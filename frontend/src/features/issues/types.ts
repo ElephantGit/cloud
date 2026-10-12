@@ -1,3 +1,5 @@
+import type { RunPreparation } from '@/api/generated.schemas'
+
 /**
  * Cloud Issue domain types, mirroring the backend contract in `api/openapi.json`.
  *
@@ -94,6 +96,8 @@ export interface IssueRun {
   revision?: RunRevision | null
   /** Agent runs: the Revision this run resumed, fixed when its session started; null for a fresh run. */
   resumeRevisionId?: string | null
+  /** Safe preparation stage and durable clone attempt budget; null once running normally. */
+  preparation?: RunPreparation | null
   createdAt: string
   updatedAt: string
 }

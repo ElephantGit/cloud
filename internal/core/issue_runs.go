@@ -23,14 +23,14 @@ func run(t *transaction, tid, iid, rid string) Object {
 	require(validID(rid), 404, "not_found")
 	o := t.one("SELECT * FROM issue_runs WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND deleted_at IS NULL", rid, tid, iid)
 	require(o != nil, 404, "not_found")
-	return withRevision(t, stripAgentRunSkeleton(o))
+	return withAgentRunDetails(t, o)
 }
 
 func runList(t *transaction, r *PublicRequest) Object {
 	issue(t, r.TenantID, r.IssueID)
 	items := t.list("SELECT * FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND deleted_at IS NULL ORDER BY created_at, id", r.IssueID, r.TenantID)
 	for _, o := range items {
-		withRevision(t, stripAgentRunSkeleton(o))
+		withAgentRunDetails(t, o)
 	}
 	return Object{"items": items, "nextCursor": ""}
 }

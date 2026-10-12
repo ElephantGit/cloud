@@ -157,6 +157,35 @@ func TestCloneFailureRetriesAsNewExecutionAndUnknownBlocks(t *testing.T) {
 	}
 }
 
+// Durable attempts bound retries even across Controller rounds and explicit user retries.
+func TestCloneFailureExhaustsItsDurableBudget(t *testing.T) {
+	f := setup(t)
+	created := f.create("clone-exhausted")
+	oid, wid := created.O("operation").S("id"), created.O("workspace").S("id")
+	f.substrate.SetFault("clone", "fail")
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := f.controller.Drain(context.Background()); err == nil {
+			t.Fatal("fixture did not produce a clone failure")
+		}
+		op := f.call("GET", f.path("/operations/"+oid), nil, "", 200)
+		want := "retry_wait"
+		if attempt == 3 {
+			want = "failed"
+		}
+		if op.S("state") != want || op.S("errorCode") != "clone_failed" {
+			t.Fatalf("attempt %d: state/code = %s/%s, want %s/clone_failed", attempt, op.S("state"), op.S("errorCode"), want)
+		}
+		if attempt < 3 {
+			f.call("POST", f.path("/operations/"+oid+"/retry"), core.Object{"version": op.N("version")}, fmt.Sprintf("bounded-retry-%d", attempt), 202)
+		}
+	}
+	if f.scalar("SELECT count(*) FROM clone_executions WHERE operation_id=$1", oid) != 3 || f.ws(wid).B("admissionOpen") {
+		t.Fatal("exhausted clone budget changed attempts or opened admission")
+	}
+	op := f.call("GET", f.path("/operations/"+oid), nil, "", 200)
+	f.call("POST", f.path("/operations/"+oid+"/retry"), core.Object{"version": op.N("version")}, "exhausted-retry", 409)
+}
+
 // Cleanup plans a Workspace's data deletion only once none of its sandboxes can still write.
 //
 // Evidence for specs test-cases/cloud/operation/workspace-runtime-lifecycle.md

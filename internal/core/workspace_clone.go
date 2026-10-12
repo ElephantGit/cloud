@@ -14,6 +14,33 @@ var deferCodes = map[string]bool{
 	"plugin_execution_failed": true, "plugin_result_unknown": true,
 }
 
+// workspaceCloneAttemptLimit bounds one operation across Controller restarts and manual retries.
+const workspaceCloneAttemptLimit = 3
+
+// workspaceCloneAttempts reads durable dispatches, rather than an in-memory retry counter.
+func workspaceCloneAttempts(t *transaction, operationID string) int64 {
+	return t.one("SELECT count(*) AS attempts FROM clone_executions WHERE operation_id=$1", operationID).N("attempts")
+}
+
+// deferWorkspaceClone retries only settled failures, with a server-owned bounded backoff.
+// An unknown outcome retains its existing blocked policy and can never consume a new dispatch.
+func deferWorkspaceClone(t *transaction, o Object) {
+	latest := t.one("SELECT result FROM clone_executions WHERE operation_id=$1 ORDER BY created_at DESC,execution_id DESC LIMIT 1", o.S("id"))
+	require(latest.O("result").S("outcome") == "clone_failed", 409, "clone_incomplete")
+	attempts := workspaceCloneAttempts(t, o.S("id"))
+	if attempts < workspaceCloneAttemptLimit {
+		delay := int64(5) * max(attempts, 1)
+		t.exec("UPDATE operations SET state='retry_wait',error_code='clone_failed',retry_at=clock_timestamp()+($2 * interval '1 second'),version=version+1,updated_at=now() WHERE id=$1", o.S("id"), delay)
+		return
+	}
+	t.exec("UPDATE operations SET state='failed',error_code='clone_failed',retry_at=NULL,version=version+1,updated_at=now() WHERE id=$1", o.S("id"))
+	t.exec("UPDATE workspaces SET observed_state='unavailable',admission_open=false,version=version+1 WHERE id=$1", o.S("workspaceId"))
+	finishRuntimeMaintenance(t, o.S("id"))
+	if w := t.one("SELECT issue_run_id FROM workspaces WHERE id=$1", o.S("workspaceId")); w.S("issueRunId") != "" {
+		runWorkspaceSettled(t, w.S("issueRunId"), "failed")
+	}
+}
+
 // workspaceCloneDispatch registers the clone of a Workspace operation in its clone step. Replaying
 // the same execution is idempotent; anything else must match the Workspace's Project repository,
 // requested ref and current Node exactly, and waits until no earlier execution is still unresolved.
@@ -26,6 +53,7 @@ func workspaceCloneDispatch(t *transaction, r *ControlRequest, operation, execut
 	}
 	require(o.S("step") == "clone" && o.S("state") == "running", 409, "dispatch_conflict")
 	require(o.N("controllerEpoch") == r.Body.N("epoch"), 409, "stale_operation")
+	require(workspaceCloneAttempts(t, operation) < workspaceCloneAttemptLimit, 409, "dispatch_conflict")
 	wid := o.S("workspaceId")
 	require(runtimeUsable(t, t.one("SELECT * FROM workspaces WHERE id=$1", wid), o.S("actorUserId")), 403, "runtime_use_forbidden")
 	requireRepositoryAccess(t, o.S("projectId"))

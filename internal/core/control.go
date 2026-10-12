@@ -102,6 +102,10 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
 		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		if o.S("step") == "clone" && code == "clone_failed" {
+			deferWorkspaceClone(t, o)
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
 		t.exec("UPDATE operations SET state=$2,error_code=$3,retry_at=clock_timestamp()+($4 * interval '1 second'),version=version+1,updated_at=now() WHERE id=$1", o.S("id"), state, code, delay)
 		return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
 	default:

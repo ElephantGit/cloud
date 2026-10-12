@@ -473,7 +473,7 @@ func TestThreadReadReportsIdleSinceAndWindowCursors(t *testing.T) {
 var runResourceFields = []string{
 	"attempt", "completedAt", "createdAt", "delegatedFromRunId", "deletedAt", "dispatchedAt", "error",
 	"executionContextRef", "executorId", "executorType", "externalExecutionId", "failureReason",
-	"fireAt", "id", "input", "issueId", "leaseExpiresAt", "maxAttempts", "parentRunId", "queuedAt",
+	"fireAt", "id", "input", "issueId", "leaseExpiresAt", "maxAttempts", "parentRunId", "preparation", "queuedAt",
 	"rerunOfRunId", "result", "resumeRevisionId", "retryOfRunId", "revision", "startedAt", "status", "tenantId", "triggerEvidenceKind",
 	"triggerEvidenceRefId", "triggerSummary", "updatedAt", "version", "workflowInvocationRef",
 }

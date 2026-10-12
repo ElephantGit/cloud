@@ -544,6 +544,19 @@ func TestRefQueryAcceptsOnlyTheCloudIdentity(t *testing.T) {
 	}
 }
 
+// A git without http-backend (Alpine's git package alone) must stop startup, not answer 500.
+func TestNewRefusesGitWithoutHTTPBackend(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "git")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho "+dir+"\n"), 0o700); err != nil { //nolint:gosec // G306: the fake git must be executable.
+		t.Fatal(err)
+	}
+	_, err := New(&Options{Store: &fakeStore{}, RepositoryRoot: filepath.Join(dir, "repositories"), GitProgram: fake, CloudClient: []byte{1}, Hook: []string{"true"}, Health: func(context.Context) error { return nil }})
+	if err == nil || !strings.Contains(err.Error(), "http-backend") {
+		t.Fatalf("New with a git lacking http-backend = %v, want a startup error", err)
+	}
+}
+
 func TestRuntimeScopeAcceptsOnlyGitAccessPurpose(t *testing.T) {
 	tenant, workspace := uuid.NewString(), uuid.NewString()
 	for _, c := range []struct {

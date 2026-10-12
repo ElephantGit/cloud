@@ -18,5 +18,5 @@ pre-receive hook 运行。
 | `GIT_SERVER_CLOUD_CLIENT_CERT_FILE` | `/etc/ora-git-management/cloud-client.pem`，唯一允许查询 ref 的叶证书 |
 | `GIT_SERVER_HEALTH_SERVER_NAME` | `git-server`，`-healthcheck` 校验的 TLS 名称 |
 
-`-healthcheck` 访问 ref 监听所配置主机（未配置时为回环地址）上的 `/healthz`，用部署 CA 校验服务端证书，不读取私钥。镜像需要 `git`
-（`git http-backend`）。运行包测试、`task check`、`task test:race` 及 `task build`。
+`-healthcheck` 访问 ref 监听所配置主机（未配置时为回环地址）上的 `/healthz`，用部署 CA 校验服务端证书，不读取私钥。镜像需要带 `git http-backend` 的
+`git`（Alpine 为 `git` 与 `git-daemon`），缺少时启动失败。运行包测试、`task check`、`task test:race` 及 `task build`。

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,11 @@ func New(input *Options) (*Service, error) {
 	if o.GitProgram, err = filepath.Abs(git); err != nil {
 		return nil, errors.New("git server git program unavailable")
 	}
+	// Some distributions package http-backend separately from git (Alpine: git-daemon). Without it
+	// every authorized request would fail at the CGI step, so refuse to start instead.
+	if err := requireHTTPBackend(o.GitProgram); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(o.RepositoryRoot, 0o750); err != nil {
 		return nil, errors.New("git server repository root unavailable")
 	}
@@ -114,6 +120,20 @@ func New(input *Options) (*Service, error) {
 		s.serveHooks(ctx, listener)
 	}()
 	return s, nil
+}
+
+func requireHTTPBackend(git string) error {
+	cmd := exec.Command(git, "--exec-path") //nolint:gosec // G204: the deployment's git program, resolved above.
+	cmd.Env = gitEnvironment()
+	out, err := cmd.Output()
+	if err != nil {
+		return errors.New("git server git program unavailable")
+	}
+	info, err := os.Stat(filepath.Join(strings.TrimSpace(string(out)), "git-http-backend"))
+	if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
+		return errors.New("git server requires git http-backend")
+	}
+	return nil
 }
 
 // Close stops the hook channel after the HTTP servers have drained, then removes runtime files.

@@ -35,9 +35,10 @@ USER ora
 ENTRYPOINT ["/app/devsetup"]
 
 FROM alpine:3.22
-# git serves sandbox repositories through `git http-backend` (cmd/git-server); /var/lib/ora-git is
+# git serves sandbox repositories through `git http-backend` (cmd/git-server), which Alpine ships in
+# git-daemon rather than git; /var/lib/ora-git is
 # its repository volume, owned by the service user so a fresh named volume inherits that owner.
-RUN apk add --no-cache ca-certificates tzdata git && adduser -D -u 10001 ora && \
+RUN apk add --no-cache ca-certificates tzdata git git-daemon && adduser -D -u 10001 ora && \
     install -d -o ora -g ora -m 0700 /app/logs /var/lib/ora-git
 WORKDIR /app
 COPY --from=build /out/server /out/gateway /out/model-gateway /out/git-server /out/cloudctl /app/

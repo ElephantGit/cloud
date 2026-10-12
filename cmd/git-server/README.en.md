@@ -20,5 +20,5 @@ runs this binary as the pre-receive hook (`-pre-receive`).
 | `GIT_SERVER_HEALTH_SERVER_NAME` | `git-server`, TLS name `-healthcheck` verifies |
 
 `-healthcheck` calls the ref listener's `/healthz` at its configured host (loopback when unset) and verifies the server certificate
-against the deployment CA; it reads no private key. The image needs `git` (for `git http-backend`).
+against the deployment CA; it reads no private key. The image needs `git` with `git http-backend` (Alpine: `git` and `git-daemon`); startup fails without it.
 Run package tests, `task check`, `task test:race` and `task build`.

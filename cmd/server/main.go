@@ -145,6 +145,7 @@ func run() (runErr error) {
 	// dispatch loop.
 	{
 		const agentSessionStartInterval = 10 * time.Second
+		store.AgentStartTimeout = cfg.IssueRuns.AgentStartTimeout
 		syncGroup.Add(1)
 		go func() {
 			defer syncGroup.Done()

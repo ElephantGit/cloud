@@ -57,6 +57,8 @@ issue_runs:
   # time. The approved first-version default is 15m; omitting the key (or setting it non-positive)
   # selects that default. Override: CLOUD_ISSUE_RUNS_THREAD_IDLE_TIMEOUT.
   thread_idle_timeout: 15m
+  # Startup expiry retires only unregistered intent; registered work waits for Node termination.
+  agent_start_timeout: 30m
   # IssueRun D5's two give-up limits for a Revision delivery, both deployment durations judged on
   # database time and both not per-run columns. `delivery_give_up_after` is the continuous-failure
   # window: once a run has been failing to deliver for longer than this, Cloud abandons the delivery

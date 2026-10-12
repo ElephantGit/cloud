@@ -12,8 +12,8 @@ import (
 //
 // Everything in this file stops at `thread_state = 'ending'`. Nothing here writes `ended`, marks a
 // queued turn `discarded`, settles a Revision, moves the run to `delivering`/`releasing`/`done`, or
-// deletes a Workspace: that is the session-terminal path (`SessionEnded`), it belongs to Phase 5,
-// and 4C deliberately has no second terminal authority (G-019). An `EndSession` command is a
+// deletes a Workspace: registered execution settles through `SessionEnded`, and an undispatched
+// intent is reconciled by the startup loop. An `EndSession` command is a
 // *request* — IssueRun D6 says so in as many words — so ending a Thread leaves the run's own
 // `phase`/`status` exactly as they were and the session shutdown, delivery and Revision lifecycle
 // proceed on their own evidence.

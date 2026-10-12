@@ -123,6 +123,11 @@ type Store struct {
 	// the moment it went idle.
 	ThreadIdleTimeout time.Duration
 
+	// AgentStartTimeout bounds waiting for a first authoritative Node record. Expiry of registered
+	// execution requests termination but retains the Workspace until terminal evidence arrives.
+	// Zero disables timeout policy, without disabling explicit pre-dispatch ending or refusal.
+	AgentStartTimeout time.Duration
+
 	// DeliveryGiveUpAfter and DeliveryUnreachableAfter are IssueRun D5's two first-version give-up
 	// limits for a Revision delivery: how long delivery may fail continuously before Cloud abandons
 	// it, and how long the run Workspace's Node may be unreachable before Cloud does the same. They

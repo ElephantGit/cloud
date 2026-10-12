@@ -31,6 +31,9 @@ type Config struct {
 // rather than to any individual run (IssueRun B side). Leaf keys are bound to CLOUD_ISSUE_RUNS_*
 // environment overrides like every other section.
 type IssueRunsConfig struct {
+	// AgentStartTimeout bounds startup waiting on database time. A registered execution retains
+	// its Workspace while termination is reconciled; expiry alone is never proof it did not act.
+	AgentStartTimeout time.Duration `mapstructure:"agent_start_timeout"`
 	// ThreadIdleTimeout is Thread D4's idle window: how long a Thread may sit `idle` before Cloud
 	// asks the session to end. It is a duration configured per deployment, never a per-run column,
 	// and the comparison that judges it runs on database time — no Cloud, Controller or Node process
@@ -161,6 +164,9 @@ func Load(configPath string) (*Config, error) {
 	if cfg.IssueRuns.ThreadIdleTimeout <= 0 {
 		cfg.IssueRuns.ThreadIdleTimeout = DefaultThreadIdleTimeout
 	}
+	if cfg.IssueRuns.AgentStartTimeout <= 0 {
+		cfg.IssueRuns.AgentStartTimeout = DefaultAgentStartTimeout
+	}
 	// IssueRun D5's two approved defaults, applied for the same reason: an operator who omits the keys
 	// gets the limits the decision fixes, not a zero-length window that would abandon every delivery
 	// immediately.
@@ -177,6 +183,9 @@ func Load(configPath string) (*Config, error) {
 // DefaultThreadIdleTimeout is Thread D4's first-version idle window, applied when
 // issue_runs.thread_idle_timeout is absent or not positive.
 const DefaultThreadIdleTimeout = 15 * time.Minute
+
+// DefaultAgentStartTimeout bounds the first-record wait; unresolved dispatches remain recoverable.
+const DefaultAgentStartTimeout = 30 * time.Minute
 
 // DefaultDeliveryGiveUpAfter and DefaultDeliveryUnreachableAfter are IssueRun D5's first-version
 // give-up limits, applied when the corresponding key is absent or not positive.

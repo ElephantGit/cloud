@@ -204,13 +204,11 @@ func runWorkspaceLive(t *transaction, wid, runID string) bool {
 	return t.one(`SELECT id FROM workspaces WHERE id=$1 AND issue_run_id=$2 AND deleted_at IS NULL`, wid, runID) != nil
 }
 
-// scanStartingAgentRuns returns the bounded, deterministically ordered ids of runs that settled into
-// 'starting' but have not yet declared their first produce, for the retry loop. It is a read-only short
-// scan outside the advisory lock (exactness lives in each start transaction), bounded by LIMIT and
-// ordered by (created_at, id). Eligibility mirrors startAgentSession: an agent run currently
-// 'starting'/'dispatched' with a live run Workspace, not cancelled, not soft-deleted, backing a real
-// space_agents executor, and with no Thread entry seq=1 yet (so already-started runs are excluded from
-// restart; the in-transaction once guard is still authoritative for races).
+// scanStartingAgentRuns returns bounded, deterministically ordered starting runs needing declaration
+// or reconciliation. A first prompt excludes a repeated declaration, but not withdrawal, capability
+// refusal or budget expiry. Eligibility is rechecked under the same transaction lock as registration;
+// this read-only scan never decides whether an external execution is absent. Roster changes cannot
+// hide an already-created run's ending or recovery responsibility.
 func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string, error) {
 	rows, err := s.Pool.QueryContext(ctx, `
 		SELECT ir.id FROM issue_runs ir
@@ -218,14 +216,26 @@ func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string,
 		  AND ir.phase = 'starting'
 		  AND ir.status = 'dispatched'
 		  AND ir.workspace_id IS NOT NULL
-		  AND ir.cancel_requested_at IS NULL
 		  AND ir.deleted_at IS NULL
-		  AND EXISTS (SELECT 1 FROM space_agents sa WHERE sa.id = ir.executor_id AND sa.tenant_id = ir.tenant_id)
-		  AND NOT EXISTS (
-		    SELECT 1 FROM thread_entries te WHERE te.run_id = ir.id AND te.seq = 1
+		  AND (
+		   (ir.cancel_requested_at IS NULL
+		    AND EXISTS (SELECT 1 FROM space_agents sa WHERE sa.id=ir.executor_id AND sa.tenant_id=ir.tenant_id)
+		    AND NOT EXISTS (SELECT 1 FROM thread_entries te WHERE te.run_id=ir.id AND te.seq=1))
+		   OR (NOT EXISTS (SELECT 1 FROM node_executions e WHERE e.operation_id=ir.id AND e.kind='agent_session')
+		       AND (ir.thread_state='ending' OR ir.cancel_requested_at IS NOT NULL
+		       OR (ir.input->>'modelBindingId' IS NOT NULL AND EXISTS (
+		         SELECT 1 FROM node_instances n JOIN sandbox_instances si ON si.id=n.sandbox_instance_id
+		         JOIN workspaces w ON w.id=n.workspace_id AND w.runtime_generation=si.generation
+		         WHERE n.workspace_id=ir.workspace_id AND n.initialized AND n.connection_state='connected'
+		           AND n.ended_at IS NULL AND si.terminated_at IS NULL AND NOT n.model_proxy))))
+		   OR ($2>0 AND COALESCE(ir.result->'startup'->>'state','')!='awaiting_node' AND COALESCE(
+		     (SELECT min(created_at) FROM node_executions WHERE operation_id=ir.id AND kind='agent_session'),
+		     (SELECT min(created_at) FROM execution_work WHERE run_id=ir.id AND kind='agent_session'),
+		     (SELECT max(updated_at) FROM operations WHERE workspace_id=ir.workspace_id AND kind='create_workspace' AND state='succeeded'),
+		     ir.updated_at)<now()-make_interval(secs=>$2))
 		  )
 		ORDER BY ir.created_at, ir.id
-		LIMIT $1`, limit)
+		LIMIT $1`, limit, s.AgentStartTimeout.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -241,9 +251,9 @@ func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string,
 	return ids, rows.Err()
 }
 
-// StartQueuedAgentSessionsOnce is one bounded retry-loop pass: scan the eligible 'starting' runs
-// (read-only) and start each in its own short transaction, with the sleep between ticks owned by the
-// caller (D-015, G-007). Per-run failures are deliberately not surfaced here — the start transaction
+// StartQueuedAgentSessionsOnce is one bounded retry-loop pass: reconcile eligible starting runs and
+// declare first prompts in separate short transactions, with the sleep between ticks owned by the
+// caller (D-015, G-007). Per-run failures are deliberately not surfaced here — the transaction
 // already rolls back on error and keeps the run 'starting' for a later tick, and the loop must not
 // flood logs because one run is transiently stuck. Only a scan-level failure cancels the pass.
 func (s *Store) StartQueuedAgentSessionsOnce(ctx context.Context) error {
@@ -256,6 +266,9 @@ func (s *Store) StartQueuedAgentSessionsOnce(ctx context.Context) error {
 	}
 	for _, id := range ids {
 		if _, err := s.transact(ctx, func(t *transaction) Object {
+			if s.reconcileAgentStartup(t, id) {
+				return Object{}
+			}
 			if err := s.startAgentSession(t, id); err != nil {
 				panic(databaseFailure{err})
 			}

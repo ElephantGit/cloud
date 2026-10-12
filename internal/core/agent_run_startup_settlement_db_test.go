@@ -134,6 +134,30 @@ func TestRegisteredStartupTimeoutRetainsReconciliationResponsibility(t *testing.
 	}
 }
 
+// The startup pass may run before the cancellation pass; an accepted cancellation still wins.
+func TestStartupTimeoutHonorsCancellationBeforeEndingPass(t *testing.T) {
+	store := commandStore(t)
+	store.AgentStartTimeout = time.Minute
+	scene := seedTakeoverScene(t, store)
+	requestCancel(t, store, scene.run)
+	if _, err := store.Pool.Exec("UPDATE node_executions SET created_at=now()-interval '2 minutes' WHERE execution_id=$1", scene.execution); err != nil {
+		t.Fatal(err)
+	}
+	startupPass(t, store)
+	var policyCancellation bool
+	if err := store.Pool.QueryRow(`SELECT (result->'startup'->>'policyCancellation')::boolean FROM issue_runs WHERE id=$1`, scene.run).Scan(&policyCancellation); err != nil {
+		t.Fatal(err)
+	}
+	if policyCancellation || runThreadState(t, store, scene.run).String != "ending" {
+		t.Fatal("startup timeout overwrote an accepted user cancellation before its ending pass")
+	}
+	cancelPass(t, store)
+	startupPass(t, store)
+	if reasons := endSessionRequests(t, store, scene.run); len(reasons) != 1 || reasons[0] != "cancelled" {
+		t.Fatalf("reordered cancellation/startup passes created duplicate ending: %v", reasons)
+	}
+}
+
 // Dispatch and withdrawal serialize on the same lock: either registration retains responsibility,
 // or withdrawal rejects the late registration. Neither outcome permits cleanup of a registered start.
 func TestStartupEndingAndDispatchRaceKeepsOneOwner(t *testing.T) {

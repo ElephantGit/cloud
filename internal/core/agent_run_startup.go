@@ -28,8 +28,10 @@ func (s *Store) reconcileAgentStartup(t *transaction, runID string) bool {
 	} else if evidence.expired && run.O("result").O("startup").S("state") != "awaiting_node" {
 		// A timeout cannot prove whether the Node acted. Request termination and make the
 		// unresolved responsibility visible without discarding commands, work, turns or storage.
-		policyCancel := run.S("threadState") != "ending"
-		if policyCancel {
+		// The cancel pass may not have materialized ending yet. Its accepted intent still owns
+		// the outcome, even when this pass is the one that releases the termination command.
+		policyCancel := !ending
+		if run.S("threadState") != "ending" {
 			s.endAgentThread(t, run, "cancelled")
 		}
 		startup := Object{"state": "awaiting_node", "policyCancellation": policyCancel}

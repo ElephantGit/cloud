@@ -50,7 +50,9 @@ Thread 读取增加 `initiatorUserId`、可空 `model{connectionName,modelId,mod
 开发 fixture 只对明确配置的精确主机名使用 Docker DNS，不成为生产回退。
 
 拒绝码区分策略拒绝、解析失败、TLS 验证失败、超时、重定向和上游不可达；日志只写安全分类，
-不记录原始 URL、解析地址、请求体、认证头或供应商错误。ACP 失败终止 Node 会话并撤销授权，
+不记录原始 URL、解析地址、请求体、认证头或供应商错误。ACP 失败终止 Node 会话并撤销授权；
+已知的 `Authentication required` / `Not logged in` 拒绝归类为
+`agent_authentication_required`，其他供应商原始文本不公开。
 Thread GET 的 `failureCode` 只来自白名单。取消的 `TurnEnded` 不触发空闲；正常多轮完成仍进入 idle。
 运行 GET/List 的 `preparation` 显示环境、clone、Agent 准备、启动阶段、持久 clone 次数和等待重试。
 同一 Workspace 操作最多三次 clone，首次/第二次失败后等待 5/10 秒，第三次终止；未知结果继续阻塞。

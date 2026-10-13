@@ -13,10 +13,12 @@ Under the same transaction lock as dispatch, withdrawal verifies there is no Age
 | Condition | Business outcome | Safe reason |
 |---|---|---|
 | User end or cancellation | `cancelled`, delivery `skipped` | No failure |
-| Frozen input requires model proxy, but the current initialized, connected Node explicitly lacks it | `failed`, delivery `skipped` | `model_proxy_unavailable` |
+| Frozen input requires model proxy, but the current initialized, connected Node with a heartbeat within 30 seconds explicitly lacks it | `failed`, delivery `skipped` | `model_proxy_unavailable` |
 | Startup budget expired | `failed`, delivery `skipped` | `agent_start_failed` |
 
 The end endpoint still returns `202/ending` with its existing request replay behavior. Periodic reconciliation settles the intent. A busy Project operation slot leaves the run `releasing` for the existing deletion redeclaration loop.
+
+Capability evidence shares dispatch's database-clock freshness boundary. A Node whose connected flag outlives its heartbeat is temporarily unknown: it cannot trigger capability refusal or retire the frozen intent of an existing pending Thread. Disconnected and uninitialized Nodes cannot supply definitive capability absence either.
 
 ## Registered execution without a startup record
 

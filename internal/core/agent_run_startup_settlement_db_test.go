@@ -90,6 +90,89 @@ func TestModelProxyRefusalSettlesBeforeDispatch(t *testing.T) {
 	}
 }
 
+// An unknown Node cannot supply a deterministic capability refusal. The connected flag can outlive
+// its heartbeat, so the business loop must use the same freshness boundary as dispatch admission.
+func TestUnknownNodeCapabilityDoesNotRejectStartup(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		connection  string
+		initialized bool
+		stale       bool
+	}{
+		{name: "expired heartbeat", connection: "connected", initialized: true, stale: true},
+		{name: "disconnected", connection: "disconnected", initialized: true},
+		{name: "not initialized", connection: "connected"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := commandStore(t)
+			input := sessionStartInput()
+			input["modelBindingId"] = newID()
+			scene := seedStartingRun(t, store, input)
+			bindConnectedNode(t, store, scene.ws)
+			if _, err := store.Pool.Exec(`UPDATE node_instances SET connection_state=$2,initialized=$3,
+				last_seen_at=CASE WHEN $4 THEN clock_timestamp()-interval '1 minute' ELSE clock_timestamp() END
+				WHERE workspace_id=$1`, scene.ws, test.connection, test.initialized, test.stale); err != nil {
+				t.Fatal(err)
+			}
+			startupPass(t, store)
+			startupPass(t, store)
+			phase, status, reason, _, _, _ := runFields(t, store, scene.seed.run)
+			if phase.String != "starting" || status != "dispatched" || reason != "" {
+				t.Fatalf("unknown Node was classified as a capability refusal: %s/%s/%s", phase.String, status, reason)
+			}
+			if got := countDeleteOperations(t, store, scene.seed.run); got != 0 {
+				t.Fatalf("unknown capability caused %d cleanup declarations", got)
+			}
+		})
+	}
+}
+
+// Inputs queued before this reconciliation policy retain their frozen intent when the target's
+// capability evidence expires. A stale Node cannot turn an existing pending Thread into failure.
+func TestStaleNodeCannotWithdrawDeclaredStartup(t *testing.T) {
+	store := commandStore(t)
+	input := sessionStartInput()
+	input["modelBindingId"] = newID()
+	scene := seedStartingRun(t, store, input)
+	bindConnectedNode(t, store, scene.ws)
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		if err := store.startAgentSession(tx, scene.seed.run); err != nil {
+			panic(databaseFailure{err})
+		}
+		return Object{}
+	}); err != nil {
+		t.Fatalf("declare the existing session intent: %v", err)
+	}
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '1 minute'
+		WHERE workspace_id=$1`, scene.ws); err != nil {
+		t.Fatal(err)
+	}
+	startupPass(t, store)
+	startupPass(t, store)
+	phase, status, reason, _, _, _ := runFields(t, store, scene.seed.run)
+	if phase.String != "starting" || status != "dispatched" || reason != "" || runThreadState(t, store, scene.seed.run).String != "pending" {
+		t.Fatalf("stale Node withdrew pending startup: %s/%s/%s thread=%v", phase.String, status, reason, runThreadState(t, store, scene.seed.run))
+	}
+	var remaining int64
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM execution_work WHERE run_id=$1
+		AND kind='agent_session' AND execution_id IS NULL AND input->>'modelBindingId'=$2`,
+		scene.seed.run, input.S("modelBindingId")).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 1 || countDeleteOperations(t, store, scene.seed.run) != 0 {
+		t.Fatalf("stale capability lost frozen work or queued cleanup: remaining=%d", remaining)
+	}
+	ids, err := store.scanStartingAgentRuns(context.Background(), agentSessionStartBatchSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if id == scene.seed.run {
+			t.Fatal("stale capability repeatedly occupies the bounded startup scan")
+		}
+	}
+}
+
 // A queued start can expire without ever becoming an external execution.
 func TestUndispatchedStartupTimeoutReleasesItsWorkspace(t *testing.T) {
 	store := commandStore(t)

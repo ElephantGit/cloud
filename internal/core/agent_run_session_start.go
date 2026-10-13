@@ -227,7 +227,8 @@ func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string,
 		         SELECT 1 FROM node_instances n JOIN sandbox_instances si ON si.id=n.sandbox_instance_id
 		         JOIN workspaces w ON w.id=n.workspace_id AND w.runtime_generation=si.generation
 		         WHERE n.workspace_id=ir.workspace_id AND n.initialized AND n.connection_state='connected'
-		           AND n.ended_at IS NULL AND si.terminated_at IS NULL AND NOT n.model_proxy))))
+		           AND n.ended_at IS NULL AND si.terminated_at IS NULL
+		           AND n.last_seen_at>clock_timestamp()-interval '30 seconds' AND NOT n.model_proxy))))
 		   OR ($2>0 AND COALESCE(ir.result->'startup'->>'state','')!='awaiting_node' AND COALESCE(
 		     (SELECT min(created_at) FROM node_executions WHERE operation_id=ir.id AND kind='agent_session'),
 		     (SELECT min(created_at) FROM execution_work WHERE run_id=ir.id AND kind='agent_session'),

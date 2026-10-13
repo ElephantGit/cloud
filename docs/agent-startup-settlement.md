@@ -13,10 +13,12 @@
 | 条件 | 业务结果 | 安全原因 |
 |---|---|---|
 | 普通结束或取消 | `cancelled`，交付 `skipped` | 无失败原因 |
-| 冻结输入要求模型代理，但当前已初始化、连接中的 Node 明确不具备能力 | `failed`，交付 `skipped` | `model_proxy_unavailable` |
+| 冻结输入要求模型代理，但当前代次已初始化、连接且 30 秒内有心跳的 Node 明确不具备能力 | `failed`，交付 `skipped` | `model_proxy_unavailable` |
 | 启动预算耗尽 | `failed`，交付 `skipped` | `agent_start_failed` |
 
 普通结束接口仍返回 `202/ending`，由周期对账结算，不改变同键重放语义。Project 操作槽忙时，Run 保持 `releasing`，由已有 delete 重声明循环继续清理。
+
+能力证据与派发使用相同的数据库时间边界。仅有 `connected` 标记、但心跳已过期的 Node 属于暂时未知；它不触发能力拒绝，也不撤回已有 pending Thread 的冻结意图。断连和未初始化同样不能提供确定性缺能力证据。
 
 ## 已登记且尚无启动记录
 

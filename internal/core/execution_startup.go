@@ -26,12 +26,14 @@ func inspectAgentStartup(t *transaction, run Object, timeout time.Duration) agen
 		input = work.O("input")
 	}
 	if input.S("modelBindingId") != "" {
-		// Only an initialized current incarnation supplies definitive capability evidence.
+		// Only an initialized, reachable current incarnation supplies definitive capability evidence.
+		// The connected flag can outlive its heartbeat, so use dispatch's database freshness bound.
 		node := t.one(`SELECT n.model_proxy FROM node_instances n
 			JOIN sandbox_instances si ON si.id=n.sandbox_instance_id
 			JOIN workspaces w ON w.id=n.workspace_id AND w.runtime_generation=si.generation
 			WHERE n.workspace_id=$1 AND n.connection_state='connected' AND n.initialized
-			  AND n.ended_at IS NULL AND si.terminated_at IS NULL`, wid)
+			  AND n.ended_at IS NULL AND si.terminated_at IS NULL
+			  AND n.last_seen_at>clock_timestamp()-interval '30 seconds'`, wid)
 		evidence.modelUnavailable = node != nil && !node.B("modelProxy")
 	}
 	if timeout > 0 {

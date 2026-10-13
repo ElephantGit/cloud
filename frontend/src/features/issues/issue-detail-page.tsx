@@ -27,7 +27,8 @@ import { workspacePaths } from '@/lib/paths'
 export function IssueDetailPage({ slug }: { slug: string }) {
   const { issueId, workspaceSlug } = useParams<{ issueId: string; workspaceSlug: string }>()
   const navigate = useNavigate()
-  const { data: issue, isPending } = useIssue(slug, issueId)
+  const issueQuery = useIssue(slug, issueId)
+  const { data: issue, isPending } = issueQuery
   const { data: statuses } = useIssueStatuses(slug)
   const { data: members = [] } = useMembers(slug)
   const { data: allIssues = [] } = useIssues(slug)
@@ -76,6 +77,24 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">
             {issue.description || '暂无描述。'}
           </p>
+          {updateIssue.isError && (
+            <div role="alert" className="space-y-1 text-sm text-destructive">
+              <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void issueQuery.refetch().then((result) => {
+                    if (!result.isError) updateIssue.reset()
+                    return result
+                  })
+                }}
+              >
+                重新加载任务
+              </Button>
+            </div>
+          )}
           <ActivityPanel slug={slug} issueId={issue.id} members={members} />
         </div>
         <IssuePropertiesPanel
@@ -86,6 +105,7 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           members={members}
           issueHref={p.issueDetail}
           onCommit={commit}
+          saving={updateIssue.isPending}
         />
         <IssueThreadPanel tid={slug} issueId={issue.id} members={members} />
       </div>

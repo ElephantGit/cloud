@@ -8,6 +8,36 @@ import (
 	"github.com/wanglongan587/cloud/internal/controlpb"
 )
 
+// Real gRPC takeover still receipts late facts after business abandonment, without a new delivery.
+func TestStartupAbandonmentReceiptsLateFactsWithoutResurrectingRun(t *testing.T) {
+	f := setup(t)
+	f.bindBusinessHooks()
+	scene := seedLiveThreadScene(t, f)
+	scene.start(t, f)
+	f.endThread(scene.threadScene, "end-before-first-record", 202, "")
+	_, err := f.store.Pool.Exec("UPDATE issue_runs SET startup_ending_deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1", scene.runID)
+	must(t, err)
+	must(t, f.store.StartQueuedAgentSessionsOnce(context.Background()))
+	phase, status, state := f.threadRunState(scene.runID)
+	if phase != "done" || status != "failed" || state != "ended" {
+		t.Fatalf("confirmation did not bound waiting: %s/%s/%s", phase, status, state)
+	}
+	f.postThread(scene.threadScene, "late-input", threadBody("must not dispatch"), 409, "thread_closed")
+	f.runningThread(t, scene)
+	f.sessionEndOK(t, scene, "late-terminal-fact", 2, controlpb.AgentSessionEndReason_AGENT_SESSION_END_REASON_CANCELLED)
+	f.sessionEndOK(t, scene, "late-terminal-fact", 2, controlpb.AgentSessionEndReason_AGENT_SESSION_END_REASON_CANCELLED)
+	phase, status, state = f.threadRunState(scene.runID)
+	if phase != "done" || status != "failed" || state != "ended" {
+		t.Fatalf("late fact resurrected run: %s/%s/%s", phase, status, state)
+	}
+	if f.scalar("SELECT count(*) FROM agent_run_residuals WHERE run_id=$1 AND session_ended_at IS NOT NULL AND cleared_at IS NULL", scene.runID) != 1 ||
+		f.scalar("SELECT count(*) FROM node_event_receipts WHERE execution_id=$1", scene.executionID) != 2 ||
+		f.scalar("SELECT count(*) FROM execution_work WHERE run_id=$1 AND kind='deliver_revision'", scene.runID) != 0 ||
+		f.scalar("SELECT count(*) FROM operations WHERE kind='delete_workspace'") != 0 {
+		t.Fatal("late facts must update their original responsibility, never fabricate delivery or cleanup")
+	}
+}
+
 // Ending before any registration keeps HTTP request idempotency while the production loop
 // settles the run, and ownership checks remain identical to the existing Thread endpoints.
 func TestStartupEndPreservesHTTPIdempotencyAndClosesFurtherInput(t *testing.T) {
@@ -88,7 +118,7 @@ func TestStartupTimeoutReconcilesLateNodeEvidenceWithoutReopening(t *testing.T) 
 				f.endThread(scene.threadScene, "explicit-startup-end", 202, "")
 			}
 			f.store.AgentStartTimeout = time.Minute
-			_, err := f.store.Pool.Exec(`UPDATE node_executions SET created_at=now()-interval '2 minutes' WHERE execution_id=$1`, scene.executionID)
+			_, err := f.store.Pool.Exec(`UPDATE issue_runs SET startup_deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1`, scene.runID)
 			must(t, err)
 			must(t, f.store.StartQueuedAgentSessionsOnce(context.Background()))
 			must(t, f.store.StartQueuedAgentSessionsOnce(context.Background()))

@@ -47,7 +47,8 @@ func (s *Store) startAgentSession(t *transaction, runID string) error {
 	snap := o.O("input")
 	// The prior Revision is chosen before the first prompt is rendered: the prompt tells the Agent what
 	// it resumes, and both are fixed by this one transaction (resume decision D1, D4).
-	resume := selectPriorRevision(t, o)
+	s.freezeAgentStartup(t, runID)
+	resume := frozenAgentResume(t, runID)
 	content := renderAgentInitialTurn(snap, resume.context)
 	turnID := newID()
 	// Exactly-once marker write. 0 affected rows → a prior start already declared the first produce;
@@ -213,30 +214,22 @@ func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string,
 	rows, err := s.Pool.QueryContext(ctx, `
 		SELECT ir.id FROM issue_runs ir
 		WHERE ir.executor_type = 'agent'
-		  AND ir.phase = 'starting'
-		  AND ir.status = 'dispatched'
-		  AND ir.workspace_id IS NOT NULL
-		  AND ir.deleted_at IS NULL
-		  AND (
-		   (ir.cancel_requested_at IS NULL
-		    AND EXISTS (SELECT 1 FROM space_agents sa WHERE sa.id=ir.executor_id AND sa.tenant_id=ir.tenant_id)
-		    AND NOT EXISTS (SELECT 1 FROM thread_entries te WHERE te.run_id=ir.id AND te.seq=1))
-		   OR (NOT EXISTS (SELECT 1 FROM node_executions e WHERE e.operation_id=ir.id AND e.kind='agent_session')
-		       AND (ir.thread_state='ending' OR ir.cancel_requested_at IS NOT NULL
+		  AND (ir.phase='starting' OR (ir.phase='running' AND ir.startup_ending_deadline_at IS NOT NULL))
+		  AND ir.status IN ('dispatched','running')
+		  AND ir.workspace_id IS NOT NULL AND ir.deleted_at IS NULL
+		  AND (ir.startup_deadline_at IS NULL OR ir.startup_ending_deadline_at<=clock_timestamp()
+		   OR (ir.phase='starting' AND (
+		    (ir.thread_state IS NULL AND ir.cancel_requested_at IS NULL)
+		    OR (COALESCE(ir.result->'startup'->>'state','')!='awaiting_node' AND ir.startup_deadline_at<=clock_timestamp())
+		    OR (NOT EXISTS (SELECT 1 FROM node_executions e WHERE e.operation_id=ir.id AND e.kind='agent_session')
+		      AND (ir.thread_state='ending' OR ir.cancel_requested_at IS NOT NULL
 		       OR (ir.input->>'modelBindingId' IS NOT NULL AND EXISTS (
 		         SELECT 1 FROM node_instances n JOIN sandbox_instances si ON si.id=n.sandbox_instance_id
 		         JOIN workspaces w ON w.id=n.workspace_id AND w.runtime_generation=si.generation
 		         WHERE n.workspace_id=ir.workspace_id AND n.initialized AND n.connection_state='connected'
 		           AND n.ended_at IS NULL AND si.terminated_at IS NULL
-		           AND n.last_seen_at>clock_timestamp()-interval '30 seconds' AND NOT n.model_proxy))))
-		   OR ($2>0 AND COALESCE(ir.result->'startup'->>'state','')!='awaiting_node' AND COALESCE(
-		     (SELECT min(created_at) FROM node_executions WHERE operation_id=ir.id AND kind='agent_session'),
-		     (SELECT min(created_at) FROM execution_work WHERE run_id=ir.id AND kind='agent_session'),
-		     (SELECT max(updated_at) FROM operations WHERE workspace_id=ir.workspace_id AND kind='create_workspace' AND state='succeeded'),
-		     ir.updated_at)<now()-make_interval(secs=>$2))
-		  )
-		ORDER BY ir.created_at, ir.id
-		LIMIT $1`, limit, s.AgentStartTimeout.Seconds())
+		           AND n.last_seen_at>clock_timestamp()-interval '30 seconds' AND NOT n.model_proxy)))))))
+		ORDER BY ir.created_at, ir.id LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +259,14 @@ func (s *Store) StartQueuedAgentSessionsOnce(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
+		// Freeze an upgraded run's policy even if a later declaration cannot reach its Node.
+		// Otherwise that declaration rollback would let the next deployment choose a new window.
+		if _, err := s.transact(ctx, func(t *transaction) Object {
+			s.freezeAgentStartup(t, id)
+			return Object{}
+		}); err != nil {
+			continue
+		}
 		if _, err := s.transact(ctx, func(t *transaction) Object {
 			if s.reconcileAgentStartup(t, id) {
 				return Object{}

@@ -1,33 +1,31 @@
-# Agent 启动结算
+# Agent 启动与未知结果的有界业务收尾
 
-[中文](agent-startup-settlement.md) | [English](agent-startup-settlement.en.md)
+[English](agent-startup-settlement.en.md) | 中文
 
-首条 prompt 与启动工作项只证明 Cloud 声明了意图。派发登记意味着 Node 可能已经执行，即使尚未收到 ACK 或 Thread 记录。启动对账据此决定能否撤回；不会以缺回复推断执行不存在。
+本实现遵守已批准的 bounded-agent-startup ADR D1–D4。工作项/首条 prompt 是 Cloud 意图，登记意味着 Node 可能已执行；无回复不能证明没有外部副作用。D5 创建 blocked 放弃单独交付，不在本期启用。
 
-此实现用于评审 specs 的 `20261012-bounded-agent-startup-and-undispatched-withdrawal` 提案；新终态边界与默认预算须先由 owner 批准并同步核心用例，随后才能合并用于部署。没有数据迁移，也不重写历史 Node 结果。
+## 持久窗口
 
-## 未登记的启动
+| 配置（环境变量前缀 CLOUD_ISSUE_RUNS_） | 默认 | 起点 |
+| --- | --- | --- |
+| agent_start_timeout | 2m | 运行 Workspace 创建成功/ready |
+| agent_restore_timeout | 6m | 同一 ready，替代普通窗口，包含 Revision 恢复和启动 |
+| agent_end_confirm_timeout | 5m | 启动中已登记未知执行首次 ending |
 
-在与派发登记相同的事务锁下，确认不存在 Agent 执行、已绑定工作项或已投递命令，才能撤回启动工作项与未投递命令。撤回、Thread 终结、queued 轮次丢弃、业务结算和 owned delete 声明同事务提交；失败全部回滚，迟到登记被拒绝。
+缺省使用默认值，显式零、负值、非时长及溢出拒绝启动。0034 追加持久 ready/deadline 与恢复选择，普通和恢复使用一个绝对启动截止；声明、输入、重试、重启或配置调整不续期。恢复候选沿既有同 Issue/Project/仓库和 refused 规则选择，在 ready 固定以确定窗口，首轮声明复用该选择。
 
-| 条件 | 业务结果 | 安全原因 |
-|---|---|---|
-| 普通结束或取消 | `cancelled`，交付 `skipped` | 无失败原因 |
-| 冻结输入要求模型代理，但当前代次已初始化、连接且 30 秒内有心跳的 Node 明确不具备能力 | `failed`，交付 `skipped` | `model_proxy_unavailable` |
-| 启动预算耗尽 | `failed`，交付 `skipped` | `agent_start_failed` |
+存量未初始化窗口的 starting Run 在串行扫描中一次固定：有成功 create_workspace 证据时使用其完成时间，否则明确以首次策略观察为 ready 起点；已有声明复用工作项的冻结恢复输入。它不声称为缺少证据的历史运行追溯恢复精确期限。历史 D8 删除放弃状态不改写。
 
-普通结束接口仍返回 `202/ending`，由周期对账结算，不改变同键重放语义。Project 操作槽忙时，Run 保持 `releasing`，由已有 delete 重声明循环继续清理。
+## 未登记与已登记
 
-能力证据与派发使用相同的数据库时间边界。仅有 `connected` 标记、但心跳已过期的 Node 属于暂时未知；它不触发能力拒绝，也不撤回已有 pending Thread 的冻结意图。断连和未初始化同样不能提供确定性缺能力证据。
+未登记时，当前已初始化、连接且 30 秒内心跳的 Node 明确缺模型能力才以 model_proxy_unavailable 失败。容量、排队和暂时不可达继续保留原 work/输入，由已有领取调度在原预算内延后；本实现不新增队列或退避策略。到期原子撤回并以 agent_start_failed/releasing 结算，用户先结束则 cancelled。撤回与登记共用事务锁，终态、queued 输入丢弃和 owned delete 声明一起提交。
 
-## 已登记且尚无启动记录
+已登记且无启动记录时，到期请求 ending，保留既有用户结束原因和所有执行/资源证据。真实终态及时到达，沿原交付链路处理；确认截止仍未知则原子写 failed/done/ended、deliveryState=failed 和 agent_run_residuals，不伪造 Node 结果、收据或 Revision。关闭新派发/输入/模型授权，保留 Workspace 并阻止普通删除或接管。迟到真实记录和终态按原身份接管及 ACK，只补证据，不复活或再次结算。
 
-预算耗尽后，Thread 保持 `ending`，GET Thread 返回 `failureCode=agent_start_failed` 并拒绝新输入；工作项、登记、queued 轮次、命令与 Workspace 全部保留。已有用户结束原因保留，否则声明一个策略取消。重复扫描不增加结束命令。
+## 运维查询与回收边界
 
-迟到记录按原顺序接管，首条记录不会重新打开 `ending`。真实 Node 终态仍是交付的入口；交付结算后才声明删除。策略超时取消最终为 `failed`，此前接受的用户结束保留其业务结果，Node 失败继续使用受限安全原因。Cloud 不伪造 Node 结果、收据、历史或 Revision。
+授权部署运维使用受控数据库会话，按 tenant_id/run_id 查询 agent_run_residuals；其中仅记录资源身份和未完成责任，不包含凭据或业务输入。session_ended_at 是迟到真实终态的证据，不是删除证明。cleared_at 保留给后续经批准的回收流程，本期不会自动设置。
 
-## 预算与验证
+账本的 tenant/project/workspace/generation 与既有 operation/effect/clone/Node execution 身份一起保留。隐藏 Workspace 的公开入口继续不可用；只有后续回收 ADR 定义授权、真实终止/late ensure fencing 和删除顺序后才能开放自动回收。业务 done 不等于物理资源已释放。
 
-`issue_runs.agent_start_timeout` 默认 `30m`，可用 `CLOUD_ISSUE_RUNS_AGENT_START_TIMEOUT` 设置正时长。数据库时间以当前阶段的稳定起点判断：声明前用 Workspace 创建完成时间，声明后用工作项创建时间，登记后用执行创建时间。用户输入、请求重放和连接恢复不续期。
-
-数据库回归覆盖结束撤回、明确能力拒绝、超时、派发竞争、迟到登记、重复结算、事务回滚与 Project 忙后的清理重试；HTTP/gRPC 回归覆盖同键重放、关闭输入、公开安全原因、迟到记录、终态与交付。真实供应商对话和管理强停仍需各自的完整验收；超时本身不能证明已经登记的执行停止。
+直接回归覆盖固定窗口、配置拒绝、两 Store 配置变化、延后 work、重复扫描、账本失败回滚、迁移和真实 HTTP/gRPC 迟到事实。完整真实 Controller 暂时失败调度与永久失联演练仍须和领取调度、部署验收对齐。

@@ -124,9 +124,13 @@ type Store struct {
 	ThreadIdleTimeout time.Duration
 
 	// AgentStartTimeout bounds waiting for a first authoritative Node record. Expiry of registered
-	// execution requests termination but retains the Workspace until terminal evidence arrives.
-	// Zero disables timeout policy, without disabling explicit pre-dispatch ending or refusal.
+	// execution requests termination; confirmation expiry retains an independent residual ledger.
+	// Zero-value stores select the approved defaults when each durable window is first frozen.
 	AgentStartTimeout time.Duration
+	// AgentRestoreTimeout is the ready-based window for a selected prior Revision.
+	AgentRestoreTimeout time.Duration
+	// AgentEndConfirmTimeout is frozen at the first unresolved startup ending request.
+	AgentEndConfirmTimeout time.Duration
 
 	// DeliveryGiveUpAfter and DeliveryUnreachableAfter are IssueRun D5's two first-version give-up
 	// limits for a Revision delivery: how long delivery may fail continuously before Cloud abandons

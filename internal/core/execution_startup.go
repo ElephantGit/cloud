@@ -1,7 +1,5 @@
 package core
 
-import "time"
-
 // agentStartupEvidence is control-plane evidence read under the dispatch transaction lock.
 // Registration is a conservative boundary: even a missing acknowledgement can have reached Node.
 type agentStartupEvidence struct {
@@ -12,7 +10,7 @@ type agentStartupEvidence struct {
 }
 
 // inspectAgentStartup keeps execution, command and Node table reads with their control-plane owner.
-func inspectAgentStartup(t *transaction, run Object, timeout time.Duration) agentStartupEvidence {
+func inspectAgentStartup(t *transaction, run Object) agentStartupEvidence {
 	rid, wid := run.S("id"), run.S("workspaceId")
 	work := t.one("SELECT * FROM execution_work WHERE run_id=$1 AND kind='agent_session' ORDER BY created_at,id LIMIT 1", rid)
 	execution := t.one("SELECT * FROM node_executions WHERE operation_id=$1 AND kind='agent_session' ORDER BY created_at,execution_id LIMIT 1", rid)
@@ -36,15 +34,8 @@ func inspectAgentStartup(t *transaction, run Object, timeout time.Duration) agen
 			  AND n.last_seen_at>clock_timestamp()-interval '30 seconds'`, wid)
 		evidence.modelUnavailable = node != nil && !node.B("modelProxy")
 	}
-	if timeout > 0 {
-		// Accepted user turns update the run timestamp. They cannot renew the startup budget.
-		evidence.expired = t.one(`SELECT ir.id FROM issue_runs ir
-			WHERE ir.id=$1 AND COALESCE(
-			 (SELECT min(created_at) FROM node_executions WHERE operation_id=ir.id AND kind='agent_session'),
-			 (SELECT min(created_at) FROM execution_work WHERE run_id=ir.id AND kind='agent_session'),
-			 (SELECT max(updated_at) FROM operations WHERE workspace_id=ir.workspace_id AND kind='create_workspace' AND state='succeeded'),
-			 ir.updated_at) < now()-make_interval(secs => $2)`, rid, timeout.Seconds()) != nil
-	}
+	evidence.expired = t.one("SELECT id FROM issue_runs WHERE id=$1 AND startup_deadline_at<=clock_timestamp()", rid) != nil
+
 	return evidence
 }
 

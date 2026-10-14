@@ -48,6 +48,9 @@ func (s *Store) endAgentThread(t *transaction, o Object, reason string) {
 		WHERE id=$1 AND thread_state IN ('pending','active','idle')`, runID); moved != 1 {
 		panic(databaseFailure{fmt.Errorf("end agent thread: run %s was not moved to ending (rows affected %d)", runID, moved)})
 	}
+	if o.S("phase") == "starting" {
+		s.freezeAgentEnding(t, runID)
+	}
 	// The command is released through the control plane's own in-transaction seam
 	// (controller-integration D6): the business layer never writes thread_commands, and a failure
 	// rolls the `ending` write back with it, so a Thread can never be `ending` without the request

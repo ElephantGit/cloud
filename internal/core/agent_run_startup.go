@@ -6,11 +6,16 @@ import "fmt"
 // It never fabricates a Node result or receipt. Registered work retains its recovery responsibility.
 func (s *Store) reconcileAgentStartup(t *transaction, runID string) bool {
 	run := t.one(`SELECT * FROM issue_runs WHERE id=$1 AND executor_type='agent'
-		AND phase='starting' AND status='dispatched' AND deleted_at IS NULL`, runID)
+		AND (phase='starting' OR (phase='running' AND startup_ending_deadline_at IS NOT NULL))
+		AND status IN ('dispatched','running') AND deleted_at IS NULL`, runID)
 	if run == nil {
 		return true
 	}
-	evidence := inspectAgentStartup(t, run, s.AgentStartTimeout)
+	s.freezeAgentStartup(t, runID)
+	if s.abandonExpiredAgentStartup(t, runID) {
+		return true
+	}
+	evidence := inspectAgentStartup(t, run)
 	ending := run.S("threadState") == "ending" || run.S("cancelRequestedAt") != ""
 	if !evidence.registered {
 		if ending {
@@ -34,6 +39,7 @@ func (s *Store) reconcileAgentStartup(t *transaction, runID string) bool {
 		if run.S("threadState") != "ending" {
 			s.endAgentThread(t, run, "cancelled")
 		}
+		s.freezeAgentEnding(t, runID)
 		startup := Object{"state": "awaiting_node", "policyCancellation": policyCancel}
 		t.exec(`UPDATE issue_runs SET failure_reason='agent_start_failed',
 			result=COALESCE(result,'{}'::jsonb)||jsonb_build_object('startup',$2::jsonb),

@@ -1,33 +1,31 @@
-# Agent startup settlement
+# Bounded Agent startup and unknown-result business settlement
 
-[中文](agent-startup-settlement.md) | [English](agent-startup-settlement.en.md)
+English | [中文](agent-startup-settlement.md)
 
-The first prompt and queued work prove Cloud declared intent. Dispatch registration means Node may already have executed, even without an acknowledgement or Thread record. Startup reconciliation uses this boundary to decide whether withdrawal is safe.
+The implementation follows approved bounded-agent-startup ADR D1–D4. Work and the first prompt are Cloud intent; registration means Node may have acted. Missing replies do not prove absence of effects. D5 blocked creation abandonment is a separate delivery.
 
-This implementation supports review of the specs proposal `20261012-bounded-agent-startup-and-undispatched-withdrawal`. The new terminal boundary and default budget require owner approval and synchronized core cases before merging for deployment. No migration or rewriting of historical Node results is involved.
+## Durable windows
 
-## Before registration
+| Setting (environment prefix CLOUD_ISSUE_RUNS_) | Default | Anchor |
+| --- | --- | --- |
+| agent_start_timeout | 2m | Run Workspace creation succeeds/ready |
+| agent_restore_timeout | 6m | Same ready anchor, replacing the ordinary window and including restore/start |
+| agent_end_confirm_timeout | 5m | First ending of an unresolved registered startup |
 
-Under the same transaction lock as dispatch, withdrawal verifies there is no Agent execution, bound work or delivered command. Retiring unregistered work and commands, ending the Thread, discarding queued turns, settling the business outcome and declaring owned deletion commit together. Any failure rolls everything back; late registration is rejected.
+Omitted values use defaults; explicit zero, negative, malformed or overflowing durations refuse startup. Migration 0034 adds durable ready/deadline and resume selection. Declaration, input, retry, restart and configuration changes never renew the absolute deadline. Resume candidates keep the existing Issue/Project/repository/refusal rules; ready freezes the choice to select the window, and declaration reuses it.
 
-| Condition | Business outcome | Safe reason |
-|---|---|---|
-| User end or cancellation | `cancelled`, delivery `skipped` | No failure |
-| Frozen input requires model proxy, but the current initialized, connected Node with a heartbeat within 30 seconds explicitly lacks it | `failed`, delivery `skipped` | `model_proxy_unavailable` |
-| Startup budget expired | `failed`, delivery `skipped` | `agent_start_failed` |
+Legacy starting runs initialize once under the serialized scan: a completed create_workspace anchors ready, otherwise the first policy observation is explicit. Existing declarations retain their work's frozen restore input. Missing historical evidence cannot retroactively establish exact deadlines. Historical D8 release-abandonment outcomes are unchanged.
 
-The end endpoint still returns `202/ending` with its existing request replay behavior. Periodic reconciliation settles the intent. A busy Project operation slot leaves the run `releasing` for the existing deletion redeclaration loop.
+## Before and after registration
 
-Capability evidence shares dispatch's database-clock freshness boundary. A Node whose connected flag outlives its heartbeat is temporarily unknown: it cannot trigger capability refusal or retire the frozen intent of an existing pending Thread. Disconnected and uninitialized Nodes cannot supply definitive capability absence either.
+Before registration, only a current initialized connected Node with a heartbeat within 30 seconds can prove model_proxy_unavailable. Capacity, queueing and temporary unreachability retain the same work/input; the existing scheduler owns deferral within the original budget, not a second queue or backoff policy. Expiry atomically withdraws intent and settles agent_start_failed/releasing; an earlier user end settles cancelled. Registration and withdrawal share the transaction lock; terminal state, discarded queued input and owned-delete declaration commit together.
 
-## Registered execution without a startup record
+An unresolved registered startup requests ending at expiry, preserving existing user intent and execution/resource facts. Timely real terminal evidence follows the original delivery path. Confirmation expiry atomically commits failed/done/ended, deliveryState=failed and agent_run_residuals without inventing Node results, receipts or a Revision. New dispatch/input/model authorization closes; the Workspace remains protected from ordinary deletion or handoff. Late true records and terminal events are receipted against original identities without resurrection or another settlement.
 
-Expiry leaves the Thread `ending`, exposes `failureCode=agent_start_failed` on GET Thread and closes further input. Work, registration, queued turns, commands and the Workspace remain. An existing user end reason is retained; otherwise Cloud declares one policy cancellation. Repeated scans do not add termination commands.
+## Operator query and recovery boundary
 
-Late records retain their original takeover order, and a first record cannot reopen an ending Thread. A real terminal Node event still enters delivery; cleanup is declared only when delivery settles. A policy timeout cancellation ends as `failed`; a prior user end retains its business outcome. Node failures retain bounded safe classifications. Cloud fabricates no Node result, receipt, history or Revision.
+Authorized deployment operators query agent_run_residuals by tenant_id/run_id through controlled database access. Rows contain resource identities and outstanding responsibility, not credentials or business input. session_ended_at proves a late session terminal, never physical deletion. cleared_at is reserved for a separately approved cleanup workflow and is not automatically set here.
 
-## Budget and validation
+Tenant/project/workspace/generation and existing operation/effect/clone/Node execution identities remain retained. Hidden Workspace public endpoints stay unavailable. Automatic cleanup needs the later recovery ADR's authorization, real termination/late-ensure fencing and deletion order. Business done does not mean resources are physically released.
 
-`issue_runs.agent_start_timeout` defaults to `30m`; `CLOUD_ISSUE_RUNS_AGENT_START_TIMEOUT` accepts a positive deployment override. The database clock compares the stable stage origin: successful Workspace creation before declaration, work creation after declaration, and execution creation after registration. User input, request replay and connection recovery do not renew it.
-
-Database regressions cover withdrawal, explicit capability refusal, expiry, dispatch races, late registration, repeats, rollback and cleanup after Project contention. HTTP/gRPC tests cover request replay, closed input, safe reads, late records, terminal takeover and delivery. Real provider conversations and administrative force-stop require their own acceptance evidence; a timeout never proves that registered execution stopped.
+Direct regressions cover frozen windows, invalid configuration, changed settings across two Stores, deferred work, repeated scans, ledger rollback, migration and real HTTP/gRPC late facts. Full Controller deferral and permanent-disconnection deployment qualification still require coordination with scheduling and deployment acceptance.

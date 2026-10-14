@@ -19,7 +19,7 @@
 
 ## Boundaries and invariants
 
-The startup settlement proposal uses `issue_runs.agent_start_timeout`, defaulting to 30 minutes. A positive duration can be supplied through `CLOUD_ISSUE_RUNS_AGENT_START_TIMEOUT`; an absent, zero or negative value selects the default. The database clock owns expiry and additional input does not renew it. Registered executions retain their Workspace and recovery evidence until a real terminal result arrives. See [Startup settlement](../../docs/agent-startup-settlement.en.md) for semantics and the review boundary.
+Startup windows use database time. Confirmation expiry settles business state while retaining independent residual responsibility; a business terminal does not prove physical release. See [Startup settlement](../../docs/agent-startup-settlement.en.md) for defaults and recovery boundaries.
 
 The optional `object_store` section configures S3 delivery. When enabled, the server loads separately mounted access/secret key files into memory and validates private/public endpoints, region, bucket, addressing mode and a TTL between one second and seven days. All keys support `CLOUD_OBJECT_STORE_*` overrides. Short-lived PUT grants can bind SHA-256; Cloud verifies existence, size and stored checksum through private HEAD before registering Revision. Disabled by default, delivery settles skipped/object_store_unconfigured through the caller's transaction without dispatch; standalone grant requests return unavailable. Health reports configured/unconfigured, not S3 availability.
 
@@ -27,3 +27,5 @@ The optional `object_store` section configures S3 delivery. When enabled, the se
 - **Immutable runtime**: Configurations are loaded once at command startup and passed as ready-to-use values. There is no global mutable configuration singleton.
 
 See [config.yaml](../../configs/config.yaml), [cmd/server](../../cmd/server/README.en.md), and [Authentication](../../docs/authentication.md).
+
+Agent startup, restore and end confirmation default to 2m/6m/5m (agent_start_timeout, agent_restore_timeout, agent_end_confirm_timeout). Only omission selects defaults; explicit nonpositive or invalid durations fail. Changes affect new durable windows only, never renew active ones.

@@ -178,9 +178,7 @@ func TestUndispatchedStartupTimeoutReleasesItsWorkspace(t *testing.T) {
 	store := commandStore(t)
 	store.AgentStartTimeout = time.Minute
 	scene, _ := seedDispatchableWork(t, store)
-	if _, err := store.Pool.Exec("UPDATE execution_work SET created_at=now()-interval '2 minutes' WHERE run_id=$1", scene.run); err != nil {
-		t.Fatal(err)
-	}
+	expireStartupWindow(t, store, scene.run)
 	startupPass(t, store)
 	phase, status, reason, _, _, _ := runFields(t, store, scene.run)
 	if phase.String != "releasing" || status != "failed" || reason != "agent_start_failed" {
@@ -193,9 +191,7 @@ func TestRegisteredStartupTimeoutRetainsReconciliationResponsibility(t *testing.
 	store := commandStore(t)
 	store.AgentStartTimeout = time.Minute
 	scene := seedTakeoverScene(t, store)
-	if _, err := store.Pool.Exec("UPDATE node_executions SET created_at=now()-interval '2 minutes' WHERE execution_id=$1", scene.execution); err != nil {
-		t.Fatal(err)
-	}
+	expireStartupWindow(t, store, scene.run)
 	startupPass(t, store)
 	startupPass(t, store)
 	phase, status, reason, _, _, _ := runFields(t, store, scene.run)
@@ -223,9 +219,7 @@ func TestStartupTimeoutHonorsCancellationBeforeEndingPass(t *testing.T) {
 	store.AgentStartTimeout = time.Minute
 	scene := seedTakeoverScene(t, store)
 	requestCancel(t, store, scene.run)
-	if _, err := store.Pool.Exec("UPDATE node_executions SET created_at=now()-interval '2 minutes' WHERE execution_id=$1", scene.execution); err != nil {
-		t.Fatal(err)
-	}
+	expireStartupWindow(t, store, scene.run)
 	startupPass(t, store)
 	var policyCancellation bool
 	if err := store.Pool.QueryRow(`SELECT (result->'startup'->>'policyCancellation')::boolean FROM issue_runs WHERE id=$1`, scene.run).Scan(&policyCancellation); err != nil {

@@ -37,18 +37,19 @@ func main() {
 
 // configureCollaboration installs the optional development Agent/Team/Workflow fixtures on the store
 // when the deployment explicitly enables them (`collaboration.development_fixtures`). It is the
-// cmd/server composition gate: production default is OFF, leaving the collaboration ports nil so the
-// target discovery API serves only human targets. It is intentionally independent of authentication —
-// enabling GitHub Auth must never enable these fixtures, and an auth failure must never fall back to
-// a fixture identity.
+// cmd/server composition gate: production default is OFF, where the directory serves the two real
+// target types (Space Agents and workflows) and the fixture-only ports stay nil. It is intentionally
+// independent of authentication — enabling GitHub Auth must never enable these fixtures, and an auth
+// failure must never fall back to a fixture identity.
 func configureCollaboration(store *core.Store, developmentFixtures bool, log *zap.Logger) {
 	if !developmentFixtures {
-		// Production: Agent is the one collaboration target with real backing (space_agents). Wire a
-		// roster-backed directory so target discovery serves real Space Agents; Team/Workflow
-		// (cross-module ports, still unbuilt) stay unreported. Run-create resolution re-validates
-		// against space_agents in-transaction regardless of this directory.
+		// Production: layer the roster-backed Agent directory in front of the workflow-backed one
+		// NewStore already installed, so discovery and resolution serve both real target types.
+		// Replacing the directory instead would drop published workflows from @ — the regression #65
+		// reported. Team has no backend in any deployment and stays unreported. Run-create resolution
+		// re-validates agents against space_agents in-transaction regardless of this directory.
 		if store.Pool != nil {
-			store.Directory = core.NewSpaceAgentDirectory(store.Pool)
+			store.Directory = core.DirectoryChain{core.NewSpaceAgentDirectory(store.Pool), store.Directory}
 		}
 		return
 	}

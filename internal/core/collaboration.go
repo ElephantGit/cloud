@@ -37,6 +37,39 @@ type CollaborationDirectory interface {
 	ResolveTarget(ctx context.Context, tenantID, targetType, targetID string) (CollaborationTargetSummary, bool, error)
 }
 
+// DirectoryChain composes directory sources in priority order, for a deployment whose target types
+// have separate real backends. Listing concatenates each source's matches in chain order; resolution
+// returns the first source that can resolve the target. A source's error stops the chain and is
+// returned as-is, so a database failure can never surface as "not found". Cloud serves Agent and
+// Workflow this way: the space_agents roster in front of the workflow-backed directory, rather than
+// one source replacing the other.
+type DirectoryChain []CollaborationDirectory
+
+// ListTargets returns each source's matches for the same tenant and query, in chain order.
+func (c DirectoryChain) ListTargets(ctx context.Context, tenantID, query string) ([]CollaborationTargetSummary, error) {
+	out := []CollaborationTargetSummary{}
+	for _, source := range c {
+		items, err := source.ListTargets(ctx, tenantID, query)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	return out, nil
+}
+
+// ResolveTarget returns the first source's resolution. A target no source can resolve is not-found,
+// never an error: the caller turns it into the same 404 an unknown id produces.
+func (c DirectoryChain) ResolveTarget(ctx context.Context, tenantID, targetType, targetID string) (CollaborationTargetSummary, bool, error) {
+	for _, source := range c {
+		target, ok, err := source.ResolveTarget(ctx, tenantID, targetType, targetID)
+		if err != nil || ok {
+			return target, ok, err
+		}
+	}
+	return CollaborationTargetSummary{}, false, nil
+}
+
 // ContextInput is the deterministic, invocation-time material passed to a ContextBuilder. It is a
 // value, not a persisted bundle — the builder's output is snapshotted into IssueRun.input.
 //

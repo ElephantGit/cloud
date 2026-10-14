@@ -10,11 +10,12 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
-// TestConfigureCollaborationDefaultOff guards the cmd/server composition gate: with the development
-// flag off (the production default) every collaboration port stays nil, so the @ target discovery
-// API serves only human targets and no development Agent/Team/Workflow fixture is exposed. This is
-// the regression class that previously let core/integration tests pass while the real cmd/server
-// entry served only users.
+// TestConfigureCollaborationDefaultOff guards the cmd/server composition gate for a store with no
+// pool: with the development flag off (the production default) no development Agent/Team fixture is
+// installed, and a store that cannot back a real directory gets none. The pool-backed production
+// wiring (roster-backed Agent plus database-backed Workflow) is covered by
+// TestConfigureCollaborationProductionServesAgentsAndWorkflows. This is the regression class that
+// previously let core/integration tests pass while the real cmd/server entry served only users.
 func TestConfigureCollaborationDefaultOff(t *testing.T) {
 	store := &core.Store{}
 	configureCollaboration(store, false, zap.NewNop())

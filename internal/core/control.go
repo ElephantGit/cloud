@@ -107,6 +107,12 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
 		}
 		t.exec("UPDATE operations SET state=$2,error_code=$3,retry_at=clock_timestamp()+($4 * interval '1 second'),version=version+1,updated_at=now() WHERE id=$1", o.S("id"), state, code, delay)
+		if state == "blocked" && o.S("kind") == "create_workspace" && o.S("workspaceId") != "" {
+			// ADR D5: the first persistent `blocked` of a run Workspace creation freezes its absolute
+			// abandonment deadline in this same transaction. The freeze is a no-op for public
+			// Workspace creations (no business run) and for every later blocked write (deadline set).
+			t.store.freezeWorkspaceCreationDeadline(t, o.S("workspaceId"))
+		}
 		return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
 	default:
 		reject(404, "not_found")

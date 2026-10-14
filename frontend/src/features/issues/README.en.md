@@ -31,4 +31,6 @@ Issue creation supports the existing optional `projectRef` contract. Tests paste
 
 MSW stands in for the real Cloud API; under `onUnhandledRequest: 'error'` every test must serve every query the page mounts.
 
-Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned association/removal, retained values and GET reload after conflicts, ordinary comments creating no Run, and the Thread of a Run created through Task Mode. Component evidence never substitutes for real-provider multi-turn, terminal-state and resource-release acceptance.
+Recovery reloads and property saves are mutually exclusive: properties and the reload button remain locked until the original save error has been handled. Failed reloads retain the error; a later save uses the loaded version and reports its own failure independently.
+
+Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned association/removal, retained values and GET reload after conflicts, delayed GET/PUT exclusion and error visibility, ordinary comments creating no Run, and the Thread of a Run created through Task Mode. Component evidence never substitutes for real-provider multi-turn, terminal-state and resource-release acceptance.

@@ -27,4 +27,6 @@
 
 MSW 模拟真实 Cloud 接口；`onUnhandledRequest: 'error'` 下每个测试都要为页面挂载的所有查询提供 handler。新任务测试通过粘贴填写标题，验证真实 API 创建与列表刷新。
 
-详情测试经过 SessionProvider 和 CurrentSpaceProvider，验证关联/取消关联的版本号、冲突后保留及 GET 重读，以及普通评论不创建 Run、Task Mode 创建的同 Run Thread 可见。组件证据不替代真实供应商多轮、终态和资源释放的联合验收。
+恢复重读与属性保存互斥：重读期间锁住属性和重读按钮，处理原保存错误后才解锁；失败重读保留错误，后续保存仍以读取到的版本提交并独立显示失败。
+
+详情测试经过 SessionProvider 和 CurrentSpaceProvider，验证关联/取消关联的版本号、冲突后保留及 GET 重读、延迟 GET/PUT 的互斥与错误可见性，以及普通评论不创建 Run、Task Mode 创建的同 Run Thread 可见。组件证据不替代真实供应商多轮、终态和资源释放的联合验收。

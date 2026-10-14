@@ -1,4 +1,5 @@
 import { Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,8 @@ export function IssueDetailPage({ slug }: { slug: string }) {
   const { data: members = [] } = useMembers(slug)
   const { data: allIssues = [] } = useIssues(slug)
   const updateIssue = useUpdateIssue(slug)
+  const [reloading, setReloading] = useState(false)
+  const propertiesBusy = updateIssue.isPending || reloading
   const deleteIssue = useDeleteIssue(slug)
   const p = workspacePaths(workspaceSlug ?? slug)
 
@@ -48,8 +51,10 @@ export function IssueDetailPage({ slug }: { slug: string }) {
     )
   }
 
-  const commit = (patch: UpdateIssueInput) =>
+  const commit = (patch: UpdateIssueInput) => {
+    if (propertiesBusy) return
     updateIssue.mutate({ id: issue.id, version: issue.version, patch })
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -84,9 +89,12 @@ export function IssueDetailPage({ slug }: { slug: string }) {
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={propertiesBusy}
                 onClick={() => {
+                  setReloading(true)
                   void issueQuery.refetch().then((result) => {
                     if (!result.isError) updateIssue.reset()
+                    setReloading(false)
                     return result
                   })
                 }}
@@ -105,7 +113,7 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           members={members}
           issueHref={p.issueDetail}
           onCommit={commit}
-          saving={updateIssue.isPending}
+          saving={propertiesBusy}
         />
         <IssueThreadPanel tid={slug} issueId={issue.id} members={members} />
       </div>

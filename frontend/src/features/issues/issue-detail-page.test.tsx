@@ -113,6 +113,70 @@ async function selectRepository(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('IssueDetailPage', () => {
+  it.each([200, 503])(
+    'keeps recovery reload exclusive and preserves the next save failure after GET %s',
+    async (reloadStatus) => {
+      const issue = makeIssue('i1', 'Recovery race')
+      serveDetail(issue)
+      let releaseReload: (() => void) | undefined
+      let releaseSave: (() => void) | undefined
+      const reload = new Promise<void>((resolve) => {
+        releaseReload = resolve
+      })
+      const save = new Promise<void>((resolve) => {
+        releaseSave = resolve
+      })
+      onTestFinished(() => {
+        releaseReload?.()
+        releaseSave?.()
+      })
+      const requests: unknown[] = []
+      const fault = { code: 'version_conflict', params: {}, requestId: 'r' }
+      server.use(
+        http.put('/api/v1/tenants/t1/issues/i1', async ({ request }) => {
+          requests.push(await request.json())
+          if (requests.length === 2) await save
+          return HttpResponse.json(fault, { status: 409 })
+        }),
+      )
+      const user = userEvent.setup()
+      renderIssueDetail('i1')
+      const project = await selectRepository(user)
+      expect(await screen.findByRole('alert')).toHaveTextContent('保存任务失败')
+      let reloads = 0
+      server.use(
+        http.get('/api/v1/tenants/t1/issues/i1', async () => {
+          reloads += 1
+          await reload
+          return HttpResponse.json(reloadStatus === 200 ? { ...issue, version: 4 } : fault, {
+            status: reloadStatus,
+          })
+        }),
+      )
+      const reloadButton = screen.getByRole('button', { name: '重新加载任务' })
+      await user.click(reloadButton)
+      await waitFor(() => expect(reloads).toBe(1))
+      expect(project).toBeDisabled()
+      const status = screen.getAllByRole('combobox')[0]
+      if (!status) throw new Error('The versioned status selector is missing')
+      expect(status).toBeDisabled()
+      expect(reloadButton).toBeDisabled()
+      await user.click(project)
+      await user.click(reloadButton)
+      expect(requests).toEqual([{ projectRef: 'p1', version: 1 }])
+      expect(reloads).toBe(1)
+      releaseReload?.()
+      await waitFor(() => expect(project).toBeEnabled())
+      expect(screen.queryAllByRole('alert')).toHaveLength(reloadStatus === 200 ? 0 : 1)
+      await selectRepository(user)
+      await waitFor(() => expect(requests).toHaveLength(2))
+      expect(requests[1]).toEqual({ projectRef: 'p1', version: reloadStatus === 200 ? 4 : 1 })
+      expect(project).toBeDisabled()
+      releaseSave?.()
+      expect(await screen.findByRole('alert')).toHaveTextContent('保存任务失败')
+      expect(project).toBeEnabled()
+    },
+  )
   it('does not send another versioned property update while project saving is pending', async () => {
     const issue = makeIssue('i1', 'Pending association')
     serveDetail(issue)

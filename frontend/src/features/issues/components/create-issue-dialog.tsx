@@ -28,6 +28,7 @@ import { useCreateIssue, useIssues } from '@/features/issues/api'
 import { IssueProjectSelect } from './issue-project-select'
 import { columnLabel, issueNumber } from '@/features/issues/present'
 import type { IssuePriority, IssueStatusColumn, TenantMember } from '@/features/issues/types'
+import { useCurrentSpace } from '@/features/spaces/current-space'
 
 /** Canonical status keys used before the catalog loads (or when it is empty). */
 const FALLBACK_STATUS_KEYS = [
@@ -44,21 +45,29 @@ const FALLBACK_STATUS_KEYS = [
 const EMPTY_STATUSES: IssueStatusColumn[] = []
 const EMPTY_MEMBERS: TenantMember[] = []
 
-/** Creates a task with optional project association; each opening starts a fresh draft after submission. */
-// oxlint-disable-next-line max-lines-per-function -- this dialog owns one cohesive create-issue form and its reset lifecycle.
-export function CreateIssueDialog({
-  slug,
-  statuses = EMPTY_STATUSES,
-  members = EMPTY_MEMBERS,
-  defaultStatus = 'backlog',
-  trigger,
-}: {
+type CreateIssueDialogProps = {
   slug: string
   statuses?: IssueStatusColumn[]
   members?: TenantMember[]
   defaultStatus?: string
   trigger?: React.ReactElement
-}) {
+}
+
+/** Optional project association; drafts never survive a change of tenant or collaboration space. */
+export function CreateIssueDialog(props: CreateIssueDialogProps) {
+  const { space, isPending } = useCurrentSpace()
+  if (isPending) return null
+  return <IssueDraftDialog key={`${props.slug}:${space?.id ?? ''}`} {...props} />
+}
+
+// oxlint-disable-next-line max-lines-per-function -- this dialog owns one cohesive create-issue form and its reset lifecycle.
+function IssueDraftDialog({
+  slug,
+  statuses = EMPTY_STATUSES,
+  members = EMPTY_MEMBERS,
+  defaultStatus = 'backlog',
+  trigger,
+}: CreateIssueDialogProps) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -210,6 +219,11 @@ export function CreateIssueDialog({
             </Select>
           </div>
           <DialogFooter>
+            {createIssue.isError && (
+              <p role="alert" className="text-xs text-destructive">
+                创建任务失败，请稍后重试。
+              </p>
+            )}
             <DialogClose
               render={
                 <Button type="button" variant="outline">

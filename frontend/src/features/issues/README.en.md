@@ -14,7 +14,7 @@ The tenant's issue board, list and detail pages, plus the Cloud Issue data layer
 | `types.ts` | Issue domain types mirroring the backend contract; preparation uses generated `RunPreparation` without duplicating its contract |
 | `present.ts` | Pure display helpers: number, assignee, status columns |
 | `issues-page.tsx` / `issues-board.tsx` / `issues-list.tsx` | The issues page, the board (drag → `move` anchors) and the list |
-| `issue-detail-page.tsx` | Detail page: description and activity column, properties column (`components/issue-properties-panel.tsx`) and, when the issue has an agent run, the "Agent 会话" column (`thread/`) |
+| `issue-detail-page.tsx` | Activity, versioned Project association with failure reload, real Agent entry and the existing Thread; supplies member names |
 | `*.test.ts(x)` | Page and hook tests |
 
 Subdirectories: `components/` (page sub-components), `thread/` (the Agent session panel).
@@ -30,3 +30,7 @@ Issue creation supports the existing optional `projectRef` contract. Tests paste
 ## Testing
 
 MSW stands in for the real Cloud API; under `onUnhandledRequest: 'error'` every test must serve every query the page mounts.
+
+Recovery reloads and property saves are mutually exclusive: properties and the reload button remain locked until the original save error has been handled. Failed reloads retain the error; a later save uses the loaded version and reports its own failure independently.
+
+Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned association/removal, retained values and GET reload after conflicts, delayed GET/PUT exclusion and error visibility, ordinary comments creating no Run, and the Thread of a Run created through Task Mode. Component evidence never substitutes for real-provider multi-turn, terminal-state and resource-release acceptance.

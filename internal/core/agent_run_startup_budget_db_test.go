@@ -133,3 +133,50 @@ func TestStartupResidualFailureRollsBackBusinessTerminalAndProtection(t *testing
 		t.Fatal("recovery did not settle after the ledger became writable")
 	}
 }
+
+// A transport reconnect is availability evidence, not permission to clear a business residual.
+func TestNodeReconnectPreservesStartupResidualAdmissionFence(t *testing.T) {
+	for _, abandoned := range []bool{false, true} {
+		name := "live run"
+		if abandoned {
+			name = "abandoned run"
+		}
+		t.Run(name, func(t *testing.T) {
+			store := commandStore(t)
+			scene := seedTakeoverScene(t, store)
+			if abandoned {
+				requestStartupEnd(t, store, scene.dispatchableScene)
+				expireConfirmation(t, store, scene.run)
+				startupPass(t, store)
+			}
+			for _, state := range []string{"disconnected", "connected", "connected"} {
+				if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+					n := tx.one("SELECT * FROM node_instances WHERE node_id=$1", scene.node)
+					w := tx.one("SELECT * FROM workspaces WHERE id=$1", scene.ws)
+					nodeStatus(tx, &ControlRequest{Body: Object{
+						"version": n.N("version"), "connectionState": state, "initialized": true,
+					}}, n, w)
+					return Object{}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var open, connected bool
+			var observed string
+			if err := store.Pool.QueryRow(`SELECT w.admission_open,w.observed_state,
+			 n.connection_state='connected' FROM workspaces w JOIN node_instances n ON n.workspace_id=w.id
+			 WHERE w.id=$1`, scene.ws).Scan(&open, &observed, &connected); err != nil {
+				t.Fatal(err)
+			}
+			if open == abandoned || observed != "ready" || !connected {
+				t.Fatalf("reconnect admission=%v ready=%s connected=%v, abandoned=%v", open, observed, connected, abandoned)
+			}
+			if abandoned {
+				phase, status, _, _, _, _ := runFields(t, store, scene.run)
+				if phase.String != "done" || status != "failed" {
+					t.Fatal("connection evidence resurrected the abandoned run")
+				}
+			}
+		})
+	}
+}

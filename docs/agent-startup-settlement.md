@@ -24,6 +24,8 @@
 
 ## 运维查询与回收边界
 
+Node 重连可以恢复连接与 ready 事实，但未清除的残留账本继续关闭 Workspace admission。连接恢复不构成重新受理或物理回收证明；同一路径对没有残留的正常运行仍恢复受理。
+
 授权部署运维使用受控数据库会话，按 tenant_id/run_id 查询 agent_run_residuals；其中仅记录资源身份和未完成责任，不包含凭据或业务输入。session_ended_at 是迟到真实终态的证据，不是删除证明。cleared_at 保留给后续经批准的回收流程，本期不会自动设置。
 
 账本的 tenant/project/workspace/generation 与既有 operation/effect/clone/Node execution 身份一起保留。隐藏 Workspace 的公开入口继续不可用；只有后续回收 ADR 定义授权、真实终止/late ensure fencing 和删除顺序后才能开放自动回收。业务 done 不等于物理资源已释放。

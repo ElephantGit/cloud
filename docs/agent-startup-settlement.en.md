@@ -24,6 +24,8 @@ An unresolved registered startup requests ending at expiry, preserving existing 
 
 ## Operator query and recovery boundary
 
+A Node reconnect can restore connection and readiness evidence, but an uncleared residual keeps Workspace admission closed. Connectivity proves neither permission to accept new work nor physical cleanup; the same path still restores admission for ordinary runs without residuals.
+
 Authorized deployment operators query agent_run_residuals by tenant_id/run_id through controlled database access. Rows contain resource identities and outstanding responsibility, not credentials or business input. session_ended_at proves a late session terminal, never physical deletion. cleared_at is reserved for a separately approved cleanup workflow and is not automatically set here.
 
 Tenant/project/workspace/generation and existing operation/effect/clone/Node execution identities remain retained. Hidden Workspace public endpoints stay unavailable. Automatic cleanup needs the later recovery ADR's authorization, real termination/late-ensure fencing and deletion order. Business done does not mean resources are physically released.

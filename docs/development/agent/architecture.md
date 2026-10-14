@@ -163,10 +163,12 @@ database-backed. It deliberately does not touch Forms — workflow form descript
 the config comment + the server startup log both warn that production must leave it off. `cmd/ora-web`
 wires the same helper unconditionally (it is a development/demo edge only). The gate is **independent of
 authentication**: enabling GitHub Auth never enables these fixtures, and an auth failure never falls
-back to a fixture identity. With the flag off the `@` target discovery API serves real tenant members
-**and the tenant's real workflows** — `WorkflowDirectory` and `WorkflowFormDescriptors` are production
-adapters wired by `core.NewStore`, so a workflow is @-able in every deployment. With it on, the same API
-additionally serves the fixture Agent/Team targets with stable IDs (`internal/collab`:
+back to a fixture identity. With the flag off the `@` target discovery API serves real tenant members,
+**the tenant's real Space Agents, and the tenant's real workflows** — `SpaceAgentDirectory`,
+`WorkflowDirectory` and `WorkflowFormDescriptors` are production adapters, wired by `cmd/server` (the
+roster-backed Agent directory, layered in front of the workflow-backed one `core.NewStore` installs), so
+an agent and a workflow are both @-able in every deployment. With it on, the same API additionally serves
+the fixture Agent/Team targets with stable IDs (`internal/collab`:
 `BackendAgentID`/`ReviewAgentID`/`PlatformTeamID`).
 
 **Still schema-ready / not API-implemented:**

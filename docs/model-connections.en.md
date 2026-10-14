@@ -63,7 +63,9 @@ fixture hosts use Docker DNS; this is never a production fallback.
 
 Safe codes distinguish policy, DNS, TLS, timeout, redirects and unavailability. Logs contain only
 classification, without raw URLs, resolved addresses, bodies, headers or provider errors. ACP
-failure ends the Node session and revokes access; Thread GET's `failureCode` is allowlisted.
+failure ends the Node session and revokes access. The known `Authentication required` /
+`Not logged in` refusals become `agent_authentication_required`; other provider-authored text
+remains private. Thread GET's `failureCode` is allowlisted.
 Cancelled `TurnEnded` cannot mark a Thread idle; successful multi-turn sessions still become idle.
 Run GET/List's `preparation` projects environment, clone, Agent preparation/start phases, durable
 clone attempts and retry waiting. A Workspace operation permits three clones, with 5/10-second

@@ -15,7 +15,8 @@ func appendSessionFailure(t *transaction, run Object, detail string) {
 func publicSessionFailureCode(detail string) string {
 	switch detail {
 	case "agent_turn_failed", "agent_stream_closed", "agent_unavailable", "agent_start_failed",
-		"model_proxy_unavailable", "model_access_unavailable", "model_access_expired", "thread_unavailable":
+		"agent_authentication_required", "model_proxy_unavailable", "model_access_unavailable",
+		"model_access_expired", "thread_unavailable":
 		return detail
 	default:
 		return "agent_failed"

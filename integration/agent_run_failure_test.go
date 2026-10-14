@@ -10,6 +10,7 @@ import (
 func TestSessionFailureProjectsOnlySafeCodes(t *testing.T) {
 	for _, tc := range []struct{ detail, want string }{
 		{"agent_turn_failed", "agent_turn_failed"},
+		{"agent_authentication_required", "agent_authentication_required"},
 		{"provider diagnostic must not be displayed", "agent_failed"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {

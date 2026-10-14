@@ -139,12 +139,22 @@ describe('threadItems', () => {
       entry(2, {
         source: 'system',
         kind: 'session_failed',
+        record: { code: 'agent_authentication_required' },
+      }),
+      entry(3, {
+        source: 'system',
+        kind: 'session_failed',
         record: { code: 'private provider diagnostic' },
       }),
     ])
     expect(rows).toEqual([
       { variant: 'note', key: 1, text: '模型请求失败，会话已结束（agent_turn_failed）' },
-      { variant: 'note', key: 2, text: 'Agent 会话失败（agent_failed）' },
+      {
+        variant: 'note',
+        key: 2,
+        text: 'Agent 未登录或缺少凭据，请先完成登录或配置凭据（agent_authentication_required）',
+      },
+      { variant: 'note', key: 3, text: 'Agent 会话失败（agent_failed）' },
     ])
   })
 })

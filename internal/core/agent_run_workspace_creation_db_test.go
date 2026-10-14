@@ -312,6 +312,11 @@ func TestBlockedCreationExpirySettlesReleasesSlotAndProtectsResidual(t *testing.
 	if queuedTurns != 0 {
 		t.Fatalf("queued user turns survived the abandonment: %d", queuedTurns)
 	}
+	// The residual Workspace cannot be deleted or reused: the run-scoped delete seam refuses it
+	// until a separately approved recovery workflow clears the ledger row.
+	if _, err := store.DeleteRunWorkspace(context.Background(), p.run); err == nil {
+		t.Fatal("residual workspace deletion was accepted")
+	}
 	// The slot release is real: the queued sibling run's creation is no longer busy.
 	if err := store.agentRunDispatcher().Dispatch(context.Background(), siblingRun); err != nil {
 		t.Fatalf("sibling dispatch failed: %v", err)
@@ -402,5 +407,30 @@ func TestBlockedCreationRealSettlementAndCancelDoNotResurrectOrReorder(t *testin
 	}
 	if opState != "failed" {
 		t.Fatalf("cancelled creation operation not abandoned: %s", opState)
+	}
+}
+
+// The abandonment is keyed on the run row itself, so one tenant's due creation never settles
+// another tenant's: the same pass that abandons the expired one leaves an unrelated blocked
+// creation in a different tenant exactly where it is.
+func TestBlockedCreationAbandonmentIsIsolatedPerTenant(t *testing.T) {
+	store := commandStore(t)
+	due := seedProvisioningCreation(t, store)
+	seedControllerLease(t, store)
+	parkCreationBlocked(t, store, controllerClaims(), due.operation, "node_unavailable")
+	expireCreationDeadline(t, store, due.run)
+
+	// A second tenant with its own blocked creation whose window has not expired.
+	other := seedProvisioningCreation(t, store)
+	parkCreationBlocked(t, store, controllerClaims(), other.operation, "node_unavailable")
+
+	creationPass(t, store)
+	phase, status, reason, _, _, _ := runFields(t, store, due.run)
+	if phase.String != "done" || status != "failed" || reason != "workspace_unavailable" {
+		t.Fatalf("the due creation was not abandoned: %s/%s/%s", phase.String, status, reason)
+	}
+	otherPhase, otherStatus, otherReason, _, _, _ := runFields(t, store, other.run)
+	if otherPhase.String != "provisioning" || otherStatus != "dispatched" || otherReason != "" {
+		t.Fatalf("another tenant's creation was touched: %s/%s/%s", otherPhase.String, otherStatus, otherReason)
 	}
 }

@@ -84,9 +84,19 @@ func workflowSnapshotList(t *transaction, r *PublicRequest) Object {
 // publishWorkflow freezes the live graph into the next snapshot version. The workflow
 // row is locked for the transaction, so two publishes cannot both pick the same next
 // version. The snapshot name defaults to the workflow name; the body may override it.
+//
+// This is the one place a graph is authoritatively judged. A snapshot is what runs execute, so
+// publishing is the last moment Cloud can refuse a document it could not run: a graph that reaches
+// here and is frozen is a graph Cloud has agreed to execute, and the problems come back with the node
+// or slot at fault so the editor can mark it. Saving is deliberately not gated this way — an
+// unfinished draft is a legitimate document, and a check moved into the save path would stop the
+// author mid-edit. Nothing about the *runtime* is judged here either: whether an executor is
+// installed or configured is the runner's answer, not the author's, and asking it at publish would
+// refuse a graph for a reason the publisher cannot fix.
 func publishWorkflow(t *transaction, r *PublicRequest) Object {
 	w := t.one("SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL FOR UPDATE", r.WorkflowID, r.TenantID)
 	require(w != nil, 404, "not_found")
+	requireValidWorkflowGraph(w.O("graph"))
 	next := t.one("SELECT COALESCE(MAX(version),0)+1 AS version FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2", r.TenantID, r.WorkflowID).N("version")
 	name := w.S("name")
 	if r.Body.S("name") != "" {

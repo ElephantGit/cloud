@@ -64,6 +64,15 @@ type Fault struct {
 
 func (e *Fault) Error() string       { return e.Code }
 func reject(status int, code string) { panic(&Fault{Code: code, Status: status, Params: Object{}}) }
+
+// rejectWith is reject for a fault whose safe parameters are what makes it actionable: the field, node
+// or slot the client has to point the user at. Parameters are part of the stable error contract, so
+// they carry identifiers and codes the client localizes — never prose, and never anything the caller
+// is not already allowed to read.
+func rejectWith(status int, code string, params Object) {
+	panic(&Fault{Code: code, Status: status, Params: params})
+}
+
 func require(ok bool, status int, code string) {
 	if !ok {
 		reject(status, code)

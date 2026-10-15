@@ -94,3 +94,69 @@ func TestRecordProvisioningFactReceiptsLateFactsOverGRPCWithoutResurrectingRun(t
 		t.Fatalf("ledger receipts wrong: %d", n)
 	}
 }
+
+// The gRPC contract carries a fact's target in dedicated fields, so the submission fingerprint
+// binds them: a replay naming a different operation or effect is a conflict, never a replay for
+// the original target. The same contract lets a provisional observation (running) progress to
+// the real terminal under a new submission.
+func TestRecordProvisioningFactBindsTargetAndProgressesOverGRPC(t *testing.T) {
+	f := setup(t)
+	f.bindBusinessHooks()
+	created := f.create("d5-fact-bind-target")
+	f.drain()
+	run := f.insertAgentRun(t, created.O("resource").S("id"))
+	provisioned, e := f.store.CreateRunWorkspace(context.Background(), run)
+	must(t, e)
+	workspace := provisioned.O("workspace").S("id")
+	operation := provisioned.O("operation").S("id")
+	_, e = f.store.Pool.Exec(`UPDATE issue_runs SET phase='provisioning', status='dispatched', workspace_id=$2, version=version+1 WHERE id=$1`, run, workspace)
+	must(t, e)
+
+	c := newGRPCController(t, f)
+	snap := c.claim()
+	planned, e := c.operations.PlanEffect(c.ctx, &controlpb.PlanEffectRequest{SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, Version: snap.GetOperation().GetVersion(), Kind: controlpb.EffectKind_EFFECT_KIND_SANDBOX_ENSURE, WorkspaceId: workspace})
+	must(t, e)
+	effectID := planned.GetEffect().GetId()
+	_, e = c.operations.DeferOperation(c.ctx, &controlpb.DeferOperationRequest{SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, Version: planned.GetOperation().GetVersion(), State: controlpb.DeferState_DEFER_STATE_BLOCKED, Reason: controlpb.DeferReason_DEFER_REASON_NODE_UNAVAILABLE, RetrySeconds: 60})
+	must(t, e)
+	_, e = f.store.Pool.Exec(`UPDATE issue_runs SET workspace_deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1`, run)
+	must(t, e)
+	must(t, f.store.GiveUpBlockedWorkspaceCreationsOnce(context.Background()))
+
+	// A recorded creation fact...
+	_, e = c.operations.RecordProvisioningFact(c.ctx, &controlpb.RecordProvisioningFactRequest{SubmissionId: "bound-creation", Epoch: c.epoch, OperationId: operation, Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_CREATION, Outcome: controlpb.ProvisioningOutcome_PROVISIONING_OUTCOME_READY})
+	must(t, e)
+	// ...replayed against another operation is a conflict, not a replay for the original target.
+	_, e = c.operations.RecordProvisioningFact(c.ctx, &controlpb.RecordProvisioningFactRequest{SubmissionId: "bound-creation", Epoch: c.epoch, OperationId: "6f1d2b34-0000-4000-8000-000000000001", Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_CREATION, Outcome: controlpb.ProvisioningOutcome_PROVISIONING_OUTCOME_READY})
+	expectStatus(t, e, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+
+	// A provisional effect observation, then the same submission against another effect target.
+	_, e = c.operations.RecordProvisioningFact(c.ctx, &controlpb.RecordProvisioningFactRequest{SubmissionId: "bound-effect", Epoch: c.epoch, OperationId: operation, Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_EFFECT, EffectId: effectID, State: controlpb.EffectState_EFFECT_STATE_RUNNING, ExternalId: "sub-bound"})
+	must(t, e)
+	_, e = c.operations.RecordProvisioningFact(c.ctx, &controlpb.RecordProvisioningFactRequest{SubmissionId: "bound-effect", Epoch: c.epoch, OperationId: operation, Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_EFFECT, EffectId: "6f1d2b34-0000-4000-8000-000000000002", State: controlpb.EffectState_EFFECT_STATE_RUNNING, ExternalId: "sub-bound"})
+	expectStatus(t, e, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+
+	// The real terminal arrives under a new submission and takes over from the observation.
+	terminal, e := c.operations.RecordProvisioningFact(c.ctx, &controlpb.RecordProvisioningFactRequest{
+		SubmissionId: "bound-terminal", Epoch: c.epoch, OperationId: operation,
+		Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_EFFECT, EffectId: effectID,
+		State: controlpb.EffectState_EFFECT_STATE_SUCCEEDED, ExternalId: "sub-bound",
+		Evidence: &controlpb.EffectEvidence{Evidence: &controlpb.EffectEvidence_SandboxEnsured{SandboxEnsured: &controlpb.SandboxEnsured{SandboxInstanceId: effectID, NodeId: "node-late"}}},
+	})
+	must(t, e)
+	if terminal.GetEffect().GetState() != controlpb.EffectState_EFFECT_STATE_SUCCEEDED {
+		t.Fatalf("terminal after running not receipted: %s", terminal.GetEffect().GetState())
+	}
+	// The ledger holds the terminal on top of the retained observation; nothing reopened.
+	var state string
+	var prior int
+	must(t, f.store.Pool.QueryRow(`SELECT responsibility->'lateFacts'->('effect:'||$2)->>'state',
+		jsonb_array_length(responsibility->'lateFacts'->('effect:'||$2)->'prior')
+		FROM agent_run_residuals WHERE run_id=$1`, run, effectID).Scan(&state, &prior))
+	if state != "succeeded" || prior != 1 {
+		t.Fatalf("ledger receipt wrong: state=%s prior=%d", state, prior)
+	}
+	if n := f.scalar(`SELECT count(*) FROM workspaces WHERE id=$1 AND admission_open`, workspace); n != 0 {
+		t.Fatal("late terminal reopened admission")
+	}
+}

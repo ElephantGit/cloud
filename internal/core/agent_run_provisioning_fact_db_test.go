@@ -307,3 +307,41 @@ func TestProvisioningEffectFactProgressesFromProvisionalToTerminal(t *testing.T)
 		t.Fatalf("progression resurrected the run: %s/%s/%s", phase.String, status, reason)
 	}
 }
+
+// A fact submission's fingerprint includes its target: replaying the same submission id against a
+// different operation or effect is a conflict instead of a replay of the response recorded for
+// the original target.
+func TestProvisioningFactSubmissionBindsItsTarget(t *testing.T) {
+	store := commandStore(t)
+	scene := seedAbandonedCreation(t, store, true)
+
+	// The creation's own outcome, recorded once.
+	if _, err := submitFact(t, store, scene, "bound-creation", Object{"epoch": 1, "kind": "creation", "outcome": "ready"}); err != nil {
+		t.Fatalf("creation fact refused: %v", err)
+	}
+	// The same submission and body, but naming a different operation: must conflict, not answer
+	// for the original operation.
+	if _, err := store.Control(context.Background(), &ControlRequest{
+		Action: "provisioning_fact", OperationID: newID(), SubmissionID: "bound-creation",
+		Body: Object{"epoch": 1, "kind": "creation", "outcome": "ready"}, Service: scene.claims,
+	}); err == nil || !strings.Contains(err.Error(), "submission_conflict") {
+		t.Fatalf("retargeted creation submission replayed: %v", err)
+	}
+
+	// An effect fact, then the same submission replayed against a different effect target.
+	if _, err := submitFact(t, store, scene, "bound-effect", Object{"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "running", "externalId": "sub-bound"}); err != nil {
+		t.Fatalf("effect fact refused: %v", err)
+	}
+	if _, err := store.Control(context.Background(), &ControlRequest{
+		Action: "provisioning_fact", OperationID: scene.operation, EffectID: newID(), SubmissionID: "bound-effect",
+		Body: Object{"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "running", "externalId": "sub-bound"}, Service: scene.claims,
+	}); err == nil || !strings.Contains(err.Error(), "submission_conflict") {
+		t.Fatalf("retargeted effect submission replayed: %v", err)
+	}
+
+	// The ledger still holds exactly the two facts receipted for their original targets.
+	var facts int
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM jsonb_object_keys((SELECT responsibility->'lateFacts' FROM agent_run_residuals WHERE run_id=$1))`, scene.run).Scan(&facts); err != nil || facts != 2 {
+		t.Fatalf("ledger receipts wrong: count=%d err=%v", facts, err)
+	}
+}

@@ -61,7 +61,9 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		if r.Action == "provisioning_fact" {
 			// D5's independent fact-takeover entry: a lease holder submits real results about an
 			// abandoned creation without re-claiming the failed operation (agent_run_provisioning_fact).
-			return submitted(t, r, func() Object { return provisioningFact(t, r) })
+			// The fingerprint also binds the fact's target: the operation and effect identities travel
+			// in the request fields, so a replay naming a different target is a conflict, not a replay.
+			return submittedTarget(t, r, func() Object { return provisioningFact(t, r) })
 		}
 		if strings.HasPrefix(r.Action, "force_") {
 			return submitted(t, r, func() Object { return forceStopCommand(t, r) })

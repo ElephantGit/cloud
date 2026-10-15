@@ -310,7 +310,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		case strings.Contains(r.Path, "/workflows"):
 			switch {
 			case strings.HasSuffix(r.Path, "/runs"):
-				out = Object{"resource": createWorkflowRun(t, r)}
+				out = Object{"resource": createWorkflowRun(t, r, uid)}
 			case strings.HasSuffix(r.Path, "/publish"):
 				out = Object{"resource": publishWorkflow(t, r)}
 			case strings.HasSuffix(r.Path, "/restore"):

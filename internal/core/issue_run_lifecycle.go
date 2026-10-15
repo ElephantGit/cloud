@@ -78,6 +78,12 @@ func enqueueRun(t *transaction, tid, iid, executorType, executorID string, input
 	}
 	// This opaque reference is server-owned even for agents that do not use personal models.
 	delete(input, "modelBindingId")
+	// A workflow run's frozen version is written by the admission gate in the caller's own transaction,
+	// so a caller can never choose it. Every other executor has no use for the key, and dropping it
+	// keeps a caller-supplied value from being persisted as if the server had said it.
+	if executorType != "workflow" {
+		delete(input, "workflowSnapshotId")
+	}
 	id := newID()
 	t.exec("INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,input,status,trigger_evidence_kind,trigger_evidence_ref_id) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)", id, tid, iid, executorType, executorID, jsonText(input), triggerKind, triggerRef)
 	if executorType == "agent" {

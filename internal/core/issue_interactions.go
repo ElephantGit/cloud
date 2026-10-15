@@ -108,22 +108,33 @@ func applyCommentTargets(t *transaction, i Object, r *PublicRequest, uid, commen
 }
 
 // confirmInteraction is the ONLY transition that turns a Workflow interaction into an execution intent
-// (§38.7). It re-resolves the target and the *current* descriptor server-side, re-validates the
-// submitted values against it, persists them as the interaction's Issue-owned input, creates the
-// initial run, and claims the interaction with a compare-and-set on `run_id IS NULL`. Dispatch is the
-// caller's post-commit responsibility, so no external effect happens inside this transaction (§38.22).
+// (§38.7). It re-resolves the target server-side, re-validates the submitted values, persists them as
+// the interaction's Issue-owned input, creates the initial run, and claims the interaction with a
+// compare-and-set on `run_id IS NULL`. Dispatch is the caller's post-commit responsibility, so no
+// external effect happens inside this transaction (§38.22).
+//
+// The values are validated against the schema of the *version being confirmed* rather than the live
+// document the form was rendered from, and against the same admission gate the other two entries use.
+// The version is the form's own `version` field, whose option values are snapshot ids; leaving it
+// unset means the newest published version, and a version that is not this workflow's is a 404 rather
+// than a silent fallback. A workflow with nothing published cannot be confirmed at all: there is no
+// frozen document to execute, and running the live draft is what the draft/published split forbids.
+// The resolved version is frozen onto the run's input, so the run still says what it executed after
+// the workflow has been edited or published again.
 func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches *[]dispatchTarget) Object {
 	it := interaction(t, r.TenantID, r.IssueID, r.InteractionID)
 	require(it.S("mode") == "form", 409, "interaction_not_confirmable")
 	require(it["runId"] == nil, 409, "interaction_already_confirmed")
 	i := issue(t, r.TenantID, r.IssueID)
 	targetType, targetID := it.S("targetType"), it.S("targetId")
-	issueContext := formContextForIssue(t, r.TenantID, i)
-	descriptor := workflowFormDescriptor(t, r.TenantID, targetType, targetID, &issueContext)
+	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	values := interactionValues(r.Body)
-	validateFormValues(descriptor, values, true)
+	s := admitWorkflowRun(t, r.TenantID, targetID, values.S(fieldKeyVersion), uid)
+	issueContext := formContextForIssue(t, r.TenantID, i)
+	validateFormValues(snapshotFormDescriptor(t, workflow(t, r.TenantID, targetID), s, &issueContext), values, true)
 
 	input := buildRunContext(t, i, "", targetType, targetID, values, appliedContextRefs(r.Body))
+	freezeWorkflowSnapshot(input, s.S("id"))
 	runObj := enqueueRun(t, r.TenantID, i.S("id"), targetType, targetID, input, "interaction", it.S("id"), "user", uid)
 	claimed := t.execRows("UPDATE issue_interactions SET input=$3, run_id=$4 WHERE id=$1 AND tenant_id=$2 AND run_id IS NULL", it.S("id"), r.TenantID, jsonText(values), runObj.S("id"))
 	require(claimed == 1, 409, "interaction_already_confirmed")

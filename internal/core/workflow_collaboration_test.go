@@ -50,13 +50,13 @@ func projectGraph(t *testing.T, graph Object, snapshots []Object, issue IssueFor
 		Ref:         reviewRef,
 		Title:       "Review flow",
 		Description: "Reviews a change",
-		Graph:       encodeGraph(t, graph),
+		Graph:       decodeGraph(t, graph),
 		Snapshots:   snapshots,
 	}, &issue)
 }
 
-// encodeGraph renders a graph to the bytes the column stores, so a test reads the document the way
-// the projection does: every nested object decoded to a map, never a hand-built Object.
+// encodeGraph renders a graph to the bytes the column stores, for tests that assert on the stored
+// document rather than on the projection.
 func encodeGraph(t *testing.T, graph Object) []byte {
 	t.Helper()
 	raw, err := json.Marshal(graph)
@@ -292,7 +292,7 @@ func TestFormDescriptorProjectionBounds(t *testing.T) {
 		t.Fatalf("option count = %d, want %d", len(wide.Options), maxFormOptions)
 	}
 
-	raw := encodeGraph(t, Object{"nodes": []any{Object{
+	raw := decodeGraph(t, Object{"nodes": []any{Object{
 		"id":   "start-1",
 		"data": Object{"kind": "start", "inputVariables": []any{Object{"name": "field", "valueType": "string"}}},
 	}}})
@@ -344,9 +344,11 @@ func TestWorkflowStartVariablesReadsTheDocument(t *testing.T) {
 		}
 	}
 
-	// An unreadable column value is an empty form, not a failed request.
-	if d := formDescriptorFromGraph(&workflowFormSource{Ref: reviewRef, Graph: []byte("not json")}, &IssueFormContext{}); len(d.Fields) != 0 {
-		t.Fatalf("an unreadable graph produced fields: %+v", d.Fields)
+	// An empty document is an empty form, not a failed request. The column is decoded before it
+	// reaches the projection, so this is what a row the workflow API did not write looks like here;
+	// the decode's own tolerance is exercised against real jsonb by the integration suite.
+	if d := formDescriptorFromGraph(&workflowFormSource{Ref: reviewRef, Graph: Object{}}, &IssueFormContext{}); len(d.Fields) != 0 {
+		t.Fatalf("an empty graph produced fields: %+v", d.Fields)
 	}
 }
 

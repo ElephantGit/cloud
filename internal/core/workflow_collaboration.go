@@ -100,14 +100,18 @@ func (p WorkflowFormDescriptors) ResolveFormDescriptor(ctx context.Context, tena
 		return FormDescriptor{}, false, nil
 	}
 	var name, description string
-	var graph []byte
-	err := p.Pool.QueryRowContext(ctx, "SELECT name, description, graph FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", formRef, tenantID).Scan(&name, &description, &graph)
+	var raw []byte
+	err := p.Pool.QueryRowContext(ctx, "SELECT name, description, graph FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", formRef, tenantID).Scan(&name, &description, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FormDescriptor{}, false, nil
 	}
 	if err != nil {
 		return FormDescriptor{}, false, err
 	}
+	// The column is a NOT NULL jsonb object, so a decode failure means the row was not written by the
+	// workflow API. An unreadable graph yields an empty form rather than a failed request.
+	graph := Object{}
+	_ = json.Unmarshal(raw, &graph)
 	source := workflowFormSource{Ref: formRef, Title: name, Description: description, Graph: graph}
 	// Only an issue-scoped form carries the launch fields, so only it pays for the second query: a
 	// caller with no issue context gets the same single lookup it always did.
@@ -153,7 +157,7 @@ type workflowFormSource struct {
 	Ref         string
 	Title       string
 	Description string
-	Graph       []byte
+	Graph       Object
 	Snapshots   []Object
 }
 
@@ -166,10 +170,27 @@ type workflowFormSource struct {
 // issue to inject them for: a caller with no issue context gets the author's own form, byte for byte
 // what it was before the fields existed.
 func formDescriptorFromGraph(source *workflowFormSource, issue *IssueFormContext) FormDescriptor {
-	graph := Object{}
-	// The column is a NOT NULL jsonb object, so a decode failure means the row was not written by the
-	// workflow API. An unreadable graph yields an empty form rather than a failed request.
-	_ = json.Unmarshal(source.Graph, &graph)
+	fields := workflowInputFields(source.Graph)
+	if issue.IssueID != "" {
+		fields = injectPlatformFields(fields, issue, workflowStartPrompt(source.Graph), source.Snapshots, launchFieldsFromGraph(source.Graph))
+	}
+	return FormDescriptor{
+		FormRef:     source.Ref,
+		Title:       clip(source.Title, 200),
+		Description: clip(source.Description, 2000),
+		Fields:      fields,
+	}
+}
+
+// workflowInputFields projects the values one run of this graph may set: the Start node's declared
+// variables, then the graph's global variables. It is the schema side of both projections of a graph —
+// the form a user fills in and the input a run is admitted with — so the two can never disagree about
+// what a variable is called, what type it takes or whether it is required.
+//
+// A variable the projection cannot express as a valid field is dropped, exactly as it is from the
+// form: it could not have been filled in, so treating it as a missing required value would refuse
+// every run of a graph that published fine.
+func workflowInputFields(graph Object) []FormField {
 	fields := []FormField{}
 	for _, variable := range workflowStartVariables(graph) {
 		if len(fields) == maxFormFields {
@@ -179,16 +200,37 @@ func formDescriptorFromGraph(source *workflowFormSource, issue *IssueFormContext
 			fields = append(fields, field)
 		}
 	}
-	fields = appendGlobalVariableFields(fields, graph)
-	if issue.IssueID != "" {
-		fields = injectPlatformFields(fields, issue, workflowStartPrompt(graph), source.Snapshots, launchFieldsFromGraph(graph))
+	return appendGlobalVariableFields(fields, graph)
+}
+
+// workflowSnapshotOptions lists a workflow's published versions newest first, in the shape the launch
+// field offers them. It is the transaction-scoped twin of the descriptor provider's own query, for the
+// callers that already hold a transaction and must not open a second connection inside it.
+func workflowSnapshotOptions(t *transaction, tid, wid string) []Object {
+	return t.list("SELECT id, version, name FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT $3", tid, wid, maxFormOptions)
+}
+
+// snapshotFormDescriptor projects one *frozen* snapshot onto the form descriptor a confirm validates
+// against, rather than the live document the form was rendered from.
+//
+// The distinction is the whole point of confirming against a version: an edit made after the last
+// publish must not retroactively change what an already-offered version accepts, and a variable an
+// older version declared must still be submittable when that version is the one chosen. The
+// platform's own launch fields are still injected — they describe the invocation, not the version —
+// so the descriptor carries the same field set the form showed for this version.
+func snapshotFormDescriptor(t *transaction, w, s Object, issue *IssueFormContext) FormDescriptor {
+	source := workflowFormSource{
+		Ref:         w.S("id"),
+		Title:       w.S("name"),
+		Description: w.S("description"),
+		Graph:       s.O("graph"),
+		Snapshots:   workflowSnapshotOptions(t, w.S("tenantId"), w.S("id")),
 	}
-	return FormDescriptor{
-		FormRef:     source.Ref,
-		Title:       clip(source.Title, 200),
-		Description: clip(source.Description, 2000),
-		Fields:      fields,
-	}
+	descriptor := formDescriptorFromGraph(&source, issue)
+	// Fail closed, exactly as the provider path does: a descriptor that cannot be rendered is a 500
+	// rather than a form that silently accepts less than it shows.
+	validateFormDescriptor(descriptor)
+	return descriptor
 }
 
 // Reserved keys of the fields the platform injects into every workflow form (§38.37b, §38.37c). They

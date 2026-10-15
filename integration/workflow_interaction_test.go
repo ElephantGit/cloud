@@ -147,6 +147,14 @@ func reviewWorkflow(t *testing.T, f *fixture) string {
 	return createWorkflow(t, f, "Security Review Workflow", "wf-review", reviewVariables())
 }
 
+// publishWorkflow freezes a workflow's live graph into its next published version. A confirm executes
+// a *published* version — the live document is a draft — so a test that drives one has to publish
+// first, exactly as the author would.
+func publishWorkflow(t *testing.T, f *fixture, wid, key string) core.Object {
+	t.Helper()
+	return f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{}, key, 200).O("resource")
+}
+
 // workflowComment posts a comment addressed at `wid` and returns the form interaction it created.
 // Creating the interaction must NOT create a run.
 func workflowComment(t *testing.T, f *fixture, wid, iid, key, body string) core.Object {
@@ -671,11 +679,15 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 	}
 }
 
-// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (§38.19): no provider is
-// 503, a malformed descriptor is 500 — never a partially usable form.
+// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (§38.19) and where they
+// stop: the read-only descriptor route is 503 with no provider and 500 for a malformed one, never a
+// partially usable form, while a confirm does not consult the provider at all. A confirm validates the
+// submitted values against the schema of the version being confirmed, which is frozen in the snapshot
+// the run will execute — so a provider outage can neither admit a bad submission nor block a good one.
 func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-prov-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Provider states"}, "wf-prov", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-prov-1", "configure")
 
@@ -684,15 +696,20 @@ func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 
 	f.store.Forms = nil
 	f.call("GET", f.path("/collaboration/forms/"+wid), nil, "", 503)
-	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c1", 503)
 
 	f.store.Forms = invalidDescriptorProvider{FormRef: wid}
 	f.call("GET", f.path("/collaboration/forms/"+wid), nil, "", 500)
-	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c2", 500)
 
-	// Nothing was executed while the provider was unusable.
-	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", iss.S("id")); n != 0 {
-		t.Fatalf("a failed provider still produced a run")
+	// The snapshot's own schema is still enforced while the provider is unusable...
+	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")),
+		core.Object{"values": core.Object{"repository": "ora-space/cloud"}}, "wf-prov-c1", 400)
+	// ...and a legal submission is confirmed rather than held hostage by it.
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c2", 200).O("resource")
+	if created.S("executorType") != "workflow" || created.S("executorId") != wid {
+		t.Fatalf("confirm with an unusable provider produced the wrong run: %v", created)
+	}
+	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", iss.S("id")); n != 1 {
+		t.Fatalf("confirm produced %d runs, want exactly one", n)
 	}
 }
 
@@ -756,6 +773,7 @@ func TestWorkflowAssistIsSideEffectFree(t *testing.T) {
 func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-confirm-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Confirm me", "description": "desc"}, "wf-confirm-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-confirm-1", "configure the review")
 
@@ -866,6 +884,7 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-idem-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Idempotent"}, "wf-idem-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-idem-1", "configure")
 

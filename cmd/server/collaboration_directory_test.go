@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -139,9 +140,16 @@ func (s *productionServer) path(p string) string { return "/api/v1/tenants/" + s
 // this test covers, and IssueRun D1 makes the roster row the whole agent target.
 func (s *productionServer) seedAgent(display, pluginID, status string) string {
 	s.t.Helper()
+	return s.seedAgentIn(s.space, s.tid, display, pluginID, status)
+}
+
+// seedAgentIn is seedAgent against an explicit space and tenant, so a case can plant a roster row in
+// another tenant and assert the directory never serves it.
+func (s *productionServer) seedAgentIn(space, tid, display, pluginID, status string) string {
+	s.t.Helper()
 	id := uuid.NewString()
 	if _, err := s.store.Pool.Exec(`INSERT INTO space_agents(id, space_id, tenant_id, plugin_id, display_name, status) VALUES($1,$2,$3,$4,$5,$6)`,
-		id, s.space, s.tid, pluginID, display, status); err != nil {
+		id, space, tid, pluginID, display, status); err != nil {
 		s.t.Fatalf("seed space_agents: %v", err)
 	}
 	return id
@@ -235,8 +243,19 @@ func TestConfigureCollaborationProductionServesAgentsAndWorkflows(t *testing.T) 
 	for _, hit := range hits {
 		found[hit.S("id")] = true
 	}
-	if !found[triage] || found[archived] || found[foreign] {
+	if !found[triage] || found[archived] || found[foreign] || found[retired] {
 		t.Fatalf("workflow name search wrong: %v", hits)
+	}
+
+	// #126: the same request must filter the roster-backed agent too. "Hello World" does not match
+	// `Triage`, so a search that found the workflow must not answer with the agent; before the fix the
+	// unfiltered agent came back here next to the filtered members and workflows.
+	if found[active] {
+		t.Fatalf("agent search must narrow the roster like the other types: %v", hits)
+	}
+	agentHits := targetItems(s.call("GET", s.path("/collaboration/targets")+"?q=Hello", nil, "", 200))
+	if len(agentHits) != 1 || agentHits[0].S("id") != active {
+		t.Fatalf("agent name search must return the matching roster row alone: %v", agentHits)
 	}
 
 	// Resolution through the shipped HTTP path: a workflow @ records a configured-but-unconfirmed
@@ -257,4 +276,72 @@ func TestConfigureCollaborationProductionServesAgentsAndWorkflows(t *testing.T) 
 	s.call("POST", s.path("/issues/"+iid+"/comments"), core.Object{"body": "x", "targets": []any{core.Object{"type": "workflow", "id": archived}}}, "archived-comment", 404)
 	s.call("POST", s.path("/issues/"+iid+"/comments"), core.Object{"body": "x", "targets": []any{core.Object{"type": "workflow", "id": foreign}}}, "foreign-comment", 404)
 	s.call("POST", s.path("/issues/"+iid+"/comments"), core.Object{"body": "x", "targets": []any{core.Object{"type": "agent", "id": retired, "task": "t"}}}, "retired-comment", 404)
+}
+
+// TestProductionDirectorySearchFiltersAgentsLikeOtherTargets is #126's direct evidence: one search
+// request must narrow the roster-backed Space Agent exactly the way it narrows the members and
+// workflows it answers with. Before the fix SpaceAgentDirectory dropped `q`, so a query for one agent
+// by name returned every active agent while the rest of the same response was filtered — the
+// "unmatched agent survived the search" failure these cases assert against. Every case drives the
+// shipped HTTP path, so the filtering is observed where a client observes it.
+func TestProductionDirectorySearchFiltersAgentsLikeOtherTargets(t *testing.T) {
+	s := newProductionServer(t)
+	backend := s.seedAgent("Backend Builder", "official/backend", "active")
+	frontend := s.seedAgent("Frontend Builder", "official/frontend", "active")
+	// Retired, and sharing the word the searches below use: a query for that word must return the
+	// active row alone, so a dropped status filter cannot hide behind the new name filter.
+	retired := s.seedAgent("Backend Retired", "official/backend-retired", "retired")
+	triage := s.publishWorkflow("Incident Triage", "triage")
+
+	// A second tenant over the same store with a roster row of its own: the tenant scope of the read
+	// must survive the added filter.
+	other, err := s.store.Bootstrap(context.Background(), "Other tenant", "corp", "bob", "Bob")
+	if err != nil {
+		t.Fatalf("bootstrap other tenant: %v", err)
+	}
+	foreign := s.seedAgentIn(other.S("spaceId"), other.S("tenantId"), "Backend Foreign", "official/foreign", "active")
+
+	// search returns the response's target ids in wire order: the tenant's members first, then the
+	// directory chain (roster agents, then workflows).
+	search := func(rawQuery string) []string {
+		s.t.Helper()
+		items := targetItems(s.call("GET", s.path("/collaboration/targets")+rawQuery, nil, "", 200))
+		ids := make([]string, 0, len(items))
+		for _, it := range items {
+			ids = append(ids, it.S("id"))
+		}
+		return ids
+	}
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"empty q lists every active target", "", []string{s.uid, backend, frontend, triage}},
+		{"whitespace-only q lists every active target", "?q=%20%20", []string{s.uid, backend, frontend, triage}},
+		{"agent name substring narrows the roster", "?q=Frontend", []string{frontend}},
+		{"agent name match ignores case", "?q=bAcKeNd", []string{backend}},
+		{"member name narrows the members", "?q=Alice", []string{s.uid}},
+		{"workflow name still narrows the workflows", "?q=Triage", []string{triage}},
+		{"a literal % matches no name", "?q=%25", nil},
+		{"a literal _ matches no name", "?q=_", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := search(c.query)
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("GET /collaboration/targets%s: want %v got %v", c.query, c.want, got)
+			}
+			for _, hidden := range []string{retired, foreign} {
+				if slices.Contains(got, hidden) {
+					t.Fatalf("GET /collaboration/targets%s must never expose %s: %v", c.query, hidden, got)
+				}
+			}
+		})
+	}
+
+	// The handler still owns q validation, and the directory only ever sees an already-trimmed,
+	// length-checked term: an over-long query is refused before any directory is consulted.
+	s.call("GET", s.path("/collaboration/targets")+"?q="+strings.Repeat("a", 201), nil, "", 400)
 }

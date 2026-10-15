@@ -125,6 +125,11 @@ func applyCommentTargets(t *transaction, i Object, r *PublicRequest, uid, commen
 // `version` is the platform's key only while the author's own Start node leaves it alone; a workflow
 // that declares a variable under that name owns the key, and the value submitted under it is that
 // variable's rather than a version selection — see workflowVersionCursor.
+//
+// The version's schema is the schema of this submission only while it still describes the form the
+// client rendered, which is the live document's. When the two have diverged the confirm refuses with
+// `workflow_version_fields_changed` and names the fields, rather than validating values the user was
+// shown against a schema they were never shown — see workflowFieldDivergence.
 func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches *[]dispatchTarget) Object {
 	it := interaction(t, r.TenantID, r.IssueID, r.InteractionID)
 	require(it.S("mode") == "form", 409, "interaction_not_confirmable")
@@ -136,7 +141,11 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches
 	w := workflow(t, r.TenantID, targetID)
 	s := admitWorkflowRun(t, r.TenantID, targetID, workflowVersionCursor(w.O("graph"), values), uid)
 	issueContext := formContextForIssue(t, r.TenantID, i)
-	validateFormValues(snapshotFormDescriptor(t, w, s, &issueContext), values, true)
+	versionDescriptor := snapshotFormDescriptor(t, w, s, &issueContext)
+	if diverged := workflowFieldDivergence(liveFormDescriptor(t, w, &issueContext), versionDescriptor); len(diverged) > 0 {
+		rejectWith(409, "workflow_version_fields_changed", Object{"fields": stringList(diverged)})
+	}
+	validateFormValues(versionDescriptor, values, true)
 
 	input := buildRunContext(t, i, "", targetType, targetID, values, appliedContextRefs(r.Body))
 	freezeWorkflowSnapshot(input, s.S("id"))

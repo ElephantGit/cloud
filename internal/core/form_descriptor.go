@@ -318,10 +318,12 @@ func appliedContextRefs(body Object) []Object {
 // what the client rendered would reject values the user was legitimately shown.
 //
 // This resolves the workflow's *live* document, which is right for both of them — they render a form
-// the user is still filling in, and the version picker has not been used yet. A confirm is the one
-// caller that must not come through here: it executes the version that was chosen, so it projects that
-// snapshot instead (snapshotFormDescriptor), and an edit made since the last publish cannot change
-// what an already-offered version accepts.
+// the user is still filling in, and the version picker has not been used yet. A confirm does not come
+// through here: it executes the version that was chosen, so it projects that snapshot
+// (snapshotFormDescriptor) and an edit made since the last publish cannot change what an already-offered
+// version accepts. It projects the live document as well, but only to refuse a version that no longer
+// describes the form the user was handed (workflowFieldDivergence) — and it projects it itself rather
+// than through this provider, so that a descriptor outage cannot block a confirm.
 func workflowFormDescriptor(t *transaction, tid, targetType, targetID string, issue *IssueFormContext) FormDescriptor {
 	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	require(t.directory != nil, 503, "form_descriptor_unavailable")

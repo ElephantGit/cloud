@@ -176,6 +176,28 @@ func confirmPath(f *fixture, iid, ixid string) string {
 	return f.path("/issues/" + iid + "/interactions/" + ixid + "/confirm")
 }
 
+// refusedFields asserts a confirm was refused because the version it names no longer describes the form
+// the client rendered, and returns the fields that refusal names. The fault is the point of the
+// assertion: the same submission checked against the version's schema alone would be refused too, by a
+// fault about the values — saying a field the user was shown is invalid, or that one they were never
+// shown is missing.
+func refusedFields(t *testing.T, refusal core.Object) []string {
+	t.Helper()
+	if got := refusal.S("code"); got != "workflow_version_fields_changed" {
+		t.Fatalf("code = %q, want workflow_version_fields_changed: %v", got, refusal)
+	}
+	raw, _ := refusal.O("params")["fields"].([]any)
+	out := []string{}
+	for _, item := range raw {
+		text, ok := item.(string)
+		if !ok {
+			t.Fatalf("the refusal named a value that is not a field: %v", item)
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
 // assistPath targets the stateless pre-confirm assist route: the form is a draft until the user
 // confirms it, so assist must work without a persisted interaction.
 func assistPath(f *fixture, iid string) string {
@@ -726,6 +748,111 @@ func TestAuthorDeclaredVersionIsNotTheVersionCursor(t *testing.T) {
 	}
 	if got := run.O("input").S("workflowSnapshotId"); got != published.S("id") {
 		t.Fatalf("run snapshot = %q, want the newest published version %q", got, published.S("id"))
+	}
+}
+
+// TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft covers the two documents a confirm reconciles.
+// The form the client rendered comes from the workflow's *live* document — the frontend resolves a
+// descriptor once per formRef and keeps it while the user fills the form in — while the submission
+// executes one frozen version. An author who edits between publishing a version and confirming against
+// it, which is the ordinary state of a workflow between an edit and its publish, leaves that version
+// describing a different form: validating the user's answers against it can only refuse a value they
+// were legitimately shown, or demand a field they were never shown. Both are answers about the wrong
+// document, so the confirm refuses the mismatch itself, names the fields, executes nothing, and leaves
+// the interaction unclaimed — the user then does what the fault says, and publishes or picks a version
+// whose fields the form still matches.
+func TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft(t *testing.T) {
+	f := setup(t)
+	authorField := func(name string) core.Object {
+		return core.Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string", "required": true}
+	}
+	wid := createWorkflow(t, f, "Diverging Workflow", "wf-diverge", []any{authorField("topic")})
+	v1 := publishWorkflow(t, f, wid, "wf-diverge-pub-1")
+	// edit is an author's edit that is saved but not published: the live document and the newest version
+	// part ways here, which is what every step below turns on.
+	edit := func(variables []any) {
+		t.Helper()
+		live := f.call("GET", f.path("/workflows/"+wid), nil, "", 200)
+		f.call("PUT", f.path("/workflows/"+wid), core.Object{
+			"graph": startInputGraph(variables), "version": live.N("version"),
+		}, "", 200)
+	}
+	newIssue := func(key string) string {
+		t.Helper()
+		return f.call("POST", f.path("/issues"), core.Object{"title": "Diverging form"}, key, 200).O("resource").S("id")
+	}
+	rendered := func(iid string) []string {
+		t.Helper()
+		return fieldKeys(orderedFormFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iid), nil, "", 200)))
+	}
+	withVersion := func(base core.Object, id string) core.Object {
+		values := core.Object{"version": id}
+		for key, value := range base {
+			values[key] = value
+		}
+		return values
+	}
+	// What the form invites once the draft declares both fields: every key it renders, filled in.
+	submitted := core.Object{"repository": "ora-space/cloud", "branch": "main", "topic": "auth", "scope": "full-repo"}
+
+	// The draft gains a required field after version 1 was published, so the rendered form asks for
+	// `scope` and the version the user's answers would be checked against has never heard of it.
+	edit([]any{authorField("topic"), authorField("scope")})
+	ahead := newIssue("wf-diverge-issue-1")
+	if fields := rendered(ahead); !slices.Contains(fields, "scope") {
+		t.Fatalf("the rendered form is not the draft's: %v", fields)
+	}
+	it := workflowComment(t, f, wid, ahead, "wf-diverge-1", "configure")
+	refusal := f.call("POST", confirmPath(f, ahead, it.S("id")), core.Object{"values": submitted}, "wf-diverge-c1", 409)
+	if got := refusedFields(t, refusal); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("the refusal named %v, want the field version 1 does not declare", got)
+	}
+	// A refused confirm claims nothing: no run was created, and the same interaction is still there to
+	// confirm once the form and the version agree again.
+	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", ahead); n != 0 {
+		t.Fatalf("a refused confirm created %d runs", n)
+	}
+	// Publishing the draft is the first remedy the fault names, and the same submission then goes through.
+	v2 := publishWorkflow(t, f, wid, "wf-diverge-pub-2")
+	run := f.call("POST", confirmPath(f, ahead, it.S("id")), core.Object{"values": submitted}, "wf-diverge-c2", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+ahead+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v2.S("id") {
+		t.Fatalf("the run executed %q, want the version published since the refusal %q", got, v2.S("id"))
+	}
+
+	// The other remedy: the live document is now version 2, and the same mismatch read from the version
+	// side is a user who picks the older version 1 — which does not declare `scope` either. Selecting a
+	// version has to be a real way out, so the fix and the mismatch are checked on one interaction.
+	picked := newIssue("wf-diverge-issue-2")
+	older := workflowComment(t, f, wid, picked, "wf-diverge-2", "configure")
+	chose := f.call("POST", confirmPath(f, picked, older.S("id")), core.Object{"values": withVersion(submitted, v1.S("id"))}, "wf-diverge-c3", 409)
+	if got := refusedFields(t, chose); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("selecting version 1 named %v, want the field version 1 does not declare", got)
+	}
+	run = f.call("POST", confirmPath(f, picked, older.S("id")), core.Object{"values": withVersion(submitted, v2.S("id"))}, "wf-diverge-c4", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+picked+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v2.S("id") {
+		t.Fatalf("the run executed %q, want the version that was selected %q", got, v2.S("id"))
+	}
+
+	// And the direction where the values are complete: `scope` leaves the draft, so the form no longer
+	// offers it while version 2 still requires it. Checked against version 2 alone this submission is
+	// `required_field_missing` for a field the user was never shown — which is why the version is not
+	// asked, and the mismatch is named instead.
+	edit([]any{authorField("topic")})
+	behind := newIssue("wf-diverge-issue-3")
+	if fields := rendered(behind); slices.Contains(fields, "scope") {
+		t.Fatalf("the rendered form still asks for a field the draft dropped: %v", fields)
+	}
+	back := workflowComment(t, f, wid, behind, "wf-diverge-3", "configure")
+	// No `scope` in the submission, because no form asked for one.
+	thin := core.Object{"repository": "ora-space/cloud", "branch": "main", "topic": "auth"}
+	missing := f.call("POST", confirmPath(f, behind, back.S("id")), core.Object{"values": thin}, "wf-diverge-c5", 409)
+	if got := refusedFields(t, missing); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("the refusal named %v, want the field the form no longer asks for", got)
+	}
+	// Here the remedy is the older version, because version 1's fields are still this form's.
+	run = f.call("POST", confirmPath(f, behind, back.S("id")), core.Object{"values": withVersion(thin, v1.S("id"))}, "wf-diverge-c6", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+behind+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v1.S("id") {
+		t.Fatalf("the run executed %q, want the version whose fields the form still matches %q", got, v1.S("id"))
 	}
 }
 

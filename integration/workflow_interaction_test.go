@@ -679,6 +679,56 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 	}
 }
 
+// TestAuthorDeclaredVersionIsNotTheVersionCursor covers the one key a form value and a platform cursor
+// can both be called. §38.37d keeps a key the author declared in their own Start node, so a workflow
+// that declares `version` gets no version selector and the value under that key is the author's
+// variable. Read as a cursor it would make such a form unconfirmable both ways round: a value that is
+// not a snapshot id is a 404, and the platform's prefill would have put a snapshot id in the author's
+// field, so a user who left it alone would run the newest version while handing their workflow that id
+// as its `version`. `version` is a plausible name for a release workflow's Start variable, which is
+// what makes a silently reinterpreted form value a compatibility boundary rather than a curiosity.
+func TestAuthorDeclaredVersionIsNotTheVersionCursor(t *testing.T) {
+	f := setup(t)
+	wid := createWorkflow(t, f, "Release Workflow", "wf-version-owned", []any{
+		core.Object{"name": "version", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	published := publishWorkflow(t, f, wid, "wf-version-owned-pub")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
+
+	// The form the author's declaration produces: their own control under that key, holding nothing —
+	// and no version selector, which is what makes the key theirs to begin with.
+	fields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))
+	if v := fields["version"]; v.S("type") != "text" || v.S("label") != "Release version" {
+		t.Fatalf("the author's version control was replaced by the platform's: %v", v)
+	}
+	if _, prefilled := fields["version"]["defaultValue"]; prefilled {
+		t.Fatalf("the author's version was prefilled with a snapshot id: %v", fields["version"])
+	}
+	// The control for that missing selector: the key is the platform's in a graph that leaves it alone,
+	// so the form above differs because of the declaration rather than because the field is gone.
+	plain := reviewWorkflow(t, f)
+	publishWorkflow(t, f, plain, "wf-version-plain-pub")
+	plainFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+plain+"?issueId="+iss.S("id")), nil, "", 200))
+	if v := plainFields["version"]; v.S("type") != "select" {
+		t.Fatalf("a workflow that declares no version lost the platform's selector: %v", v)
+	}
+
+	// A user who types their own value: the run still executes the newest published version — nothing
+	// selected it — and the workflow receives what they typed rather than that version's id.
+	it := workflowComment(t, f, wid, iss.S("id"), "wf-version-owned-1", "release")
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "version": "1.2.3", "scope": "full-repo",
+	}}, "wf-version-owned-c1", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").O("interactionValues").S("version"); got != "1.2.3" {
+		t.Fatalf("the workflow did not receive the author's version: %v", run.O("input").O("interactionValues"))
+	}
+	if got := run.O("input").S("workflowSnapshotId"); got != published.S("id") {
+		t.Fatalf("run snapshot = %q, want the newest published version %q", got, published.S("id"))
+	}
+}
+
 // TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (§38.19) and where they
 // stop: the read-only descriptor route is 503 with no provider and 500 for a malformed one, never a
 // partially usable form, while a confirm does not consult the provider at all. A confirm validates the

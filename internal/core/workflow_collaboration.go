@@ -478,6 +478,12 @@ func platformDefault(value string) any {
 // before the platform field existed — and so is an *illegal* default: the same URL is not a legal
 // value for a `repository` the author declared as a select that does not offer it.
 //
+// The version field is the one key the platform contributes nothing to. Its value is not a value the
+// workflow receives but the cursor `confirmInteraction` resolves the run's snapshot from, so it is
+// never a default the author's own variable of that name could mean: filling it would hand the run a
+// snapshot id as the variable's value. The author's field is left exactly as they declared it, and the
+// cursor stays the platform's — see workflowVersionCursor.
+//
 // The workflow's declaration (§38.37d) is applied here, and only to the fields the platform is
 // *adding*. A field the author asked for in their own Start node is asked for because they asked for
 // it, so no declaration withdraws it: for that key the declaration is inert, control and requiredness
@@ -492,7 +498,9 @@ func injectPlatformFields(fields []FormField, issue *IssueFormContext, startProm
 	for i := range offered {
 		field := &offered[i]
 		if i, ok := declared[field.Key]; ok {
-			fillDefault(&fields[i], field)
+			if field.Key != fieldKeyVersion {
+				fillDefault(&fields[i], field)
+			}
 			continue
 		}
 		if !launchFieldEnabled(declaration, field.Key) {
@@ -583,6 +591,31 @@ func fillDefault(field, platform *FormField) {
 	if validFieldValue(field, platform.DefaultValue) {
 		field.DefaultValue = platform.DefaultValue
 	}
+}
+
+// workflowVersionCursor reads the published version a confirmed form asked for, or "" for the newest
+// one. It is the only reader of the `version` key, in one place, because which of the two things that
+// key can be — the platform's cursor or an author's variable — is a decision that must be made the same
+// way wherever it is read.
+//
+// The key is the platform's own only when the graph's own input fields do not declare it (§38.37d): an
+// author who declares a variable under that name keeps it, no version selector is injected into their
+// form, and the value the user typed is theirs to give the workflow. Reading it as a snapshot id would
+// either 404 on a value that is not an id or, when the value is one, run the version the user asked for
+// while feeding the workflow that same id as its parameter.
+//
+// The graph is the *live* document rather than the version being resolved — the one the form was
+// rendered from — because that is what fixes the meaning of the value in hand, and it is decidable
+// before the snapshot is resolved. Reading it from the resolved version instead would make the meaning
+// of a submitted value depend on which version the same submission selected.
+func workflowVersionCursor(graph, values Object) string {
+	fields := workflowInputFields(graph)
+	for i := range fields {
+		if fields[i].Key == fieldKeyVersion {
+			return ""
+		}
+	}
+	return values.S(fieldKeyVersion)
 }
 
 // workflowStartNode returns the `data` of the graph's first Start node. The graph is a document the API

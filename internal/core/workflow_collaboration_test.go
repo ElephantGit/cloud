@@ -657,7 +657,8 @@ func TestGlobalsComeAfterTheAuthorsOwnFields(t *testing.T) {
 
 // TestLaunchKeysCollideLikeTheOlderOnes covers the collision rule for the three new reserved keys: an
 // author who declares one keeps their own control, label and requiredness, and the platform only fills
-// a default their control can actually hold.
+// a default their control can actually hold. The version field is the exception that proves the rule —
+// its default is a cursor rather than a value, so no control can hold it.
 func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	declared := []any{
 		Object{"name": fieldKeyBranch, "displayName": "Target branch", "valueType": "string"},
@@ -685,20 +686,68 @@ func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	if branch.DefaultValue != issueContext().DefaultBranch {
 		t.Fatalf("branch default = %v, want the project's branch", branch.DefaultValue)
 	}
-	// A text control holds the snapshot id the platform would have offered, so the default fills — what
-	// it must not do is turn the author's field into a select.
+	// The version field is the one the platform contributes nothing to: its value is the cursor confirm
+	// resolves the run's snapshot from, not a value the author's variable could hold, so a text control
+	// must not be prefilled with a snapshot id — the run would receive that id as its own `version`.
 	version := fieldOf(t, d, fieldKeyVersion)
 	if version.Type != fieldText || version.Label != "Release" {
 		t.Fatalf("the author's version control was overwritten: %+v", version)
 	}
-	if version.DefaultValue != snapshotRows(2)[0].S("id") {
-		t.Fatalf("version default = %v, want the newest snapshot", version.DefaultValue)
+	if version.DefaultValue != nil {
+		t.Fatalf("version default = %v, want none: the cursor is not a value the variable can hold", version.DefaultValue)
 	}
 	// The platform offers no default for the context refs at all — an empty selection is the only
 	// honest starting point — so the author's declaration is left exactly as it was written.
 	refs := fieldOf(t, d, fieldKeyContextRefs)
 	if refs.Type != fieldText || refs.Label != "Refs" || refs.DefaultValue != nil {
 		t.Fatalf("the author's context refs control was changed: %+v", refs)
+	}
+}
+
+// TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt covers the one key a form value and a
+// platform cursor can both be called. A graph whose own Start node declares `version` is asking for its
+// own variable of that name, so the value under that key must not also select the snapshot: read as a
+// cursor it would 404 on any value that is not a snapshot id, and on one that is, it would run the
+// version the user picked while handing the workflow that same id as its parameter.
+func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) {
+	newest := snapshotRows(2, 1)[0].S("id")
+	declared := startGraph([]any{Object{"name": fieldKeyVersion, "valueType": "string"}}, "")
+	plain := startGraph([]any{Object{"name": "scope", "valueType": "string"}}, "")
+	cases := []struct {
+		name   string
+		graph  Object
+		values Object
+		want   string
+	}{
+		{
+			name:   "the platform's own field carries the cursor",
+			graph:  plain,
+			values: Object{fieldKeyVersion: newest},
+			want:   newest,
+		},
+		{
+			name:   "no version is the newest published one",
+			graph:  plain,
+			values: Object{"repository": "ora-space/cloud"},
+			want:   "",
+		},
+		{
+			name:   "an author's version is a value, not a version selection",
+			graph:  declared,
+			values: Object{fieldKeyVersion: "1.2.3"},
+			want:   "",
+		},
+		{
+			name:   "an author's version holding a snapshot id still selects nothing",
+			graph:  declared,
+			values: Object{fieldKeyVersion: newest},
+			want:   "",
+		},
+	}
+	for _, tc := range cases {
+		if got := workflowVersionCursor(decodeGraph(t, tc.graph), tc.values); got != tc.want {
+			t.Fatalf("%s: cursor = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 

@@ -121,6 +121,10 @@ func applyCommentTargets(t *transaction, i Object, r *PublicRequest, uid, commen
 // frozen document to execute, and running the live draft is what the draft/published split forbids.
 // The resolved version is frozen onto the run's input, so the run still says what it executed after
 // the workflow has been edited or published again.
+//
+// `version` is the platform's key only while the author's own Start node leaves it alone; a workflow
+// that declares a variable under that name owns the key, and the value submitted under it is that
+// variable's rather than a version selection — see workflowVersionCursor.
 func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches *[]dispatchTarget) Object {
 	it := interaction(t, r.TenantID, r.IssueID, r.InteractionID)
 	require(it.S("mode") == "form", 409, "interaction_not_confirmable")
@@ -129,9 +133,10 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches
 	targetType, targetID := it.S("targetType"), it.S("targetId")
 	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	values := interactionValues(r.Body)
-	s := admitWorkflowRun(t, r.TenantID, targetID, values.S(fieldKeyVersion), uid)
+	w := workflow(t, r.TenantID, targetID)
+	s := admitWorkflowRun(t, r.TenantID, targetID, workflowVersionCursor(w.O("graph"), values), uid)
 	issueContext := formContextForIssue(t, r.TenantID, i)
-	validateFormValues(snapshotFormDescriptor(t, workflow(t, r.TenantID, targetID), s, &issueContext), values, true)
+	validateFormValues(snapshotFormDescriptor(t, w, s, &issueContext), values, true)
 
 	input := buildRunContext(t, i, "", targetType, targetID, values, appliedContextRefs(r.Body))
 	freezeWorkflowSnapshot(input, s.S("id"))

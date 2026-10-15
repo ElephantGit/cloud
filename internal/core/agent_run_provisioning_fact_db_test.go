@@ -254,3 +254,56 @@ func TestProvisioningFactDoesNotReopenTheOperationsOwnActions(t *testing.T) {
 		t.Fatalf("claim picked up an abandoned creation: %v", claimed["operation"])
 	}
 }
+
+// A provisional observation does not lock the ledger: the same effect may first be reported
+// absent, then running, and only later reach its real terminal — exactly the progression the live
+// path itself allows. The terminal takes over, the superseded observations stay as prior
+// evidence, and the business terminal never moves.
+func TestProvisioningEffectFactProgressesFromProvisionalToTerminal(t *testing.T) {
+	store := commandStore(t)
+	scene := seedAbandonedCreation(t, store, true)
+
+	// The Substrate first reports it never started the ensure (absent keeps the effect planned)...
+	if _, err := submitFact(t, store, scene, "progress-absent", Object{"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "absent"}); err != nil {
+		t.Fatalf("absent observation refused: %v", err)
+	}
+	// ...then that it did start, under a submission Cloud never saw answered.
+	if _, err := submitFact(t, store, scene, "progress-running", Object{"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "running", "externalId": "sub-123"}); err != nil {
+		t.Fatalf("running observation refused: %v", err)
+	}
+	// The real terminal arrives under a new submission: it must take over, not conflict.
+	terminal := Object{
+		"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "succeeded", "externalId": "sub-123",
+		"result": Object{"sandboxInstanceId": scene.effect, "nodeId": "node-late"},
+	}
+	out, err := submitFact(t, store, scene, "progress-terminal", terminal)
+	if err != nil {
+		t.Fatalf("terminal after running must be accepted: %v", err)
+	}
+	if out.O("effect").S("state") != "succeeded" || out.O("effect").S("externalId") != "sub-123" {
+		t.Fatalf("terminal fact not stored on the effect: %v", out.O("effect"))
+	}
+	if _, err := submitFact(t, store, scene, "progress-replay", terminal); err != nil {
+		t.Fatalf("identical terminal must replay: %v", err)
+	}
+	// One receipt for the identity: the terminal on top, both provisional observations retained.
+	var state string
+	var prior int
+	if err := store.Pool.QueryRow(`SELECT responsibility->'lateFacts'->('effect:'||$2)->>'state',
+		jsonb_array_length(responsibility->'lateFacts'->('effect:'||$2)->'prior')
+		FROM agent_run_residuals WHERE run_id=$1`, scene.run, scene.effect).Scan(&state, &prior); err != nil {
+		t.Fatalf("ledger receipt read failed: %v", err)
+	}
+	if state != "succeeded" || prior != 2 {
+		t.Fatalf("ledger receipt wrong: state=%s prior=%d", state, prior)
+	}
+	// A terminal is final: a contradicting outcome stays refused, by the live path's own evidence
+	// rules for the effect row, and the ledger keeps the recorded terminal.
+	if _, err := submitFact(t, store, scene, "progress-conflict", Object{"epoch": 1, "kind": "effect", "effectId": scene.effect, "state": "failed", "externalId": "sub-123", "result": Object{"error": "substrate said no"}}); err == nil {
+		t.Fatal("contradicting terminal accepted")
+	}
+	phase, status, reason, _, _, _ := runFields(t, store, scene.run)
+	if phase.String != "done" || status != "failed" || reason != "workspace_unavailable" {
+		t.Fatalf("progression resurrected the run: %s/%s/%s", phase.String, status, reason)
+	}
+}

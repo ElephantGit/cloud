@@ -65,3 +65,8 @@ selected snapshot, then validates that published snapshot.
 Execution input contains only declared Start/global variables. Platform fields stay on the IssueRun,
 whose `input.workflowSnapshotId` matches the linked execution. Linked IssueRuns bypass the legacy
 Dispatcher, including development doubles.
+
+`projectWorkflowRunToIssueRun` projects authoritative state, timestamps and errors inside the caller's
+transaction. Output summaries are `system` `run.message` activities, never workflow-authored comments.
+PostgreSQL tests call this function directly. Scheduler calls, execution identity and slot bindings
+remain executor integration work; this preflight does not establish actual Node execution.

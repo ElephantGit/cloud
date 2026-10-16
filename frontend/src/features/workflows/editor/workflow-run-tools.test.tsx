@@ -183,13 +183,12 @@ describe('WorkflowRunTools', () => {
     await waitFor(() => expect(runButton).toBeEnabled())
 
     fireEvent.click(runButton)
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
-    // A run must name the Project its Workspace provisions in, and the editor has none to state
-    // yet: the refusal happens before the request, so nothing is created and nothing navigates.
-    // The button goes pending and comes back armed, which is where the refusal settles.
-    await waitFor(() => expect(runButton).toBeEnabled())
-    expect(bodies).toEqual([])
-    expect(router.state.location.pathname).toBe(EDITOR_PATH)
+    // The browser path carries the workspace slug, never the tenant UUID.
+    await waitFor(() => expect(router.state.location.pathname).toBe(`${EDITOR_PATH}/runs/run-new`))
+    // The run names the version it executes, so the server can freeze that document onto it.
+    expect(bodies).toEqual([{ snapshotId: 'snap-1', input: {} }])
   })
 
   it('lists run history and opens a run from a row', async () => {
@@ -239,6 +238,7 @@ describe('workflow run navigation through the app routes', () => {
     await waitFor(() => expect(runButton).toBeEnabled())
 
     fireEvent.click(runButton)
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
     // A UUID workspace path would have been redirected to Issues by the Layout before
     // this page ever mounted, so the route is what proves the click stayed put.

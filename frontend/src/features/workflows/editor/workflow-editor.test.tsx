@@ -1047,10 +1047,12 @@ describe('WorkflowEditor run tools', () => {
       }),
     )
     fireEvent.click(runButton)
+    // The toolbar button opens the start dialog; the run is created by its own submit, once the
+    // member has seen — and answered — what the published version asks for.
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
-    // The run form that picks the Project is not built yet, so the mutation refuses the run before
-    // the request is sent and this capture stays empty.
-    await waitFor(() => expect(runButton).toBeEnabled())
-    expect(bodies).toEqual([])
+    // The version's Start node declares nothing, so there is nothing to answer and the run carries
+    // the empty input the server reads as "use this version's own defaults".
+    await waitFor(() => expect(bodies).toEqual([{ snapshotId: 'snap-1', input: {} }]))
   })
 })

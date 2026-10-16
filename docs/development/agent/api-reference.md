@@ -219,14 +219,33 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   → `textarea` holding JSON. A name without a `.` is not a global and is dropped.
 - The three routes must agree: `assist` and `confirm` re-resolve the descriptor with the **same** issue
   context, so a client that fetches with `?issueId=` must confirm against that same issue (a client
-  rendering the un-injected form gets 400 `required_field_missing` on confirm). `prompt`, `repository`,
-  `branch`, `version` and `context_refs` are **reserved keys** — an executor that validates run input
-  against Start variables must map them explicitly. `context_refs` is reserved in a second sense: the
-  surface reads its value back out (a list of `refType:refId` strings) and turns it into the run's
-  `contextRefs`, in addition to whatever AI Assist applied.
-- `values` is a plain `{fieldKey: value}` map, re-validated server-side against the **current**
-  descriptor: unknown key / wrong type / value outside `options` → 400 `invalid_field_value`; missing
-  required → 400 `required_field_missing`.
+  rendering the un-injected form gets 400 `required_field_missing` on confirm). They agree on the
+  *context*, not on which document they project: GET and `assist` read the **live** graph, while
+  `confirm` reads the **version** it is about to execute — the two describe the same fields only while
+  the draft has not moved on from that version, which is what the divergence check below is for.
+  `prompt`, `repository`, `branch`, `version` and `context_refs` are **reserved keys** — an executor
+  that validates run input against Start variables must map them explicitly. `context_refs` is reserved
+  in a second sense: the surface reads its value back out (a list of `refType:refId` strings) and turns
+  it into the run's `contextRefs`, in addition to whatever AI Assist applied. `version` carries a second
+  reservation: it is the platform's version cursor only while the author's own Start node declares no
+  variable under that name — a workflow that declares one keeps the key, gets no version selector
+  injected, and the value the user typed is that variable's rather than a snapshot choice.
+- `values` is a plain `{fieldKey: value}` map, re-validated server-side against the descriptor of the
+  **version being confirmed** rather than the live document: unknown key / wrong type / value outside
+  `options` → 400 `invalid_field_value`; missing required → 400 `required_field_missing`. The version is
+  the `version` field's value (a snapshot id) or the newest published one when that field is unset; a
+  version that is not this workflow's is 404. A workflow with nothing published cannot be confirmed:
+  with no version selected it is 400 `workflow_no_published_snapshot`, because there is no frozen
+  document to execute and running the live draft is what the draft/published split forbids.
+- **The version's schema is the submission's schema only while it still describes the form the client
+  rendered**, and the form is rendered from the live document. When an author edits between publishing a
+  version and confirming against it, the two can disagree about which fields exist, which are required,
+  and which values a select offers — in either direction: a field the version rejects as unknown, or one
+  it insists on that the form never showed. `confirm` refuses that with 409
+  `workflow_version_fields_changed` and `params.fields` naming the keys, instead of blaming a value the
+  user was legitimately given; the answer is to publish again or select another version. Only the fields
+  that judge a submission are compared, so a changed label, description, placeholder or default is not a
+  divergence.
 - Confirm claims the interaction with a compare-and-set on `run_id IS NULL`: a second confirm (different
   key) → 409 `interaction_already_confirmed`; the same key + same body replays the stored response.
 - Confirm on a non-`form` interaction → 409 `interaction_not_confirmable`.
@@ -236,7 +255,10 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
 - Capability states: `503 form_descriptor_unavailable` / `503 assist_unavailable` (port not wired);
   `404 form_descriptor_not_found` (unknown `formRef`); `500 invalid_form_descriptor` (provider bug).
 - The confirmed values land in `issue_interactions.input`; the effective execution snapshot in
-  `issue_runs.input`; a workflow run's message is a `system` **activity**, never a `workflow` comment.
+  `issue_runs.input` as `workflowSnapshotId`, which is server-owned — the caller cannot choose it, and
+  every entry that starts a workflow run (this one, a direct `WorkflowRun`, a manual workflow IssueRun)
+  resolves it through the same admission gate. A workflow run's message is a `system` **activity**,
+  never a `workflow` comment.
 
 ## Projects / workspaces / operations
 

@@ -42,8 +42,8 @@ func workflowRunSummary(run Object) Object {
 		"nodeStates": run.O("nodeStates"),
 		"rounds":     rounds,
 		"error":      run.S("error"),
-		"startedAt":  run.S("startedAt"),
-		"finishedAt": run.S("finishedAt"),
+		"startedAt":  run["startedAt"],
+		"finishedAt": run["finishedAt"],
 		"createdAt":  run.S("createdAt"),
 		"updatedAt":  run.S("updatedAt"),
 	}

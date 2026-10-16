@@ -2542,6 +2542,12 @@ workflow whose author owns that key still receives its own value while the versi
 the one that runs. Historical interactions keep their stored `input` untouched: it is immutable, and
 nothing ever writes the old key.
 
+**The fold belongs to the submission path alone.** AI Assist resolves no version — it validates the
+shape of what the user has typed so far and creates nothing — so a key that selects nothing has nothing
+to be folded onto, and the old key is not accepted there. A form rendered before the deploy may still
+be refused as an unknown key when it asks for a suggestion on that field; the confirm of the same form
+is not, because the selection is the one thing the assist path never consumes.
+
 **The label, the number, and `workflow_runs.version` are not affected.** The option label is still
 `v3 · <name>`; `workflow_snapshots.version` and the optimistic-concurrency `version` on every resource
 keep their names; only the form field's key changed. `internal/contract`, the OpenAPI document and the

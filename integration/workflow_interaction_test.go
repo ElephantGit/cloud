@@ -761,7 +761,7 @@ func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmReadsThePreRenameVersionKey covers the other half of the rename (§38.37e): the
+// TestWorkflowConfirmReadsThePreRenameVersionKey covers the other half of the rename (§38.37f): the
 // field is `snapshotId` now, but a form rendered before the deploy answers under `version`, and the
 // values are submitted after it. That submission has to be accepted as the version selection it is —
 // reading only the new key would start the newest version while the version the user picked is dropped

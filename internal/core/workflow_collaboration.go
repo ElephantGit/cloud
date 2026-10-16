@@ -332,7 +332,7 @@ const (
 
 // legacyFieldKeyVersion is the name the version selector used to be injected under. Its value was
 // always a snapshot id, so the rename to fieldKeySnapshotID is a naming correction and not a change of
-// meaning (§38.37e, specs#99) — but the rename cannot reach data that is already immutable: the `input`
+// meaning (§38.37f, specs#99) — but the rename cannot reach data that is already immutable: the `input`
 // of an interaction confirmed before the deploy, and the graph of a snapshot published before it. Both
 // are read through this key, and nothing is ever written under it.
 const legacyFieldKeyVersion = "version"
@@ -496,7 +496,7 @@ func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots [
 // is the snapshot id rather than the version number: the id is what a run is created from, and it
 // keeps pointing at the same frozen document. The version number rides in the label, where it is read
 // rather than consumed — which is why the field is keyed `snapshotId` and not `version`, the name that
-// said the opposite of what the value is (§38.37e).
+// said the opposite of what the value is (§38.37f).
 //
 // A workflow that has never been published has nothing to offer, and an option-less select would fail
 // descriptor validation, so the field is dropped rather than injected empty.
@@ -705,7 +705,7 @@ func fillDefault(field, platform *FormField) {
 // either 404 on a value that is not an id or, when the value is one, run the version the user asked for
 // while feeding the workflow that same id as its parameter.
 //
-// There are two keys to try because the field was renamed (§38.37e) and a rename cannot reach a form
+// There are two keys to try because the field was renamed (§38.37f) and a rename cannot reach a form
 // that was rendered before it: `snapshotId` is the name this build's form asks under, and `version` is
 // what the same field was called until then. The new key is tried first, so a submission carrying both
 // is answered by the one this build wrote; the old key is the answer for the submissions that carry

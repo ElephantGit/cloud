@@ -175,7 +175,7 @@ func operation(t *transaction, r *ControlRequest) Object {
 // it. clones lists this operation's Workspace clone executions so a recovering Controller finds the
 // original execution instead of registering a second one.
 func snapshot(t *transaction, o Object) Object {
-	p := t.one("SELECT p.*,c.secret_ref FROM projects p LEFT JOIN credential_refs c ON c.id=p.credential_ref_id WHERE p.id=$1", o.S("projectId"))
+	p := t.one("SELECT p.*,c.secret_ref FROM "+projectView+" p LEFT JOIN credential_refs c ON c.id=p.credential_ref_id WHERE p.id=$1", o.S("projectId"))
 	out := Object{
 		"operation":  o,
 		"project":    p,
@@ -362,6 +362,11 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 		advanceClone(t, o, wid)
 		next = finishPluginGate(t, o, wid)
 	case "quiesce":
+		// Repository Operations already running when the Project entered deleting may still write
+		// to its Git Server repository; deletion starts only after they have all ended.
+		if o.S("kind") == "delete_project" {
+			require(!repositoryOperationsUnfinished(t, o.S("projectId")), 409, "repository_operation_unfinished")
+		}
 		for _, w := range operationWorkspaces(t, o) {
 			checkActivities(t, w)
 			live := t.one("SELECT id FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL", w.S("id"))

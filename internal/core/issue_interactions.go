@@ -115,16 +115,18 @@ func applyCommentTargets(t *transaction, i Object, r *PublicRequest, uid, commen
 //
 // The values are validated against the schema of the *version being confirmed* rather than the live
 // document the form was rendered from, and against the same admission gate the other two entries use.
-// The version is the form's own `version` field, whose option values are snapshot ids; leaving it
+// The version is the form's own `snapshotId` field, whose option values are snapshot ids; leaving it
 // unset means the newest published version, and a version that is not this workflow's is a 404 rather
 // than a silent fallback. A workflow with nothing published cannot be confirmed at all: there is no
 // frozen document to execute, and running the live draft is what the draft/published split forbids.
 // The resolved version is frozen onto the run's input, so the run still says what it executed after
 // the workflow has been edited or published again.
 //
-// `version` is the platform's key only while the author's own Start node leaves it alone; a workflow
+// `snapshotId` is the platform's key only while the author's own Start node leaves it alone; a workflow
 // that declares a variable under that name owns the key, and the value submitted under it is that
-// variable's rather than a version selection — see workflowVersionCursor.
+// variable's rather than a version selection — see workflowVersionCursor. A submission still carrying
+// the pre-rename `version` key is read under it, so the version the user picked is the one that runs,
+// and the key is folded away before the values are validated — see foldLegacyVersionAnswer.
 //
 // The version's schema is the schema of this submission only while it still describes the form the
 // client rendered, which is the live document's. When the two have diverged the confirm refuses with
@@ -139,7 +141,9 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string, dispatches
 	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	values := interactionValues(r.Body)
 	w := workflow(t, r.TenantID, targetID)
-	s := admitWorkflowRun(t, r.TenantID, targetID, workflowVersionCursor(w.O("graph"), values), uid)
+	cursor := workflowVersionCursor(w.O("graph"), values)
+	foldLegacyVersionAnswer(w.O("graph"), values)
+	s := admitWorkflowRun(t, r.TenantID, targetID, cursor, uid)
 	issueContext := formContextForIssue(t, r.TenantID, i)
 	versionDescriptor := snapshotFormDescriptor(t, w, s, &issueContext)
 	if diverged := workflowFieldDivergence(liveFormDescriptor(t, w, &issueContext), versionDescriptor); len(diverged) > 0 {

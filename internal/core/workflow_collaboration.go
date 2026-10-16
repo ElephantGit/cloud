@@ -326,15 +326,22 @@ const (
 	fieldKeyPrompt      = "prompt"
 	fieldKeyRepository  = "repository"
 	fieldKeyBranch      = "branch"
-	fieldKeyVersion     = "version"
+	fieldKeySnapshotID  = "snapshotId"
 	fieldKeyContextRefs = "context_refs"
 )
+
+// legacyFieldKeyVersion is the name the version selector used to be injected under. Its value was
+// always a snapshot id, so the rename to fieldKeySnapshotID is a naming correction and not a change of
+// meaning (§38.37e, specs#99) — but the rename cannot reach data that is already immutable: the `input`
+// of an interaction confirmed before the deploy, and the graph of a snapshot published before it. Both
+// are read through this key, and nothing is ever written under it.
+const legacyFieldKeyVersion = "version"
 
 // launchFieldKeys is every key the platform injects, and the only set a workflow's `launchFields`
 // declaration may name: a declaration cannot conjure a field the catalog does not have, so an
 // unrecognized key is dropped rather than remembered. The order the fields are *injected* in lives in
 // the catalog below, where each field is actually built.
-var launchFieldKeys = []string{fieldKeyRepository, fieldKeyBranch, fieldKeyVersion, fieldKeyPrompt, fieldKeyContextRefs}
+var launchFieldKeys = []string{fieldKeyRepository, fieldKeyBranch, fieldKeySnapshotID, fieldKeyPrompt, fieldKeyContextRefs}
 
 // launchFieldOverride is one entry of a workflow's `launchFields` declaration (§38.37d): whether the
 // form asks for that field, and whether it insists on an answer.
@@ -353,6 +360,11 @@ type launchFieldOverride struct {
 // what keeps a workflow written before this declaration existed rendering exactly the form it always
 // did. An unreadable entry contributes nothing rather than failing the request, the way the globals
 // projection reads the same document.
+//
+// A declaration naming the pre-rename `version` key counts as naming the snapshot selector, because
+// that is the field it was written about: the graphs carrying it are published snapshots, which are
+// immutable, so reading it strictly would quietly hand a field back to a workflow whose author had
+// withdrawn it — the silent-ignore the publish gate exists to prevent, one layer up.
 func launchFieldsFromGraph(graph Object) map[string]launchFieldOverride {
 	declared, _ := graph["launchFields"].([]any)
 	out := map[string]launchFieldOverride{}
@@ -362,8 +374,8 @@ func launchFieldsFromGraph(graph Object) map[string]launchFieldOverride {
 			continue
 		}
 		entry := Object(raw)
-		key := entry.S("key")
-		if !isLaunchFieldKey(key) {
+		key := launchFieldKey(entry.S("key"))
+		if key == "" {
 			continue
 		}
 		override := launchFieldOverride{Enabled: true}
@@ -378,13 +390,17 @@ func launchFieldsFromGraph(graph Object) map[string]launchFieldOverride {
 	return out
 }
 
-func isLaunchFieldKey(key string) bool {
+// launchFieldKey resolves a declared key to the catalog key it names, or "" when it names none.
+func launchFieldKey(key string) string {
+	if key == legacyFieldKeyVersion {
+		return fieldKeySnapshotID
+	}
 	for _, candidate := range launchFieldKeys {
 		if candidate == key {
-			return true
+			return key
 		}
 	}
-	return false
+	return ""
 }
 
 // launchFieldEnabled reports whether the form asks for a field. Silence means yes: only an explicit
@@ -479,7 +495,8 @@ func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots [
 // versionField offers the workflow's published versions, newest first and newest by default. The value
 // is the snapshot id rather than the version number: the id is what a run is created from, and it
 // keeps pointing at the same frozen document. The version number rides in the label, where it is read
-// rather than consumed.
+// rather than consumed — which is why the field is keyed `snapshotId` and not `version`, the name that
+// said the opposite of what the value is (§38.37e).
 //
 // A workflow that has never been published has nothing to offer, and an option-less select would fail
 // descriptor validation, so the field is dropped rather than injected empty.
@@ -497,7 +514,7 @@ func versionField(snapshots []Object) (FormField, bool) {
 		return FormField{}, false
 	}
 	return FormField{
-		Key:          fieldKeyVersion,
+		Key:          fieldKeySnapshotID,
 		Label:        "运行版本",
 		Type:         fieldSelect,
 		Required:     false,
@@ -562,8 +579,8 @@ func platformDefault(value string) any {
 // before the platform field existed — and so is an *illegal* default: the same URL is not a legal
 // value for a `repository` the author declared as a select that does not offer it.
 //
-// The version field is the one key the platform contributes nothing to. Its value is not a value the
-// workflow receives but the cursor `confirmInteraction` resolves the run's snapshot from, so it is
+// The snapshot selector is the one key the platform contributes nothing to. Its value is not a value
+// the workflow receives but the cursor `confirmInteraction` resolves the run's snapshot from, so it is
 // never a default the author's own variable of that name could mean: filling it would hand the run a
 // snapshot id as the variable's value. The author's field is left exactly as they declared it, and the
 // cursor stays the platform's — see workflowVersionCursor.
@@ -582,7 +599,7 @@ func injectPlatformFields(fields []FormField, issue *IssueFormContext, startProm
 	for i := range offered {
 		field := &offered[i]
 		if i, ok := declared[field.Key]; ok {
-			if field.Key != fieldKeyVersion {
+			if field.Key != fieldKeySnapshotID {
 				fillDefault(&fields[i], field)
 			}
 			continue
@@ -678,28 +695,78 @@ func fillDefault(field, platform *FormField) {
 }
 
 // workflowVersionCursor reads the published version a confirmed form asked for, or "" for the newest
-// one. It is the only reader of the `version` key, in one place, because which of the two things that
+// one. It is the only reader of the version keys, in one place, because which of the two things such a
 // key can be — the platform's cursor or an author's variable — is a decision that must be made the same
 // way wherever it is read.
 //
-// The key is the platform's own only when the graph's own input fields do not declare it (§38.37d): an
+// A key is the platform's own only when the graph's own input fields do not declare it (§38.37d): an
 // author who declares a variable under that name keeps it, no version selector is injected into their
 // form, and the value the user typed is theirs to give the workflow. Reading it as a snapshot id would
 // either 404 on a value that is not an id or, when the value is one, run the version the user asked for
 // while feeding the workflow that same id as its parameter.
+//
+// There are two keys to try because the field was renamed (§38.37e) and a rename cannot reach a form
+// that was rendered before it: `snapshotId` is the name this build's form asks under, and `version` is
+// what the same field was called until then. The new key is tried first, so a submission carrying both
+// is answered by the one this build wrote; the old key is the answer for the submissions that carry
+// only it, which is the whole reason to read it — the alternative is starting the newest version while
+// the version the user picked is dropped without a word.
 //
 // The graph is the *live* document rather than the version being resolved — the one the form was
 // rendered from — because that is what fixes the meaning of the value in hand, and it is decidable
 // before the snapshot is resolved. Reading it from the resolved version instead would make the meaning
 // of a submitted value depend on which version the same submission selected.
 func workflowVersionCursor(graph, values Object) string {
-	fields := workflowInputFields(graph)
-	for i := range fields {
-		if fields[i].Key == fieldKeyVersion {
-			return ""
+	if !declaresWorkflowInputField(graph, fieldKeySnapshotID) {
+		if id := values.S(fieldKeySnapshotID); id != "" {
+			return id
 		}
 	}
-	return values.S(fieldKeyVersion)
+	if !declaresWorkflowInputField(graph, legacyFieldKeyVersion) {
+		return values.S(legacyFieldKeyVersion)
+	}
+	return ""
+}
+
+// declaresWorkflowInputField reports whether the graph's own Start node declares a variable under key.
+func declaresWorkflowInputField(graph Object, key string) bool {
+	fields := workflowInputFields(graph)
+	for i := range fields {
+		if fields[i].Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// foldLegacyVersionAnswer takes the pre-rename `version` key back out of a submission, rewriting it
+// under `snapshotId` where that key is free.
+//
+// It runs immediately after workflowVersionCursor, and the order is the point: the old key has to
+// survive until the cursor has read it — in a graph whose author declared `snapshotId` for a variable
+// of their own, the old key is the *only* place the selection can be read from — and it has to be gone
+// afterwards, because the `@` form is the one surface where the set of keys *is* the contract and a key
+// the descriptor does not declare fails the confirm outright (see validateFormValues).
+//
+// The rewrite is what keeps the interaction stored under the name this build uses, as every new one is.
+// It is skipped where the author has claimed `snapshotId` for their own variable: there is nowhere to
+// write the answer, and writing it anyway would hand the workflow a snapshot id as that variable's
+// value. The answer is dropped there, which costs nothing that is not recorded elsewhere — the version
+// the run executed is frozen onto the run's own input by the gate that resolved it.
+func foldLegacyVersionAnswer(graph, values Object) {
+	answer, ok := values[legacyFieldKeyVersion]
+	if !ok || declaresWorkflowInputField(graph, legacyFieldKeyVersion) {
+		return
+	}
+	delete(values, legacyFieldKeyVersion)
+	if declaresWorkflowInputField(graph, fieldKeySnapshotID) {
+		return
+	}
+	// The same rule the cursor reads by: an answer the client already gave under the new key is the one
+	// this build's form wrote, and the old key does not displace it.
+	if values.S(fieldKeySnapshotID) == "" {
+		values[fieldKeySnapshotID] = answer
+	}
 }
 
 // workflowStartNode returns the `data` of the graph's first Start node. The graph is a document the API

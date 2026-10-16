@@ -366,3 +366,35 @@ func formDescriptorByRef(t *transaction, r *PublicRequest) Object {
 	validateFormDescriptor(descriptor)
 	return formDescriptorObject(descriptor)
 }
+
+// workflowSnapshotForm is the public read path for
+// `GET /workflows/{wfid}/snapshots/{sid}/form`: the `@` form projected from one frozen version rather
+// than from the live document.
+//
+// It exists because a caller can choose the version *before* rendering — the workflow editor's manual
+// run entry does — and such a caller has to be shown the fields of the version it picked. The `@` form
+// is rendered from the live document and relies on the confirm's divergence refusal instead, which
+// works there because the user never chose a version; a manual run has chosen one, so projecting the
+// live document would show a form the chosen version does not accept and then refuse every answer.
+// Confirm already projects this way when it validates a submission, so both read the one projection:
+// this route adds a caller, not a second rule.
+//
+// It is a projection and not an admission decision. Reading a descriptor says nothing about whether a
+// run may start — publish state, archiving, input dependencies and per-slot resolution stay the start
+// gate's answers — so a caller that can read this form can still be refused by `POST …/runs`.
+//
+// Scoping is the snapshot read's own (§workflowSnapshot): an unknown or archived workflow, a snapshot
+// of another workflow or another tenant, and a malformed id are all the same 404 as the direct-run
+// entry answers with, so a client shows one message for one situation.
+//
+// The `issueId` query parameter is optional exactly as it is on the live route, and the response names
+// the snapshot it was projected from: the same workflow has a different form per version, so the
+// projection has to say which version it describes.
+func workflowSnapshotForm(t *transaction, r *PublicRequest) Object {
+	w := workflow(t, r.TenantID, r.WorkflowID)
+	s := workflowSnapshot(t, r.TenantID, r.WorkflowID, r.SnapshotID)
+	issue := issueFormContext(t, r.TenantID, strings.TrimSpace(r.FormIssueID))
+	out := formDescriptorObject(snapshotFormDescriptor(t, w, s, &issue))
+	out["snapshotId"] = s.S("id")
+	return out
+}

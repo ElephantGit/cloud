@@ -475,6 +475,11 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 	case strings.HasSuffix(r.Path, "/resource-status"):
 		return page(t, "SELECT w.id,w.project_id,w.owner_user_id,w.kind,w.desired_state,w.observed_state,w.runtime_generation,w.version FROM workspaces w WHERE w.tenant_id=$1 AND w.deleted_at IS NULL AND w.issue_run_id IS NULL", []any{r.TenantID}, "w.id", r)
 	case strings.Contains(r.Path, "/workflows"):
+		// A snapshot-scoped form read is checked before the bare snapshot read, because both carry a
+		// snapshot id and only the path distinguishes projecting a version from describing it.
+		if r.SnapshotID != "" && strings.HasSuffix(r.Path, "/form") {
+			return workflowSnapshotForm(t, r)
+		}
 		if r.SnapshotID != "" {
 			return workflowSnapshot(t, r.TenantID, r.WorkflowID, r.SnapshotID)
 		}

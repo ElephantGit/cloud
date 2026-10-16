@@ -171,6 +171,7 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
 | Method | Path | Body fields | Response |
 | --- | --- | --- | --- |
 | GET | `/collaboration/forms/{formRef}` | query `?issueId=` | `FormDescriptor` (`{formRef,title?,description?,fields[]}`) |
+| GET | `/workflows/{wfid}/snapshots/{snapshotId}/form` | query `?issueId=` | `WorkflowSnapshotForm` (`{snapshotId,formRef,title?,description?,fields[]}`) |
 | POST 🔑 | `/issues/{iid}/collaboration/assist` | `targetId`*, `values`(object) | `{suggestedValues, suggestedContextRefs, explanations?}` — **stateless, suggest only, no side effects** |
 | POST 🔑 | `/issues/{iid}/interactions/{ixid}/confirm` | `values`(object)*, `contextRefs`(array of `{refType,refId}`) | `{resource: IssueRun}` (the initial run, `status=queued`; dispatch is post-commit) |
 
@@ -236,6 +237,17 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   injected, and the value the user typed is that variable's rather than a snapshot choice. The cursor
   also reads the pre-rename `version` key, under the mirror of that rule: it selects the version only
   while the author's Start node declares no variable named `version`.
+- A caller that picks the version **before** rendering it fetches
+  `GET /workflows/{wfid}/snapshots/{snapshotId}/form` instead: the same projection, made from that
+  version's frozen graph, with `snapshotId` echoed in the response so the form says which version it
+  describes (`formRef` stays the workflow's own id). This is the read the workflow editor's manual-run
+  entry uses, and it is the projection `confirm` validates against, so what it renders and what it runs
+  cannot drift. Scope is the direct-run entry's: another tenant's or another workflow's snapshot, an
+  unknown or malformed snapshot id, and an archived workflow are all 404 `not_found`. It is a **read,
+  not a start** — publish state, archiving and per-slot executor resolution are still answered by
+  `POST …/runs`, so a readable form can still be a refused start. `assist` and the live
+  `GET /collaboration/forms/{formRef}` are unchanged and still project the live graph, because a caller
+  that has not chosen a version has no version to name.
 - `values` is a plain `{fieldKey: value}` map, re-validated server-side against the descriptor of the
   **version being confirmed** rather than the live document: unknown key / wrong type / value outside
   `options` → 400 `invalid_field_value`; missing required → 400 `required_field_missing`. The version is

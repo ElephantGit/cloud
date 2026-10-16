@@ -2557,3 +2557,64 @@ covers the withdrawal and the requiredness a declaration written under the old n
 executed the version that key selected, that the interaction stored it under `snapshotId`, and that an
 author-owned `snapshotId` keeps its own value); `graph-codec.test.ts` the codec's rewrite of a stored
 declaration.
+
+**Revision — a caller that picks a version before rendering it (§38.37g).** §38.37e made the version a
+decision the start gate resolves, and §38.37f named the field for what it holds, but every *read* was
+still a projection of the live document. That is right for the `@` form: the user has not chosen a
+version when it is drawn, so the form shows the draft's fields and the confirm refuses a version that
+no longer describes them (§38.37e). A caller that **has** chosen one cannot work that way — projecting
+the live document would show it fields the chosen version does not accept (refused later as
+`invalid_field_value`) and hide fields that version requires (reported later as `required_field_missing`)
+— which is why the workflow editor's manual-run entry (#72) needs the form of the version it selected.
+This revision adds that read and no new rule:
+`GET /api/v1/tenants/{tid}/workflows/{wfid}/snapshots/{snapshotId}/form`.
+
+**One projection, two readers.** The route answers `snapshotFormDescriptor` — the function a confirm
+already uses to judge a submission — so a client renders exactly the descriptor its values will be
+validated against, and neither side can drift from the other. The live route is unchanged and keeps its
+semantics: `GET /collaboration/forms/{formRef}` still projects the live document, and the divergence
+refusal still lives at the confirm, because a caller that has not chosen a version has no version to
+name and must not be moved onto this route. Platform fields are injected on both reads, under the same
+rules: they describe the invocation rather than the version, so `repository`, `branch`, `snapshotId`,
+`prompt` and `context_refs` lead the form on either route, `?issueId=` tailors both, and the ones the
+workflow owns — the prompt, the version list — come from the document that was projected. The version
+picker deliberately still lists **every** published version on both reads: it is a property of the
+workflow, not of the graph, so a client's picker behaves identically whichever form it rendered.
+
+**The response names the version it projected.** `snapshotId` is required in this response and absent
+from the live one, and it is the only difference between the two shapes. A workflow has a different form
+per version, so a projection that did not say which version decided the fields could not be used by the
+caller that chose one — and would make a client's rendering unattributable when a run later disagrees
+with it. `formRef` stays the workflow's own identity on both reads: a version is not a form. The echo
+is response metadata, not a form field, so an author's declaration cannot withdraw it — it says which
+version was projected, which the caller already stated in the path — and it shares a name with the
+version selector without sharing a namespace: one is a key of the response, the other a key inside
+`fields`.
+
+**Scope is the snapshot read's, and the codes match the direct-run entry.** The route resolves the
+workflow and then the version through `workflowSnapshot`, which is exactly what an explicit
+`snapshotId` on `POST …/runs` resolves through. Another tenant's snapshot, another workflow's snapshot,
+an unknown id, a malformed id, an unknown workflow and an archived workflow are therefore all the same
+`404 not_found` — the same status *and* the same code the direct-run entry gives the same cursor — so a
+client shows one message for one situation rather than translating two vocabularies for it.
+
+**A projection, not a gate.** Reading a descriptor says nothing about whether a run may start. Publish
+state, archiving, input dependencies and per-slot executor resolution stay `admitWorkflowRun`'s answers
+(§38.37e), and a form is rendered before any of them is known: a workflow whose start is refused
+`409 slot_not_configured` still has a readable form, and reading it creates no run and claims nothing.
+Duplicating any part of the gate here would give the two answers a way to disagree, which is the one
+thing §38.37e exists to prevent.
+
+**No migration, and a contract change that is additive.** No schema change. `WorkflowSnapshotForm` is
+a new response schema (`snapshotId` added to the descriptor's own fields), the route is new, and
+`api/openapi.json` plus the frontend's generated client carry both.
+
+Verification: `integration/workflow_snapshot_form_test.go` covers the projection over real HTTP —
+`TestWorkflowSnapshotFormProjectsTheChosenVersion` edits and republishes the live document so two
+versions and the draft disagree on both the author's variables and the workflow-owned prompt, reads
+each version's form, and asserts each was projected from its own graph while the live read followed the
+edit; `TestWorkflowSnapshotFormScoping` covers every cursor that is not this tenant's workflow and one
+of its snapshots (another workflow's, another tenant's, unknown, malformed, unknown workflow, archived
+workflow) against the direct-run entry's answer for the same situation, and the issue context that
+cannot be resolved; `TestWorkflowSnapshotFormIsNotARunGate` reads the form of a workflow whose start is
+refused for an unmapped slot, and asserts the read left no run behind.

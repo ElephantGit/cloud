@@ -30,6 +30,25 @@ var workflowExecutableNodeKinds = map[string]bool{
 	"output":    true,
 }
 
+// workflowUnsupportedAgentConfigFields are the agent-node configuration fields the first phase does
+// not execute (#67 D2). The schema knows all of them and the editor may write them, but nothing in
+// Cloud reads them, so publishing refuses them by name instead of freezing a document whose author
+// believes a setting is in effect when no runner will ever apply it.
+//
+// They are listed rather than derived so the refusal stays a decision about *this* field, and in this
+// order so the problem list a client renders is deterministic. `executorSlot`, `roleId` and `prompt`
+// are the first phase's agent configuration and are deliberately absent here; the pre-slot
+// `agentConfig.executor` is absent too, because specs#98 D5 makes it a field to accept and drop
+// rather than refuse.
+var workflowUnsupportedAgentConfigFields = []string{
+	"skills",
+	"mcps",
+	"interactive",
+	"outputContract",
+	"retry",
+	"promptInactivity",
+}
+
 // workflowDefaultSlot is the executor slot every graph may reference without declaring it, and the
 // slot an agent node uses when it names none (specs#98 D2). It is reserved: a graph may not declare
 // it, because declaring it would let an author redefine the one name every runner already has.
@@ -66,10 +85,12 @@ type workflowGraphProblem struct {
 	NodeID string
 	Slot   string
 	Kind   string
+	Field  string
 }
 
 // Object renders one problem for the fault's `problems` list, omitting the fields that do not apply.
-func (p workflowGraphProblem) Object() Object {
+// It takes its receiver by pointer because a problem is five strings and is rendered in a loop.
+func (p *workflowGraphProblem) Object() Object {
 	out := Object{"code": p.Code}
 	if p.NodeID != "" {
 		out["nodeId"] = p.NodeID
@@ -79,6 +100,9 @@ func (p workflowGraphProblem) Object() Object {
 	}
 	if p.Kind != "" {
 		out["kind"] = p.Kind
+	}
+	if p.Field != "" {
+		out["field"] = p.Field
 	}
 	return out
 }
@@ -111,9 +135,9 @@ func validateWorkflowGraph(graph Object) []workflowGraphProblem {
 	return problems
 }
 
-// validateWorkflowNodes checks node identity, kind and the start-node count. The editor allows at
-// most one Start node, and a run needs exactly one entry point, so zero and two are both refused: a
-// graph with none is unfinished, and one with two has no defined place to begin.
+// validateWorkflowNodes checks node identity, kind, agent configuration and the start-node count. The
+// editor allows at most one Start node, and a run needs exactly one entry point, so zero and two are
+// both refused: a graph with none is unfinished, and one with two has no defined place to begin.
 func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	seen := map[string]bool{}
@@ -143,10 +167,38 @@ func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
 			problems = append(problems, workflowGraphProblem{Code: "node_kind_unsupported", NodeID: id, Kind: kind})
 		case kind == "start":
 			starts++
+		case kind == "agent":
+			// Only an agent node is asked about its configuration, and only once its kind is known to
+			// be one Cloud executes: a `tool` node carrying `skills` is already refused for the kind,
+			// and reporting its config too would ask the author to fix a field of a node they have to
+			// delete anyway.
+			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		}
 	}
 	if starts != 1 {
 		problems = append(problems, workflowGraphProblem{Code: "start_node_count"})
+	}
+	return problems
+}
+
+// validateAgentConfig refuses the agent-node configuration the first phase does not execute, naming
+// both the node and the field (#67 D2). The alternative — ignoring the field — is the one outcome the
+// decision rules out: an author who set `retry` would read a publish that succeeded as "my retry
+// policy is in effect", and nothing would ever apply it.
+//
+// A key present with a JSON null is not a refusal. The decision's reason for refusing these fields is
+// that they change execution behavior, and a null changes none; refusing it would be the same
+// mistake in the other direction, rejecting a document for a value that asks for nothing. The same
+// reading is what `validSlotHint` applies to an absent-or-null `hint`.
+func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
+	problems := []workflowGraphProblem{}
+	config := data.O("agentConfig")
+	for _, field := range workflowUnsupportedAgentConfigFields {
+		value, present := config[field]
+		if !present || value == nil {
+			continue
+		}
+		problems = append(problems, workflowGraphProblem{Code: "node_config_unsupported", NodeID: nodeID, Field: field})
 	}
 	return problems
 }

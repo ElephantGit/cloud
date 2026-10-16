@@ -65,6 +65,16 @@ func graphAgent(id, slot string, legacy bool) Object {
 	return Object{"id": id, "type": "workflow", "data": Object{"kind": "agent", "agentConfig": config}}
 }
 
+// graphAgentConfig builds an agent node carrying the given agentConfig keys beside the first phase's
+// own, so a case can state the configuration it is about without rebuilding the node around it.
+func graphAgentConfig(id string, extra Object) Object {
+	config := Object{"schemaVersion": 1, "prompt": "review"}
+	for key, value := range extra {
+		config[key] = value
+	}
+	return Object{"id": id, "type": "workflow", "data": Object{"kind": "agent", "agentConfig": config}}
+}
+
 func graphEdge(source, target string) Object {
 	return Object{"id": source + "->" + target, "source": source, "target": target}
 }
@@ -106,11 +116,12 @@ func TestValidateWorkflowGraph(t *testing.T) {
 	chineseDescriptionOverLimit := strings.Repeat("深", maxSlotDescription+1)
 	chineseModelID := strings.Repeat("模", maxSlotHintField)
 
-	cases := []struct {
+	type graphCase struct {
 		name  string
 		graph Object
 		want  []any
-	}{
+	}
+	cases := []graphCase{
 		{
 			name:  "a start node and an agent node",
 			graph: workflowGraph([]any{graphStart("s"), graphAgent("a", "", false)}, []any{graphEdge("s", "a")}, nil),
@@ -177,6 +188,23 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			name:  "an unsupported node kind",
 			graph: workflowGraph([]any{graphStart("s"), Object{"id": "t", "data": Object{"kind": "tool"}}}, []any{}, nil),
 			want:  []any{Object{"code": "node_kind_unsupported", "nodeId": "t", "kind": "tool"}},
+		},
+		{
+			// The node is refused for its kind, and its configuration is not also reported: the author
+			// has to delete this node, so a field of it is not theirs to fix.
+			name: "a node of an unsupported kind carrying an unused configuration field",
+			graph: workflowGraph([]any{
+				graphStart("s"),
+				Object{"id": "t", "data": Object{"kind": "tool", "agentConfig": Object{"retry": 3}}},
+			}, []any{}, nil),
+			want: []any{Object{"code": "node_kind_unsupported", "nodeId": "t", "kind": "tool"}},
+		},
+		{
+			// A key written as null asks for nothing, so it is not the "configuration the author
+			// believes is in effect" the decision refuses; only a value is.
+			name: "an agent node whose unused configuration field is null",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"retry": nil})},
+				[]any{graphEdge("s", "a")}, nil),
 		},
 		{
 			name:  "no start node",
@@ -274,6 +302,30 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			want:  []any{Object{"code": "slot_not_declared", "nodeId": "a", "slot": "strong"}},
 		},
 	}
+
+	// Each first-phase-unused agent configuration field is refused by name (#67 D2). The cases are
+	// generated from the list the validator reads, so a field added there cannot go untested here.
+	for _, field := range workflowUnsupportedAgentConfigFields {
+		cases = append(cases, graphCase{
+			name:  "an agent node carrying " + field,
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{field: "set"})}, []any{graphEdge("s", "a")}, nil),
+			want:  []any{Object{"code": "node_config_unsupported", "nodeId": "a", "field": field}},
+		})
+	}
+
+	// All six at once, in the order the list declares: that order is what the editor renders, so it
+	// must come from the list rather than from the document's map iteration.
+	everyUnusedField := Object{}
+	wantEveryField := []any{}
+	for _, field := range workflowUnsupportedAgentConfigFields {
+		everyUnusedField[field] = true
+		wantEveryField = append(wantEveryField, Object{"code": "node_config_unsupported", "nodeId": "a", "field": field})
+	}
+	cases = append(cases, graphCase{
+		name:  "an agent node carrying every unused configuration field",
+		graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", everyUnusedField)}, []any{graphEdge("s", "a")}, nil),
+		want:  wantEveryField,
+	})
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

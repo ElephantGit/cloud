@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -170,6 +171,49 @@ func TestWorkflowPublishValidatesTheGraphAndSavingDoesNot(t *testing.T) {
 	if snap.N("version") != 1 {
 		t.Fatalf("the first accepted publish is not version 1: %v", snap)
 	}
+}
+
+// TestWorkflowPublishRefusesUnusedAgentConfiguration covers the other half of the publish gate's job
+// (#67 D2): refusing a node kind Cloud does not execute, and refusing a *configuration field* it does
+// not execute. The outcome the decision rules out is publishing the document with the field silently
+// ignored, which reads to its author as "my setting is in effect" when no runner will ever apply it.
+// Saving stays allowed for the same reason it does elsewhere — the draft is still being written.
+func TestWorkflowPublishRefusesUnusedAgentConfiguration(t *testing.T) {
+	f := setup(t)
+	draft := f.call("POST", f.path("/workflows"), core.Object{
+		"name": "Configured flow", "graph": agentRunGraph("", false, nil),
+	}, "adm-cfg-create", 200).O("resource")
+
+	// The graph the editor would write for an author who configured retry and skills: both are in the
+	// canonical schema, and neither is in the first phase's executable subset.
+	configured := agentRunGraph("", false, nil)
+	config := configured["nodes"].([]any)[1].(core.Object).O("data").O("agentConfig")
+	config["retry"] = core.Object{"max": 3}
+	config["skills"] = []any{"review"}
+	live := f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
+	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
+		"graph": configured, "version": live.N("version"),
+	}, "", 200)
+
+	refused := f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-cfg-pub", 400)
+	want := []core.Object{
+		{"code": "node_config_unsupported", "nodeId": "agent-1", "field": "skills"},
+		{"code": "node_config_unsupported", "nodeId": "agent-1", "field": "retry"},
+	}
+	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
+		t.Fatalf("publish problems = %v, want %v", got, want)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id=$1", draft.S("id")); n != 0 {
+		t.Fatalf("a refused publish froze %d snapshots", n)
+	}
+
+	// The same document with only the first phase's configuration publishes: the refusal is about the
+	// fields Cloud cannot apply, not about an agent node having a configuration at all.
+	live = f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
+	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
+		"graph": agentRunGraph("", false, nil), "version": live.N("version"),
+	}, "", 200)
+	f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-cfg-pub-2", 200)
 }
 
 // TestWorkflowRunSnapshotIsScopedToItsWorkflow covers the snapshot a run may name: an id belonging to

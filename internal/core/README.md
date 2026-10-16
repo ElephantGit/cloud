@@ -55,3 +55,11 @@
 `model_connections.go`、`model_credentials.go`、`model_run_binding.go` 和 `model_grants.go`
 管理用户私有连接、不可变密文引用、运行快照与临时令牌摘要。Core 不接收或解密上游 API Key；
 冻结、权限、续期与撤销规则见 [个人模型连接](../../docs/model-connections.md)。
+
+## Workflow 调用关联
+
+Workflow Confirm 和 manual IssueRun 在同一事务内通过 `insertWorkflowRun` 创建执行行，
+再写入 `issue_runs.workflow_invocation_ref`；直接启动也使用该创建函数。
+Confirm 保留活稿表单与所选快照字段不一致时的 409 门禁，校验 schema 和执行图来自所选发布快照。执行输入只含快照声明的
+Start 与全局变量；平台字段保留在 IssueRun，`input.workflowSnapshotId` 与关联运行一致。
+有引用的 IssueRun 不进入 legacy Dispatcher；开发 mock 的完成状态不能替代 WorkflowRun 状态。

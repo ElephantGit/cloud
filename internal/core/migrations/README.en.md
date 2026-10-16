@@ -101,3 +101,16 @@ Both `0033` files retain their complete filenames and original SQL. The complete
 ## 0034: Agent startup windows and residual ownership
 
 Adds startup_ready_at, startup_deadline_at, startup_resume, startup_ending_deadline_at and agent_run_residuals without rewriting historical outcomes. The serialized policy scan freezes legacy active windows once. Residual ownership commits with failed/done; late true terminal facts add evidence without granting cleanup authority. Fresh/upgrade/repeat coverage: TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade.
+
+## 0036: WorkflowRun invocation references
+
+`0036_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
+workflow IssueRun (including running and deferred) as failed, with
+`workflow_execution_unavailable_before_invocation_linkage`. It then adds a tenant-scoped composite
+foreign key and a unique invocation reference. The CHECK requires a reference for non-terminal
+workflow executors and forbids it for other executors. Historical terminal workflow rows may retain
+NULL references and remain editable; their input and outcomes are preserved without inventing runs.
+The CHECK is unconditionally validated, so fresh and upgraded databases enforce the same schema.
+0035 is reserved for the earlier WorkflowRun identity migration in #68; invocation linkage follows as
+0036. Fresh, seeded upgrade, repeated migration,
+constraint validation and historical update coverage is in `integration/workflow_invocation_migration_test.go`.

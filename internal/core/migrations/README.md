@@ -100,3 +100,14 @@ Cloud 领域方法。冻结与撤销规则见 [模型连接契约](../../../docs
 ## 0034：Agent 启动窗口与残留责任
 
 新增 startup_ready_at、startup_deadline_at、startup_resume、startup_ending_deadline_at 及 agent_run_residuals。迁移不改历史结果；活动存量由串行策略扫描一次固定窗口。残留账本与 failed/done 同事务提交，迟到真实终态仅补证据，不代替清理授权。新库/升级/重复执行见 TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade。
+
+## 0036：WorkflowRun 调用引用
+
+`0036_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
+（含 running、deferred）结算为 failed，原因是
+`workflow_execution_unavailable_before_invocation_linkage`，再添加租户一致的复合外键及唯一引用。
+CHECK 要求非终态 workflow 行具有引用，其他 executor 不得携带引用。历史终态 workflow 行可保留
+NULL 引用并继续更新；迁移保留其输入和结果，不虚构执行。CHECK 无条件 VALIDATE，空库和升级库
+采用同一份已验证约束。0035 留给依赖链中更早的 #68 WorkflowRun 身份迁移，本调用关联迁移使用 0036。
+空库、种子升级、重复迁移、约束验证状态及
+历史行更新测试见 `integration/workflow_invocation_migration_test.go`。

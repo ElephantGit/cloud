@@ -55,3 +55,13 @@ See [Database migrations](migrations/README.en.md), [Core contract](../../docs/c
 own private metadata, immutable ciphertext references, run snapshots and temporary-token digests.
 Core never receives or decrypts upstream API keys. See [personal model connections](../../docs/model-connections.en.md)
 for freezing, authorization, renewal and revocation rules.
+
+## Workflow invocation linkage
+
+Workflow Confirm and manual IssueRuns create the execution row through `insertWorkflowRun` and
+write `issue_runs.workflow_invocation_ref` in the same transaction; direct starts use the same
+insertion function. Confirm retains the 409 gate for field differences between the live form and the
+selected snapshot, then validates that published snapshot.
+Execution input contains only declared Start/global variables. Platform fields stay on the IssueRun,
+whose `input.workflowSnapshotId` matches the linked execution. Linked IssueRuns bypass the legacy
+Dispatcher, including development doubles.

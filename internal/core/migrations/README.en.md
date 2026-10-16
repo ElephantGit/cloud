@@ -101,3 +101,9 @@ Both `0033` files retain their complete filenames and original SQL. The complete
 ## 0034: Agent startup windows and residual ownership
 
 Adds startup_ready_at, startup_deadline_at, startup_resume, startup_ending_deadline_at and agent_run_residuals without rewriting historical outcomes. The serialized policy scan freezes legacy active windows once. Residual ownership commits with failed/done; late true terminal facts add evidence without granting cleanup authority. Fresh/upgrade/repeat coverage: TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade.
+
+
+`0035_model_attempt_statistics.sql` adds a content-free model HTTP attempt ledger and tenant/run/time index.
+Composite foreign keys bind run/tenant, binding/run and grant/binding/execution; CHECK constraints bound statuses,
+nullable counters, timing and completion shape. No historical backfill. Apply with `cloudctl migrate`; services still
+only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackfill` covers fresh, 0034 upgrade and rerun.

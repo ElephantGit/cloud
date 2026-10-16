@@ -8,6 +8,8 @@
 
 - [migrations](migrations/README.en.md) defines the forward-only, linear PostgreSQL schema migration scripts and checksum verification.
 - [plugins.go](plugins.go) persists and reads the plugin catalog snapshot (the `pluginmarket.CatalogSink` implementation) and owns the space plugin selection state machine (install/remove fan-out, the aggregation rule, SSE invalidation broadcasts).
+- [session_list.go](session_list.go) and [session_history.go](session_history.go) provide tenant Agent
+  session discovery, current-member authorization and complete registered JSONL archive reads.
 
 ## Architecture and runtime model
 
@@ -18,7 +20,9 @@
 - **Workspaces & Tasks**: Each project has at most one active `main` workspace (enforced by the `one_main` partial unique index). Additional workspaces are `isolated` and map 1:1 with `tasks`.
 - **Operations & Effects**: Mutations (such as project creation, workspace start/stop, or deletion) execute as durable `operations` (`queued`, `running`, `retry_wait`, `blocked`, `done`, `failed`). Operations decompose into durable `effects` representing external tasks executed by Substrate and Controller.
 - **Clone Requests**: independent work items accepted idempotently by `(tenant_id, actor_user_id, request_id)`, outside the operation/effect model; a Controller claims them over the internal control contract, registers the dispatch (`clone_executions`) and takes over the Node result (`clone_event_receipts`). The public `/clones` routes are visible to the submitting user only; `state` is projected from the request state and the execution result.
-- **Nodes & Sessions**: `workspace_nodes` represent active execution containers bound to a workspace. `sessions` track user conversational threads.
+- **Nodes & Sessions**: `node_instances` records Nodes on runtime workspaces. Agent conversations
+  persist in `issue_runs`, `thread_entries` and execution receipts; `revisions` registers delivered
+  complete JSONL objects in storage.
 
 ### Concurrency and locking
 - **Transactional advisory lock**: Phase-one serializes domain mutations using PostgreSQL's `SELECT pg_advisory_xact_lock(67420911)` within `Store.transact`. This eliminates race conditions during aggregate state transitions while keeping locking database-local.
@@ -55,3 +59,58 @@ See [Database migrations](migrations/README.en.md), [Core contract](../../docs/c
 own private metadata, immutable ciphertext references, run snapshots and temporary-token digests.
 Core never receives or decrypts upstream API keys. See [personal model connections](../../docs/model-connections.en.md)
 for freezing, authorization, renewal and revocation rules.
+
+## Session Dashboard reads
+
+`GET /api/v1/tenants/:tid/agent-sessions` lists persisted Agent IssueRuns, excluding deleted runs
+and Issues. Filters are `projectId`, one `status`, the exact plugin identifier `agent`, and creation
+times `from` (inclusive) / `to` (exclusive, RFC 3339). `limit` defaults to 50 and caps at 100.
+Ordering is descending `(createdAt,id)`; `after` is the preceding page's `nextCursor` UUID and must
+resolve to a visible Agent Run in the current tenant. `before` is unsupported.
+
+Both new readers dispatch before the general `Public` transaction. `sessionReadIdentity` resolves
+existing identities and Huawei aliases and checks conflicts, active user status and current tenant
+membership without provisioning users, binding aliases or refreshing runtime state. The list projects
+Issue/project identity, Agent plugin, status, timestamps and a nullable frozen model summary.
+`historyAvailable` means an unexpired Revision registration exists; storage reachability and size
+bounds are checked only when reading the archive.
+
+`GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/history` calls `Store.SessionHistory`. A short
+transaction checks membership, Issue, Agent Run and unexpired registration. Private signed S3 GET
+runs outside the transaction. Only the registered key is accepted, with the exact layout
+`revisions/{tenant}/{run}/{work UUID}/session.jsonl`; callers cannot supply a URL or path. Actual
+bytes must match the registered size and SHA-256, with a 32 MiB / 100000-object bound and valid UTF-8
+JSONL. The read refuses redirects, propagates cancellation and has a 30-second storage timeout.
+A second short transaction rechecks current authorization and unchanged registration before return.
+
+The response is `{source:"archive",records:[...],sizeBytes,sha256}`. Records retain file order,
+duplicate `seq` updates, original fields and JSON numeric precision for consumer-side history replay.
+Absent/expired registration returns `404 history_unavailable`; oversized input returns
+`413 history_too_large`; invalid bytes or JSONL return `502 history_invalid`; storage failures return
+`502 history_unavailable`. No storage URL, object key or credential is exposed.
+
+This version does not represent Chat or Workflow Runs as Agent sessions and never scans personal
+session directories. Live views keep using the existing Thread projection; space SSE is an invalidation
+hint. Neither Thread nor an archive guarantees token/cost usage, parent-child relationships, or every
+tool's input/output and timing. Missing data stays unavailable. Record `seq` and Cloud Thread paging
+`seq` are separate sequences and must remain distinct during replay.
+
+`session_history*_test.go` uses synthetic data, real HTTP and isolated PostgreSQL schemas for access,
+scoped keys, read-only identities, revocation/replacement during I/O, byte/checksum/JSONL bounds,
+cancellation and numeric preservation. `session_list_test.go` covers list scope and pagination.
+No real user conversation is a product test fixture.
+
+## Model request statistics
+
+`model_attempts.go` records intent before outbound HTTP using the live grant's tenant, run, execution and frozen model.
+Append-only migration `0035_model_attempt_statistics.sql` adds `model_request_attempts` with composite scope foreign keys;
+existing sessions are not backfilled. Rows contain statuses, protocol/model, safe error codes, gateway timing and nullable
+usage counters, never request/response content or credentials. Failed intent persistence blocks forwarding. Finalization
+may close a revoked grant's existing attempt; identical completion is idempotent and conflicting completion is rejected.
+
+`session_model_statistics.go` serves authorized run `/statistics` and `/model-calls` reads independently of archives.
+Statistics aggregate every recorded HTTP attempt in the run; calls page ascending `(startedAt,id)`, default 50, maximum 100.
+Every metric carries `value/knownCount/totalCount/availability`: missing stays null, measured zero stays zero, and unfinished
+usage snapshots remain partial. `started` may mean an active request or a lost final observation, never inferred success,
+failure or zero consumption. Reads do not provision identities or refresh lifecycle state. Real PG tests cover immutable
+concurrent completion, coverage, pagination and database-enforced read-only access.

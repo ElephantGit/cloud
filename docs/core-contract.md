@@ -78,3 +78,55 @@ registry index,并在落盘前校验 sha256。`plugin_ensure` / `plugin_delete` 
 ## 运行时协作边界
 
 [完整状态机与升级限制](runtime-control.md)。Creator、operator session 与任务 actor 独立于 durable owner。生命周期串行不替代单运行时写入互斥；管理员强停有独立持久意图，不删除原在途记录。SQL 0018–0023 只追加，未知创建者和旧责任保持保守。
+
+## Agent 会话 Dashboard 的只读边界
+
+`GET /api/v1/tenants/:tid/agent-sessions` 只投影已持久化的 Agent IssueRun，排除已删除 Run/Issue；
+不把 Chat 或 Workflow Run 当作同一种会话。列表按 `(createdAt,id)` 倒序，每页默认 50、最大 100，
+`after` 接收前一页的排他 UUID 游标，并在当前租户内重新解析。筛选支持项目 UUID `projectId`、单个
+运行状态 `status`、精确插件标识 `agent` 及创建时间 `[from,to)`（RFC 3339）；不支持 `before`，
+未知、重复或空查询项被拒绝。响应只含 Issue/项目、Agent、状态、时间与可空冻结模型摘要。
+
+`GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/history` 读取已登记 Revision 的完整 JSONL。
+它不接受客户端 URL、文件路径、对象键或查询参数，不扫描用户个人文件系统。两个新入口只解析已有身份
+及 Huawei 别名，检查冲突与启用状态，再核验当前活动租户成员资格；不 JIT 建号、绑定别名或刷新运行时。
+
+归档读取先用短数据库事务核验租户、Issue、Agent Run 和未过期 Revision。对象键只能来自登记，并匹配
+`revisions/{tenant}/{run}/{work UUID}/session.jsonl`。事务提交后才向配置的私有 S3 端点签名 GET；
+禁止重定向，传播请求取消，存储超时 30 秒。校验真实字节大小和 SHA-256，最多读取 32 MiB，最多返回
+100000 个合法 UTF-8 JSONL 对象。外部读取后在新事务中重新检查当前权限和登记一致性，撤销成员权限或
+替换登记均不能让原请求继续返回会话内容。此路径不修改业务状态，也不需要数据库迁移。
+
+成功响应为 `{source:"archive",records:[...],sizeBytes,sha256}`，记录保持原文件顺序、字段、JSON
+数字精度与重复 `seq` 更新；消费者按 history 语义重放，不将 Cloud Thread 分页 `seq` 作为原记录序号。
+没有或已过期登记返回 `404 history_unavailable`；实际大小或记录数超限返回 `413 history_too_large`；
+完整性/JSONL 损坏返回 `502 history_invalid`，存储故障返回 `502 history_unavailable`。不在公开响应、
+错误或日志中输出私有 S3 地址、签名 URL、对象键或凭据。`historyAvailable` 仅表达登记存在且未过期；
+读取时仍可能因对象不可达、损坏或超限失败。
+
+实时显示继续使用已有 Thread 投影与空间 SSE 失效通知，归档不是实时 token 流。历史协议并不保证
+token/cost、父子会话关系或每个工具的原始输入/输出和耗时；只能展示已有证据，缺失项保持不可用。
+用真实 HTTP、隔离 PostgreSQL schema 和合成记录验证 scope、分页、下载前后鉴权、只读身份解析、
+摘要与上限、取消和数值保真；真实用户会话只能用于本地受控验收，不能进入产品 fixture。
+
+## 模型 HTTP 请求统计边界
+
+迁移 0035 为新模型请求建立独立台账。Model Gateway 在真正发送 HTTP 之前登记，之后保存完成观察；
+每次 HTTP 尝试计数一次，客户端重试是新的尝试，SSE chunk 和 Thread 记录不是请求次数。
+台账不含正文、Key、header、provider 错误原文或用户文件路径。服务崩溃留下的 `started` 保持未知，
+不虚构完成或消费；完成写入使用有界独立上下文重试，重复内容幂等。
+
+`GET .../runs/:rid/statistics` 聚合全 Run 已登记尝试，`GET .../runs/:rid/model-calls` 提供升序分页。
+两者只读解析已有身份，校验当前成员、Issue 和 Agent Run，不依赖 Revision，返回 `private, no-store`。
+前者不接受查询，后者仅 `limit`（默认 50，最大 100）和同 Run 的 UUID `after`。
+来源固定为 `model_gateway`、范围为 `recorded_http_attempts`，不是旧会话完整请求数或模型账单。
+
+六类 token 独立保留 provider 字段并返回覆盖率，未知为 null，测得 0 为 0。SSE 累计快照替换而非相加；
+无终止事件的快照只能是部分数据。OpenAI input 含缓存读，Anthropic input 不含缓存读写；reasoning 是
+output 子集，不与 output 重加。Provider 未报 total 时不猜总量；费用暂不推算。耗时来自网关单调时钟，
+首个有效输出耗时排除 ping、空 role 和 usage-only 事件，不称 TTFT。汇总范围不随请求表分页改变。
+
+Runtime 的已有最终 `turnEnded` 另外可携带 ACP `token_usage`，保留 accountingScope，与 Gateway 是
+不同来源，不相加；unspecified 不作跨轮累计，内部重试不新加结束事件、不改变 Cloud Thread 状态机。
+旧记录缺字段仍兼容，旧归档无用量不会伪造或回写。此阶段不覆盖其它未经过网关的 Agent、Chat/Workflow
+全量会话、费用定价、子 Agent 拓扑或用户本地扫描。

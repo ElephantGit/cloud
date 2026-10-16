@@ -9,6 +9,8 @@
 - [migrations](migrations/README.md)：定义按顺序执行、仅向前的 PostgreSQL Schema 迁移脚本和校验和验证。
 - [plugins.go](plugins.go)：插件市场目录快照的落库与读取（`pluginmarket.CatalogSink` 实现）、
   工作区插件选择状态机（安装/移除 fan-out、聚合规则、SSE 失效广播）。
+- [session_list.go](session_list.go) 与 [session_history.go](session_history.go)：租户 Agent 会话列表、
+  当前成员鉴权和已登记 JSONL 归档的完整读取，不创建会话或修改运行状态。
 
 ## 架构与运行时模型
 
@@ -19,7 +21,8 @@
 - **工作区与任务（Workspaces & Tasks）**：每个项目至多拥有一个活跃的 `main` 主工作区（由 `one_main` 部分唯一索引强制约束）。其余工作区均为 `isolated` 隔离工作区，且与 `tasks` 保持 1:1 映射。
 - **操作与效果（Operations & Effects）**：状态变更（如创建项目、启动/停止工作区或删除）作为持久化 `operations` 执行（状态包括 `queued`、`running`、`retry_wait`、`blocked`、`done`、`failed`）。Operation 被分解为持久化 `effects`，表示由 Substrate 和 Controller 执行的外部任务。
 - **clone 请求（Clone Requests）**：由 `(tenant_id, actor_user_id, request_id)` 幂等接受的独立工作项，不挂在 operation/effect 模型上；Controller 经内部控制契约领取、登记派发（`clone_executions`）并接管 Node 结果（`clone_event_receipts`）。公开 `/clones` 路由只对提交者可见，`state` 由请求状态与执行结果投影而来。
-- **节点与会话（Nodes & Sessions）**：`workspace_nodes` 表示绑定到工作区的活动执行容器。`sessions` 跟踪用户的对话线程。
+- **节点与会话（Nodes & Sessions）**：`node_instances` 记录运行时工作区上的 Node。Agent 会话以
+  `issue_runs`、`thread_entries` 和执行收据持久化；已交付的完整 JSONL 由 `revisions` 登记到对象存储。
 
 ### 并发控制与锁机制
 - **事务级咨询锁**：第一阶段在 `Store.transact` 中使用 PostgreSQL 的 `SELECT pg_advisory_xact_lock(67420911)` 将领域变更串行化。这会在将锁保持在数据库内部的同时，避免聚合状态转换期间的竞态条件。
@@ -55,3 +58,48 @@
 `model_connections.go`、`model_credentials.go`、`model_run_binding.go` 和 `model_grants.go`
 管理用户私有连接、不可变密文引用、运行快照与临时令牌摘要。Core 不接收或解密上游 API Key；
 冻结、权限、续期与撤销规则见 [个人模型连接](../../docs/model-connections.md)。
+
+## 会话 Dashboard 读取
+
+`GET /api/v1/tenants/:tid/agent-sessions` 仅列出已持久化的 Agent IssueRun，排除已删除的 Run 和
+Issue。筛选项为 `projectId`、单个 `status`、精确插件标识 `agent` 和创建时间区间 `from`（含）/
+`to`（不含，RFC 3339）。默认 `limit=50`，最大 100；按 `(createdAt,id)` 倒序，`after` 为上一页的
+`nextCursor` UUID。游标必须属于当前租户内可见的 Agent Run；不支持 `before`。
+
+两个新读取入口在通用 `Public` 事务之前分派：`sessionReadIdentity` 只解析已有身份及 Huawei 别名，
+检查身份冲突、用户启用状态和当前租户成员资格，不进行 JIT 建号、别名绑定或运行时状态刷新。
+列表只投影 Issue、项目、Agent 插件、状态、时间及可空的冻结模型摘要；`historyAvailable` 仅表示存在
+未过期的 Revision 登记，不保证对象存储当前可达，也不保证文件在读取上限内。
+
+`GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/history` 由 `Store.SessionHistory` 实现。
+它先在短事务中校验成员、Issue、Agent Run 和未过期 Revision，再在事务外通过私有 S3 端点签名 GET。
+对象键只能来自登记，并精确匹配 `revisions/{tenant}/{run}/{work UUID}/session.jsonl`；客户端不能传 URL
+或路径。实际字节必须与登记大小、SHA-256 相符，最大 32 MiB、100000 条合法 UTF-8 JSONL 对象；
+拒绝重定向、传播取消，存储读取超时 30 秒。返回前再次核验当前权限和登记一致性。
+
+成功响应为 `{source:"archive",records:[...],sizeBytes,sha256}`。`records` 保留文件顺序、重复 `seq`
+更新、原始字段和 JSON 数字精度，由消费者按原 history 语义重放。缺少或过期登记返回
+`404 history_unavailable`，超限返回 `413 history_too_large`，损坏返回 `502 history_invalid`，
+存储故障返回 `502 history_unavailable`；响应不含存储 URL、对象键或凭据。
+
+第一版不将 Chat 或 Workflow Run 声称为 Agent 会话，也不扫描用户个人会话目录。实时页面继续通过已有
+Thread API 读取投影，空间 SSE 只作失效提示。完整归档和 Thread 都不能保证存在 token、cost、父子会话
+关系或每个工具的输入/输出与耗时；缺失信息应显示不可用，不能补造。原始记录的 `seq` 与 Cloud Thread
+分页 `seq` 是两个序列，归档回放不得用后者覆盖前者。
+
+`session_history*_test.go` 使用合成数据、真实 HTTP 和独立 PostgreSQL schema，覆盖授权、路径隔离、
+纯只读身份解析、下载期间撤销权限/替换登记、大小/摘要/JSONL 上限、取消及数值保真；
+`session_list_test.go` 覆盖列表作用域与分页。测试不使用真实用户日志作为 fixture。
+
+## 模型请求统计
+
+`model_attempts.go` 在发送上游 HTTP 前，以当前 grant 的真实租户、Run、执行与冻结模型登记请求。
+迁移 `0035_model_attempt_statistics.sql` 新增 `model_request_attempts`，通过复合外键约束作用域；不回填旧会话。
+完成记录只含状态、协议、模型标识、HTTP 状态、安全错误码、网关观察耗时与可空 token 指标，不保存正文或凭据。
+开始失败则不发送；完成允许在 grant 撤销后写入，重复同内容完成幂等，不同内容为冲突。
+
+`session_model_statistics.go` 提供同 Run 的 `/statistics` 与 `/model-calls` 只读接口，独立于归档可用性。
+前者聚合该 Run 全部已登记 HTTP 尝试，后者按 `(startedAt,id)` 升序分页，默认 50、最大 100。
+每个指标带 `value/knownCount/totalCount/availability`，缺失为 null，已知零仍为零；未完成快照不标为完整。
+`started` 可能是正在请求，也可能是进程退出留下的未完成观察，不推断模型成功、失败或消费为零。
+数据库聚合不读取日志正文，不执行身份创建或生命周期刷新；测试覆盖真实 PG、并发完成、只读查询和覆盖率。

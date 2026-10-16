@@ -108,12 +108,17 @@ func problemObjects(problems []workflowGraphProblem) []any {
 // `default`, a slot declared for later — are here too, because a validator that refuses a legal
 // document is worse than one that misses a rule.
 func TestValidateWorkflowGraph(t *testing.T) {
-	longDescription := strings.Repeat("x", maxSlotDescription+1)
+	// specs#98 D1 states the description's bound as a literal 500 characters, so the cases below spell it
+	// out instead of deriving it from `maxSlotDescription`: a limit read back from the implementation
+	// agrees with the implementation by construction, and would keep passing if the constant drifted away
+	// from the decision. The hint's ceiling is Cloud's own — D3 fixes the field's shape, not a length — so
+	// that pair stays derived from `maxSlotHintField`, where the constant *is* the decision.
+	longDescription := strings.Repeat("x", 501)
 	// The limits count characters, so a description written in Chinese is the case that separates a
 	// character count from a byte count: 500 of these characters are 1500 bytes, and the byte-counting
 	// implementation this replaced refused them from the 167th character on.
-	chineseDescription := strings.Repeat("深", maxSlotDescription)
-	chineseDescriptionOverLimit := strings.Repeat("深", maxSlotDescription+1)
+	chineseDescription := strings.Repeat("深", 500)
+	chineseDescriptionOverLimit := strings.Repeat("深", 501)
 	chineseModelID := strings.Repeat("模", maxSlotHintField)
 
 	type graphCase struct {

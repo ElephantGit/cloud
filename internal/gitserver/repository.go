@@ -145,6 +145,22 @@ type RefCommit struct {
 	Commit string `json:"commit"`
 }
 
+// EnsureRepository creates a Project repository under root exactly as the server's first
+// authorized write does, and returns its path. Only development tooling that prepares contract
+// fixtures calls it; in a running stack the server creates repositories itself.
+func EnsureRepository(ctx context.Context, root, git, tenantID, projectID string) (string, error) {
+	if !canonicalID(tenantID) || !canonicalID(projectID) || !filepath.IsAbs(root) {
+		return "", errors.New("canonical tenant and project IDs and an absolute root are required")
+	}
+	r := &repositories{root: root, git: git}
+	return r.path(tenantID, projectID), r.ensure(ctx, tenantID, projectID)
+}
+
+// RepositoryPath is where a Project repository lives under root.
+func RepositoryPath(root, tenantID, projectID string) string {
+	return (&repositories{root: root}).path(tenantID, projectID)
+}
+
 // resolve returns the commit a contract ref names, or "" when the repository or ref is absent.
 func (r *repositories) resolve(ctx context.Context, tenantID, projectID, ref string) (string, error) {
 	refs, err := r.forEachRef(ctx, tenantID, projectID, ref)

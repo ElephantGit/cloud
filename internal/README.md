@@ -17,6 +17,7 @@
 - [contract](contract/README.md)：定义 OpenAPI 3.0 Schema 模型、DTO 结构体与契约覆盖率测试。
 - [repository](repository/README.md)：基于 GORM 管理 PostgreSQL 连接池与启动时快速探活。
 - [objectstore](objectstore/README.md)：Cloud 自己的 S3 兼容对象存储客户端（SigV4 预签上传授权、HEAD 校验对象的大小与 SHA-256），只服务 Revision 链路。
+- [gitpreset](gitpreset/README.md)：仅用于验收的 Git Server 契约预置与断言，直接写仓库卷与数据库，不被服务进程引用。
 - [gitserver](gitserver/README.md)：Project 仓库的 Git 访问：沙盒与 Repo Executor 两个仓库监听、按 Core 逐请求授权的 ref 规则集、`git http-backend`、pre-receive 按 namespace 执行规则与 Cloud 的 ref 查询。
 - [config](config/README.md)：加载并校验应用程序配置文件及环境变量覆盖。
 - [logger](logger/README.md)：基于 Zap 和 Lumberjack 提供结构化、非阻塞的 JSON 日志记录。
@@ -32,6 +33,7 @@
    - `internal/api/router` $\rightarrow$ `internal/core`, `internal/contract`；`internal/controlgrpc` $\rightarrow$ `internal/core`, `internal/controlpb`。
    - `internal/core` $\rightarrow$ 标准库、`gorm.io/gorm`、`internal/core/migrations`。
    - `internal/repository` $\rightarrow$ `internal/config`, `gorm.io/gorm`。
+   - `internal/gitpreset` $\rightarrow$ `internal/core`（ref 词汇）、`internal/gitserver`（建仓）；只有 `cmd/git-server-preset` 导入它。
    - `internal/objectstore` $\rightarrow$ `internal/core`（仅 `UploadGrant` 值类型）；`internal/core` 通过自己声明的 `RevisionObjects` 接口调用它，**不**反向导入本包。
    - 底层包（`core`、`repository`、`objectstore`）严禁反向导入上层表现层包（`api`、`router`）。
 2. **PostgreSQL 为唯一权威持久化**：

@@ -17,6 +17,7 @@
 - [contract](contract/README.en.md) defines OpenAPI 3.0 schema models, DTO structures, and contract coverage tests.
 - [repository](repository/README.en.md) manages PostgreSQL database connection pools and startup health checks via GORM.
 - [objectstore](objectstore/README.en.md) is cloud's own S3-compatible object-store client (SigV4-presigned upload grants, HEAD verification of an object's size and SHA-256), serving the Revision path alone.
+- [gitpreset](gitpreset/README.en.md) prepares and checks Git Server contract fixtures for acceptance only, writing the repository volume and database directly; no service process imports it.
 - [gitserver](gitserver/README.en.md) serves Git access to Project repositories: the sandbox and Repo Executor repository listeners, per-request ref rule sets from Core, `git http-backend`, per-namespace pre-receive rules and Cloud's ref query.
 - [config](config/README.en.md) loads and validates application configuration files and environment overrides.
 - [logger](logger/README.en.md) provides structured, non-blocking JSON logging via Zap and Lumberjack.
@@ -32,6 +33,7 @@
    - `internal/api/router` $\rightarrow$ `internal/core`, `internal/contract`; `internal/controlgrpc` $\rightarrow$ `internal/core`, `internal/controlpb`.
    - `internal/core` $\rightarrow$ standard library, `gorm.io/gorm`, `internal/core/migrations`.
    - `internal/repository` $\rightarrow$ `internal/config`, `gorm.io/gorm`.
+   - `internal/gitpreset` $\rightarrow$ `internal/core` (ref vocabulary), `internal/gitserver` (repository creation); only `cmd/git-server-preset` imports it.
    - `internal/objectstore` $\rightarrow$ `internal/core` (the `UploadGrant` value type only); `internal/core` reaches it through the `RevisionObjects` interface it declares for itself and never imports this package back.
    - Lower layers (`core`, `repository`, `objectstore`) never import upper presentation layers (`api`, `router`).
 2. **PostgreSQL is authoritative**:

@@ -34,7 +34,7 @@ const ExecutionHeader = "Ora-Execution-Id"
 
 // Store is the authoritative policy the repository boundary consumes.
 type Store interface {
-	AuthorizeGitAccess(ctx context.Context, scope core.GitRuntimeScope, executionID, projectID string) (core.GitAccess, error)
+	AuthorizeGitAccess(ctx context.Context, scope core.GitRuntimeScope, executionID, projectID string) (core.GitGrant, error)
 }
 
 // Options injects policy, storage and process wiring.
@@ -166,7 +166,7 @@ func (s *Service) RepositoryHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "git_access_denied")
 		return
 	}
-	access, err := s.options.Store.AuthorizeGitAccess(r.Context(), scope, executions[0], request.projectID)
+	grant, err := s.options.Store.AuthorizeGitAccess(r.Context(), scope, executions[0], request.projectID)
 	if err != nil {
 		var fault *core.Fault
 		if errors.As(err, &fault) {
@@ -178,7 +178,7 @@ func (s *Service) RepositoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.endpoint.writes() {
-		if access.Mode != core.GitWrite {
+		if !grant.Writes() {
 			writeError(w, http.StatusForbidden, "git_access_denied")
 			return
 		}
@@ -198,7 +198,7 @@ func (s *Service) RepositoryHandler(w http.ResponseWriter, r *http.Request) {
 	env := append(gitEnvironment(), "GIT_PROJECT_ROOT="+s.options.RepositoryRoot, "GIT_HTTP_EXPORT_ALL=1")
 	env = append(env, policyEnvironment(s.hooks)...)
 	if request.endpoint == receivePack {
-		token, release := s.pushes.register(push{scope: scope, execution: executions[0], project: request.projectID})
+		token, release := s.pushes.register(&push{scope: scope, execution: executions[0], tenant: request.tenantID, project: request.projectID})
 		defer release()
 		env = append(env, hookSocketEnv+"="+s.listener.Addr().String(), pushTokenEnv+"="+token)
 	}

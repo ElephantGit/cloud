@@ -57,7 +57,7 @@ describe('graph envelope codec', () => {
       annotations: [annotation],
       globalVariables: [{ name: 'sys.workflow_id', valueType: 'string' }],
       launchFields: [
-        { key: 'version', enabled: false },
+        { key: 'snapshotId', enabled: false },
         { key: 'prompt', enabled: true, required: true },
       ],
       viewport: { x: 32, y: 64, zoom: 1.5 },
@@ -95,6 +95,19 @@ describe('graph envelope codec', () => {
     // A key the catalogue does not have cannot be declared about, and a declaration that is not
     // a list of entries is no declaration at all.
     expect(parsed.launchFields).toEqual([{ key: 'branch' }])
+  })
+
+  it('reads a declaration written before the snapshot field was renamed', () => {
+    const parsed = parseWorkflowGraphValue({
+      ...EMPTY_ENVELOPE,
+      launchFields: [{ key: 'version', enabled: false }, { key: 'prompt' }],
+    })
+
+    // `version` named the snapshot selector until it was renamed to say what its value is. A
+    // published snapshot's graph is immutable, so the old entries are still stored and still mean
+    // what they meant: rewriting one keeps the author's withdrawal instead of re-asking for a field
+    // they had turned off, and the next save writes the name this build uses.
+    expect(parsed.launchFields).toEqual([{ key: 'snapshotId', enabled: false }, { key: 'prompt' }])
   })
 
   it('omits the description key when absent', () => {

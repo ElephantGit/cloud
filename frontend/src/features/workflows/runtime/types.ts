@@ -79,7 +79,7 @@ export interface WorkflowGlobalVariable {
 export const WORKFLOW_LAUNCH_FIELD_KEYS = [
   'repository',
   'branch',
-  'version',
+  'snapshotId',
   'prompt',
   'context_refs',
 ] as const
@@ -97,7 +97,7 @@ export const WORKFLOW_LAUNCH_FIELD_DEFAULTS: readonly {
 }[] = [
   { key: 'repository', required: true },
   { key: 'branch', required: true },
-  { key: 'version', required: false },
+  { key: 'snapshotId', required: false },
   { key: 'prompt', required: false },
   { key: 'context_refs', required: false },
 ]

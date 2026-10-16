@@ -236,7 +236,11 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   the `version` field's value (a snapshot id) or the newest published one when that field is unset; a
   version that is not this workflow's is 404. A workflow with nothing published cannot be confirmed:
   with no version selected it is 400 `workflow_no_published_snapshot`, because there is no frozen
-  document to execute and running the live draft is what the draft/published split forbids.
+  document to execute and running the live draft is what the draft/published split forbids. Confirm
+  goes through that same gate as every other workflow start, and so also refuses — before the values
+  are looked at, because nothing would run — a start the confirming user cannot staff: a graph
+  referencing an executor slot they have no model for is 409 `workflow_executor_unconfigured`, with
+  one entry per gap in `params.slots` (`slot`, `nodeIds`, `reason`).
 - **The version's schema is the submission's schema only while it still describes the form the client
   rendered**, and the form is rendered from the live document. When an author edits between publishing a
   version and confirming against it, the two can disagree about which fields exist, which are required,

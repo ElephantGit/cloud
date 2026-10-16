@@ -48,8 +48,10 @@ func TestMain(m *testing.M) {
 type fakeStore struct {
 	mu     sync.Mutex
 	grants map[string]core.GitGrant
-	down   bool
-	calls  int
+	// operations are the current grants of repository Operations, keyed by Operation ID.
+	operations map[string]core.GitGrant
+	down       bool
+	calls      int
 	// denyAfter, when positive, denies every call after that many calls: it models the execution
 	// ending between a push's ref advertisement and its pre-receive check.
 	denyAfter int
@@ -69,6 +71,20 @@ func (f *fakeStore) AuthorizeGitAccess(_ context.Context, scope core.GitRuntimeS
 		return core.GitGrant{}, &core.Fault{Code: "git_access_denied", Status: 403}
 	}
 	return access, nil
+}
+
+func (f *fakeStore) AuthorizeGitOperation(_ context.Context, operation, tenant, project string) (core.GitGrant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.down {
+		return core.GitGrant{}, errors.New("database unavailable")
+	}
+	grant, ok := f.operations[operation]
+	if !ok || grant.TenantID != tenant || grant.ProjectID != project || (f.denyAfter > 0 && f.calls > f.denyAfter) {
+		return core.GitGrant{}, &core.Fault{Code: "git_access_denied", Status: 403}
+	}
+	return grant, nil
 }
 
 func (f *fakeStore) set(fn func(*fakeStore)) {
@@ -161,7 +177,9 @@ type harness struct {
 	store             *fakeStore
 	pki               *pki
 	service           *Service
-	repo, ref         *httptest.Server
+	repo, ref, svc    *httptest.Server
+	executorPKI       *pki
+	executor          identity
 	root              string
 	tenant, workspace string
 	project           string
@@ -175,11 +193,12 @@ func newHarness(t *testing.T) *harness {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal("git is required: the repository boundary is tested with the real client and http-backend")
 	}
-	h := &harness{t: t, store: &fakeStore{grants: map[string]core.GitGrant{}}, pki: newPKI(t), root: filepath.Join(t.TempDir(), "repositories"), tenant: uuid.NewString(), workspace: uuid.NewString(), project: uuid.NewString()}
+	h := &harness{t: t, store: &fakeStore{grants: map[string]core.GitGrant{}, operations: map[string]core.GitGrant{}}, pki: newPKI(t), executorPKI: newPKI(t), root: filepath.Join(t.TempDir(), "repositories"), tenant: uuid.NewString(), workspace: uuid.NewString(), project: uuid.NewString()}
 	server := h.pki.issue("server", "", x509.ExtKeyUsageServerAuth)
 	h.sandbox = h.pki.issue("sandbox", "spiffe://ora.local/git-access/tenant/"+h.tenant+"/runtime/"+h.workspace+"/generation/3", x509.ExtKeyUsageClientAuth)
 	h.cloud = h.pki.issue("cloud", "spiffe://ora.local/cloud/git-ref-query", x509.ExtKeyUsageClientAuth)
-	h.config = Config{CertificateFile: server.cert, PrivateKeyFile: server.key, SandboxCAFile: filepath.Join(h.pki.dir, "ca.pem"), CloudClientCertFile: h.cloud.cert}
+	h.executor = h.executorPKI.issue("executor", ExecutorIdentity, x509.ExtKeyUsageClientAuth)
+	h.config = Config{CertificateFile: server.cert, PrivateKeyFile: server.key, SandboxCAFile: filepath.Join(h.pki.dir, "ca.pem"), CloudClientCertFile: h.cloud.cert, ExecutorCAFile: filepath.Join(h.executorPKI.dir, "ca.pem")}
 	env, err := exec.LookPath("env")
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +227,15 @@ func (h *harness) start() {
 	if err != nil {
 		h.t.Fatal(err)
 	}
+	serviceTLS, err := h.config.ServiceRepositoryTLS()
+	if err != nil {
+		h.t.Fatal(err)
+	}
 	h.service = service
+	h.svc = httptest.NewUnstartedServer(http.HandlerFunc(service.ServiceRepositoryHandler))
+	h.svc.TLS = serviceTLS
+	h.svc.Config.ErrorLog = log.New(io.Discard, "", 0)
+	h.svc.StartTLS()
 	h.repo = httptest.NewUnstartedServer(http.HandlerFunc(service.RepositoryHandler))
 	h.repo.TLS = repoTLS
 	h.repo.Config.ErrorLog = log.New(io.Discard, "", 0)
@@ -224,6 +251,7 @@ func (h *harness) stop() {
 		return
 	}
 	h.repo.Close()
+	h.svc.Close()
 	h.ref.Close()
 	if err := h.service.Close(); err != nil {
 		h.t.Error(err)
@@ -232,6 +260,34 @@ func (h *harness) stop() {
 }
 
 func (h *harness) url() string { return h.repo.URL + "/" + h.tenant + "/" + h.project + ".git" }
+
+// serviceURL is the same Project repository on the Repo Executor's listener.
+func (h *harness) serviceURL() string {
+	return h.svc.URL + "/" + h.tenant + "/" + h.project + ".git"
+}
+
+// operation registers a repository Operation's current grant and returns its ID.
+func (h *harness) operation(writable ...core.GitWritableRef) string {
+	id := uuid.NewString()
+	h.store.set(func(f *fakeStore) {
+		f.operations[id] = core.GitGrant{TenantID: h.tenant, ProjectID: h.project, Writable: writable}
+	})
+	return id
+}
+
+// executorGit runs the real client as the Repo Executor on the service listener.
+func (h *harness) executorGit(dir, operation string, args ...string) (string, error) {
+	h.t.Helper()
+	base := []string{"-c", "http.sslCert=" + h.executor.cert, "-c", "http.sslKey=" + h.executor.key, "-c", "http.sslCAInfo=" + h.config.SandboxCAFile}
+	if operation != "" {
+		base = append(base, "-c", "http.extraHeader="+OperationHeader+": "+operation)
+	}
+	cmd := exec.Command("git", append(base, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(gitEnvironment(), "GIT_TERMINAL_PROMPT=0", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid")
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
 
 // grant registers a delivery execution's current permission in the fake policy and returns the
 // one delivery ref it may create.

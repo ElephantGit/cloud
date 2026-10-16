@@ -48,10 +48,13 @@ type hookResponse struct {
 	Allow bool `json:"allow"`
 }
 
-// push is the authenticated context of one receive-pack request awaiting its pre-receive decision.
+// push is the authenticated context of one receive-pack request awaiting its pre-receive decision:
+// the listener it arrived on, the sandbox scope (sandbox listener only), the execution or
+// Operation it names, and the repository it addresses.
 type push struct {
-	scope                      core.GitRuntimeScope
-	execution, tenant, project string
+	listener                 listener
+	scope                    core.GitRuntimeScope
+	context, tenant, project string
 }
 
 // pushes maps one-time tokens to in-flight receive-pack requests. The token only links the hook
@@ -87,8 +90,8 @@ func (s *Service) decide(ctx context.Context, request hookRequest) bool {
 	if !ok || request.PushOptions != 0 || len(request.Updates) == 0 {
 		return false
 	}
-	grant, err := s.options.Store.AuthorizeGitAccess(ctx, p.scope, p.execution, p.project)
-	if err != nil || grant.TenantID != p.tenant || grant.ProjectID != p.project {
+	grant, err := s.authorize(ctx, &p)
+	if err != nil {
 		return false
 	}
 	return admit(&grant, request.Updates, func(ref, commit string) (bool, error) {

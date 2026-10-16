@@ -240,9 +240,13 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
 - A caller that picks the version **before** rendering it fetches
   `GET /workflows/{wfid}/snapshots/{snapshotId}/form` instead: the same projection, made from that
   version's frozen graph, with `snapshotId` echoed in the response so the form says which version it
-  describes (`formRef` stays the workflow's own id). This is the read the workflow editor's manual-run
-  entry uses, and it is the projection `confirm` validates against, so what it renders and what it runs
-  cannot drift. Scope is the direct-run entry's: another tenant's or another workflow's snapshot, an
+  describes (`formRef` stays the workflow's own id). The echo is what a version-first caller submits
+  rather than a label: the injected selector keeps its own default, the newest published version, so
+  rendering an older version's projection without selecting the echoed id would confirm the newest one.
+  It is the projection `confirm` validates against, so once the selection matches the projection, what
+  the form renders and what the run executes cannot drift. The workflow editor's manual-run entry — the
+  caller that picks a version before rendering — is what this read is being built for. Scope is the
+  direct-run entry's: another tenant's or another workflow's snapshot, an
   unknown or malformed snapshot id, and an archived workflow are all 404 `not_found`. It is a **read,
   not a start** — publish state, archiving and per-slot executor resolution are still answered by
   `POST …/runs`, so a readable form can still be a refused start. `assist` and the live

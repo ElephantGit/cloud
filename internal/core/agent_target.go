@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 // Agent target resolution + project gate (IssueRun D1/D2, plugin-marketplace "node executes plugin
@@ -79,9 +80,21 @@ func NewSpaceAgentDirectory(pool *sql.DB) *SpaceAgentDirectory {
 	return &SpaceAgentDirectory{pool: pool}
 }
 
-// ListTargets returns the tenant's active Space Agents as selectable @ targets, ordered stably.
+// ListTargets returns the tenant's active Space Agents as selectable @ targets, ordered stably and
+// optionally filtered by a display-name substring. It applies the same `q` contract as the member
+// and workflow projections of this endpoint: an empty query lists every active agent, a non-empty one
+// keeps the active agents whose display_name contains it case-insensitively. The term is escaped
+// through likePattern so `%` and `_` stay literal — a caller-supplied wildcard must never widen the
+// result set past the agent the client asked for.
 func (d *SpaceAgentDirectory) ListTargets(ctx context.Context, tenantID, query string) ([]CollaborationTargetSummary, error) {
-	rows, err := d.pool.QueryContext(ctx, `SELECT id::text, display_name FROM space_agents WHERE tenant_id=$1 AND status='active' ORDER BY display_name, id`, tenantID)
+	q := `SELECT id::text, display_name FROM space_agents WHERE tenant_id=$1 AND status='active'`
+	args := []any{tenantID}
+	if term := strings.TrimSpace(query); term != "" {
+		args = append(args, likePattern(term))
+		q += " AND display_name ILIKE $2"
+	}
+	q += " ORDER BY display_name, id"
+	rows, err := d.pool.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

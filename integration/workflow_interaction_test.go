@@ -797,6 +797,26 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 		t.Fatalf("the pre-rename key was stored: %v", stored)
 	}
 
+	// The run's copy above is what the executor received; the obligation also names the interaction row,
+	// which is what the user configured and what the next reader of the issue sees. They are two columns
+	// written from one submission in one transaction, so the fold has to have reached both: reading the
+	// row back is also the only assertion that separates a rewritten key from an added one.
+	var row core.Object
+	for _, item := range issueItems(f.call("GET", f.path("/issues/"+iss.S("id")+"/interactions"), nil, "", 200)) {
+		if item.S("id") == it.S("id") {
+			row = item
+		}
+	}
+	if row == nil {
+		t.Fatalf("the confirmed interaction is not readable, so its stored keys cannot be checked")
+	}
+	if row.O("input").S("snapshotId") != older.S("id") {
+		t.Fatalf("the interaction did not store the selection under the new key: %v", row.O("input"))
+	}
+	if _, kept := row.O("input")["version"]; kept {
+		t.Fatalf("the interaction stored the pre-rename key: %v", row.O("input"))
+	}
+
 	// The same submission against a graph whose author declared `snapshotId` for a variable of their
 	// own. There the new key is theirs, so the selection cannot be written under it — but the version
 	// the user picked is still the one that runs, and the variable keeps the value they gave it.

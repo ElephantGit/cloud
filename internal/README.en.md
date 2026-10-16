@@ -17,7 +17,7 @@
 - [contract](contract/README.en.md) defines OpenAPI 3.0 schema models, DTO structures, and contract coverage tests.
 - [repository](repository/README.en.md) manages PostgreSQL database connection pools and startup health checks via GORM.
 - [objectstore](objectstore/README.en.md) is cloud's own S3-compatible object-store client (SigV4-presigned upload grants, HEAD verification of an object's size and SHA-256), serving the Revision path alone.
-- [gitserver](gitserver/README.en.md) serves sandbox Git access: git-access mTLS, per-request authorization from Core, `git http-backend`, the pre-receive delivery-ref rules and Cloud's ref query.
+- [gitserver](gitserver/README.en.md) serves Git access to Project repositories: the sandbox and Repo Executor repository listeners, per-request ref rule sets from Core, `git http-backend`, per-namespace pre-receive rules and Cloud's ref query.
 - [config](config/README.en.md) loads and validates application configuration files and environment overrides.
 - [logger](logger/README.en.md) provides structured, non-blocking JSON logging via Zap and Lumberjack.
 - [simulator](simulator/README.en.md) implements in-process doubles for the Substrate execution engine, Controller, and Workspace Node.

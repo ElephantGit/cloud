@@ -17,7 +17,7 @@
 - [contract](contract/README.md)：定义 OpenAPI 3.0 Schema 模型、DTO 结构体与契约覆盖率测试。
 - [repository](repository/README.md)：基于 GORM 管理 PostgreSQL 连接池与启动时快速探活。
 - [objectstore](objectstore/README.md)：Cloud 自己的 S3 兼容对象存储客户端（SigV4 预签上传授权、HEAD 校验对象的大小与 SHA-256），只服务 Revision 链路。
-- [gitserver](gitserver/README.md)：沙盒 Git 访问：git-access mTLS、按 Core 逐请求授权、`git http-backend`、pre-receive 交付 ref 规则与 Cloud 的 ref 查询。
+- [gitserver](gitserver/README.md)：Project 仓库的 Git 访问：沙盒与 Repo Executor 两个仓库监听、按 Core 逐请求授权的 ref 规则集、`git http-backend`、pre-receive 按 namespace 执行规则与 Cloud 的 ref 查询。
 - [config](config/README.md)：加载并校验应用程序配置文件及环境变量覆盖。
 - [logger](logger/README.md)：基于 Zap 和 Lumberjack 提供结构化、非阻塞的 JSON 日志记录。
 - [simulator](simulator/README.md)：实现 Substrate 执行引擎、Controller 与 Workspace Node 的进程内替身。

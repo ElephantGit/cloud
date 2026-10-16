@@ -1,6 +1,11 @@
 package gitserver
 
 import (
+	"crypto/tls"
+	"encoding/json"
+	"net/http"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -122,5 +127,70 @@ func TestTrackingCASRule(t *testing.T) {
 	}
 	if out, err := h.git(dir, h.sandbox, "sync-2", "push", h.url(), ":"+head); err == nil {
 		t.Fatalf("a tracking ref was deleted: %s", out)
+	}
+}
+
+// listRefs calls the ref listener's prefix form as Cloud.
+func (h *harness) listRefs(prefix string) (int, []RefCommit) {
+	h.t.Helper()
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: h.pki.pool, Certificates: []tls.Certificate{h.cloud.pair}}}}
+	defer client.CloseIdleConnections()
+	q := url.Values{"tenantId": {h.tenant}, "projectId": {h.project}, "prefix": {prefix}}
+	response, err := client.Get(h.ref.URL + "/internal/v1/refs?" + q.Encode())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var body struct {
+		Refs []RefCommit `json:"refs"`
+	}
+	_ = json.NewDecoder(response.Body).Decode(&body)
+	return response.StatusCode, body.Refs
+}
+
+// The ref query answers every contract namespace, singly or by a prefix inside one namespace
+// instance, and nothing outside them.
+func TestRefQueryCoversEveryNamespaceAndListsByPrefix(t *testing.T) {
+	h := newHarness(t)
+	binding, workspace := uuid.NewString(), uuid.NewString()
+	if status, refs := h.listRefs(core.GitWorkspaceRefPrefix(workspace)); status != http.StatusOK || len(refs) != 0 {
+		t.Fatalf("listing an absent repository = %d %v, want 200 and none", status, refs)
+	}
+	dir, first := h.checkout(1)
+	second := h.commit(dir, "second")
+	h.allow("all", core.GitWritableRef{Prefix: core.GitSnapshotRefPrefix(binding), Rule: core.GitCreateOnly}, core.GitWritableRef{Prefix: core.GitUpstreamHeadPrefix(binding), Rule: core.GitTrackingCAS}, core.GitWritableRef{Prefix: core.GitWorkspaceRefPrefix(workspace), Rule: core.GitFastForward})
+	pushed := map[string]string{
+		core.GitSnapshotRef(binding, first):              first,
+		core.GitUpstreamHeadPrefix(binding) + "main":     first,
+		core.GitWorkspaceRefPrefix(workspace) + "main":   second,
+		core.GitWorkspaceRefPrefix(workspace) + "feat/a": first,
+	}
+	args := []string{"push", "--atomic", h.url()}
+	for ref, commit := range pushed {
+		args = append(args, commit+":"+ref)
+	}
+	if out, err := h.git(dir, h.sandbox, "all", args...); err != nil {
+		t.Fatalf("seeding refs failed: %s", out)
+	}
+	for ref, commit := range pushed {
+		if status, body := h.queryRef(&h.cloud, h.tenant, h.project, ref); status != http.StatusOK || body["commit"] != commit {
+			t.Fatalf("query %s = %d %v, want %s", ref, status, body, commit)
+		}
+	}
+	status, refs := h.listRefs(core.GitWorkspaceRefPrefix(workspace))
+	want := []RefCommit{{Ref: core.GitWorkspaceRefPrefix(workspace) + "feat/a", Commit: first}, {Ref: core.GitWorkspaceRefPrefix(workspace) + "main", Commit: second}}
+	if status != http.StatusOK || !reflect.DeepEqual(refs, want) {
+		t.Fatalf("workspace listing = %d %v, want %v", status, refs, want)
+	}
+	if status, refs := h.listRefs("refs/ora/upstreams/" + binding + "/"); status != http.StatusOK || len(refs) != 2 {
+		t.Fatalf("binding listing = %d %v, want the snapshot and the tracking ref", status, refs)
+	}
+	for _, prefix := range []string{"refs/", "refs/heads/", "refs/heads/workspaces/", core.GitWorkspaceRefPrefix(workspace) + "feat/", "refs/ora/upstreams/"} {
+		if status, _ := h.listRefs(prefix); status != http.StatusBadRequest {
+			t.Errorf("prefix %q = %d, want 400", prefix, status)
+		}
+	}
+	if status, _ := h.queryRef(&h.cloud, h.tenant, h.project, "refs/heads/main"); status != http.StatusBadRequest {
+		t.Fatalf("a ref outside the namespaces = %d, want 400", status)
 	}
 }

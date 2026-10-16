@@ -319,8 +319,10 @@ func validExecutionID(s string) bool {
 	return true
 }
 
-// RefHandler answers Cloud's read-only delivery-ref query and the unauthenticated health route on
-// the ref listener. The query is the only operation and only Cloud's pinned leaf may use it.
+// RefHandler answers Cloud's read-only ref query and the unauthenticated health route on the ref
+// listener. Only Cloud's pinned leaf may query. A query names either one ref of a contract
+// namespace (?ref=) or a prefix inside one namespace instance (?prefix=), whose refs it lists. The
+// answer is the repository's state at query time; the server records nothing.
 func (s *Service) RefHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		s.health(w, r)
@@ -341,8 +343,26 @@ func (s *Service) RefHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return ""
 	}
-	tenant, project, ref := single("tenantId"), single("projectId"), single("ref")
-	if len(query) != 3 || !canonicalID(tenant) || !canonicalID(project) || !deliveryRef.MatchString(ref) {
+	tenant, project, ref, prefix := single("tenantId"), single("projectId"), single("ref"), single("prefix")
+	if len(query) != 3 || !canonicalID(tenant) || !canonicalID(project) {
+		writeError(w, http.StatusBadRequest, "invalid_ref_query")
+		return
+	}
+	if prefix != "" {
+		if !core.ValidGitRefPrefix(prefix) {
+			writeError(w, http.StatusBadRequest, "invalid_ref_query")
+			return
+		}
+		refs, err := s.repos.list(r.Context(), tenant, project, prefix)
+		if err != nil {
+			s.options.Logger.Warn("git ref query unavailable", zap.String("projectId", project), zap.Error(err))
+			writeError(w, http.StatusServiceUnavailable, "git_service_unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"refs": refs})
+		return
+	}
+	if _, ok := core.ParseGitRef(ref); !ok {
 		writeError(w, http.StatusBadRequest, "invalid_ref_query")
 		return
 	}

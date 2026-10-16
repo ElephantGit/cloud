@@ -171,9 +171,15 @@ func optionValue(f *FormField, value string) bool {
 	return false
 }
 
-// validateFormValues re-validates submitted form values against the *current* descriptor (§38.15). The
-// frontend descriptor is a rendering hint, never an authority: unknown keys, wrong types, values outside
-// `options` and (when requireComplete) missing required fields are all rejected here.
+// validateFormValues re-validates submitted form values against the descriptor the form was rendered
+// from (§38.15). The frontend descriptor is a rendering hint, never an authority: unknown keys, wrong
+// types, values outside `options` and (when requireComplete) missing required fields are all rejected
+// here.
+//
+// Which descriptor that is depends on the caller. Assist and the form read validate against the live
+// document, because that is what the user is looking at; a confirm validates against the frozen
+// version being confirmed, because that is what will execute. The fault names the field either way:
+// a form with several fields has to say which one it is refusing, or the user has to guess.
 func validateFormValues(d FormDescriptor, values Object, requireComplete bool) {
 	known := map[string]FormField{}
 	for i := range d.Fields {
@@ -181,17 +187,22 @@ func validateFormValues(d FormDescriptor, values Object, requireComplete bool) {
 		known[f.Key] = f
 	}
 	for k := range values {
-		_, ok := known[k]
-		require(ok, 400, "invalid_field_value")
+		if _, ok := known[k]; !ok {
+			rejectWith(400, "invalid_field_value", Object{"field": k})
+		}
 	}
 	for i := range d.Fields {
 		f := &d.Fields[i]
 		v, present := values[f.Key]
 		if !present || v == nil {
-			require(!requireComplete || !f.Required, 400, "required_field_missing")
+			if requireComplete && f.Required {
+				rejectWith(400, "required_field_missing", Object{"field": f.Key})
+			}
 			continue
 		}
-		require(validFieldValue(f, v), 400, "invalid_field_value")
+		if !validFieldValue(f, v) {
+			rejectWith(400, "invalid_field_value", Object{"field": f.Key})
+		}
 	}
 }
 
@@ -302,10 +313,17 @@ func appliedContextRefs(body Object) []Object {
 // then the provider resolves the descriptor, then the descriptor is validated. Every failure is a typed
 // fault, never a partially usable form (§38.19).
 //
-// `issue` is the issue context the descriptor is tailored with. GET, assist and confirm must all pass
-// the same one: assist re-validates submitted values against this descriptor, and confirm re-validates
-// them against a freshly resolved one, so a descriptor that disagreed with what the client rendered
-// would reject values the user was legitimately shown.
+// `issue` is the issue context the descriptor is tailored with. GET and assist must pass the same one:
+// assist re-validates submitted values against this descriptor, so a descriptor that disagreed with
+// what the client rendered would reject values the user was legitimately shown.
+//
+// This resolves the workflow's *live* document, which is right for both of them — they render a form
+// the user is still filling in, and the version picker has not been used yet. A confirm does not come
+// through here: it executes the version that was chosen, so it projects that snapshot
+// (snapshotFormDescriptor) and an edit made since the last publish cannot change what an already-offered
+// version accepts. It projects the live document as well, but only to refuse a version that no longer
+// describes the form the user was handed (workflowFieldDivergence) — and it projects it itself rather
+// than through this provider, so that a descriptor outage cannot block a confirm.
 func workflowFormDescriptor(t *transaction, tid, targetType, targetID string, issue *IssueFormContext) FormDescriptor {
 	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	require(t.directory != nil, 503, "form_descriptor_unavailable")
@@ -347,4 +365,36 @@ func formDescriptorByRef(t *transaction, r *PublicRequest) Object {
 	require(ok, 404, "form_descriptor_not_found")
 	validateFormDescriptor(descriptor)
 	return formDescriptorObject(descriptor)
+}
+
+// workflowSnapshotForm is the public read path for
+// `GET /workflows/{wfid}/snapshots/{sid}/form`: the `@` form projected from one frozen version rather
+// than from the live document.
+//
+// It exists because a caller can choose the version *before* rendering — the workflow editor's manual
+// run entry does — and such a caller has to be shown the fields of the version it picked. The `@` form
+// is rendered from the live document and relies on the confirm's divergence refusal instead, which
+// works there because the user never chose a version; a manual run has chosen one, so projecting the
+// live document would show a form the chosen version does not accept and then refuse every answer.
+// Confirm already projects this way when it validates a submission, so both read the one projection:
+// this route adds a caller, not a second rule.
+//
+// It is a projection and not an admission decision. Reading a descriptor says nothing about whether a
+// run may start — publish state, archiving, input dependencies and per-slot resolution stay the start
+// gate's answers — so a caller that can read this form can still be refused by `POST …/runs`.
+//
+// Scoping is the snapshot read's own (§workflowSnapshot): an unknown or archived workflow, a snapshot
+// of another workflow or another tenant, and a malformed id are all the same 404 as the direct-run
+// entry answers with, so a client shows one message for one situation.
+//
+// The `issueId` query parameter is optional exactly as it is on the live route, and the response names
+// the snapshot it was projected from: the same workflow has a different form per version, so the
+// projection has to say which version it describes.
+func workflowSnapshotForm(t *transaction, r *PublicRequest) Object {
+	w := workflow(t, r.TenantID, r.WorkflowID)
+	s := workflowSnapshot(t, r.TenantID, r.WorkflowID, r.SnapshotID)
+	issue := issueFormContext(t, r.TenantID, strings.TrimSpace(r.FormIssueID))
+	out := formDescriptorObject(snapshotFormDescriptor(t, w, s, &issue))
+	out["snapshotId"] = s.S("id")
+	return out
 }

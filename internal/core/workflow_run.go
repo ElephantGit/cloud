@@ -76,20 +76,20 @@ func composeWorkflowRun(t *transaction, run Object) Object {
 // never half-persisted. Drafts are disallowed: running the live document would let an
 // edit change what an already-created run "executed", so a workflow with no published
 // snapshot is a hard error, exactly like desktop's workflow_no_published_snapshot.
-func createWorkflowRun(t *transaction, r *PublicRequest) Object {
+//
+// The snapshot, the input and the executor slots all go through the shared admission gate, so this
+// entry accepts exactly what a manual workflow IssueRun and a confirmed @ interaction accept. The
+// initiator matters here: the executor slots are resolved against *their* personal configuration,
+// which is why the uid is part of the request rather than inferred later.
+func createWorkflowRun(t *transaction, r *PublicRequest, uid string) Object {
 	w := workflow(t, r.TenantID, r.WorkflowID)
 	name := w.S("name")
 	if n := r.Body.S("name"); n != "" {
 		name = validText(n, 200)
 	}
-	var s Object
-	if r.Body.S("snapshotId") != "" {
-		s = workflowSnapshot(t, r.TenantID, r.WorkflowID, r.Body.S("snapshotId"))
-	} else {
-		s = t.one("SELECT * FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT 1", r.TenantID, r.WorkflowID)
-		require(s != nil, 400, "workflow_no_published_snapshot")
-	}
+	s := admitWorkflowRun(t, r.TenantID, r.WorkflowID, r.Body.S("snapshotId"), uid)
 	input := r.Body.O("input")
+	requireWorkflowRunInput(s.O("graph"), input)
 	id := newID()
 	t.exec("INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input) VALUES($1,$2,$3,$4,$5,$6,$7)", id, r.TenantID, r.WorkflowID, s.S("id"), name, "pending", jsonText(input))
 	if t.simulator != nil {

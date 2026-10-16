@@ -2431,3 +2431,196 @@ shapes, "cannot offer what the platform does not have", and the inert-for-the-au
 drift guard, a withdrawn key rejected by both `assist` and `confirm` (with the same form accepted as the
 control), the author's requiredness enforced at confirm, an empty optional field accepted, and a
 declaration that is inert for a key the author's own Start node declares.
+
+**Revision — the draft/published split gets teeth (§38.37e).** §38.37c made `version` a choice a caller
+could express and §38.37d let the author declare it, but nothing behind the field enforced anything:
+publishing never judged the graph it froze, and no start path resolved, checked or recorded *which*
+frozen document it was starting. Three entries create workflow work — a direct `WorkflowRun`, a manual
+workflow IssueRun, and the `@` confirm — and each deciding for itself what may be started is not a rule
+but three. This revision moves those decisions into one place, `internal/core/workflow_admission.go`.
+
+**Publishing judges the graph; saving still does not.** `publishWorkflow` runs `requireValidWorkflowGraph`
+before it freezes the snapshot: node kinds are the canonical subset, there is exactly one `start`, every
+edge endpoint exists, every referenced `executorSlots` name is declared, and no node carries
+configuration the first phase cannot run. That last one is `node_config_unsupported`, one problem per
+field, with `nodeId` and `field` naming it: `skills`, `mcps`, `interactive`, `outputContract`, `retry`
+and `promptInactivity` are accepted by the schema and a client may write them — they are the second
+phase's surface — but nothing in Cloud reads them, so a version frozen carrying one would
+promise a run that silently ignores what its author configured. The check is on the *value*, not the
+key: a field present as `null` or absent is not a violation, so a graph that merely names the shape
+publishes, and only an author who actually filled one in is refused. A violation is
+`400 workflow_graph_invalid` with one entry per problem in `params.problems` (`code`, plus the
+`nodeId`/`slot`/`kind`/`field` at fault), so the editor can mark each node while the code stays single
+and stable. Saving is deliberately exempt — an unfinished graph is a legitimate draft, and a check in the
+save path would stop the author mid-edit. Nothing about the *runtime* is judged here: whether an
+executor is installed or configured is the runner's answer, not the author's, and MCP ADR D4 already
+puts that at start.
+
+**One gate, three entries.** `admitWorkflowRun` answers the two questions a start has to answer, in the
+caller's own transaction, so a refused start leaves no run, no claimed interaction and no activity
+behind — and never a run row that could be dispatched.
+
+| Question | Answer |
+| --- | --- |
+| Which document runs? | The caller's explicit `snapshotId` when it made one, otherwise the newest published version. Scoped to tenant and workflow, so another tenant's or another workflow's id is the same 404 as an unknown one, and an archived workflow is 404 before its history is consulted. A workflow with nothing published is `400 workflow_no_published_snapshot`: it exists, and the actionable fact is that there is no frozen version — executing the live draft instead is exactly what the split exists to prevent. |
+| Does the input answer it? | `requireWorkflowRunInput` reads the **snapshot's** graph, never the live document, so a version published months ago still accepts exactly what it accepted then. Only the declared Start variables are checked. A run's input is an execution input object rather than a form submission: it carries the platform's own material (context references, the issue context, a frozen executor reference) beside the workflow's parameters, so an extra key is not an error. The `@` form is the one place where the key *set* is the contract, and `validateFormValues` already rejects unknown keys there. |
+| Can the initiator staff it? | `requireWorkflowExecutorSlots`: `default` resolves through `defaultExecutorGap`, the same policy the OpenCode run binding applies, so "the default model is usable" cannot mean two different things in two places; a named slot is reported `slot_not_configured`, because personal slot mappings do not exist yet and saying "configurable but missing" is honest where resolving it to something would not be. Every gap is collected before refusing — learning about three unmapped slots one 409 at a time is a poor way to find out — each carrying `slot`, `nodeIds`, `reason` and the author's `description`/`hint` so the form can show what to map it to. There is no fallback of any kind: not to `default`, not to the author's `hint`, not to another user's configuration. |
+
+**The frozen version is server-owned — this supersedes §38.37c's "Nothing binds the chosen version".**
+`freezeWorkflowSnapshot` writes the gate's own resolved id onto the run's input as
+`workflowSnapshotId`, inside the caller's transaction, so a caller cannot claim a run executed a version
+it did not; `enqueueRun` deletes the key for every non-workflow executor, so a caller-supplied value can
+never be persisted as if the server had said it. The `issue_runs` row still carries no `snapshot_id`
+column — it is not Stage 8's `workflow_runs` — and the field still records the caller's choice rather
+than a result, which is all "records intent, not a fact" ever claimed. What does not survive is the
+sentence after it: the choice is now bound, not merely wished for. What also remains true is that Cloud
+has no engine to hand the version to.
+
+**A `version` the author declared is not the cursor.** §38.37d rule 11 gives a key the author's own Start
+node declares to the author, control and requiredness alike; the cursor follows the same rule.
+`workflowVersionCursor` reads ownership from the **live** graph — the document the form was rendered
+from — before any snapshot is resolved, so a workflow declaring a `version` Start variable keeps the
+key, gets no selector and no injected default, and the value the user typed is that variable's rather
+than a snapshot choice.
+
+**Confirm judges the values by the version, and refuses a version that no longer describes the form.**
+The form is rendered from the live document and the values are judged by the version being confirmed;
+the two describe the same fields only while the draft has not moved on from that version — §38.37b's
+"front and back must deploy together" was the same fact, stated for one direction. Both directions are
+now refused explicitly, before the values are looked at, with `409 workflow_version_fields_changed` and
+`params.fields` naming the keys: a field the version rejects as unknown (the user was shown it) and a
+field it insists on that the form never showed (the user could not have supplied it) would otherwise
+both come back as a fault about the user's value, which is a true sentence about the wrong object. The
+answer is to publish — which makes the live document a version matching the form — or to select a
+version that still matches. Only the properties that judge a submission are compared (key set, control
+type, requiredness, option *set*), so a changed label, description, placeholder or default, or a
+reordered option list, is not a divergence. The comparison projects the live document directly rather
+than through `FormDescriptorProvider`, so a provider that is unavailable still leaves confirm usable.
+
+**No migration and no contract drift.** No schema change, and `task openapi` produces no diff: the new
+refusals are stable codes carried in the existing `Fault`'s `params`, not new routes, fields or
+statuses.
+
+Verification: `internal/core/workflow_graph_test.go` covers the canonical schema, including the
+documents that must **not** be refused (a legacy `agentConfig.executor`, an explicit `default`, a
+declared-but-unreferenced slot, an unsupported field present as `null`) and each unsupported agent
+config field refused by name; `internal/core/workflow_admission_test.go` the input check and the
+collection of every slot gap; `internal/core/workflow_collaboration_test.go` the cursor-ownership matrix
+and `workflowFieldDivergence`'s 14-case matrix (both directions, requiredness flipped either way,
+control type, option set, a withdrawn platform field, a platform key handed to the author, and the four
+non-divergences). `integration/workflow_admission_test.go` covers publish-validation-versus-save, the
+unsupported agent config over real HTTP, the
+snapshot's tenant/workflow scope, input judged by the version's own schema, the manual run's executor
+resolution, and the default/named slot gate over real HTTP and PostgreSQL; and
+`integration/workflow_interaction_test.go` adds `TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft`,
+which drives both directions and both remedies and asserts the run freezes the version it executed.
+
+**Revision — the version selector says what its value is (§38.37f).** The field §38.37c introduced was
+keyed `version` while its value was always a snapshot id (§38.37c rule 6 says so itself); the version
+number only ever appeared in the option's label. The name is now `snapshotId`, and the change is a
+correction of a name rather than of a meaning — but a rename cannot reach data that is already
+immutable, so it is a compatibility boundary and is handled as one in three places.
+
+**Reading a declaration written under the old name.** A published snapshot's graph is frozen, so the
+`launchFields` entries of every version published before the deploy still name `version`. Both readers
+resolve that key onto `snapshotId`: the Go catalogue accepts it as a declaration of the snapshot
+selector, and the editor's graph codec rewrites it on parse so the dialog shows the row as its author
+left it and the next save writes the new name. Dropping it instead would hand a field back to a
+workflow whose author had **withdrawn** it — the silent re-asking the declaration exists to prevent —
+which is why this is a rewrite rather than an ignore.
+
+**Reading a submission written under the old name.** The `@` form is rendered from a descriptor and
+submitted later, so a form rendered before the deploy answers under `version` while the confirm arrives
+after it. The cursor reads that key too, under the mirror of §38.37d rule 11: the old key selects the
+version only while the author's own Start node declares no variable named `version`. A submission
+carrying both is answered by `snapshotId`, because that is the key this build's form wrote. The value
+is then **folded** onto `snapshotId` before validation and before the values are persisted — not merely
+read — because `validateFormValues` rejects unknown keys outright: an unfolded submission would be a
+`400 invalid_field_value` naming the very field the user was shown, which is the one outcome reading it
+was supposed to avoid. The fold does not displace a `snapshotId` the submission already carries, so a
+workflow whose author owns that key still receives its own value while the version the user picked is
+the one that runs. Historical interactions keep their stored `input` untouched: it is immutable, and
+nothing ever writes the old key.
+
+**The fold belongs to the submission path alone.** AI Assist resolves no version — it validates the
+shape of what the user has typed so far and creates nothing — so a key that selects nothing has nothing
+to be folded onto, and the old key is not accepted there. A form rendered before the deploy may still
+be refused as an unknown key when it asks for a suggestion on that field; the confirm of the same form
+is not, because the selection is the one thing the assist path never consumes.
+
+**The label, the number, and `workflow_runs.version` are not affected.** The option label is still
+`v3 · <name>`; `workflow_snapshots.version` and the optimistic-concurrency `version` on every resource
+keep their names; only the form field's key changed. `internal/contract`, the OpenAPI document and the
+frontend's generated client carry no workflow launch field by name, so there is no generated diff.
+
+Verification: `internal/core/workflow_collaboration_test.go` extends the cursor-ownership matrix with
+the legacy key (it selects; it still selects when the author took `snapshotId`; an author's own `version`
+variable makes it a value) and adds `TestFoldLegacyVersionAnswer`; `workflow_launch_fields_test.go`
+covers the withdrawal and the requiredness a declaration written under the old name still expresses;
+`integration/workflow_interaction_test.go` covers the declaration over real HTTP
+(`TestFormDescriptorAuthorDeclaredLaunchFields`) and the submission
+(`TestWorkflowConfirmReadsThePreRenameVersionKey`, which confirms under the old key and asserts the run
+executed the version that key selected, that the interaction stored it under `snapshotId`, and that an
+author-owned `snapshotId` keeps its own value); `graph-codec.test.ts` the codec's rewrite of a stored
+declaration.
+
+**Revision — a caller that picks a version before rendering it (§38.37g).** §38.37e made the version a
+decision the start gate resolves, and §38.37f named the field for what it holds, but every *read* was
+still a projection of the live document. That is right for the `@` form: the user has not chosen a
+version when it is drawn, so the form shows the draft's fields and the confirm refuses a version that
+no longer describes them (§38.37e). A caller that **has** chosen one cannot work that way — projecting
+the live document would show it fields the chosen version does not accept (refused later as
+`invalid_field_value`) and hide fields that version requires (reported later as `required_field_missing`)
+— which is why the workflow editor's manual-run entry (#72) needs the form of the version it selected.
+This revision adds that read and no new rule:
+`GET /api/v1/tenants/{tid}/workflows/{wfid}/snapshots/{snapshotId}/form`.
+
+**One projection, two readers.** The route answers `snapshotFormDescriptor` — the function a confirm
+already uses to judge a submission — so a client renders exactly the descriptor its values will be
+validated against, and neither side can drift from the other. The live route is unchanged and keeps its
+semantics: `GET /collaboration/forms/{formRef}` still projects the live document, and the divergence
+refusal still lives at the confirm, because a caller that has not chosen a version has no version to
+name and must not be moved onto this route. Platform fields are injected on both reads, under the same
+rules: they describe the invocation rather than the version, so `repository`, `branch`, `snapshotId`,
+`prompt` and `context_refs` lead the form on either route, `?issueId=` tailors both, and the ones the
+workflow owns — the prompt, the version list — come from the document that was projected. The version
+picker deliberately still lists **every** published version on both reads: it is a property of the
+workflow, not of the graph, so a client's picker behaves identically whichever form it rendered.
+
+**The response names the version it projected.** `snapshotId` is required in this response and absent
+from the live one, and it is the only difference between the two shapes. A workflow has a different form
+per version, so a projection that did not say which version decided the fields could not be used by the
+caller that chose one — and would make a client's rendering unattributable when a run later disagrees
+with it. `formRef` stays the workflow's own identity on both reads: a version is not a form. The echo
+is response metadata, not a form field, so an author's declaration cannot withdraw it — it says which
+version was projected, which the caller already stated in the path — and it shares a name with the
+version selector without sharing a namespace: one is a key of the response, the other a key inside
+`fields`.
+
+**Scope is the snapshot read's, and the codes match the direct-run entry.** The route resolves the
+workflow and then the version through `workflowSnapshot`, which is exactly what an explicit
+`snapshotId` on `POST …/runs` resolves through. Another tenant's snapshot, another workflow's snapshot,
+an unknown id, a malformed id, an unknown workflow and an archived workflow are therefore all the same
+`404 not_found` — the same status *and* the same code the direct-run entry gives the same cursor — so a
+client shows one message for one situation rather than translating two vocabularies for it.
+
+**A projection, not a gate.** Reading a descriptor says nothing about whether a run may start. Publish
+state, archiving, input dependencies and per-slot executor resolution stay `admitWorkflowRun`'s answers
+(§38.37e), and a form is rendered before any of them is known: a workflow whose start is refused
+`409 slot_not_configured` still has a readable form, and reading it creates no run and claims nothing.
+Duplicating any part of the gate here would give the two answers a way to disagree, which is the one
+thing §38.37e exists to prevent.
+
+**No migration, and a contract change that is additive.** No schema change. `WorkflowSnapshotForm` is
+a new response schema (`snapshotId` added to the descriptor's own fields), the route is new, and
+`api/openapi.json` plus the frontend's generated client carry both.
+
+Verification: `integration/workflow_snapshot_form_test.go` covers the projection over real HTTP —
+`TestWorkflowSnapshotFormProjectsTheChosenVersion` edits and republishes the live document so two
+versions and the draft disagree on both the author's variables and the workflow-owned prompt, reads
+each version's form, and asserts each was projected from its own graph while the live read followed the
+edit; `TestWorkflowSnapshotFormScoping` covers every cursor that is not this tenant's workflow and one
+of its snapshots (another workflow's, another tenant's, unknown, malformed, unknown workflow, archived
+workflow) against the direct-run entry's answer for the same situation, and the issue context that
+cannot be resolved; `TestWorkflowSnapshotFormIsNotARunGate` reads the form of a workflow whose start is
+refused for an unmapped slot, and asserts the read left no run behind.

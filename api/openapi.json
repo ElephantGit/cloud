@@ -3894,6 +3894,38 @@
         ],
         "type": "object"
       },
+      "WorkflowSnapshotForm": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormField"
+            },
+            "type": "array"
+          },
+          "formRef": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshotId",
+          "formRef",
+          "fields"
+        ],
+        "type": "object"
+      },
       "Workspace": {
         "additionalProperties": false,
         "properties": {
@@ -7310,7 +7342,7 @@
             }
           },
           {
-            "description": "Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, prompt) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.",
+            "description": "Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, branch, prompt, snapshotId) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.",
             "in": "query",
             "name": "issueId",
             "schema": {
@@ -21405,6 +21437,152 @@
           }
         ],
         "summary": "GET /api/v1/tenants/:tid/workflows/:wfid/snapshots/:snapshotId",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tid}/workflows/{wfid}/snapshots/{snapshotId}/form": {
+      "get": {
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. The `@` form projected from the named frozen version instead of from the live document, for a caller that chooses a version before rendering it. The response names the snapshot it was projected from, and the same optional issueId tailors it exactly as the live form read does. This is a projection and not a run admission: publish state, archiving, input dependencies and per-slot resolution stay the answers of POST …/runs, so a readable form can still be refused there. An unknown workflow, a snapshot belonging to another workflow or another tenant, and a malformed snapshot id are all 404 not_found, the same answer the direct-run entry gives for the same situation. Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "operationId": "get_api_v1_tenants_tid_workflows_wfid_snapshots_snapshotId_form",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "wfid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "snapshotId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, branch, prompt, snapshotId) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.",
+            "in": "query",
+            "name": "issueId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSnapshotForm"
+                }
+              }
+            },
+            "description": "Successful command or resource response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "GET /api/v1/tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form",
         "tags": [
           "workflows"
         ]

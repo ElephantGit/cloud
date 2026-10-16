@@ -100,7 +100,7 @@ const launchDescriptor: FormDescriptor = {
     },
     { key: 'branch', label: '分支', type: 'text', required: true, defaultValue: 'main' },
     {
-      key: 'version',
+      key: 'snapshotId',
       label: '运行版本',
       type: 'select',
       required: false,
@@ -384,7 +384,7 @@ describe('WorkflowInteractionComposer', () => {
         values: {
           repository: 'https://github.com/ora/cloud',
           branch: 'release/1.0',
-          version: 'snap-3',
+          snapshotId: 'snap-3',
           prompt: 'Review the diff',
         },
       }),
@@ -415,7 +415,7 @@ describe('WorkflowInteractionComposer', () => {
         values: {
           repository: 'https://github.com/ora/cloud',
           branch: 'main',
-          version: 'snap-3',
+          snapshotId: 'snap-3',
           prompt: 'Review the diff',
           context_refs: ['project:p1', 'parent_issue:p2'],
         },

@@ -3,6 +3,7 @@ package core
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Canonical workflow graph validation: the server-executable subset of the graph schema specs owns.
@@ -41,10 +42,21 @@ var workflowSlotNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // Bounds on the author-written slot description, which is the only thing a runner sees when deciding
 // what to map the slot to (specs#98 D1).
+//
+// They count characters, not bytes: the description is written for a human and D1 says so explicitly,
+// and a byte count is a different limit in every language — 500 bytes is 500 Latin letters but about
+// 166 Chinese ones, so a byte count would refuse a description the decision allows. Rune count is the
+// unit `gitIdentityName` already uses for the same reason.
 const (
 	minSlotDescription = 1
 	maxSlotDescription = 500
 )
+
+// maxSlotHintField bounds one `hint` string. specs#98 D3 fixes the hint's shape but no length, so this
+// is Cloud's own ceiling on a value it only ever displays — kept, and counted in characters for the
+// same reason the description is: a model id is an opaque string that may be written in any script,
+// and a byte count would bound the Chinese ones four times tighter for no reason anyone could name.
+const maxSlotHintField = 200
 
 // workflowGraphProblem is one canonical-schema violation: a stable code plus the safe parameters that
 // say where it is. It carries no prose because the wire contract is codes and parameters — a client
@@ -195,7 +207,7 @@ func validateWorkflowSlots(graph Object, nodes []any) []workflowGraphProblem {
 			declared[name] = true
 		}
 		description := strings.TrimSpace(slot.S("description"))
-		if len(description) < minSlotDescription || len(description) > maxSlotDescription {
+		if n := utf8.RuneCountInString(description); n < minSlotDescription || n > maxSlotDescription {
 			problems = append(problems, workflowGraphProblem{Code: "slot_description_invalid", Slot: name})
 		}
 		if hint, ok := slot["hint"]; ok && hint != nil && !validSlotHint(hint) {
@@ -228,7 +240,7 @@ func validSlotHint(hint any) bool {
 			continue
 		}
 		text, ok := value.(string)
-		if !ok || text == "" || len(text) > 200 {
+		if !ok || text == "" || utf8.RuneCountInString(text) > maxSlotHintField {
 			return false
 		}
 	}

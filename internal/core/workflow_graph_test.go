@@ -99,6 +99,12 @@ func problemObjects(problems []workflowGraphProblem) []any {
 // document is worse than one that misses a rule.
 func TestValidateWorkflowGraph(t *testing.T) {
 	longDescription := strings.Repeat("x", maxSlotDescription+1)
+	// The limits count characters, so a description written in Chinese is the case that separates a
+	// character count from a byte count: 500 of these characters are 1500 bytes, and the byte-counting
+	// implementation this replaced refused them from the 167th character on.
+	chineseDescription := strings.Repeat("深", maxSlotDescription)
+	chineseDescriptionOverLimit := strings.Repeat("深", maxSlotDescription+1)
+	chineseModelID := strings.Repeat("模", maxSlotHintField)
 
 	cases := []struct {
 		name  string
@@ -226,6 +232,33 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			name:  "a slot description past the limit",
 			graph: workflowGraph([]any{graphStart("s")}, []any{}, []any{graphSlot("strong", longDescription)}),
 			want:  []any{Object{"code": "slot_description_invalid", "slot": "strong"}},
+		},
+		{
+			// specs#98 D1 counts characters, not bytes: this document is 1500 bytes and legal. The
+			// case is the regression the byte-counting implementation failed — it refused every
+			// Chinese description past the 166th character.
+			name:  "a slot description at the limit in Chinese",
+			graph: workflowGraph([]any{graphStart("s")}, []any{}, []any{graphSlot("strong", chineseDescription)}),
+		},
+		{
+			name:  "a slot description one character past the limit in Chinese",
+			graph: workflowGraph([]any{graphStart("s")}, []any{}, []any{graphSlot("strong", chineseDescriptionOverLimit)}),
+			want:  []any{Object{"code": "slot_description_invalid", "slot": "strong"}},
+		},
+		{
+			// The same unit question for the hint: a model id is an opaque string, so its ceiling is
+			// counted the same way the description's is.
+			name: "a hint at the limit in Chinese",
+			graph: workflowGraph([]any{graphStart("s")}, []any{}, []any{
+				Object{"name": "strong", "description": "深度推理", "hint": Object{"modelId": chineseModelID}},
+			}),
+		},
+		{
+			name: "a hint past the limit",
+			graph: workflowGraph([]any{graphStart("s")}, []any{}, []any{
+				Object{"name": "strong", "description": "深度推理", "hint": Object{"modelId": chineseModelID + "模"}},
+			}),
+			want: []any{Object{"code": "slot_hint_invalid", "slot": "strong"}},
 		},
 		{
 			name: "a hint of the wrong shape",

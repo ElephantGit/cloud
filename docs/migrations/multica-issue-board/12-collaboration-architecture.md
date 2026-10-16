@@ -2441,10 +2441,17 @@ but three. This revision moves those decisions into one place, `internal/core/wo
 
 **Publishing judges the graph; saving still does not.** `publishWorkflow` runs `requireValidWorkflowGraph`
 before it freezes the snapshot: node kinds are the canonical subset, there is exactly one `start`, every
-edge endpoint exists, and every referenced `executorSlots` name is declared. A violation is
+edge endpoint exists, every referenced `executorSlots` name is declared, and no node carries
+configuration the first phase cannot run. That last one is `node_config_unsupported`, one problem per
+field, with `nodeId` and `field` naming it: `skills`, `mcps`, `interactive`, `outputContract`, `retry`
+and `promptInactivity` are accepted by the schema and a client may write them — they are the second
+phase's surface — but nothing in Cloud reads them, so a version frozen carrying one would
+promise a run that silently ignores what its author configured. The check is on the *value*, not the
+key: a field present as `null` or absent is not a violation, so a graph that merely names the shape
+publishes, and only an author who actually filled one in is refused. A violation is
 `400 workflow_graph_invalid` with one entry per problem in `params.problems` (`code`, plus the
-`nodeId`/`slot`/`kind` at fault), so the editor can mark each node while the code stays single and
-stable. Saving is deliberately exempt — an unfinished graph is a legitimate draft, and a check in the
+`nodeId`/`slot`/`kind`/`field` at fault), so the editor can mark each node while the code stays single
+and stable. Saving is deliberately exempt — an unfinished graph is a legitimate draft, and a check in the
 save path would stop the author mid-edit. Nothing about the *runtime* is judged here: whether an
 executor is installed or configured is the runner's answer, not the author's, and MCP ADR D4 already
 puts that at start.
@@ -2496,11 +2503,13 @@ statuses.
 
 Verification: `internal/core/workflow_graph_test.go` covers the canonical schema, including the
 documents that must **not** be refused (a legacy `agentConfig.executor`, an explicit `default`, a
-declared-but-unreferenced slot); `internal/core/workflow_admission_test.go` the input check and the
+declared-but-unreferenced slot, an unsupported field present as `null`) and each unsupported agent
+config field refused by name; `internal/core/workflow_admission_test.go` the input check and the
 collection of every slot gap; `internal/core/workflow_collaboration_test.go` the cursor-ownership matrix
 and `workflowFieldDivergence`'s 14-case matrix (both directions, requiredness flipped either way,
 control type, option set, a withdrawn platform field, a platform key handed to the author, and the four
 non-divergences). `integration/workflow_admission_test.go` covers publish-validation-versus-save, the
+unsupported agent config over real HTTP, the
 snapshot's tenant/workflow scope, input judged by the version's own schema, the manual run's executor
 resolution, and the default/named slot gate over real HTTP and PostgreSQL; and
 `integration/workflow_interaction_test.go` adds `TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft`,

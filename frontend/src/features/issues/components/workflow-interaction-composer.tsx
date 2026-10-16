@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Sparkles, Workflow, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,6 +9,7 @@ import {
   useAssistWorkflow,
   useConfirmWorkflow,
   useFormDescriptor,
+  useWorkflowSnapshotForm,
 } from '@/features/issues/api'
 import { AssistSuggestions } from '@/features/issues/components/assist-suggestions'
 import { ConfirmReview } from '@/features/issues/components/confirm-review'
@@ -22,14 +24,19 @@ import type {
 } from '@/features/issues/types'
 
 /** Seeds the editable values from the descriptor's declared defaults. */
-function seedValues(descriptor: FormDescriptor): FormValues {
+function seedValues(descriptor: FormDescriptor, snapshotId?: string): FormValues {
   const values: FormValues = {}
   for (const field of descriptor.fields) {
     if (field.defaultValue !== undefined && field.defaultValue !== null) {
       values[field.key] = field.defaultValue
     }
   }
+  if (snapshotId && descriptor.fields.some(isSnapshotSelector)) values['snapshotId'] = snapshotId
   return values
+}
+
+function isSnapshotSelector(field: FormField): boolean {
+  return field.key === 'snapshotId' && field.type === 'select'
 }
 
 /** Required fields the user has not filled yet — the only client-side gate on Review (§38.15). */
@@ -96,18 +103,11 @@ function mergeContextRefs(applied: ContextRefRef[], picked: ContextRefRef[]): Co
 }
 
 /** Editable form state for one Workflow interaction. Pure UI state — nothing here is persisted. */
-function useWorkflowForm(descriptor: FormDescriptor | undefined) {
-  const [values, setValues] = useState<FormValues>({})
+function useWorkflowForm(descriptor: FormDescriptor, snapshotId?: string) {
+  const [values, setValues] = useState<FormValues>(() => seedValues(descriptor, snapshotId))
   const [contextRefs, setContextRefs] = useState<ContextRefRef[]>([])
   const [suggestion, setSuggestion] = useState<AssistSuggestion | null>(null)
   const [appliedKeys, setAppliedKeys] = useState<string[]>([])
-  const seeded = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (!descriptor || seeded.current === descriptor.formRef) return
-    seeded.current = descriptor.formRef
-    setValues(seedValues(descriptor))
-  }, [descriptor])
 
   function setField(key: string, next: unknown) {
     setValues((current) => ({ ...current, [key]: next }))
@@ -174,11 +174,16 @@ function WorkflowFormBody(props: {
   missing: FormField[]
   onAssist: () => void
   onReview: () => void
+  onFieldChange: (key: string, next: unknown) => void
 }) {
   const { descriptor, form } = props
   return (
     <div className="space-y-2">
-      <DynamicFormRenderer descriptor={descriptor} values={form.values} onChange={form.setField} />
+      <DynamicFormRenderer
+        descriptor={descriptor}
+        values={form.values}
+        onChange={props.onFieldChange}
+      />
       {form.suggestion ? (
         <AssistSuggestions
           descriptor={descriptor}
@@ -226,11 +231,13 @@ function WorkflowFormBody(props: {
 function ComposerHeader({
   title,
   collapsed,
+  pending,
   onToggle,
   onRemove,
 }: {
   title: string
   collapsed: boolean
+  pending: boolean
   onToggle: () => void
   onRemove: () => void
 }) {
@@ -255,6 +262,7 @@ function ComposerHeader({
         type="button"
         className="ml-auto rounded p-0.5 hover:bg-muted"
         onClick={onRemove}
+        disabled={pending}
         aria-label="取消"
       >
         <X className="size-4 text-muted-foreground" />
@@ -278,6 +286,7 @@ function ComposerBody(props: {
   onReview: () => void
   onBack: () => void
   onConfirm: () => void
+  onFieldChange: (key: string, next: unknown) => void
 }) {
   if (props.reviewing) {
     return (
@@ -307,12 +316,60 @@ function ComposerBody(props: {
         missing={props.missing}
         onAssist={props.onAssist}
         onReview={props.onReview}
+        onFieldChange={props.onFieldChange}
       />
       {props.assistFailed ? (
         <p className="text-xs text-muted-foreground">AI 建议当前不可用。</p>
       ) : null}
     </>
   )
+}
+
+/** Keeps one interaction across retries and locks before React can render a second click. */
+function useWorkflowSubmission({
+  slug,
+  issueId,
+  target,
+  onConfirmed,
+}: {
+  slug: string
+  issueId: string
+  target: CollaborationTargetSummary
+  onConfirmed: () => void
+}) {
+  const interactionId = useRef<string | null>(null)
+  const locked = useRef(false)
+  const confirm = useConfirmWorkflow(slug, issueId)
+  const submission = useMutation({
+    mutationFn: async (input: { values: FormValues; contextRefs?: ContextRefRef[] }) => {
+      if (!interactionId.current) {
+        const interaction = await openWorkflowInteraction(
+          slug,
+          issueId,
+          target.id,
+          `@${target.displayName}`,
+        )
+        interactionId.current = interaction.id
+      }
+      return confirm.mutateAsync({ interactionId: interactionId.current, ...input })
+    },
+    onSuccess: onConfirmed,
+    onError: () => {
+      locked.current = false
+    },
+  })
+
+  function submit(input: { values: FormValues; contextRefs?: ContextRefRef[] }) {
+    if (locked.current) return
+    locked.current = true
+    submission.mutate(input)
+  }
+
+  return {
+    submit,
+    isPending: submission.isPending || submission.isSuccess,
+    isError: submission.isError,
+  }
 }
 
 /**
@@ -334,21 +391,70 @@ export function WorkflowInteractionComposer({
   onRemove: () => void
 }) {
   const formRef = target.interactionDescriptor.formRef ?? undefined
-  const descriptorQuery = useFormDescriptor(slug, formRef, issueId)
-  const assist = useAssistWorkflow(slug, issueId)
-  const confirm = useConfirmWorkflow(slug, issueId)
-  const [reviewing, setReviewing] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [snapshotId, setSnapshotId] = useState<string>()
+  const live = useFormDescriptor(slug, formRef, issueId)
+  const snapshot = useWorkflowSnapshotForm(slug, target.id, snapshotId, issueId)
+  const descriptorQuery = snapshotId ? snapshot : live
+  const confirm = useWorkflowSubmission({ slug, issueId, target, onConfirmed })
   const descriptor = descriptorQuery.data
-  const form = useWorkflowForm(descriptor)
 
   if (descriptorQuery.isPending) return <Skeleton className="h-24 w-full" />
   if (descriptorQuery.isError || !descriptor) {
     return (
-      <p className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
-        当前部署无法加载该 Workflow 的表单（form descriptor 不可用）。
-      </p>
+      <div className="space-y-2">
+        <p className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
+          当前部署无法加载该 Workflow 的表单（form descriptor 不可用）。
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void descriptorQuery.refetch()}>
+          重试加载表单
+        </Button>
+      </div>
     )
+  }
+
+  return (
+    <WorkflowInteractionForm
+      key={snapshotId ?? 'live'}
+      slug={slug}
+      issueId={issueId}
+      target={target}
+      descriptor={descriptor}
+      snapshotId={snapshot.data?.snapshotId}
+      loading={descriptorQuery.isFetching}
+      confirm={confirm}
+      onSnapshotChange={setSnapshotId}
+      onRemove={onRemove}
+    />
+  )
+}
+
+/** A fresh field draft per selected version; submission identity stays with the outer composer. */
+function WorkflowInteractionForm(props: {
+  slug: string
+  issueId: string
+  target: CollaborationTargetSummary
+  descriptor: FormDescriptor
+  snapshotId: string | undefined
+  loading: boolean
+  confirm: ReturnType<typeof useWorkflowSubmission>
+  onSnapshotChange: (id: string) => void
+  onRemove: () => void
+}) {
+  const { slug, issueId, target, descriptor, confirm, onRemove } = props
+  const assist = useAssistWorkflow(slug, issueId)
+  const [reviewing, setReviewing] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const form = useWorkflowForm(descriptor, props.snapshotId)
+
+  function setField(key: string, next: unknown) {
+    if (
+      typeof next === 'string' &&
+      descriptor.fields.some((field) => field.key === key && isSnapshotSelector(field))
+    ) {
+      props.onSnapshotChange(next)
+    } else {
+      form.setField(key, next)
+    }
   }
 
   const contextRefs = mergeContextRefs(
@@ -358,22 +464,12 @@ export function WorkflowInteractionComposer({
   const confirmInput =
     contextRefs.length > 0 ? { values: form.values, contextRefs } : { values: form.values }
 
-  /** Confirm is the first moment anything reaches the server: comment -> interaction -> run. */
-  async function submit() {
-    const interaction = await openWorkflowInteraction(
-      slug,
-      issueId,
-      target.id,
-      `@${target.displayName}`,
-    )
-    confirm.mutate({ interactionId: interaction.id, ...confirmInput }, { onSuccess: onConfirmed })
-  }
-
   return (
     <section className="space-y-2 rounded-md border bg-muted/30 p-2">
       <ComposerHeader
         title={descriptor.title ?? target.displayName}
         collapsed={collapsed}
+        pending={confirm.isPending}
         onToggle={() => setCollapsed((current) => !current)}
         onRemove={onRemove}
       />
@@ -381,7 +477,8 @@ export function WorkflowInteractionComposer({
       {!collapsed && descriptor.description ? (
         <p className="text-xs text-muted-foreground">{descriptor.description}</p>
       ) : null}
-      {!collapsed && (
+      {props.loading && <Skeleton className="h-24 w-full" />}
+      {!collapsed && !props.loading && (
         <ComposerBody
           descriptor={descriptor}
           form={form}
@@ -400,9 +497,8 @@ export function WorkflowInteractionComposer({
           }
           onReview={() => setReviewing(true)}
           onBack={() => setReviewing(false)}
-          onConfirm={() => {
-            void submit()
-          }}
+          onConfirm={() => confirm.submit(confirmInput)}
+          onFieldChange={setField}
         />
       )}
     </section>

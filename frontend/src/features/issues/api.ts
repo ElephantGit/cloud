@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm } from '@/api/workflows/workflows'
 import { AXIOS_INSTANCE } from '@/lib/api-client'
 import type {
   AssistSuggestion,
@@ -309,6 +310,28 @@ export function useFormDescriptor(tid: string, formRef: string | undefined, issu
       return data
     },
     enabled: !!tid && !!formRef,
+  })
+}
+
+/** Reads a chosen frozen version's form, isolated by tenant, workflow, snapshot and issue context. */
+export function useWorkflowSnapshotForm(
+  tid: string,
+  workflowId: string,
+  snapshotId: string | undefined,
+  issueId: string,
+) {
+  return useQuery({
+    queryKey: ['workflow-snapshot-form', tid, workflowId, snapshotId ?? '', issueId],
+    queryFn: ({ signal }) =>
+      getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm(
+        tid,
+        workflowId,
+        snapshotId ?? '',
+        { issueId },
+        undefined,
+        signal,
+      ),
+    enabled: !!tid && !!workflowId && !!snapshotId && !!issueId,
   })
 }
 

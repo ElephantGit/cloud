@@ -34,3 +34,7 @@ MSW stands in for the real Cloud API; under `onUnhandledRequest: 'error'` every 
 Recovery reloads and property saves are mutually exclusive: properties and the reload button remain locked until the original save error has been handled. Failed reloads retain the error; a later save uses the loaded version and reports its own failure independently.
 
 Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned association/removal, retained values and GET reload after conflicts, delayed GET/PUT exclusion and error visibility, ordinary comments creating no Run, and the Thread of a Run created through Task Mode. Component evidence never substitutes for real-provider multi-turn, terminal-state and resource-release acceptance.
+
+`IssueRun.workflowInvocationRef` retains the server's WorkflowRun reference for activity status and navigation; the API test checks that list reads preserve it. Workflow confirmation exclusion, retry and detail-link interaction tests live in `components/`.
+
+`useWorkflowSnapshotForm` reuses the generated snapshot-form GET with tenant/workflow/snapshot/issue-scoped query keys. The API test varies every scope so versions and Issues cannot share the wrong field defaults.

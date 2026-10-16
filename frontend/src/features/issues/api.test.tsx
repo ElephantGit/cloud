@@ -4,7 +4,15 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '@/test/msw-server'
 import type { FormDescriptor, Issue } from './types'
-import { useCreateIssue, useFormDescriptor, useIssues, useMoveIssue, useUpdateIssue } from './api'
+import {
+  useCreateIssue,
+  useFormDescriptor,
+  useIssues,
+  useMoveIssue,
+  useRuns,
+  useUpdateIssue,
+  useWorkflowSnapshotForm,
+} from './api'
 
 function wrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -44,6 +52,28 @@ describe('useIssues', () => {
     const { result } = renderHook(() => useIssues('t1'), { wrapper: wrapper(new QueryClient()) })
 
     await waitFor(() => expect(result.current.data).toEqual([issueFixture]))
+  })
+})
+
+describe('useRuns', () => {
+  it('preserves the WorkflowRun reference for confirmed interaction navigation', async () => {
+    const linkedRun = {
+      id: 'r1',
+      executorType: 'workflow',
+      executorId: 'wf1',
+      workflowInvocationRef: 'wr1',
+      status: 'queued',
+    }
+    server.use(
+      http.get('/api/v1/tenants/t1/issues/i1/runs', () =>
+        HttpResponse.json({ items: [linkedRun], nextCursor: '' }),
+      ),
+    )
+    const { result } = renderHook(() => useRuns('t1', 'i1'), {
+      wrapper: wrapper(new QueryClient()),
+    })
+
+    await waitFor(() => expect(result.current.data).toEqual([linkedRun]))
   })
 })
 
@@ -178,5 +208,61 @@ describe('useMoveIssue', () => {
     expect(body).toEqual({ status: 'done', beforeId: 'b1', version: 3 })
     expect(idempotencyKey).toBeTruthy()
     expect(queryClient.getQueryData(['issue', 't1', 'i1'])).toEqual(moved)
+  })
+})
+
+describe('useWorkflowSnapshotForm', () => {
+  it.each([
+    {
+      scope: 'tenant',
+      change: { tenant: 't2' },
+      path: '/tenants/t2/workflows/wf1/snapshots/s1/form?issueId=i1',
+    },
+    {
+      scope: 'workflow',
+      change: { workflow: 'wf2' },
+      path: '/tenants/t1/workflows/wf2/snapshots/s1/form?issueId=i1',
+    },
+    {
+      scope: 'snapshot',
+      change: { snapshot: 's2' },
+      path: '/tenants/t1/workflows/wf1/snapshots/s2/form?issueId=i1',
+    },
+    {
+      scope: 'issue',
+      change: { issue: 'i2' },
+      path: '/tenants/t1/workflows/wf1/snapshots/s1/form?issueId=i2',
+    },
+  ])('separates the descriptor cache when $scope changes', async ({ change, path }) => {
+    const queryClient = new QueryClient()
+    const requests: string[] = []
+    server.use(
+      http.get(
+        '/api/v1/tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form',
+        ({ request, params }) => {
+          requests.push(new URL(request.url).pathname + new URL(request.url).search)
+          return HttpResponse.json({
+            formRef: params['wfid'],
+            snapshotId: params['snapshotId'],
+            fields: [],
+          })
+        },
+      ),
+    )
+    const initial = { tenant: 't1', workflow: 'wf1', snapshot: 's1', issue: 'i1' }
+    const { result, rerender } = renderHook(
+      (props: typeof initial) =>
+        useWorkflowSnapshotForm(props.tenant, props.workflow, props.snapshot, props.issue),
+      { wrapper: wrapper(queryClient), initialProps: initial },
+    )
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    rerender({ ...initial, ...change })
+    await waitFor(() => expect(requests).toHaveLength(2))
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(requests).toEqual([
+      '/api/v1/tenants/t1/workflows/wf1/snapshots/s1/form?issueId=i1',
+      `/api/v1${path}`,
+    ])
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(2)
   })
 })

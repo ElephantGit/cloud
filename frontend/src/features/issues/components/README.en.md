@@ -26,6 +26,14 @@ Depends on `features/issues/api`, `features/issues/types`, `features/issues/pres
 
 Creation drafts remount by tenant/space; activity drafts by tenant/space/issue, including navigation to cached scopes. Project association follows server results; versioned updates disable property edits until settled and keep stored values on refusal. Project guidance targets the `issue-project` selector. Targets come only from the real directory; the server remains authoritative for space compatibility.
 
+Workflow confirmation locks duplicate submissions, editing and removal from interaction creation onward; a rejected confirm reuses that interaction on retry, including after a version switch. Confirmed rows use `features/workflows/api` to read the WorkflowRun referenced by `IssueRun.workflowInvocationRef`; detail links combine `executorId`, that reference and the route's workspace slug.
+
+The initial form reads the live descriptor by `formRef + issueId`. Changing the `snapshotId` select loads the existing snapshot-form route with a tenant/workflow/snapshot/issue-scoped key, clears the old field draft and initializes the selected version's defaults. The selector retains the echoed snapshotId rather than its newest-version default. Loading or failed reads cannot review stale fields; failed reads can retry. An author's text variable with the same name remains ordinary input. Reading a form is not run admission; Confirm's `workflow_version_fields_changed` gate is unchanged.
+
+Historical runs without a WorkflowRun reference retain their IssueRun status, make no WorkflowRun request and show no detail link. Linked runs always use the WorkflowRun's authoritative status.
+
 ## Testing
 
 Component tests use MSW; properties and Task Mode→Thread are covered by `issue-detail-page.test.tsx`. Loading, empty, refused and retry states are distinct; creation, ordinary-comment and target failures retain drafts, while scope changes clear them.
+
+Workflow tests cover double-click exclusion, rejected confirms reusing an interaction across version switches, snapshot fields/defaults/echoes, pending and failed reads, and WorkflowRun status and detail links.

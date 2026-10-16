@@ -1608,6 +1608,10 @@
                   "cancelled"
                 ],
                 "type": "string"
+              },
+              "syncErrorCode": {
+                "nullable": true,
+                "type": "string"
               }
             },
             "required": [
@@ -1615,7 +1619,8 @@
               "cloneAttempts",
               "maxCloneAttempts",
               "retryAt",
-              "errorCode"
+              "errorCode",
+              "syncErrorCode"
             ],
             "type": "object"
           },
@@ -3071,6 +3076,10 @@
               "cancelled"
             ],
             "type": "string"
+          },
+          "syncErrorCode": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -3078,7 +3087,8 @@
           "cloneAttempts",
           "maxCloneAttempts",
           "retryAt",
-          "errorCode"
+          "errorCode",
+          "syncErrorCode"
         ],
         "type": "object"
       },

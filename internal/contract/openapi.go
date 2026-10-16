@@ -168,8 +168,10 @@ func Document() map[string]any {
 		"stage":         enumeration("waiting", "environment", "clone", "plugin", "start", "failed", "cancelled"),
 		"cloneAttempts": number(), "maxCloneAttempts": number(),
 		"retryAt": optional(timestamp()), "errorCode": optional(str()),
+		// syncErrorCode names why the Binding's sync failed when errorCode is repository_sync_failed.
+		"syncErrorCode": optional(str()),
 	}
-	preparationFields := []string{"stage", "cloneAttempts", "maxCloneAttempts", "retryAt", "errorCode"}
+	preparationFields := []string{"stage", "cloneAttempts", "maxCloneAttempts", "retryAt", "errorCode", "syncErrorCode"}
 	s["RunPreparation"] = object(preparationProps, preparationFields...)
 	// OpenAPI 3.0 ignores nullable beside $ref; keep this nullable projection inline.
 	runProps["preparation"] = optional(object(preparationProps, preparationFields...))

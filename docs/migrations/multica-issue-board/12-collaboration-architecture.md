@@ -2459,14 +2459,15 @@ behind — and never a run row that could be dispatched.
 | Does the input answer it? | `requireWorkflowRunInput` reads the **snapshot's** graph, never the live document, so a version published months ago still accepts exactly what it accepted then. Only the declared Start variables are checked. A run's input is an execution input object rather than a form submission: it carries the platform's own material (context references, the issue context, a frozen executor reference) beside the workflow's parameters, so an extra key is not an error. The `@` form is the one place where the key *set* is the contract, and `validateFormValues` already rejects unknown keys there. |
 | Can the initiator staff it? | `requireWorkflowExecutorSlots`: `default` resolves through `defaultExecutorGap`, the same policy the OpenCode run binding applies, so "the default model is usable" cannot mean two different things in two places; a named slot is reported `slot_not_configured`, because personal slot mappings do not exist yet and saying "configurable but missing" is honest where resolving it to something would not be. Every gap is collected before refusing — learning about three unmapped slots one 409 at a time is a poor way to find out — each carrying `slot`, `nodeIds`, `reason` and the author's `description`/`hint` so the form can show what to map it to. There is no fallback of any kind: not to `default`, not to the author's `hint`, not to another user's configuration. |
 
-**The frozen version is server-owned — this supersedes §38.37c's "`version` records intent, not a
-fact".** `freezeWorkflowSnapshot` writes the gate's own resolved id onto the run's input as
+**The frozen version is server-owned — this supersedes §38.37c's "Nothing binds the chosen version".**
+`freezeWorkflowSnapshot` writes the gate's own resolved id onto the run's input as
 `workflowSnapshotId`, inside the caller's transaction, so a caller cannot claim a run executed a version
 it did not; `enqueueRun` deletes the key for every non-workflow executor, so a caller-supplied value can
 never be persisted as if the server had said it. The `issue_runs` row still carries no `snapshot_id`
-column — it is not Stage 8's `workflow_runs` — but the version is now bound rather than wished for, and
-§38.37c's sentence must not be read as if it still held. What remains true is that Cloud has no engine
-to hand the version to.
+column — it is not Stage 8's `workflow_runs` — and the field still records the caller's choice rather
+than a result, which is all "records intent, not a fact" ever claimed. What does not survive is the
+sentence after it: the choice is now bound, not merely wished for. What also remains true is that Cloud
+has no engine to hand the version to.
 
 **A `version` the author declared is not the cursor.** §38.37d rule 11 gives a key the author's own Start
 node declares to the author, control and requiredness alike; the cursor follows the same rule.

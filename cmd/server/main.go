@@ -210,6 +210,20 @@ func run() (runErr error) {
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
+	// Workflow advance loop: the Cloud-side scheduler (specs#99 D1 条件②/④, landing order step 3).
+	// A bounded rescan of pending and running workflow runs, each advanced in its own short
+	// transaction; the ready set is recomputed from committed state only, so the pass is idempotent
+	// and a replica that crashes mid-tick resumes exactly where the committed state says. In its
+	// first step it executes start/condition/output inline and settles runs honestly; agent nodes
+	// fail the run fast with an explicit reason until the execution wiring lands in the next step.
+	{
+		const workflowAdvanceInterval = 10 * time.Second
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.AdvanceWorkflowRunsOnce, workflowAdvanceInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
 	gin.SetMode(cfg.Server.Mode)
 	server := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: router.New(store, auth, log, directory), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: cfg.Server.ReadTimeout, WriteTimeout: cfg.Server.WriteTimeout, IdleTimeout: 60 * time.Second}
 	// The control listener is bound before serving so a taken port fails startup, not a Controller.

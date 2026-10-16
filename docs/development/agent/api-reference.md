@@ -183,12 +183,14 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   | --- | --- | --- | --- | --- | --- |
   | `repository` | 仓库地址 | `text` | ✅ | issue's `project_ref → projects.repository_url` | always |
   | `branch` | 分支 | `text` | ✅ | the same project's `default_branch` | always |
-  | `version` | 运行版本 | `select` | — | newest `workflow_snapshots` row | the workflow has ≥1 published snapshot |
+  | `snapshotId` | 运行版本 | `select` | — | newest `workflow_snapshots` row | the workflow has ≥1 published snapshot |
   | `prompt` | 提示词 | `textarea` | — | Start node's 初始提示词; blank means "use the workflow's own prompt" | always |
   | `context_refs` | 补充上下文引用 | `multi_select` | — | none (empty = add nothing) | the issue has a project or a parent |
 
-  `version` offers snapshot **ids** (a run is created from an id, and the id keeps pointing at the same
-  frozen document); the version number rides in the label as `v3 · <snapshot name>`. An unpublished
+  `snapshotId` offers snapshot **ids** (a run is created from an id, and the id keeps pointing at the
+  same frozen document); the version number rides in the label as `v3 · <snapshot name>`. The key was
+  called `version` until it was renamed to say what its value is; a submission still carrying the old
+  key is read as the selection it was — see §38.37f. An unpublished
   workflow has nothing to offer and the field is **dropped** rather than injected empty — the contract
   has no way to express a select with no choices. `context_refs` is **additive**: the issue's own
   persisted references are already on every run it starts, so its options are the references the issue
@@ -199,7 +201,7 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   That table is the platform's **catalogue**, not the form: the workflow's author declares which of
   those fields their workflow's form asks for, and which of them it insists on (§38.37d). The
   declaration rides in the graph envelope as `launchFields`, a sibling of `globalVariables`, and is
-  read **per key** — `[{"key":"version","enabled":false},{"key":"prompt","required":true}]` turns off
+  read **per key** — `[{"key":"snapshotId","enabled":false},{"key":"prompt","required":true}]` turns off
   the version choice and makes the prompt mandatory, and every key it does not mention keeps the
   catalogue's own answer. That is what keeps a workflow declaring nothing rendering exactly the table
   above, and a field added to the catalogue later appears for every workflow without re-saving one.
@@ -208,11 +210,13 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   the same declaration — and AI Assist can no longer suggest it. `required` overrides the catalogue's
   answer in both directions and is enforced server-side by `confirm` (400 `required_field_missing`).
   Two rules outrank the declaration: a field with **nothing to offer** is dropped whatever the author
-  asked for (`version` with no published snapshot, `context_refs` for an issue that names no
+  asked for (`snapshotId` with no published snapshot, `context_refs` for an issue that names no
   reference), and a key the author declared as a **Start variable of their own** is theirs — the
   declaration is inert for that key, control and requiredness alike. Edited in the workflow editor's
   `@ 表单字段` dialog, which writes all five keys with both answers spelled out; it takes effect on the
   next descriptor read, because the projection reads the live graph rather than a published snapshot.
+  A snapshot published before the rename still declares `version`; that entry is read as the
+  `snapshotId` entry its author wrote, so a field they turned off stays off rather than coming back.
 - The graph's `globalVariables` are projected **after** the author's Start variables, one optional field
   each, keyed and labelled by the variable name, defaulted from its declared `value`. `number`/`integer`
   → `number`, `boolean` → `boolean`, `string`/`secret` → `text`, everything else (arrays, objects, files)
@@ -223,18 +227,23 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   *context*, not on which document they project: GET and `assist` read the **live** graph, while
   `confirm` reads the **version** it is about to execute — the two describe the same fields only while
   the draft has not moved on from that version, which is what the divergence check below is for.
-  `prompt`, `repository`, `branch`, `version` and `context_refs` are **reserved keys** — an executor
+  `prompt`, `repository`, `branch`, `snapshotId` and `context_refs` are **reserved keys** — an executor
   that validates run input against Start variables must map them explicitly. `context_refs` is reserved
   in a second sense: the surface reads its value back out (a list of `refType:refId` strings) and turns
-  it into the run's `contextRefs`, in addition to whatever AI Assist applied. `version` carries a second
+  it into the run's `contextRefs`, in addition to whatever AI Assist applied. `snapshotId` carries a second
   reservation: it is the platform's version cursor only while the author's own Start node declares no
   variable under that name — a workflow that declares one keeps the key, gets no version selector
-  injected, and the value the user typed is that variable's rather than a snapshot choice.
+  injected, and the value the user typed is that variable's rather than a snapshot choice. The cursor
+  also reads the pre-rename `version` key, under the mirror of that rule: it selects the version only
+  while the author's Start node declares no variable named `version`.
 - `values` is a plain `{fieldKey: value}` map, re-validated server-side against the descriptor of the
   **version being confirmed** rather than the live document: unknown key / wrong type / value outside
   `options` → 400 `invalid_field_value`; missing required → 400 `required_field_missing`. The version is
-  the `version` field's value (a snapshot id) or the newest published one when that field is unset; a
-  version that is not this workflow's is 404. A workflow with nothing published cannot be confirmed:
+  the `snapshotId` field's value (a snapshot id) or the newest published one when that field is unset; a
+  version that is not this workflow's is 404. A submission that answers under the pre-rename `version`
+  key instead is read the same way and stored under `snapshotId`, so a form rendered before the rename
+  and submitted after it still runs the version its user picked. A workflow with nothing published
+  cannot be confirmed:
   with no version selected it is 400 `workflow_no_published_snapshot`, because there is no frozen
   document to execute and running the live draft is what the draft/published split forbids. Confirm
   goes through that same gate as every other workflow start, and so also refuses — before the values

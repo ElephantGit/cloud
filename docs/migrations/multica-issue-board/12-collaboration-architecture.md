@@ -2514,3 +2514,46 @@ snapshot's tenant/workflow scope, input judged by the version's own schema, the 
 resolution, and the default/named slot gate over real HTTP and PostgreSQL; and
 `integration/workflow_interaction_test.go` adds `TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft`,
 which drives both directions and both remedies and asserts the run freezes the version it executed.
+
+**Revision — the version selector says what its value is (§38.37f).** The field §38.37c introduced was
+keyed `version` while its value was always a snapshot id (§38.37c rule 6 says so itself); the version
+number only ever appeared in the option's label. The name is now `snapshotId`, and the change is a
+correction of a name rather than of a meaning — but a rename cannot reach data that is already
+immutable, so it is a compatibility boundary and is handled as one in three places.
+
+**Reading a declaration written under the old name.** A published snapshot's graph is frozen, so the
+`launchFields` entries of every version published before the deploy still name `version`. Both readers
+resolve that key onto `snapshotId`: the Go catalogue accepts it as a declaration of the snapshot
+selector, and the editor's graph codec rewrites it on parse so the dialog shows the row as its author
+left it and the next save writes the new name. Dropping it instead would hand a field back to a
+workflow whose author had **withdrawn** it — the silent re-asking the declaration exists to prevent —
+which is why this is a rewrite rather than an ignore.
+
+**Reading a submission written under the old name.** The `@` form is rendered from a descriptor and
+submitted later, so a form rendered before the deploy answers under `version` while the confirm arrives
+after it. The cursor reads that key too, under the mirror of §38.37d rule 11: the old key selects the
+version only while the author's own Start node declares no variable named `version`. A submission
+carrying both is answered by `snapshotId`, because that is the key this build's form wrote. The value
+is then **folded** onto `snapshotId` before validation and before the values are persisted — not merely
+read — because `validateFormValues` rejects unknown keys outright: an unfolded submission would be a
+`400 invalid_field_value` naming the very field the user was shown, which is the one outcome reading it
+was supposed to avoid. The fold does not displace a `snapshotId` the submission already carries, so a
+workflow whose author owns that key still receives its own value while the version the user picked is
+the one that runs. Historical interactions keep their stored `input` untouched: it is immutable, and
+nothing ever writes the old key.
+
+**The label, the number, and `workflow_runs.version` are not affected.** The option label is still
+`v3 · <name>`; `workflow_snapshots.version` and the optimistic-concurrency `version` on every resource
+keep their names; only the form field's key changed. `internal/contract`, the OpenAPI document and the
+frontend's generated client carry no workflow launch field by name, so there is no generated diff.
+
+Verification: `internal/core/workflow_collaboration_test.go` extends the cursor-ownership matrix with
+the legacy key (it selects; it still selects when the author took `snapshotId`; an author's own `version`
+variable makes it a value) and adds `TestFoldLegacyVersionAnswer`; `workflow_launch_fields_test.go`
+covers the withdrawal and the requiredness a declaration written under the old name still expresses;
+`integration/workflow_interaction_test.go` covers the declaration over real HTTP
+(`TestFormDescriptorAuthorDeclaredLaunchFields`) and the submission
+(`TestWorkflowConfirmReadsThePreRenameVersionKey`, which confirms under the old key and asserts the run
+executed the version that key selected, that the interaction stored it under `snapshotId`, and that an
+author-owned `snapshotId` keeps its own value); `graph-codec.test.ts` the codec's rewrite of a stored
+declaration.

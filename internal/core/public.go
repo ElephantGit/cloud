@@ -420,6 +420,12 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 			// membership gates the read exactly like any other space-scoped list.
 			spaceMember(t, r.SpaceID, uid)
 			return pluginCatalog(t)
+		case strings.HasSuffix(r.Path, "/plugins/assets"):
+			// Workflow asset import results are read separately from installation evidence: a
+			// space can have templates with no live runtime, and an install failure says nothing
+			// about whether documents were taken over.
+			spaceMember(t, r.SpaceID, uid)
+			return spaceWorkflowAssetImportList(t, r.SpaceID)
 		case strings.HasSuffix(r.Path, "/plugins"):
 			spaceMember(t, r.SpaceID, uid)
 			return spacePluginList(t, r.SpaceID)

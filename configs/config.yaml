@@ -82,6 +82,12 @@ plugins:
   marketplace_branch: "main"
   sync_interval: 5m
   sync_enabled: true
+  # Workflow asset import downloads the selected kind='workflow' package from the catalog locator
+  # and imports its assets/workflows/*.json documents as tenant workflows. It runs independently
+  # of Node installation, so spaces without a live runtime still receive their templates.
+  # Override: CLOUD_PLUGINS_ASSET_IMPORT_ENABLED / _ASSET_IMPORT_INTERVAL.
+  asset_import_enabled: true
+  asset_import_interval: 30s
 
 object_store:
   # Cloud's own S3-compatible object storage for Revision objects (Cloud Revision D1): optional

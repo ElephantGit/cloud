@@ -29,13 +29,28 @@ const (
 // locally, refuses redirects, bounds both declared and streamed size, and hashes the actual bytes.
 // The caller must authorize the key before calling and must not hold a database transaction here.
 func ReadVerified(ctx context.Context, cfg *Config, key string, size int64, digest string, maxBytes int64) ([]byte, error) {
+	if size < 0 {
+		return nil, ErrReadInvalid
+	}
+	return readBounded(ctx, cfg, key, size, digest, maxBytes)
+}
+
+// ReadHashed is ReadVerified for callers that know the expected digest but not the object size,
+// such as a marketplace locator that records only a SHA-256. The declared size is still bounded by
+// the streamed read cap, and the digest is verified over the stored bytes.
+func ReadHashed(ctx context.Context, cfg *Config, key, digest string, maxBytes int64) ([]byte, error) {
+	return readBounded(ctx, cfg, key, -1, digest, maxBytes)
+}
+
+// readBounded implements both read contracts; a negative size means the caller does not know it.
+func readBounded(ctx context.Context, cfg *Config, key string, size int64, digest string, maxBytes int64) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if maxBytes <= 0 || maxBytes == math.MaxInt64 || size < 0 {
+	if maxBytes <= 0 || maxBytes == math.MaxInt64 {
 		return nil, ErrReadInvalid
 	}
-	if size > maxBytes {
+	if size >= 0 && size > maxBytes {
 		return nil, ErrReadTooLarge
 	}
 	sum, err := hex.DecodeString(digest)
@@ -86,7 +101,7 @@ func ReadVerified(ctx context.Context, cfg *Config, key string, size int64, dige
 		return nil, ErrReadUnavailable
 	}
 	actual := sha256.Sum256(data)
-	if int64(len(data)) != size || hex.EncodeToString(actual[:]) != digest {
+	if (size >= 0 && int64(len(data)) != size) || hex.EncodeToString(actual[:]) != digest {
 		return nil, ErrReadInvalid
 	}
 	return data, nil

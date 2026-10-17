@@ -92,6 +92,9 @@ type Store struct {
 	// ObjectStore signs upload grants and verifies stored checksums outside SQL transactions.
 	// Nil means delivery is explicitly skipped through the transaction-scoped business hook.
 	ObjectStore *objectstore.Config
+	// WorkflowAssets downloads the pinned package of a workflow plugin for asset import. Nil
+	// keeps the import loop idle, so a control-plane-only deployment never leaves the cluster.
+	WorkflowAssets WorkflowAssetSource
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -216,6 +217,11 @@ func TestWorkflowAssetImportFromInstalledPlugin(t *testing.T) {
 	if published.N("version") != 1 {
 		t.Fatalf("snapshot version = %v, want Cloud's first integer", published.N("version"))
 	}
+	// Upgrading must leave an already imported path's live graph and frozen snapshot untouched. The
+	// stored jsonb text is what a reader gets back, so byte equality here rules out re-encoding too.
+	var releaseGraph, releaseSnapshotGraph string
+	must(t, f.store.Pool.QueryRow("SELECT graph::text FROM workflows WHERE id=$1", releaseID).Scan(&releaseGraph))
+	must(t, f.store.Pool.QueryRow("SELECT graph::text FROM workflow_snapshots WHERE workflow_id=$1 AND version=1", releaseID).Scan(&releaseSnapshotGraph))
 	// Imports must not introduce an author or publisher: the copy outlives any administrator.
 	if n := f.scalar(`SELECT count(*) FROM information_schema.columns
 		WHERE table_name IN ('workflows','workflow_snapshots')
@@ -272,6 +278,13 @@ func TestWorkflowAssetImportFromInstalledPlugin(t *testing.T) {
 	}
 	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id=$1", releaseID); n != 1 {
 		t.Fatalf("upgrade republished an imported path: %d snapshots", n)
+	}
+	var upgradedGraph, upgradedSnapshotGraph string
+	must(t, f.store.Pool.QueryRow("SELECT graph::text FROM workflows WHERE id=$1", releaseID).Scan(&upgradedGraph))
+	must(t, f.store.Pool.QueryRow("SELECT graph::text FROM workflow_snapshots WHERE workflow_id=$1 AND version=1", releaseID).Scan(&upgradedSnapshotGraph))
+	if upgradedGraph != releaseGraph || upgradedSnapshotGraph != releaseSnapshotGraph {
+		t.Fatalf("an upgrade rewrote an imported path: workflow changed=%v snapshot changed=%v",
+			upgradedGraph != releaseGraph, upgradedSnapshotGraph != releaseSnapshotGraph)
 	}
 
 	// Archiving an imported workflow frees its name but never re-imports the path.
@@ -381,6 +394,38 @@ func TestWorkflowAssetImportDocumentFailuresAreIndependent(t *testing.T) {
 		t.Fatalf("only the good document and the pre-existing workflow must exist: %v", live)
 	}
 
+	// The import result and the editor's publish refusal must be the same problems, because both
+	// come from the one shared gate. Publishing the same graph proves the lists have not drifted.
+	probe := f.call("POST", f.path("/workflows"), core.Object{
+		"name":  "Import Gate Probe",
+		"graph": core.Object{"nodes": []any{}, "edges": []any{}},
+	}, "import-gate-probe", 200).O("resource")
+	refused := f.call("POST", f.path("/workflows/"+probe.S("id")+"/publish"), core.Object{}, "import-gate-probe-publish", 400)
+	publishedProblems := []any{}
+	for _, problem := range problems(t, refused) {
+		publishedProblems = append(publishedProblems, map[string]any(problem))
+	}
+	importedProblems, _ := documents["assets/workflows/graph.json"].O("failureDetail")["problems"].([]any)
+	if !reflect.DeepEqual(importedProblems, publishedProblems) {
+		t.Fatalf("import and publish gates disagree: import=%v publish=%v", importedProblems, publishedProblems)
+	}
+	f.call("DELETE", f.path("/workflows/"+probe.S("id")), core.Object{"version": probe.N("version")}, "import-gate-probe-archive", 200)
+
+	// A failed result is retried on the next trigger; the retry must refresh both the document's
+	// timestamp and the source attempt's, so a reader can tell a retry from a stuck first attempt.
+	_, err := f.store.Pool.Exec(`UPDATE workflow_asset_documents SET updated_at=now()-interval '1 hour'
+		WHERE space_id=$1 AND outcome='failed'`, sid)
+	must(t, err)
+	_, err = f.store.Pool.Exec(`UPDATE workflow_asset_imports SET attempted_at=now()-interval '1 hour'
+		WHERE space_id=$1 AND identifier='broken-kit'`, sid)
+	must(t, err)
+	if n := f.scalar(`SELECT count(*) FROM workflow_asset_documents WHERE space_id=$1 AND updated_at<now()-interval '30 minutes'`, sid); n != 4 {
+		t.Fatalf("backdated failed results = %d, want 4", n)
+	}
+	if n := f.scalar(`SELECT count(*) FROM workflow_asset_imports WHERE space_id=$1 AND attempted_at<now()-interval '30 minutes'`, sid); n != 1 {
+		t.Fatalf("backdated attempts = %d, want 1", n)
+	}
+
 	// A repaired package retries only the failed paths; the imported one keeps its original copy.
 	fixed := workflowPackage(t, map[string]string{
 		"ok.json":     executableDocument("Good Kit", `"changed":true`),
@@ -394,6 +439,12 @@ func TestWorkflowAssetImportDocumentFailuresAreIndependent(t *testing.T) {
 	f.syncMarketplace(t, repo)
 	f.installWorkflowPlugin(t, sid, "official/broken-kit", "1.1.0")
 	must(t, f.importWorkflowAssets(t))
+	if n := f.scalar(`SELECT count(*) FROM workflow_asset_documents WHERE space_id=$1 AND updated_at<now()-interval '30 minutes'`, sid); n != 0 {
+		t.Fatalf("retried documents did not refresh their timestamps: %d stale rows", n)
+	}
+	if n := f.scalar(`SELECT count(*) FROM workflow_asset_imports WHERE space_id=$1 AND attempted_at<now()-interval '30 minutes'`, sid); n != 0 {
+		t.Fatalf("retried attempt did not refresh its timestamp: %d stale rows", n)
+	}
 	documents = assetDocuments(f.assetImport(t, sid, "official/broken-kit"))
 	for _, path := range []string{"assets/workflows/bad.json", "assets/workflows/noname.json", "assets/workflows/graph.json"} {
 		if documents[path].S("outcome") != "imported" {

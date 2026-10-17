@@ -479,7 +479,7 @@ func Document() map[string]any {
 }
 
 // pathParamSchema types a path parameter. `formRef` is deliberately NOT a UUID: it is an opaque
-// provider-scoped token that Issues never parses (§38.17), constrained only by the grammar that keeps
+// provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
 	if name == "formRef" {

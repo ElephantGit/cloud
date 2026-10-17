@@ -24,8 +24,10 @@ import (
 	"github.com/wanglongan587/cloud/internal/controlgrpc"
 	"github.com/wanglongan587/cloud/internal/core"
 	"github.com/wanglongan587/cloud/internal/logger"
+	"github.com/wanglongan587/cloud/internal/modelgateway"
 	"github.com/wanglongan587/cloud/internal/pluginmarket"
 	"github.com/wanglongan587/cloud/internal/repository"
+	"github.com/wanglongan587/cloud/internal/workflowasset"
 )
 
 func main() {
@@ -122,6 +124,22 @@ func run() (runErr error) {
 		go func() {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, syncer.Sync, cfg.Plugins.SyncInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
+	// Workflow asset import is triggered by the space's desired state, never by a Node install
+	// result: a space with no live runtime still receives its templates. Downloads run outside
+	// transactions; only results are written. The checked outbound client enforces the same
+	// public-address policy as the model gateway and never follows redirects.
+	if cfg.Plugins.AssetImportEnabled {
+		upstream, clientErr := modelgateway.NewUpstreamClient(modelgateway.UpstreamConfig{DNS: modelgateway.DefaultDNSConfig()})
+		if clientErr != nil {
+			return clientErr
+		}
+		store.WorkflowAssets = workflowasset.NewFetcher(store.ObjectStore, upstream.Transport)
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.ImportWorkflowAssetsOnce, cfg.Plugins.AssetImportInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
 	// B-owned dispatch loop for queued real Space Agent runs: a bounded rescan (limit

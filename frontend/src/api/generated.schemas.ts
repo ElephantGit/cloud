@@ -1776,6 +1776,66 @@ export interface Workflow {
 }
 
 /**
+ * @nullable
+ */
+export type WorkflowAssetDocumentFailureDetail = { [key: string]: unknown } | null;
+
+export type WorkflowAssetDocumentOutcome = typeof WorkflowAssetDocumentOutcome[keyof typeof WorkflowAssetDocumentOutcome];
+
+
+export const WorkflowAssetDocumentOutcome = {
+  imported: 'imported',
+  failed: 'failed',
+} as const;
+
+export interface WorkflowAssetDocument {
+  documentPath: string;
+  /** @nullable */
+  failureCode?: string | null;
+  /** @nullable */
+  failureDetail?: WorkflowAssetDocumentFailureDetail;
+  outcome: WorkflowAssetDocumentOutcome;
+  packageSha256: string;
+  packageVersion: string;
+  /** @nullable */
+  snapshotVersion?: number | null;
+  updatedAt: string;
+  /** @nullable */
+  workflowId?: string | null;
+}
+
+export type WorkflowAssetImportState = typeof WorkflowAssetImportState[keyof typeof WorkflowAssetImportState];
+
+
+export const WorkflowAssetImportState = {
+  pending: 'pending',
+  importing: 'importing',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface WorkflowAssetImport {
+  /** @nullable */
+  attemptedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  documents: WorkflowAssetDocument[];
+  /** @nullable */
+  failureCode?: string | null;
+  identifier: string;
+  packageSha256: string;
+  packageVersion: string;
+  pluginId: string;
+  requestedRevision: number;
+  sourceNamespace: string;
+  state: WorkflowAssetImportState;
+}
+
+export interface WorkflowAssetImportList {
+  items: WorkflowAssetImport[];
+}
+
+/**
  * The frozen graph document this run executed against, from the snapshot it captured.
  * @nullable
  */

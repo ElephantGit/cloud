@@ -70,6 +70,12 @@ type PluginConfig struct {
 	// SyncEnabled turns the catalog sync loop on. When false the config section may
 	// stay empty: no marketplace source is seeded and no sync loop runs.
 	SyncEnabled bool `mapstructure:"sync_enabled"`
+	// AssetImportEnabled turns the workflow asset import loop on. It is independent of Node
+	// installation: the selected package is downloaded by Cloud and its documents become tenant
+	// workflows even when the space has no live runtime.
+	AssetImportEnabled bool `mapstructure:"asset_import_enabled"`
+	// AssetImportInterval is the period between import passes. The first pass runs at startup.
+	AssetImportInterval time.Duration `mapstructure:"asset_import_interval"`
 }
 
 // CollaborationConfig gates optional collaboration-capability wiring on the Store.
@@ -152,6 +158,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("issue_runs.agent_start_timeout", DefaultAgentStartTimeout)
 	v.SetDefault("issue_runs.agent_restore_timeout", DefaultAgentRestoreTimeout)
 	v.SetDefault("issue_runs.agent_end_confirm_timeout", DefaultAgentEndConfirmTimeout)
+	v.SetDefault("plugins.asset_import_interval", DefaultAssetImportInterval)
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
@@ -207,11 +214,18 @@ const (
 	DefaultDeliveryUnreachableAfter = 30 * time.Minute
 )
 
+// DefaultAssetImportInterval is the first-version workflow asset import cadence. The pass is a
+// bounded scan of installed workflow plugins and downloads only due attempts.
+const DefaultAssetImportInterval = 30 * time.Second
+
 // validatePlugins enforces the plugin marketplace configuration contract. An
 // empty section is legal while sync is disabled; once sync is enabled the
 // marketplace address and branch must be present and well-formed so a typo
 // fails at startup instead of surfacing as a silently empty catalog.
 func validatePlugins(p PluginConfig) error {
+	if p.AssetImportEnabled && p.AssetImportInterval <= 0 {
+		return fmt.Errorf("plugins.asset_import_interval must be a positive duration when plugins.asset_import_enabled is true")
+	}
 	if !p.SyncEnabled {
 		return nil
 	}

@@ -490,6 +490,81 @@ func TestWorkflowAssetImportFencesAReinstallDuringDownload(t *testing.T) {
 	}
 }
 
+// upgradeBeforeClaim installs the second plugin's newer version during the first download. The
+// second plugin's job was already resolved from the older selection before the pass started, so the
+// pass must discard it rather than claim the newer revision with the stale locator.
+type upgradeBeforeClaim struct {
+	f      *fixture
+	t      *testing.T
+	sid    string
+	first  []byte
+	second []byte
+	calls  int
+}
+
+func (u *upgradeBeforeClaim) Fetch(context.Context, string, string) ([]byte, error) {
+	u.calls++
+	if u.calls == 1 {
+		u.f.installWorkflowPlugin(u.t, u.sid, "official/racing-kit", "2.0.0")
+		return u.first, nil
+	}
+	return u.second, nil
+}
+
+// TestWorkflowAssetImportDiscardsAJobSupersededBeforeClaim covers the scan-to-claim window: the job
+// list is resolved before any download, so an administrator's upgrade between the scan and a later
+// claim must invalidate that job. Claiming it would download the previously selected package while
+// recording the newer revision, and the succeeded path would occupy the skip key for the old
+// document forever.
+func TestWorkflowAssetImportDiscardsAJobSupersededBeforeClaim(t *testing.T) {
+	f := setup(t)
+	repo := workflowMarketplace(t, f.root)
+	first := workflowPackage(t, map[string]string{"first.json": executableDocument("First Kit", "")})
+	old := workflowPackage(t, map[string]string{"same.json": executableDocument("Old Kit", "")})
+	newer := workflowPackage(t, map[string]string{"same.json": executableDocument("New Kit", "")})
+	packages := newWorkflowPackages(t, map[string][]byte{
+		"/first.orax": first,
+		"/old.orax":   old,
+		"/new.orax":   newer,
+	})
+	publishWorkflowRelease(t, repo, "first-kit", "1.0.0", packages.server.URL+"/first.orax", first)
+	publishWorkflowRelease(t, repo, "racing-kit", "1.0.0", packages.server.URL+"/old.orax", old)
+	f.syncMarketplace(t, repo)
+
+	sid := f.defaultSpaceID()
+	f.installWorkflowPlugin(t, sid, "official/first-kit", "")
+	f.installWorkflowPlugin(t, sid, "official/racing-kit", "")
+	// The upgrade is in the catalog before the pass scans, but the install that selects it happens
+	// during the pass, after racing-kit's job has already been resolved from the older release.
+	publishWorkflowRelease(t, repo, "racing-kit", "2.0.0", packages.server.URL+"/new.orax", newer)
+	f.syncMarketplace(t, repo)
+	// Make the first plugin's job the earlier one so the upgrade lands before racing-kit's claim.
+	_, err := f.store.Pool.Exec(`UPDATE workflow_asset_imports SET updated_at=now()-CASE
+		WHEN identifier='first-kit' THEN interval '2 hours' ELSE interval '1 hour' END WHERE space_id=$1`, sid)
+	must(t, err)
+
+	f.store.WorkflowAssets = &upgradeBeforeClaim{f: f, t: t, sid: sid, first: first, second: newer}
+	must(t, f.importWorkflowAssets(t))
+	// The superseded job wrote nothing, so the row is still pending for the newer revision.
+	item := f.assetImport(t, sid, "official/racing-kit")
+	if item.S("state") != "pending" || item.S("packageVersion") != "2.0.0" {
+		t.Fatalf("a superseded job claimed the newer revision: %v", item)
+	}
+	must(t, f.importWorkflowAssets(t))
+
+	if live := f.liveWorkflows(t); live["New Kit"] == nil || live["Old Kit"] != nil || live["First Kit"] == nil {
+		t.Fatalf("the superseded job imported stale content: %v", live)
+	}
+	item = f.assetImport(t, sid, "official/racing-kit")
+	if item.S("state") != "completed" || item.S("packageVersion") != "2.0.0" {
+		t.Fatalf("the newer revision did not complete: %v", item)
+	}
+	if n := f.scalar(`SELECT count(*) FROM workflow_asset_documents
+		WHERE space_id=$1 AND identifier='racing-kit' AND package_version='1.0.0'`, sid); n != 0 {
+		t.Fatalf("the superseded package left %d document results", n)
+	}
+}
+
 // TestWorkflowAssetImportPackageFailureRetriesOnNextTrigger covers package-level failure: a digest
 // mismatch records one bounded package code, produces no document rows, and is retried by the next
 // administrator install of the same version.

@@ -48,6 +48,11 @@ func requestWorkflowAssetImport(t *transaction, spaceID, tenantID, namespace, id
 type workflowAssetJob struct {
 	SpaceID, TenantID, Namespace, Identifier string
 	PackageVersion, PackageSHA256, Locator   string
+	// RequestedRevision is the revision the job was resolved against. The claim compares it with the
+	// row's current revision, so an administrator's reinstall between the scan and the claim makes
+	// the job stale rather than letting it download the previously selected package under the newer
+	// revision's fence.
+	RequestedRevision int64
 }
 
 // dueWorkflowAssetImports returns at most one batch of pending or lease-expired attempts. A
@@ -56,6 +61,7 @@ type workflowAssetJob struct {
 func (s *Store) dueWorkflowAssetImports(ctx context.Context) ([]workflowAssetJob, error) {
 	out, err := s.transact(ctx, func(t *transaction) Object {
 		return Object{"rows": t.list(`SELECT i.space_id,i.tenant_id,i.source_namespace,i.identifier,
+			 i.requested_revision AS requested_revision,
 			 coalesce(nullif(p.selected_release->>'version',''),c.version,i.package_version) AS package_version,
 			 coalesce(nullif(p.selected_release->>'sha256',''),c.sha256,i.package_sha256) AS package_sha256,
 			 coalesce(nullif(p.selected_release->>'url',''),c.url,'') AS locator
@@ -79,39 +85,34 @@ func (s *Store) dueWorkflowAssetImports(ctx context.Context) ([]workflowAssetJob
 			SpaceID: row.S("spaceId"), TenantID: row.S("tenantId"),
 			Namespace: row.S("sourceNamespace"), Identifier: row.S("identifier"),
 			PackageVersion: row.S("packageVersion"), PackageSHA256: row.S("packageSha256"),
-			Locator: row.S("locator"),
+			Locator: row.S("locator"), RequestedRevision: row.N("requestedRevision"),
 		})
 	}
 	return jobs, nil
 }
 
 // claimWorkflowAssetImport moves one due row to importing and returns the claimed revision, or nil
-// when another worker got there first. The revision is the fencing value the result write checks.
+// when the claim is stale or another worker got there first. The revision is the fencing value both
+// the job's package identity and the result write are checked against: a reinstall between the scan
+// and this claim bumps requested_revision, the CAS below matches nothing, and the next pass resolves
+// the job again from the newer selection.
 func (s *Store) claimWorkflowAssetImport(ctx context.Context, job *workflowAssetJob) (int64, error) {
 	out, err := s.transact(ctx, func(t *transaction) Object {
-		// The transaction's advisory lock makes the read-then-compare-set atomic without a
-		// RETURNING subquery, which PostgreSQL does not accept as a FROM source.
-		row := t.one(`SELECT requested_revision FROM workflow_asset_imports
-			WHERE space_id=$1 AND source_namespace=$2 AND identifier=$3
-			  AND ((state='pending' AND attempted_revision<requested_revision)
-			       OR (state='importing' AND lease_until<now()))`,
-			job.SpaceID, job.Namespace, job.Identifier)
-		if row == nil {
-			return nil
-		}
-		revision := row.N("requestedRevision")
 		changed := t.execRows(`UPDATE workflow_asset_imports SET state='importing',
 			 attempted_revision=requested_revision,attempted_at=now(),
 			 package_version=$4,package_sha256=$5,
 			 lease_until=now()+$6::interval,
 			 version=version+1,updated_at=now()
-			WHERE space_id=$1 AND source_namespace=$2 AND identifier=$3 AND requested_revision=$7`,
+			WHERE space_id=$1 AND source_namespace=$2 AND identifier=$3
+			  AND requested_revision=$7
+			  AND ((state='pending' AND attempted_revision<requested_revision)
+			       OR (state='importing' AND lease_until<now()))`,
 			job.SpaceID, job.Namespace, job.Identifier, job.PackageVersion, job.PackageSHA256,
-			fmt.Sprintf("%d seconds", int(assetImportLease/time.Second)), revision)
+			fmt.Sprintf("%d seconds", int(assetImportLease/time.Second)), job.RequestedRevision)
 		if changed == 0 {
 			return nil
 		}
-		return Object{"revision": revision}
+		return Object{"revision": job.RequestedRevision}
 	})
 	if err != nil {
 		return 0, err

@@ -279,8 +279,11 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   key) → 409 `interaction_already_confirmed`; the same key + same body replays the stored response.
 - Confirm on a non-`form` interaction → 409 `interaction_not_confirmable`.
 - **Assist is stateless and takes a `targetId`, not an interaction**: the form is a *draft* until the
-  user confirms it, so assist must work before any interaction exists and must write nothing. An
-  unknown/non-workflow target → 404 `target_not_found`.
+  user confirms it, so assist must work before any interaction exists and must write nothing. It
+  re-validates `values` against the live graph's descriptor, and reads the pre-rename `version` key
+  the same way `confirm` does — a form rendered before the rename is accepted here rather than refused
+  as an unknown key, because the two entries validate one submission and cannot disagree about its
+  keys. An unknown/non-workflow target → 404 `target_not_found`.
 - Capability states: `503 form_descriptor_unavailable` / `503 assist_unavailable` (port not wired);
   `404 form_descriptor_not_found` (unknown `formRef`); `500 invalid_form_descriptor` (provider bug).
 - The confirmed values land in `issue_interactions.input`; the effective execution snapshot in

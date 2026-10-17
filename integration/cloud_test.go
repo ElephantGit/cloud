@@ -267,6 +267,11 @@ func (f *fixture) call(method, path string, body core.Object, key string, want i
 	if status != want {
 		f.t.Fatalf("%s %s: want %d got %d %v", method, path, want, status, o)
 	}
+	// A replayed creation already has its snapshot; only a new Project gets its first sync.
+	if pid := o.O("resource").S("id"); method == "POST" && strings.HasSuffix(path, "/projects") && status == 202 && !f.withoutSnapshot &&
+		f.scalar("SELECT count(*) FROM repository_snapshots WHERE project_id=$1", pid) == 0 {
+		f.syncProject(pid)
+	}
 	return o
 }
 func (f *fixture) path(s string) string { return "/api/v1/tenants/" + f.tid + s }

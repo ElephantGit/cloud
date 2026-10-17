@@ -265,15 +265,13 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 	require(e != nil, 404, "not_found")
 	outcome := result.S("outcome")
 	require((outcome == "clone_ready" || outcome == "clone_failed") && result.O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
+	// A checkout of any other commit than the snapshot it was given is a contradiction, not a
+	// fact to record: the baseline would be wrong for every later delivery and resume (contract D3).
+	require(outcome != "clone_ready" || result.S("commit") == e.O("input").S("baseCommit"), 400, "base_commit_mismatch")
 	if previous := e.O("result"); len(previous) > 0 {
 		require(jsonText(previous) == jsonText(result), 409, "result_conflict")
 	} else {
-		state := "succeeded"
-		if outcome == "clone_failed" {
-			state = "failed"
-		}
 		t.exec("UPDATE clone_executions SET result=$2,updated_at=now() WHERE execution_id=$1", execution, jsonText(result))
-		t.exec("UPDATE clone_requests SET state=$2,updated_at=now() WHERE id=$1", operation, state)
 	}
 	if withReceipt {
 		sequence, event := r.Body.N("sequence"), r.Body.S("event")

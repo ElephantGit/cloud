@@ -186,6 +186,22 @@ export interface CloneExecution {
   workspaceId: string | null;
 }
 
+export type CloneInputKind = typeof CloneInputKind[keyof typeof CloneInputKind];
+
+
+export const CloneInputKind = {
+  clone: 'clone',
+} as const;
+
+export interface CloneInput {
+  /** @pattern ^([0-9a-f]{40}|[0-9a-f]{64})$ */
+  baseCommit: string;
+  kind: CloneInputKind;
+  repositoryUrl: string;
+  snapshotRef: string;
+  workspaceRef: string;
+}
+
 export type CloneStateKind = typeof CloneStateKind[keyof typeof CloneStateKind];
 
 
@@ -308,19 +324,11 @@ export interface ContextRef {
 export interface ControllerProject {
   createdAt: string;
   /** @nullable */
-  credentialRefId: string | null;
-  defaultBranch: string;
-  /** @nullable */
   deletedAt: string | null;
   id: string;
   lifecycle: string;
   name: string;
   ownerUserId: string;
-  /** @nullable */
-  repositoryCredentialRefId?: string | null;
-  repositoryUrl: string;
-  /** @nullable */
-  secretRef: string | null;
   spaceId: string;
   tenantId: string;
   version: number;
@@ -1229,6 +1237,7 @@ export type OperationRequestPluginsItem = { [key: string]: unknown };
 export type OperationRequestPrevious = {[key: string]: Workspace};
 
 export interface OperationRequest {
+  clone?: CloneInput;
   desiredRevision?: number;
   pluginId?: string;
   pluginMeta?: OperationRequestPluginMetaItem[];
@@ -1242,6 +1251,7 @@ export interface OperationRequest {
 export interface OperationResult {
   forceStopId?: string;
   resourceId?: string;
+  syncErrorCode?: string;
 }
 
 export interface Operation {
@@ -1512,6 +1522,7 @@ export interface SessionModelStatistics {
 export type SnapshotPluginInput = { [key: string]: unknown };
 
 export interface Snapshot {
+  cloneInput?: CloneInput;
   clones: CloneExecution[];
   effects: Effect[];
   nodes: Node[];

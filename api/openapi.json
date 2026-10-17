@@ -369,6 +369,38 @@
         ],
         "type": "object"
       },
+      "CloneInput": {
+        "additionalProperties": false,
+        "properties": {
+          "baseCommit": {
+            "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "clone"
+            ],
+            "type": "string"
+          },
+          "repositoryUrl": {
+            "type": "string"
+          },
+          "snapshotRef": {
+            "type": "string"
+          },
+          "workspaceRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "repositoryUrl",
+          "snapshotRef",
+          "baseCommit",
+          "workspaceRef"
+        ],
+        "type": "object"
+      },
       "CloneOperation": {
         "additionalProperties": false,
         "properties": {
@@ -644,14 +676,6 @@
             "format": "date-time",
             "type": "string"
           },
-          "credentialRefId": {
-            "format": "uuid",
-            "nullable": true,
-            "type": "string"
-          },
-          "defaultBranch": {
-            "type": "string"
-          },
           "deletedAt": {
             "format": "date-time",
             "nullable": true,
@@ -669,18 +693,6 @@
           },
           "ownerUserId": {
             "format": "uuid",
-            "type": "string"
-          },
-          "repositoryCredentialRefId": {
-            "format": "uuid",
-            "nullable": true,
-            "type": "string"
-          },
-          "repositoryUrl": {
-            "type": "string"
-          },
-          "secretRef": {
-            "nullable": true,
             "type": "string"
           },
           "spaceId": {
@@ -702,14 +714,10 @@
           "ownerUserId",
           "spaceId",
           "name",
-          "repositoryUrl",
-          "defaultBranch",
-          "credentialRefId",
           "lifecycle",
           "version",
           "createdAt",
-          "deletedAt",
-          "secretRef"
+          "deletedAt"
         ],
         "type": "object"
       },
@@ -2692,6 +2700,9 @@
       "OperationRequest": {
         "additionalProperties": false,
         "properties": {
+          "clone": {
+            "$ref": "#/components/schemas/CloneInput"
+          },
           "desiredRevision": {
             "format": "int64",
             "type": "integer"
@@ -2753,6 +2764,9 @@
           },
           "resourceId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "syncErrorCode": {
             "type": "string"
           }
         },
@@ -3532,6 +3546,9 @@
       "Snapshot": {
         "additionalProperties": false,
         "properties": {
+          "cloneInput": {
+            "$ref": "#/components/schemas/CloneInput"
+          },
           "clones": {
             "items": {
               "$ref": "#/components/schemas/CloneExecution"
@@ -18466,7 +18483,7 @@
         ]
       },
       "post": {
-        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl allows HTTPS or SSH with no password/query/fragment. defaultBranch is required and must name a branch, not HEAD (Cloud never reads the remote repository); credentialRefId must belong to tenant and owner. Sandbox, Node and clone initialization is asynchronous. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl allows HTTPS or SSH with no password/query/fragment. defaultBranch is required and must be a branch name Git accepts in a ref, not HEAD (Cloud never reads the remote repository); it is the branch the Project's Binding syncs. credentialRefId must belong to tenant and owner. Sandbox, Node and clone initialization is asynchronous; the main Workspace clones the Binding's first snapshot and waits for it. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
         "operationId": "post_api_v1_tenants_tid_projects",
         "parameters": [
           {
@@ -19255,7 +19272,7 @@
         ]
       },
       "post": {
-        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Creates one isolated Workspace and Task display identity. title/baseRef required; baseRef becomes the Workspace's requestedRef, which its Node clones; HEAD means the Project's defaultBranch. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Creates one isolated Workspace and Task display identity. title is required. The Workspace clones the Project's current snapshot of its Binding branch: baseRef may be omitted, empty, HEAD or that branch, and any other value is 400 base_ref_not_synced with nothing recorded. The branch becomes the Workspace's requestedRef, the short name of its Git Server branch refs/heads/workspaces/\u003cworkspaceId\u003e/\u003crequestedRef\u003e. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
         "operationId": "post_api_v1_tenants_tid_projects_pid_workspaces",
         "parameters": [
           {
@@ -20987,7 +21004,7 @@
         ]
       },
       "post": {
-        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Project collection scoped to the tenant's sole collaboration space; active tenant membership is required. Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl allows HTTPS or SSH with no password/query/fragment. defaultBranch is required and must name a branch, not HEAD (Cloud never reads the remote repository); credentialRefId must belong to tenant and owner. Sandbox, Node and clone initialization is asynchronous. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Project collection scoped to the tenant's sole collaboration space; active tenant membership is required. Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl allows HTTPS or SSH with no password/query/fragment. defaultBranch is required and must be a branch name Git accepts in a ref, not HEAD (Cloud never reads the remote repository); it is the branch the Project's Binding syncs. credentialRefId must belong to tenant and owner. Sandbox, Node and clone initialization is asynchronous; the main Workspace clones the Binding's first snapshot and waits for it. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
         "operationId": "post_api_v1_tenants_tid_spaces_spaceId_projects",
         "parameters": [
           {
@@ -26249,7 +26266,7 @@
     },
     "/internal/v1/operations/claim": {
       "post": {
-        "description": "Controller requests require an independent controller service credential; holder, active database-time lease epoch and operation version are checked. Claims queued/due retry/any running operation; reclaiming with the same epoch increments the operation version and fences stale in-memory workers. Returns a full scoped recovery snapshot. Reconcile every existing effect with Substrate by stable ID before planning or advancing. No automatic prompt replay.",
+        "description": "Controller requests require an independent controller service credential; holder, active database-time lease epoch and operation version are checked. Claims queued/due retry/any running operation; reclaiming with the same epoch increments the operation version and fences stale in-memory workers. Returns a full scoped recovery snapshot. Reconcile every existing effect with Substrate by stable ID before planning or advancing. No automatic prompt replay. A clone step is handed out only with its cloneInput, frozen once per operation from the Project's current Binding snapshot; without a snapshot the operation is parked as retry_wait snapshot_not_ready while the Binding's latest sync is unfinished, fails as repository_sync_failed once it ended unsuccessfully, and is blocked as git_server_unconfigured without a Git Server. delete_project is not handed out to quiesce while a sync or publish of the Project is unfinished (retry_wait repository_operation_running). A parked operation never empties the claim: the next claimable one is returned.",
         "operationId": "post_internal_v1_operations_claim",
         "requestBody": {
           "content": {
@@ -26384,7 +26401,7 @@
     },
     "/internal/v1/operations/{oid}/advance": {
       "post": {
-        "description": "Controller requests require an independent controller service credential; holder, active database-time lease epoch and operation version are checked. Derives the next step server-side. Requires current-epoch successful effects. Create goes sandbox, node, clone; start goes sandbox, node. quiesce requires all tickets finished and fresh exact-epoch idle proof from each live Node. The clone step requires the operation's latest clone execution (registered over gRPC) to have succeeded on the current Node; it records the baseline commit and commits Workspace Ready/admission with operation success, re-checking the fresh initialized current Node. start commits the same readiness at its node step. Workspace data deletion is planned and completed only after termination confirmation.",
+        "description": "Controller requests require an independent controller service credential; holder, active database-time lease epoch and operation version are checked. Derives the next step server-side. Requires current-epoch successful effects. Create goes sandbox, node, clone; start goes sandbox, node. quiesce requires all tickets finished and fresh exact-epoch idle proof from each live Node. Entering the clone step freezes its cloneInput, or parks or fails the operation as claim does. The clone step requires the operation's latest clone execution (registered over gRPC with exactly the frozen input) to have succeeded on the current Node with exactly the input's baseCommit; it records that commit as the baseline and commits Workspace Ready/admission with operation success, re-checking the fresh initialized current Node. start commits the same readiness at its node step. Workspace data deletion is planned and completed only after termination confirmation.",
         "operationId": "post_internal_v1_operations_oid_advance",
         "parameters": [
           {

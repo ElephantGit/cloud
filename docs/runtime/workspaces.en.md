@@ -37,9 +37,11 @@ by the Controller on its behalf.
   and as a credential foreign key; it is **not** an additional access grant — every current member of
   the tenant can see and use the Project.
 - The external repository is recorded on its single repository Binding: URL, default branch and an
-  optional credential reference. Only `https` or `ssh` URLs are accepted, without query, fragment or
-  embedded password. The default branch must be a concrete branch name, not `HEAD`, because Cloud
-  never reads the remote repository and the Node only clones literal branches.
+  optional credential reference (see [Git Server](../repositories/git-server.en.md)). Only `https` or
+  `ssh` URLs are accepted, without query, fragment or embedded password. The default branch must be a
+  concrete branch name, not `HEAD` (`400 default_branch_required`), and a name Git accepts in a ref
+  (`400 invalid_ref`), because Cloud never reads the remote repository, the Binding syncs exactly this
+  literal branch, and it is also the short name of each Workspace's branch on the Git Server.
 - `lifecycle`: `provisioning` (being created) → `active` → `deleting` → `deleted`. When the creating
   operation reaches a terminal state, success or failure, the Project becomes `active`: what failed is
   its main Workspace, not the Project. A deletion returns to `active` when a Node refuses to stop.
@@ -54,8 +56,12 @@ by the Controller on its behalf.
 - Each Workspace has its own persistent data, mounted as the Node's home by every generation of its
   sandbox. Stopping keeps the data; only deletion removes it. Workspaces share no volume, and there is
   no shared Project repository or linked worktree.
-- `requested_ref` is the branch to clone; `base_commit_id` is the commit the clone produced. When
-  creating an isolated Workspace, `baseRef` set to `HEAD` means the Project's default branch.
+- `requested_ref` equals the Project's default branch (the Binding branch). It is the short name of the
+  Workspace's branch on the Git Server, `refs/heads/workspaces/<workspaceId>/<requested_ref>`, and the
+  name of the checkout's local branch; `base_commit_id` is the snapshot commit the clone checked out. When
+  creating an isolated Workspace, `baseRef` may only be omitted, empty, `HEAD` or that branch; any other
+  value returns `400 base_ref_not_synced` and records nothing, since the snapshot holds only the Binding
+  branch and another name would get that branch's content.
 - `creator_user_id` is the user who actually requested the creation. Use of the runtime's content is
   judged by it, not by the Project owner (see [Runtime control](runtime-control.en.md)).
 - State is described by three groups of fields:
@@ -112,7 +118,7 @@ The `plugin` step is skipped when there are no plugins to handle. What lets each
 |---|---|---|
 | `sandbox` | Plans and performs a `sandbox_ensure` effect to create this generation's sandbox | The effect succeeded and its result carries the sandbox ID and the `nodeId` the Node must present |
 | `node` | Completes the handshake with the sandbox's Node and reports it registered | The current generation's unterminated sandbox has an initialized, connected Node with a heartbeat within 30 seconds, and its `nodeId` matches the ensure result |
-| `clone` | Registers and dispatches one clone execution and takes over the Node's result | The latest clone succeeded on the current Node with a real 40- or 64-character commit, which is written to `base_commit_id` |
+| `clone` | Registers and dispatches one clone execution with the frozen snapshot input and takes over the Node's result | The latest clone succeeded on the current Node with exactly the input's `baseCommit`, which is written to `base_commit_id` |
 | `plugin` | Registers and dispatches the plugin install or removal execution | Every item in the frozen plugin set has a result. Item failures are recorded on the instances and do not keep the Workspace from becoming ready |
 | `quiesce` | Asks the Node to check its own activity atomically and report idleness | No execution is unfinished, and when a sandbox is alive the Node has proven idleness for the current `admission_epoch` |
 | `terminate` | Plans and performs `sandbox_terminate` | The effect succeeded with `terminated=true`, i.e. the old process is confirmed never to touch the storage again |
@@ -121,6 +127,36 @@ The `plugin` step is skipped when there are no plugins to handle. What lets each
 "Workspace ready" (`observed_state=ready`, `admission_open=true`) commits in the same transaction as
 the operation's success, and the Node is checked once more right before, so admission never opens on a
 Node that has already gone away.
+
+### The clone step clones the Binding snapshot
+
+A Workspace never clones the external repository; it clones only the current snapshot of the Project's Binding
+on the Git Server:
+
+- **The input is frozen once.** The transaction that moves the operation into the `clone` step (and every later
+  claim of a `clone` step not yet frozen) builds the input from the Binding's current snapshot and writes it to
+  `operations.request.clone`: the repository on the Git Server (`git_server.repository_base_url` plus
+  `/<tenantId>/<projectId>.git`), the snapshot ref `refs/ora/upstreams/<bindingId>/snapshots/<commit>`, its commit
+  `baseCommit`, and the Workspace branch `refs/heads/workspaces/<workspaceId>/<requested_ref>`. Each operation is
+  frozen once: retries after a failure clone the same snapshot, and later snapshot updates do not change it.
+- **Forwarded verbatim.** The snapshot a Controller claims carries this input as `cloneInput`, and `RecordDispatch`
+  must register exactly it (anything else is a conflict). The Node fetches only that snapshot ref from the Git
+  Server, and the result's commit must equal `baseCommit`, otherwise `400 base_commit_mismatch` and nothing is
+  recorded. In the claimed snapshot the Project carries only its identity and lifecycle: no external repository
+  URL, default branch or credential reference.
+- **No snapshot, no dispatch.** While the Binding has no snapshot, Cloud decides by the Binding's latest sync, in the
+  same transaction as the claim or the step entry, without consuming a clone attempt: while that sync is unfinished
+  the operation goes to `retry_wait` (`snapshot_not_ready`, claimable again after 10 seconds); once it ended without
+  success the operation `failed` (`repository_sync_failed`; the public operation result carries only the sync's safe
+  `syncErrorCode`), and a failed `create_project` still leaves the Project `active`. Without a configured Git Server
+  the operation is `blocked` (`git_server_unconfigured`). A parked operation never empties the claim: the claim moves
+  on to the next claimable operation. Cloud never falls back to the external repository and never starts a sync here;
+  creating a run Workspace never syncs implicitly.
+- **Public reads do not expose the input.** The public operation resource leaves out the frozen clone input.
+
+When Cloud parks a run Workspace creation as `blocked`, it freezes the creation's abandonment deadline in the same
+transaction, just as a Controller deferral to `blocked` does (see
+[Bounded startup](../agent-runs/startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)).
 
 **Key rules.**
 
@@ -147,7 +183,9 @@ Node that has already gone away.
 - **Deleting a Project closes all its Workspaces at once.** Only administrators may delete. If any
   Workspace of the Project has activity or is held by a page, the whole deletion is refused; there is no
   partial deletion. Deletion starts only after syncs or publishes already running on the Project
-  repository have ended (see [Git Server](../repositories/git-server.en.md)).
+  repository have ended: while one is unfinished, the claim parks `delete_project` as `retry_wait`
+  (`repository_operation_running`, claimable again after 10 seconds) without counting an attempt (see
+  [Git Server](../repositories/git-server.en.md)).
 
 ## Effects: durable intent for external side effects
 
@@ -192,14 +230,13 @@ Neither start nor restart clones again; both mount the existing data.
 
 **Repository credentials.** A Project can reference one of the creator's own Git credential
 references (`credential_refs`, which hold infrastructure references, never secret values) at creation.
-Production has no executor that can resolve a credential by reference yet, so any new remote Git
-operation that needs a credential is refused explicitly with
-`409 repository_credential_executor_unavailable`; it never degrades to anonymous access or a global
-credential. Anonymous public repositories work as usual.
+It is recorded on the Binding for the Repo Executor that syncs the external repository. Repository
+credentials gate no Node work: clone, Agent sessions and delivery talk only to the Git Server, Nodes
+never reach the external repository, and the snapshot a Controller claims carries no credential reference.
 
-The tenant-level `/tenants/:tid/clones` is an early, standalone clone request API. In production new
-requests return `410 runtime_scope_required` and only historical reads remain; Workspace clones always
-go through the `clone` step above.
+The tenant-level standalone clone request API (`/tenants/:tid/clones`) is gone; migration `0039` dropped
+its request table and the clone executions that belonged to no Workspace. Every clone is the `clone` step
+of a Workspace operation.
 
 ## Related decisions
 
@@ -210,3 +247,4 @@ go through the `clone` step above.
 - [Internal Control gRPC adds Workspace operations and Controller-reported Nodes](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260926-workspace-operations-and-controller-reported-nodes.md)
 - [Projects belong to a Space: membership replaces personal ownership as the visibility and authorization boundary](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/0-project-space-scoping.md)
 - [Repository credentials are managed as team, personal or unknown attribution](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md) (approved)
+- [A Workspace's clone step consumes the Binding's current snapshot; tenant-level clones are removed](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111); the clone step section above describes its implementation)

@@ -18,7 +18,7 @@ is described in the [configuration reference](configuration.en.md).
 | git-server | `/app/git-server` | Smart HTTP and ref queries for Project repositories |
 | cloudctl | `/app/cloudctl` | Migrations, first-tenant bootstrap, credential reference registration; run once, not a service |
 | PostgreSQL 17 | — | The only business authority |
-| S3-compatible object storage | — | Revision objects (bundles, session JSONL); optional |
+| S3-compatible object storage | — | Revision session JSONL (Revisions from before the switch to Git also have bundles); optional, no Revision is delivered without it |
 
 Outside Cloud, cluster also deploys the Controller (desktop's `ora-controller`), the Sandbox Server (cluster's own
 Substrate implementation) and the Node image (desktop's `ora-node`).
@@ -70,7 +70,7 @@ because of the unknown migration, so a rollback has to deal with the database as
 
 | Process | Materials needed |
 |---|---|
-| Cloud server | The Gateway's two verification public keys (`auth.keys`); the control listener's service certificate, private key and Controller client CA; object storage credential files; the directory machine key on corporate deployments |
+| Cloud server | The Gateway's two verification public keys (`auth.keys`); the control listener's service certificate, private key and Controller client CA; object storage credential files; the CA for the Git Server ref query and Cloud's client certificate and private key; the directory machine key on corporate deployments |
 | Gateway | The service and user signing private keys; the PKCE key; the chosen provider's client secret; model-gateway's public CA |
 | model-gateway | Its service certificate and key; the CA verifying Node model client certificates; the encryption master key; the Gateway's verification public keys (through Cloud's configuration) |
 | git-server | Its service certificate and key; the CA of sandbox git-access certificates; the CA of the Repo Executor certificate; Cloud's ref query client certificate |
@@ -97,7 +97,7 @@ Production connections use TLS; never use the sample's local trust configuration
 
 | Process | Check |
 |---|---|
-| Cloud server | `GET /healthz`: an unreachable database returns `503 database_unavailable`; reports whether object storage is configured, which does not mean storage is online |
+| Cloud server | `GET /healthz`: an unreachable database returns `503 database_unavailable`; reports whether object storage and the Git Server are configured (`objectStore`, `gitServer`), which does not mean they are online |
 | Gateway | `GET /healthz`: PostgreSQL liveness |
 | model-gateway | `model-gateway -healthcheck`: verifies HTTPS and the public CA normally and checks database readiness, without reading user keys or the master key |
 | git-server | `git-server -healthcheck`: calls `/healthz` on the ref listener and verifies the server certificate against the deployment CA, without reading private keys |
@@ -129,7 +129,7 @@ refresh becomes slower.
 | PostgreSQL | All business state |
 | The model-gateway master key volume | Without it the key ciphertexts in the database cannot be decrypted; **back it up together with the database** |
 | The git-server repository volume | Project repositories (`GIT_SERVER_REPOSITORY_ROOT`) |
-| The object storage bucket | Revision bundles and session JSONL |
+| The object storage bucket | Revision session JSONL (and bundles registered before the switch to Git) |
 | Certificate and key volumes | Each process's identity material |
 
 ## CI

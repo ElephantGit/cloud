@@ -109,6 +109,10 @@ Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs
 
 `0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
 
+## 0037：仓库 Binding、快照与仓库 Operation
+
+Git Server 成为 Project 的代码中枢（cloud/git-server 契约决策）：Project 的外部仓库从 `projects` 的列移到它的 Binding。新增 `repository_bindings`（第一阶段每个 Project 恰有一个，含仓库地址、分支与凭据引用），把既有 Project 的 `repository_url`、`default_branch`、`credential_ref_id`、`repository_credential_ref_id` 原样复制为 Binding 后从 `projects` 删除这四列；新增 `repository_operations`（同步与发布 Operation，状态与终态取自契约，每个 Binding 至多一个未结束的同步）与 `repository_snapshots`（Binding 当前快照，只指向不可变的快照 ref）。约束对真实行的拒绝见 `integration/repository_binding_test.go` 的 `TestRepositoryOperationStorageConstraints`。
+
 ## 0038：运行 Workspace 创建 blocked 的有界放弃
 
 新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。

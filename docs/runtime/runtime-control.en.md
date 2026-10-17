@@ -134,9 +134,9 @@ immediately, even while an ordinary operation is under way or a page is using it
 
 Cloud file, terminal and full Agent product entry points are not open; they must first join the same
 use-permission, exclusive-control and execution-permit boundaries. Real plugin execution is already
-done by the Node (see [Plugin marketplace](../plugins/marketplace.en.md)), but private repository
-access that needs a project credential is still not open (see
-[Workspace lifecycle](workspaces.en.md#public-workspace-endpoints)).
+done by the Node (see [Plugin marketplace](../plugins/marketplace.en.md)). Nodes talk only to the Git Server and use no
+repository credential; the external repository is synced by the Repo Executor outside this repository (see
+[Workspace lifecycle](workspaces.en.md#public-workspace-endpoints) and [Git Server](../repositories/git-server.en.md)).
 
 ## Related decisions
 

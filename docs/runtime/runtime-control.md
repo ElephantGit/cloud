@@ -101,8 +101,8 @@ Controller 租约到期不能由缓存的许可延长。
 ## 尚未开放的入口
 
 云端的文件、终端和完整 Agent 产品入口没有开放；它们必须先接入同样的使用权限、独占资格和执行许可边界。插件的真实执行已经由
-Node 承担（见 [插件市场](../plugins/marketplace.md)），但需要项目凭据的私有仓库访问仍未开放（见
-[Workspace 生命周期](workspaces.md#workspace-的公开接口)）。
+Node 承担（见 [插件市场](../plugins/marketplace.md)）。Node 只与 Git Server 通信，不使用仓库凭据；外部仓库由仓库外的 Repo Executor
+同步（见 [Workspace 生命周期](workspaces.md#workspace-的公开接口) 与 [Git Server](../repositories/git-server.md)）。
 
 ## 相关决策
 

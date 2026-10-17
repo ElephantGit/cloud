@@ -49,6 +49,9 @@ Each process in this repository has its own configuration sources:
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | The give-up window for a run Workspace creation stuck in `blocked`; validated like the startup windows |
 | `issue_runs.delivery_give_up_after`, `delivery_unreachable_after` | `2h`, `30m` | Give-up limits for delivery and deletion; non-positive values take the defaults |
 | `object_store.*` | `enabled: false` | See [Revisions](../agent-runs/revisions.en.md#object-storage): `endpoint`, `public_endpoint`, `region`, `bucket`, `path_style`, `access_key_id_file`, `secret_access_key_file`, `upload_grant_ttl` |
+| `git_server.repository_base_url` | empty | The Git Server repository base URL sandboxes reach (`https`, no userinfo, query, fragment or trailing slash), written into clone, session and delivery inputs; empty runs without a Git Server: clone steps stay `blocked` (`git_server_unconfigured`) and deliveries settle as `skipped` |
+| `git_server.ref_query_url`, `ca_file`, `client_cert_file`, `client_key_file` | empty | Required with `repository_base_url`: the ref query listener's `https://host[:port]`, the CA to verify it, and Cloud's client certificate and private key files. Startup only reads the files and makes no network call; an unreachable Git Server or a mismatched certificate only makes verification unavailable and never stops startup. See [Git Server](../repositories/git-server.en.md#ref-queries) |
+| `git_server.ref_query_timeout` | `10s` | Timeout of one ref query; a non-positive value takes the default |
 
 `cloudctl` reads the same configuration but only uses the database connection; it needs a migration account with rights
 to create tables.

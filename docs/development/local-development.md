@@ -51,13 +51,14 @@ task dev                              # Cloud :8080 + Gateway :8081 + Vite :5173
 
 ## 不依赖 Controller 的演示
 
-- **模拟器**：`task simulate`（`go run ./cmd/simulator`）在进程内启动 loopback 的 Cloud 和 Substrate 替身，创建测试租户、模拟沙盒和 Node，把仓库
-  真实 clone 进 main Workspace 自己的数据目录，最后输出一个就绪的 Workspace。磁盘数据在 `.local/demo/`，数据库记录保留，每次运行创建新的演示
+- **模拟器**：`task simulate`（`go run ./cmd/simulator`）在进程内启动 loopback 的 Cloud 和 Substrate 替身，创建测试租户、模拟沙盒和 Node，在 Git
+  Server 替身（按 Git Server 卷布局存放的磁盘仓库，代替外部线登记演示 Project 的快照）里准备快照，再把该快照真实 clone 进 main Workspace
+  自己的数据目录，最后输出一个就绪的 Workspace。Node 替身只从 Git Server 替身取快照，不访问外部仓库。磁盘数据在 `.local/demo/`，数据库记录保留，每次运行创建新的演示
   租户。它使用进程内生成的临时签名密钥，没有生产凭据，不启动真实的 Agent 或插件执行器，也不证明运行时独占、管理认证或工作负载隔离。
 - **看板演示**：`cmd/demo-issue-board-web`（`scripts/demo-issue-board-web.sh`）是单文件 HTML 的 Issue 看板演示，服务端签 JWT，只用于手工验证 Issue
   接口；`frontend/` 才是正式的前端。`cmd/ora-web` 是早期的前端开发边缘服务，日常开发使用 Gateway。
 
-这些入口都只用于开发，它们使用的 `router.NewDevelopment`、`core.NewDevelopmentStore` 等开发构造函数不能出现在生产进程里。
+这些入口都只用于开发，它们使用的 `router.NewDevelopment` 等开发构造函数不能出现在生产进程里。
 
 ## 前端
 

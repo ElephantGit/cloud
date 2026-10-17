@@ -44,6 +44,9 @@
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | 运行 Workspace 创建停在 `blocked` 的放弃窗口，规则同上 |
 | `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；非正值取默认 |
 | `object_store.*` | `enabled: false` | 见 [Revision](../agent-runs/revisions.md#对象存储)：`endpoint`、`public_endpoint`、`region`、`bucket`、`path_style`、`access_key_id_file`、`secret_access_key_file`、`upload_grant_ttl` |
+| `git_server.repository_base_url` | 空 | 沙盒访问的 Git Server 仓库 base URL（`https`，不带用户信息、查询、片段和末尾斜杠），写进 clone、会话和交付输入；为空即不使用 Git Server：clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算 |
+| `git_server.ref_query_url`、`ca_file`、`client_cert_file`、`client_key_file` | 空 | 设置了 `repository_base_url` 时必填：ref 查询监听的 `https://host[:port]`、校验它的 CA，以及 Cloud 的客户端证书和私钥文件。启动时只读入文件、不发网络请求；Git Server 不可达或证书不符只让核验暂不可用，不阻止启动。见 [Git Server](../repositories/git-server.md#ref-查询) |
+| `git_server.ref_query_timeout` | `10s` | 单次 ref 查询的超时；非正值取默认 |
 
 `cloudctl` 读取同一份配置，只用到数据库连接；它需要拥有建表权限的迁移账号。
 

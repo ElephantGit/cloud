@@ -7,11 +7,13 @@
 ## Test categories and coverage
 
 - **`cloud_test.go`**: End-to-end lifecycle verification:
-  - Project and Workspace creation through sandbox → node → clone, with a real Git clone into each Workspace's own data, and `one_main` constraint enforcement.
+  - Project and Workspace creation through sandbox → node → clone, with a real Git clone of a Git Server double snapshot into each Workspace's own data, and `one_main` constraint enforcement.
   - Workspace state progression (`provisioning` $\rightarrow$ `ready` $\rightarrow$ `stopped` $\rightarrow$ `deleted`).
   - Controller leasing, epoch fencing, and operation claiming/advancing.
   - Idempotency replay and conflict detection.
 - **`workspace_lifecycle_test.go`**: retained effect kinds per step, clone failure/retry and unknown-outcome blocking, and Workspace data deletion waiting for termination.
+- **`clone_snapshot_test.go`**: the clone step consuming the Binding's current snapshot (git-server-preset fixtures stand in for the external line): waiting for the first sync then freezing the input, failing with the sync's failure, claims passing a parked operation, frozen input outliving snapshot updates, isolated `baseRef` limited to the synced branch, run Workspaces never syncing, delete_project waiting for a repository Operation, blocking without a Git Server, and tenant-level clones being gone.
+- **`git_server_grants_test.go`**: Git Server authorization: a clone execution reads only during its step, and an Agent session writes only its own Workspace's branches.
 - **`workspace_operations_grpc_test.go`**: the Controller driving a Workspace through `WorkspaceOperationService` / `NodeReportService`, Node incarnation replacement, and `OperationAvailable` delivery.
 - **`endpoints_test.go`**: Comprehensive route and parameter matrix testing for all public and internal control endpoints.
 - **`contract_test.go`**: End-to-end OpenAPI contract validation against live HTTP responses.

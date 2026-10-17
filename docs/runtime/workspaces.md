@@ -30,9 +30,10 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 
 - 属于租户和它唯一的 Space，`owner_user_id` 是创建者，作为持久归属和凭据外键保留；它**不**是额外的访问授权，
   租户的所有当前成员都能看到并使用 Project。
-- 外部仓库记录在它唯一的仓库 Binding 上：地址、默认分支、可选的凭据引用。仓库地址只接受 `https` 或 `ssh`，
-  不允许带查询、片段或内嵌密码；默认分支必须是一个具体的分支名，不接受 `HEAD`，因为 Cloud 不读取远端仓库，
-  Node 也只 clone 字面分支。
+- 外部仓库记录在它唯一的仓库 Binding 上：地址、默认分支、可选的凭据引用（见 [Git Server](../repositories/git-server.md)）。
+  仓库地址只接受 `https` 或 `ssh`，不允许带查询、片段或内嵌密码；默认分支必须是一个具体的分支名，不接受 `HEAD`
+  （`400 default_branch_required`），并且必须是 Git 接受的 ref 名（`400 invalid_ref`），因为 Cloud 不读取远端仓库，
+  Binding 只同步这一个字面分支，它也是 Workspace 在 Git Server 上分支的短名。
 - 生命周期 `lifecycle`：`provisioning`（创建中）→ `active` → `deleting` → `deleted`。创建操作进入终态时，无论
   成功还是失败，Project 都进入 `active`：失败的是它的 main Workspace，不是 Project。删除在 Node 拒绝停止时回到
   `active`。
@@ -46,8 +47,10 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 
 - 每个 Workspace 有自己的持久数据，被它的每一代沙盒挂载为 Node 的 home；停止保留数据，只有删除才删数据。
   Workspace 之间不共享卷，也没有共享的 Project 仓库或 linked worktree。
-- `requested_ref` 是要 clone 的分支，`base_commit_id` 是 clone 后得到的基础提交。创建 isolated Workspace 时
-  `baseRef` 写 `HEAD` 表示 Project 的默认分支。
+- `requested_ref` 等于 Project 的默认分支（Binding 分支），是 Workspace 在 Git Server 上分支
+  `refs/heads/workspaces/<workspaceId>/<requested_ref>` 的短名，也是 checkout 里本地分支的名字；`base_commit_id` 是
+  clone 的快照提交。创建 isolated Workspace 时 `baseRef` 只能省略、为空、写 `HEAD` 或写这个分支，其他值返回
+  `400 base_ref_not_synced`，不登记任何东西：快照里只有 Binding 分支，叫别的名字会得到这个分支的内容。
 - `creator_user_id` 是真正发起创建的用户。运行时内容的使用权限按它判定，而不是按 Project 的 owner（见
   [运行时控制](runtime-control.md)）。
 - 状态由三组字段描述：
@@ -98,7 +101,7 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 |---|---|---|
 | `sandbox` | 计划并执行 `sandbox_ensure` effect，创建这一代沙盒 | effect 成功，结果里带回沙盒 ID 和 Node 必须出示的 `nodeId` |
 | `node` | 与沙盒里的 Node 握手，报告它已注册 | 当前代次、未终止的沙盒上有一个已初始化、已连接、30 秒内有心跳的 Node，且 `nodeId` 与 ensure 结果一致 |
-| `clone` | 登记并派发一次 clone 执行，接管 Node 的结果 | 最近一次 clone 在当前 Node 上成功，带回真实的 40 或 64 位提交；提交写入 `base_commit_id` |
+| `clone` | 按冻结的快照输入登记并派发一次 clone 执行，接管 Node 的结果 | 最近一次 clone 在当前 Node 上成功，带回的提交等于输入的 `baseCommit`；提交写入 `base_commit_id` |
 | `plugin` | 登记并派发插件安装或移除执行 | 冻结的插件集合里每一项都有结果。单项失败记在实例上，不阻止 Workspace 就绪 |
 | `quiesce` | 请 Node 原子地检查自身活动并报告空闲 | 没有未结束的执行；有存活沙盒时，Node 已针对当前 `admission_epoch` 给出空闲证明 |
 | `terminate` | 计划并执行 `sandbox_terminate` | effect 成功且 `terminated=true`，即旧进程确认不会再访问存储 |
@@ -106,6 +109,27 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 
 "Workspace 就绪"（`observed_state=ready`、`admission_open=true`）和操作成功在同一个事务里提交，提交前再检查一次
 Node，保证准入不会在 Node 已经离开时打开。
+
+### clone 步骤从 Binding 快照 clone
+
+Workspace 不从外部仓库 clone，只从 Project 的 Binding 在 Git Server 上的当前快照 clone：
+
+- **输入冻结一次。** 操作进入 `clone` 步骤的事务（以及之后每次领取尚未冻结的 `clone` 步骤）从 Binding 当前快照生成输入，写进
+  `operations.request.clone`：Git Server 上的仓库地址（`git_server.repository_base_url` 加 `/<tenantId>/<projectId>.git`）、快照 ref
+  `refs/ora/upstreams/<bindingId>/snapshots/<commit>`、它的提交 `baseCommit`，以及 Workspace 分支
+  `refs/heads/workspaces/<workspaceId>/<requested_ref>`。每个操作只冻结一次，失败后的重试 clone 同一个快照，之后快照更新也不改变它。
+- **原样转交。** Controller 领取到的快照以 `cloneInput` 带出这份输入，`RecordDispatch` 必须原样登记（不一致即冲突）；Node 只从
+  Git Server 取这个快照 ref，结果的提交必须等于 `baseCommit`，否则 `400 base_commit_mismatch`，不登记。领取到的快照里 Project
+  只有身份与生命周期，不带外部仓库地址、默认分支或凭据引用。
+- **没有快照时不派发。** Binding 还没有快照时，Cloud 在领取或进入步骤的同一事务里按 Binding 最近一次同步决定，不消耗 clone 次数：
+  同步尚未结束时操作进入 `retry_wait`（`snapshot_not_ready`，10 秒后再领取）；同步已经以非成功终态结束时操作 `failed`
+  （`repository_sync_failed`，公开的操作结果只带同步的安全错误码 `syncErrorCode`），失败的 `create_project` 照常让 Project 进入
+  `active`。没有配置 Git Server 时操作停在 `blocked`（`git_server_unconfigured`）。被停放的操作不会让这次领取落空，领取继续找下一个
+  可领取的操作。Cloud 从不回退到外部仓库，也不在这里触发同步；创建运行 Workspace 不会隐式同步。
+- **公开读取不暴露输入。** 公开的操作资源里没有冻结的 clone 输入。
+
+运行 Workspace 的创建被 Cloud 以 `blocked` 停放时，与 Controller 延期为 `blocked` 一样，在同一事务里冻结它的放弃截止时间（见
+[有界启动](../agent-runs/startup-settlement.md#创建-blocked-的有界放弃)）。
 
 **几条关键规则。**
 
@@ -122,7 +146,8 @@ Node，保证准入不会在 Node 已经离开时打开。
 - **Node 断连关闭准入。** Controller 报告 Node 断开时，就绪的 Workspace 进入 `unavailable` 并关闭准入；同一个
   已初始化的 Node 重新连上后恢复可用，但被撤回的页面操作资格不会因此恢复。
 - **删除 Project 一次关闭所有 Workspace。** 只有管理员能删除；Project 下任何一个 Workspace 有活动或被页面占用，
-  整个删除就被拒绝，不做部分删除。删除需要等 Project 仓库上已经在运行的同步或发布结束后才开始（见
+  整个删除就被拒绝，不做部分删除。删除需要等 Project 仓库上已经在运行的同步或发布结束后才开始：还有未结束的
+  Operation 时，领取把 `delete_project` 停放为 `retry_wait`（`repository_operation_running`，10 秒后再领取），不计次数（见
   [Git Server](../repositories/git-server.md)）。
 
 ## effect：外部副作用的持久意图
@@ -161,11 +186,11 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 原有数据。
 
 **仓库凭据。** 创建 Project 时可以引用一条属于自己的 Git 凭据引用（`credential_refs`，只保存基础设施引用，不保存
-密钥值）。但生产环境还没有能按引用解析凭据的执行端，所以任何需要凭据的新远程 Git 操作都明确拒绝为
-`409 repository_credential_executor_unavailable`，不会降级成匿名访问或改用全局凭据；匿名的公开仓库照常工作。
+密钥值），它记在 Binding 上，供同步外部仓库的 Repo Executor 使用。仓库凭据不控制任何 Node 工作：clone、Agent 会话与交付
+只与 Git Server 通信，Node 不接触外部仓库，Controller 拿到的快照也不带凭据引用。
 
-租户级的 `/tenants/:tid/clones` 是早期的独立 clone 请求接口，生产环境里新建请求返回 `410 runtime_scope_required`，
-只保留历史读取；Workspace 的 clone 一律走上面的 `clone` 步骤。
+租户级的独立 clone 请求接口（`/tenants/:tid/clones`）已删除，迁移 `0039` 删除了它的请求表和不属于任何 Workspace 的 clone
+执行；每个 clone 都是 Workspace 操作的 `clone` 步骤。
 
 ## 相关决策
 
@@ -176,3 +201,4 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 - [Internal Control gRPC 增加 Workspace 操作与 Controller 代报 Node](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260926-workspace-operations-and-controller-reported-nodes.md)
 - [Project 归属 Space：以成员身份取代个人所有作为可见与授权边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/0-project-space-scoping.md)
 - [仓库访问凭据按团队、个人或未知归属管理](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md)（approved）
+- [Workspace 的 clone 步骤改为消费 Binding 当前快照，删除租户级 clone](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中；本文 clone 步骤一节描述的就是它的实现）

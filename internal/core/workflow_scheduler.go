@@ -426,7 +426,7 @@ func advanceWorkflowRun(t *transaction, runID string) {
 	// succeeded otherwise; the failure check reads committed state, never the pass's own reasoning.
 	states = workflowInactiveStates(graph, states)
 	if projectWorkflowNodes(graph, states).hasFailure() {
-		settleWorkflowRunStates(t, runID, version, "failed", workflowRunFailureReason(states), states)
+		settleWorkflowRunStates(t, runID, version, "failed", workflowRunFailureReason(graph, states), states)
 		return
 	}
 	settleWorkflowRunStates(t, runID, version, "succeeded", "", states)
@@ -504,9 +504,14 @@ func workflowNodeDisplayName(node workflowNodeView) string {
 }
 
 // workflowRunFailureReason names the first committed failure in node order, so the run's error
-// points at the node that actually failed rather than at a downstream casualty.
-func workflowRunFailureReason(states map[string]workflowNodeState) string {
-	for _, state := range states {
+// points at the node that actually failed rather than at a downstream casualty. The order has to
+// come from the graph: the states are a map, Go randomizes map iteration, and reading the reason
+// out of it would let the same trace record a different reason on every replay. Every committed
+// state belongs to a graph node — the scheduler writes them from graph nodes, and the graph is
+// frozen at creation — so walking the graph reaches them all.
+func workflowRunFailureReason(graph workflowGraphView, states map[string]workflowNodeState) string {
+	for _, node := range graph.Nodes {
+		state := states[node.ID]
 		if state.Status != "failed" {
 			continue
 		}

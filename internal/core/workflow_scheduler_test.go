@@ -177,6 +177,46 @@ func TestWorkflowProjectionFailurePropagates(t *testing.T) {
 	}
 }
 
+// A run's recorded failure reason must come from the first failure in node order, not from
+// whichever failure the map happened to yield first: the states are a map, Go randomizes map
+// iteration, and a reason that changes between two replays of the same trace is not evidence of
+// anything. One iteration would pass half the time under the old implementation, so the loop turns
+// that coin flip into a near-certain failure.
+func TestWorkflowRunFailureReasonFollowsNodeOrder(t *testing.T) {
+	graph := readWorkflowGraph(wfGraph(
+		[]Object{wfNode("first", "agent", ""), wfNode("second", "agent", "")},
+		nil,
+	))
+	states := map[string]workflowNodeState{
+		"first":  {Status: "failed", Output: Object{"reason": "first failed"}},
+		"second": {Status: "failed", Output: Object{"reason": "second failed"}},
+	}
+	for i := 0; i < 200; i++ {
+		if reason := workflowRunFailureReason(graph, states); reason != "first failed" {
+			t.Fatalf("iteration %d: reason = %q; want the first failure in node order", i, reason)
+		}
+	}
+}
+
+// A failed node that carries no reason of its own still has to say something, and a run whose only
+// committed failures are non-failing states reports the generic phrase rather than an empty one.
+func TestWorkflowRunFailureReasonFallbacks(t *testing.T) {
+	graph := readWorkflowGraph(wfGraph(
+		[]Object{wfNode("a", "agent", ""), wfNode("b", "agent", "")},
+		nil,
+	))
+	if reason := workflowRunFailureReason(graph, map[string]workflowNodeState{
+		"a": {Status: "failed"},
+	}); reason != "node failed" {
+		t.Fatalf("reasonless failure = %q; want node failed", reason)
+	}
+	if reason := workflowRunFailureReason(graph, map[string]workflowNodeState{
+		"a": {Status: "succeeded", Output: Object{"reason": "not a failure"}},
+	}); reason != "run failed" {
+		t.Fatalf("no committed failure = %q; want run failed", reason)
+	}
+}
+
 // wfRuleEvaluate runs one condition rule against a start node whose output the test authors
 // directly, returning whether the rule matches.
 func wfRuleEvaluate(t *testing.T, selector []any, operator string, value any, output Object) bool {

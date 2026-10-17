@@ -49,6 +49,8 @@ Upstream reconciliation coverage: `tenant_upstream_migration_test.go` verifies 0
 
 Revision tests directly cover real uploads, checksum/size/missing objects, expired-grant refresh, post-I/O fencing, transaction failures, replay, both doubles restarting and historical upgrades. Hook tests cover ready/failed, Thread, session end, delivery and deletion committing/rolling back with control evidence. Enable mandatory storage/network environments for full `task test` and `task test:race` too; skipped S3 is not acceptance. See [Testing and gates](../docs/development/testing.en.md#s3) for the environment.
 
+When restart acceptance replaces the Controller/Node, it preserves the same Git Server double to verify frozen history uploads and grant refresh after the delivery ref has been pushed.
+
 ## Test-scoped contract validation
 
 Each test process loads, validates and compiles the OpenAPI router once, then shares it read-only.

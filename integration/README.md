@@ -49,6 +49,8 @@ task test:race
 
 Revision 测试直接覆盖真实上传、checksum/大小/缺失、授权过期刷新、外部校验后围栏、事务失败与重放、双替身重启及历史升级。业务钩子测试验证 ready/failed、Thread、会话结束、交付、删除与控制证据同提交/回滚。完整 `task test`、`task test:race` 也应启用这些强制环境，避免把跳过 S3 当作已验收。环境变量见 [测试与门禁](../docs/development/testing.md#s3)。
 
+重启验收替换 Controller/Node 时保留同一个 Git Server 替身，验证交付 ref 已推送后仍能恢复冻结的 history 上传及授权刷新。
+
 ## 契约验证的测试作用域
 
 同一测试进程只解析、验证和编译一次 OpenAPI 路由表，随后只读共享；每个 fixture 仍持有自己

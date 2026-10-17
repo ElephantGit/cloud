@@ -216,10 +216,10 @@ func parseWorkflowAssetDocument(document workflowasset.Document) workflowAssetPa
 		}
 		return result
 	}
-	// The document is stored verbatim in a jsonb column. PostgreSQL rejects text that Go's decoder
-	// accepts, so such a document must fail alone instead of aborting the transaction that writes
-	// every other document's result.
-	if reason, unsupported := postgresUnsupportedText(document.Content); unsupported {
+	// The document is stored verbatim in a jsonb column. PostgreSQL rejects text and numbers that
+	// Go's decoder accepts, so such a document must fail alone instead of aborting the transaction
+	// that writes every other document's result.
+	if reason, unsupported := postgresUnsupportedJSON(document.Content); unsupported {
 		result.Failure, result.Reason = workflowasset.DocumentInvalidJSON, reason
 		return result
 	}
@@ -237,19 +237,29 @@ func parseWorkflowAssetDocument(document workflowasset.Document) workflowAssetPa
 	return result
 }
 
-// postgresUnsupportedText reports why a document cannot be stored verbatim in a jsonb column. The
+// postgresUnsupportedJSON reports why a document cannot be stored verbatim in a jsonb column. The
 // check is on the raw bytes because Go's decoder has already lost the distinction: it accepts
-// \u0000 (which PostgreSQL rejects) and silently replaces unpaired surrogate escapes with U+FFFD
-// (which PostgreSQL also rejects). Writing such a document would fail the whole result transaction,
-// so it must be classified before the write, beside the other document codes.
-func postgresUnsupportedText(content []byte) (string, bool) {
+// \u0000 (which PostgreSQL rejects), silently replaces unpaired surrogate escapes with U+FFFD
+// (which PostgreSQL also rejects), and decodes numbers outside jsonb's numeric range (for example
+// 1e-20000, which underflows to zero) without error. Writing such a document would fail the whole
+// result transaction, so it must be classified before the write, beside the other document codes.
+func postgresUnsupportedJSON(content []byte) (string, bool) {
 	if !utf8.Valid(content) {
 		return "invalid_utf8", true
 	}
 	inString := false
 	for i := 0; i < len(content); i++ {
 		if !inString {
-			inString = content[i] == '"'
+			switch {
+			case content[i] == '"':
+				inString = true
+			case content[i] == '-' || (content[i] >= '0' && content[i] <= '9'):
+				width, fits := postgresNumberFits(content[i:])
+				if !fits {
+					return "numeric_out_of_range", true
+				}
+				i += width - 1
+			}
 			continue
 		}
 		switch content[i] {
@@ -286,6 +296,83 @@ func postgresUnsupportedText(content []byte) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// jsonb stores numbers as PostgreSQL numeric, which keeps at most 131072 digits before the decimal
+// point and 16383 after it. jsonb parses literals without a typmod, so these storage limits, not
+// the smaller display precision, decide whether a document can be written verbatim.
+const (
+	postgresNumericMaxIntegerDigits = 131072
+	postgresNumericMaxScale         = 16383
+)
+
+// postgresNumberFits reports whether the JSON number at the start of content is representable as a
+// PostgreSQL numeric, and how many bytes it spans. The document is already known to be valid JSON,
+// so the scan only recovers the literal's digit layout and exponent. The scale follows the literal,
+// not the mathematical value: trailing zeros count, so 10e-16384 overflows even though its value
+// equals 1e-16383. The integer side is measured from the first significant digit, so leading zeros
+// in the fraction (0.0001e131075) do not consume the magnitude budget.
+func postgresNumberFits(content []byte) (int, bool) {
+	i := 0
+	if content[i] == '-' {
+		i++
+	}
+	integerStart := i
+	for i < len(content) && content[i] >= '0' && content[i] <= '9' {
+		i++
+	}
+	integerDigits := i - integerStart
+	fractionStart := i
+	fractionDigits := 0
+	if i < len(content) && content[i] == '.' {
+		i++
+		fractionStart = i
+		for i < len(content) && content[i] >= '0' && content[i] <= '9' {
+			i++
+		}
+		fractionDigits = i - fractionStart
+	}
+	exponent := int64(0)
+	if i < len(content) && (content[i] == 'e' || content[i] == 'E') {
+		i++
+		negative := false
+		if i < len(content) && (content[i] == '+' || content[i] == '-') {
+			negative = content[i] == '-'
+			i++
+		}
+		for i < len(content) && content[i] >= '0' && content[i] <= '9' {
+			// Saturation is enough: an exponent this large is out of range either way.
+			if exponent < 1<<40 {
+				exponent = exponent*10 + int64(content[i]-'0')
+			}
+			i++
+		}
+		if negative {
+			exponent = -exponent
+		}
+	}
+	if int64(fractionDigits)-exponent > postgresNumericMaxScale {
+		return i, false
+	}
+	first := -1
+	for j := 0; j < integerDigits; j++ {
+		if content[integerStart+j] != '0' {
+			first = j
+			break
+		}
+	}
+	if first < 0 {
+		for j := 0; j < fractionDigits; j++ {
+			if content[fractionStart+j] != '0' {
+				first = integerDigits + j
+				break
+			}
+		}
+	}
+	if first >= 0 && int64(integerDigits-first)+exponent > postgresNumericMaxIntegerDigits {
+		return i, false
+	}
+	return i, true
 }
 
 // hex4 decodes exactly four hexadecimal digits.

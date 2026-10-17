@@ -535,6 +535,55 @@ func TestWorkflowAssetImportRejectsTextPostgresCannotStore(t *testing.T) {
 	}
 }
 
+// TestWorkflowAssetImportRejectsNumbersPostgresCannotStore covers the same isolation for numbers
+// outside jsonb's numeric range. Go decodes 1e-20000 to zero, so the document parses and passes the
+// publish gate, but PostgreSQL rejects its bytes with "value overflows numeric format" and would
+// roll back the result transaction for the whole package. The document must fail alone; re-encoding
+// or truncating its content to make it storable is not allowed.
+func TestWorkflowAssetImportRejectsNumbersPostgresCannotStore(t *testing.T) {
+	f := setup(t)
+	repo := workflowMarketplace(t, f.root)
+	pkg := workflowPackage(t, map[string]string{
+		"good.json":    executableDocument("Good Kit", ""),
+		"numeric.json": executableDocument("Numeric Kit", `"extra":1e-20000`),
+	})
+	packages := newWorkflowPackages(t, map[string][]byte{"/packages/numeric-1.0.0.orax": pkg})
+	publishWorkflowRelease(t, repo, "numeric-kit", "1.0.0", packages.server.URL+"/packages/numeric-1.0.0.orax", pkg)
+	f.syncMarketplace(t, repo)
+	f.store.WorkflowAssets = workflowasset.NewFetcher(nil, packages.server.Client().Transport)
+
+	sid := f.defaultSpaceID()
+	f.installWorkflowPlugin(t, sid, "official/numeric-kit", "")
+	if err := f.importWorkflowAssets(t); err != nil {
+		t.Fatalf("a numeric document must fail alone: %v", err)
+	}
+	item := f.assetImport(t, sid, "official/numeric-kit")
+	if item.S("state") != "completed" {
+		t.Fatalf("the package must complete despite document failures: %v", item)
+	}
+	documents := assetDocuments(item)
+	if got := documents["assets/workflows/good.json"].S("outcome"); got != "imported" {
+		t.Fatalf("good.json outcome = %q, want imported: %v", got, documents["assets/workflows/good.json"])
+	}
+	numeric := documents["assets/workflows/numeric.json"]
+	if numeric.S("outcome") != "failed" || numeric.S("failureCode") != "document_invalid_json" {
+		t.Fatalf("numeric.json = %v, want document_invalid_json", numeric)
+	}
+	if reason := numeric.O("failureDetail").S("reason"); reason != "numeric_out_of_range" {
+		t.Fatalf("numeric.json reason = %q, want numeric_out_of_range", reason)
+	}
+	if live := f.liveWorkflows(t); len(live) != 1 || live["Good Kit"] == nil {
+		t.Fatalf("the failed document must not create a workflow: %v", live)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots"); n != 1 {
+		t.Fatalf("the failed document must not leave snapshots: %d", n)
+	}
+	// The result transaction committed: the source row is not stuck in importing.
+	if n := f.scalar("SELECT count(*) FROM workflow_asset_imports WHERE space_id=$1 AND state='importing'", sid); n != 0 {
+		t.Fatalf("the result transaction did not commit: %d importing rows", n)
+	}
+}
+
 // reinstallDuringFetch models an administrator upgrading the plugin while the old package is in
 // flight. The first call installs the newer version and still returns the older bytes.
 type reinstallDuringFetch struct {

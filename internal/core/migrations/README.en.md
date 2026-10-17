@@ -117,3 +117,7 @@ Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_s
 ## 0039: Retire tenant-level clones
 
 Part of the switch to Workspaces cloned from Git Server snapshots; no data is migrated. Clone executions that belong to no Workspace and their receipts are deleted, `clone_executions.clone_request_id` and the `one_request_execution` index are dropped, `clone_executions.workspace_id` becomes NOT NULL, and `clone_requests` is dropped; Workspace clone executions and their receipts stay. The migration is retry-safe. Upgrading a database that still holds tenant-level clones is `TestMigration0039RetiresTenantLevelClonesKeepingWorkspaceClones` in `integration/migration_upgrade_path_test.go`.
+
+## 0040: Revisions delivered over Git
+
+Part of the switch to Revisions delivered over Git; no data is migrated. `revisions` gains `delivery_ref`, and `revisions_bundle_shape` is replaced by `revisions_shape`: with a NULL `delivery_ref` a row keeps one of the legacy bundle shapes; with one, it must be a well-formed `refs/ora/deliveries/<UUID>` and carry no bundle column. The partial unique index `revisions_delivery_ref` lets one delivery ref belong to one Revision only. Existing bundle rows are never rewritten, and the migration is retry-safe. The constraints' refusal of real rows is `TestRevisionShapeKeepsGitAndBundleRowsApart` in `integration/agent_run_resume_test.go`.

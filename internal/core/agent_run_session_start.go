@@ -107,7 +107,8 @@ func (s *Store) startAgentSession(t *transaction, runID string) error {
 //	                       actor's default (identity-access D1; agent_run_identity.go names the
 //	                       divergence from D2's creation-time freeze).
 //	initialTurn:           the deterministic first prompt this transaction just wrote as seq=1.
-//	priorRevision:         the Revision the run resumes, when selectPriorRevision chose one.
+//	priorRevision:         the Revision the run resumes, when selectPriorRevision chose one and it
+//	                       lives in the repository the checkout was cloned from.
 //
 // A run Workspace with no recorded baseline, or one whose baseline names no successful clone
 // execution, is an invariant violation: a session cannot run in a Workspace that was never cloned, so
@@ -126,11 +127,17 @@ func (s *Store) sessionStartSpec(t *transaction, o, snap Object, turnID, content
 		return nil, fmt.Errorf("session start: run %s workspace %s has no usable base commit (%q)", runID, wid, base)
 	}
 	checkout := t.one(`
-		SELECT execution_id FROM clone_executions
+		SELECT execution_id, input FROM clone_executions
 		WHERE workspace_id=$1 AND result->>'outcome'='clone_ready' AND result->>'commit'=$2
 		ORDER BY created_at DESC, execution_id DESC LIMIT 1`, wid, base)
 	if checkout == nil {
 		return nil, fmt.Errorf("session start: run %s workspace %s has no successful clone execution for base commit %s", runID, wid, base)
+	}
+	// The prior Revision is fetched from the repository the checkout was cloned from, or not at
+	// all (contract D8). Selection already required this; the frozen prior is checked again here,
+	// where the two inputs are finally put side by side.
+	if prior != nil && prior.S("gitRepositoryUrl") != checkout.O("input").S("repositoryUrl") {
+		prior = nil
 	}
 	identity, err := runGitIdentity(t, o)
 	if err != nil {

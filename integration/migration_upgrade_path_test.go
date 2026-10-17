@@ -1019,7 +1019,7 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 		t.Helper()
 		var names string
 		must(t, pool.QueryRow(`SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
-			WHERE conrelid='revisions'::regclass AND contype='c' AND conname IN ('revisions_check','revisions_bundle_shape','revisions_resume_refused')`).Scan(&names))
+			WHERE conrelid='revisions'::regclass AND contype='c' AND conname IN ('revisions_check','revisions_bundle_shape','revisions_resume_refused','revisions_shape')`).Scan(&names))
 		return names
 	}
 	columns := func(pool *sql.DB) int {
@@ -1043,7 +1043,8 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 		t.Fatalf("before 0033: columns %d constraints %q", got, names)
 	}
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	if got, names := columns(pool), constraints(pool); got != 5 || names != "revisions_bundle_shape,revisions_resume_refused" {
+	// 0040 later replaces the bundle shape 0033 introduced with revisions_shape.
+	if got, names := columns(pool), constraints(pool); got != 5 || names != "revisions_resume_refused,revisions_shape" {
 		t.Fatalf("after 0033: columns %d constraints %q", got, names)
 	}
 }

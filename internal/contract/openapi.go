@@ -177,7 +177,8 @@ func Document() map[string]any {
 	runProps["preparation"] = optional(object(preparationProps, preparationFields...))
 	// revision is the run's registered Revision as metadata only (Cloud Revision D5): no object key,
 	// ref, digest or URL is public. Null until a Revision is registered, and for every non-agent run.
-	// `changed` says whether the run stored a bundle of its own; `priorRevisionId` is the Revision it
+	// `changed` is Cloud's verification verdict that the run delivered new commits, and `bundleSize`
+	// is null for a Revision delivered over Git (Revision D8); `priorRevisionId` is the Revision it
 	// resumed (issue-run resume decision D4, D5).
 	runProps["revision"] = optional(object(obj{"id": uuid(), "baseCommit": str(), "finalCommit": str(), "changed": boolean(), "bundleSize": optional(number()), "historySize": number(), "priorRevisionId": optional(uuid()), "createdAt": timestamp()}, "id", "baseCommit", "finalCommit", "changed", "bundleSize", "historySize", "priorRevisionId", "createdAt"))
 	// resumeRevisionId is the Revision an agent run resumes, fixed at session start; null otherwise.

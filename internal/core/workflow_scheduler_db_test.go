@@ -154,3 +154,101 @@ func TestWorkflowAdvanceIsIdempotent(t *testing.T) {
 		t.Fatalf("version = %d after three passes; want 3 (claim + settle only)", version)
 	}
 }
+
+// wfOneRuleNode is a Condition node with exactly one case, matching when `operator` holds for the
+// variable at `selector`. It exists so a DB test can name the operator under test without spelling
+// out the whole case document.
+func wfOneRuleNode(id, caseID string, selector []any, operator string) Object {
+	return wfConditionNode(id, []any{
+		Object{"id": caseID, "logic": "and", "conditions": []any{
+			Object{"variableSelector": selector, "operator": operator, "value": nil},
+		}},
+	})
+}
+
+// wfConditionScene seeds a start -> condition -> {taken, else} graph whose single case is the given
+// operator over the given selector, and returns the run id. The run's input is {} — see
+// seedWorkflowRunScene — which is the case the empty-input tests below turn on.
+func wfConditionScene(t *testing.T, store *Store, caseID string, selector []any, operator string) string {
+	t.Helper()
+	return seedWorkflowRunScene(t, store, wfGraph(
+		[]Object{
+			wfNode("s", "start", ""),
+			wfOneRuleNode("c", caseID, selector, operator),
+			wfNode("e", "output", ""),
+			wfNode("f", "output", ""),
+		},
+		[][3]string{{"s", "c", ""}, {"c", "e", caseID}, {"c", "f", workflowBranchElse}},
+	))
+}
+
+// wfSelectedBranch advances one pass and returns the branch the condition node committed.
+func wfSelectedBranch(t *testing.T, store *Store, runID string) string {
+	t.Helper()
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	_, _, states, _ := readWorkflowRun(t, store, runID)
+	cond, ok := asWorkflowObject(states["c"])
+	if !ok {
+		t.Fatal("condition node has no committed state")
+	}
+	return cond.O("output").S("selectedBranch")
+}
+
+// wfNodeStatus reads one committed node's status, failing the test if the node has no state at all.
+func wfNodeStatus(t *testing.T, states Object, nodeID string) string {
+	t.Helper()
+	state, ok := asWorkflowObject(states[nodeID])
+	if !ok {
+		t.Fatalf("node %s has no committed state", nodeID)
+	}
+	return state.S("status")
+}
+
+// A condition reading the run's own input sees an empty input as empty. This is the end-to-end shape
+// of the named-type trap: the start node nests the run input as the package's Object, so the value a
+// selector walks out is an Object too, and a type switch that only names map[string]any falls
+// through it. Before asWorkflowObject was used there, `empty` answered false on `{}` and the run took
+// the branch desktop's is_empty would not have taken — a legal start -> condition graph, decided
+// wrong, with nothing in the run to say so.
+func TestWorkflowAdvanceConditionOnEmptyRunInput(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := wfConditionScene(t, store, "was_empty", []any{"s", "input"}, "empty")
+
+	if branch := wfSelectedBranch(t, store, runID); branch != "was_empty" {
+		t.Fatalf("condition selected %q; want was_empty — an empty run input read as not-empty", branch)
+	}
+	_, _, states, _ := readWorkflowRun(t, store, runID)
+	if got := wfNodeStatus(t, states, "e"); got != "succeeded" {
+		t.Fatalf("taken branch status = %q; want succeeded", got)
+	}
+	// The untaken branch is committed as inactive rather than left absent: the run says which branch
+	// it did not take, which is what makes a wrong decision visible after the fact.
+	if got := wfNodeStatus(t, states, "f"); got != "inactive" {
+		t.Fatalf("else branch status = %q; want inactive — the else branch ran on an empty input", got)
+	}
+}
+
+// not_empty is empty's negation on the same document: the same start -> condition graph, the same
+// empty input, and the case must not match.
+func TestWorkflowAdvanceConditionNotEmptyOnEmptyRunInput(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := wfConditionScene(t, store, "was_full", []any{"s", "input"}, "not_empty")
+
+	if branch := wfSelectedBranch(t, store, runID); branch != workflowBranchElse {
+		t.Fatalf("condition selected %q; want else — an empty run input read as not-empty", branch)
+	}
+}
+
+// not_contains must not match an absent variable, and the run has to prove it end to end: the
+// selector names a path the start node never produced, and the case is written with not_contains, the
+// one negated comparator whose absence handling is not simply the inner verdict flipped.
+func TestWorkflowAdvanceConditionNotContainsOnAbsentVariable(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := wfConditionScene(t, store, "absent", []any{"s", "never_written"}, "not_contains")
+
+	if branch := wfSelectedBranch(t, store, runID); branch != workflowBranchElse {
+		t.Fatalf("condition selected %q; want else — not_contains matched an absent variable", branch)
+	}
+}

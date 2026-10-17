@@ -27,7 +27,7 @@ var workflowConditionOperators = map[string]workflowConditionOperator{
 	"not_equals":            workflowCompareNotEquals,
 	"is_not":                workflowCompareNotEquals,
 	"contains":              workflowCompareContains,
-	"not_contains":          workflowCompareNegate(workflowCompareContains),
+	"not_contains":          workflowCompareNotContains,
 	"starts_with":           workflowCompareTextOrder("starts"),
 	"ends_with":             workflowCompareTextOrder("ends"),
 	"empty":                 workflowCompareEmpty,
@@ -61,6 +61,19 @@ func workflowCompareContains(resolved any, absent bool, expected any) bool {
 	return strings.Contains(workflowTextOf(resolved), workflowTextOf(expected))
 }
 
+// workflowCompareNotContains is contains' negation with one deliberate exception: absence. Every
+// comparator in this file treats an absent variable as a no-match (see the file comment), so
+// not_contains has to answer false there too. Negating the inner verdict instead would answer
+// true, which puts not_contains and not_equals on opposite branches of the same absent variable —
+// not_contains would select its case while not_equals fell through to else. The negation belongs to
+// the comparison, not to the classification of absence.
+func workflowCompareNotContains(resolved any, absent bool, expected any) bool {
+	if absent {
+		return false
+	}
+	return !workflowCompareContains(resolved, absent, expected)
+}
+
 // workflowCompareTextOrder serves both text-position operators: "starts" is prefix, "ends" is
 // suffix; any other direction is unreachable.
 func workflowCompareTextOrder(direction string) workflowConditionOperator {
@@ -89,10 +102,16 @@ func workflowCompareEmpty(resolved any, absent bool, expected any) bool {
 		return value == ""
 	case []any:
 		return len(value) == 0
-	case map[string]any:
-		return len(value) == 0
 	default:
-		return false
+		// The object case goes through asWorkflowObject rather than a `case map[string]any` arm:
+		// Object is a named type, so an Object boxed in `any` — which is exactly what a start node's
+		// output is, since it wraps the run input — never matches that arm and would fall through to
+		// "not empty". Reading a nested object out of a node output hits the same trap one level in.
+		obj, ok := asWorkflowObject(value)
+		if !ok {
+			return false
+		}
+		return len(obj) == 0
 	}
 }
 

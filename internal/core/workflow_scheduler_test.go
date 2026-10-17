@@ -226,9 +226,15 @@ func wfRuleEvaluate(t *testing.T, selector []any, operator string, value any, ou
 }
 
 // The operator table, evaluated against a start node whose output is
-// {"flag": true, "count": 2, "text": "hello world", "list": [], "nothing": null}.
+// {"flag": true, "count": 2, "text": "hello world", "list": [], "nothing": null, "emptyObj": {},
+// "fullObj": {"a": 1}, "plainObj": {}}. The three object keys are deliberately three different Go
+// types for the same JSON: a start node's output nests the run input as the package's named Object,
+// while a jsonb-decoded row nests a plain map. Both must classify as empty the same way.
 func TestWorkflowConditionOperators(t *testing.T) {
-	output := Object{"flag": true, "count": 2.0, "text": "hello world", "list": []any{}, "nothing": nil}
+	output := Object{
+		"flag": true, "count": 2.0, "text": "hello world", "list": []any{}, "nothing": nil,
+		"emptyObj": Object{}, "fullObj": Object{"a": 1.0}, "plainObj": map[string]any{},
+	}
 	cases := []struct {
 		name      string
 		selector  []any
@@ -248,12 +254,26 @@ func TestWorkflowConditionOperators(t *testing.T) {
 		{"empty on empty list", []any{"s", "list"}, "empty", nil, true},
 		{"empty on null", []any{"s", "nothing"}, "empty", nil, true},
 		{"not_empty on text", []any{"s", "text"}, "not_empty", nil, true},
+		// An empty object is empty whichever Go type carries it. Before asWorkflowObject was used
+		// here, the named Object fell through the type switch and an empty run input read as
+		// not-empty, so a `start -> condition` graph on input {} took the opposite branch from
+		// desktop's is_empty.
+		{"empty on empty Object", []any{"s", "emptyObj"}, "empty", nil, true},
+		{"not_empty on empty Object", []any{"s", "emptyObj"}, "not_empty", nil, false},
+		{"not_empty on full Object", []any{"s", "fullObj"}, "not_empty", nil, true},
+		{"empty on full Object", []any{"s", "fullObj"}, "empty", nil, false},
+		{"empty on empty plain map", []any{"s", "plainObj"}, "empty", nil, true},
 		{"exists on present", []any{"s", "flag"}, "exists", nil, true},
 		{"not_exists on absent", []any{"s", "missing"}, "not_exists", nil, true},
 		{"exists on absent", []any{"s", "missing"}, "exists", nil, false},
 		{"empty on absent", []any{"s", "missing"}, "empty", nil, true},
 		{"not_empty on absent", []any{"s", "missing"}, "not_empty", nil, false},
 		{"comparator on absent", []any{"s", "missing"}, "equals", nil, false},
+		// Absence is a no-match for every comparator, negated ones included: not_contains must not
+		// select its branch on a variable no prior node ever produced, or it disagrees with
+		// not_equals about the same absent variable.
+		{"not_contains on absent", []any{"s", "missing"}, "not_contains", "zz", false},
+		{"not_contains mismatch", []any{"s", "text"}, "not_contains", "hello", false},
 		{"greater_than match", []any{"s", "count"}, "greater_than", 1.0, true},
 		{"greater_than no match", []any{"s", "count"}, "greater_than", 2.0, false},
 		{"greater_than_or_equal boundary", []any{"s", "count"}, "greater_than_or_equal", 2.0, true},

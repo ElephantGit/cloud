@@ -148,10 +148,15 @@ func TestDeploymentEgressSaveReplayAndPermissionReduction(t *testing.T) {
 
 func TestDeploymentEgressAssetDNSRejectionLeavesNoDocuments(t *testing.T) {
 	f := setup(t)
-	key := make([]byte,32); _,err:=rand.Read(key);must(t,err)
-	cipher,err:=modelgateway.NewCipher(key,"synthetic-metrics-v1");clear(key);must(t,err)
-	run,_,token:=seedGatewayModelGrant(t,f,"openai-completions",cipher)
-	_,err=f.store.Pool.Exec("UPDATE run_model_bindings SET base_url='https://model.example.invalid/v1' WHERE run_id=$1",run);must(t,err)
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	must(t, err)
+	cipher, err := modelgateway.NewCipher(key, "synthetic-metrics-v1")
+	clear(key)
+	must(t, err)
+	run, _, token := seedGatewayModelGrant(t, f, "openai-completions", cipher)
+	_, err = f.store.Pool.Exec("UPDATE run_model_bindings SET base_url='https://model.example.invalid/v1' WHERE run_id=$1", run)
+	must(t, err)
 	f.store.Pool.SetMaxOpenConns(1)
 	address, _, calls := deploymentDNS(t, f, true)
 	policy := deploymentPolicy(t, address)
@@ -178,14 +183,26 @@ func TestDeploymentEgressAssetDNSRejectionLeavesNoDocuments(t *testing.T) {
 	if strings.Contains(fmt.Sprint(item), "signature=") {
 		t.Fatal("signed URL leaked into failure")
 	}
-	auth,err:=core.NewAuthenticator("ora-cloud",f.client.Credentials.Trust);must(t,err)
-	gateway,err:=modelgateway.New(&modelgateway.Options{Store:f.store,Auth:auth,Cipher:cipher,PublicOrigin:"https://model.example.invalid",Upstream:client});must(t,err);t.Cleanup(gateway.Close)
-	server:=httptest.NewServer(http.HandlerFunc(gateway.ModelHandler));t.Cleanup(server.Close)
-	request,err:=http.NewRequestWithContext(t.Context(),http.MethodPost,server.URL+"/runtime/openai/v1/chat/completions",strings.NewReader(`{"model":"synthetic/model"}`));must(t,err)
-	request.Header.Set("Content-Type","application/json");request.Header.Set("Authorization","Bearer "+token)
-	response,err:=server.Client().Do(request);must(t,err);defer response.Body.Close()
-	if response.StatusCode==http.StatusOK||calls.Load()!=4{t.Fatalf("model did not use same DNS rejection: status=%d calls=%d",response.StatusCode,calls.Load())}
-	if f.scalar("SELECT count(*) FROM run_model_bindings WHERE run_id=$1 AND revoked_at IS NOT NULL",run)!=0{t.Fatal("network denial became permanent revocation")}
+	auth, err := core.NewAuthenticator("ora-cloud", f.client.Credentials.Trust)
+	must(t, err)
+	gateway, err := modelgateway.New(&modelgateway.Options{Store: f.store, Auth: auth, Cipher: cipher, PublicOrigin: "https://model.example.invalid", Upstream: client})
+	must(t, err)
+	t.Cleanup(gateway.Close)
+	server := httptest.NewServer(http.HandlerFunc(gateway.ModelHandler))
+	t.Cleanup(server.Close)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/runtime/openai/v1/chat/completions", strings.NewReader(`{"model":"synthetic/model"}`))
+	must(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := server.Client().Do(request)
+	must(t, err)
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK || calls.Load() != 4 {
+		t.Fatalf("model did not use same DNS rejection: status=%d calls=%d", response.StatusCode, calls.Load())
+	}
+	if f.scalar("SELECT count(*) FROM run_model_bindings WHERE run_id=$1 AND revoked_at IS NOT NULL", run) != 0 {
+		t.Fatal("network denial became permanent revocation")
+	}
 }
 
 func TestDeploymentEgressRevocationSurvivesRemovedTarget(t *testing.T) {

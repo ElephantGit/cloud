@@ -304,6 +304,9 @@ func postgresUnsupportedJSON(content []byte) (string, bool) {
 const (
 	postgresNumericMaxIntegerDigits = 131072
 	postgresNumericMaxScale         = 16383
+	// PostgreSQL bounds a numeric exponent at 2^30-1. Larger literals are rejected while parsing,
+	// even when the entire mantissa is zero, so the magnitude check cannot rely on the mantissa.
+	postgresNumericMaxExponent = 1<<30 - 1
 )
 
 // postgresNumberFits reports whether the JSON number at the start of content is representable as a
@@ -341,11 +344,15 @@ func postgresNumberFits(content []byte) (int, bool) {
 			i++
 		}
 		for i < len(content) && content[i] >= '0' && content[i] <= '9' {
-			// Saturation is enough: an exponent this large is out of range either way.
-			if exponent < 1<<40 {
+			// Stop accumulating past the limit; any additional digit only makes the literal less
+			// representable, and keeping the value bounded avoids overflow on long exponents.
+			if exponent <= postgresNumericMaxExponent {
 				exponent = exponent*10 + int64(content[i]-'0')
 			}
 			i++
+		}
+		if exponent > postgresNumericMaxExponent {
+			return i, false
 		}
 		if negative {
 			exponent = -exponent

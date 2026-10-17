@@ -536,16 +536,21 @@ func TestWorkflowAssetImportRejectsTextPostgresCannotStore(t *testing.T) {
 }
 
 // TestWorkflowAssetImportRejectsNumbersPostgresCannotStore covers the same isolation for numbers
-// outside jsonb's numeric range. Go decodes 1e-20000 to zero, so the document parses and passes the
-// publish gate, but PostgreSQL rejects its bytes with "value overflows numeric format" and would
-// roll back the result transaction for the whole package. The document must fail alone; re-encoding
-// or truncating its content to make it storable is not allowed.
+// outside jsonb's numeric range. Go decodes 1e-20000 to zero, and PostgreSQL also rejects exponent
+// literals beyond 2^30-1 even when the mantissa is zero; storing either fails with "value overflows
+// numeric format" and would roll back the result transaction for the whole package. Those documents
+// must fail alone, while numbers exactly on the storage boundaries still import; re-encoding or
+// truncating a document to make it storable is not allowed.
 func TestWorkflowAssetImportRejectsNumbersPostgresCannotStore(t *testing.T) {
 	f := setup(t)
 	repo := workflowMarketplace(t, f.root)
 	pkg := workflowPackage(t, map[string]string{
-		"good.json":    executableDocument("Good Kit", ""),
-		"numeric.json": executableDocument("Numeric Kit", `"extra":1e-20000`),
+		"good.json":              executableDocument("Good Kit", ""),
+		"scale-boundary.json":    executableDocument("Scale Boundary Kit", `"extra":1e-16383`),
+		"trailing-boundary.json": executableDocument("Trailing Boundary Kit", `"extra":100e-16383`),
+		"exponent-boundary.json": executableDocument("Exponent Boundary Kit", `"extra":0e1073741823`),
+		"numeric.json":           executableDocument("Numeric Kit", `"extra":1e-20000`),
+		"zero-exponent.json":     executableDocument("Zero Exponent Kit", `"extra":0e2147483648`),
 	})
 	packages := newWorkflowPackages(t, map[string][]byte{"/packages/numeric-1.0.0.orax": pkg})
 	publishWorkflowRelease(t, repo, "numeric-kit", "1.0.0", packages.server.URL+"/packages/numeric-1.0.0.orax", pkg)
@@ -562,21 +567,36 @@ func TestWorkflowAssetImportRejectsNumbersPostgresCannotStore(t *testing.T) {
 		t.Fatalf("the package must complete despite document failures: %v", item)
 	}
 	documents := assetDocuments(item)
-	if got := documents["assets/workflows/good.json"].S("outcome"); got != "imported" {
-		t.Fatalf("good.json outcome = %q, want imported: %v", got, documents["assets/workflows/good.json"])
+	for _, path := range []string{
+		"assets/workflows/good.json",
+		"assets/workflows/scale-boundary.json",
+		"assets/workflows/trailing-boundary.json",
+		"assets/workflows/exponent-boundary.json",
+	} {
+		if got := documents[path].S("outcome"); got != "imported" {
+			t.Fatalf("%s outcome = %q, want imported: %v", path, got, documents[path])
+		}
 	}
-	numeric := documents["assets/workflows/numeric.json"]
-	if numeric.S("outcome") != "failed" || numeric.S("failureCode") != "document_invalid_json" {
-		t.Fatalf("numeric.json = %v, want document_invalid_json", numeric)
+	for _, path := range []string{"assets/workflows/numeric.json", "assets/workflows/zero-exponent.json"} {
+		document := documents[path]
+		if document.S("outcome") != "failed" || document.S("failureCode") != "document_invalid_json" {
+			t.Fatalf("%s = %v, want document_invalid_json", path, document)
+		}
+		if reason := document.O("failureDetail").S("reason"); reason != "numeric_out_of_range" {
+			t.Fatalf("%s reason = %q, want numeric_out_of_range", path, reason)
+		}
 	}
-	if reason := numeric.O("failureDetail").S("reason"); reason != "numeric_out_of_range" {
-		t.Fatalf("numeric.json reason = %q, want numeric_out_of_range", reason)
+	live := f.liveWorkflows(t)
+	for _, name := range []string{"Good Kit", "Scale Boundary Kit", "Trailing Boundary Kit", "Exponent Boundary Kit"} {
+		if live[name] == nil {
+			t.Fatalf("boundary documents must import: %v", live)
+		}
 	}
-	if live := f.liveWorkflows(t); len(live) != 1 || live["Good Kit"] == nil {
-		t.Fatalf("the failed document must not create a workflow: %v", live)
+	if len(live) != 4 {
+		t.Fatalf("failed documents must not create workflows: %v", live)
 	}
-	if n := f.scalar("SELECT count(*) FROM workflow_snapshots"); n != 1 {
-		t.Fatalf("the failed document must not leave snapshots: %d", n)
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots"); n != 4 {
+		t.Fatalf("failed documents must not leave snapshots: %d", n)
 	}
 	// The result transaction committed: the source row is not stuck in importing.
 	if n := f.scalar("SELECT count(*) FROM workflow_asset_imports WHERE space_id=$1 AND state='importing'", sid); n != 0 {

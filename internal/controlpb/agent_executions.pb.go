@@ -961,7 +961,8 @@ func (x *RevisionDelivered) GetHistory() *StoredObject {
 }
 
 // The final commit equals the base commit, or the delivery spec's prior_revision final commit (a
-// resumed run that added nothing): nothing is pushed, only the session history is uploaded.
+// resumed run that added nothing). It still pushes its own delivery_ref and attempts to fast-forward
+// workspace_ref before uploading only the session history.
 type RevisionUnchanged struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FinalCommit   string                 `protobuf:"bytes,1,opt,name=final_commit,json=finalCommit,proto3" json:"final_commit,omitempty"`

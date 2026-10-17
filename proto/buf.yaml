@@ -15,6 +15,7 @@ breaking:
   ignore_only:
     FIELD_NO_DELETE:
       - ora/cloud/internal/v1/executions.proto
+      - ora/cloud/internal/v1/operations.proto
       - ora/cloud/internal/v1/agent_executions.proto
     MESSAGE_NO_DELETE:
       - ora/cloud/internal/v1/agent_executions.proto

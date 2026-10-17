@@ -421,6 +421,69 @@ func TestWorkflowAssetImportDocumentFailuresAreIndependent(t *testing.T) {
 	}
 }
 
+// TestWorkflowAssetImportRejectsTextPostgresCannotStore covers the documents PostgreSQL's jsonb
+// input refuses while Go's decoder accepts: NUL escapes, unpaired surrogate escapes and invalid
+// UTF-8. The package text is stored verbatim, so these must become document failures before the
+// result transaction; otherwise one such document aborts the write of the whole package and leaves
+// the source row importing. A valid surrogate pair is accepted, so the check does not over-reject.
+func TestWorkflowAssetImportRejectsTextPostgresCannotStore(t *testing.T) {
+	f := setup(t)
+	repo := workflowMarketplace(t, f.root)
+	pkg := workflowPackage(t, map[string]string{
+		"good.json": executableDocument("Good Kit", ""),
+		"pair.json": executableDocument("Paired Kit", `"description":"a`+"\\"+`ud83d`+"\\"+`ude00b"`),
+		"nul.json":  executableDocument("NUL Kit", `"description":"a\u0000b"`),
+		"lone.json": executableDocument("Surrogate Kit", `"description":"a\ud800b"`),
+		"utf8.json": executableDocument("UTF Kit", "\"description\":\"bad \xff byte\""),
+	})
+	packages := newWorkflowPackages(t, map[string][]byte{"/packages/text-1.0.0.orax": pkg})
+	publishWorkflowRelease(t, repo, "text-kit", "1.0.0", packages.server.URL+"/packages/text-1.0.0.orax", pkg)
+	f.syncMarketplace(t, repo)
+	f.store.WorkflowAssets = workflowasset.NewFetcher(nil, packages.server.Client().Transport)
+
+	sid := f.defaultSpaceID()
+	f.installWorkflowPlugin(t, sid, "official/text-kit", "")
+	if err := f.importWorkflowAssets(t); err != nil {
+		t.Fatalf("unrepresentable documents must fail alone: %v", err)
+	}
+	item := f.assetImport(t, sid, "official/text-kit")
+	if item.S("state") != "completed" {
+		t.Fatalf("the package must complete despite document failures: %v", item)
+	}
+	documents := assetDocuments(item)
+	for path, want := range map[string]string{
+		"assets/workflows/good.json": "imported",
+		"assets/workflows/pair.json": "imported",
+		"assets/workflows/nul.json":  "unsupported_unicode_escape",
+		"assets/workflows/lone.json": "unsupported_unicode_escape",
+		"assets/workflows/utf8.json": "invalid_utf8",
+	} {
+		document := documents[path]
+		if want == "imported" {
+			if document.S("outcome") != "imported" {
+				t.Fatalf("%s = %v, want imported", path, document)
+			}
+			continue
+		}
+		if document.S("outcome") != "failed" || document.S("failureCode") != "document_invalid_json" {
+			t.Fatalf("%s = %v, want document_invalid_json", path, document)
+		}
+		if reason := document.O("failureDetail").S("reason"); reason != want {
+			t.Fatalf("%s reason = %q, want %q", path, reason, want)
+		}
+	}
+	if live := f.liveWorkflows(t); len(live) != 2 || live["Good Kit"] == nil || live["Paired Kit"] == nil {
+		t.Fatalf("failed documents must not create workflows: %v", live)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots"); n != 2 {
+		t.Fatalf("failed documents must not leave snapshots: %d", n)
+	}
+	// The result transaction committed: the source row is not stuck in importing.
+	if n := f.scalar("SELECT count(*) FROM workflow_asset_imports WHERE space_id=$1 AND state='importing'", sid); n != 0 {
+		t.Fatalf("the result transaction did not commit: %d importing rows", n)
+	}
+}
+
 // reinstallDuringFetch models an administrator upgrading the plugin while the old package is in
 // flight. The first call installs the newer version and still returns the older bytes.
 type reinstallDuringFetch struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wanglongan587/cloud/internal/workflowasset"
 )
@@ -215,6 +216,13 @@ func parseWorkflowAssetDocument(document workflowasset.Document) workflowAssetPa
 		}
 		return result
 	}
+	// The document is stored verbatim in a jsonb column. PostgreSQL rejects text that Go's decoder
+	// accepts, so such a document must fail alone instead of aborting the transaction that writes
+	// every other document's result.
+	if reason, unsupported := postgresUnsupportedText(document.Content); unsupported {
+		result.Failure, result.Reason = workflowasset.DocumentInvalidJSON, reason
+		return result
+	}
 	problems := validateWorkflowGraph(Object(parsed.Graph))
 	if len(problems) > 0 {
 		result.Failure = "document_not_executable_graph"
@@ -227,6 +235,75 @@ func parseWorkflowAssetDocument(document workflowasset.Document) workflowAssetPa
 	}
 	result.Parsed = parsed
 	return result
+}
+
+// postgresUnsupportedText reports why a document cannot be stored verbatim in a jsonb column. The
+// check is on the raw bytes because Go's decoder has already lost the distinction: it accepts
+// \u0000 (which PostgreSQL rejects) and silently replaces unpaired surrogate escapes with U+FFFD
+// (which PostgreSQL also rejects). Writing such a document would fail the whole result transaction,
+// so it must be classified before the write, beside the other document codes.
+func postgresUnsupportedText(content []byte) (string, bool) {
+	if !utf8.Valid(content) {
+		return "invalid_utf8", true
+	}
+	inString := false
+	for i := 0; i < len(content); i++ {
+		if !inString {
+			inString = content[i] == '"'
+			continue
+		}
+		switch content[i] {
+		case '"':
+			inString = false
+		case '\\':
+			i++
+			if i >= len(content) || content[i] != 'u' || i+4 >= len(content) {
+				continue
+			}
+			code, ok := hex4(content[i+1 : i+5])
+			if !ok {
+				continue
+			}
+			i += 4
+			switch {
+			case code == 0:
+				return "unsupported_unicode_escape", true
+			case code >= 0xDC00 && code <= 0xDFFF:
+				return "unsupported_unicode_escape", true
+			case code >= 0xD800 && code <= 0xDBFF:
+				// A high surrogate is representable only immediately followed by a low one; the
+				// parser has already proved any escape has four hex digits.
+				next := i + 1
+				if next+5 >= len(content) || content[next] != '\\' || content[next+1] != 'u' {
+					return "unsupported_unicode_escape", true
+				}
+				low, ok := hex4(content[next+2 : next+6])
+				if !ok || low < 0xDC00 || low > 0xDFFF {
+					return "unsupported_unicode_escape", true
+				}
+				i = next + 5
+			}
+		}
+	}
+	return "", false
+}
+
+// hex4 decodes exactly four hexadecimal digits.
+func hex4(digits []byte) (rune, bool) {
+	var value rune
+	for _, digit := range digits {
+		switch {
+		case digit >= '0' && digit <= '9':
+			value = value*16 + rune(digit-'0')
+		case digit >= 'a' && digit <= 'f':
+			value = value*16 + rune(digit-'a'+10)
+		case digit >= 'A' && digit <= 'F':
+			value = value*16 + rune(digit-'A'+10)
+		default:
+			return 0, false
+		}
+	}
+	return value, true
 }
 
 // assetFailureCode maps a fetch/extraction error to its bounded package code. Unexpected errors are

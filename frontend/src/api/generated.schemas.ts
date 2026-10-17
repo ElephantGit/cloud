@@ -81,6 +81,52 @@ export interface AdminResource {
 /**
  * @nullable
  */
+export type AgentSessionSummaryModel = {
+  connectionName: string;
+  modelId: string;
+  modelName: string;
+} | null;
+
+export type AgentSessionSummaryStatus = typeof AgentSessionSummaryStatus[keyof typeof AgentSessionSummaryStatus];
+
+
+export const AgentSessionSummaryStatus = {
+  queued: 'queued',
+  dispatched: 'dispatched',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  deferred: 'deferred',
+} as const;
+
+export interface AgentSessionSummary {
+  /** @nullable */
+  agentPluginId: string | null;
+  /** @nullable */
+  completedAt: string | null;
+  createdAt: string;
+  historyAvailable: boolean;
+  id: string;
+  issueId: string;
+  issueNumber: number;
+  issueTitle: string;
+  /** @nullable */
+  model: AgentSessionSummaryModel;
+  /** @nullable */
+  projectId: string | null;
+  /** @nullable */
+  projectName: string | null;
+  /** @nullable */
+  startedAt: string | null;
+  status: AgentSessionSummaryStatus;
+  /** @nullable */
+  threadState: string | null;
+}
+
+/**
+ * @nullable
+ */
 export type AssistSuggestionExplanations = { [key: string]: unknown } | null;
 
 export type AssistSuggestionSuggestedValues = { [key: string]: unknown };
@@ -834,6 +880,89 @@ export interface MemberListItem {
   version: number;
 }
 
+export type MetricAggregateAvailability = typeof MetricAggregateAvailability[keyof typeof MetricAggregateAvailability];
+
+
+export const MetricAggregateAvailability = {
+  complete: 'complete',
+  partial: 'partial',
+  unavailable: 'unavailable',
+} as const;
+
+export interface MetricAggregate {
+  availability: MetricAggregateAvailability;
+  knownCount: number;
+  totalCount: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  value: number | null;
+}
+
+export type ModelAttemptUsageAvailability = typeof ModelAttemptUsageAvailability[keyof typeof ModelAttemptUsageAvailability];
+
+
+export const ModelAttemptUsageAvailability = {
+  complete: 'complete',
+  partial: 'partial',
+  unavailable: 'unavailable',
+} as const;
+
+export type ModelAttemptUsageInputSemantics = typeof ModelAttemptUsageInputSemantics[keyof typeof ModelAttemptUsageInputSemantics];
+
+
+export const ModelAttemptUsageInputSemantics = {
+  includes_cache: 'includes_cache',
+  excludes_cache: 'excludes_cache',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Provider-reported counters only. OpenAI input includes cache reads; Anthropic input excludes cache read/write. Reasoning is an output subset. Never add every field together; a missing field stays null. Complete means a terminal observation with input/output, not that every optional field exists.
+ */
+export interface ModelAttemptUsage {
+  availability: ModelAttemptUsageAvailability;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  cacheReadTokens: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  cacheWriteTokens: number | null;
+  inputSemantics: ModelAttemptUsageInputSemantics;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  inputTokens: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  outputTokens: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  reasoningTokens: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  totalTokens: number | null;
+}
+
 export type ModelConnectionAuthMode = typeof ModelConnectionAuthMode[keyof typeof ModelConnectionAuthMode];
 
 
@@ -1247,6 +1376,132 @@ export interface Sandbox {
   terminatedAt: string | null;
   version: number;
   workspaceId: string;
+}
+
+export type SessionHistoryRecordsItem = { [key: string]: unknown };
+
+export type SessionHistorySource = typeof SessionHistorySource[keyof typeof SessionHistorySource];
+
+
+export const SessionHistorySource = {
+  archive: 'archive',
+} as const;
+
+export interface SessionHistory {
+  records: SessionHistoryRecordsItem[];
+  sha256: string;
+  sizeBytes: number;
+  source: SessionHistorySource;
+}
+
+export type SessionModelAttemptOutcome = typeof SessionModelAttemptOutcome[keyof typeof SessionModelAttemptOutcome];
+
+
+export const SessionModelAttemptOutcome = {
+  started: 'started',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
+  incomplete: 'incomplete',
+} as const;
+
+export type SessionModelAttemptProtocol = typeof SessionModelAttemptProtocol[keyof typeof SessionModelAttemptProtocol];
+
+
+export const SessionModelAttemptProtocol = {
+  'openai-completions': 'openai-completions',
+  'anthropic-messages': 'anthropic-messages',
+} as const;
+
+export interface SessionModelAttempt {
+  /** @nullable */
+  durationMs: number | null;
+  /** @nullable */
+  errorCode: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  firstOutputMs: number | null;
+  /** @nullable */
+  httpStatus: number | null;
+  id: string;
+  modelId: string;
+  outcome: SessionModelAttemptOutcome;
+  protocol: SessionModelAttemptProtocol;
+  startedAt: string;
+  streamed: boolean;
+  terminalObserved: boolean;
+  usage: ModelAttemptUsage;
+}
+
+export type SessionModelStatisticsCounts = {
+  cancelled: number;
+  failed: number;
+  incomplete: number;
+  interrupted: number;
+  started: number;
+  succeeded: number;
+  total: number;
+};
+
+export type SessionModelStatisticsInputSemantics = typeof SessionModelStatisticsInputSemantics[keyof typeof SessionModelStatisticsInputSemantics];
+
+
+export const SessionModelStatisticsInputSemantics = {
+  includes_cache: 'includes_cache',
+  excludes_cache: 'excludes_cache',
+  unknown: 'unknown',
+} as const;
+
+export type SessionModelStatisticsSchemaVersion = typeof SessionModelStatisticsSchemaVersion[keyof typeof SessionModelStatisticsSchemaVersion];
+
+
+export const SessionModelStatisticsSchemaVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export type SessionModelStatisticsScope = typeof SessionModelStatisticsScope[keyof typeof SessionModelStatisticsScope];
+
+
+export const SessionModelStatisticsScope = {
+  recorded_http_attempts: 'recorded_http_attempts',
+} as const;
+
+export type SessionModelStatisticsSource = typeof SessionModelStatisticsSource[keyof typeof SessionModelStatisticsSource];
+
+
+export const SessionModelStatisticsSource = {
+  model_gateway: 'model_gateway',
+} as const;
+
+export type SessionModelStatisticsTiming = {
+  meanDurationMs: MetricAggregate;
+  meanFirstOutputMs: MetricAggregate;
+  p90DurationMs: MetricAggregate;
+};
+
+export type SessionModelStatisticsUsage = {
+  cacheReadTokens: MetricAggregate;
+  cacheWriteTokens: MetricAggregate;
+  inputTokens: MetricAggregate;
+  outputTokens: MetricAggregate;
+  reasoningTokens: MetricAggregate;
+  totalTokens: MetricAggregate;
+};
+
+export interface SessionModelStatistics {
+  counts: SessionModelStatisticsCounts;
+  /** @nullable */
+  firstRecordedAt: string | null;
+  inputSemantics: SessionModelStatisticsInputSemantics;
+  /** @nullable */
+  lastRecordedAt: string | null;
+  schemaVersion: SessionModelStatisticsSchemaVersion;
+  scope: SessionModelStatisticsScope;
+  source: SessionModelStatisticsSource;
+  timing: SessionModelStatisticsTiming;
+  usage: SessionModelStatisticsUsage;
 }
 
 export type SnapshotPluginInput = { [key: string]: unknown };
@@ -1694,7 +1949,7 @@ export type GetApiV1MeJoinRequestsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1711,7 +1966,7 @@ export type GetApiV1MeModelConnectionsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1840,7 +2095,7 @@ export type GetApiV1MeSpacesParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1857,7 +2112,7 @@ export type GetApiV1MeTenantsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1876,6 +2131,28 @@ export type PostApiV1TenantsBody = {
   slug: string;
 };
 
+export type GetApiV1TenantsTidAgentSessionsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
+ */
+after?: string;
+projectId?: string;
+status?: string;
+agent?: string;
+from?: string;
+to?: string;
+};
+
+export type GetApiV1TenantsTidAgentSessions200 = {
+  items: AgentSessionSummary[];
+  nextCursor: string;
+};
+
 export type GetApiV1TenantsTidClonesParams = {
 /**
  * @minimum 1
@@ -1883,7 +2160,7 @@ export type GetApiV1TenantsTidClonesParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1918,7 +2195,7 @@ export type GetApiV1TenantsTidInvitationsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -1953,7 +2230,7 @@ export type GetApiV1TenantsTidIssueStatusesParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2019,7 +2296,7 @@ export type GetApiV1TenantsTidIssueViewsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2180,7 +2457,7 @@ export type GetApiV1TenantsTidIssuesIidCommentsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2279,7 +2556,7 @@ export type GetApiV1TenantsTidIssuesIidLabelsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2315,7 +2592,7 @@ export type GetApiV1TenantsTidIssuesIidRunsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2346,6 +2623,23 @@ export type PostApiV1TenantsTidIssuesIidRuns200 = {
   resource: IssueRun;
 };
 
+export type GetApiV1TenantsTidIssuesIidRunsRidModelCallsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
+ */
+after?: string;
+};
+
+export type GetApiV1TenantsTidIssuesIidRunsRidModelCalls200 = {
+  items: SessionModelAttempt[];
+  nextCursor: string;
+};
+
 export type GetApiV1TenantsTidIssuesIidRunsRidThreadParams = {
 /**
  * @minimum 1
@@ -2363,6 +2657,15 @@ after?: number;
  */
 before?: number;
 };
+
+/**
+ * @nullable
+ */
+export type GetApiV1TenantsTidIssuesIidRunsRidThread200Model = {
+  connectionName: string;
+  modelId: string;
+  modelName: string;
+} | null;
 
 export type GetApiV1TenantsTidIssuesIidRunsRidThread200ThreadState = typeof GetApiV1TenantsTidIssuesIidRunsRidThread200ThreadState[keyof typeof GetApiV1TenantsTidIssuesIidRunsRidThread200ThreadState];
 
@@ -2388,7 +2691,8 @@ export type GetApiV1TenantsTidIssuesIidRunsRidThread200 = {
   /** @nullable */
   initiatorUserId: string | null;
   items: ThreadEntry[];
-  model: ThreadModel | null;
+  /** @nullable */
+  model: GetApiV1TenantsTidIssuesIidRunsRidThread200Model;
   /**
      * The window's last seq, to be sent back as `after`. Null for an empty window.
      * @nullable
@@ -2450,7 +2754,7 @@ export type GetApiV1TenantsTidIssuesIidSubscribersParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2480,7 +2784,7 @@ export type GetApiV1TenantsTidJoinLinksParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2506,7 +2810,7 @@ export type GetApiV1TenantsTidJoinRequestsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2533,7 +2837,7 @@ export type GetApiV1TenantsTidLabelsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2571,7 +2875,7 @@ export type GetApiV1TenantsTidMembersParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2646,7 +2950,7 @@ export type GetApiV1TenantsTidProjectsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2692,7 +2996,7 @@ export type GetApiV1TenantsTidProjectsPidWorkspacesParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2719,7 +3023,7 @@ export type GetApiV1TenantsTidResourceStatusParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2736,7 +3040,7 @@ export type GetApiV1TenantsTidSpacesParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2781,7 +3085,7 @@ export type GetApiV1TenantsTidSpacesSpaceIdProjectsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2811,7 +3115,7 @@ export type GetApiV1TenantsTidWorkflowsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2863,7 +3167,7 @@ export type GetApiV1TenantsTidWorkflowsWfidRunsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -2892,7 +3196,7 @@ export type GetApiV1TenantsTidWorkflowsWfidSnapshotsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };

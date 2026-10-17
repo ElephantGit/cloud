@@ -101,6 +101,12 @@ Cloud 领域方法。冻结与撤销规则见 [模型连接契约](../../../docs
 
 新增 startup_ready_at、startup_deadline_at、startup_resume、startup_ending_deadline_at 及 agent_run_residuals。迁移不改历史结果；活动存量由串行策略扫描一次固定窗口。残留账本与 failed/done 同事务提交，迟到真实终态仅补证据，不代替清理授权。新库/升级/重复执行见 TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade。
 
+
+`0035_model_attempt_statistics.sql` 增加无正文的模型 HTTP 请求台账及按租户/Run/时间排序索引。
+复合外键绑定 Run→租户、binding→Run、grant→binding/execution；CHECK 约束限制状态、可空计数、时间及
+完成形状。只新增，不回填旧日志；`cloudctl migrate` 应用，服务启动仍只验证 schema。
+`TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackfill` 验证空库、从 0034 升级及重复迁移。
+
 ## 0037：WorkflowRun 调用引用
 
 `0037_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun

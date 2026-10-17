@@ -195,8 +195,8 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 					closeAdmission(t, w, "deleted")
 				}
 				t.exec("UPDATE projects SET lifecycle='deleting',version=version+1 WHERE id=$1", p.S("id"))
-				cancelRepositoryOperationsForDeletion(t, p.S("id"))
-				req := Object{"previous": previous}
+				// syncOwed is kept on the Operation so a refused quiesce can give the sync back.
+				req := Object{"previous": previous, "syncOwed": cancelRepositoryOperationsForDeletion(t, p.S("id"))}
 				op := newOperation(t, r, uid, p.S("id"), "", "delete_project", "quiesce", hash, req)
 				for _, w := range ws {
 					reserveRuntimeMaintenance(t, w.S("id"), op.S("id"))

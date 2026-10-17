@@ -287,7 +287,7 @@ func Document() map[string]any {
 	s["PluginUniversalRelease"] = object(obj{"url": str(), "sha256": str()}, "url", "sha256")
 	s["PluginReleaseTarget"] = object(obj{"target": str(), "url": str(), "sha256": str()}, "target", "url", "sha256")
 	s["PluginLogoCandidate"] = object(obj{"role": enumeration("universal", "light", "dark"), "extension": enumeration("svg", "png", "webp", "jpg", "jpeg")}, "role", "extension")
-	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision"))})
+	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "syncOwed": boolean(), "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision"))})
 	s["OperationResult"] = object(obj{"resourceId": uuid(), "forceStopId": uuid()})
 	s["Operation"] = resource("id tenantId actorUserId projectId workspaceId kind state step request result errorCode idempotencyKey requestHash controllerEpoch retryAt version createdAt updatedAt", "workspaceId errorCode controllerEpoch retryAt")
 	opProps := properties(s, "Operation")

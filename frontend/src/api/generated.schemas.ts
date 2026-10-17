@@ -1235,6 +1235,7 @@ export interface OperationRequest {
   plugins?: OperationRequestPluginsItem[];
   previous?: OperationRequestPrevious;
   release?: PluginCatalogEntry;
+  syncOwed?: boolean;
   version?: string;
 }
 

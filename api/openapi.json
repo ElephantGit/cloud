@@ -2735,6 +2735,9 @@
           "release": {
             "$ref": "#/components/schemas/PluginCatalogEntry"
           },
+          "syncOwed": {
+            "type": "boolean"
+          },
           "version": {
             "type": "string"
           }

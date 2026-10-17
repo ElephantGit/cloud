@@ -34,10 +34,28 @@ func repositoryOperationsUnfinished(t *transaction, projectID string) bool {
 // cancelRepositoryOperationsForDeletion runs in the transaction that moves a Project to deleting.
 // Operations that never reached running are cancelled, so no new Git Server write can start;
 // running and uncertain ones settle normally and delete_project waits for them. The resync request
-// is dropped: a deleting Project creates no Operation.
-func cancelRepositoryOperationsForDeletion(t *transaction, projectID string) {
+// is dropped: a deleting Project creates no Operation. It reports whether a sync was owed — a
+// queued sync was cancelled or a resync was requested — so an aborted deletion can restore it.
+func cancelRepositoryOperationsForDeletion(t *transaction, projectID string) (syncOwed bool) {
+	syncOwed = t.one("SELECT id FROM repository_operations WHERE project_id=$1 AND type='repository_sync' AND state IN ('pending','leased') LIMIT 1", projectID) != nil ||
+		t.one("SELECT id FROM repository_bindings WHERE project_id=$1 AND resync_requested LIMIT 1", projectID) != nil
 	t.exec("UPDATE repository_operations SET state='cancelled',error_code='project_deleting',finished_at=clock_timestamp() WHERE project_id=$1 AND state IN ('pending','leased','awaiting_approval')", projectID)
 	t.exec("UPDATE repository_bindings SET resync_requested=false WHERE project_id=$1", projectID)
+	return syncOwed
+}
+
+// restoreRepositorySync runs in the transaction that returns a Project from deleting to active
+// when its deletion owed a sync. Each Binding gets that sync back: a pending `deletion_aborted`
+// sync, or, while a sync that was already running still holds the one-unfinished-sync slot, the
+// resync request it will pick up. Cancelled publishes stay cancelled; the user re-creates them.
+func restoreRepositorySync(t *transaction, projectID string) {
+	for _, b := range t.list("SELECT id,tenant_id FROM repository_bindings WHERE project_id=$1 ORDER BY id", projectID) {
+		if t.one("SELECT id FROM repository_operations WHERE binding_id=$1 AND type='repository_sync' AND state IN ('pending','leased','running')", b.S("id")) != nil {
+			t.exec("UPDATE repository_bindings SET resync_requested=true WHERE id=$1", b.S("id"))
+			continue
+		}
+		t.exec("INSERT INTO repository_operations(id,type,tenant_id,project_id,binding_id,state,trigger) VALUES($1,$2,$3,$4,$5,'pending','deletion_aborted')", newID(), RepositorySync, b.S("tenantId"), projectID, b.S("id"))
+	}
 }
 
 // settleFailedProjectCreation makes a Project whose create_project failed usable: whatever the

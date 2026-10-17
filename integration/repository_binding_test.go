@@ -169,6 +169,84 @@ func TestDeletingProjectCancelsQueuedRepositoryOperationsAndWaitsForRunning(t *t
 	}
 }
 
+// A Node refusing quiesce returns the Project from deleting to active. The sync the deletion
+// cancelled or the resync request it dropped comes back in that same transaction, as a pending
+// deletion_aborted sync or, while a running sync still holds the one-unfinished-sync slot, as the
+// resync request; cancelled publishes stay cancelled, and a deletion that owed nothing adds none.
+func TestAbortedProjectDeletionRestoresTheOwedSync(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// prepare shapes the Binding before deletion and returns the publish expected to stay cancelled.
+		prepare             func(f *fixture, pid, bid, initial string) (publish string)
+		wantAborted, resync bool
+	}{
+		{
+			name: "queued sync cancelled",
+			prepare: func(f *fixture, pid, bid, _ string) string {
+				publish, err := f.repositoryOperation(pid, bid, core.RepositoryPublish, "awaiting_approval")
+				must(f.t, err)
+				return publish
+			},
+			wantAborted: true,
+		},
+		{
+			name: "resync requested while a sync runs",
+			prepare: func(f *fixture, _, bid, initial string) string {
+				must(f.t, firstErr(f.store.Pool.Exec("UPDATE repository_operations SET state='running' WHERE id=$1", initial)))
+				must(f.t, firstErr(f.store.Pool.Exec("UPDATE repository_bindings SET resync_requested=true WHERE id=$1", bid)))
+				return ""
+			},
+			resync: true,
+		},
+		{
+			name: "nothing owed",
+			prepare: func(f *fixture, _, _, initial string) string {
+				must(f.t, firstErr(f.store.Pool.Exec("UPDATE repository_operations SET state='succeeded',finished_at=clock_timestamp() WHERE id=$1", initial)))
+				return ""
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := setup(t)
+			created := f.create("binding-abort")
+			pid, wid := created.O("resource").S("id"), created.O("workspace").S("id")
+			f.drain()
+			bid := f.bindingOf(pid).S("id")
+			var initial string
+			must(t, f.store.Pool.QueryRow("SELECT id FROM repository_operations WHERE binding_id=$1", bid).Scan(&initial))
+			publish := c.prepare(f, pid, bid, initial)
+
+			f.acknowledgeSimulatorBindings()
+			project := f.call("GET", f.path("/projects/"+pid), nil, "", 200)
+			deleting := f.call("DELETE", f.path("/projects/"+pid), core.Object{"version": project.N("version")}, "binding-abort-delete", 202)
+			node := f.node(wid)
+			var nodeVersion int64
+			must(t, f.store.Pool.QueryRow("SELECT version FROM node_instances WHERE id=$1", node.Subject).Scan(&nodeVersion))
+			refused, status, err := f.client.Call(context.Background(), "POST", "/internal/v1/nodes/idle", "node", node, nil, "", core.Object{"version": nodeVersion, "admissionEpoch": f.ws(wid).N("admissionEpoch"), "operationId": deleting.O("operation").S("id"), "idle": false})
+			must(t, err)
+			if status != 200 || refused.B("accepted") {
+				t.Fatalf("quiesce refusal = %d %v", status, refused)
+			}
+			if p := f.call("GET", f.path("/projects/"+pid), nil, "", 200); p.S("lifecycle") != "active" {
+				t.Fatalf("a refused deletion left the Project %s", p.S("lifecycle"))
+			}
+
+			aborted := f.scalar("SELECT count(*) FROM repository_operations WHERE binding_id=$1 AND type='repository_sync' AND state='pending' AND trigger='deletion_aborted'", bid)
+			if want := map[bool]int{true: 1, false: 0}[c.wantAborted]; aborted != want {
+				t.Fatalf("pending deletion_aborted syncs = %d, want %d", aborted, want)
+			}
+			if got := f.bindingOf(pid).B("resyncRequested"); got != c.resync {
+				t.Fatalf("resync requested = %v, want %v", got, c.resync)
+			}
+			if publish != "" {
+				if state, code := f.repositoryOperationState(publish); state != "cancelled" || code != "project_deleting" {
+					t.Fatalf("a cancelled publish came back as %s/%s", state, code)
+				}
+			}
+		})
+	}
+}
+
 // However create_project fails, the Project does not stay in provisioning.
 func TestFailedProjectCreationLeavesProjectActive(t *testing.T) {
 	f := setup(t)

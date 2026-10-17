@@ -35,7 +35,7 @@ const ThreadMessagePath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/mes
 // separate on purpose — raising the shared one would silently widen every existing list's contract.
 const ThreadPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread"
 
-// ThreadEndPath is the user-initiated end route (Thread D4, G-018). It is named for the same reason
+// ThreadEndPath is the user-initiated end route (Thread D4). It is named for the same reason
 // the other two Thread routes are: the contract, the coverage test and the transport all have to
 // agree on one spelling. It carries no request fields — the body is `{}` and anything else is an
 // unknown field — so it takes the default request cap.

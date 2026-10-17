@@ -1,6 +1,6 @@
 package integration
 
-// Production-path acceptance for the Phase 4B Thread takeover (mandate §43, IssueRun D3,
+// Production-path acceptance for the Thread takeover (IssueRun D3,
 // controller-integration D2/D6). The chain under test is the one cmd/server wires, named here so a
 // reader can follow it without guessing:
 //
@@ -19,7 +19,7 @@ package integration
 // registered through the real Phase 4A control actions (the `clone_claim` and `clone_dispatch`
 // commands, whose execution-centric names the merged control plane kept). Only the scene itself —
 // tenant, project, Space Agent, issue, run and its run Workspace — is seeded directly, because run
-// creation and CreateRunWorkspace are still G-001 placeholders.
+// creation and CreateRunWorkspace are still placeholders here.
 
 import (
 	"context"
@@ -57,7 +57,7 @@ func seedAgentSessionScene(t *testing.T, store *core.Store) seededAgentSession {
 	t.Helper()
 	ctx := context.Background()
 	// The production seam, wired exactly as cmd/server/main.go wires it. Without it the takeover below
-	// would roll back fail-closed (G-003) rather than prove the real path: the control plane leaves the
+	// would roll back fail-closed rather than prove the real path: the control plane leaves the
 	// B side a no-op handoff until Cloud's lifecycle is bound onto it.
 	core.BindBusinessHooks(store)
 
@@ -127,7 +127,7 @@ func seedStartingAgentRun(t *testing.T, store *core.Store) (runID, workspaceID, 
 	exec("agent", `INSERT INTO space_agents(id,space_id,tenant_id,plugin_id,display_name,status) VALUES($1,$2,$3,'official/hello-world','Hello','active')`, agent, space, tenant)
 	exec("issue", `INSERT INTO issues(id,tenant_id,creator_user_id,project_ref,title,number) VALUES($1,$2,$3,$4,'takeover issue',1)`, issue, tenant, user, project)
 	exec("run", `INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,phase,input) VALUES($1,$2,$3,'agent',$4,'dispatched','starting',$5)`, runID, tenant, issue, agent, mustJSON(t, input))
-	// The run Workspace: isolated, bound to this exact run, live — the G-011 predicate the session
+	// The run Workspace: isolated, bound to this exact run, live — the predicate the session
 	// start and the takeover both re-read. A live isolated workspace needs exactly one task identity,
 	// and the workspace/task inserts must share the transaction for that deferred trigger. Admission
 	// is open because that is what `ready` means here: the create_workspace path's last step is
@@ -294,7 +294,7 @@ func TestAgentRunThreadTakeoverOverGRPC(t *testing.T) {
 
 // TestAgentRunThreadTakeoverGRPCRejections pins the wire contract for the batches Cloud refuses:
 // an empty batch is INVALID_INPUT, a gap or an out-of-order batch is CONFLICT, and an execution
-// Cloud never registered is NOT_FOUND (controller-integration D2, plan §4B.14). Every rejection
+// Cloud never registered is NOT_FOUND (controller-integration D2). Every rejection
 // leaves the run `starting` with no receipt, so nothing is ever acked on a rejected batch.
 func TestAgentRunThreadTakeoverGRPCRejections(t *testing.T) {
 	h := newControlHarness(t)

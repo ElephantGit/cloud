@@ -756,7 +756,7 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// Reading a Thread returns one ascending-by-seq window of entries plus the run's Thread
 		// state and idle instant, all from one snapshot. `threadState` and `idleSince` are projected
 		// here rather than read off the run resource, which keeps stripping these columns from
-		// IssueRun (T4C-10). The window's cursors are nullable because an empty Thread has neither.
+		// IssueRun. The window's cursors are nullable because an empty Thread has neither.
 		return object(obj{
 			"items":           array(ref("ThreadEntry")),
 			"threadState":     enumeration("pending", "active", "idle", "ending", "ended"),

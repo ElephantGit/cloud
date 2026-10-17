@@ -95,6 +95,9 @@ type Store struct {
 	// WorkflowAssets downloads the pinned package of a workflow plugin for asset import. Nil
 	// keeps the import loop idle, so a control-plane-only deployment never leaves the cluster.
 	WorkflowAssets WorkflowAssetSource
+	// GitServer is where Workspaces clone from and Revisions are delivered to. Nil means clone
+	// steps block as git_server_unconfigured and deliveries are skipped.
+	GitServer *GitServer
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error

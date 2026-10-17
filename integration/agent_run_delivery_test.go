@@ -218,7 +218,6 @@ func deliveredResult(scene liveThreadScene, in core.Object, final string) *contr
 		Node: &controlpb.NodeIdentity{NodeId: scene.nodeID, NodeIncarnationId: "inc-" + scene.nodeID[:8]},
 		Outcome: &controlpb.ExecutionResult_RevisionDelivered{RevisionDelivered: &controlpb.RevisionDelivered{
 			FinalCommit: final, BaseCommit: in.S("baseCommit"), RevisionRef: in.S("revisionRef"),
-			Bundle:  &controlpb.StoredObject{Key: in.S("bundleKey"), Size: revisionBundleSize, Sha256: revisionBundleSHA},
 			History: &controlpb.StoredObject{Key: in.S("historyKey"), Size: revisionHistorySize, Sha256: revisionHistorySHA},
 		}},
 	}
@@ -1599,9 +1598,6 @@ func TestRevisionResultContradictingItsInputNeverReachesTheObjectStore(t *testin
 		}, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT},
 		{"base_commit", func(r *controlpb.RevisionDelivered, _ core.Object) {
 			r.BaseCommit = strings.Repeat("f", 40)
-		}, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT},
-		{"bundle_key", func(r *controlpb.RevisionDelivered, in core.Object) {
-			r.Bundle.Key = in.S("historyKey")
 		}, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT},
 		{"history_key", func(r *controlpb.RevisionDelivered, in core.Object) {
 			r.History.Key = in.S("bundleKey")

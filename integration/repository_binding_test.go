@@ -183,6 +183,10 @@ func TestAbortedProjectDeletionRestoresTheOwedSync(t *testing.T) {
 		{
 			name: "queued sync cancelled",
 			prepare: func(f *fixture, pid, bid, _ string) string {
+				// The fixture's Git Server double already ended the project_created sync with a
+				// snapshot, so the queued sync the deletion cancels is a later one.
+				_, err := f.repositoryOperation(pid, bid, core.RepositorySync, "pending")
+				must(f.t, err)
 				publish, err := f.repositoryOperation(pid, bid, core.RepositoryPublish, "awaiting_approval")
 				must(f.t, err)
 				return publish
@@ -191,8 +195,9 @@ func TestAbortedProjectDeletionRestoresTheOwedSync(t *testing.T) {
 		},
 		{
 			name: "resync requested while a sync runs",
-			prepare: func(f *fixture, _, bid, initial string) string {
-				must(f.t, firstErr(f.store.Pool.Exec("UPDATE repository_operations SET state='running' WHERE id=$1", initial)))
+			prepare: func(f *fixture, pid, bid, _ string) string {
+				_, err := f.repositoryOperation(pid, bid, core.RepositorySync, "running")
+				must(f.t, err)
 				must(f.t, firstErr(f.store.Pool.Exec("UPDATE repository_bindings SET resync_requested=true WHERE id=$1", bid)))
 				return ""
 			},

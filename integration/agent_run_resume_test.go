@@ -137,11 +137,6 @@ func (f *fixture) runResumeRevision(runID string) string {
 	return id.String
 }
 
-func (f *fixture) grantRevisionDownload(execution string) (*controlpb.GrantRevisionDownloadResponse, error) {
-	return controlpb.NewAgentRunServiceClient(f.controlConn).GrantRevisionDownload(asController("ctrl-a"),
-		&controlpb.GrantRevisionDownloadRequest{Epoch: 1, ExecutionId: execution})
-}
-
 // resumedUnchangedResult is what a Node reports when a resumed run ends on its prior Revision's final
 // commit: no bundle, only the history (contract decision D4).
 func resumedUnchangedResult(scene liveThreadScene, in core.Object, final string) *controlpb.ExecutionResult {
@@ -191,23 +186,6 @@ func TestFollowUpRunResumesTheIssueLatestRevision(t *testing.T) {
 		resume.S("finalCommit") != revisionFinalCommit || resume.S("baseCommit") != seedRunWorkspaceCommit {
 		t.Fatalf("the first prompt's resume context = %v", resume)
 	}
-
-	grants, e := f.grantRevisionDownload(scene.executionID)
-	must(t, e)
-	if len(grants.GetGrants()) != 1 {
-		t.Fatalf("want exactly one download grant, got %d", len(grants.GetGrants()))
-	}
-	grant := grants.GetGrants()[0]
-	if grant.GetObjectKey() != first.bundleKey || grant.GetMethod() != "GET" || !strings.Contains(grant.GetUrl(), first.bundleKey) || grant.GetExpiresAt() == nil {
-		t.Fatalf("download grant = key %q method %q", grant.GetObjectKey(), grant.GetMethod())
-	}
-	if _, ok := grant.GetHeaders()["if-none-match"]; ok {
-		t.Fatal("a read grant must not carry the create-only condition")
-	}
-	// The first run's ended session has a result, and has no prior: neither may read anything.
-	if _, e := f.grantRevisionDownload(first.scene.executionID); status.Code(e) == codes.OK {
-		t.Fatal("a session execution with a result must not receive a download grant")
-	}
 }
 
 // Resume D1/D4: a run of an Issue without any Revision keeps today's prompt and spec exactly.
@@ -221,9 +199,6 @@ func TestRunWithoutHistoryStartsFresh(t *testing.T) {
 	}
 	if _, ok := f.firstPromptContext(scene.runID)["resume"]; ok {
 		t.Fatal("a run without history must keep its first prompt free of a resume context")
-	}
-	if _, e := f.grantRevisionDownload(scene.executionID); status.Code(e) == codes.OK {
-		t.Fatal("a session without priorRevision must not receive a download grant")
 	}
 }
 

@@ -139,7 +139,7 @@ func TestControlGRPCCloneLoopWithSubmissionReplay(t *testing.T) {
 	}
 	claimed, e := client.ClaimWork(holder, &controlpb.ClaimWorkRequest{SubmissionId: "s-claim-1", Epoch: epoch})
 	must(t, e)
-	if claimed.GetItem().GetOperationId() != request.S("id") || claimed.GetItem().GetInput().GetClone().GetBranch() != "main" {
+	if claimed.GetItem().GetOperationId() != request.S("id") || claimed.GetItem().GetInput().GetClone().GetRepositoryUrl() != "https://example.invalid/repo.git" {
 		t.Fatalf("unexpected work item: %v", claimed.GetItem())
 	}
 	// A stale epoch cannot claim or write.

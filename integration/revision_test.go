@@ -198,15 +198,10 @@ func TestRevisionS3VerificationAndAtomicTakeover(t *testing.T) {
 				history.Size++
 			}
 			if mode == "delivered" {
-				// Git artifact generation is exercised separately by the simulator acceptance.
-				bundle := []byte("opaque bundle object verified by S3 checksum")
-				sum := sha256.Sum256(bundle)
-				var key string
-				must(t, f.store.Pool.QueryRow("SELECT input->>'bundleKey' FROM node_executions WHERE execution_id=$1", req.ExecutionId).Scan(&key))
-				if status := putRevisionObject(t, cfg, key, bundle, ""); status != 200 {
-					t.Fatalf("bundle PUT status=%d", status)
-				}
-				req.Result.Outcome = &controlpb.ExecutionResult_RevisionDelivered{RevisionDelivered: &controlpb.RevisionDelivered{BaseCommit: f.commit, FinalCommit: strings.Repeat("b", 40), RevisionRef: req.Result.GetRevisionUnchanged().GetRevisionRef(), History: history, Bundle: &controlpb.StoredObject{Key: key, Size: uint64(len(bundle)), Sha256: hex.EncodeToString(sum[:])}}}
+				// The Git push itself is exercised against a real Git Server in git_server_test.go.
+				final := strings.Repeat("b", 40)
+				f.pushedDelivery(req.ExecutionId, final)
+				req.Result.Outcome = &controlpb.ExecutionResult_RevisionDelivered{RevisionDelivered: &controlpb.RevisionDelivered{BaseCommit: f.commit, FinalCommit: final, RevisionRef: req.Result.GetRevisionUnchanged().GetRevisionRef(), History: history}}
 			}
 			_, err := f.store.Pool.Exec("CREATE TABLE delivery_hook_evidence(outcome text, revision_id uuid)")
 			must(t, err)

@@ -117,7 +117,7 @@ func (c *grpcController) status(n *controlpb.NodeRecord, connection controlpb.No
 }
 
 func cloneSpec(repository, branch string) *controlpb.ExecutionInput {
-	return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: &controlpb.CloneSpec{Repository: repository, Branch: branch}}}
+	return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: &controlpb.CloneSpec{RepositoryUrl: repository, WorkspaceRef: branch}}}
 }
 
 // A Rust-shaped Controller creates a Project purely over gRPC: sandbox, then the Controller reports
@@ -135,7 +135,7 @@ func TestGRPCControllerDrivesWorkspaceThroughNodeAndClone(t *testing.T) {
 	wid := created.O("workspace").S("id")
 	snap := c.claim()
 	op := snap.GetOperation()
-	if op.GetKind() != controlpb.OperationKind_OPERATION_KIND_CREATE_PROJECT || op.GetStep() != controlpb.OperationStep_OPERATION_STEP_SANDBOX || snap.GetWorkspaces()[0].GetRequestedRef() != "main" || snap.GetProject().GetRepositoryUrl() != "https://example.invalid/repo.git" {
+	if op.GetKind() != controlpb.OperationKind_OPERATION_KIND_CREATE_PROJECT || op.GetStep() != controlpb.OperationStep_OPERATION_STEP_SANDBOX || snap.GetWorkspaces()[0].GetRequestedRef() != "main" || snap.GetProject().GetId() != created.O("resource").S("id") {
 		t.Fatalf("unexpected snapshot: %v", snap)
 	}
 	_, e := c.operations.PlanEffect(c.ctx, &controlpb.PlanEffectRequest{SubmissionId: c.sub(), Epoch: c.epoch, OperationId: op.GetId(), Version: op.GetVersion(), Kind: controlpb.EffectKind_EFFECT_KIND_WORKSPACE_DATA_DELETE, WorkspaceId: wid})

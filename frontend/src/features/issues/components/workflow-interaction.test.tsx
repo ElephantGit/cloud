@@ -241,6 +241,20 @@ async function reviewAndConfirm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '确认执行' }))
 }
 
+/** Renders the composer and confirms once against a server that answers the field-divergence 409. */
+async function confirmIntoFieldsChanged() {
+  server.use(
+    http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
+      HttpResponse.json({ code: 'workflow_version_fields_changed' }, { status: 409 }),
+    ),
+  )
+  const user = userEvent.setup()
+  const { onConfirmed } = renderComposer()
+  await screen.findByLabelText(/提示词/)
+  await reviewAndConfirm(user)
+  return { user, onConfirmed }
+}
+
 function serveOldSnapshot() {
   const read = vi.fn<(issueId: string | null) => void>()
   server.use(
@@ -654,15 +668,7 @@ describe('WorkflowInteractionComposer', () => {
 
   it('explains how to resolve workflow version field divergence after confirm', async () => {
     serveComposer({ descriptor: launchDescriptor })
-    server.use(
-      http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
-        HttpResponse.json({ code: 'workflow_version_fields_changed' }, { status: 409 }),
-      ),
-    )
-    const user = userEvent.setup()
-    const { onConfirmed } = renderComposer()
-    await screen.findByLabelText(/提示词/)
-    await reviewAndConfirm(user)
+    const { onConfirmed } = await confirmIntoFieldsChanged()
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。',
     )
@@ -674,15 +680,7 @@ describe('WorkflowInteractionComposer', () => {
   it('keeps the same interaction when a rejected confirm is retried after switching snapshot', async () => {
     const { comment, confirm } = serveComposer({ descriptor: launchDescriptor })
     serveOldSnapshot()
-    server.use(
-      http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
-        HttpResponse.json({ code: 'workflow_version_fields_changed' }, { status: 409 }),
-      ),
-    )
-    const user = userEvent.setup()
-    const { onConfirmed } = renderComposer()
-    await screen.findByLabelText(/提示词/)
-    await reviewAndConfirm(user)
+    const { user, onConfirmed } = await confirmIntoFieldsChanged()
     await screen.findByText('所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。')
     await user.click(screen.getByRole('button', { name: '返回修改' }))
     await user.click(selectTrigger('运行版本'))

@@ -74,7 +74,7 @@ Envelope `{code, params, requestId}`. Common codes by status:
 - **428** `version_required`
 - **500** `internal_error`
 
-## Traps (learned the hard way — see migrations/multica-issue-board/09-observations.md)
+## Traps (learned the hard way)
 
 1. **Nested issue paths are swallowed** by `case r.IssueID != "" || HasSuffix(path,"/issues")`.
    Dispatch `/comments` `/labels` `/subscribers` **inside** that case; in `readPublic` put nested
@@ -92,7 +92,7 @@ Envelope `{code, params, requestId}`. Common codes by status:
    lazily (`ON CONFLICT DO NOTHING`) on first read/write.
 7. **Don't couple Comment to Run.** A comment is not an interaction and not a run. Adding a
    `run_id`/`interaction_id` column to `issue_comments` breaks the frozen cardinality
-   (1 comment → 0..N runs) — use `issue_runs.trigger_evidence_*` for provenance instead (§37.8).
+   (1 comment → 0..N runs) — use `issue_runs.trigger_evidence_*` for provenance instead ([Issue collaboration ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md) D4).
 
 ## Auth model (summary — see ../../authentication.md)
 
@@ -139,8 +139,8 @@ execution have not.
   end-to-end collaboration chain: directory → picker → mention/task → deterministic context → mock
   execution → run lifecycle → activity → reply comment → timeline. No real Agent/Team/Workflow/Runtime.
 - The consuming-side **ports** now exist as Go interfaces — `CollaborationDirectory`, `ContextBuilder`,
-  `ExecutionDispatcher`, `ExecutionObserver` (canonical list still in
-  [§6.4](../../migrations/multica-issue-board/12-collaboration-architecture.md#64-canonical-port-inventory-unified-by-wave-3b-0);
+  `ExecutionDispatcher`, `ExecutionObserver` (canonical list in
+  [Issue collaboration ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md) D1;
   do not trust a partial list elsewhere).
 - **Fixture/mock adapters** `FixtureCollaborationDirectory` (in-memory, stable UUIDs),
   `DeterministicContextBuilder` (bounded recent comments ≤10, no AI), and `MockExecutionDispatcher`
@@ -174,7 +174,7 @@ the fixture Agent/Team targets with stable IDs (`internal/collab`:
 **Still schema-ready / not API-implemented:**
 
 - `issue_comments.author_type = system` is CHECK-allowed but nothing writes a `system` comment yet.
-- `ConversationTarget` remains **not implemented** (left open in §37.17).
+- `ConversationTarget` remains **not implemented** (left open by the Issue collaboration ADR).
 
 **Implemented (Wave 3B-2, migration `0012` — formerly `0010`/`0009`; renumbered in the workspace integration):**
 
@@ -197,14 +197,12 @@ the fixture Agent/Team targets with stable IDs (`internal/collab`:
 Non-`user` actor refs (`agent`/`team`/`system`) are **opaque UUIDs** this wave — shape-validated, not
 resolved. `users` remains the only *resolved* human actor. **`workflow` is not an actor at all**: it
 exists only on the collaboration-*target* side (`CollaborationTargetRef`), which is why workflow output
-lands as a `system`-authored activity rather than a workflow-authored comment (§8, §38.26). The target
-contracts live in
-[`docs/migrations/multica-issue-board/12-collaboration-architecture.md`](../../migrations/multica-issue-board/12-collaboration-architecture.md);
-Wave 3A's concrete divergences from that doc are in its §36.
+lands as a `system`-authored activity rather than a workflow-authored comment (Issue collaboration ADR D2). The target
+contracts live in the [Issue collaboration ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md).
 
-### Collaboration interaction model — quick reference (frozen in §37)
+### Collaboration interaction model — quick reference (Issue collaboration ADR D2–D6)
 
-Read the full section before implementing anything collaborative. The short version:
+Read the ADR before implementing anything collaborative. The short version:
 
 | Rule | Statement |
 | --- | --- |
@@ -220,7 +218,7 @@ Read the full section before implementing anything collaborative. The short vers
 | Timeline | `Comment` + `IssueActivity` in one per-issue `seq` namespace; **strictly separate** from Execution Logs. |
 | Fixtures | dev/demo config only, production default off, **no mock domain tables**. |
 
-### Workflow interaction — quick reference (frozen in §38, implemented by 3B-2)
+### Workflow interaction — quick reference (Issue collaboration ADR D7–D9)
 
 | Rule | Statement |
 | --- | --- |
@@ -233,5 +231,5 @@ Read the full section before implementing anything collaborative. The short vers
 | Interaction state | No status column: `run_id IS NULL` = unconfirmed, `run_id != NULL` = confirmed. |
 | Workflow output | An **`IssueActivity`** (`actor_type='system'` + run/executor in `details`). **`workflow` is not an `ActorRef`.** |
 | Execution ports | Reuse `ExecutionDispatcher` / `ExecutionObserver`; no `WorkflowDispatcher`, no second lifecycle. |
-| API surface | `/collaboration/forms/{formRef}`, `/issues/{iid}/interactions/{ixid}/assist`, `.../confirm`. The collaboration surface **never** grows workflow CRUD — the Workflow module owns `/workflows/*` as its own resource. |
+| API surface | `/collaboration/forms/{formRef}`, `/issues/{iid}/collaboration/assist` (stateless, keyed by `targetId`), `/issues/{iid}/interactions/{ixid}/confirm`. The collaboration surface **never** grows workflow CRUD — the Workflow module owns `/workflows/*` as its own resource. |
 | Extra error | `409 interaction_not_confirmable` — confirm/assist called on a non-`form` interaction. |

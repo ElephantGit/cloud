@@ -34,3 +34,5 @@ MSW 模拟真实 Cloud 接口；`onUnhandledRequest: 'error'` 下每个测试都
 `IssueRun.workflowInvocationRef` 保留服务端返回的 WorkflowRun 引用，供活动栏读取真实运行状态并导航；API 测试检查列表没有丢失该关联。Workflow 确认去重、失败重试和详情链接的交互测试位于 `components/`。
 
 `useWorkflowSnapshotForm` 复用生成的 snapshot form GET，查询键包含 tenant/workflow/snapshot/issue；API 测试逐项切换这些范围，避免不同版本或 Issue 共用表单默认值。
+
+`useWorkflowPublishedSnapshotIds` 按 tenant/workflow 缓存全部已发布版本 id，使用生成的列表接口逐页读取（每页 100，传递取消信号），不缓存图副本。活动表单用它判断下拉选项是否都属于已发布版本；API 测试验证第二页游标、完整 id 列表及租户/Workflow 隔离。

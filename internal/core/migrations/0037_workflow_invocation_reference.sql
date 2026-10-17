@@ -12,6 +12,7 @@ ALTER TABLE workflow_runs
 
 ALTER TABLE issue_runs
   ADD CONSTRAINT issue_runs_workflow_invocation_fk
+    -- workflow_invocation_ref had no writer before this migration, so dangling references are not expected and the FK fails closed.
     FOREIGN KEY (workflow_invocation_ref, tenant_id) REFERENCES workflow_runs(id, tenant_id),
   ADD CONSTRAINT issue_runs_workflow_invocation_uniq UNIQUE (workflow_invocation_ref),
   ADD CONSTRAINT issue_runs_workflow_invocation_shape

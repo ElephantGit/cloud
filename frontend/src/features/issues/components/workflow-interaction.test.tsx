@@ -180,6 +180,9 @@ function serveComposer(overrides: { descriptor?: unknown; suggestion?: AssistSug
     http.get('/api/v1/tenants/t1/collaboration/forms/security-review', () =>
       HttpResponse.json(overrides.descriptor ?? descriptor),
     ),
+    http.get('/api/v1/tenants/t1/workflows/wf1/snapshots', () =>
+      HttpResponse.json({ items: [{ id: 'snap-3' }, { id: 'snap-2' }], nextCursor: '' }),
+    ),
     http.post('/api/v1/tenants/t1/issues/i1/collaboration/assist', async ({ request }) => {
       assist(await request.json())
       return HttpResponse.json(overrides.suggestion ?? suggestion)
@@ -611,6 +614,63 @@ describe('WorkflowInteractionComposer', () => {
     )
   })
 
+  it('keeps an authors select named snapshotId as ordinary input when any option is not published', async () => {
+    const { confirm } = serveComposer({
+      descriptor: {
+        formRef: 'security-review',
+        fields: [
+          {
+            key: 'snapshotId',
+            label: 'Author snapshot choice',
+            type: 'select',
+            required: true,
+            defaultValue: 'snap-3',
+            options: [
+              { value: 'snap-3', label: 'Author default' },
+              { value: 'custom-choice', label: 'Author custom choice' },
+            ],
+          },
+        ],
+      },
+    })
+    const formRead = vi.fn<() => void>()
+    server.use(
+      http.get('/api/v1/tenants/t1/workflows/wf1/snapshots/:id/form', () => {
+        formRead()
+        return HttpResponse.json({ code: 'not_found' }, { status: 404 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderComposer()
+    await user.click(await screen.findByLabelText(/Author snapshot choice/))
+    await user.click(await screen.findByRole('option', { name: 'Author custom choice' }))
+    expect(selectTrigger('Author snapshot choice')).toHaveTextContent('Author custom choice')
+    await reviewAndConfirm(user)
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith({ values: { snapshotId: 'custom-choice' } }),
+    )
+    expect(formRead).not.toHaveBeenCalled()
+  })
+
+  it('explains how to resolve workflow version field divergence after confirm', async () => {
+    serveComposer({ descriptor: launchDescriptor })
+    server.use(
+      http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
+        HttpResponse.json({ code: 'workflow_version_fields_changed' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    const { onConfirmed } = renderComposer()
+    await screen.findByLabelText(/提示词/)
+    await reviewAndConfirm(user)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。',
+    )
+    expect(screen.queryByText('workflow_version_fields_changed')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '返回修改' })).toBeEnabled()
+    expect(onConfirmed).not.toHaveBeenCalled()
+  })
+
   it('keeps the same interaction when a rejected confirm is retried after switching snapshot', async () => {
     const { comment, confirm } = serveComposer({ descriptor: launchDescriptor })
     serveOldSnapshot()
@@ -623,7 +683,7 @@ describe('WorkflowInteractionComposer', () => {
     const { onConfirmed } = renderComposer()
     await screen.findByLabelText(/提示词/)
     await reviewAndConfirm(user)
-    await screen.findByText('确认失败，请重试。')
+    await screen.findByText('所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。')
     await user.click(screen.getByRole('button', { name: '返回修改' }))
     await user.click(selectTrigger('运行版本'))
     await user.click(await screen.findByRole('option', { name: 'v2 · 发布 2' }))

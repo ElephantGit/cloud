@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm } from '@/api/workflows/workflows'
+import {
+  getApiV1TenantsTidWorkflowsWfidSnapshots,
+  getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm,
+} from '@/api/workflows/workflows'
 import { AXIOS_INSTANCE } from '@/lib/api-client'
 import type {
   AssistSuggestion,
@@ -310,6 +313,29 @@ export function useFormDescriptor(tid: string, formRef: string | undefined, issu
       return data
     },
     enabled: !!tid && !!formRef,
+  })
+}
+
+/** Lists every published snapshot id so version-selector checks do not depend on UUID page order. */
+export function useWorkflowPublishedSnapshotIds(tid: string, workflowId: string | undefined) {
+  return useQuery({
+    queryKey: ['workflow-published-snapshot-ids', tid, workflowId ?? ''],
+    queryFn: ({ signal }) => {
+      const ids: string[] = []
+      async function collectPage(cursor = ''): Promise<string[]> {
+        const page = await getApiV1TenantsTidWorkflowsWfidSnapshots(
+          tid,
+          workflowId ?? '',
+          { limit: 100, ...(cursor ? { cursor } : {}) },
+          undefined,
+          signal,
+        )
+        ids.push(...page.items.map((item) => item.id))
+        return page.nextCursor ? collectPage(page.nextCursor) : ids
+      }
+      return collectPage()
+    },
+    enabled: !!tid && !!workflowId,
   })
 }
 

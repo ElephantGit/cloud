@@ -11,6 +11,7 @@ import {
   useMoveIssue,
   useRuns,
   useUpdateIssue,
+  useWorkflowPublishedSnapshotIds,
   useWorkflowSnapshotForm,
 } from './api'
 
@@ -264,5 +265,74 @@ describe('useWorkflowSnapshotForm', () => {
       `/api/v1${path}`,
     ])
     expect(queryClient.getQueryCache().getAll()).toHaveLength(2)
+  })
+})
+
+describe('useWorkflowPublishedSnapshotIds', () => {
+  it.each([
+    { scope: 'tenant', tenant: 't2', workflow: 'wf1' },
+    { scope: 'workflow', tenant: 't1', workflow: 'wf2' },
+  ])('follows all pages and isolates ids when $scope changes', async ({ tenant, workflow }) => {
+    const requests: { path: string; limit: string | null; cursor: string | null }[] = []
+    server.use(
+      http.get('/api/v1/tenants/:tid/workflows/:wfid/snapshots', ({ request, params }) => {
+        const url = new URL(request.url)
+        const cursor = url.searchParams.get('cursor')
+        requests.push({ path: url.pathname, limit: url.searchParams.get('limit'), cursor })
+        const prefix = `${String(params['tid'])}/${String(params['wfid'])}`
+        return HttpResponse.json({
+          items: [{ id: `${prefix}/${cursor ? 'second' : 'first'}` }],
+          nextCursor: cursor ? '' : 'page-two',
+        })
+      }),
+    )
+    const cache = new QueryClient()
+    const { result, rerender } = renderHook(
+      (props: { tenant: string; workflow: string }) =>
+        useWorkflowPublishedSnapshotIds(props.tenant, props.workflow),
+      { wrapper: wrapper(cache), initialProps: { tenant: 't1', workflow: 'wf1' } },
+    )
+    await waitFor(() => expect(result.current.data).toEqual(['t1/wf1/first', 't1/wf1/second']))
+    rerender({ tenant, workflow })
+    await waitFor(() =>
+      expect(result.current.data).toEqual([
+        `${tenant}/${workflow}/first`,
+        `${tenant}/${workflow}/second`,
+      ]),
+    )
+    expect(requests).toEqual([
+      { path: '/api/v1/tenants/t1/workflows/wf1/snapshots', limit: '100', cursor: null },
+      { path: '/api/v1/tenants/t1/workflows/wf1/snapshots', limit: '100', cursor: 'page-two' },
+      {
+        path: `/api/v1/tenants/${tenant}/workflows/${workflow}/snapshots`,
+        limit: '100',
+        cursor: null,
+      },
+      {
+        path: `/api/v1/tenants/${tenant}/workflows/${workflow}/snapshots`,
+        limit: '100',
+        cursor: 'page-two',
+      },
+    ])
+    expect(
+      cache
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.queryKey),
+    ).toEqual([
+      ['workflow-published-snapshot-ids', 't1', 'wf1'],
+      ['workflow-published-snapshot-ids', tenant, workflow],
+    ])
+  })
+
+  it.each([
+    { tenant: '', workflow: 'wf1' },
+    { tenant: 't1', workflow: undefined },
+  ])('does not fetch until tenant and workflow ids are present: %j', ({ tenant, workflow }) => {
+    const { result } = renderHook(() => useWorkflowPublishedSnapshotIds(tenant, workflow), {
+      wrapper: wrapper(new QueryClient()),
+    })
+    expect(result.current.fetchStatus).toBe('idle')
+    expect(result.current.data).toBeUndefined()
   })
 })

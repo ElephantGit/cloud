@@ -9,6 +9,7 @@ import {
   useAssistWorkflow,
   useConfirmWorkflow,
   useFormDescriptor,
+  useWorkflowPublishedSnapshotIds,
   useWorkflowSnapshotForm,
 } from '@/features/issues/api'
 import { AssistSuggestions } from '@/features/issues/components/assist-suggestions'
@@ -22,6 +23,7 @@ import type {
   FormField,
   FormValues,
 } from '@/features/issues/types'
+import { faultCode } from '@/lib/api-client'
 
 /** Seeds the editable values from the descriptor's declared defaults. */
 function seedValues(descriptor: FormDescriptor, snapshotId?: string): FormValues {
@@ -31,12 +33,25 @@ function seedValues(descriptor: FormDescriptor, snapshotId?: string): FormValues
       values[field.key] = field.defaultValue
     }
   }
-  if (snapshotId && descriptor.fields.some(isSnapshotSelector)) values['snapshotId'] = snapshotId
+  if (snapshotId) values['snapshotId'] = snapshotId
   return values
 }
 
-function isSnapshotSelector(field: FormField): boolean {
-  return field.key === 'snapshotId' && field.type === 'select'
+// An author's snapshotId field suppresses platform injection, so its name and type are insufficient.
+function isSnapshotSelector(field: FormField, publishedIds: string[]): boolean {
+  return (
+    field.key === 'snapshotId' &&
+    field.type === 'select' &&
+    !!field.options?.length &&
+    field.options.every((option) => publishedIds.includes(option.value))
+  )
+}
+
+function confirmFailure(error: unknown): string {
+  if (faultCode(error) === 'workflow_version_fields_changed') {
+    return '所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。'
+  }
+  return '确认失败，请重试。'
 }
 
 /** Required fields the user has not filled yet — the only client-side gate on Review (§38.15). */
@@ -281,7 +296,7 @@ function ComposerBody(props: {
   assistPending: boolean
   confirmPending: boolean
   assistFailed: boolean
-  confirmFailed: boolean
+  confirmError: string | undefined
   onAssist: () => void
   onReview: () => void
   onBack: () => void
@@ -301,8 +316,10 @@ function ComposerBody(props: {
           onBack={props.onBack}
           onConfirm={props.onConfirm}
         />
-        {props.confirmFailed ? (
-          <p className="text-xs text-destructive">确认失败，请重试。</p>
+        {props.confirmError ? (
+          <p role="alert" className="text-xs text-destructive">
+            {props.confirmError}
+          </p>
         ) : null}
       </>
     )
@@ -368,7 +385,7 @@ function useWorkflowSubmission({
   return {
     submit,
     isPending: submission.isPending || submission.isSuccess,
-    isError: submission.isError,
+    errorMessage: submission.isError ? confirmFailure(submission.error) : undefined,
   }
 }
 
@@ -397,15 +414,25 @@ export function WorkflowInteractionComposer({
   const descriptorQuery = snapshotId ? snapshot : live
   const confirm = useWorkflowSubmission({ slug, issueId, target, onConfirmed })
   const descriptor = descriptorQuery.data
+  const candidate = descriptor?.fields.find(
+    (field) => field.key === 'snapshotId' && field.type === 'select',
+  )
+  const published = useWorkflowPublishedSnapshotIds(slug, candidate ? target.id : undefined)
 
-  if (descriptorQuery.isPending) return <Skeleton className="h-24 w-full" />
-  if (descriptorQuery.isError || !descriptor) {
+  if (descriptorQuery.isPending || (candidate && published.isPending)) {
+    return <Skeleton className="h-24 w-full" />
+  }
+  if (descriptorQuery.isError || !descriptor || (candidate && published.isError)) {
     return (
       <div className="space-y-2">
         <p className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
           当前部署无法加载该 Workflow 的表单（form descriptor 不可用）。
         </p>
-        <Button variant="outline" size="sm" onClick={() => void descriptorQuery.refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void (published.isError ? published.refetch() : descriptorQuery.refetch())}
+        >
           重试加载表单
         </Button>
       </div>
@@ -419,6 +446,9 @@ export function WorkflowInteractionComposer({
       issueId={issueId}
       target={target}
       descriptor={descriptor}
+      versionField={descriptor.fields.find((field) =>
+        isSnapshotSelector(field, published.data ?? []),
+      )}
       snapshotId={snapshot.data?.snapshotId}
       loading={descriptorQuery.isFetching}
       confirm={confirm}
@@ -434,6 +464,7 @@ function WorkflowInteractionForm(props: {
   issueId: string
   target: CollaborationTargetSummary
   descriptor: FormDescriptor
+  versionField: FormField | undefined
   snapshotId: string | undefined
   loading: boolean
   confirm: ReturnType<typeof useWorkflowSubmission>
@@ -444,13 +475,10 @@ function WorkflowInteractionForm(props: {
   const assist = useAssistWorkflow(slug, issueId)
   const [reviewing, setReviewing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const form = useWorkflowForm(descriptor, props.snapshotId)
+  const form = useWorkflowForm(descriptor, props.versionField ? props.snapshotId : undefined)
 
   function setField(key: string, next: unknown) {
-    if (
-      typeof next === 'string' &&
-      descriptor.fields.some((field) => field.key === key && isSnapshotSelector(field))
-    ) {
+    if (typeof next === 'string' && key === props.versionField?.key) {
       props.onSnapshotChange(next)
     } else {
       form.setField(key, next)
@@ -488,7 +516,7 @@ function WorkflowInteractionForm(props: {
           assistPending={assist.isPending}
           confirmPending={confirm.isPending}
           assistFailed={assist.isError}
-          confirmFailed={confirm.isError}
+          confirmError={confirm.errorMessage}
           onAssist={() =>
             assist.mutate(
               { targetId: target.id, values: form.values },

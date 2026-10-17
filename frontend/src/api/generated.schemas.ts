@@ -2848,7 +2848,7 @@ export type GetApiV1TenantsTidGitCredentialsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };
@@ -3741,7 +3741,7 @@ export type GetApiV1TenantsTidProjectsPidRepositoryOperationsParams = {
  */
 limit?: number;
 /**
- * Exclusive UUID cursor, ascending stable ordering.
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
  */
 after?: string;
 };

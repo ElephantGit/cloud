@@ -371,9 +371,9 @@ func (f *fixture) deliveryRows(execution string) (executionRow, workInput string
 func (f *fixture) runPlacement(runID string) (projectID, repositoryURL string) {
 	f.t.Helper()
 	must(f.t, f.store.Pool.QueryRow(`
-		SELECT p.id, p.repository_url FROM issue_runs r
+		SELECT b.project_id, b.repository_url FROM issue_runs r
 		JOIN workspaces w ON w.id = r.workspace_id
-		JOIN projects p ON p.id = w.project_id
+		JOIN repository_bindings b ON b.project_id = w.project_id
 		WHERE r.id=$1`, runID).Scan(&projectID, &repositoryURL))
 	return projectID, repositoryURL
 }

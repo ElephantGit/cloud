@@ -29,7 +29,7 @@ func formContextForIssue(t *transaction, tid string, i Object) IssueFormContext 
 	// project that has since been deleted is a missing default, never an error. Reading the branch
 	// alongside the repository costs nothing: it is the same row, and `default_branch` is NOT NULL, so
 	// a project that exists always yields one.
-	if project := t.one("SELECT repository_url, default_branch FROM projects WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", ref, tid); project != nil {
+	if project := t.one("SELECT repository_url, default_branch FROM "+projectView+" p WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", ref, tid); project != nil {
 		out.ProjectID = ref
 		out.RepositoryURL = project.S("repositoryUrl")
 		out.DefaultBranch = project.S("defaultBranch")

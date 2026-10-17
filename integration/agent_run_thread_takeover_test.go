@@ -120,7 +120,7 @@ func seedStartingAgentRun(t *testing.T, store *core.Store) (runID, workspaceID, 
 	exec("tenant", `INSERT INTO tenants(id,name,status) VALUES($1,'takeover','active')`, tenant)
 	exec("membership", `INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')`, tenant, user)
 	exec("space", `INSERT INTO collab_workspaces(id,tenant_id,name,slug,created_by) VALUES($1,$2,'takeover',$3,$4)`, space, tenant, "takeover-"+space[:8], user)
-	exec("project", `INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,repository_url,default_branch,lifecycle) VALUES($1,$2,$3,$4,'takeover','https://example.invalid/takeover.git','main','active')`, project, tenant, user, space)
+	exec("project", `WITH p AS (INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,lifecycle) VALUES($1,$2,$3,$4,'takeover','active') RETURNING id,tenant_id) INSERT INTO repository_bindings(id,tenant_id,project_id,repository_url,branch) SELECT gen_random_uuid(),tenant_id,id,'https://example.invalid/takeover.git','main' FROM p`, project, tenant, user, space)
 	// A live project carries exactly one main workspace (deferred project_main trigger); the run
 	// Workspace is the separate kind='isolated' one below.
 	exec("main-workspace", `INSERT INTO workspaces(id,tenant_id,owner_user_id,project_id,kind,desired_state,observed_state,runtime_generation,requested_ref) VALUES($1,$2,$3,$4,'main','running','ready',1,'HEAD')`, uuid.NewString(), tenant, user, project)

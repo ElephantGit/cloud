@@ -4227,6 +4227,137 @@
         ],
         "type": "object"
       },
+      "WorkflowAssetDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "documentPath": {
+            "type": "string"
+          },
+          "failureCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failureDetail": {
+            "additionalProperties": true,
+            "nullable": true,
+            "type": "object"
+          },
+          "outcome": {
+            "enum": [
+              "imported",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "packageSha256": {
+            "type": "string"
+          },
+          "packageVersion": {
+            "type": "string"
+          },
+          "snapshotVersion": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentPath",
+          "packageVersion",
+          "packageSha256",
+          "outcome",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "WorkflowAssetImport": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowAssetDocument"
+            },
+            "type": "array"
+          },
+          "failureCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "packageSha256": {
+            "type": "string"
+          },
+          "packageVersion": {
+            "type": "string"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "requestedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceNamespace": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "importing",
+              "completed",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "pluginId",
+          "sourceNamespace",
+          "identifier",
+          "packageVersion",
+          "packageSha256",
+          "state",
+          "requestedRevision",
+          "documents"
+        ],
+        "type": "object"
+      },
+      "WorkflowAssetImportList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowAssetImport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "WorkflowRun": {
         "additionalProperties": false,
         "properties": {
@@ -20419,6 +20550,134 @@
           }
         ],
         "summary": "POST /api/v1/tenants/:tid/spaces/:spaceId/plugins",
+        "tags": [
+          "spaces"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tid}/spaces/{spaceId}/plugins/assets": {
+      "get": {
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Every tenant has one collaboration space. Active tenant members can read it. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "operationId": "get_api_v1_tenants_tid_spaces_spaceId_plugins_assets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "spaceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAssetImportList"
+                }
+              }
+            },
+            "description": "Successful command or resource response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "GET /api/v1/tenants/:tid/spaces/:spaceId/plugins/assets",
         "tags": [
           "spaces"
         ]

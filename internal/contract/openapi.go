@@ -259,6 +259,29 @@ func Document() map[string]any {
 	spacePluginProps["observedVersion"] = optional(str())
 	spacePluginProps["installError"] = optional(str())
 	s["SpacePluginList"] = object(obj{"items": array(ref("SpacePlugin"))}, "items")
+	// Workflow asset import is read separately from installation evidence: a space with no live
+	// runtime still imports templates, and an install failure says nothing about them. The document
+	// codes are bounded, and failureDetail carries only safe structured parameters.
+	s["WorkflowAssetDocument"] = object(obj{
+		"documentPath": str(), "packageVersion": str(), "packageSha256": str(),
+		"outcome":         enumeration("imported", "failed"),
+		"workflowId":      optional(uuid()),
+		"snapshotVersion": optional(number()),
+		"failureCode":     optional(str()),
+		"failureDetail":   optional(obj{"type": "object", "additionalProperties": true}),
+		"updatedAt":       timestamp(),
+	}, "documentPath", "packageVersion", "packageSha256", "outcome", "updatedAt")
+	s["WorkflowAssetImport"] = object(obj{
+		"pluginId": str(), "sourceNamespace": str(), "identifier": str(),
+		"packageVersion": str(), "packageSha256": str(),
+		"state":             enumeration("pending", "importing", "completed", "failed"),
+		"failureCode":       optional(str()),
+		"requestedRevision": number(),
+		"attemptedAt":       optional(timestamp()),
+		"completedAt":       optional(timestamp()),
+		"documents":         array(ref("WorkflowAssetDocument")),
+	}, "pluginId", "sourceNamespace", "identifier", "packageVersion", "packageSha256", "state", "requestedRevision", "documents")
+	s["WorkflowAssetImportList"] = object(obj{"items": array(ref("WorkflowAssetImport"))}, "items")
 	s["PluginUniversalRelease"] = object(obj{"url": str(), "sha256": str()}, "url", "sha256")
 	s["PluginReleaseTarget"] = object(obj{"target": str(), "url": str(), "sha256": str()}, "target", "url", "sha256")
 	s["PluginLogoCandidate"] = object(obj{"role": enumeration("universal", "light", "dark"), "extension": enumeration("svg", "png", "webp", "jpg", "jpeg")}, "role", "extension")
@@ -604,6 +627,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		case strings.Contains(r.Path, "/plugins"):
 			if r.Method == "GET" && strings.HasSuffix(r.Path, "/plugins/catalog") {
 				return ref("PluginCatalog"), "200"
+			}
+			if r.Method == "GET" && strings.HasSuffix(r.Path, "/plugins/assets") {
+				return ref("WorkflowAssetImportList"), "200"
 			}
 			if r.Method == "GET" {
 				return ref("SpacePluginList"), "200"

@@ -80,8 +80,10 @@ func (e *importedWorkflowEvidence) assertRun(t *testing.T, user core.Claims, id 
 	if n := e.f.scalar("SELECT count(*) FROM workflow_runs WHERE id=$1 AND tenant_id=$2 AND workflow_id=$3 AND snapshot_id=$4", id, e.f.tid, e.workflow, snapshot.S("id")); n != 1 {
 		t.Fatalf("stored WorkflowRun binding = %d rows, want 1", n)
 	}
-	return core.Object{"workflowId": run.S("workflowId"), "snapshotId": run.S("snapshotId"),
-		"status": run.S("status"), "input": run.O("input"), "definitionSnapshot": run.O("definitionSnapshot")}
+	return core.Object{
+		"workflowId": run.S("workflowId"), "snapshotId": run.S("snapshotId"),
+		"status": run.S("status"), "input": run.O("input"), "definitionSnapshot": run.O("definitionSnapshot"),
+	}
 }
 
 func TestImportedWorkflowDirectoryAndRunsIgnoreImportTriggerUser(t *testing.T) {

@@ -109,6 +109,7 @@ func (s *Store) startAgentSession(t *transaction, runID string) error {
 //	initialTurn:           the deterministic first prompt this transaction just wrote as seq=1.
 //	priorRevision:         the Revision the run resumes, when selectPriorRevision chose one and it
 //	                       lives in the repository the checkout was cloned from.
+//	workspaceDirectory:    the Project's Workspaces as of now, for `ora-git list`.
 //
 // A run Workspace with no recorded baseline, or one whose baseline names no successful clone
 // execution, is an invariant violation: a session cannot run in a Workspace that was never cloned, so
@@ -160,7 +161,39 @@ func (s *Store) sessionStartSpec(t *transaction, o, snap Object, turnID, content
 	if prior != nil {
 		spec["priorRevision"] = prior
 	}
+	spec["workspaceDirectory"] = workspaceDirectory(t, wid)
 	return spec, nil
+}
+
+// workspaceDirectoryLimit bounds the Workspace directory a session input carries (contract D7).
+const workspaceDirectoryLimit = 100
+
+// workspaceDirectory lists the Workspaces of the session's Project, newest first, so `ora-git list`
+// can name their branches by Issue and run (contract D7). Run Workspaces stay listed after deletion
+// because their branches remain on the Git Server. It is a snapshot taken when the session work is
+// released, never refreshed and never used for authorization: which branches a session can read and
+// write is decided by the Git Server alone.
+func workspaceDirectory(t *transaction, wid string) []Object {
+	rows := t.list(`
+		SELECT w.id AS workspace_id,
+		       CASE WHEN w.issue_run_id IS NOT NULL THEN 'run' ELSE w.kind END AS kind,
+		       r.issue_id, i.title AS issue_title, r.id AS issue_run_id, r.status AS run_status
+		FROM workspaces w
+		JOIN workspaces self ON self.id=$1 AND self.project_id=w.project_id AND self.tenant_id=w.tenant_id
+		LEFT JOIN issue_runs r ON r.id=w.issue_run_id AND r.tenant_id=w.tenant_id
+		LEFT JOIN issues i ON i.id=r.issue_id AND i.tenant_id=r.tenant_id
+		WHERE w.deleted_at IS NULL OR w.issue_run_id IS NOT NULL
+		ORDER BY w.created_at DESC, w.id DESC
+		LIMIT $2`, wid, workspaceDirectoryLimit)
+	out := make([]Object, 0, len(rows))
+	for _, row := range rows {
+		listing := Object{"workspaceId": row.S("workspaceId"), "kind": row.S("kind")}
+		if row.S("issueRunId") != "" {
+			listing["issueId"], listing["issueTitle"], listing["issueRunId"], listing["runStatus"] = row.S("issueId"), row.S("issueTitle"), row.S("issueRunId"), row.S("runStatus")
+		}
+		out = append(out, listing)
+	}
+	return out
 }
 
 // renderAgentInitialTurn produces the deterministic first-prompt content from the frozen run-create

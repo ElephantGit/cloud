@@ -16,7 +16,8 @@ type ControlSignal struct {
 type ControlSignalKind string
 
 const (
-	// SignalWorkAvailable follows a committed clone request; OperationID names it.
+	// SignalWorkAvailable follows a committed execution work item (an Agent session or a Revision
+	// delivery); OperationID carries the ID of its IssueRun.
 	SignalWorkAvailable ControlSignalKind = "work_available"
 	// SignalOperationAvailable follows a committed transaction that queued a runtime Workspace
 	// operation (created or retried); OperationID names it. A retry_wait operation becoming due has no

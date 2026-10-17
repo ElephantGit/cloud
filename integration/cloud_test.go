@@ -109,7 +109,7 @@ func setup(t *testing.T) *fixture {
 	pool, config := testSchema(t, "test_")
 	db, e := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	must(t, e)
-	store, e := core.NewDevelopmentStore(db)
+	store, e := core.NewStore(db)
 	must(t, e)
 	// Wire the dev/demo collaboration fixtures so the mock execution path is exercised. Workflow
 	// targets and their form descriptors stay database-backed: the fixtures layer agent/team in front

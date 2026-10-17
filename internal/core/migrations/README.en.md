@@ -101,7 +101,6 @@ Both `0033` files retain their complete filenames and original SQL. The complete
 
 Adds startup_ready_at, startup_deadline_at, startup_resume, startup_ending_deadline_at and agent_run_residuals without rewriting historical outcomes. The serialized policy scan freezes legacy active windows once. Residual ownership commits with failed/done; late true terminal facts add evidence without granting cleanup authority. Fresh/upgrade/repeat coverage: TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade.
 
-
 `0035_model_attempt_statistics.sql` adds a content-free model HTTP attempt ledger and tenant/run/time index.
 Composite foreign keys bind run/tenant, binding/run and grant/binding/execution; CHECK constraints bound statuses,
 nullable counters, timing and completion shape. No historical backfill. Apply with `cloudctl migrate`; services still
@@ -114,3 +113,7 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 ## 0038: Bounded abandonment of a blocked run Workspace creation
 
 Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
+
+## 0039: Retire tenant-level clones
+
+Part of the switch to Workspaces cloned from Git Server snapshots; no data is migrated. Clone executions that belong to no Workspace and their receipts are deleted, `clone_executions.clone_request_id` and the `one_request_execution` index are dropped, `clone_executions.workspace_id` becomes NOT NULL, and `clone_requests` is dropped; Workspace clone executions and their receipts stay. The migration is retry-safe. Upgrading a database that still holds tenant-level clones is `TestMigration0039RetiresTenantLevelClonesKeepingWorkspaceClones` in `integration/migration_upgrade_path_test.go`.

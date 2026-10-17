@@ -333,7 +333,7 @@ func Document() map[string]any {
 		properties(s, name)["baseCommitId"] = optional(obj{"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"})
 	}
 	// A Workspace operation's clone executions, registered through the gRPC ExecutionService.
-	s["CloneExecution"] = resource("executionId operationId workspaceId cloneRequestId nodeId input result dispatchedEpoch createdAt updatedAt nodeOperationId terminatedByForceStopId", "workspaceId cloneRequestId result terminatedByForceStopId")
+	s["CloneExecution"] = resource("executionId operationId workspaceId nodeId input result dispatchedEpoch createdAt updatedAt nodeOperationId terminatedByForceStopId", "result terminatedByForceStopId")
 	ce := properties(s, "CloneExecution")
 	ce["credentialRefId"] = optional(uuid())
 	ce["credentialRefVersion"] = optional(number())
@@ -359,15 +359,6 @@ func Document() map[string]any {
 	s["EmptyClaim"] = object(obj{"operation": obj{"type": "object", "nullable": true, "enum": []any{nil}}}, "operation")
 	s["Access"] = object(obj{"userId": uuid(), "tenantId": uuid(), "workspaceId": uuid(), "allowedAction": enumeration("read", "execute"), "executable": boolean(), "runtimeGeneration": number()}, "userId", "tenantId", "workspaceId", "allowedAction", "executable", "runtimeGeneration")
 	s["IdleRefusal"] = object(obj{"accepted": boolean(), "errorCode": enumeration("resource_in_use")}, "accepted", "errorCode")
-	// Clone requests mirror the transitional Controller DTO: the tagged state carries the terminal
-	// fact, and identities assigned at dispatch are null until a Controller records it.
-	s["CloneState"] = object(obj{"kind": enumeration("pending", "succeeded", "failed"), "path": str(), "commit": str(), "reason": enumeration("sourceUnavailable", "branchNotFound", "destinationConflict", "operationFailed", "interrupted", "unspecified"), "retainedPath": str()}, "kind")
-	cloneProps := fields("operationId createdAt updatedAt")
-	for _, name := range []string{"requestId", "repository", "branch"} {
-		cloneProps[name] = str()
-	}
-	cloneProps["executionId"], cloneProps["nodeId"], cloneProps["state"] = optional(str()), optional(str()), ref("CloneState")
-	s["CloneOperation"] = object(cloneProps, "operationId", "requestId", "repository", "branch", "executionId", "nodeId", "state", "createdAt", "updatedAt")
 	// The clone step's input, frozen from the Binding's current snapshot before a Controller can see
 	// the step and forwarded verbatim: a Git Server repository, a snapshot ref, its commit and the
 	// Workspace's branch there. It names no external repository and no credential.
@@ -503,8 +494,6 @@ func tag(r router.Route) string {
 		return "internal"
 	case strings.HasPrefix(r.Path, "/api/v1/me"):
 		return "me"
-	case strings.Contains(r.Path, "/clones"):
-		return "clones"
 	case strings.Contains(r.Path, "/spaces"):
 		return "spaces"
 	case strings.Contains(r.Path, "/workflows"):
@@ -533,7 +522,7 @@ func isList(r router.Route) bool {
 	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath {
 		return r.Method == "GET"
 	}
-	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/clones"))
+	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests"))
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
@@ -801,15 +790,6 @@ func responseSchema(r router.Route) (schema obj, status string) {
 			return object(obj{"items": array(ref("Issue")), "nextCursor": str()}, "items", "nextCursor"), "200"
 		}
 		return ref("Issue"), "200"
-	case strings.Contains(r.Path, "/clones"):
-		switch {
-		case isList(r):
-			return object(obj{"items": array(ref("CloneOperation")), "nextCursor": str()}, "items", "nextCursor"), "200"
-		case r.Method == "GET":
-			return ref("CloneOperation"), "200"
-		default:
-			return ref("CloneOperation"), "202"
-		}
 	case r.Path == "/api/v1/tenants" && r.Method == "POST":
 		return ref("TenantCreated"), "201"
 	}
@@ -1085,9 +1065,6 @@ func description(r router.Route) string {
 	}
 	if r.Path == "/api/v1/tenants" && r.Method == "POST" {
 		base = "Public requests require a gateway service credential plus a caller-bound user credential. The verified identity authorizes self-service provisioning without prior membership. Atomically creates a tenant and its sole visible collaboration space with the same name and the given globally unique, immutable slug; the caller becomes its first administrator. The idempotency key is matched per user across tenants and recorded under the new tenant. "
-	}
-	if strings.Contains(r.Path, "/clones") {
-		base += "Unscoped clone submission is retired in production and returns 410 runtime_scope_required; existing requests remain readable by their original submitter. An explicit development store can exercise the legacy coordination fixture without enabling a production bypass. requestId is the caller's durable request identity: repeating it with the same repository and branch returns the original request, a different input is 409 idempotency_conflict. repository must be an https or ssh URL the Controller can clone; branch is a short branch name, never HEAD. executionId and nodeId are null until a dispatch is recorded; a pending state means awaiting reconciliation, never failure. "
 	}
 	if strings.HasSuffix(r.Path, "/thread/messages") {
 		// The Thread POST's own fault vocabulary. It is stated here rather than added to the shared

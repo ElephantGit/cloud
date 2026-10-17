@@ -66,15 +66,3 @@ func TestCredentialedProjectClonesItsSnapshotWithoutTheCredential(t *testing.T) 
 		t.Fatal("cloning rewrote durable ownership or reference")
 	}
 }
-
-func TestProductionStoreRefusesUnscopedCloneAdmission(t *testing.T) {
-	f := setup(t)
-	production := newStoreOnSchema(t, f.store.Pool)
-	_, err := production.EnqueueClone(context.Background(), f.tid, f.uid, "unscoped", "https://example.invalid/repo.git", "main")
-	if err == nil || core.ErrorCode(err).Code != "runtime_scope_required" {
-		t.Fatalf("production legacy admission: %v", err)
-	}
-	if f.scalar("SELECT count(*) FROM clone_requests") != 0 {
-		t.Fatal("refused legacy request was persisted")
-	}
-}

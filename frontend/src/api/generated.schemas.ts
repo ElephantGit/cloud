@@ -164,8 +164,6 @@ export type CloneExecutionInput = { [key: string]: unknown };
 export type CloneExecutionResult = { [key: string]: unknown } | null;
 
 export interface CloneExecution {
-  /** @nullable */
-  cloneRequestId: string | null;
   createdAt: string;
   /** @nullable */
   credentialRefId?: string | null;
@@ -182,8 +180,7 @@ export interface CloneExecution {
   /** @nullable */
   terminatedByForceStopId: string | null;
   updatedAt: string;
-  /** @nullable */
-  workspaceId: string | null;
+  workspaceId: string;
 }
 
 export type CloneInputKind = typeof CloneInputKind[keyof typeof CloneInputKind];
@@ -200,49 +197,6 @@ export interface CloneInput {
   repositoryUrl: string;
   snapshotRef: string;
   workspaceRef: string;
-}
-
-export type CloneStateKind = typeof CloneStateKind[keyof typeof CloneStateKind];
-
-
-export const CloneStateKind = {
-  pending: 'pending',
-  succeeded: 'succeeded',
-  failed: 'failed',
-} as const;
-
-export type CloneStateReason = typeof CloneStateReason[keyof typeof CloneStateReason];
-
-
-export const CloneStateReason = {
-  sourceUnavailable: 'sourceUnavailable',
-  branchNotFound: 'branchNotFound',
-  destinationConflict: 'destinationConflict',
-  operationFailed: 'operationFailed',
-  interrupted: 'interrupted',
-  unspecified: 'unspecified',
-} as const;
-
-export interface CloneState {
-  commit?: string;
-  kind: CloneStateKind;
-  path?: string;
-  reason?: CloneStateReason;
-  retainedPath?: string;
-}
-
-export interface CloneOperation {
-  branch: string;
-  createdAt: string;
-  /** @nullable */
-  executionId: string | null;
-  /** @nullable */
-  nodeId: string | null;
-  operationId: string;
-  repository: string;
-  requestId: string;
-  state: CloneState;
-  updatedAt: string;
 }
 
 export type CollaborationTargetType = typeof CollaborationTargetType[keyof typeof CollaborationTargetType];
@@ -2227,29 +2181,6 @@ to?: string;
 export type GetApiV1TenantsTidAgentSessions200 = {
   items: AgentSessionSummary[];
   nextCursor: string;
-};
-
-export type GetApiV1TenantsTidClonesParams = {
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
-/**
- * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
- */
-after?: string;
-};
-
-export type GetApiV1TenantsTidClones200 = {
-  items: CloneOperation[];
-  nextCursor: string;
-};
-
-export type PostApiV1TenantsTidClonesBody = {
-  branch: string;
-  repository: string;
-  requestId: string;
 };
 
 export type GetApiV1TenantsTidCollaborationFormsFormRefParams = {

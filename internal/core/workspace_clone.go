@@ -176,6 +176,8 @@ func failWorkspaceClone(t *transaction, o Object, code string) {
 // and name the Workspace's current Node, and waits until no earlier execution is still unresolved.
 func workspaceCloneDispatch(t *transaction, r *ControlRequest, operation, execution, node string, input Object) Object {
 	o := t.one("SELECT * FROM operations WHERE id=$1 AND workspace_id IS NOT NULL", operation)
+	// Tenant-level clone requests no longer exist; an ID that names no Workspace operation is not a
+	// clone this registry can accept.
 	require(o != nil, 404, "not_found")
 	if existing := t.one("SELECT * FROM clone_executions WHERE execution_id=$1", execution); existing != nil {
 		require(existing.S("operationId") == operation && existing.S("nodeId") == node && jsonText(existing.O("input")) == jsonText(input), 409, "dispatch_conflict")

@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -355,5 +356,25 @@ func TestCloneStepBlocksWithoutAGitServer(t *testing.T) {
 	}
 	if f.scalar("SELECT count(*) FROM clone_executions WHERE operation_id=$1", oid) != 0 {
 		t.Fatal("no clone may be dispatched without a Git Server")
+	}
+}
+
+// D5, invariant 8: Cloud has no tenant-level clone entry point or storage.
+func TestTenantLevelClonesAreGone(t *testing.T) {
+	f := setup(t)
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		req, err := http.NewRequestWithContext(t.Context(), method, f.cloud.URL+f.path("/clones"), strings.NewReader(`{"requestId":"r","repository":"https://example.invalid/repo.git","branch":"main"}`))
+		must(t, err)
+		res, err := http.DefaultClient.Do(req)
+		must(t, err)
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s /clones answered %d, want 404", method, res.StatusCode)
+		}
+	}
+	var table *string
+	must(t, f.store.Pool.QueryRow(`SELECT to_regclass('clone_requests')::text`).Scan(&table))
+	if table != nil {
+		t.Fatalf("clone_requests still exists: %s", *table)
 	}
 }

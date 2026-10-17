@@ -71,18 +71,13 @@ func deliveryWorkInput(t *transaction, run Object, workID string, input Object) 
 	return out
 }
 
-// claimWorkItem is the pure read behind ClaimWork: the older of a queued tenant clone and an
-// unregistered session or delivery. Ownership moves only when the dispatch is recorded.
+// claimWorkItem is the pure read behind ClaimWork: the oldest unregistered session or delivery.
+// Ownership moves only when the dispatch is recorded. Clones are never work items: every clone is
+// a Workspace operation's clone step, handed out by the operation claim.
 func claimWorkItem(t *transaction) Object {
-	var request Object
-	if t.legacyCloneFixture {
-		request = t.one("SELECT * FROM clone_requests WHERE state='queued' ORDER BY created_at,id LIMIT 1")
-	} else if t.one("SELECT id FROM clone_requests WHERE state='queued'") != nil {
-		reject(410, "runtime_scope_required")
-	}
 	work := t.one("SELECT * FROM execution_work ew WHERE execution_id IS NULL AND available_at<=clock_timestamp() AND NOT EXISTS(SELECT 1 FROM agent_run_residuals ar WHERE ar.run_id=ew.run_id) ORDER BY created_at,id LIMIT 1")
-	if work != nil && (request == nil || work.S("createdAt") < request.S("createdAt")) {
-		return Object{"work": work}
+	if work == nil {
+		return Object{"work": nil}
 	}
-	return Object{"request": request}
+	return Object{"work": work}
 }

@@ -9,7 +9,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -111,8 +110,12 @@ func TestWorkflowAdvanceFailsRunOnUnwiredAgentNode(t *testing.T) {
 	if status != "failed" {
 		t.Fatalf("run settled %q; want failed", status)
 	}
-	if !strings.Contains(runErr, "a") || !strings.Contains(runErr, "not wired") {
-		t.Fatalf("run error %q does not name the unwired agent node", runErr)
+	// The unwired-agent path is the one failure that writes a run error of its own rather than
+	// reusing the node's reason, and the point of it is that the run names the node. The assertion
+	// is the whole sentence: a substring check on the id would assert nothing here, because the node
+	// is named "a" and every non-empty string contains it.
+	if runErr != "agent node a is not wired to execution yet" {
+		t.Fatalf("run error %q; want it to name the unwired agent node", runErr)
 	}
 	agent, ok := asWorkflowObject(states["a"])
 	if !ok {

@@ -848,6 +848,93 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 	}
 }
 
+// TestWorkflowAssistReadsThePreRenameVersionKey covers the assist half of the same rename (Issue collaboration D8).
+// Assist validates the submission the confirm will, against the descriptor the client rendered from,
+// so the two entries have to accept the same keys: the live descriptor no longer declares `version`,
+// and reading only the new key refuses the submission as an unknown field. That refusal is the bug —
+// one set of values a pre-rename form sent, accepted by the confirm and refused by assist.
+//
+// What assist can be held to is narrower than what the confirm is, because assist is stateless and
+// answers with a patch: it persists no folded values and echoes none of the ones it was given, so
+// which of two submitted keys won is not observable through this route. That half is covered where the
+// rule itself lives — the foldLegacyVersionAnswer table in internal/core, which is also the only
+// definition of it, since assist now calls the same function rather than keeping a rule of its own.
+// What this test pins is the wiring: the fold runs before assist validates.
+func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
+	f := setup(t)
+	wid := reviewWorkflow(t, f)
+	older := publishWorkflow(t, f, wid, "wf-assist-rename-pub-1")
+	newest := f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{"name": "Second cut"}, "wf-assist-rename-pub-2", 200).O("resource")
+	if newest.S("id") == older.S("id") {
+		t.Fatal("the two publishes are the same snapshot, so the test cannot tell which one was read")
+	}
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form"}, "wf-assist-rename-issue", 200).O("resource")
+
+	// The submission a client that rendered the pre-rename form sends — the selection under the old key
+	// and no `snapshotId` at all — driven through both entries in turn. Assist comes first so the 200
+	// below is assist's own answer to exactly the values the confirm then accepts.
+	preRename := core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "version": older.S("id"),
+		"prompt": "Review the diff", "scope": "full-repo", "severity": "high",
+	}
+	f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, preRename), "wf-assist-rename-a1", 200)
+	it := workflowComment(t, f, wid, iss.S("id"), "wf-assist-rename-1", "run it")
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": preRename}, "wf-assist-rename-c1", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != older.S("id") {
+		t.Fatalf("run snapshot = %q, want the version the old form selected %q", got, older.S("id"))
+	}
+
+	// A key the descriptor declares nowhere is still refused, so the acceptance above is the old key
+	// being read rather than assist having stopped checking the set of keys at all.
+	refusal := f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, core.Object{
+		"repository": "ora-space/cloud", "revision": older.S("id"),
+	}), "wf-assist-rename-a2", 400)
+	if refusal.S("code") != "invalid_field_value" || refusal.O("params").S("field") != "revision" {
+		t.Fatalf("an unknown key was refused for the wrong reason: %v", refusal)
+	}
+	// Both keys at once is the ordinary state mid-deploy, and legal either way: the fold takes the old
+	// key out, so the set that reaches validation is the descriptor's own.
+	f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, core.Object{
+		"repository": "ora-space/cloud", "version": older.S("id"), "snapshotId": newest.S("id"),
+	}), "wf-assist-rename-a3", 200)
+
+	// A graph whose author declared `snapshotId` for a variable of their own. There the new key is
+	// theirs, so the fold drops the old one rather than writing a snapshot id into their variable —
+	// and the submission is accepted all the same, which is the rule the confirm applies to this graph.
+	owned := createWorkflow(t, f, "Owned Workflow", "wf-assist-rename-owned", []any{
+		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	publishWorkflow(t, f, owned, "wf-assist-rename-owned-pub")
+	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form again"}, "wf-assist-rename-issue-2", 200).O("resource")
+	f.call("POST", assistPath(f, ownedIss.S("id")), workflowAssistBody(owned, core.Object{
+		"repository": "ora-space/cloud", "version": "1.2.3",
+	}), "wf-assist-rename-owned-a1", 200)
+
+	// A graph whose author declared `version` for a variable of their own. That key is the author's, so
+	// the fold leaves the submission alone and the value stays theirs to give the workflow. The mock
+	// assistant never suggests over a key the user has already filled, so its silence about `version`
+	// is what shows the value survived — and the unfilled call beside it is the control proving the
+	// mock does offer that key, without which the silence would prove nothing.
+	legacy := createWorkflow(t, f, "Legacy Workflow", "wf-assist-rename-legacy", []any{
+		core.Object{"name": "version", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	publishWorkflow(t, f, legacy, "wf-assist-rename-legacy-pub")
+	legacyIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form once more"}, "wf-assist-rename-issue-3", 200).O("resource")
+	unfilled := f.call("POST", assistPath(f, legacyIss.S("id")), workflowAssistBody(legacy, core.Object{
+		"repository": "ora-space/cloud",
+	}), "wf-assist-rename-legacy-a1", 200).O("suggestedValues")
+	if unfilled.S("version") == "" {
+		t.Fatalf("the control did not fire: the mock no longer offers the author's version key, so its silence below would prove nothing: %v", unfilled)
+	}
+	filled := f.call("POST", assistPath(f, legacyIss.S("id")), workflowAssistBody(legacy, core.Object{
+		"repository": "ora-space/cloud", "version": "1.2.3",
+	}), "wf-assist-rename-legacy-a2", 200).O("suggestedValues")
+	if _, suggested := filled["version"]; suggested {
+		t.Fatalf("the author's own version key was taken from them: %v", filled)
+	}
+}
+
 // TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft covers the two documents a confirm reconciles.
 // The form the client rendered comes from the workflow's *live* document — the frontend resolves a
 // descriptor once per formRef and keeps it while the user fills the form in — while the submission

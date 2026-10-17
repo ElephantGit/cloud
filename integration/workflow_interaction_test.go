@@ -11,7 +11,7 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
-// invalidDescriptorProvider returns a descriptor that violates the §38.3 invariants (a select with no
+// invalidDescriptorProvider returns a descriptor that violates the Issue collaboration D7 invariants (a select with no
 // options and a duplicated field key), to prove Issues fails closed instead of rendering it.
 type invalidDescriptorProvider struct{ FormRef string }
 
@@ -54,7 +54,7 @@ func startPromptGraph(variables []any, prompt string) core.Object {
 
 // launchGraph is startInputGraph with the workflow's launch-field declaration in the envelope: the
 // author's answer, carried in the document rather than registered anywhere, about which platform
-// fields the @ form asks for and which of them it insists on (§38.37d).
+// fields the @ form asks for and which of them it insists on (Issue collaboration D8).
 func launchGraph(variables, launchFields []any) core.Object {
 	graph := startInputGraph(variables)
 	graph["launchFields"] = launchFields
@@ -213,7 +213,7 @@ func validValues() core.Object {
 	return core.Object{"repository": "ora-space/cloud", "branch": "main", "scope": "full-repo", "severity": "high"}
 }
 
-// TestWorkflowCommentCreatesFormInteractionWithoutRun covers §38.1/§38.6: selecting a workflow records
+// TestWorkflowCommentCreatesFormInteractionWithoutRun covers Issue collaboration D4/D9: selecting a workflow records
 // a configured-but-unconfirmed interaction and produces no run, no dispatch and no execution.
 func TestWorkflowCommentCreatesFormInteractionWithoutRun(t *testing.T) {
 	f := setup(t)
@@ -240,7 +240,7 @@ func TestWorkflowCommentCreatesFormInteractionWithoutRun(t *testing.T) {
 	}
 }
 
-// TestFormDescriptorProjection covers the read-only provider-backed descriptor route (§38.17) and the
+// TestFormDescriptorProjection covers the read-only provider-backed descriptor route (Issue collaboration D7) and the
 // target projection that advertises the formRef.
 func TestFormDescriptorProjection(t *testing.T) {
 	f := setup(t)
@@ -317,7 +317,7 @@ func TestFormDescriptorProjection(t *testing.T) {
 	f.call("GET", f.path("/collaboration/forms/"+uuid.NewString()), nil, "", 404)
 }
 
-// TestFormDescriptorPlatformFieldsForAnIssue covers the issue-scoped projection (§38.37b, §38.37c): a
+// TestFormDescriptorPlatformFieldsForAnIssue covers the issue-scoped projection (Issue collaboration D8): a
 // form opened for one issue carries the launch fields — which repository and branch this run is for,
 // which published version to run, what prompt, and which extra context travels with it — prefilled from
 // that issue's project and the workflow's own document.
@@ -429,7 +429,7 @@ func TestFormDescriptorPlatformFieldsForAnIssue(t *testing.T) {
 	f.call("GET", f.path("/collaboration/forms/"+release+"?issueId=not-a-uuid"), nil, "", 404)
 }
 
-// TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations covers the reserved-key rule (§38.37c):
+// TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations covers the reserved-key rule (Issue collaboration D8):
 // a workflow that declares one of the platform's own names keeps its declaration, and the platform
 // contributes only the default that declaration can hold.
 func TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations(t *testing.T) {
@@ -512,7 +512,7 @@ func fieldShapes(fields []core.Object) []string {
 	return out
 }
 
-// TestFormDescriptorAuthorDeclaredLaunchFields covers §38.37d: the workflow's author decides which of
+// TestFormDescriptorAuthorDeclaredLaunchFields covers Issue collaboration D8: the workflow's author decides which of
 // the platform's launch fields the `@` form asks for, and which of them it insists on. The declaration
 // rides in the graph, so the live document is what decides — publishing only gives the version field
 // something to offer.
@@ -637,7 +637,7 @@ func TestFormDescriptorAuthorDeclaredLaunchFields(t *testing.T) {
 }
 
 // TestWorkflowConfirmCarriesPlatformFields covers the round trip across the three paths that must
-// agree on one descriptor (§38.37b): the values the form was rendered with are the values assist
+// agree on one descriptor (Issue collaboration D8): the values the form was rendered with are the values assist
 // accepts and the values confirm persists and hands to the run. A descriptor that differed between
 // them would reject a submission the user was legitimately shown.
 func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
@@ -713,7 +713,7 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 }
 
 // TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor covers the one key a form value and a platform
-// cursor can both be called. §38.37d keeps a key the author declared in their own Start node, so a
+// cursor can both be called. Issue collaboration D8 keeps a key the author declared in their own Start node, so a
 // workflow that declares `snapshotId` gets no version selector and the value under that key is the
 // author's variable. Read as a cursor it would make such a form unconfirmable both ways round: a value
 // that is not a snapshot id is a 404, and the platform's prefill would have put a snapshot id in the
@@ -761,7 +761,7 @@ func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmReadsThePreRenameVersionKey covers the other half of the rename (§38.37f): the
+// TestWorkflowConfirmReadsThePreRenameVersionKey covers the other half of the rename (Issue collaboration D8): the
 // field is `snapshotId` now, but a form rendered before the deploy answers under `version`, and the
 // values are submitted after it. That submission has to be accepted as the version selection it is —
 // reading only the new key would start the newest version while the version the user picked is dropped
@@ -953,7 +953,7 @@ func TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft(t *testing.T) {
 	}
 }
 
-// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (§38.19) and where they
+// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (Issue collaboration D7) and where they
 // stop: the read-only descriptor route is 503 with no provider and 500 for a malformed one, never a
 // partially usable form, while a confirm does not consult the provider at all. A confirm validates the
 // submitted values against the schema of the version being confirmed, which is frozen in the snapshot
@@ -987,7 +987,7 @@ func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 	}
 }
 
-// TestWorkflowAssistIsSideEffectFree covers §38.12/§38.13: assist returns a field-level patch, never
+// TestWorkflowAssistIsSideEffectFree covers Issue collaboration D9: assist returns a field-level patch, never
 // clobbers a filled value, and touches no Issue state.
 func TestWorkflowAssistIsSideEffectFree(t *testing.T) {
 	f := setup(t)
@@ -1041,8 +1041,8 @@ func TestWorkflowAssistIsSideEffectFree(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmValidatesAndExecutes covers the confirm boundary end-to-end (§38.7, §38.15,
-// §38.20): authoritative re-validation, exactly one run, the persisted interaction input, the run's
+// TestWorkflowConfirmValidatesAndExecutes covers the confirm boundary end-to-end (Issue collaboration
+// D9): authoritative re-validation, exactly one run, the persisted interaction input, the run's
 // effective snapshot, provenance, and the workflow timeline representation.
 func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	f := setup(t)
@@ -1077,7 +1077,7 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 
 	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-confirm-ok", 200).O("resource")
 	// The confirm response is the committed enqueue: dispatch is post-commit, so execution has not been
-	// observed yet (§19 ordering). The frontend re-reads the run/timeline afterwards.
+	// observed yet. The frontend re-reads the run/timeline afterwards.
 	if created.S("status") != "queued" || created.S("executorType") != "workflow" || created.S("executorId") != wid {
 		t.Fatalf("workflow run wrong at confirm time: %v", created)
 	}
@@ -1153,7 +1153,7 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmIdempotencyAndDoubleConfirm covers §38.22: the same key+body replays, a changed
+// TestWorkflowConfirmIdempotencyAndDoubleConfirm covers Issue collaboration D9: the same key+body replays, a changed
 // body under the same key conflicts, and a second confirm can never produce a second run.
 func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	f := setup(t)
@@ -1180,7 +1180,7 @@ func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmScopeAndModeGuards covers the security invariants of §38.31: a confirm is scoped to
+// TestWorkflowConfirmScopeAndModeGuards covers the security invariants of Issue collaboration (invariants 3 and 4): a confirm is scoped to
 // its own issue and tenant, and only a Form Mode interaction is confirmable/assistable.
 func TestWorkflowConfirmScopeAndModeGuards(t *testing.T) {
 	f := setup(t)

@@ -115,10 +115,10 @@ threading, shared per-issue timeline `seq`).
 | Capability | State |
 | --- | --- |
 | `issue_comments.author_type = system` | CHECK allows `system`, but **no** code path writes a `system` comment yet (agent/team replies now go through the internal run-reply path, §Interaction). |
-| `ConversationTarget` | **Not implemented** — out of scope this wave, left open in §37.17. |
+| `ConversationTarget` | **Not implemented** — left open by the Issue collaboration ADR. |
 
-**Implemented by Wave 3B-1** (migration `0009` — formerly `0008`, renumbered in the workspace integration; semantics frozen in
-[12-collaboration-architecture.md §37](../../migrations/multica-issue-board/12-collaboration-architecture.md#37-wave-3b-0--collaboration-interaction-model-frozen)):
+**Implemented by Wave 3B-1** (migration `0009` — formerly `0008`, renumbered in the workspace integration; semantics in the
+[Issue collaboration ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)):
 
 - `Comment.authorType` is no longer hard-coded `user`: mock agent/team runs post a reply comment with
   `author_type='agent'`/`'team'` through an **internal** path (no public impersonation — clients cannot
@@ -128,7 +128,7 @@ threading, shared per-issue timeline `seq`).
 - `Comment.targets[]` is implemented on comment create (see the Interaction section below).
 - `GET /collaboration/targets` exposes the `@`-picker projection (*not* an Agent/Team/Workflow API).
 
-The 14 integration ports are inventoried in that doc's §6.4.
+The integration ports are inventoried in that ADR's D1.
 
 | Method | Path | Body fields | Response |
 | --- | --- | --- | --- |
@@ -191,7 +191,7 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   `snapshotId` offers snapshot **ids** (a run is created from an id, and the id keeps pointing at the
   same frozen document); the version number rides in the label as `v3 · <snapshot name>`. The key was
   called `version` until it was renamed to say what its value is; a submission still carrying the old
-  key is read as the selection it was — see §38.37f. An unpublished
+  key is read as the selection it was (Issue collaboration ADR D8). An unpublished
   workflow has nothing to offer and the field is **dropped** rather than injected empty — the contract
   has no way to express a select with no choices. `context_refs` is **additive**: the issue's own
   persisted references are already on every run it starts, so its options are the references the issue
@@ -200,7 +200,7 @@ workflow_not_available` (3B-1) is **SUPERSEDED**.
   gains a default when that default validates against its control. Unknown or foreign issue ⇒ 404.
 
   That table is the platform's **catalogue**, not the form: the workflow's author declares which of
-  those fields their workflow's form asks for, and which of them it insists on (§38.37d). The
+  those fields their workflow's form asks for, and which of them it insists on (Issue collaboration ADR D8). The
   declaration rides in the graph envelope as `launchFields`, a sibling of `globalVariables`, and is
   read **per key** — `[{"key":"snapshotId","enabled":false},{"key":"prompt","required":true}]` turns off
   the version choice and makes the prompt mandatory, and every key it does not mention keeps the

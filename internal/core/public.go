@@ -216,7 +216,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				out = Object{"resource": appendThreadMessage(t, s, r, uid)}
 				status = 201
 			case strings.HasSuffix(r.Path, "/thread/end"):
-				// Thread D4 (G-018): the user ending the conversation. Also matched before the /runs
+				// Thread D4: the user ending the conversation. Also matched before the /runs
 				// arm, and answered 202 because the request is accepted for asynchronous shutdown —
 				// the Thread is `ending`, not `ended`. The response is the Thread state itself rather
 				// than a wrapped resource: the endpoint creates no new resource to point at.

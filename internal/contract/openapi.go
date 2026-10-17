@@ -481,7 +481,7 @@ func Document() map[string]any {
 }
 
 // pathParamSchema types a path parameter. `formRef` is deliberately NOT a UUID: it is an opaque
-// provider-scoped token that Issues never parses (§38.17), constrained only by the grammar that keeps
+// provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
 	if name == "formRef" {
@@ -758,7 +758,7 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// Reading a Thread returns one ascending-by-seq window of entries plus the run's Thread
 		// state and idle instant, all from one snapshot. `threadState` and `idleSince` are projected
 		// here rather than read off the run resource, which keeps stripping these columns from
-		// IssueRun (T4C-10). The window's cursors are nullable because an empty Thread has neither.
+		// IssueRun. The window's cursors are nullable because an empty Thread has neither.
 		return object(obj{
 			"items":           array(ref("ThreadEntry")),
 			"threadState":     enumeration("pending", "active", "idle", "ending", "ended"),

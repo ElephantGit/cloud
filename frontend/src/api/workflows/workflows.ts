@@ -33,6 +33,7 @@ import type {
   GetApiV1TenantsTidWorkflowsWfidRunsParams,
   GetApiV1TenantsTidWorkflowsWfidSnapshots200,
   GetApiV1TenantsTidWorkflowsWfidSnapshotsParams,
+  GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams,
   PostApiV1TenantsTidWorkflows200,
   PostApiV1TenantsTidWorkflowsBody,
   PostApiV1TenantsTidWorkflowsWfidPublish200,
@@ -43,7 +44,8 @@ import type {
   PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody,
   Workflow,
   WorkflowRun,
-  WorkflowSnapshot
+  WorkflowSnapshot,
+  WorkflowSnapshotForm
 } from '../generated.schemas';
 
 import { customInstance } from '../../lib/api-client';
@@ -1038,6 +1040,121 @@ export function useGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotId<TData = Aw
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdQueryOptions(tid,wfid,snapshotId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. The `@` form projected from the named frozen version instead of from the live document, for a caller that chooses a version before rendering it. The response names the snapshot it was projected from, and the same optional issueId tailors it exactly as the live form read does. This is a projection and not a run admission: publish state, archiving, input dependencies and per-slot resolution stay the answers of POST …/runs, so a readable form can still be refused there. An unknown workflow, a snapshot belonging to another workflow or another tenant, and a malformed snapshot id are all 404 not_found, the same answer the direct-run entry gives for the same situation. Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form
+ */
+export const getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm = (
+    tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowSnapshotForm>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/snapshots/${snapshotId}/form`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryKey = (tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams,) => {
+    return [
+    `/api/v1/tenants/${tid}/workflows/${wfid}/snapshots/${snapshotId}/form`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError = ErrorType<Error>>(tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryKey(tid,wfid,snapshotId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>> = ({ signal }) => getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm(tid,wfid,snapshotId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && wfid !== null && wfid !== undefined && snapshotId !== null && snapshotId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>>
+export type GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    snapshotId: string,
+    params: undefined |  GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form
+ */
+
+export function useGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    snapshotId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormQueryOptions(tid,wfid,snapshotId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

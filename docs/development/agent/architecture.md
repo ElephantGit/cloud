@@ -229,7 +229,7 @@ Read the full section before implementing anything collaborative. The short vers
 | Execution boundary | Exactly one: an explicit **Confirm**. Editing, AI Assist, applying suggestions and draft saves create **no** run. |
 | AI Assist | `InputAssistProvider` returns a **field-level patch** + suggested refs. Suggest only — never creates a run, never writes a persistent `IssueContextRef`. |
 | Form values | A plain `{fieldKey: value}` object. **Never** Workflow-specific columns. |
-| Validation | The frontend is UX only; the Issues API **re-validates on Confirm** against the current descriptor. |
+| Validation | The frontend is UX only; the Issues API **re-validates on Confirm** against the descriptor of the **version being confirmed** — the document the run will execute, not the live draft. A draft that has moved on from that version is refused (`409 workflow_version_fields_changed`) rather than used to judge values the user was shown. |
 | Interaction state | No status column: `run_id IS NULL` = unconfirmed, `run_id != NULL` = confirmed. |
 | Workflow output | An **`IssueActivity`** (`actor_type='system'` + run/executor in `details`). **`workflow` is not an `ActorRef`.** |
 | Execution ports | Reuse `ExecutionDispatcher` / `ExecutionObserver`; no `WorkflowDispatcher`, no second lifecycle. |

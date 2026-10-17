@@ -212,6 +212,11 @@ func Document() map[string]any {
 		"options":      optional(array(ref("FormOption"))),
 	}, "key", "label", "type", "required")
 	s["FormDescriptor"] = object(obj{"formRef": str(), "title": optional(str()), "description": optional(str()), "fields": array(ref("FormField"))}, "formRef", "fields")
+	// The snapshot-scoped form read answers the same descriptor shape plus the snapshot it was projected
+	// from: one workflow has a different form per published version, so a projection has to name the
+	// version that decided the fields. `snapshotId` is therefore required here and absent on the live
+	// read, which is the one difference between the two shapes.
+	s["WorkflowSnapshotForm"] = object(obj{"snapshotId": uuid(), "formRef": str(), "title": optional(str()), "description": optional(str()), "fields": array(ref("FormField"))}, "snapshotId", "formRef", "fields")
 	s["AssistSuggestion"] = object(obj{
 		"suggestedValues":      obj{"type": "object", "additionalProperties": true},
 		"suggestedContextRefs": array(ref("ContextRefRef")),
@@ -398,10 +403,12 @@ func Document() map[string]any {
 				obj{"name": "after", "in": "query", "schema": obj{"type": "integer", "format": "int64", "minimum": 0}, "description": "Forward Thread seq cursor: the window starts after this seq. Mutually exclusive with before; neither cursor reads the tail."},
 				obj{"name": "before", "in": "query", "schema": obj{"type": "integer", "format": "int64", "minimum": 0}, "description": "Backward Thread seq cursor: the window ends just before this seq, taking the entries closest to it from below. Mutually exclusive with after."})
 		}
-		if strings.Contains(r.Path, "/collaboration/forms/") {
+		// Both form reads take the context: the live `@` form and the snapshot-scoped one project the
+		// same platform fields, and only differ in which document they project them from.
+		if strings.Contains(r.Path, "/collaboration/forms/") || snapshotFormPath(r.Path) {
 			// Optional, and absent by default: a caller that omits it gets the descriptor without the
 			// platform fields, which is what every client served before they existed still sends.
-			parameters = append(parameters, obj{"name": "issueId", "in": "query", "schema": uuid(), "description": "Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, prompt) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404."})
+			parameters = append(parameters, obj{"name": "issueId", "in": "query", "schema": uuid(), "description": "Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, branch, prompt, snapshotId) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404."})
 		}
 		if r.Path == "/api/v1/tenants/:tid/people" {
 			parameters = append(parameters, obj{"name": "keyword", "in": "query", "required": true, "schema": obj{"type": "string", "minLength": 2, "maxLength": 100}})
@@ -481,6 +488,14 @@ func tag(r router.Route) string {
 		return "operations"
 	}
 	return "tenants"
+}
+
+// snapshotFormPath reports whether the route is the snapshot-scoped form read
+// (`…/workflows/{wfid}/snapshots/{snapshotId}/form`). It is asked by three places that would otherwise
+// read this route as a bare snapshot read, because the snapshot id looks the same either way and only
+// the `/form` suffix tells projecting a version from describing it.
+func snapshotFormPath(path string) bool {
+	return strings.HasSuffix(path, "/snapshots/:snapshotId/form")
 }
 
 func isList(r router.Route) bool {
@@ -680,6 +695,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		if strings.Contains(r.Path, "/snapshots") {
 			if r.Method == "GET" && strings.HasSuffix(r.Path, "/snapshots") {
 				return object(obj{"items": array(ref("WorkflowSnapshot")), "nextCursor": str()}, "items", "nextCursor"), "200"
+			}
+			if snapshotFormPath(r.Path) {
+				return ref("WorkflowSnapshotForm"), "200"
 			}
 			return ref("WorkflowSnapshot"), "200"
 		}
@@ -1022,6 +1040,11 @@ func description(r router.Route) string {
 		default:
 			base += "Every tenant has one collaboration space. Active tenant members can read it. "
 		}
+	}
+	if snapshotFormPath(r.Path) {
+		// The projection's own contract, stated here rather than in the shared workflow sentence: what
+		// this route answers and, more importantly, what reading it does not decide.
+		base += "The `@` form projected from the named frozen version instead of from the live document, for a caller that chooses a version before rendering it. The response names the snapshot it was projected from, and the same optional issueId tailors it exactly as the live form read does. This is a projection and not a run admission: publish state, archiving, input dependencies and per-slot resolution stay the answers of POST …/runs, so a readable form can still be refused there. An unknown workflow, a snapshot belonging to another workflow or another tenant, and a malformed snapshot id are all 404 not_found, the same answer the direct-run entry gives for the same situation. "
 	}
 	if strings.Contains(r.Path, "/workflows") {
 		base += "Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. "

@@ -1848,6 +1848,16 @@ export interface WorkflowSnapshot {
   workflowId: string;
 }
 
+export interface WorkflowSnapshotForm {
+  /** @nullable */
+  description?: string | null;
+  fields: FormField[];
+  formRef: string;
+  snapshotId: string;
+  /** @nullable */
+  title?: string | null;
+}
+
 export type WorkspaceListItemDesiredState = typeof WorkspaceListItemDesiredState[keyof typeof WorkspaceListItemDesiredState];
 
 
@@ -2168,7 +2178,7 @@ export type PostApiV1TenantsTidClonesBody = {
 
 export type GetApiV1TenantsTidCollaborationFormsFormRefParams = {
 /**
- * Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, prompt) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.
+ * Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, branch, prompt, snapshotId) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.
  */
 issueId?: string;
 };
@@ -3194,6 +3204,13 @@ after?: string;
 export type GetApiV1TenantsTidWorkflowsWfidSnapshots200 = {
   items: WorkflowSnapshot[];
   nextCursor: string;
+};
+
+export type GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams = {
+/**
+ * Issue the form is being configured for. Tailors the descriptor with the platform fields (repository, branch, prompt, snapshotId) and prefills them from the issue's project repository and the workflow's Start prompt. An unknown or foreign issue is 404.
+ */
+issueId?: string;
 };
 
 export type PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody = {

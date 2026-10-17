@@ -167,7 +167,7 @@ func TestWorkflowSnapshotRestore(t *testing.T) {
 	}
 
 	// A snapshot from another workflow is not restorable here (the read is workflow-scoped).
-	other := f.call("POST", f.path("/workflows"), core.Object{"name": "Other flow"}, "rst-other", 200).O("resource")
+	other := f.call("POST", f.path("/workflows"), core.Object{"name": "Other flow", "graph": snapshotGraph("other")}, "rst-other", 200).O("resource")
 	f.call("POST", f.path("/workflows/"+other.S("id")+"/publish"), core.Object{}, "rst-op", 200)
 	otherSnap := snapshotItems(f.call("GET", f.path("/workflows/"+other.S("id")+"/snapshots"), nil, "", 200))[0]
 	f.call("PUT", f.path("/workflows/"+wfid+"/snapshots/"+otherSnap.S("id")+"/restore"),

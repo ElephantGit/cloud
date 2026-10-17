@@ -1608,6 +1608,10 @@
                   "cancelled"
                 ],
                 "type": "string"
+              },
+              "syncErrorCode": {
+                "nullable": true,
+                "type": "string"
               }
             },
             "required": [
@@ -1615,7 +1619,8 @@
               "cloneAttempts",
               "maxCloneAttempts",
               "retryAt",
-              "errorCode"
+              "errorCode",
+              "syncErrorCode"
             ],
             "type": "object"
           },
@@ -2730,6 +2735,9 @@
           "release": {
             "$ref": "#/components/schemas/PluginCatalogEntry"
           },
+          "syncOwed": {
+            "type": "boolean"
+          },
           "version": {
             "type": "string"
           }
@@ -3071,6 +3079,10 @@
               "cancelled"
             ],
             "type": "string"
+          },
+          "syncErrorCode": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -3078,7 +3090,8 @@
           "cloneAttempts",
           "maxCloneAttempts",
           "retryAt",
-          "errorCode"
+          "errorCode",
+          "syncErrorCode"
         ],
         "type": "object"
       },

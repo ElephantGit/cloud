@@ -201,7 +201,7 @@ func run() (runErr error) {
 	// release half: a `releasing` run whose delete_workspace operation has no operation in flight gets
 	// its delete re-declared, which is the Cloud-side retry the decision requires after a Node refuses
 	// to quiesce (the run Workspace has no public API and no user to retry it). The third applies
-	// IssueRun D8's single give-up limit to the delete side (G-032): a `releasing` run whose Workspace
+	// IssueRun D8's single give-up limit to the delete side: a `releasing` run whose Workspace
 	// Node has been unknown for cfg.IssueRuns.DeliveryUnreachableAfter — the same window, D8 adds no
 	// new one — is settled `done` with failure_reason=workspace_unavailable, its delete operation left
 	// terminally failed and its Workspace row retained; `done` there means Cloud stopped retrying,

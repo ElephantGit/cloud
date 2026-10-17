@@ -149,7 +149,7 @@ function ConfirmedWorkflowRow({
   )
 }
 
-/** Confirmed workflow interactions, shown as status rows next to the history (§39, §40). */
+/** Confirmed workflow interactions, shown as status rows next to the history. */
 function ConfirmedWorkflows(props: {
   slug: string
   interactions: IssueInteraction[]

@@ -54,7 +54,7 @@ function confirmFailure(error: unknown): string {
   return '确认失败，请重试。'
 }
 
-/** Required fields the user has not filled yet — the only client-side gate on Review (§38.15). */
+/** Required fields the user has not filled yet — the only client-side gate on Review (Issue collaboration D9). */
 function missingRequired(descriptor: FormDescriptor, values: FormValues): FormField[] {
   return descriptor.fields.filter((field) => {
     if (!field.required) return false
@@ -70,7 +70,7 @@ function sameRef(left: ContextRefRef, right: ContextRefRef): boolean {
   return left.refType === right.refType && left.refId === right.refId
 }
 
-/** The descriptor key whose value is read as context references rather than as workflow input (§38.37c). */
+/** The descriptor key whose value is read as context references rather than as workflow input (Issue collaboration D8). */
 const CONTEXT_REFS_KEY = 'context_refs'
 
 /**
@@ -392,7 +392,7 @@ function useWorkflowSubmission({
 /**
  * The Form Mode configuration panel for a workflow the user has selected but not yet submitted. It is
  * a **draft**: the comment, the interaction and the run are all created only when 确认执行 is pressed,
- * so an abandoned form leaves no trace in the Timeline. Selecting a workflow never executes it (§38.1).
+ * so an abandoned form leaves no trace in the Timeline. Selecting a workflow never executes it (Issue collaboration D9).
  */
 export function WorkflowInteractionComposer({
   slug,

@@ -114,9 +114,9 @@ Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs
 
 新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。
 
-## 0035：WorkflowRun 运行身份
+## 0039：WorkflowRun 运行身份
 
-`0035_workflow_run_identity.sql` 把运行身份与工作项所有权交给控制面。`workflow_runs` 新增
+`0039_workflow_run_identity.sql` 把运行身份与工作项所有权交给控制面。`workflow_runs` 新增
 `created_by` 与 `project_id` 两列（均可空：本迁移之前的行没有可恢复的发起人，而 `project_id` 由知道
 Project 的调用路径写入），新运行在创建时冻结二者；`workspaces` 新增互斥的 `workflow_run_id`，使运行
 Workspace 可以属于 WorkflowRun；`execution_work` 同样变为「恰有一个所有者」的判别形状，原单列唯一索引
@@ -124,4 +124,4 @@ Workspace 可以属于 WorkflowRun；`execution_work` 同样变为「恰有一�
 `runtime_controls` 的预留改为多态运行引用，`maintenance_run_id` 的外键被删除而非改写——多态引用无法做
 外键，存活校验移到授予它的代码里。只新增列、约束与索引，不回填。
 
-`TestMigration0035WorkflowRunIdentityAppliesFreshAndUpgrades` 验证空库、从 0034 升级及重复迁移。
+`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` 验证空库、从 0038 升级及重复迁移。

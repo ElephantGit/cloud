@@ -115,9 +115,9 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 
 Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
 
-## 0035: WorkflowRun identity
+## 0039: WorkflowRun identity
 
-`0035_workflow_run_identity.sql` hands run identity and work-item ownership to the control plane.
+`0039_workflow_run_identity.sql` hands run identity and work-item ownership to the control plane.
 `workflow_runs` gains `created_by` and `project_id` (both nullable: rows written before this migration
 carry no recoverable actor, and `project_id` is filled by the invocation path that knows a Project),
 which new runs freeze at creation. `workspaces` gains a mutually exclusive `workflow_run_id`, so a run
@@ -128,4 +128,4 @@ becomes a polymorphic run reference: the `maintenance_run_id` foreign key is dro
 reworked, because a polymorphic reference cannot be a foreign key, and the liveness check moves to the
 code that grants on it. Additive: columns, constraints and indexes, no backfill.
 
-`TestMigration0035WorkflowRunIdentityAppliesFreshAndUpgrades` covers fresh, 0034 upgrade and rerun.
+`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` covers fresh, 0038 upgrade and rerun.

@@ -19,16 +19,28 @@ type PublicRequest struct {
 	FormIssueID string
 	// ModelConnectionID addresses an owner-scoped personal connection outside tenant routing.
 	ModelConnectionID string
-	Limit             int
-	Body              Object
-	Identity          *Claims
-	Person            *DirectoryPerson
+	// Session filters are independent of resource IDs used by public route dispatch.
+	SessionProjectID, SessionStatus, SessionAgent, SessionFrom, SessionTo string
+	Limit                                                                 int
+	Body                                                                  Object
+	Identity                                                              *Claims
+	Person                                                                *DirectoryPerson
 }
 
 // Public executes one authorized public request in a short database transaction.
 // Committed collaboration-space mutations are broadcast to live space subscribers
 // after the transaction succeeds, never before.
 func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, error) {
+	if r.Method == "GET" && r.Path == "/api/v1/tenants/"+r.TenantID+"/agent-sessions" {
+		return s.sessionList(ctx, r)
+	}
+	if r.Method == "GET" && r.Path == "/api/v1/tenants/"+r.TenantID+"/issues/"+r.IssueID+"/runs/"+r.RunID+"/history" {
+		return s.SessionHistory(ctx, r)
+	}
+	runPath := "/api/v1/tenants/" + r.TenantID + "/issues/" + r.IssueID + "/runs/" + r.RunID
+	if r.Method == "GET" && (r.Path == runPath+"/statistics" || r.Path == runPath+"/model-calls") {
+		return s.sessionModelRead(ctx, r)
+	}
 	status := 200
 	var dispatches []dispatchTarget
 	var events []SpaceEvent

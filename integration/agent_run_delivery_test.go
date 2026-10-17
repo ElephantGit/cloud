@@ -2090,10 +2090,12 @@ func TestGrantRevisionUploadSignsOneGrantPerObjectKey(t *testing.T) {
 	if got := f.scalar(`SELECT count(*) FROM revisions WHERE run_id=$1`, scene.runID); got != 0 {
 		t.Fatalf("granting must register nothing, got %d Revisions", got)
 	}
-	// And nothing in the schema could hold one: a grant is minted per request and never stored, so no
-	// table may have a column an upload URL or a credential could live in.
+	// Upload capabilities remain transient. The model ledger's UUID foreign key references a
+	// model_access_grants row; it cannot hold an upload URL, bearer token or presigned credential.
+	// Keep rejecting every other grant/presign column rather than exempting the whole model table.
 	if got := f.scalar(`SELECT count(*) FROM information_schema.columns
-		WHERE table_schema=current_schema() AND (column_name ILIKE '%grant%' OR column_name ILIKE '%presign%')`); got != 0 {
+		WHERE table_schema=current_schema() AND (column_name ILIKE '%grant%' OR column_name ILIKE '%presign%')
+		AND NOT (table_name='model_request_attempts' AND column_name='grant_id' AND data_type='uuid')`); got != 0 {
 		t.Fatalf("the schema must have nowhere to persist an upload grant, got %d column(s)", got)
 	}
 

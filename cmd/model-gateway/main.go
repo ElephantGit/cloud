@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ func main() {
 // run owns every listener and request context; shutdown cancels model streams before joining servers.
 func run() (runErr error) {
 	path := flag.String("config", "", "Cloud database and verification-key configuration")
+	checkEgress := flag.Bool("check-egress", false, "validate deployment egress without starting services; print schema and digest")
 	health := flag.Bool("healthcheck", false, "verify credential service readiness without reading private keys")
 	egressPath := flag.String("deployment-egress", os.Getenv("ORA_DEPLOYMENT_EGRESS_FILE"), "shared deployment egress JSON file")
 	flag.Parse()
@@ -45,11 +47,22 @@ func run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Load(*path)
+	deployment, err := modelgateway.LoadConfig()
 	if err != nil {
 		return err
 	}
-	deployment, err := modelgateway.LoadConfig()
+	if *checkEgress {
+		client, err := modelgateway.NewUpstreamClient(modelgateway.UpstreamConfig{DevelopmentHosts: deployment.DevelopmentHosts, DNS: deployment.DNS, Policy: policy})
+		if err != nil {
+			return err
+		}
+		defer client.CloseIdleConnections()
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			SchemaVersion int    `json:"schemaVersion"`
+			Digest        string `json:"digest"`
+		}{1, policy.Digest(deployment.DNS)})
+	}
+	cfg, err := config.Load(*path)
 	if err != nil {
 		return err
 	}

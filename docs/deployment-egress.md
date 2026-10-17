@@ -74,3 +74,7 @@ HTTP/SOCKS 代理和重定向。企业模式业务传输使用 HTTP/1.1，避免
 固定内部对象存储的 object-key 取包继续走部署客户端，不可作为被拒 HTTPS 的回退。此策略不覆盖
 Node 插件安装、marketplace Git 同步或身份认证。真实现场连通性、供应商工具/流式能力和 cluster
 协调更新仍需对应部署验收。
+
+部署工具可先运行 `/app/model-gateway -check-egress -deployment-egress <file>`：该入口使用实际服务的
+解析器和公网 DNS 环境配置，仅输出 `schemaVersion` 与 `digest` JSON，不查询 DNS、不连接数据库、
+不加载凭据、不监听端口。无效配置以非零状态退出，可在停服务前预检；应用后再与两端 healthz 比较。

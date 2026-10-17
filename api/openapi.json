@@ -24946,6 +24946,13 @@
                     "dependencies": {
                       "additionalProperties": false,
                       "properties": {
+                        "gitServer": {
+                          "enum": [
+                            "configured",
+                            "unconfigured"
+                          ],
+                          "type": "string"
+                        },
                         "objectStore": {
                           "enum": [
                             "configured",
@@ -24955,7 +24962,8 @@
                         }
                       },
                       "required": [
-                        "objectStore"
+                        "objectStore",
+                        "gitServer"
                       ],
                       "type": "object"
                     },

@@ -243,11 +243,13 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 			failure(c, &core.Fault{Code: "database_unavailable", Status: 503, Params: core.Object{}})
 			return
 		}
-		storage := "unconfigured"
-		if store.ObjectStore != nil {
-			storage = "configured"
+		configured := func(ok bool) string {
+			if ok {
+				return "configured"
+			}
+			return "unconfigured"
 		}
-		c.JSON(200, gin.H{"status": "ok", "dependencies": gin.H{"objectStore": storage}})
+		c.JSON(200, gin.H{"status": "ok", "dependencies": gin.H{"objectStore": configured(store.ObjectStore != nil), "gitServer": configured(store.GitServer != nil)}})
 	})
 	for _, route := range Routes() {
 		r.Handle(route.Method, route.Path, func(c *gin.Context) {

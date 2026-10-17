@@ -3360,6 +3360,14 @@ export type PostApiV1TenantsTidWorkspacesWidStop202 = {
   resource: Workspace;
 };
 
+export type Health200DependenciesGitServer = typeof Health200DependenciesGitServer[keyof typeof Health200DependenciesGitServer];
+
+
+export const Health200DependenciesGitServer = {
+  configured: 'configured',
+  unconfigured: 'unconfigured',
+} as const;
+
 export type Health200DependenciesObjectStore = typeof Health200DependenciesObjectStore[keyof typeof Health200DependenciesObjectStore];
 
 
@@ -3369,6 +3377,7 @@ export const Health200DependenciesObjectStore = {
 } as const;
 
 export type Health200Dependencies = {
+  gitServer: Health200DependenciesGitServer;
   objectStore: Health200DependenciesObjectStore;
 };
 

@@ -168,8 +168,10 @@ func Document() map[string]any {
 		"stage":         enumeration("waiting", "environment", "clone", "plugin", "start", "failed", "cancelled"),
 		"cloneAttempts": number(), "maxCloneAttempts": number(),
 		"retryAt": optional(timestamp()), "errorCode": optional(str()),
+		// syncErrorCode names why the Binding's sync failed when errorCode is repository_sync_failed.
+		"syncErrorCode": optional(str()),
 	}
-	preparationFields := []string{"stage", "cloneAttempts", "maxCloneAttempts", "retryAt", "errorCode"}
+	preparationFields := []string{"stage", "cloneAttempts", "maxCloneAttempts", "retryAt", "errorCode", "syncErrorCode"}
 	s["RunPreparation"] = object(preparationProps, preparationFields...)
 	// OpenAPI 3.0 ignores nullable beside $ref; keep this nullable projection inline.
 	runProps["preparation"] = optional(object(preparationProps, preparationFields...))
@@ -285,7 +287,7 @@ func Document() map[string]any {
 	s["PluginUniversalRelease"] = object(obj{"url": str(), "sha256": str()}, "url", "sha256")
 	s["PluginReleaseTarget"] = object(obj{"target": str(), "url": str(), "sha256": str()}, "target", "url", "sha256")
 	s["PluginLogoCandidate"] = object(obj{"role": enumeration("universal", "light", "dark"), "extension": enumeration("svg", "png", "webp", "jpg", "jpeg")}, "role", "extension")
-	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision"))})
+	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "syncOwed": boolean(), "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision"))})
 	s["OperationResult"] = object(obj{"resourceId": uuid(), "forceStopId": uuid()})
 	s["Operation"] = resource("id tenantId actorUserId projectId workspaceId kind state step request result errorCode idempotencyKey requestHash controllerEpoch retryAt version createdAt updatedAt", "workspaceId errorCode controllerEpoch retryAt")
 	opProps := properties(s, "Operation")
@@ -479,7 +481,7 @@ func Document() map[string]any {
 }
 
 // pathParamSchema types a path parameter. `formRef` is deliberately NOT a UUID: it is an opaque
-// provider-scoped token that Issues never parses (§38.17), constrained only by the grammar that keeps
+// provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
 	if name == "formRef" {
@@ -756,7 +758,7 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// Reading a Thread returns one ascending-by-seq window of entries plus the run's Thread
 		// state and idle instant, all from one snapshot. `threadState` and `idleSince` are projected
 		// here rather than read off the run resource, which keeps stripping these columns from
-		// IssueRun (T4C-10). The window's cursors are nullable because an empty Thread has neither.
+		// IssueRun. The window's cursors are nullable because an empty Thread has neither.
 		return object(obj{
 			"items":           array(ref("ThreadEntry")),
 			"threadState":     enumeration("pending", "active", "idle", "ending", "ended"),

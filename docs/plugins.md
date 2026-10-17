@@ -1,6 +1,6 @@
 # 插件市场:cloud 权威状态与 catalog 快照
 
-> 对应 `plan.md`(功能设计)与 desktop 仓的插件契约(orax.toml / 目录条目 / 命名空间)。cloud 是插件
+> 对应 desktop 仓的插件契约(orax.toml / 目录条目 / 命名空间)。cloud 是插件
 > **选择状态**与**市场目录快照**的唯一权威;Node 执行平面只下载与运行 cloud 快照出来的内容,
 > 从不自行同步市场。安装由 Node 执行,不再经过 Substrate 的 `plugin_ensure`。
 

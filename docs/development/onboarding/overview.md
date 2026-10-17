@@ -1,7 +1,6 @@
 # Ora Cloud — 项目概览（新员工向）
 
-欢迎！这份文档帮你在 15 分钟内建立对 Ora Cloud 的整体认识。想看「现在做到哪了」直接跳
-[progress.md](progress.md)；想上手改代码看 [../agent/](../agent/)（那份是写给 AI 助手和
+欢迎！这份文档帮你在 15 分钟内建立对 Ora Cloud 的整体认识。想上手改代码看 [../agent/](../agent/)（那份是写给 AI 助手和
 已经熟悉项目的人的）。
 
 ## 这是什么
@@ -71,14 +70,14 @@ Ora Cloud 是一个**云端开发环境编排平台**的权威存储与控制面
 
 Issue 看板能力迁移自参考项目 Multica，但**完全按 Ora Cloud 自己的架构重写**（不是抄代码）。
 三次迁移：第一波做了核心看板，第二波补齐了评论/标签/订阅/编号/搜索/批量等周边，第三波把正式
-Web 前端迁入 [`frontend/`](../../frontend/README.md)。完整故事在
-[../../migrations/multica-issue-board/](../../migrations/multica-issue-board/)。
+Web 前端迁入 [`frontend/`](../../frontend/README.md)。协作交互的决策见
+[Issue 协作 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)。
 
 ## 下一步读什么
 
 | 我想… | 去读 |
 | --- | --- |
-| 知道哪些做完了、哪些还没做 | [progress.md](progress.md) |
+| 知道系统为什么这样设计 | [Cloud ADR](https://github.com/ora-space/specs/tree/main/decisions/cloud) |
 | 跑起来看看 | 根目录 README / `scripts/demo-issue-board-web.sh`（看板演示）· `frontend/`（正式前端） |
 | 改代码、加功能 | [../agent/architecture.md](../agent/architecture.md) → [../agent/adding-features.md](../agent/adding-features.md) |
 | 查某个接口的字段 | [../agent/api-reference.md](../agent/api-reference.md) |

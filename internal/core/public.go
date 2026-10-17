@@ -198,12 +198,13 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 					closeAdmission(t, w, "deleted")
 				}
 				t.exec("UPDATE projects SET lifecycle='deleting',version=version+1 WHERE id=$1", p.S("id"))
-				req := Object{"previous": previous}
+				// syncOwed is kept on the Operation so a refused quiesce can give the sync back.
+				req := Object{"previous": previous, "syncOwed": cancelRepositoryOperationsForDeletion(t, p.S("id"))}
 				op := newOperation(t, r, uid, p.S("id"), "", "delete_project", "quiesce", hash, req)
 				for _, w := range ws {
 					reserveRuntimeMaintenance(t, w.S("id"), op.S("id"))
 				}
-				out = Object{"resource": t.one("SELECT * FROM projects WHERE id=$1", p.S("id")), "operation": op}
+				out = Object{"resource": t.one("SELECT * FROM "+projectView+" p WHERE id=$1", p.S("id")), "operation": op}
 				status = 202
 				if p.S("spaceId") != "" {
 					events = append(events, SpaceEvent{Type: "project.archived", SpaceID: p.S("spaceId"), ProjectID: p.S("id")})
@@ -218,7 +219,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				out = Object{"resource": appendThreadMessage(t, s, r, uid)}
 				status = 201
 			case strings.HasSuffix(r.Path, "/thread/end"):
-				// Thread D4 (G-018): the user ending the conversation. Also matched before the /runs
+				// Thread D4: the user ending the conversation. Also matched before the /runs
 				// arm, and answered 202 because the request is accepted for asynchronous shutdown —
 				// the Thread is `ending`, not `ended`. The response is the Thread state itself rather
 				// than a wrapped resource: the endpoint creates no new resource to point at.
@@ -417,7 +418,7 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 		case strings.HasSuffix(r.Path, "/projects"):
 			spaceMember(t, r.SpaceID, uid)
 			// The tenant's sole space shares every live project with its active members.
-			return page(t, "SELECT p.* FROM projects p WHERE p.space_id=$1 AND p.deleted_at IS NULL", []any{r.SpaceID}, "p.id", r)
+			return page(t, "SELECT p.* FROM "+projectView+" p WHERE p.space_id=$1 AND p.deleted_at IS NULL", []any{r.SpaceID}, "p.id", r)
 		case strings.HasSuffix(r.Path, "/plugins/catalog"):
 			// The catalog snapshot is shared by every space of the deployment; space
 			// membership gates the read exactly like any other space-scoped list.
@@ -524,7 +525,7 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 		}
 		return p
 	default:
-		return page(t, "SELECT p.* FROM projects p JOIN collab_workspaces w ON w.id=p.space_id WHERE p.tenant_id=$1 AND p.deleted_at IS NULL AND w.archived_at IS NULL", []any{r.TenantID}, "p.id", r)
+		return page(t, "SELECT p.* FROM "+projectView+" p JOIN collab_workspaces w ON w.id=p.space_id WHERE p.tenant_id=$1 AND p.deleted_at IS NULL AND w.archived_at IS NULL", []any{r.TenantID}, "p.id", r)
 	}
 }
 
@@ -586,10 +587,11 @@ func createProject(t *transaction, r *PublicRequest, uid, hash string) Object {
 		cred = id
 	}
 	pid, wid := newID(), newID()
-	t.exec("INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,repository_url,default_branch,credential_ref_id,lifecycle) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'provisioning')", pid, r.TenantID, uid, spaceID, name, repo, branch, cred)
+	t.exec("INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,lifecycle) VALUES($1,$2,$3,$4,$5,'provisioning')", pid, r.TenantID, uid, spaceID, name)
+	createBinding(t, r.TenantID, pid, repo, branch, cred)
 	insertWorkspace(t, r.TenantID, uid, uid, pid, wid, "main", branch, "")
 	op := newOperation(t, r, uid, pid, wid, "create_project", "sandbox", hash, Object{})
-	return Object{"resource": t.one("SELECT * FROM projects WHERE id=$1", pid), "workspace": t.one("SELECT * FROM workspaces WHERE id=$1", wid), "operation": op}
+	return Object{"resource": t.one("SELECT * FROM "+projectView+" p WHERE id=$1", pid), "workspace": t.one("SELECT * FROM workspaces WHERE id=$1", wid), "operation": op}
 }
 
 func insertWorkspace(t *transaction, tid, owner, creator, pid, wid, kind, ref, title string) {
@@ -667,7 +669,7 @@ func adminOperation(o Object) Object {
 
 func workspaceAction(t *transaction, r *PublicRequest, uid, hash string, admin bool) Object {
 	w := workspace(t, r.TenantID, uid, r.WorkspaceID, admin)
-	p := t.one("SELECT * FROM projects WHERE id=$1", w.S("projectId"))
+	p := t.one("SELECT * FROM "+projectView+" p WHERE id=$1", w.S("projectId"))
 	require(p.S("lifecycle") == "active", 409, "resource_unavailable")
 	version(w, r.Body.N("version"))
 	if !admin {

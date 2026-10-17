@@ -157,8 +157,25 @@ var operationStates = map[string]map[string]bool{
 	core.RepositoryPublish: {"awaiting_approval": false, "pending": false, "leased": false, "running": false, "uncertain": false, "succeeded": true, "conflict": true, "rejected": true, "failed": true, "cancelled": true},
 }
 
-// Operation writes one Operation row in a given state, for waiting, failure and deletion
-// scenarios. Terminal states get finished_at; the database still enforces one unfinished sync.
+// advanceSync moves the Binding's unfinished sync, if there is one, to the given sync state and
+// returns its ID; "" means the Binding had none. A terminal state also sets finished_at.
+func advanceSync(ctx context.Context, tx *sql.Tx, b binding, state string, errorCode any) (string, error) {
+	var id string
+	err := tx.QueryRowContext(ctx, `UPDATE repository_operations SET state=$2,error_code=$3,finished_at=CASE WHEN $4 THEN clock_timestamp() END
+	 WHERE binding_id=$1 AND type='repository_sync' AND state IN ('pending','leased','running') RETURNING id`, b.id, state, errorCode, operationStates[core.RepositorySync][state]).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("advance sync: %w", err)
+	}
+	return id, nil
+}
+
+// Operation writes an Operation in a given state, for waiting, failure and deletion scenarios.
+// Terminal states get finished_at. A sync moves the Binding's unfinished sync — every new Project
+// starts with one — to the requested state instead of adding a second row beside it, so any sync
+// state can be preset; only without one is a new sync row written. A publish is always a new row.
 func (p *Preset) Operation(ctx context.Context, projectID, kind, state, errorCode string) (Result, error) {
 	types := map[string]string{"sync": core.RepositorySync, "publish": core.RepositoryPublish}
 	t, ok := types[kind]
@@ -177,11 +194,26 @@ func (p *Preset) Operation(ctx context.Context, projectID, kind, state, errorCod
 	if errorCode != "" {
 		code = errorCode
 	}
-	var id string
-	err = p.DB.QueryRowContext(ctx, `INSERT INTO repository_operations(id,type,tenant_id,project_id,binding_id,state,trigger,error_code,finished_at)
-	 VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'preset',$6,CASE WHEN $7 THEN clock_timestamp() END) RETURNING id`, t, b.tenant, b.project, b.id, state, code, terminal).Scan(&id)
+	tx, err := p.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("record operation: %w", err)
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var id string
+	if t == core.RepositorySync {
+		if id, err = advanceSync(ctx, tx, b, state, code); err != nil {
+			return nil, err
+		}
+	}
+	if id == "" {
+		err = tx.QueryRowContext(ctx, `INSERT INTO repository_operations(id,type,tenant_id,project_id,binding_id,state,trigger,error_code,finished_at)
+		 VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'preset',$6,CASE WHEN $7 THEN clock_timestamp() END) RETURNING id`, t, b.tenant, b.project, b.id, state, code, terminal).Scan(&id)
+		if err != nil {
+			return nil, fmt.Errorf("record operation: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return Result{"ok": true, "projectId": b.project, "bindingId": b.id, "operationId": id, "type": t, "state": state}, nil
 }

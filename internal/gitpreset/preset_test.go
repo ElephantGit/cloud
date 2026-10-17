@@ -138,8 +138,8 @@ func TestSnapshotProducesAContractConformingProject(t *testing.T) {
 	}
 }
 
-// ref writes any contract ref, operation writes any contract state, and the database still
-// refuses a second unfinished sync.
+// ref writes any contract ref, and operation writes any contract state: a sync moves the Binding's
+// unfinished sync when there is one, so no state collides with the one-unfinished-sync index.
 func TestRefAndOperationPresets(t *testing.T) {
 	p, _, project, _ := newPreset(t)
 	ctx := context.Background()
@@ -163,15 +163,26 @@ func TestRefAndOperationPresets(t *testing.T) {
 		t.Error("a ref to a commit the repository lacks was written")
 	}
 
-	(expect{t}).ok(p.Operation(ctx, project, "sync", "running", ""))
-	if _, err := p.Operation(ctx, project, "sync", "pending", ""); err == nil {
-		t.Error("a second unfinished sync was written")
+	// Like every new Project, this one starts with an unfinished sync; each sync state moves that
+	// row instead of colliding with it on the one-unfinished-sync index.
+	initial := uuid.NewString()
+	if _, err := p.DB.Exec("INSERT INTO repository_operations(id,type,tenant_id,project_id,binding_id,state,trigger) SELECT $1,'repository_sync',tenant_id,project_id,id,'pending','project_created' FROM repository_bindings WHERE project_id=$2", initial, project); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"leased", "running", "pending"} {
+		if r := (expect{t}).ok(p.Operation(ctx, project, "sync", state, "")); r["operationId"] != initial {
+			t.Fatalf("sync %s wrote %v, want the unfinished sync %s moved", state, r["operationId"], initial)
+		}
 	}
 	failed := (expect{t}).ok(p.Operation(ctx, project, "sync", "failed", "upstream_unreachable"))
 	var code string
 	var finished bool
-	if err := p.DB.QueryRow("SELECT error_code,finished_at IS NOT NULL FROM repository_operations WHERE id=$1", failed["operationId"]).Scan(&code, &finished); err != nil || code != "upstream_unreachable" || !finished {
-		t.Fatalf("failed sync = %q finished=%v %v", code, finished, err)
+	if err := p.DB.QueryRow("SELECT error_code,finished_at IS NOT NULL FROM repository_operations WHERE id=$1", failed["operationId"]).Scan(&code, &finished); err != nil || failed["operationId"] != initial || code != "upstream_unreachable" || !finished {
+		t.Fatalf("failed sync %v = %q finished=%v %v", failed["operationId"], code, finished, err)
+	}
+	// With no unfinished sync left, a sync state is a new row.
+	if r := (expect{t}).ok(p.Operation(ctx, project, "sync", "running", "")); r["operationId"] == initial {
+		t.Fatal("a finished sync was moved back to running")
 	}
 	(expect{t}).ok(p.Operation(ctx, project, "publish", "uncertain", ""))
 	for _, c := range []struct{ kind, state string }{{"sync", "uncertain"}, {"publish", "superseded"}, {"clone", "pending"}} {

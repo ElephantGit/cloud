@@ -14,7 +14,7 @@ wires dependencies and sets the exit code.
 |---|---|
 | `snapshot --project <id> (--commit <oid> \| --synthetic <n>)` | Writes `snapshots/<oid>` and the tracking ref, records a `succeeded` sync and makes it the current snapshot; `--synthetic` first creates a deterministic history of n commits |
 | `ref --project <id> --ref <name> --commit <oid>` | Writes one ref of any namespace (for example a Workspace branch to publish from); the commit must already be in the repository |
-| `operation --project <id> --type sync\|publish --state <state> [--error-code <code>]` | Writes one Operation in the given state for waiting, failure and deletion scenarios; terminal states get `finished_at` |
+| `operation --project <id> --type sync\|publish --state <state> [--error-code <code>]` | Writes one Operation in the given state for waiting, failure and deletion scenarios; terminal states get `finished_at`. A sync moves the Binding's unfinished sync (such as the one written when the Project was created) to the given state and writes a new row only when there is none, so every sync state can be preset; a publish is always a new row |
 | `check --project <id>` | Contract assertion: do the Git Server's refs and Cloud's records satisfy the contract |
 
 Each run prints one JSON line: `{"ok": true, ...}` on success; `{"ok": false, "violations": [...]}`

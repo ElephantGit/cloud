@@ -11,7 +11,7 @@
 |---|---|
 | `snapshot --project <id> (--commit <oid> \| --synthetic <n>)` | 写入 `snapshots/<oid>` 与跟踪 ref，登记一行 `succeeded` 的同步，推进当前快照；`--synthetic` 先生成有 n 个提交的确定性历史 |
 | `ref --project <id> --ref <name> --commit <oid>` | 写入任意 namespace 的一个 ref（例如作为发布源的 Workspace 分支）；提交必须已在仓库中 |
-| `operation --project <id> --type sync\|publish --state <state> [--error-code <code>]` | 写入一行给定状态的 Operation，用于等待、失败、删除等场景；终态写 `finished_at` |
+| `operation --project <id> --type sync\|publish --state <state> [--error-code <code>]` | 写入一行给定状态的 Operation，用于等待、失败、删除等场景；终态写 `finished_at`。同步改写该 Binding 未结束的同步（例如建 Project 时的那一行）为给定状态，没有时才新写一行，因此任何同步状态都能预置；发布总是新写一行 |
 | `check --project <id>` | 契约断言：Git Server 上的 ref 与 Cloud 记录是否符合契约 |
 
 每次输出一行 JSON：成功为 `{"ok": true, ...}`；`check` 发现问题为 `{"ok": false, "violations": [...]}`；命令失败为

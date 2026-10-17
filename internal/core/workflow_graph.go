@@ -256,7 +256,7 @@ func validateConditionConfig(nodeID string, data Object) []workflowGraphProblem 
 			problems = append(problems, workflowGraphProblem{Code: "condition_case_id_missing", NodeID: nodeID, Field: "cases.id"})
 		}
 		// An absent logic is `and`, which is what the evaluator applies and what the editor omits;
-		// only a value neither side recognises is refused.
+		// only a value neither side recognizes is refused.
 		switch c.S("logic") {
 		case "", "and", "or":
 		default:

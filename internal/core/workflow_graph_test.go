@@ -370,7 +370,7 @@ func TestValidateWorkflowGraph(t *testing.T) {
 //
 // The cases and workflowUnsupportedConditionConfigs are checked against each other in both
 // directions: a declared code with no case here fails, and a case producing a code the list does not
-// declare fails too. That is what keeps the ADR's list, the PR's list and the gate's behaviour the
+// declare fails too. That is what keeps the ADR's list, the PR's list and the gate's behavior the
 // same list, and what makes circus#210's job — deleting one entry at a time as each difference
 // is closed — a change this test refuses to let pass unnoticed.
 func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {

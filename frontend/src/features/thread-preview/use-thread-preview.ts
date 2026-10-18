@@ -30,6 +30,7 @@ export function useThreadPreview(ref: PreviewRef, enabled: boolean) {
     const queryKey = ['thread-preview', tid, issueId, runId] as const
     const clear = () => queryClient.setQueryData(queryKey, emptyPreview())
     const receive = (data: string) => {
+      if (controller.signal.aborted) return
       const next = parseThreadPreview(data)
       if (!next) return
       setConnection(next.available ? 'live' : 'unavailable')
@@ -63,6 +64,7 @@ export function useThreadPreview(ref: PreviewRef, enabled: boolean) {
         } catch {
           if (controller.signal.aborted) return
         }
+        if (controller.signal.aborted) return
         setConnection('disconnected')
         // oxlint-disable-next-line no-await-in-loop -- cancellation owns the retry timer
         await pauseEventStream(controller.signal, Math.min(1000 * 2 ** attempts, 30000))

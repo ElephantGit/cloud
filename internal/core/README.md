@@ -6,6 +6,8 @@
 
 ## 模块概览
 
+- `task_conversation_messages.go`、`task_conversation_queue.go`、`task_conversation_context.go`：任务级有序消息、同任务 Agent 串行交接及从 Node 可见正文冻结的后续提示。失败消息阻塞后续交接；未交付成果须显式放弃后才能从已保存 Revision 继续。真实 PostgreSQL 测试覆盖并发幂等、权限、释放证据、失败暂停和缺失历史。
+
 Agent 初始提示从冻结的运行输入读取任务标题、说明、最近评论与显式引用；没有 ContextBuilder 时同样保留这些字段。不会在启动时重新读取可变任务信息。`agent_initial_context_test.go` 验证上下文不丢失及历史快照缺字段时不伪造内容。
 
 - [migrations](migrations/README.md)：定义按顺序执行、仅向前的 PostgreSQL Schema 迁移脚本和校验和验证。

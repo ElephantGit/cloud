@@ -28,6 +28,12 @@ func (s *agentRunService) TakeOverThreadEvents(ctx context.Context, req *control
 		if ev.TurnId != nil {
 			item["turnId"] = ev.GetTurnId()
 		}
+		if ev.VisibleText != nil {
+			item["visibleText"] = ev.GetVisibleText()
+		}
+		if ev.GetVisibleTextTruncated() {
+			item["visibleTextTruncated"] = true
+		}
 		events = append(events, item)
 	}
 	body := core.Object{"epoch": req.GetEpoch(), "operationId": req.GetOperationId(), "executionId": req.GetExecutionId(), "events": events}

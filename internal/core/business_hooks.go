@@ -77,7 +77,14 @@ func onThreadEvents(ctx context.Context, tx *sql.Tx, run, execution string, even
 		if err := json.Unmarshal([]byte(record), &content); err != nil || content == nil {
 			return fmt.Errorf("business hook: run %s execution %s event %d carries a record that is not a JSON object", run, execution, ev.N("sequence"))
 		}
-		parsed = append(parsed, Object{"sequence": ev.N("sequence"), "turnId": ev.S("turnId"), "record": content})
+		item := Object{"sequence": ev.N("sequence"), "turnId": ev.S("turnId"), "record": content}
+		if visible, present := ev["visibleText"]; present {
+			item["visibleText"] = visible
+		}
+		if ev.B("visibleTextTruncated") {
+			item["visibleTextTruncated"] = true
+		}
+		parsed = append(parsed, item)
 	}
 	return t.store.settleThreadEvents(t, run, execution, parsed)
 }

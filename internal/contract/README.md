@@ -6,6 +6,8 @@
 
 ## 职责
 
+`TaskConversationMessage`、任务对话的双向序号游标、发送/取消/重试/恢复/显式放弃未交付成果，以及 `issue.conversation_changed` 失效事件从本模块生成；`api/openapi.json` 与前端类型跟随同一声明更新。
+
 - **编程式生成 OpenAPI 文档**：`contract.Document()` 构建完整的 OpenAPI 3.0 规范树，定义元数据、安全方案（HTTP Bearer JWT）、参数、请求体、状态码和响应 Schema。
 - **组件模式（Component Schema）建模**：为领域实体定义严格的 JSON Schema：
   - 核心资源实体：`Tenant`、`TenantMember`、`User`、`Project`、`Workspace`、`Task`、`Operation`、`Effect`、`WorkspaceNode`、`Ticket`。

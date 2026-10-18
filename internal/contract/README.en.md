@@ -6,6 +6,8 @@
 
 ## Responsibilities
 
+This module generates `TaskConversationMessage`, the task conversation's two-direction sequence cursors, send/cancel/retry/resume/explicit-discard shapes, and the `issue.conversation_changed` invalidation event. `api/openapi.json` and frontend types follow the same declarations.
+
 - **Programmatic OpenAPI generation**: `contract.Document()` builds the complete OpenAPI 3.0 specification tree, defining metadata, security schemes (HTTP Bearer JWT), parameters, request bodies, status codes, and response schemas.
 - **Component schema modeling**: Defines strict JSON schemas for domain entities:
   - Core resources: `Tenant`, `TenantMember`, `User`, `Project`, `Workspace`, `Task`, `Operation`, `Effect`, `WorkspaceNode`, `Ticket`.

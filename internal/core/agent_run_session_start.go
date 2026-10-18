@@ -182,6 +182,11 @@ func renderAgentInitialTurn(input, resume Object) string {
 			sections[key] = value
 		}
 	}
+	for _, key := range []string{"conversationHistory", "conversationHistoryIncomplete"} {
+		if value, exists := input[key]; exists {
+			sections[key] = value
+		}
+	}
 	if resume != nil {
 		sections["resume"] = resume
 	}

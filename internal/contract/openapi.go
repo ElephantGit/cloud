@@ -93,7 +93,7 @@ func Document() map[string]any {
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
-	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
+	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
 	// GitIdentity is the identity the caller's Agent runs commit as (identity-access git identity
 	// D1). version is 0 while isDefault is true: no identity is stated and the default applies.
 	s["GitIdentity"] = object(obj{"name": str(), "email": str(), "isDefault": boolean(), "version": number()}, "name", "email", "isDefault", "version")
@@ -209,6 +209,14 @@ func Document() map[string]any {
 		"status":    optional(obj{"type": "string", "enum": []string{"queued", "delivered", "discarded"}, "nullable": true, "description": "User-turn lifecycle. Null for node and system entries."}),
 		"createdAt": timestamp(),
 	}, "seq", "source", "kind", "record", "createdAt")
+	s["TaskConversationMessage"] = object(obj{
+		"id": uuid(), "seq": obj{"type": "integer", "format": "int64", "minimum": 1},
+		"userId": uuid(), "agentId": uuid(), "body": str(),
+		"state": enumeration("waiting", "submitted", "cancelled", "failed"),
+		"runId": optional(uuid()), "threadSeq": optional(obj{"type": "integer", "format": "int64"}),
+		"errorCode": optional(str()), "delivery": optional(enumeration("pending", "queued", "delivered", "discarded", "failed", "cancelled")),
+		"createdAt": timestamp(),
+	}, "id", "seq", "userId", "agentId", "body", "state", "runId", "threadSeq", "errorCode", "createdAt")
 	s["ContextRef"] = resource("id tenantId issueId refType refId createdAt", "")
 	contextRefProps := properties(s, "ContextRef")
 	contextRefProps["refType"] = contextRefTypeEnum()
@@ -446,7 +454,7 @@ func Document() map[string]any {
 				responses[code] = obj{"description": "Archive exceeds limits or cannot be verified/read", "content": obj{"application/json": obj{"schema": ref("Error")}}}
 			}
 		}
-		if r.Method == "GET" && r.Path == router.ThreadPath {
+		if r.Method == "GET" && (r.Path == router.ThreadPath || r.Path == router.TaskConversationPath) {
 			// The Thread read has its own cursor vocabulary and window: `seq` is a decimal
 			// conversation position, not a UUID, and D5 caps the window at 500 rather than the
 			// shared 100. All three parameters are described in full in the operation description.
@@ -791,6 +799,14 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// Appending a user turn returns the entry it created, not the run: the caller already has
 		// the run and the message is the new resource.
 		return object(obj{"resource": ref("ThreadEntry")}, "resource"), "201"
+	case strings.HasSuffix(r.Path, "/conversation/messages"):
+		return object(obj{"resource": ref("TaskConversationMessage")}, "resource"), "201"
+	case strings.Contains(r.Path, "/conversation/messages/") && (strings.HasSuffix(r.Path, "/cancel") || strings.HasSuffix(r.Path, "/retry")):
+		return object(obj{"resource": ref("TaskConversationMessage")}, "resource"), "200"
+	case strings.HasSuffix(r.Path, "/conversation/resume"), strings.HasSuffix(r.Path, "/conversation/discard"):
+		return object(obj{"acknowledgedRunId": uuid()}, "acknowledgedRunId"), "200"
+	case strings.HasSuffix(r.Path, "/conversation"):
+		return object(obj{"items": array(ref("TaskConversationMessage")), "nextCursor": optional(obj{"type": "integer", "format": "int64"}), "prevCursor": optional(obj{"type": "integer", "format": "int64"})}, "items", "nextCursor", "prevCursor"), "200"
 	case strings.HasSuffix(r.Path, "/thread/end"):
 		// Ending a Thread returns the Thread's new state, not a resource: the endpoint creates
 		// nothing to point at, and the caller's next move is to watch `threadState` reach `ended`.
@@ -966,7 +982,7 @@ func inputSchema(name string, r router.Route) obj {
 		return obj{"type": "integer", "minimum": 1, "maximum": 3600}
 	case "protocolVersion":
 		return obj{"type": "integer", "enum": []int{1}}
-	case "initialized", "idle", "impactConfirmed":
+	case "initialized", "idle", "impactConfirmed", "acknowledgeLostWork":
 		return boolean()
 	case "result":
 		return ref("EffectResult")
@@ -1005,7 +1021,7 @@ func inputSchema(name string, r router.Route) obj {
 		return uuid()
 	case "category":
 		return enumeration("unstarted", "started", "done", "closed")
-	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId":
+	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId", "agentId", "runId":
 		return uuid()
 	case "projectId":
 		return obj{"type": "string", "format": "uuid", "description": "The Project the run's Workspace provisions in. Required: a run that names none is refused with 409 workflow_run_project_required, never persisted without one. Frozen at creation for the run's whole lifetime. Authorized against the caller's own collaboration space: an unknown, archived or foreign Project is 404."}

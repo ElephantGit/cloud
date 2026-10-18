@@ -6,6 +6,8 @@
 
 ## 职责
 
+任务对话新增 `GET/POST /issues/:iid/conversation`、显式 Agent 消息、待交接消息取消/重试、成功成果恢复与未交付成果显式放弃入口；使用同源成员鉴权和幂等键。对话消息与 Thread 消息可接受最多 256 KiB 请求包裹，正文仍由领域核心限制为 64 KiB。URL 中的 `:mid` 只作为待交接消息身份，不由客户端指定作者或状态。
+
 ### 路由白名单与分发
 - `Routes()` 显式声明系统支持的端点白名单：
   - **公开 API (`/api/v1/...`)**：涵盖用户、租户、成员关系、协作空间及其成员、项目、工作区、操作、状态查询、Issue 协作（Issue、状态、标签、视图、评论、订阅、运行、上下文引用、交互与协作目标），以及工作区插件（`/tenants/:tid/spaces/:spaceId/plugins`：目录快照、选择列表、安装、移除）、Agent 会话列表与完整归档读取，以及作为独立工作项的 clone 请求（`/tenants/:tid/clones`、`/clones/:cloneId`：提交、列表、单条查询，与 Project/Workspace 的 operation 模型无关）。

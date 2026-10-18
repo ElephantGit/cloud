@@ -32,7 +32,7 @@ func buildRunContext(t *transaction, i Object, task, targetType, targetID string
 	}
 	in.ContextRefs = append(t.list("SELECT ref_type, ref_id FROM issue_context_refs WHERE issue_id=$1 AND tenant_id=$2 ORDER BY ref_type, created_at, id", i.S("id"), i.S("tenantId")), extraRefs...)
 	if t.contextBuilder == nil {
-		return Object{
+		out := Object{
 			"task":              task,
 			"issue":             Object{"title": in.IssueTitle, "description": in.IssueDescription},
 			"recentComments":    in.RecentComments,
@@ -40,12 +40,19 @@ func buildRunContext(t *transaction, i Object, task, targetType, targetID string
 			"target":            Object{"type": targetType, "id": targetID},
 			"contextRefs":       in.ContextRefs,
 		}
+		if targetType == "agent" {
+			conversationHistory(t, out, i.S("tenantId"), i.S("id"))
+		}
+		return out
 	}
 	out, err := t.contextBuilder.Build(t.ctx, in)
 	if err != nil {
 		panic(databaseFailure{err})
 	}
 	require(out != nil, 500, "internal_error")
+	if targetType == "agent" {
+		conversationHistory(t, out, i.S("tenantId"), i.S("id"))
+	}
 	return out
 }
 

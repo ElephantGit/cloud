@@ -16,12 +16,14 @@ export function ThreadMessages({
   loadingOlder,
   onLoadOlder,
   onQuote,
+  liveRevision = 0,
 }: {
-  entries: readonly ThreadEntry[]
+  entries: readonly (ThreadEntry & { livePreview?: boolean })[]
   hasOlder: boolean
   loadingOlder: boolean
   onLoadOlder: () => void
   onQuote?: ((text: string) => void) | undefined
+  liveRevision?: number
 }) {
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -31,10 +33,10 @@ export function ThreadMessages({
   const lastSeq = entries.at(-1)?.seq
   const firstSeq = entries.at(0)?.seq
   useEffect(() => {
-    if (lastSeq === undefined) return
+    if (lastSeq === undefined && liveRevision === 0) return
     if (following.current) endRef.current?.scrollIntoView({ block: 'nearest' })
     else setUnread(true)
-  }, [lastSeq])
+  }, [lastSeq, liveRevision])
   useEffect(() => {
     if (firstSeq === undefined) return
     const element = scrollRef.current

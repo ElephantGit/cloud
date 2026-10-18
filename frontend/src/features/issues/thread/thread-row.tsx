@@ -113,7 +113,7 @@ export function ThreadRow({
     case 'thought':
       return (
         <li>
-          <details className="rounded-lg bg-muted/30 px-3 py-2">
+          <details open={item.live ?? false} className="rounded-lg bg-muted/30 px-3 py-2">
             <summary className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
               <Brain className="size-4" />
               思考与进展

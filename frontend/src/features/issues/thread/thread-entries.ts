@@ -69,7 +69,7 @@ export type ThreadItem =
   | { variant: 'prompt'; key: number; text: string }
   | { variant: 'user'; key: number; text: string; status: string | undefined }
   | { variant: 'agent'; key: number; text: string; turnId: string | undefined }
-  | { variant: 'thought'; key: number; text: string; turnId: string | undefined }
+  | { variant: 'thought'; key: number; text: string; turnId: string | undefined; live?: boolean }
   | { variant: 'tool'; key: number; tool: SessionTool; turnId: string | undefined }
   | { variant: 'note'; key: number; text: string }
   | { variant: 'separator'; key: number }
@@ -185,12 +185,43 @@ function mergeTool(previous: SessionTool, next: SessionTool): SessionTool {
   }
 }
 
+function displayItem(
+  entry: ThreadEntry & { livePreview?: boolean },
+  event: SessionEvent | undefined,
+): ThreadItem | undefined {
+  const item = itemOf(entry, event)
+  if (!item) return undefined
+  if (item.variant === 'thought' && entry.livePreview) item.live = true
+  if (
+    entry.source === 'node' &&
+    entry.historySequence !== null &&
+    entry.historySequence !== undefined
+  )
+    item.key = -entry.historySequence - 1
+  return item
+}
+
+function mergeText(last: ThreadItem | undefined, item: ThreadItem): boolean {
+  if (
+    (item.variant === 'agent' || item.variant === 'thought') &&
+    last?.variant === item.variant &&
+    last.turnId === item.turnId
+  ) {
+    last.text += item.text
+    if (last.variant === 'thought' && item.variant === 'thought' && item.live) last.live = true
+    return true
+  }
+  return false
+}
+
 /**
  * Turns ascending entries into display rows. Consecutive agent chunks of the
  * same turn are merged into one bubble, because the agent streams a reply as
  * many small chunks and one bubble per chunk would be unreadable.
  */
-export function threadItems(entries: readonly ThreadEntry[]): ThreadItem[] {
+export function threadItems(
+  entries: readonly (ThreadEntry & { livePreview?: boolean })[],
+): ThreadItem[] {
   const items: ThreadItem[] = []
   const snapshot = adaptThread({
     runId: 'current',
@@ -199,7 +230,7 @@ export function threadItems(entries: readonly ThreadEntry[]): ThreadItem[] {
   const events = new Map(snapshot.events.map((event) => [event.seq, event]))
   const tools = new Map<string, Extract<ThreadItem, { variant: 'tool' }>>()
   for (const entry of entries) {
-    const item = itemOf(entry, events.get(entry.seq))
+    const item = displayItem(entry, events.get(entry.seq))
     if (item === undefined) continue
     if (item.variant === 'tool' && item.tool.id) {
       const identity = JSON.stringify([item.turnId, item.tool.id])
@@ -210,16 +241,7 @@ export function threadItems(entries: readonly ThreadEntry[]): ThreadItem[] {
       }
       tools.set(identity, item)
     }
-    const last = items.at(-1)
-    if (
-      (item.variant === 'agent' || item.variant === 'thought') &&
-      last?.variant === item.variant &&
-      last.turnId === item.turnId
-    ) {
-      last.text += item.text
-    } else {
-      items.push(item)
-    }
+    if (!mergeText(items.at(-1), item)) items.push(item)
   }
   return items
 }

@@ -4,9 +4,11 @@
 
 ## 职责
 
+运行中的 Thread 同时依赖 `features/thread-preview` 的可选快照。预览按历史位置覆盖，已定型记录始终优先；流式思考展开，定型后折叠。连接状态与部分缺失明确展示，预览更新保留历史阅读位置。
+
 Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。任务级组合以只读模式展示各 Run，发送交给任务统一输入框；独立会话组件保留原有发送/结束控制，供旧服务升级期间使用。
 
-不负责：run 的创建与列表（`features/issues/api` 的 `useRuns`）、SSE 连接本身（`features/spaces/use-space-events`）、Issue 其他栏目。
+不负责：run 的创建与列表（`features/issues/api` 的 `useRuns`）、SSE 连接本身（空间事件由 `features/spaces/use-space-events`、预览由 `features/thread-preview` 拥有）、Issue 其他栏目。
 
 ## 文件
 

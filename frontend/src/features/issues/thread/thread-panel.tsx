@@ -11,6 +11,15 @@ import { useLoadOlderThread, useThread, type ThreadRef, type ThreadSnapshot } fr
 import { ThreadComposer } from './thread-composer'
 import { latestAgentRun, threadStateLabel } from './thread-entries'
 import { ThreadMessages } from './thread-messages'
+import { useThreadPreview } from '@/features/thread-preview/use-thread-preview'
+import { mergeThreadPreview } from '@/features/thread-preview/preview'
+
+const PREVIEW_STATUS = {
+  live: '实时输出已连接',
+  disconnected: '实时连接已断开，正在恢复；完整记录仍会保存',
+  connecting: '等待实时预览；当前显示已保存记录',
+  unavailable: '实时预览未启用；当前显示已保存记录',
+} as const
 
 function chosenAgentRun(
   runs: readonly IssueRun[],
@@ -37,6 +46,7 @@ function DeclaredThread({
   onQuote?: ((text: string) => void) | undefined
 }) {
   const loadOlder = useLoadOlderThread(threadRef)
+  const preview = useThreadPreview(threadRef, snapshot.threadState !== 'ended')
   const oldest = snapshot.entries[0]?.seq
   return (
     <>
@@ -45,7 +55,8 @@ function DeclaredThread({
         <RunPreparation progress={preparation} />
       )}
       <ThreadMessages
-        entries={snapshot.entries}
+        entries={mergeThreadPreview(snapshot.entries, preview.snapshot)}
+        liveRevision={preview.snapshot.version}
         hasOlder={oldest !== undefined && oldest > 1}
         loadingOlder={loadOlder.isPending}
         onLoadOlder={() => {
@@ -53,6 +64,12 @@ function DeclaredThread({
         }}
         onQuote={onQuote}
       />
+      {snapshot.threadState !== 'ended' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {PREVIEW_STATUS[preview.connection]}
+          {preview.snapshot.incomplete ? ' · 部分内容需等待完整记录' : ''}
+        </p>
+      )}
       {loadOlder.isError && <p className="text-xs text-destructive">加载更早的消息失败</p>}
       <p className="text-xs text-muted-foreground">
         发起者：

@@ -1726,6 +1726,11 @@ export const ThreadEntryStatus = {
 
 export interface ThreadEntry {
   createdAt: string;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  historySequence?: number | null;
   kind: string;
   record: ThreadEntryRecord;
   /** @minimum 1 */
@@ -1744,6 +1749,22 @@ export interface ThreadModel {
   connectionName: string;
   modelId: string;
   modelName: string;
+}
+
+export type ThreadPreviewSnapshotBlocksItemRecord = { [key: string]: unknown };
+
+export type ThreadPreviewSnapshotBlocksItem = {
+  historySequence: number;
+  record: ThreadPreviewSnapshotBlocksItemRecord;
+  turnId: string;
+};
+
+export interface ThreadPreviewSnapshot {
+  available: boolean;
+  blocks: ThreadPreviewSnapshotBlocksItem[];
+  executionId: string;
+  incomplete: boolean;
+  version: number;
 }
 
 export interface Ticket {

@@ -2,6 +2,7 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { describe, expect, it } from 'vitest'
 import type { ThreadEntry } from '@/api/generated.schemas'
 import type { IssueRun } from '@/features/issues/types'
+import { mergeThreadPreview } from '@/features/thread-preview/preview'
 import {
   endFailureMessage,
   forwardCursor,
@@ -36,6 +37,30 @@ function chunk(seq: number, text: string, turnId: string): ThreadEntry {
     record: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } },
   })
 }
+
+it('renders a live thought as open and replaces its matching final history position', () => {
+  const record = {
+    type: 'update',
+    update: {
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'checking the file' },
+    },
+  }
+  const preview = {
+    available: true,
+    executionId: 'execution',
+    version: 1,
+    incomplete: false,
+    blocks: [{ historySequence: 7, turnId: 'turn', record }],
+  }
+  expect(threadItems(mergeThreadPreview([], preview))).toEqual([
+    { variant: 'thought', key: -8, text: 'checking the file', turnId: 'turn', live: true },
+  ])
+  const final = entry(4, { historySequence: 7, turnId: 'turn', record })
+  expect(threadItems(mergeThreadPreview([final], preview))).toEqual([
+    { variant: 'thought', key: -8, text: 'checking the file', turnId: 'turn' },
+  ])
+})
 
 function run(id: string, executorType: IssueRun['executorType'], createdAt: string): IssueRun {
   return {

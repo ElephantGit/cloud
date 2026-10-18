@@ -23,5 +23,5 @@ required fields: no PKCE and no `display`. Token exchange posts `grant_type`, `c
 no credentials on the query string, no PKCE-NULL `code_verifier`); userinfo posts only
 `access_token` in the body. Token and userinfo calls require a total timeout, refuse redirects, and
 must not run inside database transactions. Oversized or malformed JSON is `ErrProviderRejected`,
-matching an explicit provider refusal. See the [Gateway authentication module](../README.en.md) and
-[deployment guide](../../../docs/gateway.md).
+matching an explicit provider refusal. See the [Gateway authentication module](../README.en.md) and the
+[Gateway document](../../../docs/identity/gateway.en.md).

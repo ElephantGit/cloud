@@ -67,7 +67,7 @@ Migrations are executed in ascending numerical sequence. The sequence is **appen
   If any mismatch or unapplied migration is found, the server terminates immediately.
 - **No AutoMigrate**: The production server daemon **never** executes DDL or modifies table structures at startup. Migrations must be applied using `cloudctl migrate` under dedicated database administrator credentials.
 
-See [core overview](../README.en.md), [cloudctl CLI](../../../cmd/cloudctl/README.en.md), and [Core contract](../../../docs/core-contract.md).
+See [core overview](../README.en.md), [cloudctl CLI](../../../cmd/cloudctl/README.en.md), and [Authoritative persistence](../../../docs/core/persistence.en.md).
 
 ## Append-only multiplayer runtime migrations
 
@@ -90,7 +90,7 @@ Merging current upstream preserves the complete filenames and original SQL of `0
 0033 adds private connection metadata, defaults, immutable ciphertext credentials, user-scoped
 idempotency records, run bindings and temporary grant digests. Historical runs remain unbound;
 composite foreign keys preserve user ownership. No plaintext key enters migrations or Cloud domain
-methods. See [model connections](../../../docs/model-connections.en.md).
+methods. See [personal model connections](../../../docs/models/model-access.en.md).
 ## 0033: Revision resume
 
 0033 follows 0032 and lets a new run resume its Issue's latest Revision (issue-run resume decision): `revisions` gains `prior_revision_id` (the Revision a run resumed), `bundle_revision_id` (a resumed run that added nothing stores no bundle and names the row holding it, always one hop), and `resume_refused_at` with `resume_refused_reason` (a restore found the base commit gone from the remote; only `prior_revision_base_unavailable`); `issue_runs` gains `resume_revision_id` (the prior Revision fixed at session start). The anonymous `revisions_check` is replaced by the named `revisions_bundle_shape`: existing rows still satisfy the two original shapes, and the new third shape only admits a reused bundle with a prior. Purely forward and retry-safe; the new columns are NULL on existing rows. Fresh-database, upgrade and repeated-migration evidence is `TestMigration0033RevisionResumeAppliesFreshAndUpgrades` in `integration/migration_upgrade_path_test.go`; the constraints' refusal of real rows is in `integration/agent_run_resume_test.go`.

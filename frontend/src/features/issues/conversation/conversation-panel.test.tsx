@@ -92,6 +92,51 @@ function renderConversation(runs: IssueRun[]) {
 }
 
 describe('TaskConversationPanel', () => {
+  it('reuses a failed send identity for manual retry and refreshes it after success', async () => {
+    const runs: IssueRun[] = []
+    const messages: TaskConversationMessage[] = []
+    mockConversation(runs, messages)
+    const keys: (string | null)[] = []
+    server.use(
+      http.post(`${CONVERSATION}/messages`, ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key'))
+        if (keys.length === 1)
+          return HttpResponse.json(
+            { code: 'unavailable', params: {}, requestId: 'lost-response' },
+            { status: 503 },
+          )
+        const message: TaskConversationMessage = {
+          id: `m${keys.length}`,
+          seq: keys.length - 1,
+          userId: 'u1',
+          agentId: 'a1',
+          body: 'repeat',
+          state: 'waiting',
+          runId: null,
+          threadSeq: null,
+          errorCode: null,
+          createdAt: '2026-10-18T02:00:00Z',
+        }
+        messages.push(message)
+        return HttpResponse.json({ resource: message }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.selectOptions(screen.getByLabelText('发送给'), 'a1')
+    const editor = screen.getByLabelText('任务对话输入')
+    await user.type(editor, 'repeat')
+    await user.click(screen.getByRole('button', { name: /^发送$/ }))
+    await screen.findByRole('alert')
+    await user.click(screen.getByRole('button', { name: /^发送$/ }))
+    await waitFor(() => expect(editor).toHaveValue(''))
+    await user.type(editor, 'repeat')
+    await user.click(screen.getByRole('button', { name: /^发送$/ }))
+    await waitFor(() => expect(keys).toHaveLength(3))
+    expect(keys[0]).toBeTypeOf('string')
+    expect(keys[1]).toBe(keys[0])
+    expect(keys[2]).not.toBe(keys[1])
+  })
   it('recovers the older failed delivery when a newer direct Run is queued', async () => {
     const failed: IssueRun = {
       ...run('r-failed', 'a1', 'completed', '2026-10-18T01:00:00Z'),

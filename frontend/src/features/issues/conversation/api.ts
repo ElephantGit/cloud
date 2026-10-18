@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 import type { TaskConversationMessage } from '@/api/generated.schemas'
 import {
   getApiV1TenantsTidIssuesIidConversation,
@@ -66,12 +67,33 @@ function invalidateTask(
 export function useSendTaskMessage(tid: string, issueId: string) {
   const queryClient = useQueryClient()
   const keyFor = useIdempotencyKeys()
+  const pending = useRef<{ scope: string; input: { agentId: string; body: string } } | null>(null)
+  const scope = `${tid}:${issueId}`
   return useMutation({
-    mutationFn: (input: { agentId: string; body: string }) =>
-      postApiV1TenantsTidIssuesIidConversationMessages(tid, issueId, input, {
-        headers: mutationHeaders(keyFor(input)),
-      }),
-    onSuccess: () => invalidateTask(queryClient, tid, issueId),
+    mutationFn: (input: { agentId: string; body: string }) => {
+      const prior = pending.current
+      if (
+        !prior ||
+        prior.scope !== scope ||
+        prior.input.agentId !== input.agentId ||
+        prior.input.body !== input.body
+      )
+        pending.current = { scope, input }
+      // A user retry after an unknown network outcome is the same intent. A successful send
+      // clears it so an intentionally repeated message receives a fresh identity.
+      return postApiV1TenantsTidIssuesIidConversationMessages(tid, issueId, input, {
+        headers: mutationHeaders(keyFor(pending.current?.input ?? input)),
+      })
+    },
+    onSuccess: (_result, input) => {
+      if (
+        pending.current?.scope === scope &&
+        pending.current.input.agentId === input.agentId &&
+        pending.current.input.body === input.body
+      )
+        pending.current = null
+      invalidateTask(queryClient, tid, issueId)
+    },
   })
 }
 

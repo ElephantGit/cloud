@@ -65,7 +65,7 @@ fixture 主机使用系统 DNS；该例外不能由用户连接配置开启。`2
 
 `*_test.go` 用生成的临时密钥、真实 TLS/HTTP 和故障策略替身验证加密、证书用途、流式边界、
 阻塞取消、诊断过滤及地址策略。`transport_network_test.go` 的可选无凭据探测只证明可信解析与
-真实 TLS 连接，HTTP 401 不能作为模型调用验收。真实 PostgreSQL 归属和授权验证见 Core 测试；实际 OpenCode 与
-模型服务证据由 cluster 独立 M4 验收提供。详见 [个人模型连接](../../docs/model-connections.md)。
+真实 TLS 连接，HTTP 401 不能作为模型调用验收。真实 PostgreSQL 归属和授权验证见 Core 测试。详见
+[model-gateway](../../docs/models/model-gateway.md) 与 [个人模型连接](../../docs/models/model-access.md)。
 `attempt*_test.go` 与 `usage_test.go` 另外验证发送前登记、重复快照、未知/零、单调计时、取消后收尾、
 失败不重发及原始转发字节；这些受控上游均为合成数据，不代表任何真实模型的计费结果。

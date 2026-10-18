@@ -34,14 +34,14 @@
 - **No business state**: The router owns no business logic, domain state transitions, or database connections. It delegates entirely to `core.Store.Public` and `core.Store.Control`.
 - **Contract synchronization**: Route paths, allowed fields, and HTTP methods must stay synchronized with `internal/contract` and `api/openapi.json`.
 
-See [api overview](../README.en.md), [Core domain](../../core/README.en.md), [OpenAPI contract](../../contract/README.en.md), and [Authentication](../../../docs/authentication.md).
+See [api overview](../README.en.md), [Core domain](../../core/README.en.md), [OpenAPI contract](../../contract/README.en.md), and [Internal credentials](../../../docs/identity/authentication.en.md).
 
 ## Personal model routes
 
 `/me/model-connections` and `/me/model-default` use verified user scope and strict model/version
 validation. Credential routes exist in the published contract; Cloud rejects them before reading
 the body, while Gateway routes directly to model-gateway. Thread exposes the initiator, model summary
-and append/end capabilities. See [model connections](../../../docs/model-connections.en.md).
+and append/end capabilities. See [personal model connections](../../../docs/models/model-access.en.md).
 
 ## Agent session Dashboard routes
 

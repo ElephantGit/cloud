@@ -67,7 +67,7 @@ Migrations are executed in ascending numerical sequence. The sequence is **appen
   If any mismatch or unapplied migration is found, the server terminates immediately.
 - **No AutoMigrate**: The production server daemon **never** executes DDL or modifies table structures at startup. Migrations must be applied using `cloudctl migrate` under dedicated database administrator credentials.
 
-See [core overview](../README.en.md), [cloudctl CLI](../../../cmd/cloudctl/README.en.md), and [Core contract](../../../docs/core-contract.md).
+See [core overview](../README.en.md), [cloudctl CLI](../../../cmd/cloudctl/README.en.md), and [Authoritative persistence](../../../docs/core/persistence.en.md).
 
 ## Append-only multiplayer runtime migrations
 
@@ -90,7 +90,7 @@ Merging current upstream preserves the complete filenames and original SQL of `0
 0033 adds private connection metadata, defaults, immutable ciphertext credentials, user-scoped
 idempotency records, run bindings and temporary grant digests. Historical runs remain unbound;
 composite foreign keys preserve user ownership. No plaintext key enters migrations or Cloud domain
-methods. See [model connections](../../../docs/model-connections.en.md).
+methods. See [personal model connections](../../../docs/models/model-access.en.md).
 ## 0033: Revision resume
 
 0033 follows 0032 and lets a new run resume its Issue's latest Revision (issue-run resume decision): `revisions` gains `prior_revision_id` (the Revision a run resumed), `bundle_revision_id` (a resumed run that added nothing stores no bundle and names the row holding it, always one hop), and `resume_refused_at` with `resume_refused_reason` (a restore found the base commit gone from the remote; only `prior_revision_base_unavailable`); `issue_runs` gains `resume_revision_id` (the prior Revision fixed at session start). The anonymous `revisions_check` is replaced by the named `revisions_bundle_shape`: existing rows still satisfy the two original shapes, and the new third shape only admits a reused bundle with a prior. Purely forward and retry-safe; the new columns are NULL on existing rows. Fresh-database, upgrade and repeated-migration evidence is `TestMigration0033RevisionResumeAppliesFreshAndUpgrades` in `integration/migration_upgrade_path_test.go`; the constraints' refusal of real rows is in `integration/agent_run_resume_test.go`.
@@ -111,14 +111,14 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 
 `0036_workflow_asset_imports.sql` records asset imports for `kind='workflow'` plugins: `workflow_asset_imports` holds one row per (space, plugin) with the `requested_revision` each administrator install/reinstall advances, the import progress and its lease; `workflow_asset_documents` holds one row per document path, and only an `outcome='imported'` row permanently occupies (space, namespace, identifier, document path) — failed documents are retried on the next trigger. The imported workflows and published snapshots are ordinary user data; these two tables only record provenance, idempotency and per-document outcomes. Forward-only and additive; no existing table changes.
 
-## 0037: WorkflowRun invocation references
+## 0038: WorkflowRun invocation references
 
-`0037_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
+`0038_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
 workflow IssueRun (including running and deferred) as failed, with
 `workflow_execution_unavailable_before_invocation_linkage`. It then adds a tenant-scoped composite
 foreign key and a unique invocation reference. The CHECK requires a reference for non-terminal
 workflow executors and forbids it for other executors. Historical terminal workflow rows may retain
 NULL references and remain editable; their input and outcomes are preserved without inventing runs.
 The CHECK is unconditionally validated, so fresh and upgraded databases enforce the same schema.
-The number follows the 0036 migration already on main. Fresh, seeded upgrade, repeated migration,
+The number follows the 0037 migration already on main. Fresh, seeded upgrade, repeated migration,
 constraint validation and historical update coverage is in `integration/workflow_invocation_migration_test.go`.

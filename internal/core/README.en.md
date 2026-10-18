@@ -52,13 +52,13 @@
 - **No in-memory state**: All state transitions must be committed to PostgreSQL before returning success.
 - **Tenant isolation**: Project and runtime reads verify active tenant membership and scope queries by a trusted `tenant_id`. `owner_user_id` remains for resource, credential, and execution ownership; it does not exclude another member of the same tenant.
 
-See [Database migrations](migrations/README.en.md), [Core contract](../../docs/core-contract.md), and [Authentication](../../docs/authentication.md).
+See [Database migrations](migrations/README.en.md), [Authoritative persistence](../../docs/core/persistence.en.md), and [Internal credentials](../../docs/identity/authentication.en.md).
 
 ## Personal model connections
 
 `model_connections.go`, `model_credentials.go`, `model_run_binding.go` and `model_grants.go`
 own private metadata, immutable ciphertext references, run snapshots and temporary-token digests.
-Core never receives or decrypts upstream API keys. See [personal model connections](../../docs/model-connections.en.md)
+Core never receives or decrypts upstream API keys. See [personal model connections](../../docs/models/model-access.en.md)
 for freezing, authorization, renewal and revocation rules.
 
 ## Workflow invocation linkage

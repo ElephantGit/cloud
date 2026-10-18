@@ -67,7 +67,7 @@
   如果发现任何校验和不匹配或未应用的迁移，服务器会立即终止。
 - **不使用 AutoMigrate**：生产服务器守护进程启动时**从不**执行 DDL 或修改表结构。迁移必须使用专用数据库管理员凭据通过 `cloudctl migrate` 应用。
 
-参见 [core 总览](../README.md)、[cloudctl CLI 工具](../../../cmd/cloudctl/README.md) 与 [核心不变量与契约](../../../docs/core-contract.md)。
+参见 [core 总览](../README.md)、[cloudctl CLI 工具](../../../cmd/cloudctl/README.md) 与 [权威持久化与事务模型](../../../docs/core/persistence.md)。
 
 ## 多人运行时控制的追加迁移
 
@@ -89,7 +89,7 @@
 
 0033 追加用户私有模型连接、默认模型、不可变密文凭据、用户作用域幂等记录、运行快照和
 临时授权摘要表。历史运行不会新增绑定；跨表复合外键保存用户归属。原始密钥从不进入迁移或
-Cloud 领域方法。冻结与撤销规则见 [模型连接契约](../../../docs/model-connections.md)。
+Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs/models/model-access.md)。
 ## 0033：Revision 续接
 
 0033 在 0032 之后支持新运行续接同一 Issue 的最近一次 Revision（issue-run 续接决策）：`revisions` 增加 `prior_revision_id`（续接自哪个 Revision）、`bundle_revision_id`（续接后没有新提交时不存 bundle，指向实际持有 bundle 的那一行，永远一跳）、`resume_refused_at` 与 `resume_refused_reason`（恢复时发现基础提交已从远端消失，只允许 `prior_revision_base_unavailable`）；`issue_runs` 增加 `resume_revision_id`（会话启动时固定的前序 Revision）。原匿名约束 `revisions_check` 换成具名的 `revisions_bundle_shape`：既有行仍满足原来的两种形状，新增的第三种形状只允许“沿用 bundle 且有前序”。纯前向、可重复执行，既有行的新列均为 NULL。新库、升级与重复迁移证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0033RevisionResumeAppliesFreshAndUpgrades`，约束对真实行的拒绝见 `integration/agent_run_resume_test.go`。
@@ -110,13 +110,13 @@ Cloud 领域方法。冻结与撤销规则见 [模型连接契约](../../../docs
 
 `0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
 
-## 0037：WorkflowRun 调用引用
+## 0038：WorkflowRun 调用引用
 
-`0037_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
+`0038_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
 （含 running、deferred）结算为 failed，原因是
 `workflow_execution_unavailable_before_invocation_linkage`，再添加租户一致的复合外键及唯一引用。
 CHECK 要求非终态 workflow 行具有引用，其他 executor 不得携带引用。历史终态 workflow 行可保留
 NULL 引用并继续更新；迁移保留其输入和结果，不虚构执行。CHECK 无条件 VALIDATE，空库和升级库
-采用同一份已验证约束。编号接在 main 已有的 0036 之后。
+采用同一份已验证约束。编号接在 main 已有的 0037 之后。
 空库、种子升级、重复迁移、约束验证状态及
 历史行更新测试见 `integration/workflow_invocation_migration_test.go`。

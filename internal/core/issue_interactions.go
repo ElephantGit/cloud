@@ -163,6 +163,13 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 // assist is deliberately stateless here: it resolves the target and its current descriptor, reads the
 // issue context, and returns suggestions. It writes nothing: no comment, no interaction, no run, no
 // context ref, no issue mutation (Issue collaboration D5/D9).
+//
+// Assist validates the same submission the confirm will, against the same descriptor, so it has to
+// accept the same keys: a form rendered before the rename answers under the old `version` key, and the
+// live descriptor no longer declares it. The fold is the confirm's own, taken from the one place the
+// rule is defined (see foldLegacyVersionAnswer), rather than a second compatibility rule that could
+// drift from it. Assist reads no version cursor: it resolves no version, and the graph is read only to
+// decide what the old key means for this workflow.
 func assistWorkflow(t *transaction, r *PublicRequest) Object {
 	i := issue(t, r.TenantID, r.IssueID)
 	targetID := r.Body.S("targetId")
@@ -172,6 +179,7 @@ func assistWorkflow(t *transaction, r *PublicRequest) Object {
 	// Assist is requested while the form is still being filled, so shape is validated but requiredness
 	// is not — an incomplete form is exactly when a suggestion is useful.
 	current := interactionValues(r.Body)
+	foldLegacyVersionAnswer(workflow(t, r.TenantID, targetID).O("graph"), current)
 	validateFormValues(descriptor, current, false)
 
 	in := AssistInput{

@@ -34,13 +34,13 @@
 - **无业务状态**：路由层不持有任何业务逻辑、领域状态流转或数据库连接。它完全委托给 `core.Store.Public` 与 `core.Store.Control` 执行。
 - **契约严格同步**：路由路径、允许字段以及 HTTP 方法必须与 `internal/contract` 及 `api/openapi.json` 保持严格同步。
 
-参见 [api 总览](../README.md)、[核心领域状态机](../../core/README.md)、[OpenAPI 契约](../../contract/README.md) 与 [认证配置与凭据](../../../docs/authentication.md)。
+参见 [api 总览](../README.md)、[核心领域状态机](../../core/README.md)、[OpenAPI 契约](../../contract/README.md) 与 [内部凭据与服务信任](../../../docs/identity/authentication.md)。
 
 ## 个人模型路由
 
 `/me/model-connections` 与 `/me/model-default` 使用已验证用户作用域，严格校验模型数组和版本。
 credential 路由只用于公开契约；Cloud HTTP 在读取请求体前拒绝，Gateway 将请求直接交给
-model-gateway。Thread 返回发起者、模型摘要及可追加/可结束权限。见 [模型连接](../../../docs/model-connections.md)。
+model-gateway。Thread 返回发起者、模型摘要及可追加/可结束权限。见 [个人模型连接](../../../docs/models/model-access.md)。
 
 ## Agent 会话 Dashboard 路由
 

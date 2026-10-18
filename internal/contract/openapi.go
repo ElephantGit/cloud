@@ -201,14 +201,19 @@ func Document() map[string]any {
 	// when the Node echoes that turn_id — so Node and system entries carry neither. The Node's own
 	// execution id and sequence are deliberately not part of this resource.
 	s["ThreadEntry"] = object(obj{
-		"seq":       obj{"type": "integer", "format": "int64", "minimum": 1},
-		"source":    enumeration("node", "user", "system"),
-		"kind":      str(),
-		"record":    obj{"type": "object", "additionalProperties": true},
-		"turnId":    optional(uuid()),
-		"status":    optional(obj{"type": "string", "enum": []string{"queued", "delivered", "discarded"}, "nullable": true, "description": "User-turn lifecycle. Null for node and system entries."}),
-		"createdAt": timestamp(),
+		"seq":             obj{"type": "integer", "format": "int64", "minimum": 1},
+		"source":          enumeration("node", "user", "system"),
+		"kind":            str(),
+		"record":          obj{"type": "object", "additionalProperties": true},
+		"turnId":          optional(uuid()),
+		"status":          optional(obj{"type": "string", "enum": []string{"queued", "delivered", "discarded"}, "nullable": true, "description": "User-turn lifecycle. Null for node and system entries."}),
+		"createdAt":       timestamp(),
+		"historySequence": optional(obj{"type": "integer", "format": "int64", "minimum": 0}),
 	}, "seq", "source", "kind", "record", "createdAt")
+	s["ThreadPreviewSnapshot"] = object(obj{
+		"available": boolean(), "executionId": str(), "version": number(), "incomplete": boolean(),
+		"blocks": array(object(obj{"historySequence": number(), "turnId": str(), "record": obj{"type": "object", "additionalProperties": true}}, "historySequence", "turnId", "record")),
+	}, "available", "executionId", "version", "incomplete", "blocks")
 	s["TaskConversationMessage"] = object(obj{
 		"id": uuid(), "seq": obj{"type": "integer", "format": "int64", "minimum": 1},
 		"userId": uuid(), "agentId": uuid(), "body": str(),
@@ -512,6 +517,18 @@ func Document() map[string]any {
 		},
 	}}
 	paths["/healthz"] = obj{"get": obj{"operationId": "health", "tags": []string{"health"}, "summary": "PostgreSQL readiness and optional dependency configuration", "responses": obj{"200": obj{"description": "Database reachable", "content": obj{"application/json": obj{"schema": object(obj{"status": enumeration("ok"), "dependencies": object(obj{"objectStore": enumeration("configured", "unconfigured")}, "objectStore")}, "status")}}}, "503": obj{"description": "Database unavailable", "content": obj{"application/json": obj{"schema": ref("Error")}}}}}}
+	paths["/api/v1/tenants/{tid}/issues/{iid}/runs/{rid}/thread/preview/events"] = obj{"get": obj{
+		"operationId": "getThreadPreviewEvents", "tags": []string{"tenants"}, "summary": "Stream ephemeral Thread replacement snapshots", "description": "Bounded optional previews, never durable history. Credentials and active membership are checked before each snapshot; terminal records supersede previews. Disconnect does not stop the Agent.",
+		"parameters": []any{obj{"name": "tid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "iid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "rid", "in": "path", "required": true, "schema": uuid()}},
+		"security":   []any{obj{"serviceCredential": []string{}, "userCredential": []string{}}},
+		"responses": obj{
+			"200": obj{"description": "Replacement snapshot stream", "content": obj{"text/event-stream": obj{"schema": ref("ThreadPreviewSnapshot")}}},
+			"401": obj{"description": errorDescription("401"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"403": obj{"description": errorDescription("403"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"404": obj{"description": errorDescription("404"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"503": obj{"description": errorDescription("503"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+		},
+	}}
 	return obj{"openapi": "3.0.3", "info": obj{"title": "Ora Cloud phase one", "version": "1.0.0", "description": "Authoritative PostgreSQL core. Simulation is separate; no production Controller/Node/Kubernetes implementation is implied."}, "servers": []any{obj{"url": "http://localhost:8080"}}, "paths": paths, "components": obj{"schemas": s, "securitySchemes": obj{"serviceCredential": obj{"type": "http", "scheme": "bearer", "bearerFormat": "EdDSA JWT", "description": "Pinned issuer/kid/kind=service/role, aud=ora-cloud, exp and iat required, <=5 minute lifetime. Public API requires gateway; internal control requires controller; nodes require scoped node role."}, "userCredential": obj{"type": "apiKey", "in": "header", "name": "X-Ora-User-Token", "description": "Separately signed EdDSA JWT: kind=user, source+sub, caller must equal authenticated service sub, aud=ora-cloud. User and membership status checked in PostgreSQL."}}}}
 }
 
@@ -813,6 +830,8 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// 202 because the request is accepted for asynchronous shutdown — the session is asked to
 		// stop, it has not stopped.
 		return object(obj{"threadState": enumeration("ending")}, "threadState"), "202"
+	case strings.HasSuffix(r.Path, "/thread/preview"):
+		return ref("ThreadPreviewSnapshot"), "200"
 	case strings.HasSuffix(r.Path, "/thread"):
 		// Reading a Thread returns one ascending-by-seq window of entries plus the run's Thread
 		// state and idle instant, all from one snapshot. `threadState` and `idleSince` are projected

@@ -157,6 +157,7 @@ func Routes() []Route {
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs", "", []string{"executorType", "executorId", "input"}},
 		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid", "", nil},
 		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread", "", nil},
+		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/preview", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/messages", "", []string{"content"}},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/end", "", nil},
 		{"GET", TaskConversationPath, "", nil},
@@ -481,6 +482,7 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 		})
 	}
 	r.GET("/api/v1/tenants/:tid/spaces/:spaceId/events", func(c *gin.Context) { sseEvents(store, auth, c) })
+	r.GET("/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/preview/events", func(c *gin.Context) { sseThreadPreviews(store, auth, c) })
 	r.NoRoute(func(c *gin.Context) { failure(c, &core.Fault{Code: "not_found", Status: 404, Params: core.Object{}}) })
 	return r
 }

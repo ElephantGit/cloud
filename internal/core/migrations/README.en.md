@@ -6,6 +6,8 @@ This module contains Ora Cloud's linear, forward-only PostgreSQL schema migratio
 
 ## Migration catalog
 
+`0040_thread_preview_positions.sql` adds only a nullable Node history position to durable Thread rows so final records supersede previews. Preview content is never stored and legacy positions are not invented. Integration tests cover upgrade and repeated application.
+
 Migrations are executed in ascending numerical sequence. The sequence is **append-only**: `0001–0007` is the upstream baseline (byte-identical to `upstream/main`, never modified), `0008–0012` are the local Issue migrations, and `0013` onward are follow-up compatibility migrations.
 
 - **`0001_core.sql`** (upstream): Foundational domain schema:

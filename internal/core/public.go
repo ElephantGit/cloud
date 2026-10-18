@@ -498,6 +498,8 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 		return listSpaces(t, r, uid)
 	case strings.HasSuffix(r.Path, "/members"):
 		return page(t, "SELECT m.user_id AS id,m.tenant_id,m.user_id,m.role,m.status,m.version,u.display_name FROM tenant_memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1", []any{r.TenantID}, "m.user_id", r)
+	case strings.HasSuffix(r.Path, "/thread/preview"):
+		return threadPreviewRead(t, t.store, r)
 	case strings.HasSuffix(r.Path, "/thread"):
 		// Thread D5: reading a run's Thread. Matched before the /runs arm below because the path
 		// contains "/runs/" too and this is a different resource — the Thread, not the run. The POST

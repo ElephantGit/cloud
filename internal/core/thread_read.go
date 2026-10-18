@@ -77,7 +77,7 @@ func threadRead(t *transaction, r *PublicRequest) Object {
 	case r.After != "":
 		// `after=N` is the forward cursor: everything strictly after N, oldest first.
 		rows = t.list(`
-			SELECT seq, source, kind, record, turn_id, status, created_at
+			SELECT seq, source, kind, record, turn_id, status, created_at, history_sequence
 			FROM thread_entries WHERE run_id=$1 AND seq>$2 ORDER BY seq LIMIT $3`,
 			run.S("id"), threadCursor(r.After), limit)
 	case r.Before != "":
@@ -86,7 +86,7 @@ func threadRead(t *transaction, r *PublicRequest) Object {
 		// to take that page; the outer one restores the response's ascending order.
 		rows = t.list(`
 			SELECT * FROM (
-				SELECT seq, source, kind, record, turn_id, status, created_at
+				SELECT seq, source, kind, record, turn_id, status, created_at, history_sequence
 				FROM thread_entries WHERE run_id=$1 AND seq<$2 ORDER BY seq DESC LIMIT $3
 			) w ORDER BY seq`,
 			run.S("id"), threadCursor(r.Before), limit)
@@ -96,7 +96,7 @@ func threadRead(t *transaction, r *PublicRequest) Object {
 		// Thread has grown.
 		rows = t.list(`
 			SELECT * FROM (
-				SELECT seq, source, kind, record, turn_id, status, created_at
+				SELECT seq, source, kind, record, turn_id, status, created_at, history_sequence
 				FROM thread_entries WHERE run_id=$1 ORDER BY seq DESC LIMIT $2
 			) w ORDER BY seq`,
 			run.S("id"), limit)
@@ -162,6 +162,9 @@ func threadEntryView(row Object) Object {
 	if row.S("source") == "user" {
 		out["turnId"] = row["turnId"]
 		out["status"] = row["status"]
+	}
+	if row["historySequence"] != nil {
+		out["historySequence"] = row["historySequence"]
 	}
 	return out
 }

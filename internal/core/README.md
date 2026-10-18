@@ -6,6 +6,8 @@
 
 ## 模块概览
 
+- `thread_preview.go`：有界的进程内可选预览。按执行与版本替换，接收时核对租约和活执行，读取时核对任务权限并排除已定型位置；不产生持久回执或 Ack。缓存过期或跨副本未命中时明确降级为持久 Thread。`thread_preview_test.go` 覆盖容量、过期、乱序和最终覆盖。
+
 - `task_conversation_messages.go`、`task_conversation_queue.go`、`task_conversation_context.go`：任务级有序消息、同任务 Agent 串行交接及从 Node 可见正文冻结的后续提示。失败消息阻塞后续交接；未交付成果须显式放弃后才能从已保存 Revision 继续。真实 PostgreSQL 测试覆盖并发幂等、权限、释放证据、失败暂停和缺失历史。
 
 Agent 初始提示从冻结的运行输入读取任务标题、说明、最近评论与显式引用；没有 ContextBuilder 时同样保留这些字段。不会在启动时重新读取可变任务信息。`agent_initial_context_test.go` 验证上下文不丢失及历史快照缺字段时不伪造内容。

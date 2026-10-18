@@ -6,6 +6,8 @@
 
 ## Module map
 
+- `thread_preview.go`: bounded process-local optional previews, replaced by execution/version. Admission verifies lease and live execution; authorized reads remove settled positions. It creates no receipt or Ack. Expiry or a different replica explicitly degrades to durable Thread data. `thread_preview_test.go` covers bounds, expiry, reordering and final dominance.
+
 - `task_conversation_messages.go`, `task_conversation_queue.go`, and `task_conversation_context.go` own ordered task messages, serialized Agent handoff, and later prompts frozen from Node-projected assistant text. A failed message blocks later handoffs; an undelivered result requires an explicit discard before continuing from a saved Revision. Real PostgreSQL tests cover concurrent idempotency, authorization, release evidence, failure pauses, and missing history.
 
 The initial Agent prompt carries the frozen task title, description, recent comments and explicit references, including the no-ContextBuilder path. Startup does not re-read mutable task context. `agent_initial_context_test.go` checks context preservation and does not invent fields absent from legacy snapshots.

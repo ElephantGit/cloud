@@ -2,6 +2,7 @@ package controlgrpc
 
 import (
 	"context"
+	"encoding/json"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -10,11 +11,23 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
-// agentRunService is the session side of the control plane: Thread events, Thread commands and
-// upload grants. Writes carry a submission identity, the same way ExecutionService does.
+// agentRunService serves durable session operations and the independent optional preview path.
 type agentRunService struct {
 	controlpb.UnimplementedAgentRunServiceServer
 	store *core.Store
+}
+
+// PublishThreadPreview accepts a lossy replacement under the current execution and lease fences.
+func (s *agentRunService) PublishThreadPreview(ctx context.Context, req *controlpb.PublishThreadPreviewRequest) (*controlpb.PublishThreadPreviewResponse, error) {
+	blocks := make([]core.ThreadPreviewBlock, 0, len(req.GetBlocks()))
+	for _, block := range req.GetBlocks() {
+		blocks = append(blocks, core.ThreadPreviewBlock{HistorySequence: int64(block.GetHistorySequence()), TurnID: block.GetTurnId(), Record: json.RawMessage(block.GetRecord())})
+	}
+	err := s.store.PublishThreadPreview(ctx, principal(ctx), req.GetEpoch(), req.GetOperationId(), core.ThreadPreviewSnapshot{ExecutionID: req.GetExecutionId(), Version: req.GetVersion(), Blocks: blocks, Incomplete: req.GetIncomplete()})
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &controlpb.PublishThreadPreviewResponse{}, nil
 }
 
 func (s *agentRunService) TakeOverThreadEvents(ctx context.Context, req *controlpb.TakeOverThreadEventsRequest) (*controlpb.TakeOverThreadEventsResponse, error) {
@@ -33,6 +46,9 @@ func (s *agentRunService) TakeOverThreadEvents(ctx context.Context, req *control
 		}
 		if ev.GetVisibleTextTruncated() {
 			item["visibleTextTruncated"] = true
+		}
+		if ev.HistorySequence != nil {
+			item["historySequence"] = int64(ev.GetHistorySequence())
 		}
 		events = append(events, item)
 	}

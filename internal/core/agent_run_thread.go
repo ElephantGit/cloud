@@ -181,15 +181,15 @@ func (s *Store) settleThreadEvents(t *transaction, runID, executionID string, ev
 		// the A-side batch classification ever let a duplicate through. Identical content is a
 		// no-op; different content under the same identity is an invariant error, never a rewrite.
 		if prior := t.one("SELECT * FROM thread_entries WHERE node_execution_id=$1 AND node_sequence=$2", executionID, ev.N("sequence")); prior != nil {
-			if prior.S("kind") != kind || jsonText(prior.O("record")) != jsonText(ev.O("record")) || prior.S("visibleText") != ev.S("visibleText") || prior.B("visibleTextTruncated") != ev.B("visibleTextTruncated") {
+			if prior.S("kind") != kind || jsonText(prior.O("record")) != jsonText(ev.O("record")) || prior.S("visibleText") != ev.S("visibleText") || prior.B("visibleTextTruncated") != ev.B("visibleTextTruncated") || (prior["historySequence"] == nil) != (ev["historySequence"] == nil) || prior.N("historySequence") != ev.N("historySequence") {
 				return fmt.Errorf("settleThreadEvents: run %s already has a different entry for execution %s node sequence %d", runID, executionID, ev.N("sequence"))
 			}
 			continue
 		}
 		t.exec(`
-			INSERT INTO thread_entries(run_id, seq, source, kind, record, turn_id, node_execution_id, node_sequence, visible_text, visible_text_truncated)
-			VALUES($1,$2,'node',$3,$4,$5,$6,$7,$8,$9)`,
-			runID, next, kind, jsonText(ev.O("record")), nullable(ev.S("turnId")), executionID, ev.N("sequence"), nullable(ev.S("visibleText")), ev.B("visibleTextTruncated"))
+			INSERT INTO thread_entries(run_id, seq, source, kind, record, turn_id, node_execution_id, node_sequence, visible_text, visible_text_truncated, history_sequence)
+			VALUES($1,$2,'node',$3,$4,$5,$6,$7,$8,$9,$10)`,
+			runID, next, kind, jsonText(ev.O("record")), nullable(ev.S("turnId")), executionID, ev.N("sequence"), nullable(ev.S("visibleText")), ev.B("visibleTextTruncated"), ev["historySequence"])
 		next++
 		taken++
 	}

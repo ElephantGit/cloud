@@ -78,6 +78,9 @@ func onThreadEvents(ctx context.Context, tx *sql.Tx, run, execution string, even
 			return fmt.Errorf("business hook: run %s execution %s event %d carries a record that is not a JSON object", run, execution, ev.N("sequence"))
 		}
 		item := Object{"sequence": ev.N("sequence"), "turnId": ev.S("turnId"), "record": content}
+		if position, present := ev["historySequence"]; present {
+			item["historySequence"] = position
+		}
 		if visible, present := ev["visibleText"]; present {
 			item["visibleText"] = visible
 		}

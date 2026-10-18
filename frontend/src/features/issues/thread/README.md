@@ -4,7 +4,7 @@
 
 ## 职责
 
-Issue 详情页右侧的「Agent 会话」栏：选出该 Issue 最近一次 agent run，读取它的 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新，并提供发送消息与结束会话。
+Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。历史选择不提供发送入口；最新会话仍按服务端权限发送和结束。
 
 不负责：run 的创建与列表（`features/issues/api` 的 `useRuns`）、SSE 连接本身（`features/spaces/use-space-events`）、Issue 其他栏目。
 
@@ -15,6 +15,7 @@ Issue 详情页右侧的「Agent 会话」栏：选出该 Issue 最近一次 age
 | `thread-entries.ts` | 纯函数：选最新 agent run、按 seq 合并窗口、把 ThreadEntry 映射为显示行（合并同一 turn 的连续 agent chunk）、状态中文标签 |
 | `thread-api.ts` | TanStack Query 层：`threadQueryKey`、`useThread`（尾部首读 + 增量读 + 404 等待 + 兜底轮询）、`useLoadOlderThread`、`useSendThreadMessage`、`useEndThread`、故障文案 |
 | `thread-messages.tsx` | 展示组件：消息列表（`role=list`，名称「会话消息」）与「加载更早」按钮 |
+| `thread-row.tsx` | 安全 Markdown、折叠执行上下文、思考和可展开的工具输入输出 |
 | `thread-composer.tsx` | 输入框「给 Agent 发送消息」、「发送」与带确认步骤的「结束会话」 |
 | `thread-panel.tsx` | `IssueThreadPanel`：选 run、标题「Agent 会话」、状态徽章、等待提示与组合 |
 | `run-delivery.tsx` | 会话下方的 Revision 交付一行（`role=status`，名称「Revision 交付」）：已登记的 Revision 显示短提交与是否有改动（续接后无新提交时说明沿用了续接的成果），否则按 `result.deliveryState` 说明跳过或失败，会话已结束但运行未结算时显示保存中 |
@@ -28,6 +29,8 @@ Issue 详情页右侧的「Agent 会话」栏：选出该 Issue 最近一次 age
 依赖 `src/api`（生成的 Thread 客户端与类型）、`features/issues/api`（`useRuns`）、`features/issues/types`、`features/spaces/api`（`mutationHeaders`、`useIdempotencyKeys`）、`lib/api-client`（`faultCode`）、`components/ui`。由 `features/issues/issue-detail-page.tsx` 使用。`features/spaces/use-space-events.ts` 通过生成客户端的同一个 query key 失效本模块的查询，但不 import 本模块。
 
 ## 不变量
+
+显示层依赖 `features/session-data` 的公开解析器和 `features/conversation-content` 的安全 Markdown。工具更新按 turn/call 身份合并，缺少身份则保持独立；未知耗时不猜值。明确选择的历史 Run 缺失时显示错误，不能回退到最新执行；没有 Thread 的终态 Run 不继续轮询等待声明。阅读历史时新消息只提示，不抢滚动；前插历史页按高度差保持锚点。
 
 - 缓存里的 entries 永远是一段连续、按 seq 升序的窗口：首读取尾部，「加载更早」用 `before=最旧 seq` 前插，增量读用 `after=已见最大 seq`（若有 queued 的用户 turn，则退回到它之前，以刷新 queued→delivered）。按 seq 去重，绝不重复。
 - 发送成功后**不**把返回的 entry 直接并入缓存：它的 seq 可能领先于尚未读到的条目，提前推进窗口会永久跳过它们；只靠重新读取按序拿到。

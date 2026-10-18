@@ -111,13 +111,17 @@ describe('threadItems', () => {
       { variant: 'prompt', key: 1, text: 'Fix the login' },
       { variant: 'note', key: 2, text: '会话已开始' },
       { variant: 'agent', key: 3, text: 'Hello', turnId: 't1' },
-      { variant: 'note', key: 5, text: 'tool_call' },
+      expect.objectContaining({
+        variant: 'tool',
+        key: 5,
+        tool: expect.objectContaining({ id: null }),
+      }),
       { variant: 'separator', key: 6 },
       { variant: 'user', key: 7, text: 'Now add tests', status: '排队中' },
       { variant: 'agent', key: 9, text: 'On it', turnId: 't2' },
       { variant: 'agent', key: 10, text: 'Other turn', turnId: 't3' },
-      { variant: 'note', key: 11, text: 'gap' },
-      { variant: 'note', key: 12, text: 'update' },
+      { variant: 'note', key: 11, text: '此处有缺失的会话记录' },
+      { variant: 'note', key: 12, text: '暂不支持展示的会话事件，可在执行详情中查看原始记录' },
     ])
   })
 
@@ -131,6 +135,67 @@ describe('threadItems', () => {
       entry(2, { source: 'user', kind: 'user_turn', record: { content: 42 } }),
     ])
     expect(items.map((item) => ('text' in item ? item.text : ''))).toEqual(['one', ''])
+  })
+
+  it('retains thought text and merges sparse tool updates by turn and call identity', () => {
+    const update = (seq: number, turnId: string, payload: Record<string, unknown>) =>
+      entry(seq, { turnId, record: { update: payload } })
+    const rows = threadItems([
+      update(1, 'a', {
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'Checking ' },
+      }),
+      update(2, 'a', {
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'files' },
+      }),
+      update(3, 'a', {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'read',
+        title: 'hello.py',
+        kind: 'read',
+        status: 'in_progress',
+        rawInput: { path: 'hello.py' },
+      }),
+      update(4, 'a', {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'read',
+        status: 'completed',
+        rawOutput: { output: 'hello' },
+      }),
+      update(5, 'b', { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'other.py' }),
+    ])
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toEqual({ variant: 'thought', key: 1, text: 'Checking files', turnId: 'a' })
+    expect(rows[1]).toMatchObject({
+      variant: 'tool',
+      key: 3,
+      tool: {
+        title: 'hello.py',
+        status: 'completed',
+        rawInput: { path: 'hello.py' },
+        output: 'hello',
+      },
+    })
+    expect(rows[2]).toMatchObject({ variant: 'tool', key: 5, tool: { title: 'other.py' } })
+  })
+
+  it('keeps unidentified tools separate and retains an orphan result', () => {
+    const rows = threadItems(
+      [1, 2].map((seq) =>
+        entry(seq, {
+          record: {
+            update: {
+              sessionUpdate: 'tool_call_update',
+              status: 'completed',
+              rawOutput: { output: 'result' },
+            },
+          },
+        }),
+      ),
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows.every((row) => row.variant === 'tool' && row.tool.output === 'result')).toBe(true)
   })
 
   it('reads durable failure codes and replaces untrusted diagnostics with a fixed message', () => {

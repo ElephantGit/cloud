@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ActivityPanel } from '@/features/issues/components/activity-panel'
+import { IssueWorkspace } from '@/features/issues/components/issue-workspace'
+import { ConversationMarkdown } from '@/features/conversation-content/markdown'
 import { IssuePropertiesPanel } from '@/features/issues/components/issue-properties-panel'
 import {
   useDeleteIssue,
@@ -16,7 +17,6 @@ import {
   type UpdateIssueInput,
 } from '@/features/issues/api'
 import { issueNumber } from '@/features/issues/present'
-import { IssueThreadPanel } from '@/features/issues/thread/thread-panel'
 import { workspacePaths } from '@/lib/paths'
 
 /**
@@ -76,12 +76,13 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           </Button>
         }
       />
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6 md:flex-row">
-        <div className="min-w-0 flex-1 space-y-4">
+      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 md:flex-row md:p-6">
+        <div className="mx-auto min-w-0 w-full max-w-[960px] flex-1 space-y-5">
           <h1 className="text-xl font-semibold">{issue.title}</h1>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-            {issue.description || '暂无描述。'}
-          </p>
+          <details className="rounded-lg border p-3">
+            <summary className="cursor-pointer text-sm text-muted-foreground">任务说明</summary>
+            <ConversationMarkdown text={issue.description || '暂无描述。'} />
+          </details>
           {updateIssue.isError && (
             <div role="alert" className="space-y-1 text-sm text-destructive">
               <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
@@ -103,19 +104,21 @@ export function IssueDetailPage({ slug }: { slug: string }) {
               </Button>
             </div>
           )}
-          <ActivityPanel slug={slug} issueId={issue.id} members={members} />
+          <IssueWorkspace key={issue.id} tid={slug} issueId={issue.id} members={members} />
         </div>
-        <IssuePropertiesPanel
-          tid={slug}
-          issue={issue}
-          issues={allIssues}
-          statuses={statuses}
-          members={members}
-          issueHref={p.issueDetail}
-          onCommit={commit}
-          saving={propertiesBusy}
-        />
-        <IssueThreadPanel tid={slug} issueId={issue.id} members={members} />
+        <details open className="w-full shrink-0 space-y-4 md:w-72">
+          <summary className="cursor-pointer text-sm font-medium">任务属性</summary>
+          <IssuePropertiesPanel
+            tid={slug}
+            issue={issue}
+            issues={allIssues}
+            statuses={statuses}
+            members={members}
+            issueHref={p.issueDetail}
+            onCommit={commit}
+            saving={propertiesBusy}
+          />
+        </details>
       </div>
     </div>
   )

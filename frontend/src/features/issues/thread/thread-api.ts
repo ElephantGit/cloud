@@ -160,12 +160,15 @@ export function threadPollInterval(snapshot: ThreadSnapshot | undefined): number
  * (poll, space event, mutation) fetches only entries after the cached window,
  * so an entry is never duplicated and a concurrent append is never skipped.
  */
-export function useThread(ref: ThreadRef) {
+export function useThread(ref: ThreadRef, runSettled = false) {
   const queryClient = useQueryClient()
   return useQuery({
     queryKey: threadQueryKey(ref),
     queryFn: ({ signal }) => readThread(ref, queryClient, signal),
-    refetchInterval: (query) => threadPollInterval(query.state.data),
+    refetchInterval: (query) =>
+      runSettled && query.state.data?.declared === false
+        ? false
+        : threadPollInterval(query.state.data),
   })
 }
 

@@ -14,6 +14,7 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 | `create-issue-dialog.tsx` / `issue-project-select.tsx` | Creation and detail project selection; loading or failure never clears a stored reference |
 | `issue-properties-panel.tsx` | Detail-page properties column: status, priority, assignee, parent/sub-issues, project, labels, properties, context refs |
 | `activity-panel.tsx` | Activity column: timeline and new comments/targets |
+| `issue-workspace.tsx` | Main conversation, execution history and activity tabs; URL-persisted historical Run selection and links to the existing full session inspector |
 | `target-picker.tsx` / `pending-targets.tsx` | Loading, empty, search and retry states of the real @ directory, plus pending targets |
 | `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow form rendering, AI suggestions, review and confirm |
 | `context-refs-panel.tsx` | Adding and removing context refs |

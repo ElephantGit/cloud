@@ -14,7 +14,7 @@ The tenant's issue board, list and detail pages, plus the Cloud Issue data layer
 | `types.ts` | Issue domain types mirroring the backend contract; preparation uses generated `RunPreparation` without duplicating its contract |
 | `present.ts` | Pure display helpers: number, assignee, status columns |
 | `issues-page.tsx` / `issues-board.tsx` / `issues-list.tsx` | The issues page, the board (drag → `move` anchors) and the list |
-| `issue-detail-page.tsx` | Activity, versioned Project association with failure reload, real Agent entry and the existing Thread; supplies member names |
+| `issue-detail-page.tsx` | Wide conversation area, Markdown description and collapsible properties; versioned Project updates with recovery reload, composing conversation/execution/activity navigation |
 | `*.test.ts(x)` | Page and hook tests |
 
 Subdirectories: `components/` (page sub-components), `thread/` (the Agent session panel).

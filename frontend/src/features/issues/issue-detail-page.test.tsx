@@ -83,14 +83,14 @@ function DetailRoute() {
   )
 }
 
-function renderIssueDetail(issueId: string) {
+function renderIssueDetail(issueId: string, search = '') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
     [
       { path: '/w/:workspaceSlug/issues', element: <div>Issues list screen</div> },
       { path: '/w/:workspaceSlug/issues/:issueId', element: <DetailRoute /> },
     ],
-    { initialEntries: [`/w/real-workspace/issues/${issueId}`] },
+    { initialEntries: [`/w/real-workspace/issues/${issueId}${search}`] },
   )
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -113,6 +113,69 @@ async function selectRepository(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('IssueDetailPage', () => {
+  it('opens a historical run from execution records, persists its URL and keeps it read-only', async () => {
+    const runs: IssueRun[] = ['old', 'new'].map((id, index) => ({
+      id,
+      tenantId: 't1',
+      issueId: 'i1',
+      executorType: 'agent',
+      executorId: 'a1',
+      input: { task: `Task ${id}` },
+      status: 'completed',
+      createdAt: `2026-10-0${index + 1}T00:00:00Z`,
+      updatedAt: `2026-10-0${index + 1}T00:00:00Z`,
+    }))
+    serveDetail(makeIssue('i1', 'History'), undefined, runs)
+    server.use(
+      http.get('/api/v1/tenants/t1/issues/i1/runs/:rid/thread', ({ params }) =>
+        HttpResponse.json({
+          items: [
+            {
+              seq: 1,
+              source: 'node',
+              kind: 'update',
+              record: {
+                update: {
+                  sessionUpdate: 'agent_message_chunk',
+                  content: { type: 'text', text: `Reply ${String(params['rid'])}` },
+                },
+              },
+              createdAt: '2026-10-01T00:00:00Z',
+            },
+          ],
+          threadState: 'ended',
+          idleSince: null,
+          nextCursor: 1,
+          prevCursor: 1,
+          initiatorUserId: 'u1',
+          model: null,
+          canAppend: false,
+          canEnd: false,
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const { router } = renderIssueDetail('i1')
+    expect(await screen.findByText('Reply new')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /执行记录/ }))
+    const old = screen.getByText('Task old').closest('li')
+    if (!old) throw new Error('Historical run card missing')
+    await user.click(within(old).getByRole('button', { name: '查看执行详情' }))
+    expect(await screen.findByText('Reply old')).toBeInTheDocument()
+    expect(router.state.location.search).toContain('run=old')
+    expect(screen.queryByLabelText('给 Agent 发送消息')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '返回最新执行' }))
+    expect(await screen.findByText('Reply new')).toBeInTheDocument()
+    expect(router.state.location.search).not.toContain('run=')
+  })
+
+  it('does not silently substitute the latest run for an invalid deep link', async () => {
+    serveDetail(makeIssue('i1', 'Missing history'))
+    renderIssueDetail('i1', '?view=conversation&run=missing')
+    expect(await screen.findByRole('alert')).toHaveTextContent('该执行记录不存在或已不可访问')
+    expect(screen.queryByLabelText('给 Agent 发送消息')).not.toBeInTheDocument()
+  })
+
   it.each([200, 503])(
     'keeps recovery reload exclusive and preserves the next save failure after GET %s',
     async (reloadStatus) => {
@@ -329,6 +392,7 @@ describe('IssueDetailPage', () => {
     )
     const user = userEvent.setup()
     renderIssueDetail('i1')
+    await user.click(await screen.findByRole('tab', { name: '任务动态' }))
     await user.click(await screen.findByPlaceholderText('添加评论…'))
     await user.paste('A plain comment')
     await user.click(screen.getByRole('button', { name: '评论' }))

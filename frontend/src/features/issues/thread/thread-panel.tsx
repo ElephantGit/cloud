@@ -17,11 +17,13 @@ function DeclaredThread({
   snapshot,
   names,
   preparation,
+  readOnly,
 }: {
   threadRef: ThreadRef
   snapshot: Extract<ThreadSnapshot, { declared: true }>
   names: ReadonlyMap<string, string>
   preparation: IssueRun['preparation']
+  readOnly: boolean
 }) {
   const loadOlder = useLoadOlderThread(threadRef)
   const oldest = snapshot.entries[0]?.seq
@@ -49,13 +51,25 @@ function DeclaredThread({
           {snapshot.model.connectionName} · {snapshot.model.modelName}（{snapshot.model.modelId}）
         </p>
       )}
-      <ThreadComposer
-        threadRef={threadRef}
-        threadState={snapshot.threadState}
-        canAppend={snapshot.canAppend}
-        canEnd={snapshot.canEnd}
-      />
+      {!readOnly && (
+        <ThreadComposer
+          threadRef={threadRef}
+          threadState={snapshot.threadState}
+          canAppend={snapshot.canAppend}
+          canEnd={snapshot.canEnd}
+        />
+      )}
     </>
+  )
+}
+
+function UndeclaredRun({ run }: { run: IssueRun }) {
+  const settled = ['completed', 'failed', 'cancelled'].includes(run.status)
+  if (!settled || run.preparation) return <RunPreparation progress={run.preparation ?? null} />
+  return (
+    <p role="status" className="text-sm text-muted-foreground">
+      运行已结束，未产生会话记录。执行状态：{run.status === 'failed' ? '失败' : '已结束'}
+    </p>
   )
 }
 
@@ -64,13 +78,16 @@ function RunThread({
   run,
   names,
   runs,
+  readOnly,
 }: {
   threadRef: ThreadRef
   run: IssueRun
   names: ReadonlyMap<string, string>
   runs: readonly IssueRun[]
+  readOnly: boolean
 }) {
-  const thread = useThread(threadRef)
+  const settled = ['completed', 'failed', 'cancelled'].includes(run.status)
+  const thread = useThread(threadRef, settled)
   const headingId = useId()
   const snapshot = thread.data
 
@@ -89,13 +106,14 @@ function RunThread({
       <RunResume run={run} runs={runs} />
       {thread.isPending && <Skeleton className="h-16 w-full" />}
       {thread.isError && <p className="text-sm text-destructive">会话加载失败</p>}
-      {snapshot?.declared === false && <RunPreparation progress={run.preparation ?? null} />}
+      {snapshot?.declared === false && <UndeclaredRun run={run} />}
       {snapshot?.declared && (
         <DeclaredThread
           threadRef={threadRef}
           snapshot={snapshot}
           names={names}
           preparation={run.preparation}
+          readOnly={readOnly}
         />
       )}
       <RunDelivery
@@ -117,23 +135,37 @@ export function IssueThreadPanel({
   tid,
   issueId,
   members,
+  selectedRunId,
 }: {
   tid: string
   issueId: string
   members?: TenantMember[]
+  /** A historical run chosen by the task page; never silently falls back to another run. */
+  selectedRunId?: string | undefined
 }) {
-  const { data: runs = [] } = useRuns(tid, issueId)
-  const run = latestAgentRun(runs)
+  const { data: runs = [], isPending, isError } = useRuns(tid, issueId)
+  const latest = latestAgentRun(runs)
+  const run = selectedRunId
+    ? runs.find((candidate) => candidate.id === selectedRunId && candidate.executorType === 'agent')
+    : latest
+  if (isError) return <p role="alert">执行记录加载失败，请稍后重试。</p>
+  if (selectedRunId && !isPending && !run) return <p role="alert">该执行记录不存在或已不可访问。</p>
   if (!run) return null
   return (
-    <aside className="w-full shrink-0 md:w-80">
+    <div className="min-w-0 w-full">
+      {selectedRunId && run.id !== latest?.id && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          正在查看历史执行；继续对话请返回最新执行。
+        </p>
+      )}
       <RunThread
         key={run.id}
         run={run}
         runs={runs}
         threadRef={{ tid, issueId, runId: run.id }}
         names={memberNameById(members)}
+        readOnly={!!selectedRunId && run.id !== latest?.id}
       />
-    </aside>
+    </div>
   )
 }

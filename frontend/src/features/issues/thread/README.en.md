@@ -4,7 +4,7 @@
 
 ## Responsibility
 
-The "Agent 会话" column on the issue detail page: it picks the issue's most recent agent run, reads that run's Thread (`/runs/:rid/thread`), pages it in both directions, refreshes it from space events, and offers sending a message and ending the session.
+The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. Historical selections are read-only; the latest Thread retains server-authorized send/end controls.
 
 Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the SSE connection itself (`features/spaces/use-space-events`), the issue's other columns.
 
@@ -15,6 +15,7 @@ Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the S
 | `thread-entries.ts` | Pure functions: pick the newest agent run, merge windows by seq, map ThreadEntry to display rows (consecutive agent chunks of one turn merge), Chinese state labels |
 | `thread-api.ts` | TanStack Query layer: `threadQueryKey`, `useThread` (tail first read + incremental reads + 404 waiting + fallback poll), `useLoadOlderThread`, `useSendThreadMessage`, `useEndThread`, fault messages |
 | `thread-messages.tsx` | Presentational: the message list (`role=list`, named "会话消息") and the "加载更早" button |
+| `thread-row.tsx` | Safe Markdown, collapsed execution context, thoughts and expandable tool input/output |
 | `thread-composer.tsx` | The "给 Agent 发送消息" textarea, "发送", and "结束会话" with a confirm step |
 | `run-delivery.tsx` | The Revision delivery line under the Thread (`role=status`, named "Revision 交付"): a registered Revision shows its short commit and whether files changed (or, for a resumed run with no new commits, that it reused the resumed work); otherwise `result.deliveryState` explains a skip or failure, and an ended session whose run has not settled shows saving |
 | `run-resume.tsx` | The resume line above the Thread (`role=note`, named "续接"): when the run resumed an earlier Revision of the same Issue, it finds that Revision among the Issue's runs and shows its short commit; a fresh run renders nothing |
@@ -24,6 +25,8 @@ Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the S
 | `*.test.ts(x)` | Pure-function unit tests and MSW integration tests |
 
 ## Dependencies
+
+Presentation also uses the public `features/session-data` adapters and `features/conversation-content` Markdown renderer. Tool updates merge by turn/call identity; unidentified calls remain separate and unknown timing is not guessed. A missing explicitly selected Run never falls back to the latest Run. Settled Runs with no Thread stop declaration polling. Reading history disables automatic following; prepending pages preserves the scroll-height anchor.
 
 Depends on `src/api` (generated Thread client and types), `features/issues/api` (`useRuns`), `features/issues/types`, `features/spaces/api` (`mutationHeaders`, `useIdempotencyKeys`), `lib/api-client` (`faultCode`), `components/ui`. Used by `features/issues/issue-detail-page.tsx`. `features/spaces/use-space-events.ts` invalidates this module's query through the same generated-client query key without importing this module.
 

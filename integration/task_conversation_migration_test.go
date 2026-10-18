@@ -12,10 +12,21 @@ import (
 func TestMigration0039TaskConversationFreshAndUpgrade(t *testing.T) {
 	fresh, _ := testSchema(t, "test_tconv39f_")
 	migratedTwice(t, newStoreOnSchema(t, fresh))
-	for _, table := range []string{"task_conversations", "task_conversation_messages"} {
+	for _, table := range []string{"task_conversations", "task_conversation_messages", "task_conversation_scan_state"} {
 		if !tableExists(t, fresh, table) {
 			t.Fatalf("fresh schema missing %s", table)
 		}
+	}
+	var scanRows int
+	must(t, fresh.QueryRow("SELECT count(*) FROM task_conversation_scan_state WHERE singleton=true").Scan(&scanRows))
+	if scanRows != 1 {
+		t.Fatalf("fresh queue scan has %d cursor rows", scanRows)
+	}
+	var projected bool
+	must(t, fresh.QueryRow(`SELECT count(*)=2 FROM information_schema.columns WHERE table_schema=current_schema()
+		AND table_name='thread_entries' AND column_name IN ('visible_text','visible_text_truncated')`).Scan(&projected))
+	if !projected {
+		t.Fatal("fresh Thread schema is missing Node's optional text projection")
 	}
 
 	pool, _ := testSchema(t, "test_tconv39u_")

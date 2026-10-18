@@ -33,7 +33,7 @@ function ToolStep({ tool }: { tool: SessionTool }) {
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">
           {TOOL_STATUS[tool.status ?? ''] ?? '状态未知'}
-          {tool.durationMs === null ? '' : ` · ${tool.durationMs}ms`}
+          {tool.durationMs === null ? ' · 耗时未知' : ` · ${tool.durationMs}ms`}
         </span>
       </summary>
       <div className="min-w-0 space-y-3 border-t p-3">

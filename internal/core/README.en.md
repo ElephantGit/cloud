@@ -6,6 +6,8 @@
 
 ## Module map
 
+- `task_conversation_readiness.go`: safe project/personal-default-model gaps for the current member. It exposes no connection/credential identity, grants no access to another person's model session and is rechecked on dispatch.
+
 - `task_conversation_stop.go`: atomically requests cancellation and persists a task pause. Existing cancellation/delivery/release owns cleanup. The pause is independent of final Run success/failure, preserves later messages and drafts, and requires explicit recovery.
 
 - `thread_preview.go`: bounded process-local optional previews, replaced by execution/version. Admission verifies lease and live execution; authorized reads remove settled positions. It creates no receipt or Ack. Expiry or a different replica explicitly degrades to durable Thread data. `thread_preview_test.go` covers bounds, expiry, reordering and final dominance.

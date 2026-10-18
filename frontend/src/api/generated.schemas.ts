@@ -1644,6 +1644,13 @@ export interface SpacePluginList {
   items: SpacePlugin[];
 }
 
+export interface TaskAgentReadiness {
+  agentId: string;
+  /** @nullable */
+  errorCode: string | null;
+  requiresPersonalModel: boolean;
+}
+
 /**
  * @nullable
  */
@@ -2699,6 +2706,7 @@ before?: number;
 export type GetApiV1TenantsTidIssuesIidConversation200 = {
   /** @nullable */
   activeRunId?: string | null;
+  agentReadiness?: TaskAgentReadiness[];
   /** @nullable */
   blockedRunId?: string | null;
   canStop?: boolean;

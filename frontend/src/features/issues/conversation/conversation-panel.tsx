@@ -473,6 +473,8 @@ export function TaskConversationPanel({
         latestRun={last}
         state={draft}
         onSent={onLatest}
+        readiness={current?.agentReadiness}
+        settingsPath={workspaceSlug ? workspacePaths(workspaceSlug).modelConnections : undefined}
       />
     </div>
   )

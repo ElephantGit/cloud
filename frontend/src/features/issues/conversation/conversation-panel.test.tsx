@@ -92,6 +92,33 @@ function renderConversation(runs: IssueRun[]) {
 }
 
 describe('TaskConversationPanel', () => {
+  it('shows personal-model gaps before sending while leaving plain comments available', async () => {
+    const runs = [run('r-old', 'a1', 'completed', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [])
+    server.use(
+      http.get(CONVERSATION, () =>
+        HttpResponse.json({
+          items: [],
+          nextCursor: null,
+          prevCursor: null,
+          agentReadiness: [
+            { agentId: 'a1', requiresPersonalModel: true, errorCode: 'model_default_required' },
+            { agentId: 'a2', requiresPersonalModel: false, errorCode: null },
+          ],
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.type(screen.getByLabelText('任务对话输入'), 'work on this')
+    expect(await screen.findByText('请先配置个人默认模型')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^发送$/ })).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('发送给'), 'a2')
+    expect(screen.getByRole('button', { name: /^发送$/ })).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('发送给'), 'a1')
+    await user.click(screen.getByRole('button', { name: '仅评论' }))
+    expect(screen.getByRole('button', { name: '发表评论' })).toBeEnabled()
+  })
   it('reuses a failed send identity for manual retry and refreshes it after success', async () => {
     const runs: IssueRun[] = []
     const messages: TaskConversationMessage[] = []

@@ -109,14 +109,7 @@ func (s *Store) dispatchTaskMessage(ctx context.Context, messageID string) (stri
 			return Object{}
 		}
 		if agent.S("pluginId") == "official/ora-space.opencode" {
-			if reason, _, _ := defaultExecutorGap(t, message.S("userId")); reason != "" {
-				code := "model_default_required"
-				switch reason {
-				case slotReasonConnectionDown:
-					code = "model_connection_unavailable"
-				case slotReasonCredentialMissing:
-					code = "model_credential_required"
-				}
+			if code := taskPersonalModelGap(t, message.S("userId")); code != "" {
 				taskMessageFail(t, message, code)
 				return Object{}
 			}

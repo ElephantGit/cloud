@@ -1,9 +1,11 @@
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { useCreateComment } from '@/features/issues/api'
 import type { CollaborationTargetSummary, IssueRun } from '@/features/issues/types'
-import { taskConversationError, useSendTaskMessage } from './api'
+import { taskConversationError } from './api'
+import { useComposerSubmit } from './use-composer-submit'
 import type { useConversationDraft } from './use-conversation-draft'
+import type { TaskAgentReadiness } from '@/api/generated.schemas'
+import { AgentReadiness } from './agent-readiness'
 
 function AgentRecipient({
   agents,
@@ -151,6 +153,8 @@ export function ConversationComposer({
   latestRun,
   state,
   onSent,
+  readiness,
+  settingsPath,
 }: {
   tid: string
   issueId: string
@@ -158,42 +162,26 @@ export function ConversationComposer({
   latestRun: IssueRun | undefined
   state: ReturnType<typeof useConversationDraft>
   onSent: () => void
+  readiness: TaskAgentReadiness[] | undefined
+  settingsPath: string | undefined
 }) {
   const { mode, setMode, selected, setSelected, draft, setDraft, input } = state
-  const send = useSendTaskMessage(tid, issueId)
-  const comment = useCreateComment(tid, issueId)
   const agents = targets.filter((target) => target.type === 'agent')
   const agentId = selected ?? latestRun?.executorId ?? ''
   const agent = agents.find((target) => target.id === agentId)
-  const busy = send.isPending || comment.isPending
   const handoff = waitingForHandoff(mode, agent, latestRun)
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault()
-    const body = draft
-    if (!body.trim() || busy) return
-    if (mode === 'comment') {
-      comment.mutate(
-        { body },
-        {
-          onSuccess: () => {
-            setDraft('')
-            onSent()
-          },
-        },
-      )
-    } else if (agent) {
-      send.mutate(
-        { agentId: agent.id, body },
-        {
-          onSuccess: () => {
-            setDraft('')
-            onSent()
-          },
-        },
-      )
-    }
-  }
+  const recipient = readiness?.find((item) => item.agentId === agentId)
+  const submission = useComposerSubmit({
+    tid,
+    issueId,
+    draft,
+    mode,
+    agent,
+    readiness: recipient,
+    clearDraft: () => setDraft(''),
+    onSent,
+  })
+  const { busy, canSubmit, submit } = submission
 
   let buttonLabel = '发送'
   if (busy) buttonLabel = '发送中…'
@@ -236,11 +224,12 @@ export function ConversationComposer({
         handoff={handoff}
         agentName={agent?.displayName ?? 'Agent'}
         agentMissing={mode === 'agent' && !agent}
-        sendError={send.error}
-        commentError={comment.error}
+        sendError={submission.sendError}
+        commentError={submission.commentError}
       />
+      {mode === 'agent' && <AgentReadiness readiness={recipient} settingsPath={settingsPath} />}
       <div className="flex justify-end">
-        <Button type="submit" disabled={!draft.trim() || busy || (mode === 'agent' && !agent)}>
+        <Button type="submit" disabled={!canSubmit}>
           {buttonLabel}
         </Button>
       </div>

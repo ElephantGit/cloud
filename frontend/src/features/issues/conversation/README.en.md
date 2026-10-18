@@ -11,6 +11,7 @@ Task-level conversation reads, sends, pending handoffs, and Agent selection. A r
 | `conversation-composer.tsx` | One Agent target, explicit mention picker, Agent message/plain comment modes and handoff hint. |
 | `use-conversation-draft.ts` | One task-scoped draft and history quote; changing the Agent only changes the input target. |
 | `task-stop.tsx` / `task-recovery.tsx` | Stop the current execution, retain a task pause and explicitly recover saved/discarded results independently of history browsing. |
+| `agent-readiness.tsx` / `use-composer-submit.ts` | Show current-user model/project gaps before sending, share submission eligibility and preserve refused drafts. |
 | `*.test.ts(x)` | MSW and component scenarios for closed-session continuation, switching, failure and queueing. |
 
 Depends on generated `src/api`, `features/issues/api`, `features/issues/thread`, `features/spaces/api`, `features/conversation-content`, and `components/ui`. Only server-authorized roster targets are selectable; the selector and `@` picker change recipient only on explicit selection, while an ordinary typed `@name` has no routing effect. Changing a local selection never starts a run. Historical Run selection is read-only while the composer always addresses the task's current target. Pages merge by server seq, and a retry after an unknown response reuses its idempotency key.

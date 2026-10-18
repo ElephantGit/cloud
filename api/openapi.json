@@ -3913,6 +3913,28 @@
         ],
         "type": "object"
       },
+      "TaskAgentReadiness": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requiresPersonalModel": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "requiresPersonalModel",
+          "errorCode"
+        ],
+        "type": "object"
+      },
       "TaskConversationMessage": {
         "additionalProperties": false,
         "properties": {
@@ -12863,6 +12885,12 @@
                       "format": "uuid",
                       "nullable": true,
                       "type": "string"
+                    },
+                    "agentReadiness": {
+                      "items": {
+                        "$ref": "#/components/schemas/TaskAgentReadiness"
+                      },
+                      "type": "array"
                     },
                     "blockedRunId": {
                       "format": "uuid",

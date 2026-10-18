@@ -49,7 +49,7 @@ func taskMessageView(t *transaction, row Object) Object {
 }
 
 func taskConversationRead(t *transaction, r *PublicRequest) Object {
-	issue(t, r.TenantID, r.IssueID)
+	task := issue(t, r.TenantID, r.IssueID)
 	require(r.After == "" || r.Before == "", 400, "invalid_pagination")
 	limit := r.Limit
 	if limit == 0 {
@@ -74,7 +74,7 @@ func taskConversationRead(t *transaction, r *PublicRequest) Object {
 	barrier := taskRecoveryRun(t, r.TenantID, r.IssueID)
 	uid := identityWithAlias(t, r.Identity).S("id")
 	canStop := latest != nil && barrier == nil && canEndForTaskHandoff(t, latest, uid)
-	out := Object{"items": items, "nextCursor": nil, "prevCursor": nil, "pausedRunId": conversation["pausedRunId"], "blockedRunId": nullable(barrier.S("id")), "activeRunId": nullable(latest.S("id")), "canStop": canStop}
+	out := Object{"items": items, "nextCursor": nil, "prevCursor": nil, "pausedRunId": conversation["pausedRunId"], "blockedRunId": nullable(barrier.S("id")), "activeRunId": nullable(latest.S("id")), "canStop": canStop, "agentReadiness": taskAgentReadiness(t, task, uid)}
 	if len(items) != 0 {
 		out["nextCursor"] = items[len(items)-1]["seq"]
 		out["prevCursor"] = items[0]["seq"]

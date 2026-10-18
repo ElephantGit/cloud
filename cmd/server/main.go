@@ -185,6 +185,23 @@ func run() (runErr error) {
 			pluginmarket.RunSyncLoop(ctx, store.StartQueuedAgentSessionsOnce, agentSessionStartInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
+	// Blocked-creation loop (ADR D5): a run Workspace creation parked in `blocked` has no public
+	// retry (the Workspace is invisible), so Cloud's own scan is the only way its wait ends. The
+	// first pass anchors an absolute, never-renewed deadline (30m default); a later pass abandons
+	// the business run, fails the creation operation, releases the Project operation slot and
+	// retains an independent residual ledger — all in one transaction per run, so a repeated tick
+	// confirms the same settlement instead of rebuilding anything. The residual Workspace stays
+	// protected: no delete is queued, admission stays closed, and late Controller facts are
+	// receipted through the provisioning-fact entry without resurrecting the run.
+	{
+		const agentWorkspaceBlockedInterval = 10 * time.Second
+		store.AgentWorkspaceBlockedTimeout = cfg.IssueRuns.AgentWorkspaceBlockedTimeout
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.GiveUpBlockedWorkspaceCreationsOnce, agentWorkspaceBlockedInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
 	// Thread-ending loops: B-owned recovery for the two ending triggers reachable without a new
 	// public API. The idle scan ends a Thread whose idle window has expired (thread_state='idle' with
 	// idle_since older than cfg.IssueRuns.ThreadIdleTimeout), and the cancel pass reacts to a
@@ -238,6 +255,20 @@ func run() (runErr error) {
 		go func() {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
+	// Workflow advance loop: the Cloud-side scheduler (specs#99 D1 条件②/④, landing order step 3).
+	// A bounded rescan of pending and running workflow runs, each advanced in its own short
+	// transaction; the ready set is recomputed from committed state only, so the pass is idempotent
+	// and a replica that crashes mid-tick resumes exactly where the committed state says. In its
+	// first step it executes start/condition/output inline and settles runs honestly; agent nodes
+	// fail the run fast with an explicit reason until the execution wiring lands in the next step.
+	{
+		const workflowAdvanceInterval = 10 * time.Second
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.AdvanceWorkflowRunsOnce, workflowAdvanceInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
 	gin.SetMode(cfg.Server.Mode)

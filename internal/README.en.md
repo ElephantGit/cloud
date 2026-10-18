@@ -43,4 +43,4 @@
 4. **Error handling**:
    - Public-facing errors use the stable `Fault` structure (`Code`, `Params`, `Status`). Internal SQL, stack traces, and database errors are logged internally and never returned to clients.
 
-See [AGENTS.md](../AGENTS.md), [Core contract](../docs/core-contract.md), and [Authentication](../docs/authentication.md).
+See [AGENTS.md](../AGENTS.md), [Authoritative persistence](../docs/core/persistence.en.md), and [Internal credentials](../docs/identity/authentication.en.md).

@@ -40,7 +40,7 @@ Unit tests cover `return_to`/origin/cookie policy, identity normalization, crede
 
 `query_test.go` covers route, method, and encoding boundaries of the session query guard. `query_db_test.go` uses an isolated PostgreSQL schema and the real Gateway and Cloud router to verify rejection before proxy cleanup, authentication order, unchanged valid queries, Cloud-owned parameter rejection, and compatibility for other routes. Set `TEST_DATABASE_URL`; `REQUIRE_POSTGRES=1` prevents skipping when the database is missing.
 
-See the [internal overview](../README.en.md), the [Huawei IDaaS adapter](idaas/README.en.md), the [GitHub adapter](github/README.en.md), the [development provider](devlogin/README.en.md), and the [Gateway document](../../docs/gateway.md).
+See the [internal overview](../README.en.md), the [Huawei IDaaS adapter](idaas/README.en.md), the [GitHub adapter](github/README.en.md), the [development provider](devlogin/README.en.md), and the [Gateway document](../../docs/identity/gateway.en.md).
 
 Strict session query syntax guards also cover `.../runs/:rid/statistics` and `.../runs/:rid/model-calls`, preventing
 proxy query cleanup from bypassing Cloud parameter validation. Unit and real Gateway-to-Cloud tests cover both paths.

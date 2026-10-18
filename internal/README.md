@@ -43,4 +43,4 @@
 4. **错误处理**：
    - 面向客户端的公开错误统一使用稳定的 `Fault` 结构体（包含 `Code`、`Params`、`Status`）。内部 SQL 细节、错误堆栈与数据库异常仅记录于内部日志中，绝不对外暴露。
 
-参见 [AGENTS.md](../AGENTS.md)、[核心不变量与契约](../docs/core-contract.md) 与 [认证配置与凭据](../docs/authentication.md)。
+参见 [AGENTS.md](../AGENTS.md)、[权威持久化与事务模型](../docs/core/persistence.md) 与 [内部凭据与服务信任](../docs/identity/authentication.md)。

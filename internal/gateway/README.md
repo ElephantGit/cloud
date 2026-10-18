@@ -40,7 +40,7 @@
 
 `query_test.go` 覆盖会话查询保护的路径、方法与编码边界；`query_db_test.go` 使用独立 PostgreSQL schema、真实 Gateway 和 Cloud router，验证异常查询在代理清洗前被拒绝、认证顺序、正常查询原样转发、Cloud 的业务参数拒绝，以及其他路由的兼容行为。运行时设置 `TEST_DATABASE_URL`；`REQUIRE_POSTGRES=1` 禁止缺少数据库时跳过。
 
-参见 [内部子系统总览](../README.md)、[华为 IDaaS 适配器](idaas/README.md)、[GitHub 适配器](github/README.md)、[本地开发 provider](devlogin/README.md) 与 [Gateway 文档](../../docs/gateway.md)。
+参见 [内部子系统总览](../README.md)、[华为 IDaaS 适配器](idaas/README.md)、[GitHub 适配器](github/README.md)、[本地开发 provider](devlogin/README.md) 与 [Gateway 文档](../../docs/identity/gateway.md)。
 
 会话查询语法保护同样覆盖 `.../runs/:rid/statistics` 与 `.../runs/:rid/model-calls`，防止代理移除
 非法查询后绕过 Cloud 严格参数校验。语法单测与真实 Gateway→Cloud 测试覆盖这两个新路径。

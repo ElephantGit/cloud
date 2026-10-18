@@ -45,6 +45,9 @@ func taskRunBlocker(t *transaction, message Object) Object {
 }
 
 func taskPreviousRunNeedsAttention(t *transaction, message Object) bool {
+	if t.one("SELECT 1 FROM task_conversations WHERE issue_id=$1 AND paused_run_id IS NOT NULL", message.S("issueId")) != nil {
+		return true
+	}
 	ack := t.one(`SELECT acknowledged_run_id FROM task_conversations WHERE issue_id=$1`, message.S("issueId"))
 	previous := t.one(`SELECT * FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND executor_type='agent' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1`, message.S("issueId"), message.S("tenantId"))
 	if previous == nil {
@@ -184,14 +187,14 @@ func taskConversationResume(t *transaction, r *PublicRequest, uid string) Object
 	require(validID(runID), 400, "invalid_run")
 	prior := t.one("SELECT * FROM issue_runs WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND executor_type='agent' AND deleted_at IS NULL", runID, r.TenantID, r.IssueID)
 	require(prior != nil, 404, "not_found")
-	latest := t.one("SELECT id FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND executor_type='agent' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1", r.IssueID, r.TenantID)
-	require(latest.S("id") == runID, 409, "stale_run")
-	require(prior.S("phase") == "done" && (prior.S("status") == "failed" || prior.S("status") == "cancelled"), 409, "run_not_resumable")
+	paused := t.one("SELECT 1 FROM task_conversations WHERE issue_id=$1 AND paused_run_id=$2", r.IssueID, runID) != nil
+	require(taskRecoveryRun(t, r.TenantID, r.IssueID).S("id") == runID, 409, "stale_run")
+	require(prior.S("phase") == "done" && (prior.S("status") == "failed" || prior.S("status") == "cancelled" || paused), 409, "run_not_resumable")
 	require(prior.O("result").S("deliveryState") == "saved" || prior.O("result").S("deliveryState") == "unchanged", 409, "run_not_resumable")
 	require(prior.S("workspaceId") == "" || t.one("SELECT id FROM workspaces WHERE id=$1 AND deleted_at IS NULL", prior.S("workspaceId")) == nil, 409, "workspace_unreleased")
 	require(canEndForTaskHandoff(t, prior, uid), 403, "model_run_end_forbidden")
 	ensureTaskConversation(t, r.TenantID, r.IssueID)
-	t.exec("UPDATE task_conversations SET acknowledged_run_id=$2,updated_at=now() WHERE issue_id=$1", r.IssueID, runID)
+	t.exec("UPDATE task_conversations SET acknowledged_run_id=$2,paused_run_id=NULL,updated_at=now() WHERE issue_id=$1", r.IssueID, runID)
 	taskConversationChanged(t, r.TenantID, r.IssueID)
 	return Object{"acknowledgedRunId": runID}
 }
@@ -206,14 +209,13 @@ func taskConversationDiscard(t *transaction, r *PublicRequest, uid string) Objec
 	require(validID(runID), 400, "invalid_run")
 	prior := t.one("SELECT * FROM issue_runs WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND executor_type='agent' AND deleted_at IS NULL", runID, r.TenantID, r.IssueID)
 	require(prior != nil, 404, "not_found")
-	latest := t.one("SELECT id FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND executor_type='agent' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1", r.IssueID, r.TenantID)
-	require(latest.S("id") == runID, 409, "stale_run")
+	require(taskRecoveryRun(t, r.TenantID, r.IssueID).S("id") == runID, 409, "stale_run")
 	state := prior.O("result").S("deliveryState")
 	require(prior.S("phase") == "done" && (state == "failed" || state == "skipped"), 409, "run_not_resumable")
 	require(prior.S("workspaceId") == "" || t.one("SELECT id FROM workspaces WHERE id=$1 AND deleted_at IS NULL", prior.S("workspaceId")) == nil, 409, "workspace_unreleased")
 	require(canEndForTaskHandoff(t, prior, uid), 403, "model_run_end_forbidden")
 	ensureTaskConversation(t, r.TenantID, r.IssueID)
-	t.exec("UPDATE task_conversations SET acknowledged_run_id=$2,updated_at=now() WHERE issue_id=$1", r.IssueID, runID)
+	t.exec("UPDATE task_conversations SET acknowledged_run_id=$2,paused_run_id=NULL,updated_at=now() WHERE issue_id=$1", r.IssueID, runID)
 	taskConversationChanged(t, r.TenantID, r.IssueID)
 	return Object{"acknowledgedRunId": runID}
 }

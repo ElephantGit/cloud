@@ -62,3 +62,19 @@ func TestMigration0039TaskConversationFreshAndUpgrade(t *testing.T) {
 	wantPGError(t, insert(uuid.NewString(), "duplicate position"), "23505")
 	wantPGError(t, insert(uuid.NewString(), strings.Repeat("x", 65537)), "23514")
 }
+
+func TestMigration0041DoesNotInventTaskPauses(t *testing.T) {
+	pool, _ := testSchema(t, "test_pause41_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0041_task_conversation_manual_pause.sql"))
+	seed := seedOwnershipChain(t, pool)
+	_, err := pool.Exec("INSERT INTO task_conversations(issue_id,tenant_id,last_seq) VALUES($1,$2,0)", seed.issueID, seed.tenantID)
+	must(t, err)
+	store := newStoreOnSchema(t, pool)
+	must(t, store.Migrate(context.Background()))
+	must(t, store.Migrate(context.Background()))
+	var paused *string
+	must(t, pool.QueryRow("SELECT paused_run_id FROM task_conversations WHERE issue_id=$1", seed.issueID).Scan(&paused))
+	if paused != nil {
+		t.Fatal("migration paused an existing task without a user stop")
+	}
+}

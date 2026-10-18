@@ -6,6 +6,8 @@
 
 ## 迁移目录
 
+`0041_task_conversation_manual_pause.sql` 增加可空 `paused_run_id`，避免用户停止与正常完成同时发生时，后续队列悄悄恢复；旧任务不自动暂停。
+
 `0040_thread_preview_positions.sql` 仅为持久 Thread 条目增加可空的 Node 历史位置，用于最终记录覆盖实时预览；不保存预览正文、不推测旧行位置。升级与重复执行由集成测试覆盖。
 
 迁移脚本严格按照数字序号递增顺序执行。序列是 **append-only**：`0001–0007` 是 upstream 基线（与 `upstream/main` 逐字节一致、不可修改），`0008–0012` 是本地 Issue 迁移，`0013` 起为后续兼容迁移。

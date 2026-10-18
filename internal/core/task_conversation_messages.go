@@ -69,7 +69,12 @@ func taskConversationRead(t *transaction, r *PublicRequest) Object {
 	for _, row := range rows {
 		items = append(items, taskMessageView(t, row))
 	}
-	out := Object{"items": items, "nextCursor": nil, "prevCursor": nil}
+	conversation := t.one("SELECT paused_run_id FROM task_conversations WHERE issue_id=$1 AND tenant_id=$2", r.IssueID, r.TenantID)
+	latest := taskStoppableRun(t, r.TenantID, r.IssueID)
+	barrier := taskRecoveryRun(t, r.TenantID, r.IssueID)
+	uid := identityWithAlias(t, r.Identity).S("id")
+	canStop := latest != nil && barrier == nil && canEndForTaskHandoff(t, latest, uid)
+	out := Object{"items": items, "nextCursor": nil, "prevCursor": nil, "pausedRunId": conversation["pausedRunId"], "blockedRunId": nullable(barrier.S("id")), "activeRunId": nullable(latest.S("id")), "canStop": canStop}
 	if len(items) != 0 {
 		out["nextCursor"] = items[len(items)-1]["seq"]
 		out["prevCursor"] = items[0]["seq"]

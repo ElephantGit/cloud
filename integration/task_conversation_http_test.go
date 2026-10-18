@@ -40,4 +40,14 @@ func TestTaskConversationHTTPReadsAndIdempotentlyAcceptsAddressedMessages(t *tes
 	if status != 400 {
 		t.Fatalf("HTTP accepted caller-selected delivery state: %d %v", status, invalid)
 	}
+	status, stopped, err := f.threadRequest("POST", path+"/stop", mustJSONRaw(map[string]any{"runId": scene.runID}), uuid.NewString())
+	must(t, err)
+	if status != 202 || stopped.S("state") != "stopping" {
+		t.Fatalf("HTTP task stop: %d %v", status, stopped)
+	}
+	status, page, err = f.threadRequest("GET", path, "", "")
+	must(t, err)
+	if status != 200 || page.S("pausedRunId") != scene.runID || page.B("canStop") {
+		t.Fatalf("HTTP task pause was not durable: %d %v", status, page)
+	}
 }

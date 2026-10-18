@@ -14,6 +14,7 @@ const agentDispatchBatchSize = 100
 // requiring explicit recovery. A business terminal status is insufficient: a residual Workspace
 // can remain after release gave up, and a delivery failure must not silently restore older work.
 const agentRunTaskClaimGuard = `
+	AND NOT EXISTS (SELECT 1 FROM task_conversations paused WHERE paused.issue_id=ir.issue_id AND paused.paused_run_id IS NOT NULL)
 	AND NOT EXISTS (
 	  SELECT 1 FROM issue_runs peer
 	  WHERE peer.issue_id=ir.issue_id AND peer.id<>ir.id

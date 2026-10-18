@@ -165,6 +165,7 @@ func Routes() []Route {
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/cancel", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/retry", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/resume", "", []string{"runId"}},
+		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/stop", "", []string{"runId"}},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/discard", "", []string{"runId", "acknowledgeLostWork"}},
 		{"GET", "/api/v1/tenants/:tid/issues/:iid/context-refs", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/context-refs", "", []string{"refType", "refId"}},

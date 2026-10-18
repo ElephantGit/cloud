@@ -6,6 +6,8 @@
 
 ## Responsibilities
 
+Task `POST .../conversation/stop` returns 202 and atomically requests cancellation plus a queue pause. Reads identify the current execution, earliest unresolved barrier, manual pause and `canStop`. Historical selection never changes the stop target; explicit recovery must address the earliest barrier.
+
 `thread_preview.go` serves run-scoped snapshot SSE. Every send and periodic heartbeat rechecks credentials and membership; disconnect only cancels the subscription. Slow browsers consume the latest snapshot without blocking Agent or durable records.
 
 Task conversation adds `GET/POST /issues/:iid/conversation`, explicitly addressed Agent messages, pending-message cancel/retry, saved-result resume, and explicit undelivered-result discard under the same member authentication and idempotency rules. Conversation and Thread message envelopes may reach 256 KiB while core still limits decoded text to 64 KiB. URL `:mid` only identifies a pending message; callers never choose author or state.

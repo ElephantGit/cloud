@@ -2697,9 +2697,16 @@ before?: number;
 };
 
 export type GetApiV1TenantsTidIssuesIidConversation200 = {
+  /** @nullable */
+  activeRunId?: string | null;
+  /** @nullable */
+  blockedRunId?: string | null;
+  canStop?: boolean;
   items: TaskConversationMessage[];
   /** @nullable */
   nextCursor: number | null;
+  /** @nullable */
+  pausedRunId?: string | null;
   /** @nullable */
   prevCursor: number | null;
 };
@@ -2740,6 +2747,22 @@ export type PostApiV1TenantsTidIssuesIidConversationResumeBody = {
 
 export type PostApiV1TenantsTidIssuesIidConversationResume200 = {
   acknowledgedRunId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationStopBody = {
+  runId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationStop202State = typeof PostApiV1TenantsTidIssuesIidConversationStop202State[keyof typeof PostApiV1TenantsTidIssuesIidConversationStop202State];
+
+
+export const PostApiV1TenantsTidIssuesIidConversationStop202State = {
+  stopping: 'stopping',
+} as const;
+
+export type PostApiV1TenantsTidIssuesIidConversationStop202 = {
+  runId: string;
+  state: PostApiV1TenantsTidIssuesIidConversationStop202State;
 };
 
 export type GetApiV1TenantsTidIssuesIidInteractions200 = {

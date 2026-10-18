@@ -251,6 +251,10 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				require(r.Method == "POST", 404, "not_found")
 				out = taskConversationDiscard(t, r, uid)
 				queueConversation = true
+			case strings.HasSuffix(r.Path, "/conversation/stop"):
+				require(r.Method == "POST", 404, "not_found")
+				out = taskConversationStop(t, s, r, uid)
+				status = 202
 			case strings.HasSuffix(r.Path, "/thread/messages"):
 				// Thread D3: appending a user turn. Matched before the /runs arm because the path
 				// contains "/runs/" too, and the thread sub-resource is a different write.

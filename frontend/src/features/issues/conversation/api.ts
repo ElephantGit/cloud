@@ -7,6 +7,7 @@ import {
   postApiV1TenantsTidIssuesIidConversationMessagesMidRetry,
   postApiV1TenantsTidIssuesIidConversationDiscard,
   postApiV1TenantsTidIssuesIidConversationResume,
+  postApiV1TenantsTidIssuesIidConversationStop,
 } from '@/api/tenants/tenants'
 import { faultCode } from '@/lib/api-client'
 import { mutationHeaders, useIdempotencyKeys } from '@/features/spaces/api'
@@ -128,6 +129,19 @@ export function useDiscardUndeliveredTaskRun(tid: string, issueId: string) {
   })
 }
 
+/** Stops the current execution and persists a task pause without dropping later messages. */
+export function useStopTaskConversation(tid: string, issueId: string) {
+  const queryClient = useQueryClient()
+  const keyFor = useIdempotencyKeys()
+  return useMutation({
+    mutationFn: (input: { runId: string }) =>
+      postApiV1TenantsTidIssuesIidConversationStop(tid, issueId, input, {
+        headers: mutationHeaders(keyFor(input)),
+      }),
+    onSuccess: () => invalidateTask(queryClient, tid, issueId),
+  })
+}
+
 const MESSAGE_FAULTS: Record<string, string> = {
   content_too_large: '消息过长，请缩短后重试',
   invalid_target: '请选择可用的 Agent',
@@ -139,6 +153,10 @@ const MESSAGE_FAULTS: Record<string, string> = {
   workspace_unreleased: '前一次执行仍有资源待释放',
   run_not_resumable: '没有可安全恢复的成果，请检查前一次执行',
   lost_work_acknowledgement_required: '请明确确认放弃未交付成果',
+  model_run_end_forbidden: '只有运行发起者或管理员可以停止和恢复此执行',
+  run_already_stopped: '当前执行已结束，请刷新后查看成果状态',
+  stale_run: '当前执行已变化，请刷新后重试',
+  task_paused: '请先处理前一次执行的暂停或未保存成果',
 }
 
 /** Maps a persisted safe refusal code to the same copy as a refused request. */

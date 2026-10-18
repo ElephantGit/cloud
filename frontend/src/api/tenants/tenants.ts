@@ -116,6 +116,8 @@ import type {
   PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody,
   PostApiV1TenantsTidIssuesIidConversationResume200,
   PostApiV1TenantsTidIssuesIidConversationResumeBody,
+  PostApiV1TenantsTidIssuesIidConversationStop202,
+  PostApiV1TenantsTidIssuesIidConversationStopBody,
   PostApiV1TenantsTidIssuesIidInteractionsIxidConfirm200,
   PostApiV1TenantsTidIssuesIidInteractionsIxidConfirmBody,
   PostApiV1TenantsTidIssuesIidLabels200,
@@ -3188,6 +3190,76 @@ export const usePostApiV1TenantsTidIssuesIidConversationResume = <TError = Error
         TContext
       > => {
       return useMutation(getPostApiV1TenantsTidIssuesIidConversationResumeMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Requires matching resource version and no active project operation. Atomically closes new execution admission. Active tickets return 409 resource_in_use without changing admission. Unknown Node activity requires later proof and remains pending/blocked. main Workspace cannot be independently deleted. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/stop
+ */
+export const postApiV1TenantsTidIssuesIidConversationStop = (
+    tid: string,
+    iid: string,
+    postApiV1TenantsTidIssuesIidConversationStopBody: PostApiV1TenantsTidIssuesIidConversationStopBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationStop202>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/stop`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationStopBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationStopMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationStop'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationStopMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>, TError,PostApiV1TenantsTidIssuesIidConversationStopMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>, TError,PostApiV1TenantsTidIssuesIidConversationStopMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationStopMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>, PostApiV1TenantsTidIssuesIidConversationStopMutationVariables> = (props) => {
+          const {tid,iid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationStop(tid,iid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationStopMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>>
+    export type PostApiV1TenantsTidIssuesIidConversationStopMutationBody = PostApiV1TenantsTidIssuesIidConversationStopBody
+    export type PostApiV1TenantsTidIssuesIidConversationStopMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationStopMutationVariables = {tid: string;iid: string;data: PostApiV1TenantsTidIssuesIidConversationStopBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/stop
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationStop = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>, TError,PostApiV1TenantsTidIssuesIidConversationStopMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationStop>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationStopMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationStopMutationOptions(options), queryClient);
     }
     /**
  * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.

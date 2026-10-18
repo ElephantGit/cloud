@@ -822,8 +822,10 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		return object(obj{"resource": ref("TaskConversationMessage")}, "resource"), "200"
 	case strings.HasSuffix(r.Path, "/conversation/resume"), strings.HasSuffix(r.Path, "/conversation/discard"):
 		return object(obj{"acknowledgedRunId": uuid()}, "acknowledgedRunId"), "200"
+	case strings.HasSuffix(r.Path, "/conversation/stop"):
+		return object(obj{"runId": uuid(), "state": enumeration("stopping")}, "runId", "state"), "202"
 	case strings.HasSuffix(r.Path, "/conversation"):
-		return object(obj{"items": array(ref("TaskConversationMessage")), "nextCursor": optional(obj{"type": "integer", "format": "int64"}), "prevCursor": optional(obj{"type": "integer", "format": "int64"})}, "items", "nextCursor", "prevCursor"), "200"
+		return object(obj{"items": array(ref("TaskConversationMessage")), "nextCursor": optional(obj{"type": "integer", "format": "int64"}), "prevCursor": optional(obj{"type": "integer", "format": "int64"}), "activeRunId": optional(uuid()), "pausedRunId": optional(uuid()), "blockedRunId": optional(uuid()), "canStop": boolean()}, "items", "nextCursor", "prevCursor"), "200"
 	case strings.HasSuffix(r.Path, "/thread/end"):
 		// Ending a Thread returns the Thread's new state, not a resource: the endpoint creates
 		// nothing to point at, and the caller's next move is to watch `threadState` reach `ended`.

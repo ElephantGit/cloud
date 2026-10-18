@@ -17,13 +17,12 @@ import {
   loadedTaskMessages,
   taskConversationError,
   taskConversationFailureCode,
-  useDiscardUndeliveredTaskRun,
-  useResumeTaskConversation,
   useTaskConversation,
   useUpdateTaskMessage,
 } from './api'
 import { ConversationComposer } from './conversation-composer'
 import { useConversationDraft, type ConversationQuote } from './use-conversation-draft'
+import { TaskExecutionControls } from './task-stop'
 
 type ConversationRow =
   | { kind: 'run'; at: string; id: string; run: IssueRun }
@@ -285,74 +284,6 @@ function ConversationRowItem({
   )
 }
 
-function RecoveryButton({
-  tid,
-  issueId,
-  runId,
-  kind,
-}: {
-  tid: string
-  issueId: string
-  runId: string
-  kind: 'resume' | 'discard'
-}) {
-  const resume = useResumeTaskConversation(tid, issueId)
-  const discard = useDiscardUndeliveredTaskRun(tid, issueId)
-  const action = kind === 'resume' ? resume : discard
-  return (
-    <>
-      <Button
-        className="mt-3"
-        size="sm"
-        variant="outline"
-        disabled={action.isPending}
-        onClick={() => action.mutate({ runId })}
-      >
-        {kind === 'resume' ? '恢复等待中的消息' : '放弃未交付成果并继续'}
-      </Button>
-      {action.isError && (
-        <p role="alert" className="mt-2 text-destructive">
-          {taskConversationError(action.error)}
-        </p>
-      )}
-    </>
-  )
-}
-
-function TaskResume({
-  tid,
-  issueId,
-  last,
-  waiting,
-}: {
-  tid: string
-  issueId: string
-  last: IssueRun | undefined
-  waiting: boolean
-}) {
-  if (!waiting || !last) return null
-  const failedRun = ['failed', 'cancelled'].includes(last.status)
-  const saved = last.result?.deliveryState === 'saved' || last.result?.deliveryState === 'unchanged'
-  const undelivered = ['failed', 'skipped'].includes(last.result?.deliveryState ?? '')
-  let kind: 'resume' | 'discard' | null = null
-  if (saved && failedRun) kind = 'resume'
-  else if (undelivered) kind = 'discard'
-  if (!kind) return null
-  return (
-    <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
-      <p className="font-medium">
-        {failedRun ? '上次 Agent 执行未正常完成' : '上次 Agent 执行成果交付失败'}，后续消息已暂停。
-      </p>
-      <p className="mt-1 text-muted-foreground">
-        {kind === 'resume'
-          ? '成果已保存并确认释放后，可明确恢复等待中的消息。'
-          : '本次成果未交付。继续会放弃这次运行中未保存的文件修改；历史记录保留，下一轮从任务最近一次已保存成果开始。请先检查执行详情。'}
-      </p>
-      <RecoveryButton tid={tid} issueId={issueId} runId={last.id} kind={kind} />
-    </section>
-  )
-}
-
 function ConversationRows({
   rows,
   tid,
@@ -421,6 +352,31 @@ function OlderHistoryControls({
   )
 }
 
+function ConversationFeedback({
+  empty,
+  pending,
+  failed,
+}: {
+  empty: boolean
+  pending: boolean
+  failed: boolean
+}) {
+  return (
+    <>
+      {empty && !pending && (
+        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          还没有对话。选择 Agent 并发送第一条任务消息。
+        </p>
+      )}
+      {failed && (
+        <p role="alert" className="text-sm text-destructive">
+          任务消息加载失败，请重试。
+        </p>
+      )}
+    </>
+  )
+}
+
 /** Renders one durable task discussion across Run boundaries while leaving each Thread immutable. */
 export function TaskConversationPanel({
   tid,
@@ -455,6 +411,7 @@ export function TaskConversationPanel({
   const rows = conversationRows(shown, messages, timeline.data ?? [])
   const last = agents.at(-1)
   const waiting = messages.some((message) => message.state === 'waiting')
+  const current = conversation.data?.pages[0]
   // During a rolling upgrade an older Cloud may not have the task endpoint yet. Preserve its
   // original Thread composer until the authoritative task queue becomes available.
   if (conversation.isError && faultCode(conversation.error) === 'not_found') {
@@ -495,19 +452,20 @@ export function TaskConversationPanel({
             currentUserId={currentUserId}
             onQuote={draft.quote}
           />
-          {!rows.length && !conversation.isPending && (
-            <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-              还没有对话。选择 Agent 并发送第一条任务消息。
-            </p>
-          )}
-          {conversation.isError && (
-            <p role="alert" className="text-sm text-destructive">
-              任务消息加载失败，请重试。
-            </p>
-          )}
-          <TaskResume tid={tid} issueId={issueId} last={last} waiting={waiting} />
+          <ConversationFeedback
+            empty={rows.length === 0}
+            pending={conversation.isPending}
+            failed={conversation.isError}
+          />
         </>
       )}
+      <TaskExecutionControls
+        tid={tid}
+        issueId={issueId}
+        current={current}
+        runs={agents}
+        waiting={waiting}
+      />
       <ConversationComposer
         tid={tid}
         issueId={issueId}

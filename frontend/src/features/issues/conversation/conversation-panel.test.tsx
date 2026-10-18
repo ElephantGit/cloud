@@ -92,6 +92,66 @@ function renderConversation(runs: IssueRun[]) {
 }
 
 describe('TaskConversationPanel', () => {
+  it('recovers the older failed delivery when a newer direct Run is queued', async () => {
+    const failed: IssueRun = {
+      ...run('r-failed', 'a1', 'completed', '2026-10-18T01:00:00Z'),
+      result: { deliveryState: 'failed' },
+    }
+    const runs = [failed, run('r-next', 'a2', 'queued', '2026-10-18T02:00:00Z')]
+    mockConversation(runs, [])
+    const bodies: unknown[] = []
+    server.use(
+      http.get(CONVERSATION, () =>
+        HttpResponse.json({
+          items: [],
+          nextCursor: null,
+          prevCursor: null,
+          blockedRunId: 'r-failed',
+          activeRunId: 'r-next',
+          canStop: false,
+        }),
+      ),
+      http.post(`${CONVERSATION}/discard`, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ acknowledgedRunId: 'r-failed' })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.click(await screen.findByRole('button', { name: '放弃未交付成果并继续' }))
+    await waitFor(() => expect(bodies).toEqual([{ runId: 'r-failed', acknowledgeLostWork: true }]))
+    expect(screen.queryByRole('button', { name: '停止当前执行' })).not.toBeInTheDocument()
+  })
+  it('stops the current task execution without clearing the input draft', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [])
+    let paused = false
+    const bodies: unknown[] = []
+    server.use(
+      http.get(CONVERSATION, () =>
+        HttpResponse.json({
+          items: [],
+          nextCursor: null,
+          prevCursor: null,
+          activeRunId: 'r-live',
+          pausedRunId: paused ? 'r-live' : null,
+          canStop: !paused,
+        }),
+      ),
+      http.post(`${CONVERSATION}/stop`, async ({ request }) => {
+        bodies.push(await request.json())
+        paused = true
+        return HttpResponse.json({ runId: 'r-live', state: 'stopping' }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.type(screen.getByLabelText('任务对话输入'), 'keep this draft')
+    await user.click(await screen.findByRole('button', { name: '停止当前执行' }))
+    expect(await screen.findByText(/后续消息已暂停。当前成果保存/)).toBeInTheDocument()
+    expect(screen.getByLabelText('任务对话输入')).toHaveValue('keep this draft')
+    expect(bodies).toEqual([{ runId: 'r-live' }])
+  })
   it('keeps an ended run readable while a new same-Agent message starts the next run', async () => {
     const runs = [run('r-old', 'a1', 'completed', '2026-10-18T01:00:00Z')]
     const messages: TaskConversationMessage[] = []

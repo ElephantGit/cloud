@@ -6,6 +6,8 @@
 
 ## Responsibilities
 
+Task-read `activeRunId`, `blockedRunId`, `pausedRunId`, `canStop` and the stop action's 202 response come from the same contract. Older clients may ignore the additional state fields.
+
 The optional live path declares `ThreadPreviewSnapshot`, Thread `historySequence`, snapshot reads and `getThreadPreviewEvents` SSE. Snapshots are complete replacements and may be unavailable; they are neither durable Thread data nor execution-success evidence.
 
 This module generates `TaskConversationMessage`, the task conversation's two-direction sequence cursors, send/cancel/retry/resume/explicit-discard shapes, and the `issue.conversation_changed` invalidation event. `api/openapi.json` and frontend types follow the same declarations.

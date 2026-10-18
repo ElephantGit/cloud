@@ -6,6 +6,8 @@
 
 ## 模块概览
 
+Agent 初始提示从冻结的运行输入读取任务标题、说明、最近评论与显式引用；没有 ContextBuilder 时同样保留这些字段。不会在启动时重新读取可变任务信息。`agent_initial_context_test.go` 验证上下文不丢失及历史快照缺字段时不伪造内容。
+
 - [migrations](migrations/README.md)：定义按顺序执行、仅向前的 PostgreSQL Schema 迁移脚本和校验和验证。
 - [plugins.go](plugins.go)：插件市场目录快照的落库与读取（`pluginmarket.CatalogSink` 实现）、
   工作区插件选择状态机（安装/移除 fan-out、聚合规则、SSE 失效广播）。

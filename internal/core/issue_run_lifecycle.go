@@ -34,6 +34,8 @@ func buildRunContext(t *transaction, i Object, task, targetType, targetID string
 	if t.contextBuilder == nil {
 		return Object{
 			"task":              task,
+			"issue":             Object{"title": in.IssueTitle, "description": in.IssueDescription},
+			"recentComments":    in.RecentComments,
 			"interactionValues": values,
 			"target":            Object{"type": targetType, "id": targetID},
 			"contextRefs":       in.ContextRefs,

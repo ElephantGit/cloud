@@ -6,6 +6,8 @@
 
 ## Module map
 
+The initial Agent prompt carries the frozen task title, description, recent comments and explicit references, including the no-ContextBuilder path. Startup does not re-read mutable task context. `agent_initial_context_test.go` checks context preservation and does not invent fields absent from legacy snapshots.
+
 - [migrations](migrations/README.en.md) defines the forward-only, linear PostgreSQL schema migration scripts and checksum verification.
 - [plugins.go](plugins.go) persists and reads the plugin catalog snapshot (the `pluginmarket.CatalogSink` implementation) and owns the space plugin selection state machine (install/remove fan-out, the aggregation rule, SSE invalidation broadcasts).
 - [session_list.go](session_list.go) and [session_history.go](session_history.go) provide tenant Agent

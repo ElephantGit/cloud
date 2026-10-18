@@ -82,6 +82,14 @@ Environment variables are listed in [model-gateway](../models/model-gateway.en.m
 `database.*` and `auth.*` from Cloud's configuration file, using the latter to verify credential writes forwarded by the
 Gateway.
 
+## Shared egress
+
+The Cloud server and model-gateway point at one out-of-package JSON file with `-deployment-egress <path>` or
+`ORA_DEPLOYMENT_EGRESS_FILE`; the flag wins. Omitting it keeps public mode. Public DNS remains
+`MODEL_GATEWAY_DNS_HTTPS_URL` and `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`, and both processes must receive the same values.
+The file format, the enterprise allowlist and how to replace the file are in
+[Shared deployment egress](deployment-egress.en.md). This is not a key in `configs/config.yaml`.
+
 ## git-server
 
 The full description is in [`cmd/git-server`](../../cmd/git-server/README.en.md):

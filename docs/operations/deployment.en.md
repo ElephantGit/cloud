@@ -93,13 +93,20 @@ because of the unknown migration, so a rollback has to deal with the database as
 
 Production connections use TLS; never use the sample's local trust configuration.
 
+## Shared egress
+
+The Cloud server and every model-gateway mount one read-only `deployment-egress.json` and point at it with
+`-deployment-egress` or `ORA_DEPLOYMENT_EGRESS_FILE`. To replace it, stop both processes, confirm the old processes have
+exited, then swap the file and start again; editing the file alone does not change the snapshot already loaded. The
+policy is in [Shared deployment egress](deployment-egress.en.md).
+
 ## Health checks
 
 | Process | Check |
 |---|---|
-| Cloud server | `GET /healthz`: an unreachable database returns `503 database_unavailable`; reports whether object storage is configured, which does not mean storage is online |
+| Cloud server | `GET /healthz`: an unreachable database returns `503 database_unavailable`; reports whether object storage is configured, which does not mean storage is online. The response also carries `X-Ora-Egress-Schema` and `X-Ora-Egress-Digest` |
 | Gateway | `GET /healthz`: PostgreSQL liveness |
-| model-gateway | `model-gateway -healthcheck`: verifies HTTPS and the public CA normally and checks database readiness, without reading user keys or the master key |
+| model-gateway | `model-gateway -healthcheck`: verifies HTTPS and the public CA normally and checks database readiness, without reading user keys, the master key or the egress digest. `GET /healthz` on the credential listener is what carries the same `X-Ora-Egress-Schema` and `X-Ora-Egress-Digest` as Cloud |
 | git-server | `git-server -healthcheck`: calls `/healthz` on the ref listener and verifies the server certificate against the deployment CA, without reading private keys |
 
 Health checks report only whether dependencies are ready and never reveal configuration.

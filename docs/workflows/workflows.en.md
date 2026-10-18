@@ -109,8 +109,8 @@ workflow of the tenant, creating its first published version at the same time:
   no live runtime still receives the templates.
 - A background loop runs every `plugins.asset_import_interval` (30 seconds by default); downloading and parsing happen
   outside any transaction, and only the results are written in one short transaction. Downloads use the same checked
-  outbound client and public-address policy as model-gateway and never follow redirects (see
-  [Outbound policy](../models/model-gateway.en.md#outbound-policy)).
+  outbound client and the same deployment egress policy as model-gateway and never follow redirects (see
+  [Shared deployment egress](../operations/deployment-egress.en.md)).
 - The package location comes from the selected release in the catalog snapshot and is resolved at each claim rather
   than stored. Imports are fenced by **the claimed revision**: if the administrator reinstalls during the download, the
   stale attempt writes nothing and the next pass resolves the newer selection.

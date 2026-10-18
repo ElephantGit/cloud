@@ -16,11 +16,14 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 		  FROM issue_runs r JOIN thread_entries te ON te.run_id=r.id
 		  WHERE r.tenant_id=$1 AND r.issue_id=$2 AND r.executor_type='agent'
 		    AND r.phase='done' AND r.deleted_at IS NULL AND te.visible_text IS NOT NULL
-		  ORDER BY r.created_at DESC,r.id DESC,te.seq DESC LIMIT 500
+		  ORDER BY r.created_at DESC,r.id DESC,te.seq DESC LIMIT 501
+		), kept AS (
+		  SELECT * FROM recent ORDER BY run_created_at DESC,run_id DESC,seq DESC LIMIT 500
 		)
 		SELECT run_id,turn_id::text AS turn_id,string_agg(visible_text,'' ORDER BY seq) AS assistant_text,
-		       bool_or(visible_text_truncated) AS truncated, max(seq) AS last_seq,run_created_at
-		FROM recent GROUP BY run_id,turn_id,run_created_at ORDER BY run_created_at DESC,run_id DESC,last_seq DESC LIMIT $3`,
+		       bool_or(visible_text_truncated) AS truncated, max(seq) AS last_seq,run_created_at,
+		       (SELECT count(*)>500 FROM recent) AS overflow
+		FROM kept GROUP BY run_id,turn_id,run_created_at ORDER BY run_created_at DESC,run_id DESC,last_seq DESC LIMIT $3`,
 		tid, iid, taskConversationHistoryTurns)
 	// A past session with no projection is a known gap, including pre-upgrade rows. It remains
 	// readable through its Thread/verified archive, but cannot be described as recovered context.
@@ -29,7 +32,10 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 		AND NOT EXISTS (SELECT 1 FROM thread_entries te WHERE te.run_id=r.id AND te.visible_text IS NOT NULL) LIMIT 1`, tid, iid) != nil
 	chosen := make([]Object, 0, len(rows))
 	truncated := len(rows) == taskConversationHistoryTurns
-	for _, row := range rows {
+	for index, row := range rows {
+		if row.B("overflow") {
+			truncated = true
+		}
 		user := t.one(`SELECT m.body FROM task_conversation_messages m
 			JOIN thread_entries te ON te.run_id=m.run_id AND te.seq=COALESCE(m.thread_seq,1)
 			WHERE m.run_id=$1 AND m.state='submitted' AND te.turn_id::text=$2
@@ -53,7 +59,7 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 				truncated = true
 			}
 		}
-		if row.B("truncated") {
+		if row.B("truncated") || row.B("overflow") && index == len(rows)-1 {
 			turn["assistantTruncated"] = true
 		}
 		candidate := append([]Object{turn}, chosen...)

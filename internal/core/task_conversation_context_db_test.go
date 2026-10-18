@@ -86,6 +86,28 @@ func TestTaskConversationRestoresLegacyInitialTaskWithoutInventingLaterTurns(t *
 	}
 }
 
+func TestTaskConversationMarksAPartialTurnWhenItsProjectionWindowOverflows(t *testing.T) {
+	store := dispatcherDB(t)
+	seed := seedDispatchScene(t, store.Pool, false)
+	var snapshot Object
+	_, err := store.transact(context.Background(), func(tx *transaction) Object {
+		turn := newID()
+		tx.exec(`UPDATE issue_runs SET status='completed',phase='done',input='{"task":"Long answer"}' WHERE id=$1`, seed.run)
+		tx.exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record,turn_id) VALUES($1,1,'system','user_turn','{"content":"Long answer"}',$2)`, seed.run, turn)
+		tx.exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record,turn_id,visible_text)
+			SELECT $1,n,'node','update','{"type":"update"}',$2,'x' FROM generate_series(2,502) n`, seed.run, turn)
+		snapshot = buildRunContext(tx, issue(tx, seed.tenant, seed.issue), "new work", "agent", seed.agent, Object{}, nil)
+		return Object{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := snapshot["conversationHistory"].([]Object)
+	if len(history) != 1 || len(history[0].S("assistant")) != 500 || !history[0].B("assistantTruncated") || !snapshot.B("conversationHistoryIncomplete") {
+		t.Fatalf("partial assistant turn was presented as complete: %v", snapshot)
+	}
+}
+
 func TestTaskConversationProjectionSurvivesReceiptReplayWithoutChangingHistory(t *testing.T) {
 	store := commandStore(t)
 	scene := seedTakeoverScene(t, store)

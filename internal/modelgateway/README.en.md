@@ -78,8 +78,8 @@ Tests use generated ephemeral secrets and actual TLS/HTTP boundaries for encrypt
 purpose, protocol streams, cancellation, safe diagnostics and address policy. The optional credential-free
 `transport_network_test.go` probe establishes trusted DNS and verified TLS connectivity only; HTTP 401
 does not establish model-call acceptance. Core's PostgreSQL tests
-cover durable ownership and grant authority; cluster M4 supplies actual OpenCode/provider evidence.
-See [personal model connections](../../docs/model-connections.en.md).
+cover durable ownership and grant authority. See [model-gateway](../../docs/models/model-gateway.en.md)
+and [personal model connections](../../docs/models/model-access.en.md).
 `attempt*_test.go` and `usage_test.go` also cover registration before dispatch, repeated snapshots,
 unknown versus zero, monotonic timing, finalization after cancellation, failures without redispatch
 and byte-preserving forwarding. Their controlled upstreams are synthetic, not evidence of real billing.

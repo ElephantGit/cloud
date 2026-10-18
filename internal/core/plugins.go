@@ -1,7 +1,7 @@
 // Plugin marketplace state: cloud is the sole authority for the per-space plugin
 // selection and the catalog snapshot. The Node execution plane only downloads
 // and runs what cloud fans out through the operation/effect channel; it never
-// syncs the marketplace itself. See docs/plugins.md for the full contract.
+// syncs the marketplace itself. See docs/plugins/marketplace.md for the full contract.
 package core
 
 import (

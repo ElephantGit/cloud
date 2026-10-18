@@ -19,4 +19,4 @@ authorize 只发送 2.0 普通模式必填字段，不附加 PKCE 或 `display`�
 （不发送 Basic 头，不把凭据放进 query，也不发送 PKCE-NULL 的 `code_verifier`）；userinfo 只在请求体
 提交 `access_token`。token/userinfo 调用必须有总超时、禁止重定向且不得位于数据库事务内。超大或非法
 JSON 响应与明确拒绝一样归为 `ErrProviderRejected`。参见
-[Gateway 认证模块](../README.md) 与 [部署说明](../../../docs/gateway.md)。
+[Gateway 认证模块](../README.md) 与 [Gateway 文档](../../../docs/identity/gateway.md)。

@@ -83,7 +83,7 @@ describe('imported workflow documents', () => {
 
   it('recovers the launch-field declaration an export carried', () => {
     const launchFields = [
-      { key: 'version', enabled: false },
+      { key: 'snapshotId', enabled: false },
       { key: 'prompt', enabled: true, required: true },
     ]
     const imported = parseImportedWorkflowDocument(documentWith({ launchFields }))

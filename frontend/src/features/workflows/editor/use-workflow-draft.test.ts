@@ -222,7 +222,7 @@ describe('useWorkflowDraft', () => {
 
   it('carries the launch-field declaration from the stored graph into the next save', () => {
     const declaration = [
-      { key: 'version', enabled: false },
+      { key: 'snapshotId', enabled: false },
       { key: 'prompt', required: true },
     ]
     const { result } = setup(declarationFixture(declaration))

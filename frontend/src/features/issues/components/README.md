@@ -23,7 +23,7 @@
 
 ## 依赖与不变量
 
-工作区组合 `features/issues/thread` 的会话面板；正文使用 `features/conversation-content`。切换页签与查看历史不会创建运行，成功提交 Agent 任务后回到最新会话。执行记录由真实 Run 列表驱动，未知 Agent 展示保守名称。
+工作区组合 `features/issues/conversation` 的任务对话及 `features/issues/thread` 的会话面板；正文使用 `features/conversation-content`。切换页签与查看历史不会创建运行，成功提交 Agent 任务后回到最新会话。执行记录由真实 Run 列表驱动，未知 Agent 展示保守名称。
 
 依赖 `features/issues/api`、`features/issues/types`、`features/issues/present`、`features/projects/api` 的真实项目列表、`features/spaces/current-space` 与 `components`；由 `features/issues` 的页面使用。草稿（评论、目标、表单）只在用户按下各自按钮时才写入服务端；属性栏的修改都经页面传入的 `onCommit`（带版本号）。项目选择来自当前已加入空间，不能回退到演示数据。
 

@@ -56,6 +56,8 @@ import type {
   GetApiV1TenantsTidIssuesIidComments200,
   GetApiV1TenantsTidIssuesIidCommentsParams,
   GetApiV1TenantsTidIssuesIidContextRefs200,
+  GetApiV1TenantsTidIssuesIidConversation200,
+  GetApiV1TenantsTidIssuesIidConversationParams,
   GetApiV1TenantsTidIssuesIidInteractions200,
   GetApiV1TenantsTidIssuesIidLabels200,
   GetApiV1TenantsTidIssuesIidLabelsParams,
@@ -104,6 +106,16 @@ import type {
   PostApiV1TenantsTidIssuesIidCommentsBody,
   PostApiV1TenantsTidIssuesIidContextRefs200,
   PostApiV1TenantsTidIssuesIidContextRefsBody,
+  PostApiV1TenantsTidIssuesIidConversationDiscard200,
+  PostApiV1TenantsTidIssuesIidConversationDiscardBody,
+  PostApiV1TenantsTidIssuesIidConversationMessages201,
+  PostApiV1TenantsTidIssuesIidConversationMessagesBody,
+  PostApiV1TenantsTidIssuesIidConversationMessagesMidCancel200,
+  PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody,
+  PostApiV1TenantsTidIssuesIidConversationMessagesMidRetry200,
+  PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody,
+  PostApiV1TenantsTidIssuesIidConversationResume200,
+  PostApiV1TenantsTidIssuesIidConversationResumeBody,
   PostApiV1TenantsTidIssuesIidInteractionsIxidConfirm200,
   PostApiV1TenantsTidIssuesIidInteractionsIxidConfirmBody,
   PostApiV1TenantsTidIssuesIidLabels200,
@@ -2715,6 +2727,466 @@ export const useDeleteApiV1TenantsTidIssuesIidContextRefsCrid = <TError = ErrorT
         TContext
       > => {
       return useMutation(getDeleteApiV1TenantsTidIssuesIidContextRefsCridMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary GET /api/v1/tenants/:tid/issues/:iid/conversation
+ */
+export const getApiV1TenantsTidIssuesIidConversation = (
+    tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<GetApiV1TenantsTidIssuesIidConversation200>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidIssuesIidConversationQueryKey = (tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams,) => {
+    return [
+    `/api/v1/tenants/${tid}/issues/${iid}/conversation`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidIssuesIidConversationQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError = ErrorType<Error>>(tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidIssuesIidConversationQueryKey(tid,iid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>> = ({ signal }) => getApiV1TenantsTidIssuesIidConversation(tid,iid,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && iid !== null && iid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidIssuesIidConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>>
+export type GetApiV1TenantsTidIssuesIidConversationQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidIssuesIidConversation<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    params: undefined |  GetApiV1TenantsTidIssuesIidConversationParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidIssuesIidConversation<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidIssuesIidConversation<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/issues/:iid/conversation
+ */
+
+export function useGetApiV1TenantsTidIssuesIidConversation<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    params?: GetApiV1TenantsTidIssuesIidConversationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidConversation>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidIssuesIidConversationQueryOptions(tid,iid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/discard
+ */
+export const postApiV1TenantsTidIssuesIidConversationDiscard = (
+    tid: string,
+    iid: string,
+    postApiV1TenantsTidIssuesIidConversationDiscardBody: PostApiV1TenantsTidIssuesIidConversationDiscardBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationDiscard200>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/discard`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationDiscardBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationDiscardMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationDiscard'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationDiscardMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>, TError,PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>, TError,PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationDiscardMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>, PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables> = (props) => {
+          const {tid,iid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationDiscard(tid,iid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationDiscardMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>>
+    export type PostApiV1TenantsTidIssuesIidConversationDiscardMutationBody = PostApiV1TenantsTidIssuesIidConversationDiscardBody
+    export type PostApiV1TenantsTidIssuesIidConversationDiscardMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables = {tid: string;iid: string;data: PostApiV1TenantsTidIssuesIidConversationDiscardBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/discard
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationDiscard = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>, TError,PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationDiscard>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationDiscardMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationDiscardMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages
+ */
+export const postApiV1TenantsTidIssuesIidConversationMessages = (
+    tid: string,
+    iid: string,
+    postApiV1TenantsTidIssuesIidConversationMessagesBody: PostApiV1TenantsTidIssuesIidConversationMessagesBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationMessages201>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/messages`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationMessagesBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationMessages'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationMessagesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>, PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables> = (props) => {
+          const {tid,iid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationMessages(tid,iid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMutationBody = PostApiV1TenantsTidIssuesIidConversationMessagesBody
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables = {tid: string;iid: string;data: PostApiV1TenantsTidIssuesIidConversationMessagesBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationMessages = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessages>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationMessagesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationMessagesMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/cancel
+ */
+export const postApiV1TenantsTidIssuesIidConversationMessagesMidCancel = (
+    tid: string,
+    iid: string,
+    mid: string,
+    postApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody: PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationMessagesMidCancel200>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/messages/${mid}/cancel`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationMessagesMidCancel'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>, PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables> = (props) => {
+          const {tid,iid,mid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationMessagesMidCancel(tid,iid,mid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationBody = PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables = {tid: string;iid: string;mid: string;data: PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/cancel
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationMessagesMidCancel = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidCancel>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationMessagesMidCancelMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/retry
+ */
+export const postApiV1TenantsTidIssuesIidConversationMessagesMidRetry = (
+    tid: string,
+    iid: string,
+    mid: string,
+    postApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody: PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationMessagesMidRetry200>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/messages/${mid}/retry`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationMessagesMidRetry'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>, PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables> = (props) => {
+          const {tid,iid,mid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationMessagesMidRetry(tid,iid,mid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationBody = PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables = {tid: string;iid: string;mid: string;data: PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/retry
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationMessagesMidRetry = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>, TError,PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationMessagesMidRetry>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationMessagesMidRetryMutationOptions(options), queryClient);
+    }
+    /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/resume
+ */
+export const postApiV1TenantsTidIssuesIidConversationResume = (
+    tid: string,
+    iid: string,
+    postApiV1TenantsTidIssuesIidConversationResumeBody: PostApiV1TenantsTidIssuesIidConversationResumeBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidConversationResume200>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/conversation/resume`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidConversationResumeBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidConversationResumeMutationKey = () => ['postApiV1TenantsTidIssuesIidConversationResume'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidConversationResumeMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>, TError,PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>, TError,PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidConversationResumeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>, PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables> = (props) => {
+          const {tid,iid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidConversationResume(tid,iid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidConversationResumeMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>>
+    export type PostApiV1TenantsTidIssuesIidConversationResumeMutationBody = PostApiV1TenantsTidIssuesIidConversationResumeBody
+    export type PostApiV1TenantsTidIssuesIidConversationResumeMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables = {tid: string;iid: string;data: PostApiV1TenantsTidIssuesIidConversationResumeBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/conversation/resume
+ */
+export const usePostApiV1TenantsTidIssuesIidConversationResume = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>, TError,PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidConversationResume>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidConversationResumeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidConversationResumeMutationOptions(options), queryClient);
     }
     /**
  * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.

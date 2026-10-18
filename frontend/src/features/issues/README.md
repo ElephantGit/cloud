@@ -17,7 +17,7 @@
 | `issue-detail-page.tsx` | 详情页：宽对话主区域、Markdown 说明与可折叠属性；版本化 Project 关联及失败重读，组合对话/执行记录/任务动态工作区 |
 | `*.test.ts(x)` | 页面与 hooks 测试 |
 
-子目录：`components/`（页面子组件）、`thread/`（Agent 会话面板）。
+子目录：`components/`（页面子组件）、`thread/`（单次 Agent 会话面板）、`conversation/`（任务级连续对话与输入）。
 
 ## 依赖与不变量
 

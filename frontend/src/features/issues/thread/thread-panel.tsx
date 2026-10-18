@@ -12,18 +12,29 @@ import { ThreadComposer } from './thread-composer'
 import { latestAgentRun, threadStateLabel } from './thread-entries'
 import { ThreadMessages } from './thread-messages'
 
+function chosenAgentRun(
+  runs: readonly IssueRun[],
+  selectedRunId: string | undefined,
+): IssueRun | undefined {
+  if (selectedRunId)
+    return runs.find((run) => run.id === selectedRunId && run.executorType === 'agent')
+  return latestAgentRun(runs)
+}
+
 function DeclaredThread({
   threadRef,
   snapshot,
   names,
   preparation,
   readOnly,
+  onQuote,
 }: {
   threadRef: ThreadRef
   snapshot: Extract<ThreadSnapshot, { declared: true }>
   names: ReadonlyMap<string, string>
   preparation: IssueRun['preparation']
   readOnly: boolean
+  onQuote?: ((text: string) => void) | undefined
 }) {
   const loadOlder = useLoadOlderThread(threadRef)
   const oldest = snapshot.entries[0]?.seq
@@ -40,6 +51,7 @@ function DeclaredThread({
         onLoadOlder={() => {
           if (oldest !== undefined) loadOlder.mutate(oldest)
         }}
+        onQuote={onQuote}
       />
       {loadOlder.isError && <p className="text-xs text-destructive">加载更早的消息失败</p>}
       <p className="text-xs text-muted-foreground">
@@ -79,12 +91,14 @@ function RunThread({
   names,
   runs,
   readOnly,
+  onQuote,
 }: {
   threadRef: ThreadRef
   run: IssueRun
   names: ReadonlyMap<string, string>
   runs: readonly IssueRun[]
   readOnly: boolean
+  onQuote?: ((text: string) => void) | undefined
 }) {
   const settled = ['completed', 'failed', 'cancelled'].includes(run.status)
   const thread = useThread(threadRef, settled)
@@ -114,6 +128,7 @@ function RunThread({
           names={names}
           preparation={run.preparation}
           readOnly={readOnly}
+          onQuote={onQuote}
         />
       )}
       <RunDelivery
@@ -136,18 +151,21 @@ export function IssueThreadPanel({
   issueId,
   members,
   selectedRunId,
+  readOnly = false,
+  onQuote,
 }: {
   tid: string
   issueId: string
   members?: TenantMember[]
   /** A historical run chosen by the task page; never silently falls back to another run. */
   selectedRunId?: string | undefined
+  /** A task-level composer owns sends while multiple run transcripts are shown. */
+  readOnly?: boolean
+  onQuote?: ((text: string, agentId: string) => void) | undefined
 }) {
   const { data: runs = [], isPending, isError } = useRuns(tid, issueId)
   const latest = latestAgentRun(runs)
-  const run = selectedRunId
-    ? runs.find((candidate) => candidate.id === selectedRunId && candidate.executorType === 'agent')
-    : latest
+  const run = chosenAgentRun(runs, selectedRunId)
   if (isError) return <p role="alert">执行记录加载失败，请稍后重试。</p>
   if (selectedRunId && !isPending && !run) return <p role="alert">该执行记录不存在或已不可访问。</p>
   if (!run) return null
@@ -164,7 +182,8 @@ export function IssueThreadPanel({
         runs={runs}
         threadRef={{ tid, issueId, runId: run.id }}
         names={memberNameById(members)}
-        readOnly={!!selectedRunId && run.id !== latest?.id}
+        readOnly={readOnly || (!!selectedRunId && run.id !== latest?.id)}
+        onQuote={onQuote ? (text) => onQuote(text, run.executorId) : undefined}
       />
     </div>
   )

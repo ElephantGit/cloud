@@ -1,0 +1,256 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { HttpResponse, http } from 'msw'
+import { describe, expect, it, vi } from 'vitest'
+import type { TaskConversationMessage } from '@/api/generated.schemas'
+import type { IssueRun } from '@/features/issues/types'
+import { makeAgentTarget } from '@/test/issue-fixtures'
+import { server } from '@/test/msw-server'
+import { TaskConversationPanel } from './conversation-panel'
+
+const RUNS = '/api/v1/tenants/t1/issues/i1/runs'
+const CONVERSATION = '/api/v1/tenants/t1/issues/i1/conversation'
+
+function run(id: string, agent: string, status: string, at: string): IssueRun {
+  return {
+    id,
+    tenantId: 't1',
+    issueId: 'i1',
+    executorType: 'agent',
+    executorId: agent,
+    input: { task: `Task ${id}` },
+    status,
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
+function mockConversation(runs: IssueRun[], messages: TaskConversationMessage[]) {
+  server.use(
+    http.get(RUNS, () => HttpResponse.json({ items: runs, nextCursor: '' })),
+    http.get(CONVERSATION, () =>
+      HttpResponse.json({
+        items: messages,
+        nextCursor: messages.at(-1)?.seq ?? null,
+        prevCursor: messages[0]?.seq ?? null,
+      }),
+    ),
+    http.get('/api/v1/tenants/t1/issues/i1/timeline', () =>
+      HttpResponse.json({ items: [], nextCursor: '' }),
+    ),
+    http.get('/api/v1/tenants/t1/issues/i1/runs/:rid/thread', ({ params }) =>
+      HttpResponse.json({
+        items: [
+          {
+            seq: 1,
+            kind: 'update',
+            source: 'node',
+            turnId: 'turn-1',
+            record: {
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                content: { type: 'text', text: `Answer ${String(params['rid'])}` },
+              },
+            },
+            createdAt: '2026-10-18T01:01:00Z',
+          },
+        ],
+        threadState:
+          runs.find((candidate) => candidate.id === params['rid'])?.status === 'running'
+            ? 'idle'
+            : 'ended',
+        idleSince: null,
+        canAppend: true,
+        canEnd: true,
+        initiatorUserId: 'u1',
+        model: null,
+        nextCursor: 1,
+        prevCursor: 1,
+      }),
+    ),
+  )
+}
+
+function renderConversation(runs: IssueRun[]) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const onLatest = vi.fn<() => void>()
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TaskConversationPanel
+        tid="t1"
+        issueId="i1"
+        runs={runs}
+        members={[]}
+        targets={[makeAgentTarget('a1', 'OpenCode'), makeAgentTarget('a2', 'Claude')]}
+        currentUserId="u1"
+        onLatest={onLatest}
+      />
+    </QueryClientProvider>,
+  )
+  return { queryClient, onLatest }
+}
+
+describe('TaskConversationPanel', () => {
+  it('keeps an ended run readable while a new same-Agent message starts the next run', async () => {
+    const runs = [run('r-old', 'a1', 'completed', '2026-10-18T01:00:00Z')]
+    const messages: TaskConversationMessage[] = []
+    mockConversation(runs, messages)
+    const posted: unknown[] = []
+    server.use(
+      http.post(`${CONVERSATION}/messages`, async ({ request }) => {
+        posted.push({ body: await request.json(), key: request.headers.get('Idempotency-Key') })
+        const message: TaskConversationMessage = {
+          id: 'm1',
+          seq: 1,
+          userId: 'u1',
+          agentId: 'a1',
+          body: 'Please continue',
+          state: 'waiting',
+          runId: null,
+          threadSeq: null,
+          errorCode: null,
+          createdAt: '2026-10-18T02:00:00Z',
+        }
+        messages.push(message)
+        return HttpResponse.json({ resource: message }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    const { queryClient } = renderConversation(runs)
+    expect(await screen.findByText('Answer r-old')).toBeInTheDocument()
+    expect(screen.getByLabelText('发送给')).toHaveValue('a1')
+    await user.type(screen.getByLabelText('任务对话输入'), 'Please continue')
+    await user.click(screen.getByRole('button', { name: /^发送$/ }))
+    expect(await screen.findByText('等待执行或交接')).toBeInTheDocument()
+    expect(posted).toEqual([
+      { body: { agentId: 'a1', body: 'Please continue' }, key: expect.any(String) },
+    ])
+    runs.push(run('r-next', 'a1', 'queued', '2026-10-18T02:01:00Z'))
+    const firstMessage = messages[0]
+    if (!firstMessage) throw new Error('Queued message missing')
+    messages[0] = { ...firstMessage, state: 'submitted', runId: 'r-next' }
+    await queryClient.invalidateQueries({ queryKey: ['issue-runs', 't1', 'i1'] })
+    await queryClient.invalidateQueries({ queryKey: ['task-conversation', 't1', 'i1'] })
+    expect(await screen.findByText('Task r-next')).toBeInTheDocument()
+    expect(screen.getByText('Answer r-old')).toBeInTheDocument()
+  })
+
+  it('switches Agent only when a message is sent and lets its author cancel the pending handoff', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    const messages: TaskConversationMessage[] = []
+    mockConversation(runs, messages)
+    let sent = 0
+    server.use(
+      http.post(`${CONVERSATION}/messages`, async ({ request }) => {
+        sent++
+        expect(await request.json()).toEqual({ agentId: 'a2', body: 'Review the result' })
+        const message: TaskConversationMessage = {
+          id: 'm2',
+          seq: 1,
+          userId: 'u1',
+          agentId: 'a2',
+          body: 'Review the result',
+          state: 'waiting',
+          runId: null,
+          threadSeq: null,
+          errorCode: null,
+          createdAt: '2026-10-18T02:00:00Z',
+        }
+        messages.push(message)
+        return HttpResponse.json({ resource: message }, { status: 201 })
+      }),
+      http.post(`${CONVERSATION}/messages/m2/cancel`, () => {
+        const waiting = messages[0]
+        if (!waiting) throw new Error('Waiting message missing')
+        messages[0] = { ...waiting, state: 'cancelled' }
+        return HttpResponse.json({ resource: messages[0] })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await screen.findByText('Answer r-live')
+    await user.selectOptions(screen.getByLabelText('发送给'), 'a2')
+    expect(sent).toBe(0)
+    expect(screen.getByText(/等待当前 Agent 完成/)).toHaveTextContent('Claude')
+    await user.type(screen.getByLabelText('任务对话输入'), 'Review the result')
+    await user.click(screen.getByRole('button', { name: /^发送$/ }))
+    const list = await screen.findByRole('list', { name: '任务对话' })
+    expect(await within(list).findByText('等待执行或交接')).toBeInTheDocument()
+    expect(sent).toBe(1)
+    await user.click(screen.getByRole('button', { name: '取消等待' }))
+    expect(await screen.findByText('已取消')).toBeInTheDocument()
+    expect(runs).toHaveLength(1)
+  })
+
+  it('posts a plain task comment without choosing or starting an Agent', async () => {
+    const runs: IssueRun[] = []
+    mockConversation(runs, [])
+    const bodies: unknown[] = []
+    server.use(
+      http.post('/api/v1/tenants/t1/issues/i1/comments', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ resource: { id: 'c1' } }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.click(screen.getByRole('button', { name: '仅评论' }))
+    await user.type(screen.getByLabelText('任务对话输入'), 'Note for colleagues')
+    await user.click(screen.getByRole('button', { name: '发表评论' }))
+    await waitFor(() => expect(bodies).toEqual([{ body: 'Note for colleagues' }]))
+    expect(runs).toHaveLength(0)
+  })
+
+  it('changes the recipient only when an Agent mention is selected', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [])
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await screen.findByText('Answer r-live')
+    const editor = screen.getByLabelText('任务对话输入')
+    await user.type(editor, 'Please ask @Claude')
+    expect(screen.getByLabelText('发送给')).toHaveValue('a1')
+    await user.click(
+      within(screen.getByLabelText('选择提及的 Agent')).getByRole('button', { name: 'Claude' }),
+    )
+    expect(screen.getByLabelText('发送给')).toHaveValue('a2')
+    expect(editor).toHaveValue('Please ask')
+    expect(screen.getByText(/等待当前 Agent 完成/)).toHaveTextContent('Claude')
+  })
+
+  it('requires an explicit recovery action after an undelivered run', async () => {
+    const failed: IssueRun = {
+      ...run('r-failed', 'a1', 'completed', '2026-10-18T01:00:00Z'),
+      result: { deliveryState: 'failed' },
+    }
+    const messages: TaskConversationMessage[] = [
+      {
+        id: 'm-wait',
+        seq: 1,
+        userId: 'u1',
+        agentId: 'a1',
+        body: 'continue',
+        state: 'waiting',
+        runId: null,
+        threadSeq: null,
+        errorCode: null,
+        createdAt: '2026-10-18T02:00:00Z',
+      },
+    ]
+    mockConversation([failed], messages)
+    const bodies: unknown[] = []
+    server.use(
+      http.post(`${CONVERSATION}/discard`, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ acknowledgedRunId: failed.id })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation([failed])
+    expect(await screen.findByText('放弃未交付成果并继续')).toBeInTheDocument()
+    expect(bodies).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: '放弃未交付成果并继续' }))
+    await waitFor(() => expect(bodies).toEqual([{ runId: 'r-failed', acknowledgeLostWork: true }]))
+  })
+})

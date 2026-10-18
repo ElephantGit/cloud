@@ -4,7 +4,7 @@
 
 ## Responsibility
 
-The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. Historical selections are read-only; the latest Thread retains server-authorized send/end controls.
+The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. The task composition shows each Run read-only and sends from the task-level composer; the standalone Thread component retains its original authorized send/end controls for upgrades from an older server.
 
 Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the SSE connection itself (`features/spaces/use-space-events`), the issue's other columns.
 

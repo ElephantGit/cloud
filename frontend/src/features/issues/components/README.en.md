@@ -23,6 +23,8 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 
 ## Dependencies and invariants
 
+The workspace composes task discussion from `features/issues/conversation` and each session from `features/issues/thread`; text uses `features/conversation-content`. Changing tabs or reading old runs does not create work. A successful new Agent request returns to the current task conversation.
+
 Depends on `features/issues/api`, `features/issues/types`, `features/issues/present`, the real project list in `features/projects/api`, `features/spaces/current-space`, and `components`; used by the `features/issues` pages. Drafts (comments, targets, forms) reach the server only when their own button is pressed; property edits all go through the page's versioned `onCommit`. Project choices come from the current joined space and never fall back to demo data.
 
 Creation drafts remount by tenant/space; activity drafts by tenant/space/issue, including navigation to cached scopes. Project association follows server results; versioned updates disable property edits until settled and keep stored values on refusal. Project guidance targets the `issue-project` selector. Targets come only from the real directory; the server remains authoritative for space compatibility.

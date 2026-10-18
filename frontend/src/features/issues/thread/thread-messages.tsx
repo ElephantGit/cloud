@@ -15,11 +15,13 @@ export function ThreadMessages({
   hasOlder,
   loadingOlder,
   onLoadOlder,
+  onQuote,
 }: {
   entries: readonly ThreadEntry[]
   hasOlder: boolean
   loadingOlder: boolean
   onLoadOlder: () => void
+  onQuote?: ((text: string) => void) | undefined
 }) {
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -72,7 +74,7 @@ export function ThreadMessages({
       )}
       <ol aria-label="会话消息" className="space-y-4">
         {threadItems(entries).map((item) => (
-          <ThreadRow key={item.key} item={item} />
+          <ThreadRow key={item.key} item={item} onQuote={onQuote} />
         ))}
       </ol>
       {entries.length === 0 && <p className="text-sm text-muted-foreground">暂无消息</p>}

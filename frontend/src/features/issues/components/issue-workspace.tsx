@@ -2,8 +2,9 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaborationTargets, useRuns } from '@/features/issues/api'
+import { useSession } from '@/features/auth/session'
+import { TaskConversationPanel } from '@/features/issues/conversation/conversation-panel'
 import type { CollaborationTargetSummary, IssueRun, TenantMember } from '@/features/issues/types'
-import { IssueThreadPanel } from '@/features/issues/thread/thread-panel'
 import { ActivityPanel } from './activity-panel'
 import { workspacePaths } from '@/lib/paths'
 
@@ -86,6 +87,7 @@ export function IssueWorkspace({
   members: TenantMember[]
 }) {
   const [params, setParams] = useSearchParams()
+  const { session } = useSession()
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>()
   const { data: runs = [], isError } = useRuns(tid, issueId)
   const { data: targets = [] } = useCollaborationTargets(tid)
@@ -124,18 +126,17 @@ export function IssueWorkspace({
             返回最新执行
           </Button>
         )}
-        <IssueThreadPanel tid={tid} issueId={issueId} members={members} selectedRunId={selected} />
-        {agents.length === 0 && !selected && (
-          <div className="rounded-xl border border-dashed p-8 text-center">
-            <h2 className="font-medium">围绕任务与 Agent 协作</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              在任务动态中选择 Agent 并提交任务，执行过程将在这里展示。
-            </p>
-            <Button className="mt-4" onClick={() => navigate('activity')}>
-              发起任务
-            </Button>
-          </div>
-        )}
+        <TaskConversationPanel
+          tid={tid}
+          issueId={issueId}
+          members={members}
+          targets={targets}
+          runs={runs}
+          selectedRunId={selected}
+          workspaceSlug={workspaceSlug}
+          currentUserId={session.status === 'signed-in' ? session.user.id : undefined}
+          onLatest={() => navigate('conversation')}
+        />
       </TabsContent>
       <TabsContent value="runs" className="pt-4">
         {isError && <p role="alert">执行记录加载失败，请稍后重试。</p>}

@@ -4,7 +4,7 @@
 
 ## 职责
 
-Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。历史选择不提供发送入口；最新会话仍按服务端权限发送和结束。
+Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。任务级组合以只读模式展示各 Run，发送交给任务统一输入框；独立会话组件保留原有发送/结束控制，供旧服务升级期间使用。
 
 不负责：run 的创建与列表（`features/issues/api` 的 `useRuns`）、SSE 连接本身（`features/spaces/use-space-events`）、Issue 其他栏目。
 

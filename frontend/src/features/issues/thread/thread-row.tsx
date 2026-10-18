@@ -1,4 +1,5 @@
 import { Brain, Wrench } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { ConversationMarkdown } from '@/features/conversation-content/markdown'
 import type { SessionTool } from '@/features/session-data'
 import type { ThreadItem } from './thread-entries'
@@ -67,7 +68,13 @@ function ToolStep({ tool }: { tool: SessionTool }) {
 }
 
 /** One readable conversation record; infrastructure prompts remain available in a disclosure. */
-export function ThreadRow({ item }: { item: ThreadItem }) {
+export function ThreadRow({
+  item,
+  onQuote,
+}: {
+  item: ThreadItem
+  onQuote?: ((text: string) => void) | undefined
+}) {
   switch (item.variant) {
     case 'prompt':
       return (
@@ -85,12 +92,22 @@ export function ThreadRow({ item }: { item: ThreadItem }) {
         <li className="ml-6 rounded-xl bg-muted/60 p-4 sm:ml-16">
           <ConversationMarkdown text={item.text} />
           {item.status && <p className="mt-2 text-xs text-muted-foreground">{item.status}</p>}
+          {onQuote && (
+            <Button type="button" size="xs" variant="ghost" onClick={() => onQuote(item.text)}>
+              引用回复
+            </Button>
+          )}
         </li>
       )
     case 'agent':
       return (
         <li className="min-w-0 py-2">
           <ConversationMarkdown text={item.text} />
+          {onQuote && (
+            <Button type="button" size="xs" variant="ghost" onClick={() => onQuote(item.text)}>
+              引用回复
+            </Button>
+          )}
         </li>
       )
     case 'thought':

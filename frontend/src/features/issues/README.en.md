@@ -17,7 +17,7 @@ The tenant's issue board, list and detail pages, plus the Cloud Issue data layer
 | `issue-detail-page.tsx` | Wide conversation area, Markdown description and collapsible properties; versioned Project updates with recovery reload, composing conversation/execution/activity navigation |
 | `*.test.ts(x)` | Page and hook tests |
 
-Subdirectories: `components/` (page sub-components), `thread/` (the Agent session panel).
+Subdirectories: `components/` (page sub-components), `thread/` (one Agent session), `conversation/` (task-level continuing conversation and composer).
 
 ## Dependencies and invariants
 

@@ -71,6 +71,9 @@ function serveDetail(issue: Issue, allIssues: Issue[] = [issue], runs: IssueRun[
     http.get('/api/v1/tenants/t1/issues/i1/runs', () =>
       HttpResponse.json({ items: runs, nextCursor: '' }),
     ),
+    http.get('/api/v1/tenants/t1/issues/i1/conversation', () =>
+      HttpResponse.json({ items: [], nextCursor: null, prevCursor: null }),
+    ),
   )
 }
 
@@ -158,7 +161,9 @@ describe('IssueDetailPage', () => {
     const { router } = renderIssueDetail('i1')
     expect(await screen.findByText('Reply new')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /执行记录/ }))
-    const old = screen.getByText('Task old').closest('li')
+    const old = within(screen.getByRole('list', { name: '执行记录' }))
+      .getByText('Task old')
+      .closest('li')
     if (!old) throw new Error('Historical run card missing')
     await user.click(within(old).getByRole('button', { name: '查看执行详情' }))
     expect(await screen.findByText('Reply old')).toBeInTheDocument()
@@ -220,7 +225,7 @@ describe('IssueDetailPage', () => {
       await user.click(reloadButton)
       await waitFor(() => expect(reloads).toBe(1))
       expect(project).toBeDisabled()
-      const status = screen.getAllByRole('combobox')[0]
+      const status = screen.getByRole('combobox', { name: '状态' })
       if (!status) throw new Error('The versioned status selector is missing')
       expect(status).toBeDisabled()
       expect(reloadButton).toBeDisabled()
@@ -260,11 +265,11 @@ describe('IssueDetailPage', () => {
     renderIssueDetail('i1')
     const project = await selectRepository(user)
     await waitFor(() => expect(project).toBeDisabled())
-    const status = screen.getAllByRole('combobox')[0]
+    const status = screen.getByRole('combobox', { name: '状态' })
     if (!status) throw new Error('The versioned status selector is missing')
     expect(status).toBeDisabled()
     await user.click(status)
-    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: '已完成' })).not.toBeInTheDocument()
     await user.click(project)
     expect(writes).toBe(1)
     release?.()
@@ -408,7 +413,7 @@ describe('IssueDetailPage', () => {
       body: 'Read the repository',
       targets: [{ type: 'agent', id: 'a1', task: 'Read the repository' }],
     })
-    expect(screen.getByLabelText('给 Agent 发送消息')).toBeEnabled()
+    expect(screen.getByLabelText('任务对话输入')).toBeEnabled()
     expect(screen.queryByLabelText('Installed Agent 的留言')).not.toBeInTheDocument()
   })
   it('renders the title and lets the status be changed', async () => {
@@ -418,8 +423,7 @@ describe('IssueDetailPage', () => {
 
     expect(await screen.findByText('Fix the login')).toBeInTheDocument()
 
-    const [statusTrigger] = screen.getAllByRole('combobox')
-    if (!statusTrigger) throw new Error('issue detail must render a status selector')
+    const statusTrigger = screen.getByRole('combobox', { name: '状态' })
     await user.click(statusTrigger)
     await user.click(await screen.findByRole('option', { name: '已完成' }))
 

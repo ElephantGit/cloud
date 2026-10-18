@@ -74,7 +74,7 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 | `queued` | 等待 Controller 领取 |
 | `running` | 已被领取，正在某个步骤上 |
 | `retry_wait` | 暂停，`retry_at` 到期后可再次领取 |
-| `blocked` | 暂停，只有用户显式重试（`POST /operations/:oid/retry`）才继续，Cloud 不自动重试 |
+| `blocked` | 暂停，只有用户显式重试（`POST /operations/:oid/retry`）才继续，Cloud 不自动重试；运行 Workspace 的创建例外，超过上限由 Cloud 放弃（见 [有界启动](../agent-runs/startup-settlement.md#创建-blocked-的有界放弃)） |
 | `succeeded`、`failed` | 终态 |
 
 **一个 Project 同一时间至多一个未结束的操作**（`queued`、`running`、`retry_wait`、`blocked`）。新的生命周期请求

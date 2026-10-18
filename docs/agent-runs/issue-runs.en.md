@@ -47,8 +47,9 @@ Cloud in the transaction that takes over the previous phase's evidence.
   `failureReason = workspace_unavailable`, and the delete operation cleans up whatever was created; when
   the Workspace is ready but the pinned Agent plugin was not installed, the run likewise goes to
   `releasing`, with reason `agent_plugin_unavailable`.
-- When the creation operation stays `blocked` for a long time the run stays `provisioning`; there is no
-  limit for that today.
+- When the creation operation stays `blocked` beyond its limit, the run settles as `failed`, `done` and keeps its residual
+  responsibility, while the original creation operation fails and releases the Project's operation slot (see
+  [Bounded abandonment of a blocked creation](startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)).
 - **`done` does not mean the run Workspace was deleted**; only a successful delete operation does (see
   [the delete-side limit](#limits)).
 
@@ -68,6 +69,7 @@ set of loops every 10 seconds for the progress and settlement that have no exter
 | `StartQueuedAgentSessionsOnce` | Write the Thread's first turn and release the session work item for `starting` runs; also checks the startup waiting limits |
 | `EndIdleAgentThreadsOnce` | Release an end command when a Thread has been idle beyond the window |
 | `ReactToCancelledAgentRunsOnce` | Release an end command for runs with a recorded cancellation request |
+| `GiveUpBlockedWorkspaceCreationsOnce` | Abandon a run Workspace creation that has stayed `blocked` beyond its limit |
 | `GiveUpStaleDeliveriesOnce` | Give up delivery beyond its limits and move to `releasing` |
 | `RedeclareRunWorkspaceDeletesOnce` | Re-declare the delete for a `releasing` run whose delete operation is no longer in flight, e.g. after a Node refused to stop |
 | `GiveUpStaleWorkspaceReleasesOnce` | End a run as `done` when the delete side exceeds its limit |
@@ -115,6 +117,7 @@ as usual, because destroying the Workspace immediately would lose the changes th
 
 | Stage | Rule | Default (setting) |
 |---|---|---|
+| Creation | After the run Workspace's creation operation first goes `blocked`, wait for its real result | 30 minutes (`agent_workspace_blocked_timeout`), see [Bounded startup](startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation) |
 | Startup | After the run Workspace is ready, wait for the session's first record; restoring a prior Revision uses a longer window; after an end request is released, wait for confirmation | 2 minutes, 6 minutes, 5 minutes (`agent_start_timeout`, `agent_restore_timeout`, `agent_end_confirm_timeout`), see [Bounded startup](startup-settlement.en.md) |
 | Delivery retries | A failed delivery is retried with a new execution, waiting 30 seconds and doubling each time up to 10 minutes; the run stays `delivering` and the sandbox stays up | — |
 | Giving up delivery | When delivery has failed continuously since the first delivery work item beyond the limit, or the run Workspace's Node has been in an unknown state beyond the limit, delivery is given up: `deliveryState = failed`, the run goes to `releasing`, and this round's unsaved changes are lost | 2 hours (`delivery_give_up_after`), 30 minutes (`delivery_unreachable_after`) |

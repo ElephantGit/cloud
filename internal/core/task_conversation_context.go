@@ -12,15 +12,15 @@ const (
 func conversationHistory(t *transaction, input Object, tid, iid string) {
 	rows := t.list(`
 		WITH recent AS (
-		  SELECT te.run_id,te.seq,te.turn_id,te.visible_text,te.visible_text_truncated,te.created_at
+		  SELECT te.run_id,r.created_at AS run_created_at,te.seq,te.turn_id,te.visible_text,te.visible_text_truncated
 		  FROM issue_runs r JOIN thread_entries te ON te.run_id=r.id
 		  WHERE r.tenant_id=$1 AND r.issue_id=$2 AND r.executor_type='agent'
 		    AND r.phase='done' AND r.deleted_at IS NULL AND te.visible_text IS NOT NULL
-		  ORDER BY te.created_at DESC,te.run_id DESC,te.seq DESC LIMIT 500
+		  ORDER BY r.created_at DESC,r.id DESC,te.seq DESC LIMIT 500
 		)
 		SELECT run_id,turn_id::text AS turn_id,string_agg(visible_text,'' ORDER BY seq) AS assistant_text,
-		       bool_or(visible_text_truncated) AS truncated, max(created_at) AS observed_at
-		FROM recent GROUP BY run_id,turn_id ORDER BY observed_at DESC,run_id DESC LIMIT $3`,
+		       bool_or(visible_text_truncated) AS truncated, max(seq) AS last_seq,run_created_at
+		FROM recent GROUP BY run_id,turn_id,run_created_at ORDER BY run_created_at DESC,run_id DESC,last_seq DESC LIMIT $3`,
 		tid, iid, taskConversationHistoryTurns)
 	// A past session with no projection is a known gap, including pre-upgrade rows. It remains
 	// readable through its Thread/verified archive, but cannot be described as recovered context.
@@ -37,6 +37,21 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 		turn := Object{"id": row.S("runId") + ":" + row.S("turnId"), "assistant": row.S("assistantText")}
 		if user != nil {
 			turn["user"] = user.S("body")
+		} else {
+			// Older runs predate task_conversation_messages. Their first frozen task is still
+			// trustworthy for the initial turn, but later turns without a linked user message are
+			// an explicit gap rather than an invitation to invent one from a tool record.
+			initial := t.one("SELECT turn_id FROM thread_entries WHERE run_id=$1 ORDER BY seq LIMIT 1", row.S("runId"))
+			if row.S("turnId") != "" && initial.S("turnId") == row.S("turnId") {
+				prior := t.one("SELECT input->>'task' AS task FROM issue_runs WHERE id=$1", row.S("runId"))
+				if prior.S("task") != "" {
+					turn["user"] = prior.S("task")
+				} else {
+					truncated = true
+				}
+			} else {
+				truncated = true
+			}
 		}
 		if row.B("truncated") {
 			turn["assistantTruncated"] = true

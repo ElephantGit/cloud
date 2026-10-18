@@ -61,6 +61,31 @@ func TestTaskConversationSignalsMissingLegacyProjectionAndCapsPrompt(t *testing.
 	}
 }
 
+func TestTaskConversationRestoresLegacyInitialTaskWithoutInventingLaterTurns(t *testing.T) {
+	store := dispatcherDB(t)
+	seed := seedDispatchScene(t, store.Pool, false)
+	var snapshot Object
+	_, err := store.transact(context.Background(), func(tx *transaction) Object {
+		initialTurn, laterTurn := newID(), newID()
+		tx.exec(`UPDATE issue_runs SET status='completed',phase='done',input='{"task":"Original review request"}' WHERE id=$1`, seed.run)
+		tx.exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record,turn_id) VALUES($1,1,'system','user_turn','{"content":"Original review request"}',$2)`, seed.run, initialTurn)
+		tx.exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record,turn_id,visible_text) VALUES($1,2,'node','update','{"type":"update"}',$2,'Review complete')`, seed.run, initialTurn)
+		tx.exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record,turn_id,visible_text) VALUES($1,3,'node','update','{"type":"update"}',$2,'Later answer')`, seed.run, laterTurn)
+		snapshot = buildRunContext(tx, issue(tx, seed.tenant, seed.issue), "Next question", "agent", seed.agent, Object{}, nil)
+		return Object{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := snapshot["conversationHistory"].([]Object)
+	if len(history) != 2 || history[0].S("user") != "Original review request" || history[0].S("assistant") != "Review complete" {
+		t.Fatalf("legacy initial turn was not restored: %v", history)
+	}
+	if history[1]["user"] != nil || !snapshot.B("conversationHistoryIncomplete") {
+		t.Fatalf("later legacy turn was given an invented user message: %v", snapshot)
+	}
+}
+
 func TestTaskConversationProjectionSurvivesReceiptReplayWithoutChangingHistory(t *testing.T) {
 	store := commandStore(t)
 	scene := seedTakeoverScene(t, store)

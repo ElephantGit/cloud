@@ -10,12 +10,13 @@ func appendSessionFailure(t *transaction, run Object, detail string) {
 	threadAppended(t, run)
 }
 
-// publicSessionFailureCode accepts only bounded Node-owned classifications. Raw ACP/provider
+// publicSessionFailureCode accepts only bounded startup or Node classifications. Raw ACP/provider
 // diagnostics are never a public failureReason, even when supplied by a registered Node.
 func publicSessionFailureCode(detail string) string {
 	switch detail {
 	case "agent_turn_failed", "agent_stream_closed", "agent_unavailable", "agent_start_failed",
-		"model_proxy_unavailable", "model_access_unavailable", "model_access_expired", "thread_unavailable":
+		"agent_authentication_required", "model_proxy_unavailable", "model_access_unavailable",
+		"model_access_expired", "thread_unavailable":
 		return detail
 	default:
 		return "agent_failed"

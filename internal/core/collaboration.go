@@ -8,7 +8,7 @@ import "context"
 // blocked on external modules). Each of the corresponding Store fields is nil by default
 // ("Unavailable"); dev/demo/integration wire the in-memory fixtures, production real adapters later.
 //
-// Canonical inventory: docs/migrations/multica-issue-board/12-collaboration-architecture.md §6.4.
+// Canonical inventory: specs decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md D1.
 
 // InteractionDescriptor is the minimal presentation/permission hint for a CollaborationTarget:
 // which mode a @ selection produces, whether that mode requires an explicit task, and — for Form Mode
@@ -17,7 +17,7 @@ import "context"
 type InteractionDescriptor struct {
 	Mode         string `json:"mode"` // mention | task | form
 	RequiresTask bool   `json:"requiresTask"`
-	FormRef      string `json:"formRef,omitempty"` // form mode only; opaque to Issues (§38.17)
+	FormRef      string `json:"formRef,omitempty"` // form mode only; opaque to Issues (Issue collaboration D7)
 }
 
 // CollaborationTargetSummary is the read-only projection of one selectable @ target. Human targets
@@ -37,10 +37,43 @@ type CollaborationDirectory interface {
 	ResolveTarget(ctx context.Context, tenantID, targetType, targetID string) (CollaborationTargetSummary, bool, error)
 }
 
+// DirectoryChain composes directory sources in priority order, for a deployment whose target types
+// have separate real backends. Listing concatenates each source's matches in chain order; resolution
+// returns the first source that can resolve the target. A source's error stops the chain and is
+// returned as-is, so a database failure can never surface as "not found". Cloud serves Agent and
+// Workflow this way: the space_agents roster in front of the workflow-backed directory, rather than
+// one source replacing the other.
+type DirectoryChain []CollaborationDirectory
+
+// ListTargets returns each source's matches for the same tenant and query, in chain order.
+func (c DirectoryChain) ListTargets(ctx context.Context, tenantID, query string) ([]CollaborationTargetSummary, error) {
+	out := []CollaborationTargetSummary{}
+	for _, source := range c {
+		items, err := source.ListTargets(ctx, tenantID, query)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	return out, nil
+}
+
+// ResolveTarget returns the first source's resolution. A target no source can resolve is not-found,
+// never an error: the caller turns it into the same 404 an unknown id produces.
+func (c DirectoryChain) ResolveTarget(ctx context.Context, tenantID, targetType, targetID string) (CollaborationTargetSummary, bool, error) {
+	for _, source := range c {
+		target, ok, err := source.ResolveTarget(ctx, tenantID, targetType, targetID)
+		if err != nil || ok {
+			return target, ok, err
+		}
+	}
+	return CollaborationTargetSummary{}, false, nil
+}
+
 // ContextInput is the deterministic, invocation-time material passed to a ContextBuilder. It is a
 // value, not a persisted bundle — the builder's output is snapshotted into IssueRun.input.
 //
-// One seam serves every interaction mode (§38.10): Task Mode uses `Task`, Form Mode uses
+// One seam serves every interaction mode (Issue collaboration D5): Task Mode uses `Task`, Form Mode uses
 // `InteractionValues`; both share the issue context and the selected refs. There is deliberately no
 // WorkflowContextBuilder / AgentContextBuilder fork.
 type ContextInput struct {
@@ -55,7 +88,7 @@ type ContextInput struct {
 }
 
 // IssueFormContext is the already-authorized issue material a descriptor may be tailored with
-// (§38.37b, §38.37c). It is a value the Issue domain resolves inside its own transaction and hands
+// (Issue collaboration D8). It is a value the Issue domain resolves inside its own transaction and hands
 // over, so a provider never reads the Issues tables and can never resolve the same issue from another
 // tenant's point of view. The zero value means "no issue context": the descriptor is then projected
 // exactly as it was before this context existed, and no platform field is injected.
@@ -73,7 +106,7 @@ type IssueFormContext struct {
 	ParentIssueID string
 }
 
-// FormDescriptorProvider resolves the Issues-facing FormDescriptor for a `formRef` (§38.17). Issues
+// FormDescriptorProvider resolves the Issues-facing FormDescriptor for a `formRef` (Issue collaboration D7). Issues
 // never learns whether the descriptor comes from a Workflow database, an HTTP/RPC service, a JSON
 // Schema, a DSL, code or protobuf — the adapter owns that mapping.
 //
@@ -87,7 +120,7 @@ type FormDescriptorProvider interface {
 	ResolveFormDescriptor(ctx context.Context, tenantID, formRef string, issue IssueFormContext) (FormDescriptor, bool, error)
 }
 
-// AssistInput is the invocation-time material for one AI Assist request (§38.11).
+// AssistInput is the invocation-time material for one AI Assist request (Issue collaboration D9).
 type AssistInput struct {
 	TargetType       string
 	TargetID         string
@@ -100,7 +133,7 @@ type AssistInput struct {
 }
 
 // AssistSuggestion is a *suggestion only*: a field-level patch plus suggested context refs. Applying it
-// is a user action and execution stays a separate explicit confirm (§38.12). It may never carry side
+// is a user action and execution stays a separate explicit confirm (Issue collaboration D9). It may never carry side
 // effects on Issues.
 type AssistSuggestion struct {
 	Values       Object // field key -> suggested value (partial; unmentioned keys keep the user's value)
@@ -108,7 +141,7 @@ type AssistSuggestion struct {
 	Explanations Object // field key -> human-readable rationale
 }
 
-// InputAssistProvider serves AI Assist on a Workflow form. It may only suggest (§38.12).
+// InputAssistProvider serves AI Assist on a Workflow form. It may only suggest (Issue collaboration D9).
 type InputAssistProvider interface {
 	Suggest(ctx context.Context, in AssistInput) (AssistSuggestion, error)
 }
@@ -155,7 +188,7 @@ type SyncExecutor interface {
 // completed/failed/cancelled and the Store maps each onto the IssueRun state machine plus Timeline
 // activity (started -> running; progress/message -> activity; completed/failed -> terminal;
 // cancelled -> cancelled). An agent/team message becomes a reply Comment; a workflow message becomes a
-// `system` activity because a workflow is not an Actor (§38.26).
+// `system` activity because a workflow is not an Actor (Issue collaboration D2).
 type ExecutionObserver interface {
 	ObserveStarted(ctx context.Context, tenantID, runID string) (Object, error)
 	ObserveProgress(ctx context.Context, tenantID, runID, message string) (Object, error)
@@ -174,7 +207,7 @@ func validTargetType(t string) bool {
 	return false
 }
 
-// modeForType is the frozen target-type -> interaction-mode default (§37.2). It is the Unavailable
+// modeForType is the frozen target-type -> interaction-mode default (Issue collaboration D3). It is the Unavailable
 // fallback for InteractionDescriptor; a directory-backed descriptor must agree with it.
 func modeForType(targetType string) (mode string, requiresTask bool) {
 	switch targetType {

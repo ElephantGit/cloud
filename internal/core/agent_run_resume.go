@@ -2,7 +2,7 @@ package core
 
 // Resuming a new IssueRun from its Issue's latest Revision (issue-run 20261010 resume decision).
 //
-// Selection runs once, in the session-start transaction, and its result is frozen into the
+// Selection runs once when the ready-based startup budget is frozen, and its result is copied into the
 // AgentSession spec; the Node restores exactly what the spec names and never queries Cloud for it.
 // Runs on one Issue are assumed serial: two overlapping runs may select the same prior Revision.
 
@@ -50,7 +50,7 @@ func selectPriorRevision(t *transaction, o Object) resumeChoice {
 		return resumeChoice{context: Object{"skippedRevisionId": candidate.S("id"), "reason": reason}}
 	}
 	w := t.one(`
-		SELECT w.project_id, p.repository_url FROM workspaces w JOIN projects p ON p.id = w.project_id
+		SELECT w.project_id, b.repository_url FROM workspaces w JOIN repository_bindings b ON b.project_id = w.project_id
 		WHERE w.id = $1 AND w.issue_run_id = $2 AND w.deleted_at IS NULL`, o.S("workspaceId"), o.S("id"))
 	if w == nil || w.S("projectId") != candidate.S("projectId") || w.S("repositoryUrl") != candidate.S("repositoryUrl") {
 		return skipped("project_changed")

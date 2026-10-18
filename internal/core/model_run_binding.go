@@ -1,5 +1,34 @@
 package core
 
+// defaultExecutorGap reports why the user's personal default executor cannot be used for a run, or
+// returns an empty reason when it can. It is the one policy behind both the OpenCode run binding and
+// the workflow `default` slot, so "the default model is usable" cannot come to mean two different
+// things: the default selection must exist, its connection must still be the user's, enabled and
+// undeleted, the connection must still carry a credential, and the chosen model must still be one the
+// connection offers. The connection and model are returned for the caller that goes on to freeze them.
+//
+// It reports a reason rather than panicking because the two callers answer differently: the OpenCode
+// binding rejects one run with one fault, while the workflow gate collects every unusable slot before
+// refusing so the user can fix them in one pass.
+func defaultExecutorGap(t *transaction, uid string) (reason string, connection, model Object) {
+	d := modelDefault(t, uid)
+	if d.S("connectionId") == "" {
+		return slotReasonDefaultMissing, nil, nil
+	}
+	c := t.one("SELECT * FROM personal_model_connections WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL AND enabled", d.S("connectionId"), uid)
+	if c == nil {
+		return slotReasonConnectionDown, nil, nil
+	}
+	if c.S("credentialId") == "" {
+		return slotReasonCredentialMissing, c, nil
+	}
+	m := findModel(c, d.S("modelId"))
+	if m == nil {
+		return slotReasonModelUnavailable, c, nil
+	}
+	return "", c, m
+}
+
 // bindRunModel freezes the initiating user's personal configuration only for the production
 // OpenCode plugin. It runs in enqueueRun's transaction so missing configuration rolls back the
 // comment, interaction, activity and run together. Unrelated agents keep their existing contract.
@@ -7,13 +36,18 @@ func bindRunModel(t *transaction, runID, uid string, input Object) {
 	if input.S("agentPluginId") != "official/ora-space.opencode" {
 		return
 	}
-	d := modelDefault(t, uid)
-	require(d.S("connectionId") != "", 409, "model_default_required")
-	c := t.one("SELECT * FROM personal_model_connections WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL AND enabled", d.S("connectionId"), uid)
-	require(c != nil, 409, "model_connection_unavailable")
-	require(c.S("credentialId") != "", 409, "model_credential_required")
-	m := findModel(c, d.S("modelId"))
-	require(m != nil, 409, "model_default_required")
+	// The faults are unchanged from before the policy was shared: this path has always named the one
+	// thing the user has to fix, and a caller of the OpenCode route must keep seeing the same codes.
+	reason, c, m := defaultExecutorGap(t, uid)
+	switch reason {
+	case "":
+	case slotReasonConnectionDown:
+		reject(409, "model_connection_unavailable")
+	case slotReasonCredentialMissing:
+		reject(409, "model_credential_required")
+	default:
+		reject(409, "model_default_required")
+	}
 	// Git identity is fixed with the model binding so changes to the profile before dispatch
 	// cannot change the attribution of this queued personal-model run.
 	git := t.one("SELECT name,email FROM user_git_identities WHERE user_id=$1", uid)

@@ -14,7 +14,7 @@ var platformLaunchDefaults = []struct {
 }{
 	{fieldKeyRepository, true},
 	{fieldKeyBranch, true},
-	{fieldKeyVersion, false},
+	{fieldKeySnapshotID, false},
 	{fieldKeyPrompt, false},
 	{fieldKeyContextRefs, false},
 }
@@ -29,7 +29,7 @@ func explicitLaunchDefaults() []any {
 	return out
 }
 
-// launchGraph adds the author's launch-field declaration (§38.37d) to a Start-only graph, the way the
+// launchGraph adds the author's launch-field declaration (Issue collaboration D8) to a Start-only graph, the way the
 // editor stores it: a top-level array of the document, beside the global variables.
 func launchGraph(launchFields []any) Object {
 	graph := startGraph(nil, "")
@@ -78,7 +78,7 @@ func TestLaunchFieldsDefaultToTheWholeCatalog(t *testing.T) {
 func TestLaunchFieldsDeclarationDropsFields(t *testing.T) {
 	d := launchDescriptor(t, []any{
 		Object{"key": fieldKeyRepository, "enabled": false},
-		Object{"key": fieldKeyVersion, "enabled": false},
+		Object{"key": fieldKeySnapshotID, "enabled": false},
 		Object{"key": fieldKeyContextRefs, "enabled": false},
 	}, snapshotRows(2, 1))
 	validateFormDescriptor(d)
@@ -106,6 +106,35 @@ func TestLaunchFieldsDeclarationDropsFields(t *testing.T) {
 	}
 }
 
+// TestLaunchFieldsDeclarationAcceptsThePreRenameKey covers the declaration written before the field was
+// renamed (Issue collaboration D8). A snapshot published then carries `version` where this build reads `snapshotId`,
+// and the graph of a published snapshot is immutable — so reading the entry strictly would hand the
+// field back to a workflow whose author had withdrawn it, which is the silent-ignore the declaration
+// exists to prevent. The rename's other half is unchanged: the entry is read as the snapshot selector
+// and nothing else.
+func TestLaunchFieldsDeclarationAcceptsThePreRenameKey(t *testing.T) {
+	d := launchDescriptor(t, []any{
+		Object{"key": legacyFieldKeyVersion, "enabled": false},
+	}, snapshotRows(2, 1))
+	validateFormDescriptor(d)
+
+	if fieldIndex(d, fieldKeySnapshotID) != -1 {
+		t.Fatalf("a withdrawn snapshot field came back: %+v", d.Fields)
+	}
+	if fieldIndex(d, legacyFieldKeyVersion) != -1 {
+		t.Fatalf("the pre-rename key reached the descriptor: %+v", d.Fields)
+	}
+
+	// The declaration still carries the author's requiredness for the field, under the old name.
+	required := launchDescriptor(t, []any{
+		Object{"key": legacyFieldKeyVersion, "enabled": true, "required": true},
+	}, snapshotRows(2, 1))
+	validateFormDescriptor(required)
+	if !fieldOf(t, required, fieldKeySnapshotID).Required {
+		t.Fatalf("the pre-rename declaration lost its requiredness: %+v", required.Fields)
+	}
+}
+
 // TestLaunchFieldsDeclarationSetsRequiredness covers the other half of the declaration: the author
 // decides which of the fields they keep must be answered. The prompt becomes required and the branch
 // stops being required, both against the platform's own answer — and the fields they said nothing about
@@ -126,7 +155,7 @@ func TestLaunchFieldsDeclarationSetsRequiredness(t *testing.T) {
 	if !fieldOf(t, d, fieldKeyRepository).Required {
 		t.Fatal("a field the declaration did not mention lost the platform's requiredness")
 	}
-	if fieldOf(t, d, fieldKeyVersion).Required {
+	if fieldOf(t, d, fieldKeySnapshotID).Required {
 		t.Fatal("a field the declaration did not mention gained requiredness")
 	}
 	// Optional is not empty: the branch is still prefilled from the issue's project, the author has only
@@ -161,7 +190,7 @@ func TestLaunchFieldsReadsTheDeclarationDefensively(t *testing.T) {
 		[]any{Object{"key": 7, "enabled": false}},
 		[]any{Object{"key": fieldKeyRepository, "enabled": "false"}},
 		[]any{Object{"key": fieldKeyPrompt, "required": "true"}},
-		[]any{Object{"key": fieldKeyVersion, "required": nil}},
+		[]any{Object{"key": fieldKeySnapshotID, "required": nil}},
 		// A key the platform does not have cannot be withdrawn, and cannot be added either: the
 		// declaration names the catalog, it does not extend it.
 		[]any{Object{"key": "deploy_target", "enabled": false, "required": true}},
@@ -185,9 +214,9 @@ func TestLaunchFieldsReadsTheDeclarationDefensively(t *testing.T) {
 // into a 500 rather than producing the field.
 func TestLaunchFieldsCannotOfferWhatThePlatformDoesNotHave(t *testing.T) {
 	// Nothing published, and the author asked for the version field all the same.
-	unpublished := launchDescriptor(t, []any{Object{"key": fieldKeyVersion, "enabled": true, "required": true}}, nil)
+	unpublished := launchDescriptor(t, []any{Object{"key": fieldKeySnapshotID, "enabled": true, "required": true}}, nil)
 	validateFormDescriptor(unpublished)
-	if fieldIndex(unpublished, fieldKeyVersion) != -1 {
+	if fieldIndex(unpublished, fieldKeySnapshotID) != -1 {
 		t.Fatalf("an unpublished workflow grew a version field: %+v", unpublished.Fields)
 	}
 
@@ -200,9 +229,9 @@ func TestLaunchFieldsCannotOfferWhatThePlatformDoesNotHave(t *testing.T) {
 
 	// Withdrawing is still the author's to do, and the two rules compose: a field the platform cannot
 	// offer is absent whether the declaration asks for it or says nothing.
-	withdrawn := launchDescriptor(t, []any{Object{"key": fieldKeyVersion, "enabled": false}}, nil)
+	withdrawn := launchDescriptor(t, []any{Object{"key": fieldKeySnapshotID, "enabled": false}}, nil)
 	validateFormDescriptor(withdrawn)
-	if fieldIndex(withdrawn, fieldKeyVersion) != -1 {
+	if fieldIndex(withdrawn, fieldKeySnapshotID) != -1 {
 		t.Fatalf("an unpublished workflow grew a version field: %+v", withdrawn.Fields)
 	}
 }

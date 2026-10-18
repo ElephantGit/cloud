@@ -10,39 +10,70 @@ import (
 )
 
 // runGraph is a two-step document (start -> agent) so the test proves node_states follow the
-// graph the run pinned, including that the second node's state appears.
-func runGraph() core.Object {
-	return core.Object{
-		"nodes": []any{
-			core.Object{
-				"id": "start", "type": "workflow", "deletable": false,
-				"position": core.Object{"x": 0, "y": 0},
-				"data":     core.Object{"kind": "start", "title": "开始", "description": ""},
-			},
-			core.Object{
-				"id": "agent-1", "type": "workflow",
-				"position": core.Object{"x": 300, "y": 0},
-				"data": core.Object{
-					"kind": "agent", "title": "评审", "description": "",
-					"agentConfig": core.Object{"schemaVersion": 1, "executor": core.Object{}, "prompt": "评审"},
-				},
-			},
-		},
-		"edges": []any{core.Object{
-			"id": "e1", "kind": "data", "source": "start", "target": "agent-1",
-		}},
-		"viewport": core.Object{"x": 0, "y": 0, "zoom": 1},
+// graph the run pinned, including that the second node's state appears. Its agent node carries the
+// pre-slot `agentConfig.executor` field a desktop-imported graph still has, which the gate reads as
+// the implicit `default` slot — so this graph is also the evidence that such a document keeps running
+// (specs#98 D5).
+func runGraph() core.Object { return agentRunGraph("", true, nil) }
+
+// fixtureModelID is the model the fixture personal connection offers, and the one the fixture default
+// selection names.
+const fixtureModelID = "vendor/model-v1"
+
+// fixtureModels is a connection's model list. An empty list is not a legal connection, so every caller
+// names at least one.
+func fixtureModels(ids ...string) []any {
+	out := []any{}
+	for _, id := range ids {
+		out = append(out, core.Object{"id": id, "name": id, "contextWindow": 128000, "maxTokens": 8192})
 	}
+	return out
+}
+
+// personalModelBody is a complete connection body. The personal model API replaces the whole
+// connection on update, so a case that changes one field resends the rest.
+func personalModelBody(name string, models []any, enabled bool) core.Object {
+	return core.Object{
+		"name": name, "protocol": "openai-completions", "baseUrl": "https://models.example.invalid/v1",
+		"authMode": "bearer", "models": models, "enabled": enabled,
+	}
+}
+
+// seedPersonalModel gives the fixture actor a complete personal model configuration — an enabled
+// connection carrying a credential, and a default selection naming one of its models — and returns the
+// connection as the API reports it. The workflow start gate resolves the implicit `default` slot
+// through exactly this state, so a test that needs a start to be admitted answers it the way a user
+// would: through the personal model API, never by patching the store.
+//
+// The credential is written through Store.PutModelCredential because core never accepts a plaintext
+// key: in production the gateway hands it an authenticated ciphertext, and the fixture stands in for
+// that boundary with an in-memory buffer that is not a key and is never logged.
+func seedPersonalModel(t *testing.T, f *fixture) core.Object {
+	t.Helper()
+	connection := f.call("POST", "/api/v1/me/model-connections",
+		personalModelBody("Personal", fixtureModels(fixtureModelID), true), "wf-model-connection", 201).O("resource")
+	_, err := f.store.PutModelCredential(context.Background(), &f.user, connection.S("id"), connection.N("version"),
+		"wf-model-credential", uuid.NewString(), make([]byte, 32), "fixture-key")
+	must(t, err)
+	f.call("PUT", "/api/v1/me/model-default", core.Object{
+		"connectionId": connection.S("id"), "modelId": fixtureModelID, "version": 0,
+	}, "", 200)
+	return f.call("GET", "/api/v1/me/model-connections/"+connection.S("id"), nil, "", 200)
 }
 
 func TestWorkflowRunLifecycle(t *testing.T) {
 	f := setup(t)
+	// The document's agent node runs on the initiator's personal default model, so the actor needs one
+	// before any start can be admitted.
+	seedPersonalModel(t, f)
 	wf := f.call("POST", f.path("/workflows"), core.Object{
 		"name": "Run target", "graph": runGraph(),
 	}, "run-wf", 200).O("resource")
 	wfid := wf.S("id")
 
-	// A workflow with no published snapshot cannot be run: the live graph is a draft.
+	// A workflow with no published snapshot cannot be run: the live graph is a draft. The snapshot is
+	// resolved before the executor slots are, so a missing version is reported as itself rather than as
+	// an unconfigured slot.
 	noSnapshot := f.call("POST", f.path("/workflows/"+wfid+"/runs"), core.Object{"name": "X"}, "run-0", 400)
 	if noSnapshot.S("code") != "workflow_no_published_snapshot" {
 		t.Fatalf("no-snapshot create code = %q", noSnapshot.S("code"))
@@ -127,11 +158,12 @@ func TestWorkflowRunLifecycle(t *testing.T) {
 
 func TestWorkflowRunTenantIsolation(t *testing.T) {
 	f := setup(t)
+	seedPersonalModel(t, f)
 	wf := f.call("POST", f.path("/workflows"), core.Object{
 		"name": "Isolated run source", "graph": runGraph(),
 	}, "iso-run-wf", 200).O("resource")
 	wfid := wf.S("id")
-	f.call("POST", f.path("/workflows/"+wfid+"/publish"), core.Object{}, "iso-run-pub", 200)
+	snap := f.call("POST", f.path("/workflows/"+wfid+"/publish"), core.Object{}, "iso-run-pub", 200).O("resource")
 	run := f.call("POST", f.path("/workflows/"+wfid+"/runs"), core.Object{}, "iso-run-1", 200).O("resource")
 
 	other, e := f.store.Bootstrap(context.Background(), "Other", "corp", "other", "Other")
@@ -145,5 +177,8 @@ func TestWorkflowRunTenantIsolation(t *testing.T) {
 	if reject.S("code") == "" {
 		t.Fatalf("cross-tenant reject had no code: %v", reject)
 	}
+	// Naming the snapshot explicitly does not get past the membership check either: the version a run
+	// executes is never a way around the tenant boundary.
+	f.call("POST", f.path("/workflows/"+wfid+"/runs"), core.Object{"snapshotId": snap.S("id")}, "iso-run-3", 403)
 	f.tid = original
 }

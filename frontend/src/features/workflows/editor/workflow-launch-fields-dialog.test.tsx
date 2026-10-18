@@ -79,7 +79,7 @@ describe('WorkflowLaunchFieldsDialog', () => {
 
   it('seeds the rows from the declaration the workflow carries', () => {
     renderDialog([
-      { key: 'version', enabled: false },
+      { key: 'snapshotId', enabled: false },
       { key: 'prompt', enabled: true, required: true },
     ])
 
@@ -100,7 +100,7 @@ describe('WorkflowLaunchFieldsDialog', () => {
     expect(onSave).toHaveBeenCalledWith([
       { key: 'repository', enabled: true, required: true },
       { key: 'branch', enabled: true, required: true },
-      { key: 'version', enabled: false, required: false },
+      { key: 'snapshotId', enabled: false, required: false },
       { key: 'prompt', enabled: true, required: true },
       { key: 'context_refs', enabled: true, required: false },
     ])
@@ -119,7 +119,7 @@ describe('WorkflowLaunchFieldsDialog', () => {
     expect(onSave).toHaveBeenCalledWith([
       { key: 'repository', enabled: true, required: true },
       { key: 'branch', enabled: false, required: false },
-      { key: 'version', enabled: true, required: false },
+      { key: 'snapshotId', enabled: true, required: false },
       { key: 'prompt', enabled: true, required: false },
       { key: 'context_refs', enabled: true, required: false },
     ])

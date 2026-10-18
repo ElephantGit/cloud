@@ -11,7 +11,7 @@ import (
 const agentSessionEndedOutcome = "agent_session_ended"
 
 // settleSessionEnded is the B-owned session-terminal core behind the A→B hook OnSessionEnded
-// (controller-integration D6 sessionEnded, Thread D4, IssueRun D3/D4; plan §5 Batch 1).
+// (controller-integration D6 sessionEnded, Thread D4, IssueRun D3/D4).
 //
 // It runs on the caller-owned *transaction of the session execution's terminal-event takeover,
 // inside which all of the following must commit or roll back together:
@@ -82,8 +82,22 @@ func (s *Store) settleSessionEnded(t *transaction, runID, executionID string, en
 	if !sessionEndReasons[ended.S("reason")] {
 		return fmt.Errorf("sessionEnded: run %s execution %s carries end reason %q, outside the closed set", runID, executionID, ended.S("reason"))
 	}
+	if o.S("phase") == "done" && t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", runID) != nil {
+		t.exec("UPDATE agent_run_residuals SET session_ended_at=COALESCE(session_ended_at,clock_timestamp()) WHERE run_id=$1", runID)
+		return nil
+	}
 	if ended.S("reason") == "agent_failed" {
 		t.exec("UPDATE issue_runs SET failure_reason=$2 WHERE id=$1", runID, publicSessionFailureCode(ended.S("detail")))
+	}
+	if startup := o.O("result").O("startup"); startup.S("state") == "awaiting_node" {
+		startup["state"] = "settled"
+		t.exec(`UPDATE issue_runs SET result=COALESCE(result,'{}'::jsonb)||jsonb_build_object('startup',$2::jsonb)
+			WHERE id=$1`, runID, jsonText(startup))
+		// An explicit user end keeps its own outcome. A policy timeout cancellation remains
+		// a startup failure even when Node later confirms the requested cancellation.
+		if ended.S("reason") != "agent_failed" && (!startup.B("policyCancellation") || ended.S("reason") == "user_ended" || ended.S("reason") == "idle_timeout") {
+			t.exec("UPDATE issue_runs SET failure_reason='' WHERE id=$1", runID)
+		}
 	}
 
 	// One CAS for both run-level transitions, so they cannot even in principle happen apart: the
@@ -100,7 +114,7 @@ func (s *Store) settleSessionEnded(t *transaction, runID, executionID string, en
 		  AND thread_state IN ('pending','active','idle','ending')`, runID); moved != 1 {
 		// The row was re-read in this very transaction under the caller's advisory lock, so zero
 		// affected rows contradicts that read. It is reported precisely rather than tolerated: a
-		// terminal event must never be acked for a transition that did not happen (mandate §9/§13).
+		// terminal event must never be acked for a transition that did not happen.
 		now := t.one("SELECT phase, thread_state FROM issue_runs WHERE id=$1", runID)
 		return fmt.Errorf("sessionEnded: run %s was not moved to ended/delivering (rows affected %d; phase=%q thread_state=%q)",
 			runID, moved, now.S("phase"), now.S("threadState"))

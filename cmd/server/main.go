@@ -24,8 +24,10 @@ import (
 	"github.com/wanglongan587/cloud/internal/controlgrpc"
 	"github.com/wanglongan587/cloud/internal/core"
 	"github.com/wanglongan587/cloud/internal/logger"
+	"github.com/wanglongan587/cloud/internal/modelgateway"
 	"github.com/wanglongan587/cloud/internal/pluginmarket"
 	"github.com/wanglongan587/cloud/internal/repository"
+	"github.com/wanglongan587/cloud/internal/workflowasset"
 )
 
 func main() {
@@ -37,18 +39,19 @@ func main() {
 
 // configureCollaboration installs the optional development Agent/Team/Workflow fixtures on the store
 // when the deployment explicitly enables them (`collaboration.development_fixtures`). It is the
-// cmd/server composition gate: production default is OFF, leaving the collaboration ports nil so the
-// target discovery API serves only human targets. It is intentionally independent of authentication —
-// enabling GitHub Auth must never enable these fixtures, and an auth failure must never fall back to
-// a fixture identity.
+// cmd/server composition gate: production default is OFF, where the directory serves the two real
+// target types (Space Agents and workflows) and the fixture-only ports stay nil. It is intentionally
+// independent of authentication — enabling GitHub Auth must never enable these fixtures, and an auth
+// failure must never fall back to a fixture identity.
 func configureCollaboration(store *core.Store, developmentFixtures bool, log *zap.Logger) {
 	if !developmentFixtures {
-		// Production: Agent is the one collaboration target with real backing (space_agents). Wire a
-		// roster-backed directory so target discovery serves real Space Agents; Team/Workflow
-		// (cross-module ports, still unbuilt) stay unreported. Run-create resolution re-validates
-		// against space_agents in-transaction regardless of this directory.
+		// Production: layer the roster-backed Agent directory in front of the workflow-backed one
+		// NewStore already installed, so discovery and resolution serve both real target types.
+		// Replacing the directory instead would drop published workflows from @ — the regression #65
+		// reported. Team has no backend in any deployment and stays unreported. Run-create resolution
+		// re-validates agents against space_agents in-transaction regardless of this directory.
 		if store.Pool != nil {
-			store.Directory = core.NewSpaceAgentDirectory(store.Pool)
+			store.Directory = core.DirectoryChain{core.NewSpaceAgentDirectory(store.Pool), store.Directory}
 		}
 		return
 	}
@@ -123,6 +126,22 @@ func run() (runErr error) {
 			pluginmarket.RunSyncLoop(ctx, syncer.Sync, cfg.Plugins.SyncInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
+	// Workflow asset import is triggered by the space's desired state, never by a Node install
+	// result: a space with no live runtime still receives its templates. Downloads run outside
+	// transactions; only results are written. The checked outbound client enforces the same
+	// public-address policy as the model gateway and never follows redirects.
+	if cfg.Plugins.AssetImportEnabled {
+		upstream, clientErr := modelgateway.NewUpstreamClient(modelgateway.UpstreamConfig{DNS: modelgateway.DefaultDNSConfig()})
+		if clientErr != nil {
+			return clientErr
+		}
+		store.WorkflowAssets = workflowasset.NewFetcher(store.ObjectStore, upstream.Transport)
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.ImportWorkflowAssetsOnce, cfg.Plugins.AssetImportInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
 	// B-owned dispatch loop for queued real Space Agent runs: a bounded rescan (limit
 	// agentDispatchBatchSize, ordered by created_at,id) that moves a queued run to
 	// phase='provisioning', status='dispatched' only when the A side accepts, and leaves busy runs
@@ -145,10 +164,30 @@ func run() (runErr error) {
 	// dispatch loop.
 	{
 		const agentSessionStartInterval = 10 * time.Second
+		store.AgentStartTimeout = cfg.IssueRuns.AgentStartTimeout
+		store.AgentRestoreTimeout = cfg.IssueRuns.AgentRestoreTimeout
+		store.AgentEndConfirmTimeout = cfg.IssueRuns.AgentEndConfirmTimeout
 		syncGroup.Add(1)
 		go func() {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.StartQueuedAgentSessionsOnce, agentSessionStartInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
+	// Blocked-creation loop (ADR D5): a run Workspace creation parked in `blocked` has no public
+	// retry (the Workspace is invisible), so Cloud's own scan is the only way its wait ends. The
+	// first pass anchors an absolute, never-renewed deadline (30m default); a later pass abandons
+	// the business run, fails the creation operation, releases the Project operation slot and
+	// retains an independent residual ledger — all in one transaction per run, so a repeated tick
+	// confirms the same settlement instead of rebuilding anything. The residual Workspace stays
+	// protected: no delete is queued, admission stays closed, and late Controller facts are
+	// receipted through the provisioning-fact entry without resurrecting the run.
+	{
+		const agentWorkspaceBlockedInterval = 10 * time.Second
+		store.AgentWorkspaceBlockedTimeout = cfg.IssueRuns.AgentWorkspaceBlockedTimeout
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.GiveUpBlockedWorkspaceCreationsOnce, agentWorkspaceBlockedInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
 	// Thread-ending loops: B-owned recovery for the two ending triggers reachable without a new
@@ -179,7 +218,7 @@ func run() (runErr error) {
 	// release half: a `releasing` run whose delete_workspace operation has no operation in flight gets
 	// its delete re-declared, which is the Cloud-side retry the decision requires after a Node refuses
 	// to quiesce (the run Workspace has no public API and no user to retry it). The third applies
-	// IssueRun D8's single give-up limit to the delete side (G-032): a `releasing` run whose Workspace
+	// IssueRun D8's single give-up limit to the delete side: a `releasing` run whose Workspace
 	// Node has been unknown for cfg.IssueRuns.DeliveryUnreachableAfter — the same window, D8 adds no
 	// new one — is settled `done` with failure_reason=workspace_unavailable, its delete operation left
 	// terminally failed and its Workspace row retained; `done` there means Cloud stopped retrying,
@@ -204,6 +243,20 @@ func run() (runErr error) {
 		go func() {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
+	}
+	// Workflow advance loop: the Cloud-side scheduler (specs#99 D1 条件②/④, landing order step 3).
+	// A bounded rescan of pending and running workflow runs, each advanced in its own short
+	// transaction; the ready set is recomputed from committed state only, so the pass is idempotent
+	// and a replica that crashes mid-tick resumes exactly where the committed state says. In its
+	// first step it executes start/condition/output inline and settles runs honestly; agent nodes
+	// fail the run fast with an explicit reason until the execution wiring lands in the next step.
+	{
+		const workflowAdvanceInterval = 10 * time.Second
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.AdvanceWorkflowRunsOnce, workflowAdvanceInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
 	gin.SetMode(cfg.Server.Mode)

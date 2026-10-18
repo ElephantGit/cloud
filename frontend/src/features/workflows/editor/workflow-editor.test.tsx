@@ -813,7 +813,7 @@ describe('WorkflowEditor launch fields', () => {
         launchFields: [
           { key: 'repository', enabled: true, required: true },
           { key: 'branch', enabled: true, required: true },
-          { key: 'version', enabled: false, required: false },
+          { key: 'snapshotId', enabled: false, required: false },
           { key: 'prompt', enabled: true, required: false },
           { key: 'context_refs', enabled: true, required: false },
         ],
@@ -855,7 +855,7 @@ describe('WorkflowEditor launch fields', () => {
   })
 
   it('undo restores the declaration the save replaced', async () => {
-    renderEditor({ graph: declaredGraphFixture([{ key: 'version', enabled: false }]) })
+    renderEditor({ graph: declaredGraphFixture([{ key: 'snapshotId', enabled: false }]) })
 
     openLaunchFields()
     fireEvent.click(launchAskSwitch('运行版本'))

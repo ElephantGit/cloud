@@ -79,7 +79,7 @@ export interface WorkflowGlobalVariable {
 export const WORKFLOW_LAUNCH_FIELD_KEYS = [
   'repository',
   'branch',
-  'version',
+  'snapshotId',
   'prompt',
   'context_refs',
 ] as const
@@ -97,13 +97,13 @@ export const WORKFLOW_LAUNCH_FIELD_DEFAULTS: readonly {
 }[] = [
   { key: 'repository', required: true },
   { key: 'branch', required: true },
-  { key: 'version', required: false },
+  { key: 'snapshotId', required: false },
   { key: 'prompt', required: false },
   { key: 'context_refs', required: false },
 ]
 
 /**
- * One entry of a workflow's launch-field declaration (§38.37d): a per-key override of the platform
+ * One entry of a workflow's launch-field declaration (Issue collaboration D8): a per-key override of the platform
  * catalogue. A key the declaration does not name keeps the platform's own answer, so a field the
  * platform adds later reaches every workflow without one being re-saved.
  */

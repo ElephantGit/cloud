@@ -81,9 +81,9 @@ func taskConversationRead(t *transaction, r *PublicRequest) Object {
 // shares the existing Thread in this transaction; every other message waits for ordered dispatch.
 func taskConversationSend(t *transaction, s *Store, r *PublicRequest, uid string) Object {
 	i := issue(t, r.TenantID, r.IssueID)
-	agentID, body := r.Body.S("agentId"), strings.TrimSpace(r.Body.S("body"))
+	agentID, body := r.Body.S("agentId"), r.Body.S("body")
 	require(validID(agentID), 400, "invalid_target")
-	require(body != "" && len(body) <= threadMessageTextLimit, 400, "content_too_large")
+	require(strings.TrimSpace(body) != "" && len(body) <= threadMessageTextLimit, 400, "content_too_large")
 	agent, ok := agentRunEvidence(t, r.TenantID, agentID)
 	require(ok, 404, "not_found")
 	agentRunGate(t, i, agent)

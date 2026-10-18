@@ -120,11 +120,11 @@ describe('TaskConversationPanel', () => {
     const { queryClient } = renderConversation(runs)
     expect(await screen.findByText('Answer r-old')).toBeInTheDocument()
     expect(screen.getByLabelText('发送给')).toHaveValue('a1')
-    await user.type(screen.getByLabelText('任务对话输入'), 'Please continue')
+    await user.type(screen.getByLabelText('任务对话输入'), '  Please continue  ')
     await user.click(screen.getByRole('button', { name: /^发送$/ }))
     expect(await screen.findByText('等待执行或交接')).toBeInTheDocument()
     expect(posted).toEqual([
-      { body: { agentId: 'a1', body: 'Please continue' }, key: expect.any(String) },
+      { body: { agentId: 'a1', body: '  Please continue  ' }, key: expect.any(String) },
     ])
     runs.push(run('r-next', 'a1', 'queued', '2026-10-18T02:01:00Z'))
     const firstMessage = messages[0]

@@ -96,8 +96,8 @@ func TestTaskConversationMessageOrderIdempotencyAndCancellation(t *testing.T) {
 	if first.S("id") != replayed.S("id") || first.N("seq") != 1 || first.S("state") != "waiting" {
 		t.Fatalf("retry changed the durable first message: %v / %v", first, replayed)
 	}
-	second := sendTaskMessage(t, store, caller, seed, seed.agent, "second instruction", uuid.NewString())
-	if second.N("seq") != 2 || second.S("state") != "waiting" {
+	second := sendTaskMessage(t, store, caller, seed, seed.agent, "  second instruction\n", uuid.NewString())
+	if second.N("seq") != 2 || second.S("state") != "waiting" || second.S("body") != "  second instruction\n" {
 		t.Fatalf("second message overtook the queued run: %v", second)
 	}
 	path := "/api/v1/tenants/" + seed.tenant + "/issues/" + seed.issue + "/conversation"

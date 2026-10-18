@@ -170,8 +170,8 @@ export function ConversationComposer({
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
-    const body = draft.trim()
-    if (!body || busy) return
+    const body = draft
+    if (!body.trim() || busy) return
     if (mode === 'comment') {
       comment.mutate(
         { body },

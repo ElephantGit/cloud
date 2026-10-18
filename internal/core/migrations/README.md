@@ -109,3 +109,7 @@ Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs
 ## 0036：工作流插件资产导入
 
 `0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
+
+## 0038：运行 Workspace 创建 blocked 的有界放弃
+
+新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。

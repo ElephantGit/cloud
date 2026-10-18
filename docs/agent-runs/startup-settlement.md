@@ -71,9 +71,34 @@
 
 业务上的 `done` 不等于物理资源已经释放；只有以后的回收决策定义了授权、真实终止、迟到创建的隔离和删除顺序之后，才会开放自动回收。
 
-## 仍未覆盖
+## 创建 blocked 的有界放弃
 
-运行 Workspace 的创建操作长时间停在 `blocked` 时，运行停在 `provisioning`，目前没有上限；它的有界放弃由单独的后续决策承接。
+运行 Workspace 还没就绪时也可能一直等下去：它的 `create_workspace` 操作结果不明，停在 `blocked`。运行 Workspace 对公开 API 不可见，
+没有人能手动重试，而 `blocked` 的操作还占着这个 Project 唯一的操作槽，所以只能由 Cloud 的扫描（`GiveUpBlockedWorkspaceCreationsOnce`，
+每 10 秒一次）收尾。
+
+| 配置（`issue_runs.*`） | 默认 | 起点 |
+|---|---|---|
+| `agent_workspace_blocked_timeout` | 30 分钟 | 创建操作第一次持久写入 `blocked` 的事务 |
+
+- 截止时间在第一次写入 `blocked` 的同一事务里冻结（`workspace_blocked_at`、`workspace_deadline_at`，来源记为 `blocked_write`）。延后、重试、
+  重新领取、Cloud 重启或配置调整都不续期；临时回到 `running`、`retry_wait` 也不会抹掉它；还在排队、没拿到 Project 操作槽的创建不起算。
+  配置的校验规则和启动窗口相同。
+- 迁移 `0038` 之前已经 `blocked` 的创建没有不可变的首次证据，不回填；第一次扫描时以观察时间为起点给一个默认窗口，来源记为
+  `first_observed`，不追认原先的等待已经计时。
+- 到期时创建仍没有真实终态，就在一个事务里一起完成：写入残留账本（`reason = workspace_unavailable`，带上尚未回报的 effect 计划和
+  clone、插件执行身份）；关闭 Workspace 准入并递增 epoch；撤销模型绑定和授权；丢弃排队的用户轮次；运行写为 `failed`、`done`，
+  `failureReason = workspace_unavailable`，交付状态 `skipped`；原创建操作写为 `failed`（`provisioning_result_unknown`），从而释放 Project
+  的操作槽，同 Project 的其他 Workspace 可以继续。任何一步写入失败都整体回滚，不会先释放操作槽。
+- 不声明删除：残留 Workspace 的删除，以及涉及它的 Project 删除，都由已有的残留检查拒绝。取消不重置窗口：创建先真实结算的，沿原来的
+  取消与释放路径；截止先到、结果仍然未知的，按 `failed`、`done` 收尾。
+- **迟到的事实经 `RecordProvisioningFact` 补记。** 放弃之后，Controller 用当前的服务身份和租约提交迟到的真实事实（effect 的 Substrate
+  结果、clone 或插件执行的结局、创建本身的结果）。Cloud 按原操作、effect、执行身份校验，经正常路径各自的校验器幂等写入原记录和账本
+  后才确认：相同事实重放是空操作；`running`、`absent`、`pending` 这类非终态观察可以被后来的真实事实接管，原观察保留为先前证据；已经
+  记录的终态只接受重放，矛盾的事实被拒绝。它不重开准入、不回到 `starting`、不再次结算，也不新建执行；领取、延后、推进、计划和
+  effect 结果这些操作自身的动作对已放弃的创建保持关闭。
+
+物理终止、迟到 ensure 的隔离、授权回收和删除顺序，仍然由以后的回收决策承接。
 
 ## 相关决策
 

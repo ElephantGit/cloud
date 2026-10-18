@@ -89,7 +89,7 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
 | 服务 | 职责 |
 |---|---|
 | `ControllerLeaseService` | 全局租约：`AcquireLease`、`RenewLease`、`ReleaseLease` |
-| `WorkspaceOperationService` | Workspace 生命周期操作：`ClaimOperation`、`PlanEffect`、`RecordEffectResult`、`AdvanceOperation`、`DeferOperation`、`ListLiveSandboxes` |
+| `WorkspaceOperationService` | Workspace 生命周期操作：`ClaimOperation`、`PlanEffect`、`RecordEffectResult`、`AdvanceOperation`、`DeferOperation`、`RecordProvisioningFact`、`ListLiveSandboxes` |
 | `NodeReportService` | Controller 代报它持有会话的 Node：`RegisterNode`、`ReportNodeStatus`、`EndNode`、`ReportNodeIdle` |
 | `ExecutionService` | 执行登记：`ClaimWork`、`RecordDispatch`、`TakeOverNodeEvent`、`RecordQueriedResult`、`GetDispatch`、`ListPendingDispatches` |
 | `AgentRunService` | Agent 运行：`TakeOverThreadEvents`、`ClaimThreadCommands`、`RecordThreadCommandDelivered`、`GrantRevisionUpload`、`GrantRevisionDownload` |
@@ -102,6 +102,8 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
   当前 epoch，**版本加一**，从而让还拿着旧快照的工作者失效；它是一次写入，不是纯读。返回的快照包含该操作所需的全部内容：
   Project（含凭据引用）、全部相关 Workspace、沙盒、Node、effect，以及这个操作已有的 clone 和插件执行，恢复中的 Controller
   据此找到原来的执行，而不是登记第二个。
+- `RecordProvisioningFact` 在运行 Workspace 的创建被放弃之后，按原操作、effect、执行身份补记迟到的真实事实，不重开任何东西（见
+  [创建 blocked 的有界放弃](../agent-runs/startup-settlement.md#创建-blocked-的有界放弃)）。
 - `ListLiveSandboxes` 是租约持有者的只读列表，列出应当持有 Node 会话的沙盒（属于当前代次、未在终止、ensure 已成功），附带
   `nodeId`、Substrate 标识和未结束的 Node 记录，让重启后的 Controller 不必等下一个操作就能重连所有 Node。
 

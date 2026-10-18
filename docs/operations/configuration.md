@@ -41,6 +41,7 @@
 | `plugins.asset_import_enabled`、`asset_import_interval` | —、`30s` | 工作流插件资产导入 |
 | `issue_runs.thread_idle_timeout` | `15m` | Thread 空闲窗口；非正值取默认 |
 | `issue_runs.agent_start_timeout`、`agent_restore_timeout`、`agent_end_confirm_timeout` | `2m`、`6m`、`5m` | 启动窗口，显式配置非正值时拒绝启动，见 [有界启动](../agent-runs/startup-settlement.md) |
+| `issue_runs.agent_workspace_blocked_timeout` | `30m` | 运行 Workspace 创建停在 `blocked` 的放弃窗口，规则同上 |
 | `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；非正值取默认 |
 | `object_store.*` | `enabled: false` | 见 [Revision](../agent-runs/revisions.md#对象存储)：`endpoint`、`public_endpoint`、`region`、`bucket`、`path_style`、`access_key_id_file`、`secret_access_key_file`、`upload_grant_ttl` |
 

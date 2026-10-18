@@ -87,7 +87,7 @@ row immediately, and the Controller carries it forward:
 | `queued` | Waiting for the Controller to claim it |
 | `running` | Claimed and at some step |
 | `retry_wait` | Paused; claimable again once `retry_at` passes |
-| `blocked` | Paused; continues only when a user explicitly retries it (`POST /operations/:oid/retry`); Cloud never retries it automatically |
+| `blocked` | Paused; continues only when a user explicitly retries it (`POST /operations/:oid/retry`); Cloud never retries it automatically; a run Workspace creation is the exception and is abandoned by Cloud beyond its limit (see [Bounded startup](../agent-runs/startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)) |
 | `succeeded`, `failed` | Terminal |
 
 **A Project has at most one unfinished operation at a time** (`queued`, `running`, `retry_wait`,

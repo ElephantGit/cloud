@@ -100,10 +100,42 @@ A business `done` does not mean the physical resources were released. Automatic 
 once a later reclamation decision defines authorization, real termination, fencing of late creations and the
 order of deletion.
 
-## Not yet covered
+## Bounded abandonment of a blocked creation
 
-When the run Workspace's creation operation stays `blocked` for a long time, the run stays in `provisioning`
-with no limit today; bounded abandonment of that case is handled by a separate follow-up decision.
+A run can also wait forever before its Workspace is ready: the result of its `create_workspace` operation is unknown and the
+operation stays `blocked`. A run Workspace is invisible to the public API, so nobody can retry it by hand, while the `blocked`
+operation keeps holding the Project's only operation slot; so the wait can only end through Cloud's scan
+(`GiveUpBlockedWorkspaceCreationsOnce`, every 10 seconds).
+
+| Setting (`issue_runs.*`) | Default | Starts at |
+|---|---|---|
+| `agent_workspace_blocked_timeout` | 30 minutes | The transaction that first persists `blocked` for the creation operation |
+
+- The deadline is frozen in the same transaction that first writes `blocked` (`workspace_blocked_at`, `workspace_deadline_at`,
+  source `blocked_write`). Deferring, retrying, re-claiming, a Cloud restart or a configuration change never renews it; a temporary
+  return to `running` or `retry_wait` does not erase it; a creation still queued without the Project's operation slot does not
+  start it. The setting is validated like the startup windows.
+- Creations already `blocked` before migration `0038` carry no immutable first evidence and are not backfilled; the first scan grants
+  one default window from the time it observes them, recorded as `first_observed`, without claiming the original wait was being timed.
+- When the deadline passes and the creation still has no real terminal result, one transaction does all of the following: it writes the
+  residual ledger row (`reason = workspace_unavailable`, with the effect plans and the clone and plugin execution identities not yet
+  reported); closes the Workspace's admission and bumps its epoch; revokes the model binding and grants; discards queued user turns;
+  writes the run as `failed`, `done`, with `failureReason = workspace_unavailable` and delivery state `skipped`; and writes the original
+  creation operation as `failed` (`provisioning_result_unknown`), which releases the Project's operation slot so other Workspaces of the
+  same Project can proceed. A failure of any write rolls the whole transaction back; the slot is never released first.
+- No delete is declared: deleting the residual Workspace, and Project deletes that involve it, are refused by the existing residual checks.
+  Cancellation does not reset the window: a creation that really settles first follows the original cancel and release path, and one whose
+  deadline passes first with the result still unknown settles as `failed`, `done`.
+- **Late facts are recorded through `RecordProvisioningFact`.** After the abandonment, the Controller submits late real facts (an effect's
+  Substrate result, the outcome of a clone or plugin execution, the creation's own result) under its current service identity and lease.
+  Cloud checks them against the original operation, effect and execution identities and writes them idempotently into the original records
+  and the ledger through the live paths' own validators before acknowledging: an identical fact replays as a no-op; a non-terminal
+  observation such as `running`, `absent` or `pending` can be taken over by a later real fact, keeping the earlier observation as prior
+  evidence; a recorded terminal accepts only its replay, and contradicting facts are refused. It never reopens admission, returns to
+  `starting`, settles again or creates an execution; the operation's own actions (claim, defer, advance, plan, effect result) stay closed for
+  an abandoned creation.
+
+Physical termination, fencing of late ensures, authorization recycling and deletion order remain with a later recovery decision.
 
 ## Related decisions
 

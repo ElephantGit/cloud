@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const workflowInvocationMigration = "0038_workflow_invocation_reference.sql"
+const workflowInvocationMigration = "0039_workflow_invocation_reference.sql"
 
 // seedInvocationWorkflowRun creates real rows for the composite reference under test. The graph is
 // deliberately minimal: these tests exercise database integrity rather than graph admission.

@@ -46,6 +46,7 @@ Each process in this repository has its own configuration sources:
 | `plugins.asset_import_enabled`, `asset_import_interval` | —, `30s` | Workflow plugin asset import |
 | `issue_runs.thread_idle_timeout` | `15m` | The Thread idle window; non-positive values take the default |
 | `issue_runs.agent_start_timeout`, `agent_restore_timeout`, `agent_end_confirm_timeout` | `2m`, `6m`, `5m` | Startup windows; an explicit non-positive value stops startup, see [Bounded startup](../agent-runs/startup-settlement.en.md) |
+| `issue_runs.agent_workspace_blocked_timeout` | `30m` | The give-up window for a run Workspace creation stuck in `blocked`; validated like the startup windows |
 | `issue_runs.delivery_give_up_after`, `delivery_unreachable_after` | `2h`, `30m` | Give-up limits for delivery and deletion; non-positive values take the defaults |
 | `object_store.*` | `enabled: false` | See [Revisions](../agent-runs/revisions.en.md#object-storage): `endpoint`, `public_endpoint`, `region`, `bucket`, `path_style`, `access_key_id_file`, `secret_access_key_file`, `upload_grant_ttl` |
 

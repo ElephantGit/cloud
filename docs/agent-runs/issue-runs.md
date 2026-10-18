@@ -37,7 +37,7 @@ Cloud 在接管上一阶段证据的事务里写入。
   建删操作都很短，会话本身不占用操作，所以同一 Project 的多个运行只在建删 Workspace 时排队。
 - 创建操作失败时运行进入 `releasing`，`status = failed`、`failureReason = workspace_unavailable`，已创建的部分由删除操作清理；
   Workspace 就绪但固定的 Agent 插件没有装上时同样进入 `releasing`，原因为 `agent_plugin_unavailable`。
-- 创建操作长时间停在 `blocked` 时，运行停在 `provisioning`，目前没有上限。
+- 创建操作停在 `blocked` 超过上限时，运行按 `failed`、`done` 收尾并保留残留责任，原创建操作失败、释放 Project 的操作槽（见 [创建 blocked 的有界放弃](startup-settlement.md#创建-blocked-的有界放弃)）。
 - **`done` 不代表运行 Workspace 已经删除**，只有删除操作成功才是（见 [删除侧的上限](#上限)）。
 
 运行 Workspace 只属于这一次运行（`workspaces.issue_run_id` 与 `issue_runs.workspace_id` 互相唯一引用），以触发运行的用户为创建者
@@ -53,6 +53,7 @@ Cloud 在接管上一阶段证据的事务里写入。
 | `StartQueuedAgentSessionsOnce` | 为 `starting` 的运行写 Thread 首条轮次并放出会话工作项；同时检查启动等待上限 |
 | `EndIdleAgentThreadsOnce` | Thread 空闲超过窗口时放出结束命令 |
 | `ReactToCancelledAgentRunsOnce` | 对已登记取消请求的运行放出结束命令 |
+| `GiveUpBlockedWorkspaceCreationsOnce` | 运行 Workspace 的创建停在 `blocked` 超过上限时放弃该次创建 |
 | `GiveUpStaleDeliveriesOnce` | 交付超过上限时放弃交付，进入 `releasing` |
 | `RedeclareRunWorkspaceDeletesOnce` | `releasing` 的运行没有进行中的删除操作时重新声明删除，例如 Node 拒绝停止之后 |
 | `GiveUpStaleWorkspaceReleasesOnce` | 删除侧超过上限时把运行结束为 `done` |
@@ -92,6 +93,7 @@ Cloud 在接管上一阶段证据的事务里写入。
 
 | 环节 | 规则 | 默认值（配置项） |
 |---|---|---|
+| 创建 | 运行 Workspace 的创建操作第一次 `blocked` 后等待真实结果 | 30 分钟（`agent_workspace_blocked_timeout`），见 [有界启动](startup-settlement.md#创建-blocked-的有界放弃) |
 | 启动 | 运行 Workspace 就绪后等待会话第一条记录；恢复前序 Revision 时使用更长的窗口；结束请求发出后等待确认 | 2 分钟、6 分钟、5 分钟（`agent_start_timeout`、`agent_restore_timeout`、`agent_end_confirm_timeout`），见 [有界启动](startup-settlement.md) |
 | 交付重试 | 交付失败时以新的执行重试，等待 30 秒起、每次翻倍、上限 10 分钟；运行保持 `delivering`，沙盒保持运行 | — |
 | 交付放弃 | 从第一个交付工作项起连续失败超过上限，或运行 Workspace 的 Node 状态未知超过上限，放弃交付：`deliveryState = failed`，进入 `releasing`，本轮未保存的修改丢失 | 2 小时（`delivery_give_up_after`）、30 分钟（`delivery_unreachable_after`） |

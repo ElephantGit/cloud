@@ -111,14 +111,18 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 
 `0036_workflow_asset_imports.sql` records asset imports for `kind='workflow'` plugins: `workflow_asset_imports` holds one row per (space, plugin) with the `requested_revision` each administrator install/reinstall advances, the import progress and its lease; `workflow_asset_documents` holds one row per document path, and only an `outcome='imported'` row permanently occupies (space, namespace, identifier, document path) — failed documents are retried on the next trigger. The imported workflows and published snapshots are ordinary user data; these two tables only record provenance, idempotency and per-document outcomes. Forward-only and additive; no existing table changes.
 
-## 0038: WorkflowRun invocation references
+## 0038: Bounded abandonment of a blocked run Workspace creation
 
-`0038_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
+Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
+
+## 0039: WorkflowRun invocation references
+
+`0039_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
 workflow IssueRun (including running and deferred) as failed, with
 `workflow_execution_unavailable_before_invocation_linkage`. It then adds a tenant-scoped composite
 foreign key and a unique invocation reference. The CHECK requires a reference for non-terminal
 workflow executors and forbids it for other executors. Historical terminal workflow rows may retain
 NULL references and remain editable; their input and outcomes are preserved without inventing runs.
 The CHECK is unconditionally validated, so fresh and upgraded databases enforce the same schema.
-The number follows the 0037 migration already on main. Fresh, seeded upgrade, repeated migration,
+The number follows the 0038 migration already on main. Fresh, seeded upgrade, repeated migration,
 constraint validation and historical update coverage is in `integration/workflow_invocation_migration_test.go`.

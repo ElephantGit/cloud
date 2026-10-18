@@ -110,7 +110,7 @@ The gRPC status code is the primary classification; `ErrorDetail{ErrorCode}` ref
 | Service | Responsibility |
 |---|---|
 | `ControllerLeaseService` | The global lease: `AcquireLease`, `RenewLease`, `ReleaseLease` |
-| `WorkspaceOperationService` | Workspace lifecycle operations: `ClaimOperation`, `PlanEffect`, `RecordEffectResult`, `AdvanceOperation`, `DeferOperation`, `ListLiveSandboxes` |
+| `WorkspaceOperationService` | Workspace lifecycle operations: `ClaimOperation`, `PlanEffect`, `RecordEffectResult`, `AdvanceOperation`, `DeferOperation`, `RecordProvisioningFact`, `ListLiveSandboxes` |
 | `NodeReportService` | The Controller reports the Nodes it holds sessions with: `RegisterNode`, `ReportNodeStatus`, `EndNode`, `ReportNodeIdle` |
 | `ExecutionService` | The execution registry: `ClaimWork`, `RecordDispatch`, `TakeOverNodeEvent`, `RecordQueriedResult`, `GetDispatch`, `ListPendingDispatches` |
 | `AgentRunService` | Agent runs: `TakeOverThreadEvents`, `ClaimThreadCommands`, `RecordThreadCommandDelivered`, `GrantRevisionUpload`, `GrantRevisionDownload` |
@@ -125,6 +125,9 @@ The gRPC status code is the primary classification; `ErrorDetail{ErrorCode}` ref
   everything the operation needs: the Project (with its credential reference), every related Workspace,
   sandbox, Node and effect, and the clone and plugin executions this operation already has, so a
   recovering Controller finds the original execution instead of registering a second one.
+- `RecordProvisioningFact` records late real facts against the original operation, effect and execution identities after a run
+  Workspace creation was abandoned, and reopens nothing (see
+  [Bounded abandonment of a blocked creation](../agent-runs/startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)).
 - `ListLiveSandboxes` is a read-only list for the lease holder of the sandboxes it should hold Node
   sessions with (current generation, not terminating, ensure succeeded), with the `nodeId`, the
   Substrate identifier and the unended Node records, so a restarted Controller can reconnect every Node

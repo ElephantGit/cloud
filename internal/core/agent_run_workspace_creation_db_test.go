@@ -191,7 +191,7 @@ func TestBlockedCreationDeadlineIsNotRenewedByRetryRestartOrConfiguration(t *tes
 	}
 }
 
-// A legacy blocked creation (pre-0035 row, no deadline) is anchored once by the first policy scan as
+// A legacy blocked creation (pre-0038 row, no deadline) is anchored once by the first policy scan as
 // first_observed with one default window, and never re-anchored.
 func TestLegacyBlockedCreationAnchorsOnceAsFirstObserved(t *testing.T) {
 	store := commandStore(t)

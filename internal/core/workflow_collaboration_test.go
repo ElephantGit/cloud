@@ -3,6 +3,8 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -50,13 +52,13 @@ func projectGraph(t *testing.T, graph Object, snapshots []Object, issue IssueFor
 		Ref:         reviewRef,
 		Title:       "Review flow",
 		Description: "Reviews a change",
-		Graph:       encodeGraph(t, graph),
+		Graph:       decodeGraph(t, graph),
 		Snapshots:   snapshots,
 	}, &issue)
 }
 
-// encodeGraph renders a graph to the bytes the column stores, so a test reads the document the way
-// the projection does: every nested object decoded to a map, never a hand-built Object.
+// encodeGraph renders a graph to the bytes the column stores, for tests that assert on the stored
+// document rather than on the projection.
 func encodeGraph(t *testing.T, graph Object) []byte {
 	t.Helper()
 	raw, err := json.Marshal(graph)
@@ -292,7 +294,7 @@ func TestFormDescriptorProjectionBounds(t *testing.T) {
 		t.Fatalf("option count = %d, want %d", len(wide.Options), maxFormOptions)
 	}
 
-	raw := encodeGraph(t, Object{"nodes": []any{Object{
+	raw := decodeGraph(t, Object{"nodes": []any{Object{
 		"id":   "start-1",
 		"data": Object{"kind": "start", "inputVariables": []any{Object{"name": "field", "valueType": "string"}}},
 	}}})
@@ -344,9 +346,11 @@ func TestWorkflowStartVariablesReadsTheDocument(t *testing.T) {
 		}
 	}
 
-	// An unreadable column value is an empty form, not a failed request.
-	if d := formDescriptorFromGraph(&workflowFormSource{Ref: reviewRef, Graph: []byte("not json")}, &IssueFormContext{}); len(d.Fields) != 0 {
-		t.Fatalf("an unreadable graph produced fields: %+v", d.Fields)
+	// An empty document is an empty form, not a failed request. The column is decoded before it
+	// reaches the projection, so this is what a row the workflow API did not write looks like here;
+	// the decode's own tolerance is exercised against real jsonb by the integration suite.
+	if d := formDescriptorFromGraph(&workflowFormSource{Ref: reviewRef, Graph: Object{}}, &IssueFormContext{}); len(d.Fields) != 0 {
+		t.Fatalf("an empty graph produced fields: %+v", d.Fields)
 	}
 }
 
@@ -433,7 +437,7 @@ func TestPlatformFieldsLeadTheForm(t *testing.T) {
 		snapshotRows(3, 2, 1), issueContext())
 	validateFormDescriptor(d)
 
-	want := []string{fieldKeyRepository, fieldKeyBranch, fieldKeyVersion, fieldKeyPrompt, fieldKeyContextRefs, "scope"}
+	want := []string{fieldKeyRepository, fieldKeyBranch, fieldKeySnapshotID, fieldKeyPrompt, fieldKeyContextRefs, "scope"}
 	if len(d.Fields) != len(want) {
 		t.Fatalf("field count = %d, want %d: %+v", len(d.Fields), len(want), d.Fields)
 	}
@@ -479,7 +483,7 @@ func TestVersionFieldOffersPublishedSnapshots(t *testing.T) {
 	d := projectGraph(t, startGraph(nil, ""), snapshotRows(3, 2, 1), issueContext())
 	validateFormDescriptor(d)
 
-	version := fieldOf(t, d, fieldKeyVersion)
+	version := fieldOf(t, d, fieldKeySnapshotID)
 	if version.Type != fieldSelect || version.Required {
 		t.Fatalf("version field wrong: %+v", version)
 	}
@@ -505,13 +509,13 @@ func TestVersionFieldIsAbsentWithoutASnapshot(t *testing.T) {
 	d := projectGraph(t, startGraph(nil, ""), nil, issueContext())
 	validateFormDescriptor(d)
 
-	if fieldIndex(d, fieldKeyVersion) != -1 {
+	if fieldIndex(d, fieldKeySnapshotID) != -1 {
 		t.Fatalf("an unpublished workflow grew a version field: %+v", d.Fields)
 	}
 	// A snapshot row whose id is not an id cannot become an option either.
 	d = projectGraph(t, startGraph(nil, ""), []Object{{"id": "not-an-id", "version": 1}}, issueContext())
 	validateFormDescriptor(d)
-	if fieldIndex(d, fieldKeyVersion) != -1 {
+	if fieldIndex(d, fieldKeySnapshotID) != -1 {
 		t.Fatalf("a malformed snapshot row produced a version field: %+v", d.Fields)
 	}
 }
@@ -642,7 +646,7 @@ func TestGlobalsComeAfterTheAuthorsOwnFields(t *testing.T) {
 	d := projectGraph(t, graph, snapshotRows(1), issueContext())
 	validateFormDescriptor(d)
 
-	want := []string{fieldKeyRepository, fieldKeyBranch, fieldKeyVersion, fieldKeyPrompt, fieldKeyContextRefs, "scope", "global.region"}
+	want := []string{fieldKeyRepository, fieldKeyBranch, fieldKeySnapshotID, fieldKeyPrompt, fieldKeyContextRefs, "scope", "global.region"}
 	if len(d.Fields) != len(want) {
 		t.Fatalf("field count = %d, want %d: %+v", len(d.Fields), len(want), d.Fields)
 	}
@@ -655,11 +659,12 @@ func TestGlobalsComeAfterTheAuthorsOwnFields(t *testing.T) {
 
 // TestLaunchKeysCollideLikeTheOlderOnes covers the collision rule for the three new reserved keys: an
 // author who declares one keeps their own control, label and requiredness, and the platform only fills
-// a default their control can actually hold.
+// a default their control can actually hold. The version field is the exception that proves the rule —
+// its default is a cursor rather than a value, so no control can hold it.
 func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	declared := []any{
 		Object{"name": fieldKeyBranch, "displayName": "Target branch", "valueType": "string"},
-		Object{"name": fieldKeyVersion, "displayName": "Release", "valueType": "string"},
+		Object{"name": fieldKeySnapshotID, "displayName": "Release", "valueType": "string"},
 		Object{"name": fieldKeyContextRefs, "displayName": "Refs", "valueType": "string"},
 	}
 	d := projectGraph(t, startGraph(declared, ""), snapshotRows(2, 1), issueContext())
@@ -667,7 +672,7 @@ func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 
 	// Nothing is prepended for a key the author declared, but the platform still injects the ones they
 	// did not: the two leading fields are the platform's, the three trailing ones the author's.
-	want := []string{fieldKeyRepository, fieldKeyPrompt, fieldKeyBranch, fieldKeyVersion, fieldKeyContextRefs}
+	want := []string{fieldKeyRepository, fieldKeyPrompt, fieldKeyBranch, fieldKeySnapshotID, fieldKeyContextRefs}
 	if len(d.Fields) != len(want) {
 		t.Fatalf("field count = %d, want %d: %+v", len(d.Fields), len(want), d.Fields)
 	}
@@ -683,20 +688,232 @@ func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	if branch.DefaultValue != issueContext().DefaultBranch {
 		t.Fatalf("branch default = %v, want the project's branch", branch.DefaultValue)
 	}
-	// A text control holds the snapshot id the platform would have offered, so the default fills — what
-	// it must not do is turn the author's field into a select.
-	version := fieldOf(t, d, fieldKeyVersion)
+	// The version field is the one the platform contributes nothing to: its value is the cursor confirm
+	// resolves the run's snapshot from, not a value the author's variable could hold, so a text control
+	// must not be prefilled with a snapshot id — the run would receive that id as its own `version`.
+	version := fieldOf(t, d, fieldKeySnapshotID)
 	if version.Type != fieldText || version.Label != "Release" {
 		t.Fatalf("the author's version control was overwritten: %+v", version)
 	}
-	if version.DefaultValue != snapshotRows(2)[0].S("id") {
-		t.Fatalf("version default = %v, want the newest snapshot", version.DefaultValue)
+	if version.DefaultValue != nil {
+		t.Fatalf("version default = %v, want none: the cursor is not a value the variable can hold", version.DefaultValue)
 	}
 	// The platform offers no default for the context refs at all — an empty selection is the only
 	// honest starting point — so the author's declaration is left exactly as it was written.
 	refs := fieldOf(t, d, fieldKeyContextRefs)
 	if refs.Type != fieldText || refs.Label != "Refs" || refs.DefaultValue != nil {
 		t.Fatalf("the author's context refs control was changed: %+v", refs)
+	}
+}
+
+// TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt covers the key a form value and a
+// platform cursor can both be called. A graph whose own Start node declares `snapshotId` is asking for
+// its own variable of that name, so the value under that key must not also select the snapshot: read as
+// a cursor it would 404 on any value that is not a snapshot id, and on one that is, it would run the
+// version the user picked while handing the workflow that same id as its parameter.
+//
+// The second half covers the pre-rename key (Issue collaboration D8). It is still read as a cursor, because a form
+// rendered before the rename is confirmed after it and the selection it carries is the user's; the new
+// key is read first so a submission carrying both is answered by the one this build wrote.
+func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) {
+	newest := snapshotRows(2, 1)[0].S("id")
+	older := snapshotRows(2, 1)[1].S("id")
+	declared := startGraph([]any{Object{"name": fieldKeySnapshotID, "valueType": "string"}}, "")
+	declaredLegacy := startGraph([]any{Object{"name": legacyFieldKeyVersion, "valueType": "string"}}, "")
+	plain := startGraph([]any{Object{"name": "scope", "valueType": "string"}}, "")
+	cases := []struct {
+		name   string
+		graph  Object
+		values Object
+		want   string
+	}{
+		{
+			name:   "the platform's own field carries the cursor",
+			graph:  plain,
+			values: Object{fieldKeySnapshotID: newest},
+			want:   newest,
+		},
+		{
+			name:   "no version is the newest published one",
+			graph:  plain,
+			values: Object{"repository": "ora-space/cloud"},
+			want:   "",
+		},
+		{
+			name:   "an author's version is a value, not a version selection",
+			graph:  declared,
+			values: Object{fieldKeySnapshotID: "1.2.3"},
+			want:   "",
+		},
+		{
+			name:   "an author's version holding a snapshot id still selects nothing",
+			graph:  declared,
+			values: Object{fieldKeySnapshotID: newest},
+			want:   "",
+		},
+		{
+			name:   "a form rendered before the rename still selects its version",
+			graph:  plain,
+			values: Object{legacyFieldKeyVersion: older},
+			want:   older,
+		},
+		{
+			name:   "the new key answers for a submission carrying both",
+			graph:  plain,
+			values: Object{fieldKeySnapshotID: newest, legacyFieldKeyVersion: older},
+			want:   newest,
+		},
+		{
+			name:  "the old key still selects when the author took the new one for a variable",
+			graph: declared,
+			values: Object{
+				fieldKeySnapshotID:    "1.2.3",
+				legacyFieldKeyVersion: older,
+			},
+			want: older,
+		},
+		{
+			name:   "an author's old key is a value, not a version selection",
+			graph:  declaredLegacy,
+			values: Object{legacyFieldKeyVersion: "1.2.3"},
+			want:   "",
+		},
+	}
+	for _, tc := range cases {
+		if got := workflowVersionCursor(decodeGraph(t, tc.graph), tc.values); got != tc.want {
+			t.Fatalf("%s: cursor = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestFoldLegacyVersionAnswer covers what a confirm does with the pre-rename key once the cursor has
+// read it. The values it stores and validates are the answer to the descriptor, and the `@` form is the
+// one surface where the set of keys *is* the contract, so a key the descriptor does not declare has to
+// be gone — but not before the cursor has seen it, and never by overwriting a variable the author
+// declared under the name the platform took over.
+func TestFoldLegacyVersionAnswer(t *testing.T) {
+	newest := snapshotRows(2, 1)[0].S("id")
+	older := snapshotRows(2, 1)[1].S("id")
+	plain := decodeGraph(t, startGraph(nil, ""))
+	declaredLegacy := decodeGraph(t, startGraph([]any{Object{"name": legacyFieldKeyVersion, "valueType": "string"}}, ""))
+	declaredNew := decodeGraph(t, startGraph([]any{Object{"name": fieldKeySnapshotID, "valueType": "string"}}, ""))
+	cases := []struct {
+		name   string
+		graph  Object
+		values Object
+		want   Object
+	}{
+		{
+			name:   "the old key is rewritten under the new one",
+			graph:  plain,
+			values: Object{legacyFieldKeyVersion: older, "prompt": "go"},
+			want:   Object{fieldKeySnapshotID: older, "prompt": "go"},
+		},
+		{
+			name:   "an answer already under the new key is the one kept",
+			graph:  plain,
+			values: Object{fieldKeySnapshotID: newest, legacyFieldKeyVersion: older},
+			want:   Object{fieldKeySnapshotID: newest},
+		},
+		{
+			name:   "an author's own old key is left where it is",
+			graph:  declaredLegacy,
+			values: Object{legacyFieldKeyVersion: "1.2.3"},
+			want:   Object{legacyFieldKeyVersion: "1.2.3"},
+		},
+		{
+			name:  "the old key goes, and the author's new one is untouched",
+			graph: declaredNew,
+			values: Object{
+				fieldKeySnapshotID:    "1.2.3",
+				legacyFieldKeyVersion: older,
+			},
+			want: Object{fieldKeySnapshotID: "1.2.3"},
+		},
+		{
+			name:   "a submission with no old key is left alone",
+			graph:  plain,
+			values: Object{fieldKeySnapshotID: newest},
+			want:   Object{fieldKeySnapshotID: newest},
+		},
+	}
+	for _, tc := range cases {
+		foldLegacyVersionAnswer(tc.graph, tc.values)
+		if !reflect.DeepEqual(tc.values, tc.want) {
+			t.Fatalf("%s: values = %#v, want %#v", tc.name, tc.values, tc.want)
+		}
+	}
+}
+
+// TestWorkflowFieldDivergence covers what a confirm compares before it validates anything at all. The
+// form the client rendered comes from the workflow's live document and the version it is about to
+// execute comes from a snapshot, so the two have to agree about every field that decides whether a
+// submission is acceptable — otherwise the version's schema refuses a value the user was legitimately
+// shown, or insists on a field the form never showed them, and says either thing about the wrong
+// document. What they do *not* have to agree about is how a control is drawn: a label, a description, a
+// placeholder or a default changes no answer, and an edit that only renames a field must not strand a
+// form the user has already filled in.
+func TestWorkflowFieldDivergence(t *testing.T) {
+	text := func(name string) Object {
+		return Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string"}
+	}
+	required := func(name string) Object {
+		return Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string", "required": true}
+	}
+	optioned := func(name string, values ...any) Object {
+		return Object{"name": name, "displayName": name, "fieldType": "select", "valueType": "string", "options": values}
+	}
+	descriptor := func(graph Object) FormDescriptor {
+		return projectGraph(t, graph, snapshotRows(2, 1), issueContext())
+	}
+	// The documents a confirm holds: one Start-only graph per way an edit can move a field.
+	plain := startGraph(nil, "")
+	scoped := startGraph([]any{text("scope")}, "")
+	scopeRequired := startGraph([]any{required("scope")}, "")
+	scopeSelected := startGraph([]any{optioned("scope", "a", "b")}, "")
+	scopeWidened := startGraph([]any{optioned("scope", "a", "b", "c")}, "")
+	scopeReordered := startGraph([]any{optioned("scope", "b", "a")}, "")
+	scopeRenamed := startGraph([]any{Object{
+		"name": "scope", "displayName": "评审范围", "fieldType": "text-input", "valueType": "string",
+	}}, "")
+	scopeDefaulted := startGraph([]any{Object{
+		"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "value": "everything",
+	}}, "")
+	scopedPrompted := startGraph([]any{text("scope")}, "review the diff")
+	// A draft that withdrew a platform field, and one that handed a platform key to the author: the two
+	// ways an edit reaches a field the author did not write themselves in the Start node.
+	withdrawn := launchGraph([]any{Object{"key": fieldKeyRepository, "enabled": false}})
+	owned := startGraph([]any{Object{
+		"name": fieldKeyRepository, "displayName": "Repository", "fieldType": "text-input", "valueType": "string",
+	}}, "")
+	left, right := startGraph([]any{text("left")}, ""), startGraph([]any{text("right")}, "")
+
+	// The failure is a wire list, so the order it is reported in is part of the contract.
+	cases := []struct {
+		name              string
+		rendered, version Object
+		want              []string
+	}{
+		{"the same document on both sides", scoped, scoped, nil},
+		{"a field the version does not declare", scoped, plain, []string{"scope"}},
+		{"a field the version declares and the form does not", plain, scoped, []string{"scope"}},
+		{"a field the version requires and the form does not", scoped, scopeRequired, []string{"scope"}},
+		{"a field the form requires and the version does not", scopeRequired, scoped, []string{"scope"}},
+		{"the same key as another control", scopeSelected, scoped, []string{"scope"}},
+		{"the same control offering other values", scopeSelected, scopeWidened, []string{"scope"}},
+		{"a field only one side has, each way", left, right, []string{"left", "right"}},
+		{"a platform field the draft withdrew", withdrawn, plain, []string{fieldKeyRepository}},
+		{"a platform key the draft handed to the author", owned, plain, []string{fieldKeyRepository}},
+		// The same field, drawn differently.
+		{"the same options in another order", scopeSelected, scopeReordered, nil},
+		{"another label", scoped, scopeRenamed, nil},
+		{"another default", scoped, scopeDefaulted, nil},
+		{"another Start prompt", scopedPrompted, scoped, nil},
+	}
+	for _, tc := range cases {
+		if got := workflowFieldDivergence(descriptor(tc.rendered), descriptor(tc.version)); !slices.Equal(got, tc.want) {
+			t.Fatalf("%s: diverged = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

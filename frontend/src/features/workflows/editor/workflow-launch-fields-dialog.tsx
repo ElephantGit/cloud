@@ -75,7 +75,7 @@ export function WorkflowLaunchFieldsDialog({
               key={row.key}
               row={row}
               declaredByStart={startVariableNames.includes(row.key)}
-              versionUnavailable={row.key === 'version' && hasSnapshots === false}
+              versionUnavailable={row.key === 'snapshotId' && hasSnapshots === false}
               onToggleEnabled={(enabled) => patchRow(row.key, { enabled })}
               onToggleRequired={(required) => patchRow(row.key, { required })}
             />

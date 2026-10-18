@@ -11,7 +11,7 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
-// invalidDescriptorProvider returns a descriptor that violates the §38.3 invariants (a select with no
+// invalidDescriptorProvider returns a descriptor that violates the Issue collaboration D7 invariants (a select with no
 // options and a duplicated field key), to prove Issues fails closed instead of rendering it.
 type invalidDescriptorProvider struct{ FormRef string }
 
@@ -54,7 +54,7 @@ func startPromptGraph(variables []any, prompt string) core.Object {
 
 // launchGraph is startInputGraph with the workflow's launch-field declaration in the envelope: the
 // author's answer, carried in the document rather than registered anywhere, about which platform
-// fields the @ form asks for and which of them it insists on (§38.37d).
+// fields the @ form asks for and which of them it insists on (Issue collaboration D8).
 func launchGraph(variables, launchFields []any) core.Object {
 	graph := startInputGraph(variables)
 	graph["launchFields"] = launchFields
@@ -147,6 +147,14 @@ func reviewWorkflow(t *testing.T, f *fixture) string {
 	return createWorkflow(t, f, "Security Review Workflow", "wf-review", reviewVariables())
 }
 
+// publishWorkflow freezes a workflow's live graph into its next published version. A confirm executes
+// a *published* version — the live document is a draft — so a test that drives one has to publish
+// first, exactly as the author would.
+func publishWorkflow(t *testing.T, f *fixture, wid, key string) core.Object {
+	t.Helper()
+	return f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{}, key, 200).O("resource")
+}
+
 // workflowComment posts a comment addressed at `wid` and returns the form interaction it created.
 // Creating the interaction must NOT create a run.
 func workflowComment(t *testing.T, f *fixture, wid, iid, key, body string) core.Object {
@@ -168,6 +176,28 @@ func confirmPath(f *fixture, iid, ixid string) string {
 	return f.path("/issues/" + iid + "/interactions/" + ixid + "/confirm")
 }
 
+// refusedFields asserts a confirm was refused because the version it names no longer describes the form
+// the client rendered, and returns the fields that refusal names. The fault is the point of the
+// assertion: the same submission checked against the version's schema alone would be refused too, by a
+// fault about the values — saying a field the user was shown is invalid, or that one they were never
+// shown is missing.
+func refusedFields(t *testing.T, refusal core.Object) []string {
+	t.Helper()
+	if got := refusal.S("code"); got != "workflow_version_fields_changed" {
+		t.Fatalf("code = %q, want workflow_version_fields_changed: %v", got, refusal)
+	}
+	raw, _ := refusal.O("params")["fields"].([]any)
+	out := []string{}
+	for _, item := range raw {
+		text, ok := item.(string)
+		if !ok {
+			t.Fatalf("the refusal named a value that is not a field: %v", item)
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
 // assistPath targets the stateless pre-confirm assist route: the form is a draft until the user
 // confirms it, so assist must work without a persisted interaction.
 func assistPath(f *fixture, iid string) string {
@@ -183,7 +213,7 @@ func validValues() core.Object {
 	return core.Object{"repository": "ora-space/cloud", "branch": "main", "scope": "full-repo", "severity": "high"}
 }
 
-// TestWorkflowCommentCreatesFormInteractionWithoutRun covers §38.1/§38.6: selecting a workflow records
+// TestWorkflowCommentCreatesFormInteractionWithoutRun covers Issue collaboration D4/D9: selecting a workflow records
 // a configured-but-unconfirmed interaction and produces no run, no dispatch and no execution.
 func TestWorkflowCommentCreatesFormInteractionWithoutRun(t *testing.T) {
 	f := setup(t)
@@ -210,7 +240,7 @@ func TestWorkflowCommentCreatesFormInteractionWithoutRun(t *testing.T) {
 	}
 }
 
-// TestFormDescriptorProjection covers the read-only provider-backed descriptor route (§38.17) and the
+// TestFormDescriptorProjection covers the read-only provider-backed descriptor route (Issue collaboration D7) and the
 // target projection that advertises the formRef.
 func TestFormDescriptorProjection(t *testing.T) {
 	f := setup(t)
@@ -287,7 +317,7 @@ func TestFormDescriptorProjection(t *testing.T) {
 	f.call("GET", f.path("/collaboration/forms/"+uuid.NewString()), nil, "", 404)
 }
 
-// TestFormDescriptorPlatformFieldsForAnIssue covers the issue-scoped projection (§38.37b, §38.37c): a
+// TestFormDescriptorPlatformFieldsForAnIssue covers the issue-scoped projection (Issue collaboration D8): a
 // form opened for one issue carries the launch fields — which repository and branch this run is for,
 // which published version to run, what prompt, and which extra context travels with it — prefilled from
 // that issue's project and the workflow's own document.
@@ -317,7 +347,7 @@ func TestFormDescriptorPlatformFieldsForAnIssue(t *testing.T) {
 	// With an issue, the platform fields lead the form: they say what the run is about, while the
 	// author's variables are its parameters.
 	d := f.call("GET", f.path("/collaboration/forms/"+release+"?issueId="+withProject.S("id")), nil, "", 200)
-	want := []string{"repository", "branch", "version", "prompt", "context_refs", "notes"}
+	want := []string{"repository", "branch", "snapshotId", "prompt", "context_refs", "notes"}
 	if keys := fieldKeys(orderedFormFields(t, d)); !slices.Equal(keys, want) {
 		t.Fatalf("platform fields did not lead the form: %v, want %v", keys, want)
 	}
@@ -333,7 +363,7 @@ func TestFormDescriptorPlatformFieldsForAnIssue(t *testing.T) {
 
 	// The version field offers the published versions, newest first and newest by default, and carries
 	// the snapshot id rather than the version number: the id is what a run is created from.
-	version := byKey["version"]
+	version := byKey["snapshotId"]
 	if version.S("type") != "select" || version.B("required") || version["defaultValue"] != newest.S("id") {
 		t.Fatalf("version field wrong: %v", version)
 	}
@@ -382,7 +412,7 @@ func TestFormDescriptorPlatformFieldsForAnIssue(t *testing.T) {
 		t.Fatalf("an issue that names no reference grew a context refs field: %v", empty["context_refs"])
 	}
 	// Neither the version nor the prompt depends on the issue: they come from the workflow itself.
-	if empty["version"]["defaultValue"] != newest.S("id") || empty["prompt"]["defaultValue"] != "Ship the release" {
+	if empty["snapshotId"]["defaultValue"] != newest.S("id") || empty["prompt"]["defaultValue"] != "Ship the release" {
 		t.Fatalf("a workflow-owned default depended on the issue: %v", empty)
 	}
 
@@ -399,7 +429,7 @@ func TestFormDescriptorPlatformFieldsForAnIssue(t *testing.T) {
 	f.call("GET", f.path("/collaboration/forms/"+release+"?issueId=not-a-uuid"), nil, "", 404)
 }
 
-// TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations covers the reserved-key rule (§38.37c):
+// TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations covers the reserved-key rule (Issue collaboration D8):
 // a workflow that declares one of the platform's own names keeps its declaration, and the platform
 // contributes only the default that declaration can hold.
 func TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations(t *testing.T) {
@@ -430,14 +460,14 @@ func TestFormDescriptorPlatformFieldsCollideWithAuthorDeclarations(t *testing.T)
 		t.Fatalf("the author's own branch default was replaced: %v, want main", got)
 	}
 	// The reserved keys the author did not declare are still injected alongside their fields.
-	if v := byKey["version"]; v.S("type") != "select" {
+	if v := byKey["snapshotId"]; v.S("type") != "select" {
 		t.Fatalf("the platform's version field was not injected: %v", v)
 	}
 	if p := byKey["prompt"]; p.S("type") != "textarea" || p.B("required") {
 		t.Fatalf("the platform's prompt field was not injected: %v", p)
 	}
 	// The colliding keys keep the author's position, so only the two injected fields are prepended.
-	if keys := fieldKeys(orderedFormFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))); keys[0] != "version" || keys[1] != "prompt" {
+	if keys := fieldKeys(orderedFormFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))); keys[0] != "snapshotId" || keys[1] != "prompt" {
 		t.Fatalf("the injected fields did not lead the colliding form: %v", keys)
 	}
 }
@@ -448,7 +478,7 @@ func launchDefaults() []any {
 	return []any{
 		core.Object{"key": "repository", "enabled": true, "required": true},
 		core.Object{"key": "branch", "enabled": true, "required": true},
-		core.Object{"key": "version", "enabled": true, "required": false},
+		core.Object{"key": "snapshotId", "enabled": true, "required": false},
 		core.Object{"key": "prompt", "enabled": true, "required": false},
 		core.Object{"key": "context_refs", "enabled": true, "required": false},
 	}
@@ -482,7 +512,7 @@ func fieldShapes(fields []core.Object) []string {
 	return out
 }
 
-// TestFormDescriptorAuthorDeclaredLaunchFields covers §38.37d: the workflow's author decides which of
+// TestFormDescriptorAuthorDeclaredLaunchFields covers Issue collaboration D8: the workflow's author decides which of
 // the platform's launch fields the `@` form asks for, and which of them it insists on. The declaration
 // rides in the graph, so the live document is what decides — publishing only gives the version field
 // something to offer.
@@ -515,12 +545,23 @@ func TestFormDescriptorAuthorDeclaredLaunchFields(t *testing.T) {
 	// two the platform considers essential, and the author may still decide this workflow needs none.
 	declared := createLaunchWorkflow(t, f, "Declared", "launch-declared", notesVariables(), []any{
 		core.Object{"key": "repository", "enabled": false},
-		core.Object{"key": "version", "enabled": false},
+		core.Object{"key": "snapshotId", "enabled": false},
 	})
 	f.call("POST", f.path("/workflows/"+declared+"/publish"), core.Object{}, "launch-pub-declared", 200)
 	d := f.call("GET", f.path("/collaboration/forms/"+declared+"?issueId="+iss.S("id")), nil, "", 200)
 	if keys := fieldKeys(orderedFormFields(t, d)); !slices.Equal(keys, []string{"branch", "prompt", "context_refs", "notes"}) {
 		t.Fatalf("a withdrawn field was still asked for: %v", keys)
+	}
+	// The declaration a snapshot published before the rename still holds names that selector `version`,
+	// and it has to keep meaning what its author meant: the field stays withdrawn rather than coming
+	// back to a form whose author had turned it off.
+	preRename := createLaunchWorkflow(t, f, "Pre-rename", "launch-pre-rename", notesVariables(), []any{
+		core.Object{"key": "repository", "enabled": false},
+		core.Object{"key": "version", "enabled": false},
+	})
+	f.call("POST", f.path("/workflows/"+preRename+"/publish"), core.Object{}, "launch-pub-pre-rename", 200)
+	if keys := fieldKeys(orderedFormFields(t, f.call("GET", f.path("/collaboration/forms/"+preRename+"?issueId="+iss.S("id")), nil, "", 200))); !slices.Equal(keys, []string{"branch", "prompt", "context_refs", "notes"}) {
+		t.Fatalf("a withdrawal written under the old name was lost: %v", keys)
 	}
 	// The descriptor is the whole contract, and both routes that read it re-resolve the declaration, so
 	// a value for a withdrawn field is an unknown key rather than a silently kept one.
@@ -578,7 +619,7 @@ func TestFormDescriptorAuthorDeclaredLaunchFields(t *testing.T) {
 		core.Object{"name": "repository", "displayName": "Repository", "fieldType": "text-input", "valueType": "string"},
 	}, []any{
 		core.Object{"key": "repository", "enabled": false, "required": true},
-		core.Object{"key": "version", "enabled": false},
+		core.Object{"key": "snapshotId", "enabled": false},
 	})
 	f.call("POST", f.path("/workflows/"+owned+"/publish"), core.Object{}, "launch-pub-owned", 200)
 	ownedFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+owned+"?issueId="+iss.S("id")), nil, "", 200))
@@ -590,13 +631,13 @@ func TestFormDescriptorAuthorDeclaredLaunchFields(t *testing.T) {
 	}
 	// The same declaration did withdraw a field the author does not own, so the inertness above is the
 	// author's key being theirs rather than the declaration being ignored.
-	if _, ok := ownedFields["version"]; ok {
-		t.Fatalf("a withdrawn field survived: %v", ownedFields["version"])
+	if _, ok := ownedFields["snapshotId"]; ok {
+		t.Fatalf("a withdrawn field survived: %v", ownedFields["snapshotId"])
 	}
 }
 
 // TestWorkflowConfirmCarriesPlatformFields covers the round trip across the three paths that must
-// agree on one descriptor (§38.37b): the values the form was rendered with are the values assist
+// agree on one descriptor (Issue collaboration D8): the values the form was rendered with are the values assist
 // accepts and the values confirm persists and hands to the run. A descriptor that differed between
 // them would reject a submission the user was legitimately shown.
 func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
@@ -637,7 +678,7 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 
 	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{
 		"values": core.Object{
-			"repository": repo, "prompt": "Focus on the auth path", "version": published.S("id"),
+			"repository": repo, "prompt": "Focus on the auth path", "snapshotId": published.S("id"),
 			"branch": "main", "scope": "full-repo", "severity": "high",
 			"context_refs": []any{"project:" + project.S("id")},
 		},
@@ -651,7 +692,7 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 	if executed.S("repository") != repo || executed.S("prompt") != "Focus on the auth path" {
 		t.Fatalf("platform values did not reach the run: %v", executed)
 	}
-	if executed.S("version") != published.S("id") {
+	if executed.S("snapshotId") != published.S("id") {
 		t.Fatalf("the chosen version did not reach the run: %v", executed)
 	}
 	refs, _ := run.O("input")["contextRefs"].([]any)
@@ -666,16 +707,348 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 	if reloaded.O("input").S("prompt") != "Focus on the auth path" || reloaded.O("input").S("repository") != repo {
 		t.Fatalf("platform values were not persisted on the interaction: %v", reloaded.O("input"))
 	}
-	if reloaded.O("input").S("version") != published.S("id") {
+	if reloaded.O("input").S("snapshotId") != published.S("id") {
 		t.Fatalf("the chosen version was not persisted on the interaction: %v", reloaded.O("input"))
 	}
 }
 
-// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (§38.19): no provider is
-// 503, a malformed descriptor is 500 — never a partially usable form.
+// TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor covers the one key a form value and a platform
+// cursor can both be called. Issue collaboration D8 keeps a key the author declared in their own Start node, so a
+// workflow that declares `snapshotId` gets no version selector and the value under that key is the
+// author's variable. Read as a cursor it would make such a form unconfirmable both ways round: a value
+// that is not a snapshot id is a 404, and the platform's prefill would have put a snapshot id in the
+// author's field, so a user who left it alone would run the newest version while handing their workflow
+// that id as its variable.
+func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
+	f := setup(t)
+	wid := createWorkflow(t, f, "Release Workflow", "wf-version-owned", []any{
+		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	published := publishWorkflow(t, f, wid, "wf-version-owned-pub")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
+
+	// The form the author's declaration produces: their own control under that key, holding nothing —
+	// and no version selector, which is what makes the key theirs to begin with.
+	fields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))
+	if v := fields["snapshotId"]; v.S("type") != "text" || v.S("label") != "Release version" {
+		t.Fatalf("the author's version control was replaced by the platform's: %v", v)
+	}
+	if _, prefilled := fields["snapshotId"]["defaultValue"]; prefilled {
+		t.Fatalf("the author's version was prefilled with a snapshot id: %v", fields["snapshotId"])
+	}
+	// The control for that missing selector: the key is the platform's in a graph that leaves it alone,
+	// so the form above differs because of the declaration rather than because the field is gone.
+	plain := reviewWorkflow(t, f)
+	publishWorkflow(t, f, plain, "wf-version-plain-pub")
+	plainFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+plain+"?issueId="+iss.S("id")), nil, "", 200))
+	if v := plainFields["snapshotId"]; v.S("type") != "select" {
+		t.Fatalf("a workflow that declares no version lost the platform's selector: %v", v)
+	}
+
+	// A user who types their own value: the run still executes the newest published version — nothing
+	// selected it — and the workflow receives what they typed rather than that version's id.
+	it := workflowComment(t, f, wid, iss.S("id"), "wf-version-owned-1", "release")
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "snapshotId": "1.2.3", "scope": "full-repo",
+	}}, "wf-version-owned-c1", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").O("interactionValues").S("snapshotId"); got != "1.2.3" {
+		t.Fatalf("the workflow did not receive the author's version: %v", run.O("input").O("interactionValues"))
+	}
+	if got := run.O("input").S("workflowSnapshotId"); got != published.S("id") {
+		t.Fatalf("run snapshot = %q, want the newest published version %q", got, published.S("id"))
+	}
+}
+
+// TestWorkflowConfirmReadsThePreRenameVersionKey covers the other half of the rename (Issue collaboration D8): the
+// field is `snapshotId` now, but a form rendered before the deploy answers under `version`, and the
+// values are submitted after it. That submission has to be accepted as the version selection it is —
+// reading only the new key would start the newest version while the version the user picked is dropped
+// without a word — and the interaction has to be stored under the name this build writes, because the
+// `@` form is the one surface where the set of keys is the contract and a key the descriptor does not
+// declare is refused outright.
+func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
+	f := setup(t)
+	wid := reviewWorkflow(t, f)
+	older := publishWorkflow(t, f, wid, "wf-rename-pub-1")
+	newest := f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{"name": "Second cut"}, "wf-rename-pub-2", 200).O("resource")
+	if newest.S("id") == older.S("id") {
+		t.Fatal("the two publishes are the same snapshot, so a wrong version could pass as the right one")
+	}
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form"}, "wf-rename-issue", 200).O("resource")
+
+	// The submission a client that rendered the pre-rename form sends: the selection under the old key,
+	// and no `snapshotId` at all.
+	it := workflowComment(t, f, wid, iss.S("id"), "wf-rename-1", "run it")
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "version": older.S("id"),
+		"prompt": "Review the diff", "scope": "full-repo", "severity": "high",
+	}}, "wf-rename-c1", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != older.S("id") {
+		t.Fatalf("run snapshot = %q, want the version the old form selected %q", got, older.S("id"))
+	}
+	stored := run.O("input").O("interactionValues")
+	if stored.S("snapshotId") != older.S("id") {
+		t.Fatalf("the selection was not stored under the new key: %v", stored)
+	}
+	if _, kept := stored["version"]; kept {
+		t.Fatalf("the pre-rename key was stored: %v", stored)
+	}
+
+	// The run's copy above is what the executor received; the obligation also names the interaction row,
+	// which is what the user configured and what the next reader of the issue sees. They are two columns
+	// written from one submission in one transaction, so the fold has to have reached both: reading the
+	// row back is also the only assertion that separates a rewritten key from an added one.
+	var row core.Object
+	for _, item := range issueItems(f.call("GET", f.path("/issues/"+iss.S("id")+"/interactions"), nil, "", 200)) {
+		if item.S("id") == it.S("id") {
+			row = item
+		}
+	}
+	if row == nil {
+		t.Fatalf("the confirmed interaction is not readable, so its stored keys cannot be checked")
+	}
+	if row.O("input").S("snapshotId") != older.S("id") {
+		t.Fatalf("the interaction did not store the selection under the new key: %v", row.O("input"))
+	}
+	if _, kept := row.O("input")["version"]; kept {
+		t.Fatalf("the interaction stored the pre-rename key: %v", row.O("input"))
+	}
+
+	// The same submission against a graph whose author declared `snapshotId` for a variable of their
+	// own. There the new key is theirs, so the selection cannot be written under it — but the version
+	// the user picked is still the one that runs, and the variable keeps the value they gave it.
+	owned := createWorkflow(t, f, "Owned Workflow", "wf-rename-owned", []any{
+		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	ownedOlder := publishWorkflow(t, f, owned, "wf-rename-owned-pub-1")
+	ownedNewest := f.call("POST", f.path("/workflows/"+owned+"/publish"), core.Object{"name": "Second cut"}, "wf-rename-owned-pub-2", 200).O("resource")
+	if ownedNewest.S("id") == ownedOlder.S("id") {
+		t.Fatal("the two publishes are the same snapshot, so a wrong version could pass as the right one")
+	}
+	// A second issue, because a confirmed interaction is spent: `workflowComment` reads back the issue's
+	// form interaction and would hand back the one just confirmed.
+	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form again"}, "wf-rename-issue-2", 200).O("resource")
+	it = workflowComment(t, f, owned, ownedIss.S("id"), "wf-rename-owned-1", "run it")
+	created = f.call("POST", confirmPath(f, ownedIss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "version": ownedOlder.S("id"), "snapshotId": "1.2.3",
+	}}, "wf-rename-owned-c1", 200).O("resource")
+	run = f.call("GET", f.path("/issues/"+ownedIss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != ownedOlder.S("id") {
+		t.Fatalf("run snapshot = %q, want the version the old form selected %q", got, ownedOlder.S("id"))
+	}
+	stored = run.O("input").O("interactionValues")
+	if stored.S("snapshotId") != "1.2.3" {
+		t.Fatalf("the author's variable was overwritten by the version selection: %v", stored)
+	}
+	if _, kept := stored["version"]; kept {
+		t.Fatalf("the pre-rename key was stored: %v", stored)
+	}
+}
+
+// TestWorkflowAssistReadsThePreRenameVersionKey covers the assist half of the same rename (Issue collaboration D8).
+// Assist validates the submission the confirm will, against the descriptor the client rendered from,
+// so the two entries have to accept the same keys: the live descriptor no longer declares `version`,
+// and reading only the new key refuses the submission as an unknown field. That refusal is the bug —
+// one set of values a pre-rename form sent, accepted by the confirm and refused by assist.
+//
+// What assist can be held to is narrower than what the confirm is, because assist is stateless and
+// answers with a patch: it persists no folded values and echoes none of the ones it was given, so
+// which of two submitted keys won is not observable through this route. That half is covered where the
+// rule itself lives — the foldLegacyVersionAnswer table in internal/core, which is also the only
+// definition of it, since assist now calls the same function rather than keeping a rule of its own.
+// What this test pins is the wiring: the fold runs before assist validates.
+func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
+	f := setup(t)
+	wid := reviewWorkflow(t, f)
+	older := publishWorkflow(t, f, wid, "wf-assist-rename-pub-1")
+	newest := f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{"name": "Second cut"}, "wf-assist-rename-pub-2", 200).O("resource")
+	if newest.S("id") == older.S("id") {
+		t.Fatal("the two publishes are the same snapshot, so the test cannot tell which one was read")
+	}
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form"}, "wf-assist-rename-issue", 200).O("resource")
+
+	// The submission a client that rendered the pre-rename form sends — the selection under the old key
+	// and no `snapshotId` at all — driven through both entries in turn. Assist comes first so the 200
+	// below is assist's own answer to exactly the values the confirm then accepts.
+	preRename := core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "version": older.S("id"),
+		"prompt": "Review the diff", "scope": "full-repo", "severity": "high",
+	}
+	f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, preRename), "wf-assist-rename-a1", 200)
+	it := workflowComment(t, f, wid, iss.S("id"), "wf-assist-rename-1", "run it")
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": preRename}, "wf-assist-rename-c1", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != older.S("id") {
+		t.Fatalf("run snapshot = %q, want the version the old form selected %q", got, older.S("id"))
+	}
+
+	// A key the descriptor declares nowhere is still refused, so the acceptance above is the old key
+	// being read rather than assist having stopped checking the set of keys at all.
+	refusal := f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, core.Object{
+		"repository": "ora-space/cloud", "revision": older.S("id"),
+	}), "wf-assist-rename-a2", 400)
+	if refusal.S("code") != "invalid_field_value" || refusal.O("params").S("field") != "revision" {
+		t.Fatalf("an unknown key was refused for the wrong reason: %v", refusal)
+	}
+	// Both keys at once is the ordinary state mid-deploy, and legal either way: the fold takes the old
+	// key out, so the set that reaches validation is the descriptor's own.
+	f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, core.Object{
+		"repository": "ora-space/cloud", "version": older.S("id"), "snapshotId": newest.S("id"),
+	}), "wf-assist-rename-a3", 200)
+
+	// A graph whose author declared `snapshotId` for a variable of their own. There the new key is
+	// theirs, so the fold drops the old one rather than writing a snapshot id into their variable —
+	// and the submission is accepted all the same, which is the rule the confirm applies to this graph.
+	owned := createWorkflow(t, f, "Owned Workflow", "wf-assist-rename-owned", []any{
+		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	publishWorkflow(t, f, owned, "wf-assist-rename-owned-pub")
+	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form again"}, "wf-assist-rename-issue-2", 200).O("resource")
+	f.call("POST", assistPath(f, ownedIss.S("id")), workflowAssistBody(owned, core.Object{
+		"repository": "ora-space/cloud", "version": "1.2.3",
+	}), "wf-assist-rename-owned-a1", 200)
+
+	// A graph whose author declared `version` for a variable of their own. That key is the author's, so
+	// the fold leaves the submission alone and the value stays theirs to give the workflow. The mock
+	// assistant never suggests over a key the user has already filled, so its silence about `version`
+	// is what shows the value survived — and the unfilled call beside it is the control proving the
+	// mock does offer that key, without which the silence would prove nothing.
+	legacy := createWorkflow(t, f, "Legacy Workflow", "wf-assist-rename-legacy", []any{
+		core.Object{"name": "version", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
+	})
+	publishWorkflow(t, f, legacy, "wf-assist-rename-legacy-pub")
+	legacyIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form once more"}, "wf-assist-rename-issue-3", 200).O("resource")
+	unfilled := f.call("POST", assistPath(f, legacyIss.S("id")), workflowAssistBody(legacy, core.Object{
+		"repository": "ora-space/cloud",
+	}), "wf-assist-rename-legacy-a1", 200).O("suggestedValues")
+	if unfilled.S("version") == "" {
+		t.Fatalf("the control did not fire: the mock no longer offers the author's version key, so its silence below would prove nothing: %v", unfilled)
+	}
+	filled := f.call("POST", assistPath(f, legacyIss.S("id")), workflowAssistBody(legacy, core.Object{
+		"repository": "ora-space/cloud", "version": "1.2.3",
+	}), "wf-assist-rename-legacy-a2", 200).O("suggestedValues")
+	if _, suggested := filled["version"]; suggested {
+		t.Fatalf("the author's own version key was taken from them: %v", filled)
+	}
+}
+
+// TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft covers the two documents a confirm reconciles.
+// The form the client rendered comes from the workflow's *live* document — the frontend resolves a
+// descriptor once per formRef and keeps it while the user fills the form in — while the submission
+// executes one frozen version. An author who edits between publishing a version and confirming against
+// it, which is the ordinary state of a workflow between an edit and its publish, leaves that version
+// describing a different form: validating the user's answers against it can only refuse a value they
+// were legitimately shown, or demand a field they were never shown. Both are answers about the wrong
+// document, so the confirm refuses the mismatch itself, names the fields, executes nothing, and leaves
+// the interaction unclaimed — the user then does what the fault says, and publishes or picks a version
+// whose fields the form still matches.
+func TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft(t *testing.T) {
+	f := setup(t)
+	authorField := func(name string) core.Object {
+		return core.Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string", "required": true}
+	}
+	wid := createWorkflow(t, f, "Diverging Workflow", "wf-diverge", []any{authorField("topic")})
+	v1 := publishWorkflow(t, f, wid, "wf-diverge-pub-1")
+	// edit is an author's edit that is saved but not published: the live document and the newest version
+	// part ways here, which is what every step below turns on.
+	edit := func(variables []any) {
+		t.Helper()
+		live := f.call("GET", f.path("/workflows/"+wid), nil, "", 200)
+		f.call("PUT", f.path("/workflows/"+wid), core.Object{
+			"graph": startInputGraph(variables), "version": live.N("version"),
+		}, "", 200)
+	}
+	newIssue := func(key string) string {
+		t.Helper()
+		return f.call("POST", f.path("/issues"), core.Object{"title": "Diverging form"}, key, 200).O("resource").S("id")
+	}
+	rendered := func(iid string) []string {
+		t.Helper()
+		return fieldKeys(orderedFormFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iid), nil, "", 200)))
+	}
+	withVersion := func(base core.Object, id string) core.Object {
+		values := core.Object{"snapshotId": id}
+		for key, value := range base {
+			values[key] = value
+		}
+		return values
+	}
+	// What the form invites once the draft declares both fields: every key it renders, filled in.
+	submitted := core.Object{"repository": "ora-space/cloud", "branch": "main", "topic": "auth", "scope": "full-repo"}
+
+	// The draft gains a required field after version 1 was published, so the rendered form asks for
+	// `scope` and the version the user's answers would be checked against has never heard of it.
+	edit([]any{authorField("topic"), authorField("scope")})
+	ahead := newIssue("wf-diverge-issue-1")
+	if fields := rendered(ahead); !slices.Contains(fields, "scope") {
+		t.Fatalf("the rendered form is not the draft's: %v", fields)
+	}
+	it := workflowComment(t, f, wid, ahead, "wf-diverge-1", "configure")
+	refusal := f.call("POST", confirmPath(f, ahead, it.S("id")), core.Object{"values": submitted}, "wf-diverge-c1", 409)
+	if got := refusedFields(t, refusal); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("the refusal named %v, want the field version 1 does not declare", got)
+	}
+	// A refused confirm claims nothing: no run was created, and the same interaction is still there to
+	// confirm once the form and the version agree again.
+	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", ahead); n != 0 {
+		t.Fatalf("a refused confirm created %d runs", n)
+	}
+	// Publishing the draft is the first remedy the fault names, and the same submission then goes through.
+	v2 := publishWorkflow(t, f, wid, "wf-diverge-pub-2")
+	run := f.call("POST", confirmPath(f, ahead, it.S("id")), core.Object{"values": submitted}, "wf-diverge-c2", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+ahead+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v2.S("id") {
+		t.Fatalf("the run executed %q, want the version published since the refusal %q", got, v2.S("id"))
+	}
+
+	// The other remedy: the live document is now version 2, and the same mismatch read from the version
+	// side is a user who picks the older version 1 — which does not declare `scope` either. Selecting a
+	// version has to be a real way out, so the fix and the mismatch are checked on one interaction.
+	picked := newIssue("wf-diverge-issue-2")
+	older := workflowComment(t, f, wid, picked, "wf-diverge-2", "configure")
+	chose := f.call("POST", confirmPath(f, picked, older.S("id")), core.Object{"values": withVersion(submitted, v1.S("id"))}, "wf-diverge-c3", 409)
+	if got := refusedFields(t, chose); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("selecting version 1 named %v, want the field version 1 does not declare", got)
+	}
+	run = f.call("POST", confirmPath(f, picked, older.S("id")), core.Object{"values": withVersion(submitted, v2.S("id"))}, "wf-diverge-c4", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+picked+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v2.S("id") {
+		t.Fatalf("the run executed %q, want the version that was selected %q", got, v2.S("id"))
+	}
+
+	// And the direction where the values are complete: `scope` leaves the draft, so the form no longer
+	// offers it while version 2 still requires it. Checked against version 2 alone this submission is
+	// `required_field_missing` for a field the user was never shown — which is why the version is not
+	// asked, and the mismatch is named instead.
+	edit([]any{authorField("topic")})
+	behind := newIssue("wf-diverge-issue-3")
+	if fields := rendered(behind); slices.Contains(fields, "scope") {
+		t.Fatalf("the rendered form still asks for a field the draft dropped: %v", fields)
+	}
+	back := workflowComment(t, f, wid, behind, "wf-diverge-3", "configure")
+	// No `scope` in the submission, because no form asked for one.
+	thin := core.Object{"repository": "ora-space/cloud", "branch": "main", "topic": "auth"}
+	missing := f.call("POST", confirmPath(f, behind, back.S("id")), core.Object{"values": thin}, "wf-diverge-c5", 409)
+	if got := refusedFields(t, missing); !slices.Equal(got, []string{"scope"}) {
+		t.Fatalf("the refusal named %v, want the field the form no longer asks for", got)
+	}
+	// Here the remedy is the older version, because version 1's fields are still this form's.
+	run = f.call("POST", confirmPath(f, behind, back.S("id")), core.Object{"values": withVersion(thin, v1.S("id"))}, "wf-diverge-c6", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+behind+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v1.S("id") {
+		t.Fatalf("the run executed %q, want the version whose fields the form still matches %q", got, v1.S("id"))
+	}
+}
+
+// TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (Issue collaboration D7) and where they
+// stop: the read-only descriptor route is 503 with no provider and 500 for a malformed one, never a
+// partially usable form, while a confirm does not consult the provider at all. A confirm validates the
+// submitted values against the schema of the version being confirmed, which is frozen in the snapshot
+// the run will execute — so a provider outage can neither admit a bad submission nor block a good one.
 func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-prov-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Provider states"}, "wf-prov", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-prov-1", "configure")
 
@@ -684,19 +1057,24 @@ func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 
 	f.store.Forms = nil
 	f.call("GET", f.path("/collaboration/forms/"+wid), nil, "", 503)
-	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c1", 503)
 
 	f.store.Forms = invalidDescriptorProvider{FormRef: wid}
 	f.call("GET", f.path("/collaboration/forms/"+wid), nil, "", 500)
-	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c2", 500)
 
-	// Nothing was executed while the provider was unusable.
-	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", iss.S("id")); n != 0 {
-		t.Fatalf("a failed provider still produced a run")
+	// The snapshot's own schema is still enforced while the provider is unusable...
+	f.call("POST", confirmPath(f, iss.S("id"), it.S("id")),
+		core.Object{"values": core.Object{"repository": "ora-space/cloud"}}, "wf-prov-c1", 400)
+	// ...and a legal submission is confirmed rather than held hostage by it.
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-prov-c2", 200).O("resource")
+	if created.S("executorType") != "workflow" || created.S("executorId") != wid {
+		t.Fatalf("confirm with an unusable provider produced the wrong run: %v", created)
+	}
+	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", iss.S("id")); n != 1 {
+		t.Fatalf("confirm produced %d runs, want exactly one", n)
 	}
 }
 
-// TestWorkflowAssistIsSideEffectFree covers §38.12/§38.13: assist returns a field-level patch, never
+// TestWorkflowAssistIsSideEffectFree covers Issue collaboration D9: assist returns a field-level patch, never
 // clobbers a filled value, and touches no Issue state.
 func TestWorkflowAssistIsSideEffectFree(t *testing.T) {
 	f := setup(t)
@@ -750,12 +1128,13 @@ func TestWorkflowAssistIsSideEffectFree(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmValidatesAndExecutes covers the confirm boundary end-to-end (§38.7, §38.15,
-// §38.20): authoritative re-validation, exactly one run, the persisted interaction input, the run's
+// TestWorkflowConfirmValidatesAndExecutes covers the confirm boundary end-to-end (Issue collaboration
+// D9): authoritative re-validation, exactly one run, the persisted interaction input, the run's
 // effective snapshot, provenance, and the workflow timeline representation.
 func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-confirm-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Confirm me", "description": "desc"}, "wf-confirm-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-confirm-1", "configure the review")
 
@@ -785,7 +1164,7 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 
 	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-confirm-ok", 200).O("resource")
 	// The confirm response is the committed enqueue: dispatch is post-commit, so execution has not been
-	// observed yet (§19 ordering). The frontend re-reads the run/timeline afterwards.
+	// observed yet. The frontend re-reads the run/timeline afterwards.
 	if created.S("status") != "queued" || created.S("executorType") != "workflow" || created.S("executorId") != wid {
 		t.Fatalf("workflow run wrong at confirm time: %v", created)
 	}
@@ -861,11 +1240,12 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmIdempotencyAndDoubleConfirm covers §38.22: the same key+body replays, a changed
+// TestWorkflowConfirmIdempotencyAndDoubleConfirm covers Issue collaboration D9: the same key+body replays, a changed
 // body under the same key conflicts, and a second confirm can never produce a second run.
 func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
+	publishWorkflow(t, f, wid, "wf-idem-pub")
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Idempotent"}, "wf-idem-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-idem-1", "configure")
 
@@ -887,7 +1267,7 @@ func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	}
 }
 
-// TestWorkflowConfirmScopeAndModeGuards covers the security invariants of §38.31: a confirm is scoped to
+// TestWorkflowConfirmScopeAndModeGuards covers the security invariants of Issue collaboration (invariants 3 and 4): a confirm is scoped to
 // its own issue and tenant, and only a Form Mode interaction is confirmable/assistable.
 func TestWorkflowConfirmScopeAndModeGuards(t *testing.T) {
 	f := setup(t)

@@ -78,7 +78,13 @@ func withRevision(t *transaction, o Object) Object {
 // UUID shape: a real Space Agent is resolved in-transaction against space_agents and its plugin
 // identity/version is snapshotted into the run input as authoritative (IssueRun D1/D6); an id that is
 // not a real Space Agent falls through to the directory (dev/compat fixtures) or is rejected 404
-// without leaking whether it exists. Team/workflow keep the opaque UUID shape, resolved by ports later.
+// without leaking whether it exists. Team keeps the opaque UUID shape, resolved by ports later.
+//
+// executor_type='workflow' is resolved just as authoritatively: the id must name a live workflow of
+// this tenant, and the run is admitted against that workflow's published version through the same gate
+// the direct-run and @-confirm entries use. An arbitrary UUID therefore cannot create a workflow run
+// that skips existence, tenancy, archival or publish state, and the version the run executes is frozen
+// onto its input rather than left to be decided at dispatch.
 func createRun(t *transaction, r *PublicRequest, uid string) Object {
 	i := issue(t, r.TenantID, r.IssueID)
 	executorType := r.Body.S("executorType")
@@ -86,6 +92,12 @@ func createRun(t *transaction, r *PublicRequest, uid string) Object {
 	executorID := r.Body.S("executorId")
 	require(validID(executorID), 400, "invalid_executor")
 	input := r.Body.O("input")
+	if executorType == "workflow" {
+		w := workflow(t, r.TenantID, executorID)
+		s := admitWorkflowRun(t, r.TenantID, w.S("id"), "", uid)
+		requireWorkflowRunInput(s.O("graph"), input)
+		freezeWorkflowSnapshot(input, s.S("id"))
+	}
 	if executorType == "agent" {
 		// Authoritative Space Agent (IssueRun D1): reuses the same evidence resolver as the comment
 		// path. On success the snapshot overwrites any caller-supplied plugin identity/version so they

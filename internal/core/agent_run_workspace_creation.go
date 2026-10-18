@@ -39,7 +39,7 @@ func (s *Store) freezeWorkspaceCreationDeadline(t *transaction, workspaceID stri
 	   AND deleted_at IS NULL AND workspace_deadline_at IS NULL`, workspaceID, window.Seconds())
 }
 
-// observeWorkspaceCreationDeadline is the scan-side anchor. Pre-0035 blocked creations carry no
+// observeWorkspaceCreationDeadline is the scan-side anchor. Pre-0038 blocked creations carry no
 // immutable first-blocked evidence (operations.updated_at is mutable), so the migration backfills
 // nothing: the first policy scan anchors them as first_observed and grants one default window,
 // explicitly not claiming the original window was in force before the upgrade (ADR D5, 兼容与责任

@@ -168,6 +168,28 @@ export function isWorkflowLaunchField(value: unknown): value is WorkflowLaunchFi
   )
 }
 
+/**
+ * The launch field the platform renamed: the declaration used to name the snapshot selector
+ * `version`, which said the opposite of what its value is — the value is a snapshot id, and the
+ * version number only ever appeared in the option's label.
+ */
+const RENAMED_LAUNCH_FIELDS: Readonly<Record<string, string>> = { version: 'snapshotId' }
+
+/**
+ * Rewrites a declaration written under a launch field's former name onto the name this build reads.
+ *
+ * A published snapshot's graph is immutable, so the old entries are still out there and still mean
+ * what they meant. Dropping one would hand the field back to a workflow whose author had withdrawn
+ * it — the silent re-asking the declaration exists to prevent — while rewriting it lets the editor
+ * show that row as the author left it and save it under the new name. Entries naming nothing are
+ * passed through untouched for the guard beside it to reject.
+ */
+function renameLaunchFieldKey(value: unknown): unknown {
+  const field = asJsonRecord(value)
+  const renamed = field === undefined ? undefined : RENAMED_LAUNCH_FIELDS[String(field['key'])]
+  return renamed === undefined ? value : { ...field, key: renamed }
+}
+
 /** Guards editor-note data before custom nodes render persisted content. */
 export function isWorkflowGraphAnnotation(value: unknown): value is WorkflowGraphAnnotation {
   const annotation = asJsonRecord(value)
@@ -262,7 +284,7 @@ export function parseWorkflowGraphValue(value: unknown): WorkflowGraphEnvelope {
       ? record['globalVariables'].filter(isWorkflowGlobalVariable)
       : [],
     launchFields: Array.isArray(record['launchFields'])
-      ? record['launchFields'].filter(isWorkflowLaunchField)
+      ? record['launchFields'].map(renameLaunchFieldKey).filter(isWorkflowLaunchField)
       : [],
     ...(typeof record['description'] === 'string' ? { description: record['description'] } : {}),
   }

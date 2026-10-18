@@ -64,6 +64,15 @@ type Fault struct {
 
 func (e *Fault) Error() string       { return e.Code }
 func reject(status int, code string) { panic(&Fault{Code: code, Status: status, Params: Object{}}) }
+
+// rejectWith is reject for a fault whose safe parameters are what makes it actionable: the field, node
+// or slot the client has to point the user at. Parameters are part of the stable error contract, so
+// they carry identifiers and codes the client localizes — never prose, and never anything the caller
+// is not already allowed to read.
+func rejectWith(status int, code string, params Object) {
+	panic(&Fault{Code: code, Status: status, Params: params})
+}
+
 func require(ok bool, status int, code string) {
 	if !ok {
 		reject(status, code)
@@ -83,6 +92,9 @@ type Store struct {
 	// ObjectStore signs upload grants and verifies stored checksums outside SQL transactions.
 	// Nil means delivery is explicitly skipped through the transaction-scoped business hook.
 	ObjectStore *objectstore.Config
+	// WorkflowAssets downloads the pinned package of a workflow plugin for asset import. Nil
+	// keeps the import loop idle, so a control-plane-only deployment never leaves the cluster.
+	WorkflowAssets WorkflowAssetSource
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error

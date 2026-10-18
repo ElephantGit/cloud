@@ -33,11 +33,11 @@ func TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade(t *testing.T) {
 	}
 }
 
-// 0035 adds the blocked-creation deadline columns and widens the residual reason set without
+// 0038 adds the blocked-creation deadline columns and widens the residual reason set without
 // rewriting existing outcomes: a legacy run keeps its facts, its deadline columns stay NULL (no
 // first-blocked evidence is invented), and a D4 residual keeps its original reason while the new
 // D5 reason becomes writable.
-func TestMigration0035WorkspaceBlockedDeadlineAppliesFreshAndUpgrades(t *testing.T) {
+func TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades(t *testing.T) {
 	fresh, _ := testSchema(t, "test_start35f_")
 	migratedTwice(t, newStoreOnSchema(t, fresh))
 	var columns int
@@ -49,9 +49,9 @@ func TestMigration0035WorkspaceBlockedDeadlineAppliesFreshAndUpgrades(t *testing
 	}
 
 	pool, _ := testSchema(t, "test_start35u_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0035_agent_workspace_blocked_deadline.sql"))
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0038_agent_workspace_blocked_deadline.sql"))
 	seed := seedOwnershipChain(t, pool)
-	// A pre-0035 blocked creation and a pre-0035 D4 residual: the upgrade must not invent a
+	// A pre-0038 blocked creation and a pre-0038 D4 residual: the upgrade must not invent a
 	// first-blocked instant for the former or rewrite the reason of the latter.
 	_, e := pool.Exec(`INSERT INTO operations(id,tenant_id,actor_user_id,project_id,workspace_id,kind,state,step,request,idempotency_key,request_hash)
 	 VALUES($1,$2,$3,$4,$5,'create_workspace','blocked','sandbox','{}','skel-create','skel-create-hash')`,

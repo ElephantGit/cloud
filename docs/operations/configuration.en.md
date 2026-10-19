@@ -10,6 +10,9 @@ Each process in this repository has its own configuration sources:
 | `cmd/gateway` | A file in the `configs/gateway.yaml` format, plus environment variables prefixed `GATEWAY_` |
 | `cmd/model-gateway` | Cloud's configuration file (only the database and verification keys are read), plus environment variables prefixed `MODEL_GATEWAY_` |
 | `cmd/git-server` | Cloud's configuration file (only the database is read), plus environment variables prefixed `GIT_SERVER_` |
+| `cmd/repo-executor` | Environment variables prefixed `REPO_EXECUTOR_` only |
+| `cmd/credential-store` | Environment variables prefixed `CREDENTIAL_STORE_` only |
+| `cmd/git-credential-ora` | No configuration; the Repo Executor invokes it with one task's credential material directory |
 
 ## General rules
 
@@ -49,6 +52,17 @@ Each process in this repository has its own configuration sources:
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | The give-up window for a run Workspace creation stuck in `blocked`; validated like the startup windows |
 | `issue_runs.delivery_give_up_after`, `delivery_unreachable_after` | `2h`, `30m` | Give-up limits for delivery and deletion; non-positive values take the defaults |
 | `object_store.*` | `enabled: false` | See [Revisions](../agent-runs/revisions.en.md#object-storage): `endpoint`, `public_endpoint`, `region`, `bucket`, `path_style`, `access_key_id_file`, `secret_access_key_file`, `upload_grant_ttl` |
+| `repository.enabled` | `false` | Enables the external Git line and the credential routes; with it off Projects are still created, but no sync runs and credential creation answers `503`; see [The external Git line](../repositories/external-git.en.md) |
+| `repository.executor_url`, `executor_ca_file`, `dispatcher_cert_file`, `dispatcher_key_file` | URL defaults to `https://repo-executor:8471`; files required | The Repo Executor's task listener and Cloud's dispatcher mTLS client identity |
+| `repository.authorization_key_file` | Required | The Ed25519 (PKCS#8) key signing execution authorizations; must differ from `submission_key_file` |
+| `repository.credential_store_url`, `credential_store_ca_file`, `manager_cert_file`, `manager_key_file` | URL defaults to `https://credential-store:8462`; files required | The Credential Store management interface and Cloud's manager mTLS client identity |
+| `repository.submission_key_file` | Required | The Ed25519 (PKCS#8) key signing browser submission grants |
+| `repository.credential_ingress_url` | Required | The Credential Store origin for browser submission, returned with every submission grant |
+| `repository.git_refs_url`, `git_refs_ca_file`, `git_refs_cert_file`, `git_refs_key_file` | URL defaults to `https://git-server:8446`; files required | The Git Server's read-only ref query and Cloud's fixed client certificate |
+| `repository.slots`, `lease`, `sync_timeout`, `publish_timeout` | `4`, `1m`, `30m`, `5m` | Concurrent tasks, lease, sync bound and publish bound; all must be positive |
+
+With `repository.enabled` true, startup checks that the two private keys differ, that the ingress URL is set, and loads
+three sets of mTLS client material (executor, Credential Store, Git Server) without making any network call.
 
 `cloudctl` reads the same configuration but only uses the database connection; it needs a migration account with rights
 to create tables.
@@ -104,9 +118,50 @@ The full description is in [`cmd/git-server`](../../cmd/git-server/README.en.md)
 | `GIT_SERVER_SANDBOX_CA_FILE`, `_EXECUTOR_CA_FILE` | `/etc/ora-git-management/ca.pem`, `repo-executor-ca.pem` | The CAs for the two kinds of client certificate |
 | `GIT_SERVER_CLOUD_CLIENT_CERT_FILE` | `/etc/ora-git-management/cloud-client.pem` | The only leaf certificate allowed to query refs |
 
+## Repo Executor and Credential Store
+
+The full descriptions are in [`cmd/repo-executor`](../../cmd/repo-executor/README.en.md) and
+[`cmd/credential-store`](../../cmd/credential-store/README.en.md). Both run as non-root and do not connect to Cloud's
+database; keys, certificates and public keys are mounted only as read-only files.
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `REPO_EXECUTOR_ADDR` | `:8471` | The task listener (mTLS), accepting only Cloud's dispatcher identity |
+| `REPO_EXECUTOR_CERT_FILE`, `_KEY_FILE` | Required | The executor service certificate, used for the task listener, the Git Server and the Credential Store |
+| `REPO_EXECUTOR_CLIENT_CA_FILE` | Required | The CA that issued Cloud's dispatcher client certificate |
+| `REPO_EXECUTOR_AUTHORIZATION_PUBLIC_KEYS_FILE` | Required | Cloud's execution public keys (PEM, one or more blocks) |
+| `REPO_EXECUTOR_GIT_SERVER_URL`, `_GIT_SERVER_CA_FILE` | `https://ora-git-service:8447`, required | The Git Server service repository listener and its CA |
+| `REPO_EXECUTOR_CREDENTIAL_STORE_URL`, `_CREDENTIAL_STORE_CA_FILE` | `https://credential-store:8461`, required | The Credential Store redemption listener and its CA |
+| `REPO_EXECUTOR_WORK_ROOT` | `/var/lib/repo-executor/tasks` | The task directory; deployments mount a tmpfs and it is cleaned at startup |
+| `REPO_EXECUTOR_HELPER_PATH` | `/usr/local/bin/git-credential-ora` | The only credential helper Git may use |
+| `REPO_EXECUTOR_GIT_PROGRAM` | `git` | The Git executable |
+| `REPO_EXECUTOR_SLOTS`, `_MAX_TASK_BYTES` | `4`, 2 GiB | Concurrent tasks and the per-task directory bound |
+| `REPO_EXECUTOR_SYNC_TIMEOUT_MAX`, `_PUBLISH_TIMEOUT_MAX`, `_PROBE_TIMEOUT_MAX` | `30m`, `5m`, same as publish | Bounds for the three task kinds |
+| `REPO_EXECUTOR_EGRESS_ALLOW`, `_EGRESS_DENY_HOSTS`, `_EXTERNAL_CA_FILE` | Empty | Egress allow list (acceptance fixtures only), internal host deny list, and a CA replacing system trust (acceptance fixtures only) |
+| `REPO_EXECUTOR_LOG_LEVEL` | `info` | Log level |
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `CREDENTIAL_STORE_ROOT` | Required | The credential volume, an absolute path that must have mode `0700` |
+| `CREDENTIAL_STORE_KEYRING_FILE` | Required | The read-only KEK keyring; startup fails when it is missing or invalid |
+| `CREDENTIAL_STORE_CERT_FILE`, `_KEY_FILE` | Required | The service certificate of the three mTLS listeners |
+| `CREDENTIAL_STORE_CLIENT_CA_FILE` | Required | The CA that issued executor, management and KEK-operator client certificates |
+| `CREDENTIAL_STORE_EXECUTION_PUBLIC_KEYS_FILE`, `_SUBMISSION_PUBLIC_KEYS_FILE` | Required | Cloud's two verification key sets, which must differ |
+| `CREDENTIAL_STORE_REDEMPTION_ADDR`, `_MANAGEMENT_ADDR`, `_KEY_ADDR` | `:8461`, `:8462`, `:8463` | Redemption, management and KEK-operator listeners |
+| `CREDENTIAL_STORE_INGRESS_ADDR` | `:8460` | The browser ingress, forwarded directly by the edge reverse proxy |
+| `CREDENTIAL_STORE_INGRESS_CERT_FILE`, `_INGRESS_KEY_FILE` | Required | The certificate of the browser ingress origin |
+| `CREDENTIAL_STORE_INGRESS_ALLOWED_ORIGINS` | Required | Comma-separated frontend origins; CORS echoes exactly these |
+| `CREDENTIAL_STORE_INGRESS_RATE_PER_MINUTE`, `_INGRESS_RATE_BURST` | `10`, `5` | Per-source-IP submission rate limit |
+| `CREDENTIAL_STORE_LOG_LEVEL` | `info` | Log level |
+
+The browser ingress rate-limits by the TCP source address; behind a reverse proxy every request shares the proxy's
+address, so the proxy has to rate-limit per client itself.
+
 ## Local development
 
 Local development does not edit these files directly: `config.toml` (copied from `config.toml.template` and ignored by
 Git) is turned by `task setup` into keys, secret files and `.local/dev.env`, which overrides `configs/*.yaml` with
 `CLOUD_*` and `GATEWAY_*` environment variables and is loaded by `Taskfile.yml` for every task. See
-[Local development](../development/local-development.en.md).
+[Local development](../development/local-development.en.md). `task setup` does not generate certificates or keys for the
+external Git line, and `repository.enabled` is `false` locally; enabling it means preparing the executor, Credential
+Store and Git Server material described above.

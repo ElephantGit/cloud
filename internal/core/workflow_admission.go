@@ -59,6 +59,16 @@ func workflowRunSnapshot(t *transaction, tid, wid, sid string) Object {
 // The check reads the snapshot's graph, never the live document, so a version published months ago
 // still accepts exactly what it accepted then.
 func requireWorkflowRunInput(graph, input Object) {
+	// `input` is the reserved kickoff selector, not a workflow variable. Desktop carries it on the
+	// creation request as a string (kickoff_input), so accepting another JSON type here would make
+	// `[start, input]` an object on Cloud and a string on desktop. A null is treated as absent, the
+	// same way the declared-variable check below treats it, and stays accepted for a run that named
+	// no override.
+	if v, ok := input["input"]; ok && v != nil {
+		if _, ok := v.(string); !ok {
+			rejectWith(400, "invalid_field_value", Object{"field": "input"})
+		}
+	}
 	fields := workflowInputFields(graph)
 	for i := range fields {
 		field := &fields[i]

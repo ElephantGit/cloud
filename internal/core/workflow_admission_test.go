@@ -68,6 +68,24 @@ func TestRequireWorkflowRunInput(t *testing.T) {
 			input: Object{"topic": "auth", "scope": "everything"},
 			want:  &Fault{Code: "invalid_field_value", Status: 400, Params: Object{"field": "scope"}},
 		},
+		{
+			// `input` is the reserved kickoff selector rather than a declared variable. Desktop
+			// carries it as a string, and accepting another type here would make [start, input] an
+			// object on Cloud and a string on desktop.
+			name:  "the reserved kickoff selector as a string",
+			input: Object{"topic": "auth", "input": "review the diff"},
+		},
+		{
+			// A null override is a run that named none: it is treated as absent and falls back to
+			// the authored Start instruction, exactly like a declared variable left null.
+			name:  "the reserved kickoff selector explicitly null",
+			input: Object{"topic": "auth", "input": nil},
+		},
+		{
+			name:  "the reserved kickoff selector as an object",
+			input: Object{"topic": "auth", "input": Object{"text": "review the diff"}},
+			want:  &Fault{Code: "invalid_field_value", Status: 400, Params: Object{"field": "input"}},
+		},
 	}
 
 	for _, tc := range cases {

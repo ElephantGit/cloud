@@ -20,11 +20,22 @@ import (
 // on purpose: the advance pass reads workflow_runs joined to workflow_snapshots and nothing else.
 func seedWorkflowRunScene(t *testing.T, store *Store, graph Object) string {
 	t.Helper()
+	return seedWorkflowRunSceneWithInput(t, store, graph, Object{})
+}
+
+// seedWorkflowRunSceneWithInput is seedWorkflowRunScene with a run input, written as the jsonb the
+// creation transaction stores so the pass reads exactly the document a real run carries.
+func seedWorkflowRunSceneWithInput(t *testing.T, store *Store, graph, input Object) string {
+	t.Helper()
 	wid, sid, runID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	tid, uid := uuid.NewString(), uuid.NewString()
 	g, err := json.Marshal(graph)
 	if err != nil {
 		t.Fatalf("marshal graph: %v", err)
+	}
+	in, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal run input: %v", err)
 	}
 	tx, err := store.Pool.Begin()
 	if err != nil {
@@ -40,7 +51,7 @@ func seedWorkflowRunScene(t *testing.T, store *Store, graph Object) string {
 	exec("membership", `INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')`, tid, uid)
 	exec("workflow", `INSERT INTO workflows(id,tenant_id,name,graph) VALUES($1,$2,'wf',$3::jsonb)`, wid, tid, g)
 	exec("snapshot", `INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph) VALUES($1,$2,$3,1,'v1',$4::jsonb)`, sid, tid, wid, g)
-	exec("run", `INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input) VALUES($1,$2,$3,$4,'disp','pending','{}'::jsonb)`, runID, tid, wid, sid)
+	exec("run", `INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input) VALUES($1,$2,$3,$4,'disp','pending',$5::jsonb)`, runID, tid, wid, sid, in)
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("seed commit: %v", err)
 	}
@@ -66,8 +77,10 @@ func readWorkflowRun(t *testing.T, store *Store, runID string) (status, runErr s
 // run succeeded with every node's committed state on the row.
 func TestWorkflowAdvanceSucceedsLinearRun(t *testing.T) {
 	store := dispatcherDB(t)
+	start := wfNode("s", "start", "")
+	start["data"].(Object)["input"] = "review the diff"
 	runID := seedWorkflowRunScene(t, store, wfGraph(
-		[]Object{wfNode("s", "start", ""), wfNode("o", "output", "done")},
+		[]Object{start, wfNode("o", "output", "done")},
 		[][3]string{{"s", "o", ""}},
 	))
 
@@ -90,8 +103,86 @@ func TestWorkflowAdvanceSucceedsLinearRun(t *testing.T) {
 			t.Fatalf("node %s status = %q; want %q", id, state.S("status"), want)
 		}
 	}
-	if start := states["s"].(map[string]any)["output"].(map[string]any); start["input"] == nil {
-		t.Fatal("start node output does not carry the kickoff prompt root")
+	// No kickoff was submitted, so the authored Start instruction is the run's kickoff — the same
+	// fallback every row created before the kickoff was persisted depends on.
+	if got := states["s"].(map[string]any)["output"].(map[string]any)["input"]; got != "review the diff" {
+		t.Fatalf("start node output input = %v; want the authored prompt", got)
+	}
+}
+
+// The kickoff stored on the run row is what [start, input] resolves, both as a selector and through
+// a {{#start.input#}} expected-value template. The authored instruction is present too and
+// different, so a pass that still read the document would select the other branches.
+func TestWorkflowAdvanceStartInputUsesTheStoredKickoff(t *testing.T) {
+	store := dispatcherDB(t)
+	start := wfNode("s", "start", "")
+	start["data"].(Object)["input"] = "authored prompt"
+	rule := func(id string, selector []any, value any) Object {
+		return Object{"id": id, "logic": "and", "conditions": []any{
+			Object{"variableSelector": selector, "operator": "equals", "value": value},
+		}}
+	}
+	graph := wfGraph(
+		[]Object{
+			start,
+			wfConditionNode("c", []any{rule("literal", []any{"s", "input"}, "run override")}),
+			wfConditionNode("t", []any{rule("templated", []any{"s", "marker"}, "{{#s.input#}}")}),
+			wfNode("e", "output", ""),
+			wfNode("f", "output", ""),
+			wfNode("g", "output", ""),
+			wfNode("h", "output", ""),
+		},
+		[][3]string{
+			{"s", "c", ""},
+			{"c", "e", "literal"},
+			{"c", "f", workflowBranchElse},
+			{"s", "t", ""},
+			{"t", "g", "templated"},
+			{"t", "h", workflowBranchElse},
+		},
+	)
+	runID := seedWorkflowRunSceneWithInput(t, store, graph,
+		Object{"input": "run override", "marker": "run override"})
+
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	_, _, states, _ := readWorkflowRun(t, store, runID)
+	branchOf := func(id string) string {
+		state, ok := asWorkflowObject(states[id])
+		if !ok {
+			t.Fatalf("condition %s has no committed state", id)
+		}
+		return state.O("output").S("selectedBranch")
+	}
+	if got := branchOf("c"); got != "literal" {
+		t.Fatalf("condition selected %q; want literal — [start, input] did not read the stored kickoff", got)
+	}
+	if got := branchOf("t"); got != "templated" {
+		t.Fatalf("condition selected %q; want templated — {{#start.input#}} did not read the stored kickoff", got)
+	}
+	if got := states["s"].(map[string]any)["output"].(map[string]any)["input"]; got != "run override" {
+		t.Fatalf("start node output input = %v; want the stored kickoff", got)
+	}
+}
+
+// With neither a stored kickoff nor an authored instruction {start}.input is unset, as it is in
+// desktop's pool: `not_exists` matches and `exists` would not. It is not a present empty string,
+// which would answer both existence operators the other way.
+func TestWorkflowAdvanceConditionOnUnsetKickoffReadsAbsent(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := seedWorkflowRunScene(t, store, wfGraph(
+		[]Object{
+			wfNode("s", "start", ""),
+			wfOneRuleNode("c", "absent", []any{"s", "input"}, "not_exists"),
+			wfNode("e", "output", ""),
+			wfNode("f", "output", ""),
+		},
+		[][3]string{{"s", "c", ""}, {"c", "e", "absent"}, {"c", "f", workflowBranchElse}},
+	))
+
+	if branch := wfSelectedBranch(t, store, runID); branch != "absent" {
+		t.Fatalf("condition selected %q; want absent — an unset kickoff read as present", branch)
 	}
 }
 
@@ -341,12 +432,15 @@ func wfOneRuleNode(id, caseID string, selector []any, operator string) Object {
 
 // wfConditionScene seeds a start -> condition -> {taken, else} graph whose single case is the given
 // operator over the given selector, and returns the run id. The run's input is {} — see
-// seedWorkflowRunScene — which is the case the empty-input tests below turn on.
+// seedWorkflowRunScene — and the Start node's authored prompt is empty, so {start}.input is present
+// and empty: the case the empty-value tests below turn on.
 func wfConditionScene(t *testing.T, store *Store, caseID string, selector []any, operator string) string {
 	t.Helper()
+	start := wfNode("s", "start", "")
+	start["data"].(Object)["input"] = ""
 	return seedWorkflowRunScene(t, store, wfGraph(
 		[]Object{
-			wfNode("s", "start", ""),
+			start,
 			wfOneRuleNode("c", caseID, selector, operator),
 			wfNode("e", "output", ""),
 			wfNode("f", "output", ""),
@@ -379,18 +473,16 @@ func wfNodeStatus(t *testing.T, states Object, nodeID string) string {
 	return state.S("status")
 }
 
-// A condition reading the run's own input sees an empty input as empty. This is the end-to-end shape
-// of the named-type trap: the start node nests the run input as the package's Object, so the value a
-// selector walks out is an Object too, and a type switch that only names map[string]any falls
-// through it. Before asWorkflowObject was used there, `empty` answered false on `{}` and the run took
-// the branch desktop's is_empty would not have taken — a legal start -> condition graph, decided
-// wrong, with nothing in the run to say so.
-func TestWorkflowAdvanceConditionOnEmptyRunInput(t *testing.T) {
+// An authored Start instruction that is empty is present and empty, not unset: [start, input] is
+// the empty string, so `empty` matches. The distinction matters because an unset root is a
+// different state — `not_exists` matches it and `exists` does not — which the unset-kickoff test
+// below pins.
+func TestWorkflowAdvanceConditionOnEmptyAuthoredPrompt(t *testing.T) {
 	store := dispatcherDB(t)
 	runID := wfConditionScene(t, store, "was_empty", []any{"s", "input"}, "empty")
 
 	if branch := wfSelectedBranch(t, store, runID); branch != "was_empty" {
-		t.Fatalf("condition selected %q; want was_empty — an empty run input read as not-empty", branch)
+		t.Fatalf("condition selected %q; want was_empty — an empty authored prompt read as not-empty", branch)
 	}
 	_, _, states, _ := readWorkflowRun(t, store, runID)
 	if got := wfNodeStatus(t, states, "e"); got != "succeeded" {
@@ -399,18 +491,18 @@ func TestWorkflowAdvanceConditionOnEmptyRunInput(t *testing.T) {
 	// The untaken branch is committed as inactive rather than left absent: the run says which branch
 	// it did not take, which is what makes a wrong decision visible after the fact.
 	if got := wfNodeStatus(t, states, "f"); got != "inactive" {
-		t.Fatalf("else branch status = %q; want inactive — the else branch ran on an empty input", got)
+		t.Fatalf("else branch status = %q; want inactive — the else branch ran on an empty prompt", got)
 	}
 }
 
 // not_empty is empty's negation on the same document: the same start -> condition graph, the same
-// empty input, and the case must not match.
-func TestWorkflowAdvanceConditionNotEmptyOnEmptyRunInput(t *testing.T) {
+// empty authored prompt, and the case must not match.
+func TestWorkflowAdvanceConditionNotEmptyOnEmptyAuthoredPrompt(t *testing.T) {
 	store := dispatcherDB(t)
 	runID := wfConditionScene(t, store, "was_full", []any{"s", "input"}, "not_empty")
 
 	if branch := wfSelectedBranch(t, store, runID); branch != workflowBranchElse {
-		t.Fatalf("condition selected %q; want else — an empty run input read as not-empty", branch)
+		t.Fatalf("condition selected %q; want else — an empty authored prompt read as not-empty", branch)
 	}
 }
 

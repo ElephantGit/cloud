@@ -131,7 +131,7 @@ func Document() map[string]any {
 	s["WorkflowRun"] = resource("id tenantId workflowId snapshotId name status input nodeStates rounds error startedAt finishedAt createdAt updatedAt workflowName", "startedAt finishedAt")
 	workflowRunProps := properties(s, "WorkflowRun")
 	workflowRunProps["status"] = enumeration("pending", "running", "awaiting_input", "succeeded", "failed", "cancelled")
-	workflowRunProps["input"] = obj{"type": "object", "additionalProperties": true, "description": "The kickoff input passed to the run's start node."}
+	workflowRunProps["input"] = obj{"type": "object", "additionalProperties": true, "description": "The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff — including every run created before the key was stored — evaluates against the Start node's authored instruction instead."}
 	workflowRunProps["nodeStates"] = obj{"type": "object", "additionalProperties": true, "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed."}
 	workflowRunProps["rounds"] = array(obj{"type": "object", "additionalProperties": true})
 	// definitionSnapshot lives only on a detail read (the history list trips without it);

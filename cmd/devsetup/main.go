@@ -1,6 +1,7 @@
 // devsetup turns config.toml into everything the local development stack
 // needs: the purpose-separated Ed25519 key pairs and PKCE key the Gateway and
-// Cloud share, the external provider's client secret file the Gateway reads, the
+// Cloud share, the local control mTLS bundle, the external provider's client
+// secret file the Gateway reads, the
 // environment file Taskfile.yml loads (CLOUD_*/GATEWAY_* overrides plus
 // TEST_DATABASE_URL), and the applied database schema.
 //
@@ -221,7 +222,11 @@ func materialize(cfg *devConfig, dir, envPath string) error {
 	if e := os.MkdirAll(filepath.Dir(envPath), 0o700); e != nil {
 		return e
 	}
-	if e := writePrivate(envPath, []byte(renderEnv(cfg))); e != nil {
+	controlDir := filepath.Join(filepath.Dir(envPath), "control")
+	if e := materializeControl(controlDir); e != nil {
+		return e
+	}
+	if e := writePrivate(envPath, []byte(renderEnv(cfg)+renderControlEnv(controlDir))); e != nil {
 		return e
 	}
 	fmt.Printf("wrote %s\n", envPath)

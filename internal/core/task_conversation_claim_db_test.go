@@ -36,6 +36,13 @@ func TestTaskAgentClaimCannotBypassUnresolvedTaskMessage(t *testing.T) {
 			if err == nil || ErrorCode(err).Status != 409 || ErrorCode(err).Code != code {
 				t.Fatalf("direct creation bypassed %s input: status=%d err=%v", state, httpStatus, err)
 			}
+			var runs int
+			if err := store.Pool.QueryRow("SELECT count(*) FROM issue_runs WHERE issue_id=$1", seed.issue).Scan(&runs); err != nil || runs != 1 {
+				t.Fatalf("rejected creation left a Run behind: count=%d err=%v", runs, err)
+			}
+			if state == "waiting" {
+				return
+			}
 			var direct string
 			_, err = store.transact(context.Background(), func(tx *transaction) Object {
 				// Stage a previously admitted Run so this test exercises the claim recheck, not creation.
@@ -74,6 +81,11 @@ func TestTaskAgentClaimPreservesMessageAndDirectRunOrder(t *testing.T) {
 	store := commandStore(t)
 	seed := seedDispatchScene(t, store.Pool, false)
 	caller, uid := taskConversationCaller(t, store, seed.tenant)
+	// Transaction-start timestamps are not acceptance order: an input can acquire the lock
+	// after a transaction that began later. Existing admitted work must still drain first.
+	if _, err := store.Pool.Exec("UPDATE issue_runs SET created_at=clock_timestamp()+interval '1 hour' WHERE id=$1", seed.run); err != nil {
+		t.Fatal(err)
+	}
 	message := sendTaskMessage(t, store, caller, seed, seed.agent, "queued handoff", newID())
 	if err := store.agentRunDispatcher().Dispatch(context.Background(), seed.run); err != nil {
 		t.Fatal(err)

@@ -41,15 +41,7 @@ func canEndForTaskHandoff(t *transaction, run Object, uid string) bool {
 }
 
 func taskRunBlocker(t *transaction, message Object) Object {
-	// A later direct Run must wait for this accepted message, rather than making both inputs
-	// block each other. Already active/cleaning runs retain their resource barrier regardless of age.
-	return t.one(`SELECT ir.* `+agentRunTaskSource+` WHERE ir.issue_id=$1 AND ir.tenant_id=$2
-	  AND ir.executor_type='agent' AND ir.deleted_at IS NULL
-	  AND (ir.status IN ('dispatched','running') OR ir.phase IS NOT NULL AND ir.phase<>'done'
-	    OR ir.status IN ('queued','deferred') AND
-	      (COALESCE(origin.created_at,ir.created_at),COALESCE(origin.id,ir.id))<=($3::timestamptz,$4::uuid))
-	  ORDER BY COALESCE(origin.created_at,ir.created_at),COALESCE(origin.id,ir.id) LIMIT 1`,
-		message.S("issueId"), message.S("tenantId"), message.S("createdAt"), message.S("id"))
+	return t.one(`SELECT * FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND executor_type='agent' AND deleted_at IS NULL AND (status IN ('queued','dispatched','running','deferred') OR phase IS NOT NULL AND phase<>'done') ORDER BY created_at,id LIMIT 1`, message.S("issueId"), message.S("tenantId"))
 }
 
 func taskPreviousRunNeedsAttention(t *transaction, message Object) bool {

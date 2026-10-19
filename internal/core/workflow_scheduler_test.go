@@ -283,6 +283,8 @@ func TestWorkflowConditionOperators(t *testing.T) {
 		{"ends_with match", []any{"s", "text"}, "ends_with", "world", true, false},
 		{"starts_with non-string actual is a type error", []any{"s", "count"}, "starts_with", "2", false, true},
 		{"starts_with non-string expected is a type error", []any{"s", "text"}, "starts_with", 2.0, false, true},
+		{"ends_with non-string actual is a type error", []any{"s", "count"}, "ends_with", "2", false, true},
+		{"ends_with non-string expected is a type error", []any{"s", "text"}, "ends_with", 2.0, false, true},
 		{"empty on empty list", []any{"s", "list"}, "empty", nil, true, false},
 		{"empty on null", []any{"s", "nothing"}, "empty", nil, true, false},
 		{"not_empty on text", []any{"s", "text"}, "not_empty", nil, true, false},

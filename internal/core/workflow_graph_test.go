@@ -484,6 +484,15 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			want: []any{Object{"code": "condition_selector_unsupported", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
+			// Desktop builds its pool from the graph, so a root the Start node does not declare is
+			// Undeclared there and fails the node. Cloud's evaluator has no declaration set and would
+			// answer "absent" instead — a branch the author could not have written — so publishing
+			// refuses it.
+			name: "a selector on an undeclared root",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"s", "missing"}, "exists", nil)})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
+		},
+		{
 			name: "an operator neither side knows",
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "matches", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},
@@ -518,19 +527,73 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 
 	// Refusing is not the same as refusing everything. The documents the editor legitimately
 	// publishes — a filled-in node, one the author has added but not configured yet (falls through to
-	// else), and an expected value carrying a selector template (circus#210 now evaluates it the way
-	// desktop does) — must all pass.
-	for name, node := range map[string]Object{
-		"an expected value carrying a selector template": graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})}),
-		"a mixed expected-value template":                graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "branch {{#s.input.name#}}")})}),
-		"a filled-in condition node":                     graphCondition("c", []any{graphConditionCase("yes", "and", filled)}),
-		"a condition node with no cases yet":             graphCondition("c", []any{}),
-		"a condition node with an unfinished case":       graphCondition("c", []any{graphConditionCase("yes", "and", []any{})}),
-	} {
-		got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
-		if len(got) != 0 {
-			t.Fatalf("%s was refused: %v", name, got)
-		}
+	// else), an expected value carrying a selector template (circus#210 now evaluates it the way
+	// desktop does), and a selector on each root a node's kind declares — must all pass.
+	startWithVariables := Object{"id": "s", "type": "workflow", "data": Object{
+		"kind":           "start",
+		"inputVariables": []any{Object{"name": "limit", "valueType": "number"}},
+	}}
+	agentNode := graphAgent("a", "", false)
+	outputNode := Object{"id": "o", "type": "workflow", "data": Object{"kind": "output"}}
+	oneRule := func(selector []any, operator string, value any) Object {
+		return graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, value)})})
+	}
+	positive := []struct {
+		name  string
+		nodes []any
+		edges []any
+	}{
+		{
+			name:  "an expected value carrying a selector template",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a mixed expected-value template",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "branch {{#s.input.name#}}")})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a filled-in condition node",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", filled)})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a condition node with no cases yet",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a condition node with an unfinished case",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			// Start declares every run-form variable by name, so [s, limit] is a root the pool has.
+			name:  "a declared start form variable",
+			nodes: []any{startWithVariables, oneRule([]any{"s", "limit"}, "greater_than", 90.0)},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			// Every non-start, non-condition node declares `output`; the agent's value arrives with
+			// cloud#70, and until then the root is declared but unassigned.
+			name:  "a declared agent output root",
+			nodes: []any{graphStart("s"), agentNode, oneRule([]any{"a", "output"}, "not_empty", nil)},
+			edges: []any{graphEdge("s", "a"), graphEdge("a", "c")},
+		},
+		{
+			name:  "a declared output node root",
+			nodes: []any{graphStart("s"), outputNode, oneRule([]any{"o", "output"}, "not_empty", nil)},
+			edges: []any{graphEdge("s", "o"), graphEdge("o", "c")},
+		},
+	}
+	for _, tc := range positive {
+		t.Run(tc.name, func(t *testing.T) {
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph(tc.nodes, tc.edges, nil))))
+			if len(got) != 0 {
+				t.Fatalf("refused: %v", got)
+			}
+		})
 	}
 }
 

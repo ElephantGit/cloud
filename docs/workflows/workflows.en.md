@@ -109,6 +109,12 @@ seconds):
   frozen plugin version or slot binding missing fails as `agent_plugin_version_unfrozen` or
   `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
   Once the run reaches a terminal state, Cloud declares the deletion of its Workspace.
+- **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
+  receipt arrives (with a `stopReason` other than `cancelled`), the scheduler ends the session through the existing
+  `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the
+  session has no terminal state within the confirmation window after the end request was released, the node fails
+  as `session_end_deadline_exceeded`, the run reaches a terminal state and its Workspace is released — no run stays
+  `running` forever.
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.
@@ -147,6 +153,7 @@ rewrites imported documents or published versions.
 
 - [Workflows are executed by a Cloud-side scheduler: WorkflowRun is the execution aggregate](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
 - [Workflow agent nodes reference executors by executor slot; graphs no longer store Agent CLIs or model IDs](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md) (approved)
+- [A workflow session ends after its initial turn by the Cloud scheduler, with a bounded wait on the end request](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261019-workflow-session-end-after-initial-turn.md)
 - [Plugin asset import produces published snapshots: the asset lifecycle never rewrites snapshots, and runs freeze only the snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow plugin assets are fetched by Cloud and imported document by document as editable copies](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [Personal slot mappings resolve a workflow's executors; each run pins one model binding per slot](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md) (approved)

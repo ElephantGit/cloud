@@ -35,7 +35,7 @@ func (s *Store) admitModelWrite(ctx context.Context, r *PublicRequest) error {
 				return nil
 			}
 		}
-		base = validateModelConnectionForPolicy(r.Body, true).S("baseUrl")
+		base = validateModelConnection(r.Body).S("baseUrl")
 		return nil
 	})
 	if err != nil || base == "" {
@@ -61,5 +61,8 @@ func pureModelDisable(current, body Object) bool {
 }
 
 func modelWriteData(t *transaction, body Object) Object {
-	return validateModelConnectionForPolicy(body, t.store.ModelEgress != nil && t.store.ModelEgress.Enterprise())
+	if t.store.ModelEgress != nil && t.store.ModelEgress.Enterprise() {
+		return validateModelConnection(body)
+	}
+	return validatePublicModelConnection(body)
 }

@@ -33,7 +33,7 @@ func modelConnectionView(c Object) Object {
 	return o
 }
 
-func validateModelConnectionForPolicy(body Object, enterprise bool) Object {
+func validateModelConnection(body Object) Object {
 	name := validText(body.S("name"), 200)
 	protocol, auth := body.S("protocol"), body.S("authMode")
 	require(protocol == "openai-completions" || protocol == "anthropic-messages", 400, "invalid_model_protocol")
@@ -41,10 +41,6 @@ func validateModelConnectionForPolicy(body Object, enterprise bool) Object {
 	base := strings.TrimRight(strings.TrimSpace(body.S("baseUrl")), "/")
 	u, err := url.Parse(base)
 	require(err == nil && len(base) <= 2048 && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "", 400, "invalid_model_url")
-	ip := net.ParseIP(u.Hostname())
-	require(enterprise || ip == nil || !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsMulticast(), 400, "invalid_model_url")
-	host := strings.ToLower(u.Hostname())
-	require(enterprise || host != "localhost" && !strings.HasSuffix(host, ".localhost") && !strings.HasSuffix(host, ".local"), 400, "invalid_model_url")
 	raw, ok := body["models"].([]any)
 	require(ok && len(raw) > 0 && len(raw) <= 100, 400, "invalid_model_list")
 	models := make([]Object, 0, len(raw))
@@ -69,6 +65,16 @@ func validateModelConnectionForPolicy(body Object, enterprise bool) Object {
 		require(ok, 400, "invalid_field_type")
 	}
 	return Object{"name": name, "protocol": protocol, "baseUrl": base, "authMode": auth, "models": models, "enabled": enabled}
+}
+
+func validatePublicModelConnection(body Object) Object {
+	data := validateModelConnection(body)
+	u, _ := url.Parse(data.S("baseUrl")) // The shared validator already checked the URL structure.
+	ip := net.ParseIP(u.Hostname())
+	require(ip == nil || !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsMulticast(), 400, "invalid_model_url")
+	host := strings.ToLower(u.Hostname())
+	require(host != "localhost" && !strings.HasSuffix(host, ".localhost") && !strings.HasSuffix(host, ".local"), 400, "invalid_model_url")
+	return data
 }
 
 func personalModelReplay(t *transaction, uid, key, hash string) Object {

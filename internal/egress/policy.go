@@ -51,10 +51,11 @@ type rule struct {
 
 // Policy is an immutable startup snapshot. Its zero value is not a valid enterprise policy.
 type Policy struct {
-	config  configuration
-	targets map[string]rule
-	cluster []netip.Prefix
-	hosts   map[netip.Addr]bool
+	config   configuration
+	targets  map[string]rule
+	cluster  []netip.Prefix
+	hosts    map[netip.Addr]bool
+	resolver netip.Addr
 }
 
 // Enterprise reports whether all destinations must match deployment-owned targets.
@@ -178,7 +179,7 @@ func (p *Policy) Resolve(ctx context.Context, authority string) ([]netip.Addr, e
 
 func (p *Policy) permits(r rule, address netip.Addr) bool {
 	a := address.Unmap()
-	if !a.IsValid() || a.Zone() != "" || p.hosts[a] || a.IsLoopback() || a.IsLinkLocalUnicast() || !a.IsGlobalUnicast() {
+	if !a.IsValid() || a.Zone() != "" || p.hosts[a] || a == p.resolver || a.IsLoopback() || a.IsLinkLocalUnicast() || !a.IsGlobalUnicast() {
 		return false
 	}
 	for _, prefix := range p.cluster {
@@ -226,12 +227,12 @@ var reservedNetworks = func() []netip.Prefix {
 	return out
 }()
 
-func prefixes(raw []string) ([]netip.Prefix, error) {
+func prefixes(raw []string, field string) ([]netip.Prefix, error) {
 	var result []netip.Prefix
 	for i, s := range raw {
 		p, err := netip.ParsePrefix(s)
 		if err != nil || p.Addr().Is4In6() {
-			return nil, ErrForbidden
+			return nil, invalidField(indexedField(field, i), "invalid CIDR")
 		}
 		p = p.Masked()
 		raw[i] = p.String()
@@ -241,12 +242,12 @@ func prefixes(raw []string) ([]netip.Prefix, error) {
 	return result, nil
 }
 
-func addresses(raw []string) ([]netip.Addr, error) {
+func addresses(raw []string, field string) ([]netip.Addr, error) {
 	var result []netip.Addr
 	for i, s := range raw {
 		a, err := netip.ParseAddr(s)
 		if err != nil || a.Zone() != "" {
-			return nil, ErrForbidden
+			return nil, invalidField(indexedField(field, i), "invalid IP address")
 		}
 		a = a.Unmap()
 		raw[i] = a.String()

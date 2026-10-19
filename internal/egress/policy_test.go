@@ -124,3 +124,51 @@ func TestSnapshotAndCanonicalDigest(t *testing.T) {
 		t.Fatal("public DNS omitted from identity")
 	}
 }
+
+func TestResolverAddressCannotBeBusinessDestination(t *testing.T) {
+	for _, endpoint := range []string{"10.60.0.53:53", "[fd12::53]:53", "[::ffff:10.60.0.53]:53", "8.8.8.8:53"} {
+		t.Run(endpoint, func(t *testing.T) {
+			raw := strings.Replace(enterpriseFixture, `"targets"`, `"resolver":{"transport":"tcp","address":"`+endpoint+`"},"targets"`, 1)
+			p, err := Parse([]byte(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			address := netip.MustParseAddrPort(endpoint).Addr().Unmap()
+			if p.permits(rule{private: true}, address) || p.permits(rule{private: true}, netip.AddrFrom16(address.As16())) {
+				t.Fatal("resolver address admitted as business destination")
+			}
+			raw = strings.Replace(raw, `"staticAddresses":["10.60.0.10"]`, `"staticAddresses":["`+address.String()+`"]`, 1)
+			raw = strings.Replace(raw, `"allowedCidrs":["10.60.0.0/16"],`, "", 1)
+			if _, err := Parse([]byte(raw)); err == nil {
+				t.Fatal("resolver address accepted in static target")
+			}
+		})
+	}
+}
+
+func TestStartupErrorsIdentifyFieldsWithoutValues(t *testing.T) {
+	for _, test := range []struct{ name, raw, field string }{
+		{"schema", strings.Replace(enterpriseFixture, `"schemaVersion":1`, `"schemaVersion":2`, 1), "schemaVersion"},
+		{"type", strings.Replace(enterpriseFixture, `"port":443`, `"port":"private-value"`, 1), "targets[0].port"},
+		{"unknown", strings.Replace(enterpriseFixture, `"schemaVersion":1`, `"schemaVersion":1,"private-value":true`, 1), "configuration"},
+		{"duplicate", strings.Replace(enterpriseFixture, `"host":`, `"host":"private-value","host":`, 1), "targets[0].host"},
+		{"cidrs", strings.Replace(enterpriseFixture, `["10.60.0.0/16"]`, `[]`, 1), "targets[0].allowedCidrs"},
+		{"cidr-value", strings.Replace(enterpriseFixture, `10.60.0.0/16`, `private-value`, 1), "targets[0].allowedCidrs[0]"},
+		{"static-value", strings.Replace(enterpriseFixture, `10.60.0.10`, `private-value`, 1), "targets[0].staticAddresses[0]"},
+		{"resolver", strings.Replace(enterpriseFixture, `"targets"`, `"resolver":{"transport":"tcp","address":"private-value"},"targets"`, 1), "resolver.address"},
+		{"topology", strings.Replace(enterpriseFixture, `172.30.0.0/16`, `private-value`, 1), "topology.clusterCidrs[0]"},
+		{"null", strings.Replace(enterpriseFixture, `["10.60.0.0/16"]`, `null`, 1), "targets[0].allowedCidrs"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse([]byte(test.raw))
+			if err == nil || !strings.Contains(err.Error(), test.field) {
+				t.Fatalf("missing field %s in %v", test.field, err)
+			}
+			for _, value := range []string{"private-value", "10.60.0.10", "10.60.0.0/16", "Model.Example.Invalid"} {
+				if strings.Contains(err.Error(), value) {
+					t.Fatalf("configuration value exposed in %v", err)
+				}
+			}
+		})
+	}
+}

@@ -17,7 +17,12 @@ import (
 
 func tcpDNS(t *testing.T, answer func(dnsmessage.Message) dnsmessage.Message) (string, *atomic.Int32) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	return tcpDNSAt(t, "127.0.0.1:0", answer)
+}
+
+func tcpDNSAt(t *testing.T, address string, answer func(dnsmessage.Message) dnsmessage.Message) (string, *atomic.Int32) {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +65,41 @@ func tcpDNS(t *testing.T, answer func(dnsmessage.Message) dnsmessage.Message) (s
 	}()
 	t.Cleanup(func() { _ = listener.Close(); <-done; workers.Wait() })
 	return listener.Addr().String(), &calls
+}
+
+func TestTCPResolverCannotResolveBusinessTargetToItself(t *testing.T) {
+	interfaces, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var host netip.Addr
+	for _, raw := range interfaces {
+		prefix, err := netip.ParsePrefix(raw.String())
+		if err == nil && prefix.Addr().Is4() && prefix.Addr().IsGlobalUnicast() && !prefix.Addr().IsLoopback() {
+			host = prefix.Addr()
+			break
+		}
+	}
+	if !host.IsValid() {
+		t.Fatal("resolver destination test requires a non-loopback IPv4 interface")
+	}
+	endpoint, calls := tcpDNSAt(t, net.JoinHostPort(host.String(), "0"), func(q dnsmessage.Message) dnsmessage.Message {
+		a := dnsAnswer(q, false)
+		if q.Questions[0].Type == dnsmessage.TypeA {
+			a.Answers[0].Body = &dnsmessage.AResource{A: host.As4()}
+		}
+		return a
+	})
+	raw := strings.Replace(enterpriseFixture, `"targets"`, `"resolver":{"transport":"tcp","address":"`+endpoint+`"},"targets"`, 1)
+	raw = strings.Replace(raw, `,"staticAddresses":["10.60.0.10"]`, "", 1)
+	raw = strings.Replace(raw, `"allowedCidrs":["10.60.0.0/16"],`, "", 1)
+	p, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Resolve(t.Context(), "model.example.invalid:443"); err != ErrForbidden || calls.Load() != 2 {
+		t.Fatalf("resolver address reached business admission: %v, queries %d", err, calls.Load())
+	}
 }
 
 func dnsAnswer(q dnsmessage.Message, ipv6 bool) dnsmessage.Message {

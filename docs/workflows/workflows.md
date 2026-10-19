@@ -57,6 +57,12 @@ Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执�
 
 任何一项不通过都不会留下运行、已认领的交互或活动。被执行的版本冻结在运行上，运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
 
+**运行的身份在创建时冻结。** 直接创建运行时 `projectId` 必填：缺失返回 `409 workflow_run_project_required`，不可用、已归档或属于其他空间的 Project
+按 `404` 拒绝，正在删除的返回 `409 resource_unavailable`。运行把发起人（`created_by`）和这个 Project（`project_id`）写进运行行，之后不再变化——工作流文档
+属于租户而不是某个 Project，没有可以默认的对象，而运行的 Workspace、它的 clone 和整份检出都落在被指定的 Project 里。运行 Workspace 归属于创建它的那次运行：
+`workspaces.workflow_run_id` 与 IssueRun 的 `issue_run_id` 互斥，运行时控制里为它预留的 `maintenance` 同样按运行身份记录（见
+[运行时控制](../runtime/runtime-control.md)）。
+
 ## 调度
 
 WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce`，每 10 秒一轮）：

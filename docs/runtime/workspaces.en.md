@@ -76,6 +76,8 @@ by the Controller on its behalf.
 **Run Workspaces.** Agent IssueRuns also use isolated Workspaces (`issue_run_id` set). Cloud creates
 and deletes them under the identity of the user who triggered the run, through the same operations,
 but they never appear in any public list or endpoint (see [Agent IssueRuns](../agent-runs/issue-runs.en.md)).
+A run Workspace belongs to exactly one run: `issue_run_id` and `workflow_run_id` are mutually exclusive
+columns, and the latter belongs to one [WorkflowRun](../workflows/workflows.en.md#runs).
 
 ## Durable operations
 

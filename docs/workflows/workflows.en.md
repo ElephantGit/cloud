@@ -76,6 +76,15 @@ Workflows have three start entries, all sharing one admission gate:
 If any check fails, no run, claimed interaction or activity is left behind. The executed version is frozen onto the
 run, so the run still knows which version it executed after the workflow is edited or published again.
 
+**A run's identity is frozen at creation.** A direct run must name its `projectId`: a missing one is `409
+workflow_run_project_required`, an unusable, archived or foreign-space Project is refused as `404`, and one being
+deleted is `409 resource_unavailable`. The run writes the initiating user (`created_by`) and that Project
+(`project_id`) into its row and never changes them — a workflow document belongs to a tenant, not to a Project, so
+there is nothing to default to, and the run's Workspace, its clone and its whole checkout land in the Project that
+was named. A run Workspace belongs to the run that created it: `workspaces.workflow_run_id` is mutually exclusive
+with an IssueRun's `issue_run_id`, and the `maintenance` reserved for it in runtime control is recorded against the
+same run identity (see [Runtime control](../runtime/runtime-control.en.md)).
+
 ## Scheduling
 
 WorkflowRuns are carried forward by a scheduling loop in the Cloud server (`AdvanceWorkflowRunsOnce`, every 10

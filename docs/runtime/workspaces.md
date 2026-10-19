@@ -67,6 +67,8 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 
 **运行 Workspace。** Agent IssueRun 也使用 isolated Workspace（`issue_run_id` 非空），由 Cloud 以触发运行的用户
 身份建删，走同一套操作，但不出现在任何公开列表或接口里（见 [Agent IssueRun](../agent-runs/issue-runs.md)）。
+运行 Workspace 恰好属于一次运行：`issue_run_id` 与 `workflow_run_id` 两列互斥，后者属于一次
+[WorkflowRun](../workflows/workflows.md#运行)。
 
 ## 持久操作
 
@@ -189,7 +191,7 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 密钥值），它记在 Binding 上，供同步外部仓库的 Repo Executor 使用。仓库凭据不控制任何 Node 工作：clone、Agent 会话与交付
 只与 Git Server 通信，Node 不接触外部仓库，Controller 拿到的快照也不带凭据引用。
 
-租户级的独立 clone 请求接口（`/tenants/:tid/clones`）已删除，迁移 `0039` 删除了它的请求表和不属于任何 Workspace 的 clone
+租户级的独立 clone 请求接口（`/tenants/:tid/clones`）已删除，迁移 `0043` 删除了它的请求表和不属于任何 Workspace 的 clone
 执行；每个 clone 都是 Workspace 操作的 `clone` 步骤。
 
 ## 相关决策

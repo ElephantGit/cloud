@@ -54,7 +54,8 @@ Cloud in the transaction that takes over the previous phase's evidence.
   [the delete-side limit](#limits)).
 
 A run Workspace belongs to exactly this run (`workspaces.issue_run_id` and `issue_runs.workspace_id`
-reference each other uniquely). Its creator and operation actor are the user who triggered the run, it
+reference each other uniquely; a WorkflowRun's run Workspace likewise belongs only to it, see
+[Workflows](../workflows/workflows.en.md#runs)). Its creator and operation actor are the user who triggered the run, it
 is cloned from the Project's default branch, it never appears in any public Workspace list or endpoint,
 and it accepts no other run or interactive session.
 

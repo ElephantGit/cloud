@@ -1018,7 +1018,7 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 	constraints := func(pool *sql.DB) string {
 		t.Helper()
 		var names string
-		must(t, pool.QueryRow(`SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
+		must(t, pool.QueryRow(`SELECT coalesce(string_agg(conname, ',' ORDER BY conname),'') FROM pg_constraint
 			WHERE conrelid='revisions'::regclass AND contype='c' AND conname IN ('revisions_check','revisions_bundle_shape','revisions_resume_refused','revisions_shape')`).Scan(&names))
 		return names
 	}
@@ -1043,18 +1043,76 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 		t.Fatalf("before 0033: columns %d constraints %q", got, names)
 	}
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	// 0040 later replaces the bundle shape 0033 introduced with revisions_shape.
+	// 0044 later replaces the bundle shape 0033 introduced with revisions_shape.
 	if got, names := columns(pool), constraints(pool); got != 5 || names != "revisions_resume_refused,revisions_shape" {
 		t.Fatalf("after 0033: columns %d constraints %q", got, names)
 	}
 }
 
-// Migration 0039 upgrades a database that still holds tenant-level clones: their requests,
+// 0039 turns the WorkflowRun into an execution aggregate the control plane accepts as a work owner:
+// the frozen run identity, the workspace binding, the exactly-one-owner discriminator on work and
+// the polymorphic runtime reservation. Fresh databases get all of it, an upgrade from 0037 gets it
+// without a backfill, and a rerun changes nothing.
+func TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades(t *testing.T) {
+	columns := func(pool *sql.DB) int {
+		t.Helper()
+		var n int
+		must(t, pool.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND
+			((table_name='workflow_runs' AND column_name IN ('created_by','project_id'))
+			 OR (table_name='workspaces' AND column_name='workflow_run_id')
+			 OR (table_name='execution_work' AND column_name='workflow_run_id'))`).Scan(&n))
+		return n
+	}
+	constraints := func(pool *sql.DB) string {
+		t.Helper()
+		var names string
+		must(t, pool.QueryRow(`SELECT coalesce(string_agg(conname, ',' ORDER BY conname),'') FROM pg_constraint
+			WHERE conrelid IN ('workspaces'::regclass,'execution_work'::regclass) AND contype='c'
+			  AND conname IN ('workspace_run_binding_exclusive','execution_work_owner_exclusive')`).Scan(&names))
+		return names
+	}
+	indexes := func(pool *sql.DB) string {
+		t.Helper()
+		var names string
+		must(t, pool.QueryRow(`SELECT coalesce(string_agg(indexname, ',' ORDER BY indexname),'') FROM pg_indexes
+			WHERE schemaname=current_schema() AND tablename='execution_work'
+			  AND indexname IN ('one_unregistered_execution_work','one_unregistered_workflow_execution_work')`).Scan(&names))
+		return names
+	}
+	// A polymorphic run reference cannot be a foreign key, so 0039 drops the IssueRun FK instead of
+	// reworking it. The column stays; only the constraint goes. Resolved through the search path
+	// rather than by name alone, which would count another schema's constraint of the same name.
+	reservationFK := func(pool *sql.DB) int {
+		t.Helper()
+		var n int
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint
+			WHERE conrelid='runtime_controls'::regclass AND conname='runtime_controls_maintenance_run_id_fkey'`).Scan(&n))
+		return n
+	}
+
+	freshPool, _ := testSchema(t, "test_wfi39f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	if got, names, idx, fk := columns(freshPool), constraints(freshPool), indexes(freshPool), reservationFK(freshPool); got != 4 || names != "execution_work_owner_exclusive,workspace_run_binding_exclusive" || idx != "one_unregistered_execution_work,one_unregistered_workflow_execution_work" || fk != 0 {
+		t.Fatalf("fresh: columns %d constraints %q indexes %q reservation fk %d", got, names, idx, fk)
+	}
+
+	pool, _ := testSchema(t, "test_wfi39_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0039_workflow_run_identity.sql"))
+	if got, names, fk := columns(pool), constraints(pool), reservationFK(pool); got != 0 || names != "" || fk != 1 {
+		t.Fatalf("before 0039: columns %d constraints %q reservation fk %d", got, names, fk)
+	}
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	if got, names, idx, fk := columns(pool), constraints(pool), indexes(pool), reservationFK(pool); got != 4 || names != "execution_work_owner_exclusive,workspace_run_binding_exclusive" || idx != "one_unregistered_execution_work,one_unregistered_workflow_execution_work" || fk != 0 {
+		t.Fatalf("after 0039: columns %d constraints %q indexes %q reservation fk %d", got, names, idx, fk)
+	}
+}
+
+// Migration 0043 upgrades a database that still holds tenant-level clones: their requests,
 // executions and receipts are removed, while a Workspace operation's clone execution and its receipt
 // stay, and every remaining clone execution must name its Workspace.
-func TestMigration0039RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
-	pool, _ := testSchema(t, "test_gn39_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0039_retire_tenant_level_clones.sql"))
+func TestMigration0043RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
+	pool, _ := testSchema(t, "test_gn43_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0043_retire_tenant_level_clones.sql"))
 	s := seedOwnershipChain(t, pool)
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -1071,7 +1129,7 @@ func TestMigration0039RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 
 	migratedTwice(t, newStoreOnSchema(t, pool))
 	if tableExists(t, pool, "clone_requests") {
-		t.Fatal("0039 must drop clone_requests")
+		t.Fatal("0043 must drop clone_requests")
 	}
 	var executions, receipts string
 	must(t, pool.QueryRow(`SELECT string_agg(execution_id, ',' ORDER BY execution_id) FROM clone_executions`).Scan(&executions))
@@ -1080,11 +1138,11 @@ func TestMigration0039RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 		t.Fatalf("only the Workspace clone and its receipt may remain, got executions %q receipts %q", executions, receipts)
 	}
 	if columnNullable(t, pool, "clone_executions", "workspace_id") {
-		t.Fatal("every clone execution must name its Workspace after 0039")
+		t.Fatal("every clone execution must name its Workspace after 0043")
 	}
 	var requestColumns int
 	must(t, pool.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='clone_executions' AND column_name='clone_request_id'`).Scan(&requestColumns))
 	if requestColumns != 0 {
-		t.Fatal("0039 must drop clone_executions.clone_request_id")
+		t.Fatal("0043 must drop clone_executions.clone_request_id")
 	}
 }

@@ -34,6 +34,8 @@ Depends on `src/api` (generated Thread client and types), `features/issues/api` 
 
 ## Invariants
 
+Node entries expose their actual `turnId`; tool calls and updates use that identity even when a future user input is already queued. Older responses without Node turn IDs use the user-boundary markers owned by `session-data`. Calls with no turn evidence remain separate rather than merging across the Thread.
+
 - Cached entries are always one contiguous, seq-ascending window: the first read takes the tail, "加载更早" prepends with `before=<oldest seq>`, incremental reads use `after=<highest seen seq>` (pulled back to just before the oldest queued user turn, so queued→delivered refreshes). Entries are deduplicated by seq and never repeat.
 - A sent message's returned entry is **not** merged into the cache: its seq may be ahead of entries not read yet, and advancing the window past them would skip them forever. Only a re-read picks it up, in order.
 - An event's `lastSeq` is a hint and is never used as a cursor.

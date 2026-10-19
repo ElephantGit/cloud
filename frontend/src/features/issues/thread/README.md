@@ -32,6 +32,8 @@ Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run�
 
 ## 不变量
 
+Node 条目公开其真实 `turnId`，工具调用与更新优先按该轮次关联，不能把已排队的下一条用户输入当作正在回复的轮次。旧响应缺少 Node 轮次时使用 `session-data` 的用户边界标记；完全没有轮次依据的调用保持独立，不能跨 Thread 合并。
+
 显示层依赖 `features/session-data` 的公开解析器和 `features/conversation-content` 的安全 Markdown。工具更新按 turn/call 身份合并，缺少身份则保持独立；未知耗时不猜值。明确选择的历史 Run 缺失时显示错误，不能回退到最新执行；没有 Thread 的终态 Run 不继续轮询等待声明。阅读历史时新消息只提示，不抢滚动；前插历史页按高度差保持锚点。
 
 - 缓存里的 entries 永远是一段连续、按 seq 升序的窗口：首读取尾部，「加载更早」用 `before=最旧 seq` 前插，增量读用 `after=已见最大 seq`（若有 queued 的用户 turn，则退回到它之前，以刷新 queued→delivered）。按 seq 去重，绝不重复。

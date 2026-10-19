@@ -219,6 +219,32 @@ func TestThreadReadReturnsAnAscendingWindowAfterTheCursor(t *testing.T) {
 	}
 }
 
+// Node output remains associated with its own turn even when a future user input is already queued.
+func TestThreadReadReturnsNodeTurnIdentityOverHTTP(t *testing.T) {
+	f := setup(t)
+	scene := seedThreadScene(t, f)
+	must(t, f.setThreadState(scene.runID, "running", "active"))
+	first, second := uuid.NewString(), uuid.NewString()
+	f.seedThreadEntry(scene.runID, "user", "user_turn", threadRecord("first"), first, "delivered")
+	f.seedThreadEntry(scene.runID, "node", "update", `{"update":{"sessionUpdate":"tool_call","toolCallId":"same","rawInput":"first"}}`, first, nil)
+	f.seedThreadEntry(scene.runID, "user", "user_turn", threadRecord("second"), second, "queued")
+	f.seedThreadEntry(scene.runID, "node", "update", `{"update":{"sessionUpdate":"tool_call_update","toolCallId":"same","status":"completed"}}`, first, nil)
+	f.seedThreadEntry(scene.runID, "node", "update", `{"update":{"sessionUpdate":"tool_call","toolCallId":"same","rawInput":"second"}}`, second, nil)
+	items := threadItems(t, f.getThread(scene, "", 200))
+	var nodeTurns []string
+	for _, item := range items {
+		if item.S("source") == "node" {
+			nodeTurns = append(nodeTurns, item.S("turnId"))
+			if _, present := item["status"]; present {
+				t.Fatal("Node entry gained user delivery status")
+			}
+		}
+	}
+	if fmt.Sprint(nodeTurns) != fmt.Sprint([]string{first, first, second}) {
+		t.Fatalf("HTTP response lost explicit Node turn associations: %v", nodeTurns)
+	}
+}
+
 // A Thread with no entries yet is a legal read, not a missing resource: the run exists, its session
 // was declared, and the window is simply empty.
 func TestThreadReadOfAThreadWithNoEntriesIsEmpty(t *testing.T) {

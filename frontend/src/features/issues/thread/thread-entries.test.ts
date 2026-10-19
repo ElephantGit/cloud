@@ -112,6 +112,53 @@ describe('mergeEntries', () => {
 })
 
 describe('threadItems', () => {
+  it('uses explicit Node turns when a future queued user entry precedes an earlier tool update', () => {
+    const rows = threadItems([
+      entry(1, { source: 'user', kind: 'user_turn', turnId: 'first', status: 'delivered' }),
+      entry(2, {
+        turnId: 'first',
+        record: { update: { sessionUpdate: 'tool_call', toolCallId: 'same', rawInput: 'first' } },
+      }),
+      entry(3, { source: 'user', kind: 'user_turn', turnId: 'second', status: 'queued' }),
+      entry(4, {
+        turnId: 'first',
+        record: {
+          update: { sessionUpdate: 'tool_call_update', toolCallId: 'same', status: 'completed' },
+        },
+      }),
+      entry(5, {
+        turnId: 'second',
+        record: { update: { sessionUpdate: 'tool_call', toolCallId: 'same', rawInput: 'second' } },
+      }),
+    ])
+    expect(rows.filter((row) => row.variant === 'tool')).toMatchObject([
+      { key: 2, turnId: 'first', tool: { rawInput: 'first', status: 'completed' } },
+      { key: 5, turnId: 'second', tool: { rawInput: 'second' } },
+    ])
+  })
+
+  it('keeps repeated tool IDs separate with the public response shape lacking node turnId', () => {
+    const rows = threadItems([
+      entry(1, { source: 'user', kind: 'user_turn', turnId: 'first', status: 'delivered' }),
+      entry(2, {
+        record: { update: { sessionUpdate: 'tool_call', toolCallId: 'read', rawInput: 'first' } },
+      }),
+      entry(3, { source: 'user', kind: 'user_turn', turnId: 'second', status: 'delivered' }),
+      entry(4, {
+        record: { update: { sessionUpdate: 'tool_call', toolCallId: 'read', rawInput: 'second' } },
+      }),
+      entry(5, {
+        record: {
+          update: { sessionUpdate: 'tool_call_update', toolCallId: 'read', status: 'completed' },
+        },
+      }),
+    ])
+    expect(rows.filter((row) => row.variant === 'tool')).toMatchObject([
+      { key: 2, tool: { rawInput: 'first' } },
+      { key: 4, tool: { rawInput: 'second', status: 'completed' } },
+    ])
+  })
+
   it('renders the prompt, user turns, merged agent chunks, notes and separators', () => {
     const entries = [
       entry(1, { source: 'system', kind: 'user_turn', record: { content: 'Fix the login' } }),

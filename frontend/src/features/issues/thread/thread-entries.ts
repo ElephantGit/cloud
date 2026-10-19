@@ -233,7 +233,14 @@ export function threadItems(
     const item = displayItem(entry, events.get(entry.seq))
     if (item === undefined) continue
     if (item.variant === 'tool' && item.tool.id) {
-      const identity = JSON.stringify([item.turnId, item.tool.id])
+      // Older public pages omit the Node turn ID; the session adapter owns explicit user
+      // boundary markers. Never collapse all such records into one undefined Thread-wide turn.
+      const turn = item.turnId ?? events.get(entry.seq)?.turn?.id
+      if (turn === undefined) {
+        items.push(item)
+        continue
+      }
+      const identity = JSON.stringify([turn, item.tool.id])
       const previous = tools.get(identity)
       if (previous) {
         previous.tool = mergeTool(previous.tool, item.tool)

@@ -66,6 +66,7 @@ package live in that directory's `README.md`; the authoritative source for busin
 
 - [Configuration reference](operations/configuration.en.md)
 - [Deployment and operations](operations/deployment.en.md)
+- [Shared deployment egress](operations/deployment-egress.en.md)
 
 **Development**
 

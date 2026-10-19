@@ -71,6 +71,9 @@ same time.
   interaction and run roll back together, returning `409 model_default_required`, `model_credential_required` or
   `model_connection_unavailable` respectively. Other Agents are unaffected.
 - Later changes to the connection or the default model do not change runs already created.
+- A run may carry several bindings: a workflow run freezes one per slot its graph references, in the creation
+  transaction, and each node's session redeems only the binding of the slot it references (see
+  [Workflows](../workflows/workflows.en.md#executor-slots)).
 - The session execution's input carries only an opaque `modelBindingId`; neither short-lived tokens nor the
   upstream key ever enter execution inputs or the Controller's control messages.
 - When registering a session dispatch, Cloud checks that the current Node declared the model proxy capability in

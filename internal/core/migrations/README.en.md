@@ -114,3 +114,49 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 ## 0038: Bounded abandonment of a blocked run Workspace creation
 
 Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
+
+## 0039: WorkflowRun identity
+
+`0039_workflow_run_identity.sql` hands run identity and work-item ownership to the control plane.
+`workflow_runs` gains `created_by` and `project_id` (both nullable: rows written before this migration
+carry no recoverable actor, and `project_id` is filled by the invocation path that knows a Project),
+which new runs freeze at creation. `workspaces` gains a mutually exclusive `workflow_run_id`, so a run
+Workspace can belong to a WorkflowRun. `execution_work` takes the same exactly-one-owner discriminator
+shape, its single-column uniqueness splitting into one partial index per owner, so a run of each kind
+keeps at most one unregistered item and the two ownerships never collide. Runtime control's reservation
+becomes a polymorphic run reference: the `maintenance_run_id` foreign key is dropped rather than
+reworked, because a polymorphic reference cannot be a foreign key, and the liveness check moves to the
+code that grants on it. Additive: columns, constraints and indexes, no backfill.
+
+`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` covers fresh, 0038 upgrade and rerun.
+
+## 0040: Executor slot bindings
+
+`0040_executor_slot_bindings.sql` lets executor slots reach the runtime. A `run_model_bindings` row's
+owner becomes a discriminator pair — exactly one of `run_id` / `workflow_run_id` — and the previous
+whole-table UNIQUE(run_id) splits into one (run, slot) uniqueness per owner, so a run may carry several
+bindings at once: a WorkflowRun freezes one row per slot its graph references, while an IssueRun keeps
+its single binding under the reserved `default` slot. Adds `executor_slot_mappings` (slot name ->
+executor), the invoker-owned resolution table the creation gate reads; `default` is deliberately
+excluded there because it IS the personal default model, never a stored mapping. Additive: it adds
+columns, constraints and a table without rewriting any existing binding row.
+
+## 0041: Workflow execution node
+
+`0041_workflow_execution_node.sql` adds `workflow_node_id` to `execution_work` and `node_executions`,
+with a constraint tying a work item's node to the graph of the run the item belongs to. It is
+Cloud-internal routing: the Controller-facing projection of `node_executions`
+(nodeExecutionColumns) deliberately omits it, because no Controller contract declares it. Additive,
+no backfill.
+
+## 0042: Run-level plugin version
+
+`0042_workflow_run_plugin_version.sql` adds a nullable `plugin_version` to `workflow_runs`, folding the
+plugin version into the run identity the creation transaction freezes (snapshot, input, initiator,
+Project, run Workspace binding, per-slot model bindings, plugin version). Session start reads the
+frozen value, so an upgrade can no longer change what an already-created run executes. Nullable and
+deliberately not backfilled: rows written before this migration were never frozen, and writing the
+space's current version would record a fact that never held. Such a run fails at its first agent node
+with `agent_plugin_version_unfrozen` rather than guessing; whether those rows should be backfilled,
+refused or executed under some other rule remains an open owner decision this migration records no
+answer to.

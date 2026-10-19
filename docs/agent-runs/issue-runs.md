@@ -40,7 +40,8 @@ Cloud 在接管上一阶段证据的事务里写入。
 - 创建操作停在 `blocked` 超过上限时，运行按 `failed`、`done` 收尾并保留残留责任，原创建操作失败、释放 Project 的操作槽（见 [创建 blocked 的有界放弃](startup-settlement.md#创建-blocked-的有界放弃)）。
 - **`done` 不代表运行 Workspace 已经删除**，只有删除操作成功才是（见 [删除侧的上限](#上限)）。
 
-运行 Workspace 只属于这一次运行（`workspaces.issue_run_id` 与 `issue_runs.workspace_id` 互相唯一引用），以触发运行的用户为创建者
+运行 Workspace 只属于这一次运行（`workspaces.issue_run_id` 与 `issue_runs.workspace_id` 互相唯一引用；一次 WorkflowRun 的运行 Workspace 同样只属于它，
+见 [工作流](../workflows/workflows.md#运行)），以触发运行的用户为创建者
 和操作发起者，从 Project 默认分支克隆，不出现在任何公开的 Workspace 列表或接口里，也不接受其他运行或交互式会话。
 
 ## 后台循环

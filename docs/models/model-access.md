@@ -47,6 +47,8 @@
 - 发起者没有默认模型、没有配置 Key 或连接不可用时，整条评论、交互和运行一起回滚，分别返回 `409 model_default_required`、
   `model_credential_required`、`model_connection_unavailable`。其他 Agent 的行为不受影响。
 - 之后修改连接或默认模型，不会改变已经创建的运行。
+- 一次运行可以有多份绑定：工作流运行在创建事务里为图引用的**每个槽位**各冻结一份，每个节点的会话只取用它引用的那个槽位的绑定（见
+  [工作流](../workflows/workflows.md#执行器槽位)）。
 - 会话执行的输入只带一个不透明的 `modelBindingId`；临时令牌和上游 Key 都不进入执行输入或 Controller 的控制消息。
 - 登记会话派发时，Cloud 检查当前 Node 握手时声明了模型代理能力，没有这项能力的旧 Node 不能执行使用个人模型的会话
   （`409 model_proxy_required`）；签发模型授权时同样要求这项能力。启动期间确认 Node 缺少能力时的结算见

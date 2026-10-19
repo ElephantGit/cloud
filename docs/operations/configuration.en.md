@@ -77,7 +77,7 @@ to create tables.
 | `session.ttl` | `12h` for IDaaS, `30 days` otherwise | Absolute lifetime, at most 90 days |
 | `session.cleanup_interval`, `retention`, `cleanup_batch` | `10m`, `168h`, `500` | Cleanup of expired sessions |
 | `login.provider` | `github` | The external provider, `huawei-idaas` or `github`; only its secret is read |
-| `login.development_provider` | `false` | Registers the local development login; only allowed together with `public.development` |
+| `login.development_provider` | `false` | Registers local development login; configuration validation requires `public.development: true` and a loopback HTTP `public.base_url` origin (with an optional port); HTTPS is rejected even with development mode enabled |
 | `login.attempt_ttl` | `10m` | Login attempt lifetime, 1 minute to 1 hour |
 | `login.rate_limit_per_minute`, `rate_limit_burst` | `30`, same as the former | Rate limits for login start and callback |
 | `login.pkce_key_file` | Required | At least 32 random bytes; identical on every replica |

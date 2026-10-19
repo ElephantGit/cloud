@@ -61,10 +61,12 @@ type IssueRunsConfig struct {
 	// succeed. Zero or negative selects the approved default (2 hours).
 	DeliveryGiveUpAfter time.Duration `mapstructure:"delivery_give_up_after"`
 
-	// DeliveryUnreachableAfter is IssueRun D5's unreachability window: how long the run Workspace's
-	// Node may be unreachable before Cloud treats it as gone and closes the run out in the IssueRun D8
-	// give-up path, without waiting out the full failure window. Zero or negative selects the
-	// approved default (30 minutes).
+	// DeliveryUnreachableAfter is the deployment's one unreachability window: how long a run
+	// Workspace's Node may be unreachable before Cloud treats it as gone. IssueRun D5 uses it to close
+	// a run out in the D8 give-up path without waiting out the full failure window, and the workflow
+	// scheduler uses the same window to settle an in-flight session whose Node is gone — one limit, so
+	// two passes cannot disagree about whether the same Node is still there. Zero or negative selects
+	// the approved default (30 minutes).
 	DeliveryUnreachableAfter time.Duration `mapstructure:"delivery_unreachable_after"`
 }
 

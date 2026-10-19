@@ -80,6 +80,12 @@ func (s *Store) scanAdvancableWorkflowRuns(ctx context.Context, limit int) ([]st
 // deliberately not surfaced here — the transaction already rolls back and the run is retried on the
 // next tick — so the loop must not flood logs because one run is transiently stuck. Only a scan-level
 // failure cancels the pass.
+//
+// The pass carries `DeliveryUnreachableAfter` into each run's advance: it is the deployment's one
+// tolerance for a silent Node, and the settlement of an in-flight session whose Node is gone judges
+// that same window through the same shared check (runWorkspaceNodeUnknown) the IssueRun release
+// paths use. An unconfigured window (zero or negative) fails closed there — a session is held rather
+// than failed — so a deployment that never set the limit loses nothing it was promised.
 func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -90,7 +96,7 @@ func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 	}
 	for _, id := range ids {
 		if _, err := s.transact(ctx, func(t *transaction) Object {
-			advanceWorkflowRun(t, id)
+			advanceWorkflowRun(t, id, s.DeliveryUnreachableAfter)
 			return Object{}
 		}); err != nil {
 			_ = err
@@ -463,8 +469,9 @@ func (p *workflowProjection) incomingEdges(nodeID string) []Object {
 
 // advanceWorkflowRun claims one pending run and advances it as far as committed state allows, in the
 // caller's transaction. It is idempotent: a run that lost a claim race, was advanced concurrently, or
-// is already terminal is left untouched.
-func advanceWorkflowRun(t *transaction, runID string) {
+// is already terminal is left untouched. unreachableAfter is the deployment's Node-unreachability
+// window, carried through to the session settlement (see AdvanceWorkflowRunsOnce).
+func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Duration) {
 	run := t.one(`
 		SELECT r.*, s.graph FROM workflow_runs r
 		JOIN workflow_snapshots s ON s.id = r.snapshot_id
@@ -513,7 +520,7 @@ func advanceWorkflowRun(t *transaction, runID string) {
 	// run), and the next wave waits for the terminal commit. The pass returns after any outcome —
 	// a settled node lets the next tick execute its downstream wave.
 	if nodeID, running := workflowRunningAgentNode(states); running {
-		if _, cont := workflowAgentSessionOutcome(t, runID, version, nodeID, states); !cont {
+		if _, cont := workflowAgentSessionOutcome(t, runID, version, nodeID, states, unreachableAfter); !cont {
 			return
 		}
 		// A settled session commits its terminal state and continues the pass; that commit bumped

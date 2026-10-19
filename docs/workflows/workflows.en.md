@@ -108,7 +108,16 @@ seconds):
   bounded. A Workspace that cannot be created fails the node as `workspace_unavailable`; a session that finds its
   frozen plugin version or slot binding missing fails as `agent_plugin_version_unfrozen` or
   `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
-  Once the run reaches a terminal state, Cloud declares the deletion of its Workspace.
+  **When a session has started but its Node can no longer report**, the node settles failed as `node_unavailable`
+  and the run reaches a terminal state: the judgement is the Node's reachability, not how long the session has been
+  running — a heartbeat older than `issue_runs.delivery_unreachable_after` (30 minutes by default), or a sandbox gone
+  together with the Node on it (exactly what a force stop leaves behind), both mean the Node is not there. That
+  judgement and its window are the ones the IssueRun delivery and release paths already use
+  (`runWorkspaceNodeUnknown`), so the two run kinds cannot answer "is the Node still there?" differently; an
+  unconfigured window does not degrade into a zero-length one, and the session is held rather than failed on the
+  spot. `node_unavailable` is Cloud's own diagnosis — it is also the published operation failure code for an
+  unreachable Node — and not a session end reason a Node reported. Once the run reaches a terminal state, Cloud
+  declares the deletion of its Workspace.
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
   receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the

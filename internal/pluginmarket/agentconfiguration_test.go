@@ -68,6 +68,50 @@ func TestCompileAgentConfigurationMatchesSharedVectors(t *testing.T) {
 	}
 }
 
+// A version error never masks a structural one: the desktop compiler deserializes the whole
+// declaration before checking any version, so a declaration that is both structurally wrong and
+// version-unsupported records invalid_structure in both languages. These combinations are not
+// in the shared vectors (which only combine structure problems with a supported version), so
+// this test pins the mirror to the desktop behavior directly.
+func TestCompileAgentConfigurationStructureBeatsVersionChecks(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{
+			"schema-version-with-wrong-cardinality",
+			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"multiple"}}}`,
+		},
+		{
+			"schema-version-with-unknown-member",
+			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"single","role":"main"}}}`,
+		},
+		{
+			"schema-version-with-non-string-protocols",
+			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":[1],"modelCardinality":"single"}}}`,
+		},
+		{
+			"contract-version-with-wrong-cardinality",
+			`{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":2,"protocols":["anthropic-messages"],"modelCardinality":"multiple"}}}`,
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := CompileAgentConfiguration([]byte(testCase.source))
+			if err == nil {
+				t.Fatal("the declaration must be rejected")
+			}
+			agentErr, ok := err.(*AgentConfigurationError)
+			if !ok {
+				t.Fatalf("error type = %T", err)
+			}
+			if agentErr.Code != "invalid_structure" {
+				t.Fatalf("structure must beat the version checks, got %q", agentErr.Code)
+			}
+		})
+	}
+}
+
 // The fingerprint covers the exact source bytes, so reformatting changes the declaration's
 // release identity even when the compiled capabilities are unchanged.
 func TestCompileAgentConfigurationFingerprintsExactBytes(t *testing.T) {

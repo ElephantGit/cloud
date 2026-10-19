@@ -103,8 +103,12 @@ func (o *agentJSONObject) get(key string) (any, bool) {
 // CompileAgentConfiguration validates one bounded Agent declaration without side effects.
 //
 // The check order mirrors the desktop compiler exactly, because the shared vectors pin which
-// error a multi-problem input produces: size, strict parse, explicit null Settings, structure,
-// schema version, contract version, protocols, then Settings validation.
+// error a multi-problem input produces: size, strict parse, explicit null Settings, the full
+// structure — root, agent and model-access members, required fields and their types, the
+// cardinality enum, string protocols — then schema version, contract version, empty protocols,
+// protocol identities and duplicates, and finally Settings validation. The desktop compiler
+// deserializes the whole declaration into its typed shape before checking any version, so a
+// structural problem is invalid_structure even when the declared version is itself unsupported.
 func CompileAgentConfiguration(source []byte) (*CompiledAgentConfiguration, error) {
 	if len(source) > maxAgentDeclarationBytes {
 		return nil, agentError("too_large", "")
@@ -125,16 +129,33 @@ func CompileAgentConfiguration(source []byte) (*CompiledAgentConfiguration, erro
 	if raw, present := root.get("settings"); present && raw == nil {
 		return nil, agentError("invalid_settings", "settings must not be null")
 	}
-	schemaVersion, err := agentStructure(root)
+	structure, err := agentStructure(root)
 	if err != nil {
 		return nil, err
 	}
-	if schemaVersion != agentDeclarationSchemaVersion {
-		return nil, agentError("unsupported_schema_version", strconv.FormatUint(uint64(schemaVersion), 10))
+	if structure.schemaVersion != agentDeclarationSchemaVersion {
+		return nil, agentError("unsupported_schema_version", strconv.FormatUint(uint64(structure.schemaVersion), 10))
 	}
-	modelAccess, err := agentModelAccessOf(root)
-	if err != nil {
-		return nil, err
+	if structure.contractVersion != agentModelAccessContractVersion {
+		return nil, agentError("unsupported_contract_version", strconv.FormatUint(uint64(structure.contractVersion), 10))
+	}
+	if len(structure.protocols) == 0 {
+		return nil, agentError("empty_protocols", "")
+	}
+	protocols := make([]string, 0, len(structure.protocols))
+	for _, protocol := range structure.protocols {
+		// Wire protocol identities, never provider names or CLI-specific aliases.
+		switch protocol {
+		case "openai-completions", "anthropic-messages":
+		default:
+			return nil, agentError("unsupported_protocol", "")
+		}
+		for _, seen := range protocols {
+			if seen == protocol {
+				return nil, agentError("duplicate_protocol", "")
+			}
+		}
+		protocols = append(protocols, protocol)
 	}
 	settings, err := compileAgentSettings(root)
 	if err != nil {
@@ -144,118 +165,120 @@ func CompileAgentConfiguration(source []byte) (*CompiledAgentConfiguration, erro
 	return &CompiledAgentConfiguration{
 		SchemaVersion: agentDeclarationSchemaVersion,
 		Settings:      settings,
-		ModelAccess:   modelAccess,
-		Fingerprint:   hex.EncodeToString(digest[:]),
+		ModelAccess: CompiledAgentModelAccess{
+			ContractVersion:  agentModelAccessContractVersion,
+			Protocols:        protocols,
+			ModelCardinality: agentModelCardinalitySingle,
+		},
+		Fingerprint: hex.EncodeToString(digest[:]),
 	}, nil
 }
 
-// agentStructure proves the declaration carries exactly the versioned Agent members and returns
-// the declared schema version as a validated u32.
-func agentStructure(root *agentJSONObject) (uint32, error) {
+// agentDeclarationStructure carries the structurally validated fields of one declaration.
+type agentDeclarationStructure struct {
+	schemaVersion   uint32
+	contractVersion uint32
+	protocols       []string
+}
+
+// agentStructure proves the declaration carries exactly the versioned Agent members — root,
+// agent and model-access objects, including required fields, their types, the cardinality enum
+// and the protocol array's string shape — and returns the declared versions without
+// interpreting them.
+func agentStructure(root *agentJSONObject) (agentDeclarationStructure, error) {
 	for key := range root.members {
 		switch key {
 		case "schemaVersion", "agent", "settings":
 		default:
-			return 0, agentError("invalid_structure", "unknown member "+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member "+key)
 		}
 	}
 	rawVersion, ok := root.get("schemaVersion")
 	if !ok {
-		return 0, agentError("invalid_structure", "schemaVersion is required")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "schemaVersion is required")
 	}
 	schemaVersion, ok := agentU32(rawVersion)
 	if !ok {
-		return 0, agentError("invalid_structure", "schemaVersion must be an unsigned integer")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "schemaVersion must be an unsigned integer")
 	}
 	if _, ok := root.get("agent"); !ok {
-		return 0, agentError("invalid_structure", "agent is required")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "agent is required")
 	}
-	return schemaVersion, nil
+	structure, err := agentModelAccessStructure(root)
+	if err != nil {
+		return agentDeclarationStructure{}, err
+	}
+	structure.schemaVersion = schemaVersion
+	return structure, nil
 }
 
-// agentModelAccessOf validates the model-access contribution after the schema version check.
-func agentModelAccessOf(root *agentJSONObject) (CompiledAgentModelAccess, error) {
+// agentModelAccessStructure validates the model-access contribution's structure. Versions are
+// returned as validated u32s and interpreted by the caller: the desktop compiler deserializes
+// the whole declaration before checking any version, so these failures stay invalid_structure
+// even when the declared version is itself unsupported.
+func agentModelAccessStructure(root *agentJSONObject) (agentDeclarationStructure, error) {
 	rawContribution, _ := root.get("agent")
 	contribution, ok := rawContribution.(*agentJSONObject)
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "agent must be an object")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "agent must be an object")
 	}
 	for key := range contribution.members {
 		if key != "modelAccess" {
-			return CompiledAgentModelAccess{}, agentError("invalid_structure", "unknown member agent."+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member agent."+key)
 		}
 	}
 	rawAccessValue, _ := contribution.get("modelAccess")
 	rawAccess, ok := rawAccessValue.(*agentJSONObject)
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "agent.modelAccess must be an object")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "agent.modelAccess must be an object")
 	}
 	for key := range rawAccess.members {
 		switch key {
 		case "contractVersion", "protocols", "modelCardinality":
 		default:
-			return CompiledAgentModelAccess{}, agentError("invalid_structure", "unknown member agent.modelAccess."+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member agent.modelAccess."+key)
 		}
 	}
 	rawContract, ok := rawAccess.get("contractVersion")
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "contractVersion is required")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "contractVersion is required")
 	}
 	contractVersion, ok := agentU32(rawContract)
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "contractVersion must be an unsigned integer")
-	}
-	if contractVersion != agentModelAccessContractVersion {
-		return CompiledAgentModelAccess{}, agentError("unsupported_contract_version", strconv.FormatUint(uint64(contractVersion), 10))
+		return agentDeclarationStructure{}, agentError("invalid_structure", "contractVersion must be an unsigned integer")
 	}
 	rawCardinality, ok := rawAccess.get("modelCardinality")
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "modelCardinality is required")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "modelCardinality is required")
 	}
 	cardinality, ok := rawCardinality.(string)
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "modelCardinality must be a string")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "modelCardinality must be a string")
 	}
 	// A declaration cannot introduce an unapproved second model by adding a role or fallback;
-	// every cardinality other than the approved single-model binding is a structure failure.
+	// every cardinality other than the approved single-model binding fails the typed shape — a
+	// structure failure before the version checks, exactly like the desktop compiler's enum
+	// deserialization.
 	if cardinality != agentModelCardinalitySingle {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "modelCardinality must be single")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "modelCardinality must be single")
 	}
 	rawProtocols, ok := rawAccess.get("protocols")
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "protocols is required")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "protocols is required")
 	}
 	protocolList, ok := rawProtocols.([]any)
 	if !ok {
-		return CompiledAgentModelAccess{}, agentError("invalid_structure", "protocols must be an array")
-	}
-	if len(protocolList) == 0 {
-		return CompiledAgentModelAccess{}, agentError("empty_protocols", "")
+		return agentDeclarationStructure{}, agentError("invalid_structure", "protocols must be an array")
 	}
 	protocols := make([]string, 0, len(protocolList))
 	for _, rawProtocol := range protocolList {
 		protocol, ok := rawProtocol.(string)
 		if !ok {
-			return CompiledAgentModelAccess{}, agentError("invalid_structure", "protocols must be strings")
-		}
-		// Wire protocol identities, never provider names or CLI-specific aliases.
-		switch protocol {
-		case "openai-completions", "anthropic-messages":
-		default:
-			return CompiledAgentModelAccess{}, agentError("unsupported_protocol", "")
-		}
-		for _, seen := range protocols {
-			if seen == protocol {
-				return CompiledAgentModelAccess{}, agentError("duplicate_protocol", "")
-			}
+			return agentDeclarationStructure{}, agentError("invalid_structure", "protocols must be strings")
 		}
 		protocols = append(protocols, protocol)
 	}
-	return CompiledAgentModelAccess{
-		ContractVersion:  agentModelAccessContractVersion,
-		Protocols:        protocols,
-		ModelCardinality: agentModelCardinalitySingle,
-	}, nil
+	return agentDeclarationStructure{contractVersion: contractVersion, protocols: protocols}, nil
 }
 
 // compileAgentSettings applies the shared scalar Setting rules to the optional Settings member.

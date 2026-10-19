@@ -43,7 +43,8 @@ Cloud 在接管上一阶段证据的事务里写入。
   新 `RecordDispatch` 在业务事务锁内重新核验资格，收尾前领取的快照不能绕过检查。工作与执行记录不删除，已有执行仍按原身份
   走既有恢复路径及其检查；这不等于 Node 已终止或 Workspace 已回收。接口语义见 [Controller 契约](../runtime/controller-integration.md#服务)。
 
-运行 Workspace 只属于这一次运行（`workspaces.issue_run_id` 与 `issue_runs.workspace_id` 互相唯一引用），以触发运行的用户为创建者
+运行 Workspace 只属于这一次运行（`workspaces.issue_run_id` 与 `issue_runs.workspace_id` 互相唯一引用；一次 WorkflowRun 的运行 Workspace 同样只属于它，
+见 [工作流](../workflows/workflows.md#运行)），以触发运行的用户为创建者
 和操作发起者，从 Project 默认分支克隆，不出现在任何公开的 Workspace 列表或接口里，也不接受其他运行或交互式会话。
 
 ## 后台循环

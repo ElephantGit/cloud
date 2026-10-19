@@ -151,8 +151,10 @@ generation and live sandbox.
 - `ClaimWork` is a **pure read**: it returns the oldest claimable work item, and ownership is decided
   only in `RecordDispatch`'s transaction, so a Controller that crashes between claiming and registering
   leaves nothing to recover.
-- For Agent/Revision work, `ClaimWork` skips unregistered items whose Run is `releasing`, `done` or
-  soft-deleted; Runs with residuals are also excluded. A new `RecordDispatch` rechecks Run eligibility
+- For Agent session and Revision delivery work owned by an IssueRun (a work item carrying `run_id`),
+  `ClaimWork` skips unregistered items whose Run is `releasing`, `done` or soft-deleted; Runs with
+  residuals are also excluded. WorkflowRun session work carries `workflow_run_id` instead and stays
+  claimable: the IssueRun lifecycle does not govern it. A new `RecordDispatch` rechecks Run eligibility
   and residuals under the same transaction lock as business settlement, so an earlier claim snapshot
   cannot register a new session or delivery afterwards. Work rows and execution records remain;
   existing executions use the original idempotency, query and result-takeover paths, subject to their

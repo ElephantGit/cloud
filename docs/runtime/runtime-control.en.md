@@ -75,8 +75,9 @@ idle ───────────────▶ acquiring ─────�
 **Lifecycle operations share the same write boundary.** As soon as a lifecycle operation is
 registered it puts control into `maintenance` (recording the operation ID and incrementing the control
 epoch), so page sessions cannot operate meanwhile. When the operation ends, control becomes `draining`
-and settles by the rules above. After an Agent run's run Workspace is created, control becomes a
-`maintenance` owned by that run, which bounds its sessions and deliveries from then on.
+and settles by the rules above. After a run Workspace's creation operation succeeds, control becomes a
+`maintenance` owned by the run that created it — the reservation records the run id, and both IssueRuns
+and WorkflowRuns count — which bounds its sessions and deliveries from then on.
 
 An administrator's ordinary operations cannot take over control someone else holds; force-stop is the
 way to interrupt immediately.

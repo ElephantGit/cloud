@@ -111,6 +111,82 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 
 `0036_workflow_asset_imports.sql` records asset imports for `kind='workflow'` plugins: `workflow_asset_imports` holds one row per (space, plugin) with the `requested_revision` each administrator install/reinstall advances, the import progress and its lease; `workflow_asset_documents` holds one row per document path, and only an `outcome='imported'` row permanently occupies (space, namespace, identifier, document path) — failed documents are retried on the next trigger. The imported workflows and published snapshots are ordinary user data; these two tables only record provenance, idempotency and per-document outcomes. Forward-only and additive; no existing table changes.
 
+## 0037: Repository Bindings and Operations
+
+Moves a Project's external repository out of the Project's columns and into its own Binding: `repository_bindings` (exactly one per Project: `repository_url`, `branch`, credential references, `resync_requested`), `repository_operations` (the complete sync and publish state machine, whose states are the contract's D5 item 3, so later lines add columns and never states) and `repository_snapshots` (the Binding's current snapshot, allowed to lag the tracking ref and never to lead it). An existing Project's repository becomes its Binding here, and only then are the four repository columns dropped from `projects`. Invariants: at most one unfinished sync per Binding (a partial unique index), and a snapshot ref that must be composed from the Binding and the commit.
+
 ## 0038: Bounded abandonment of a blocked run Workspace creation
 
 Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
+
+## 0039: WorkflowRun identity
+
+`0039_workflow_run_identity.sql` hands run identity and work-item ownership to the control plane.
+`workflow_runs` gains `created_by` and `project_id` (both nullable: rows written before this migration
+carry no recoverable actor, and `project_id` is filled by the invocation path that knows a Project),
+which new runs freeze at creation. `workspaces` gains a mutually exclusive `workflow_run_id`, so a run
+Workspace can belong to a WorkflowRun. `execution_work` takes the same exactly-one-owner discriminator
+shape, its single-column uniqueness splitting into one partial index per owner, so a run of each kind
+keeps at most one unregistered item and the two ownerships never collide. Runtime control's reservation
+becomes a polymorphic run reference: the `maintenance_run_id` foreign key is dropped rather than
+reworked, because a polymorphic reference cannot be a foreign key, and the liveness check moves to the
+code that grants on it. Additive: columns, constraints and indexes, no backfill.
+
+`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` covers fresh, 0038 upgrade and rerun.
+
+## 0040: Executor slot bindings
+
+`0040_executor_slot_bindings.sql` lets executor slots reach the runtime. A `run_model_bindings` row's
+owner becomes a discriminator pair — exactly one of `run_id` / `workflow_run_id` — and the previous
+whole-table UNIQUE(run_id) splits into one (run, slot) uniqueness per owner, so a run may carry several
+bindings at once: a WorkflowRun freezes one row per slot its graph references, while an IssueRun keeps
+its single binding under the reserved `default` slot. Adds `executor_slot_mappings` (slot name ->
+executor), the invoker-owned resolution table the creation gate reads; `default` is deliberately
+excluded there because it IS the personal default model, never a stored mapping. Additive: it adds
+columns, constraints and a table without rewriting any existing binding row.
+
+## 0041: Workflow execution node
+
+`0041_workflow_execution_node.sql` adds `workflow_node_id` to `execution_work` and `node_executions`,
+with a constraint tying a work item's node to the graph of the run the item belongs to. It is
+Cloud-internal routing: the Controller-facing projection of `node_executions`
+(nodeExecutionColumns) deliberately omits it, because no Controller contract declares it. Additive,
+no backfill.
+
+## 0042: Run-level plugin version
+
+`0042_workflow_run_plugin_version.sql` adds a nullable `plugin_version` to `workflow_runs`, folding the
+plugin version into the run identity the creation transaction freezes (snapshot, input, initiator,
+Project, run Workspace binding, per-slot model bindings, plugin version). Session start reads the
+frozen value, so an upgrade can no longer change what an already-created run executes. Nullable and
+deliberately not backfilled: rows written before this migration were never frozen, and writing the
+space's current version would record a fact that never held. Such a run fails at its first agent node
+with `agent_plugin_version_unfrozen` rather than guessing; whether those rows should be backfilled,
+refused or executed under some other rule remains an open owner decision this migration records no
+answer to.
+
+## 0043: External Git line
+
+The migration that lands the external Git line (executor root ADR, identity-access Credential Store, sync and publish ADRs) and the one **destructive switch** the contract allows: no transition flag and no data migration.
+
+- Credential references now point into the independent Credential Store: `secret_ref` may be empty, and `name`, `secret_state`, `store_version`, `requested_capabilities`, `capability_evidence`, the pending browser submission (`pending_submission_id`/`pending_store_version`/`pending_submission_expires_at`), `store_revocation_pending` and `revoked_at` are added. A pre-switch row can never be redeemed again, so it is **revoked** rather than deleted: it keeps its audit trail and its `capabilities` are emptied. Revocation is two steps (Cloud first, then the Store); the capability vocabulary is `read`/`publish`; a stored reference always has a `store_version`; a pending submission is always the next version; and a reference that is not revoked must carry a repository scope.
+- Adds `credential_verifications` (push-capability checks, which run once like an Operation so the probe authorization they carry is used at most once) and `repository_operation_events` (an append-only audit of publish and sync settlements whose trigger refuses UPDATE and DELETE).
+- The Binding's continuity column `repository_credential_ref_id` folds into the single surviving `credential_ref_id` (the continuity column wins), and `version` is added to fence candidate-credential switches.
+- Sync and publish Operations gain their lease, credential, result and publish columns (`lease_generation`/`lease_owner`/`authorization_id`, `expected_tracking_oid`, the approval triple, `check_attempts`/`next_check_at`), constrained so that entering running means one authorization exists, a publish shape is either complete or entirely empty, and at most one publish is in flight per branch.
+
+Fresh-database and merge-baseline (through 0042) upgrade evidence — an upgraded database carrying real Projects, credential references and a continuity column — is `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades` in `integration/migration_upgrade_path_test.go`, which also exercises those constraints and the append-only trigger against real rows.
+
+## 0044: Model attempts record WorkflowRun bindings
+
+`0044_model_attempt_workflow_run.sql` lets `model_request_attempts` record a WorkflowRun binding,
+using the same discriminator shape as 0040: `run_id` becomes nullable, `workflow_run_id` is added,
+and exactly one of them is required. Each owner gets its own pair of references — the run to
+`issue_runs` / `workflow_runs` on `(id, tenant_id)`, and the binding to `run_model_bindings` on
+`(id, run_id)` / `(id, workflow_run_id)` — with the two uniqueness constraints the new references
+need. Registration is the only consumer; WorkflowRun statistics reads stay closed. The IssueRun
+reads keep filtering by `run_id`, which is NULL on WorkflowRun rows and therefore cannot leak into
+them. Every existing row carries `run_id` (0035 required it, and the defect made every WorkflowRun
+registration fail), so nothing is backfilled. Fresh and 0043-upgrade evidence:
+`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`; real WorkflowRun registration:
+`internal/core/model_attempt_workflow_db_test.go`.
+

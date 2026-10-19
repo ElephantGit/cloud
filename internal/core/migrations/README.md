@@ -110,6 +110,69 @@ Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs
 
 `0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
 
+## 0037：仓库 Binding 与 Operation
+
+把 Project 的外部仓库从 Project 列搬进它自己的 Binding：`repository_bindings`（每 Project 恰一行，`repository_url`/`branch`/凭据引用、`resync_requested`）、`repository_operations`（同步与发布的完整状态机，状态取值就是契约的 D5 item 3，后续线路只加列、不加状态）与 `repository_snapshots`（Binding 当前快照，允许落后于跟踪 ref、绝不领先）。既有 Project 的仓库在这一步原样迁成它的 Binding，然后才删掉 `projects` 上的四个仓库列。不变量：同一 Binding 至多一个未完成同步（部分唯一索引）、快照 ref 必须由 Binding 与提交拼出。
+
 ## 0038：运行 Workspace 创建 blocked 的有界放弃
 
 新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。
+
+## 0039：WorkflowRun 运行身份
+
+`0039_workflow_run_identity.sql` 把运行身份与工作项所有权交给控制面。`workflow_runs` 新增
+`created_by` 与 `project_id` 两列（均可空：本迁移之前的行没有可恢复的发起人，而 `project_id` 由知道
+Project 的调用路径写入），新运行在创建时冻结二者；`workspaces` 新增互斥的 `workflow_run_id`，使运行
+Workspace 可以属于 WorkflowRun；`execution_work` 同样变为「恰有一个所有者」的判别形状，原单列唯一索引
+拆为每种所有者各一条部分索引，因此两类所有者各自最多保留一个未注册工作项且互不冲突；
+`runtime_controls` 的预留改为多态运行引用，`maintenance_run_id` 的外键被删除而非改写——多态引用无法做
+外键，存活校验移到授予它的代码里。只新增列、约束与索引，不回填。
+
+`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` 验证空库、从 0038 升级及重复迁移。
+
+## 0040：执行器槽位绑定
+
+`0040_executor_slot_bindings.sql` 让执行器槽位抵达运行时。`run_model_bindings` 的所有者变为判别对
+（`run_id` 与 `workflow_run_id` 恰有其一），原先整表的 UNIQUE(run_id) 拆分为每种所有者各一条
+(run, slot) 唯一索引，于是一次运行可同时持有多条绑定；WorkflowRun 为图上引用的每个槽位冻结一行，
+IssueRun 继续在保留槽位 `default` 下持有其唯一绑定。新增 `executor_slot_mappings`（槽位名 → 执行器）
+作为调用者私有的解析表，`default` 被显式排除——它就是个人默认模型本身，不是一条可存储的映射。
+只新增列、约束与表，不改写既有绑定行。
+
+## 0041：工作流执行节点
+
+`0041_workflow_execution_node.sql` 给 `execution_work` 与 `node_executions` 各加一列
+`workflow_node_id`，并加约束保证工作项所属节点确实属于该工作项所在的运行图。它是 Cloud 内部的路由
+字段：`node_executions` 面向 Controller 的投影（nodeExecutionColumns）刻意不含该列，因为它不是任何
+Controller 契约的字段。只新增，不回填。
+
+## 0042：运行级插件版本
+
+`0042_workflow_run_plugin_version.sql` 给 `workflow_runs` 加可空列 `plugin_version`，把插件版本并入
+创建事务冻结的运行身份（快照、输入、发起人、Project、运行 Workspace 绑定、逐槽位模型绑定、插件版本）。
+会话启动读冻结值，升级不再改变已创建运行的执行内容。可空且刻意不回填：本迁移之前的行从未冻结过，
+把空间当前版本写进去会记录一个从未成立的事实；这类运行在首个 agent 节点以 `agent_plugin_version_unfrozen`
+失败而不是猜测。这些行应回填、拒绝还是按其他规则执行，仍是 owner 待决事项，本迁移不记录答案。
+
+## 0043：外部 Git 线
+
+外部 Git 线（执行器根 ADR、identity-access Credential Store、同步与发布 ADR）落地的迁移，也是契约允许的那一次**破坏性切换**：没有过渡开关、没有数据迁移。
+
+- 凭据引用改为指向独立 Credential Store：`secret_ref` 允许为空，新增 `name`、`secret_state`、`store_version`、`requested_capabilities`、`capability_evidence`、待确认提交（`pending_submission_id`/`pending_store_version`/`pending_submission_expires_at`）、`store_revocation_pending` 与 `revoked_at`。切换前的行永远无法再兑换，因此**撤销**而不是删除：保留审计轨迹，`capabilities` 清空。撤销分两步（先 Cloud 后 Store），能力词表限定为 `read`/`publish`，已存凭据必有 `store_version`，待确认提交永远是下一个版本，未撤销的引用必须有仓库范围。
+- 新增 `credential_verifications`（推送能力核验，与 Operation 一样一次执行，携带的探测授权至多用一次）与 `repository_operation_events`（发布与同步结算的 append-only 审计，触发器拒绝 UPDATE/DELETE）。
+- Binding 的连续性列 `repository_credential_ref_id` 折叠进唯一保留的 `credential_ref_id`（取连续性列优先），并新增 `version` 围栏候选凭据切换。
+- 同步与发布的 Operation 补齐租约、凭据、结果与发布列（含 `lease_generation`/`lease_owner`/`authorization_id`、`expected_tracking_oid`、发布审批三元组、`check_attempts`/`next_check_at`），并约束「进入 running 即有一次授权」「发布形状完整或完全为空」「同一分支至多一个在途发布」。
+
+新库与合并时基线（含 0042）升级（带真实 Project、凭据引用与连续性列的库）证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades`，其中也对真实行验证了上述约束与 append-only 触发器。
+
+## 0044：模型尝试登记 WorkflowRun 绑定
+
+`0044_model_attempt_workflow_run.sql` 让 `model_request_attempts` 记录 WorkflowRun 的绑定，采用与
+0040 相同的判别形状：`run_id` 改为可空，新增 `workflow_run_id`，两者恰有其一。运行与绑定各按所有者
+一对：分别引用 `issue_runs`/`workflow_runs` 的 `(id, tenant_id)`，以及 `run_model_bindings` 的
+`(id, run_id)`/`(id, workflow_run_id)`，并补上后者所需的两个唯一约束。首期只登记，不开放 WorkflowRun
+的统计读取；IssueRun 的读取继续按 `run_id` 过滤，WorkflowRun 行的 `run_id` 为空，不会进入既有读取。
+既有行都带 `run_id`（0035 要求非空，且任何 WorkflowRun 登记都无法写入），无需回填。新库与 0043 升级证据见
+`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
+`internal/core/model_attempt_workflow_db_test.go`。
+

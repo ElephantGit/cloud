@@ -247,6 +247,55 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			want:  []any{Object{"code": "edge_endpoint_unknown", "nodeId": "gone"}},
 		},
 		{
+			// A DAG that reconverges: two paths lead into `c`, which is a join and not a cycle. It is
+			// the shape a cycle test most easily refuses by accident, so it is here as the legal half
+			// of that pair.
+			name: "a diamond",
+			graph: workflowGraph(
+				[]any{graphStart("s"), graphAgent("a", "", false), graphAgent("b", "", false), graphAgent("c", "", false)},
+				[]any{graphEdge("s", "a"), graphEdge("s", "b"), graphEdge("a", "c"), graphEdge("b", "c")},
+				nil,
+			),
+		},
+		{
+			// The shortest cycle there is, and one the editor can produce by dragging an edge back onto
+			// its own source.
+			name:  "a self-loop",
+			graph: workflowGraph([]any{graphStart("s"), graphAgent("a", "", false)}, []any{graphEdge("s", "a"), graphEdge("a", "a")}, nil),
+			want:  []any{Object{"code": "graph_cycle", "nodeId": "a"}},
+		},
+		{
+			// The back edge is `b→a`, so `b` is the node reported: it is on the cycle by construction,
+			// and it is the one whose outgoing edge the author has to delete.
+			name:  "a cycle behind the start node",
+			graph: workflowGraph([]any{graphStart("s"), graphAgent("a", "", false), graphAgent("b", "", false)}, []any{graphEdge("s", "a"), graphEdge("a", "b"), graphEdge("b", "a")}, nil),
+			want:  []any{Object{"code": "graph_cycle", "nodeId": "b"}},
+		},
+		{
+			// Nodes downstream of a cycle are not reported: they are casualties, not faults, and the
+			// author would have nothing to fix at them.
+			name: "a cycle with nodes downstream of it",
+			graph: workflowGraph(
+				[]any{graphStart("s"), graphAgent("a", "", false), graphAgent("b", "", false), graphAgent("c", "", false), graphAgent("o", "", false)},
+				[]any{graphEdge("s", "a"), graphEdge("a", "b"), graphEdge("b", "a"), graphEdge("b", "c"), graphEdge("c", "o")},
+				nil,
+			),
+			want: []any{Object{"code": "graph_cycle", "nodeId": "b"}},
+		},
+		{
+			// `v` sits between two cycles without being on either. A detector that peels nodes with no
+			// incoming or no outgoing edge leaves `v` in the remainder — nothing ever drains it — so a
+			// report built that way cannot tell the node the author must fix from one they must not
+			// touch. The walk names a back edge's source instead, which is on a cycle by construction.
+			name: "a node between two cycles",
+			graph: workflowGraph(
+				[]any{graphStart("s"), graphAgent("a", "", false), graphAgent("u", "", false), graphAgent("v", "", false), graphAgent("w", "", false), graphAgent("x", "", false)},
+				[]any{graphEdge("s", "a"), graphEdge("a", "u"), graphEdge("u", "a"), graphEdge("u", "v"), graphEdge("v", "w"), graphEdge("w", "x"), graphEdge("x", "w")},
+				nil,
+			),
+			want: []any{Object{"code": "graph_cycle", "nodeId": "u"}},
+		},
+		{
 			// The nameless slot's description is fine and is not also reported: a problem list the user
 			// has to read is worth keeping to the violations that are actually there.
 			name:  "a slot with no name",
@@ -435,6 +484,31 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			want: []any{Object{"code": "condition_selector_unsupported", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
+			// Desktop builds its pool from the graph, so a root the Start node does not declare is
+			// Undeclared there and fails the node. Cloud's evaluator has no declaration set and would
+			// answer "absent" instead — a branch the author could not have written — so publishing
+			// refuses it.
+			name: "a selector on an undeclared root",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"s", "missing"}, "exists", nil)})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
+		},
+		{
+			// Desktop's pool declares the system globals; Cloud neither provides their values nor
+			// declares them, so `sys` is not a node in the graph and the selector is undeclared.
+			name: "a selector on a node the graph does not contain",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"sys", "workflow_id"}, "equals", "wf-1")})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
+		},
+		{
+			// An expected-value template names the same variable pool as variableSelector, so its
+			// placeholder must hold to the same declarations. `selectedBranch` is exactly what Cloud's
+			// condition node writes at run time, but desktop declares no root on a condition node, so a
+			// template reading it would resolve on Cloud and fail desktop.
+			name: "an expected-value template on an undeclared root",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"s", "input"}, "equals", "{{#c.selectedBranch#}}")})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.value"}},
+		},
+		{
 			name: "an operator neither side knows",
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "matches", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},
@@ -443,12 +517,6 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			name: "an operator the editor has not filled in yet",
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},
-		},
-		{
-			// desktop resolves this and keeps the bound type; Cloud would compare the literal text.
-			name: "an expected value carrying a selector template",
-			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})}),
-			want: []any{Object{"code": "condition_value_template_unsupported", "nodeId": "c", "field": "cases.conditions.value"}},
 		},
 	}
 
@@ -473,17 +541,129 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 		t.Fatalf("these cases exercise %v; the declared list is %v — the two must name the same set", exercised, declared)
 	}
 
-	// Refusing is not the same as refusing everything. The two documents the editor legitimately
-	// publishes — a filled-in node, and one the author has added but not configured yet, which falls
-	// through to else — must both pass.
-	for name, node := range map[string]Object{
-		"a filled-in condition node":               graphCondition("c", []any{graphConditionCase("yes", "and", filled)}),
-		"a condition node with no cases yet":       graphCondition("c", []any{}),
-		"a condition node with an unfinished case": graphCondition("c", []any{graphConditionCase("yes", "and", []any{})}),
-	} {
-		got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
-		if len(got) != 0 {
-			t.Fatalf("%s was refused: %v", name, got)
+	// Refusing is not the same as refusing everything. The documents the editor legitimately
+	// publishes — a filled-in node, one the author has added but not configured yet (falls through to
+	// else), an expected value carrying a selector template (circus#210 now evaluates it the way
+	// desktop does), and a selector on each root a node's kind declares — must all pass.
+	startWithVariables := Object{"id": "s", "type": "workflow", "data": Object{
+		"kind":           "start",
+		"inputVariables": []any{Object{"name": "limit", "valueType": "number"}},
+	}}
+	agentNode := graphAgent("a", "", false)
+	outputNode := Object{"id": "o", "type": "workflow", "data": Object{"kind": "output"}}
+	oneRule := func(selector []any, operator string, value any) Object {
+		return graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, value)})})
+	}
+	positive := []struct {
+		name  string
+		nodes []any
+		edges []any
+	}{
+		{
+			name:  "an expected value carrying a selector template",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a mixed expected-value template",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "branch {{#s.input.name#}}")})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a filled-in condition node",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", filled)})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a condition node with no cases yet",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			name:  "a condition node with an unfinished case",
+			nodes: []any{graphStart("s"), graphCondition("c", []any{graphConditionCase("yes", "and", []any{})})},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			// Start declares every run-form variable by name, so [s, limit] is a root the pool has.
+			name:  "a declared start form variable",
+			nodes: []any{startWithVariables, oneRule([]any{"s", "limit"}, "greater_than", 90.0)},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			// Every non-start, non-condition node declares `output`; the agent's value arrives with
+			// cloud#70, and until then the root is declared but unassigned.
+			name:  "a declared agent output root",
+			nodes: []any{graphStart("s"), agentNode, oneRule([]any{"a", "output"}, "not_empty", nil)},
+			edges: []any{graphEdge("s", "a"), graphEdge("a", "c")},
+		},
+		{
+			name:  "a declared output node root",
+			nodes: []any{graphStart("s"), outputNode, oneRule([]any{"o", "output"}, "not_empty", nil)},
+			edges: []any{graphEdge("s", "o"), graphEdge("o", "c")},
+		},
+	}
+	for _, tc := range positive {
+		t.Run(tc.name, func(t *testing.T) {
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph(tc.nodes, tc.edges, nil))))
+			if len(got) != 0 {
+				t.Fatalf("refused: %v", got)
+			}
+		})
+	}
+}
+
+// TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet pins the accepted set to desktop's
+// `ComparisonOperator::parse` from both sides. A spelling only one side knows is the divergence the
+// publish gate exists to prevent: Cloud would admit a document desktop then reads as an operator it
+// does not have, and the two would branch differently on the same rule.
+//
+// The direction labels the comparator helpers are built with — "starts", "ends", "greater",
+// "greater_eq", "less", "less_eq" — read like operator spellings but are Go-side names for one
+// comparison, never wire operators, so a document that writes one is refused like any other
+// unknown operator. The map keys are checked directly as well: the gate reads that map rather than
+// restating the list, so a key added there reaches the gate with nothing else to stop it.
+func TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet(t *testing.T) {
+	selector := []any{"s", "input", "flag"}
+	// desktop's wire spellings, in the order `ComparisonOperator::parse` lists them.
+	desktop := []string{
+		"equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with",
+		"empty", "not_empty", "greater_than", "greater_than_or_equal", "less_than",
+		"less_than_or_equal", "is", "is_not", "exists", "not_exists",
+	}
+
+	for _, operator := range desktop {
+		t.Run("accepts "+operator, func(t *testing.T) {
+			node := graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, true)})})
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
+			if len(got) != 0 {
+				t.Fatalf("%q is desktop's operator but was refused: %v", operator, got)
+			}
+		})
+	}
+
+	// The comparison names the evaluator builds its operators from, which no document may write.
+	for _, operator := range []string{"starts", "ends", "greater", "greater_eq", "less", "less_eq"} {
+		t.Run("refuses "+operator, func(t *testing.T) {
+			node := graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, true)})})
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
+			want := []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("problems = %v, want %v", got, want)
+			}
+		})
+	}
+
+	known := map[string]bool{}
+	for _, operator := range desktop {
+		known[operator] = true
+	}
+	if len(workflowConditionOperators) != len(known) {
+		t.Fatalf("the evaluator's table has %d operators; desktop's parse has %d", len(workflowConditionOperators), len(known))
+	}
+	for operator := range workflowConditionOperators {
+		if !known[operator] {
+			t.Fatalf("the evaluator's table accepts %q, which desktop's parse does not", operator)
 		}
 	}
 }

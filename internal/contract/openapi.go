@@ -93,7 +93,7 @@ func Document() map[string]any {
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
-	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
+	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
 	// GitIdentity is the identity the caller's Agent runs commit as (identity-access git identity
 	// D1). version is 0 while isDefault is true: no identity is stated and the default applies.
 	s["GitIdentity"] = object(obj{"name": str(), "email": str(), "isDefault": boolean(), "version": number()}, "name", "email", "isDefault", "version")
@@ -108,9 +108,9 @@ func Document() map[string]any {
 		"historyAvailable": boolean(), "model": optional(object(obj{"connectionName": str(), "modelId": str(), "modelName": str()}, "connectionName", "modelId", "modelName")),
 	}, "id", "issueId", "issueNumber", "issueTitle", "projectId", "projectName", "agentPluginId", "status", "threadState", "createdAt", "startedAt", "completedAt", "historyAvailable", "model")
 	s["SessionHistory"] = object(obj{"source": enumeration("archive"), "records": array(obj{"type": "object", "additionalProperties": true}), "sizeBytes": number(), "sha256": str()}, "source", "records", "sizeBytes", "sha256")
+	s["SlotMapping"] = object(obj{"slotName": str(), "agentCli": str(), "connectionId": uuid(), "modelId": str(), "modelName": str(), "connectionName": str(), "available": boolean(), "unavailableReason": str(), "version": number(), "createdAt": timestamp(), "updatedAt": timestamp()}, "slotName", "agentCli", "connectionId", "modelId", "modelName", "connectionName", "available", "unavailableReason", "version", "createdAt", "updatedAt")
 	s["ThreadModel"] = object(obj{"connectionName": str(), "modelId": str(), "modelName": str()}, "connectionName", "modelId", "modelName")
 	s["Project"] = resource("id tenantId ownerUserId spaceId name repositoryUrl defaultBranch credentialRefId lifecycle version createdAt deletedAt", "credentialRefId deletedAt")
-	properties(s, "Project")["repositoryCredentialRefId"] = optional(uuid())
 	s["Workspace"] = resource("id tenantId ownerUserId projectId kind desiredState observedState runtimeGeneration version admissionOpen admissionEpoch createdAt deletedAt requestedRef baseCommitId creatorUserId creatorOperationId creatorEvidence", "deletedAt baseCommitId creatorUserId creatorOperationId")
 	// branchName is the retired linked-worktree branch; only Workspaces created before the Node
 	// clone flow have one.
@@ -132,11 +132,21 @@ func Document() map[string]any {
 	workflowRunProps := properties(s, "WorkflowRun")
 	workflowRunProps["status"] = enumeration("pending", "running", "awaiting_input", "succeeded", "failed", "cancelled")
 	workflowRunProps["input"] = obj{"type": "object", "additionalProperties": true, "description": "The kickoff input passed to the run's start node."}
-	workflowRunProps["nodeStates"] = obj{"type": "object", "additionalProperties": true, "description": "Per-node execution state keyed by node id: status, output, error, timestamps."}
+	workflowRunProps["nodeStates"] = obj{"type": "object", "additionalProperties": true, "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed."}
 	workflowRunProps["rounds"] = array(obj{"type": "object", "additionalProperties": true})
 	// definitionSnapshot lives only on a detail read (the history list trips without it);
 	// it is optional so one schema serves both list rows and the composed run page.
 	workflowRunProps["definitionSnapshot"] = optional(obj{"type": "object", "additionalProperties": true, "description": "The frozen graph document this run executed against, from the snapshot it captured."})
+	s["WorkflowRunModelBinding"] = object(obj{
+		"slot":           str(),
+		"connectionName": str(),
+		"modelId":        str(),
+		"modelName":      str(),
+		"revoked":        boolean(),
+	}, "slot", "connectionName", "modelId", "modelName", "revoked")
+	modelBindings := optional(array(ref("WorkflowRunModelBinding")))
+	modelBindings["description"] = "The frozen per-slot model bindings this run executes against, ordered by slot name. Present on a detail read. Each binding is frozen at run creation and used for the run's whole lifetime; only `revoked` can turn true (the owning connection's grant was revoked)."
+	workflowRunProps["modelBindings"] = modelBindings
 	s["IssueStatus"] = resource("id tenantId key name description category color icon isSystem position version createdAt updatedAt deletedAt", "deletedAt")
 	statusProps := properties(s, "IssueStatus")
 	statusProps["isSystem"] = boolean()
@@ -324,7 +334,6 @@ func Document() map[string]any {
 	ep["request"] = ref("EffectRequest")
 	ep["result"] = ref("EffectResult")
 	s["ControllerProject"] = resource("id tenantId ownerUserId spaceId name repositoryUrl defaultBranch credentialRefId lifecycle version createdAt deletedAt secretRef", "credentialRefId deletedAt secretRef")
-	properties(s, "ControllerProject")["repositoryCredentialRefId"] = optional(uuid())
 	s["ControllerWorkspace"] = resource("id tenantId ownerUserId projectId kind desiredState observedState runtimeGeneration version admissionOpen admissionEpoch createdAt deletedAt requestedRef baseCommitId creatorUserId creatorOperationId creatorEvidence", "deletedAt baseCommitId creatorUserId creatorOperationId")
 	properties(s, "ControllerWorkspace")["issueRunId"] = optional(uuid())
 	for _, name := range []string{"Workspace", "WorkspaceListItem", "ControllerWorkspace"} {
@@ -366,6 +375,7 @@ func Document() map[string]any {
 	}
 	cloneProps["executionId"], cloneProps["nodeId"], cloneProps["state"] = optional(str()), optional(str()), ref("CloneState")
 	s["CloneOperation"] = object(cloneProps, "operationId", "requestId", "repository", "branch", "executionId", "nodeId", "state", "createdAt", "updatedAt")
+	repositorySchemas(s)
 	paths := obj{}
 	for _, r := range router.Routes() {
 		path := r.Path
@@ -385,6 +395,9 @@ func Document() map[string]any {
 		description := description(r)
 		response, status := responseSchema(r)
 		responses := obj{status: obj{"description": "Successful command or resource response", "content": obj{"application/json": obj{"schema": response}}}}
+		if r.Method == "POST" && strings.HasSuffix(r.Path, "/repository/syncs") {
+			responses["200"] = responses[status]
+		}
 		for _, code := range []string{"400", "401", "403", "404", "409", "428", "500", "503"} {
 			responses[code] = obj{"description": errorDescription(code), "content": obj{"application/json": obj{"schema": ref("Error")}}}
 		}
@@ -394,7 +407,10 @@ func Document() map[string]any {
 		credentialWrite := r.Method == "PUT" && strings.HasPrefix(r.Path, "/api/v1/me/model-connections/") && strings.HasSuffix(r.Path, "/credential")
 		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite) && r.Path != "/api/v1/me/git-identity" {
 			keyScope := "Scoped to tenant and user."
-			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") {
+			// The personal routes are keyed on the verified user alone: a slot mapping is a
+			// (user_id, slot_name) row and a personal connection is the user's, so neither is scoped
+			// to a tenant and saying it is would describe a boundary the handler never checks.
+			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") || strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") {
 				keyScope = "Scoped to the verified user before tenant membership exists."
 			}
 			parameters = append(parameters, obj{"name": "Idempotency-Key", "in": "header", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": 200}, "description": keyScope + " Same key and canonical method/path/body returns the original response before version validation; changed request is 409."})
@@ -495,6 +511,10 @@ func tag(r router.Route) string {
 	switch {
 	case strings.HasPrefix(r.Path, "/internal/"):
 		return "internal"
+	case strings.Contains(r.Path, "/git-credentials"):
+		return "gitCredentials"
+	case strings.Contains(r.Path, "/projects/:pid/repository"):
+		return "repository"
 	case strings.HasPrefix(r.Path, "/api/v1/me"):
 		return "me"
 	case strings.Contains(r.Path, "/clones"):
@@ -524,13 +544,19 @@ func snapshotFormPath(path string) bool {
 }
 
 func isList(r router.Route) bool {
-	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath {
+	if isRepositoryRoute(r) {
+		return repositoryList(r)
+	}
+	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath || r.Path == "/api/v1/me/executor-slot-mappings" {
 		return r.Method == "GET"
 	}
 	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/clones"))
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
+	if isRepositoryRoute(r) {
+		return repositoryResponse(r)
+	}
 	if r.Path == router.SessionStatisticsPath {
 		return ref("SessionModelStatistics"), "200"
 	}
@@ -558,6 +584,12 @@ func responseSchema(r router.Route) (schema obj, status string) {
 			status = "201"
 		}
 		return object(obj{"resource": ref("ModelConnection")}, "resource"), status
+	}
+	if strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") {
+		if isList(r) {
+			return object(obj{"items": array(ref("SlotMapping")), "nextCursor": str()}, "items", "nextCursor"), "200"
+		}
+		return object(obj{"resource": ref("SlotMapping")}, "resource"), "200"
 	}
 	if r.Path == "/api/v1/me/git-identity" {
 		return ref("GitIdentity"), "200"
@@ -864,6 +896,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 }
 
 func optionalField(name string, r router.Route) bool {
+	if isRepositoryRoute(r) {
+		return repositoryOptional(name, r)
+	}
 	if strings.HasPrefix(r.Path, "/api/v1/me/model-") {
 		return name == "enabled"
 	}
@@ -896,6 +931,9 @@ func optionalField(name string, r router.Route) bool {
 }
 
 func inputSchema(name string, r router.Route) obj {
+	if schema, ok := repositoryInput(name); ok && isRepositoryRoute(r) {
+		return schema
+	}
 	switch name {
 	case "models":
 		return array(ref("ModelDefinition"))
@@ -958,6 +996,8 @@ func inputSchema(name string, r router.Route) obj {
 		return enumeration("unstarted", "started", "done", "closed")
 	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId":
 		return uuid()
+	case "projectId":
+		return obj{"type": "string", "format": "uuid", "description": "The Project the run's Workspace provisions in. Required: a run that names none is refused with 409 workflow_run_project_required, never persisted without one. Frozen at creation for the run's whole lifetime. Authorized against the caller's own collaboration space: an unknown, archived or foreign Project is 404."}
 	case "ids":
 		return array(uuid())
 	case "filter", "properties", "input", "values", "graph":
@@ -992,6 +1032,9 @@ func summary(r router.Route) string {
 }
 
 func description(r router.Route) string {
+	if isRepositoryRoute(r) {
+		return repositoryDescription(r)
+	}
 	if r.Path == router.SessionStatisticsPath {
 		return "Read-only active-member model statistics for an Agent run. Covers all recorded model-gateway HTTP attempts, independently of archive availability or request-page pagination. This is not a historical request backfill or billing ledger. Each metric exposes its own known/total coverage; absent values remain null, including a run with no observations. Input/cache semantics follow the source protocol; reasoning is an output subset. No query parameters accepted; private, no-store."
 	}
@@ -1012,6 +1055,9 @@ func description(r router.Route) string {
 	}
 	if r.Path == "/api/v1/me/model-default" {
 		return "Reads or selects the verified user's default connection and model. An unset default has empty connectionId/modelId and version 0; replacing a selection requires its current version. The connection must be owned, enabled and contain the selected model. OpenCode run creation requires a usable default and credential and rejects atomically with model_default_required, model_credential_required or model_connection_unavailable before the comment/run persists."
+	}
+	if strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") {
+		return "Personal executor-slot mappings of the verified user: slot name -> executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0)."
 	}
 	switch r.Path {
 	case "/api/v1/me/spaces":
@@ -1118,7 +1164,7 @@ func description(r router.Route) string {
 		base += "Requires matching resource version and no active project operation. Atomically closes new execution admission. Active tickets return 409 resource_in_use without changing admission. Unknown Node activity requires later proof and remains pending/blocked. main Workspace cannot be independently deleted. "
 	}
 	if strings.HasSuffix(r.Path, "/projects") && r.Method == "POST" {
-		base += "Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl allows HTTPS or SSH with no password/query/fragment. defaultBranch is required and must name a branch, not HEAD (Cloud never reads the remote repository); credentialRefId must belong to tenant and owner. Sandbox, Node and clone initialization is asynchronous. "
+		base += "Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl must be HTTPS with no user information, query or fragment; it becomes the Project's Binding together with defaultBranch, the one branch phase one synchronizes (required, a branch name, not HEAD). credentialRefId is optional (public repositories need none); a personal credential may be bound only by its owner and a team one only by an admin, and it must be stored, available and scoped to the repository. The same transaction records the first sync, which must succeed before any Workspace can clone. Sandbox, Node and clone initialization is asynchronous. "
 	}
 	if strings.HasSuffix(r.Path, "/workspaces") && r.Method == "POST" {
 		base += "Creates one isolated Workspace and Task display identity. title/baseRef required; baseRef becomes the Workspace's requestedRef, which its Node clones; HEAD means the Project's defaultBranch. "

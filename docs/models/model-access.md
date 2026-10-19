@@ -25,6 +25,8 @@
 - 修改使用当前 `version`，创建和删除使用按用户隔离的 `Idempotency-Key`。读取连接只返回 `credentialConfigured`，不返回 Key。
 - **默认模型**指向某个连接里的某个模型，是用户触发 OpenCode 运行时使用的模型。
 
+企业模式下，创建和修改连接（不含 Key 的写入路径）还要过[部署出网准入](../operations/deployment-egress.md#更新撤销与健康信息)：短事务里先检查身份、归属、版本和已完成的幂等记录，事务外做 DNS 与地址准入，写事务再核对当前权威状态。DNS 拒绝返回 `400 invalid_model_url`，不写新版本。已完成的合法重放、纯停用、删除和清 Key 不做这次准入。准入通过也不让之后的转发跳过当次出网检查，DNS 与外部 HTTP 都不放进持锁事务。
+
 ## 密钥的保管
 
 原始 API Key 只进入 model-gateway：
@@ -45,6 +47,8 @@
 - 发起者没有默认模型、没有配置 Key 或连接不可用时，整条评论、交互和运行一起回滚，分别返回 `409 model_default_required`、
   `model_credential_required`、`model_connection_unavailable`。其他 Agent 的行为不受影响。
 - 之后修改连接或默认模型，不会改变已经创建的运行。
+- 一次运行可以有多份绑定：工作流运行在创建事务里为图引用的**每个槽位**各冻结一份，每个节点的会话只取用它引用的那个槽位的绑定（见
+  [工作流](../workflows/workflows.md#执行器槽位)）。
 - 会话执行的输入只带一个不透明的 `modelBindingId`；临时令牌和上游 Key 都不进入执行输入或 Controller 的控制消息。
 - 登记会话派发时，Cloud 检查当前 Node 握手时声明了模型代理能力，没有这项能力的旧 Node 不能执行使用个人模型的会话
   （`409 model_proxy_required`）；签发模型授权时同样要求这项能力。启动期间确认 Node 缺少能力时的结算见
@@ -74,3 +78,4 @@ Git 凭据。
 - [个人模型 Thread 只由发起者追加，成员可读且管理员可结束](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261010-personal-model-initiator-controls-input.md)
 - [沙盒注入专用模型客户端证书，个人模型 Key 保留在平台代理](https://github.com/ora-space/specs/blob/main/decisions/cluster/sandbox-server/20261010-model-client-identity-replaces-shared-model-key-injection.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）
+- [模型转发与 Cloud 资产下载共用部署方出网白名单和显式解析](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261017-deployment-owned-egress-and-explicit-resolution.md)（approved）

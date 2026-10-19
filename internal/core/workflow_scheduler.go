@@ -96,6 +96,46 @@ func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 			_ = err
 		}
 	}
+	return s.redeclareWorkflowRunWorkspaceDeletes(ctx)
+}
+
+// redeclareWorkflowRunWorkspaceDeletes re-declares the Workspace deletion of every terminal run
+// still holding a live Workspace. finishWorkflowRunCleanup declares delete in the pass that
+// settles the run; a busy Project (another operation in flight) returns busy, so the declaration
+// waits for a later pass — this second scan is the retry. Idempotent: deleteWorkflowRunWorkspace
+// treats an already-declared or already-deleted Workspace as done.
+func (s *Store) redeclareWorkflowRunWorkspaceDeletes(ctx context.Context) error {
+	rows, err := s.Pool.QueryContext(ctx, `
+		SELECT r.id FROM workflow_runs r
+		JOIN workspaces w ON w.workflow_run_id=r.id
+		WHERE r.status IN ('failed','cancelled','succeeded') AND r.deleted_at IS NULL
+		  AND w.deleted_at IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.workspace_id=w.id AND o.kind='delete_workspace'
+		   AND o.state IN ('queued','running','retry_wait','blocked','succeeded'))
+		ORDER BY r.created_at, r.id LIMIT $1`, workflowAdvanceBatchSize)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := s.transact(ctx, func(t *transaction) Object {
+			finishWorkflowRunCleanup(t, id)
+			return Object{}
+		}); err != nil {
+			_ = err
+		}
+	}
 	return nil
 }
 
@@ -162,6 +202,55 @@ func readWorkflowGraph(graph Object) workflowGraphView {
 	return out
 }
 
+// workflowGraphCycle reports whether the graph contains a cycle, naming the source of the back edge the
+// walk found — a node that is on a cycle by construction — or "" when the graph is a DAG.
+//
+// It is a depth-first walk with three colors: a node still on the current path that is reached again
+// closes a cycle. The walk is deterministic — it roots at nodes in document order and follows edges in
+// document order — so the node it names is too. Two cheaper-looking tests are wrong here and are worth
+// naming so they are not reintroduced: peeling nodes with no incoming or no outgoing edge leaves the
+// remainder including nodes that are merely *between* two cycles, and unwinding the stack at a back
+// edge misses nodes on a cycle reached by a shortcut edge.
+//
+// Both the publish gate and the run's own advance read this one walk, so a graph Cloud refuses to
+// publish and a graph Cloud refuses to run are the same graph.
+func workflowGraphCycle(graph workflowGraphView) string {
+	const (
+		unvisited = 0
+		onPath    = 1
+		settled   = 2
+	)
+	state := map[string]int{}
+	cycleSource := ""
+	var walk func(id string)
+	walk = func(id string) {
+		state[id] = onPath
+		for _, edge := range graph.Edges {
+			if edge.S("source") != id {
+				continue
+			}
+			next := edge.S("target")
+			switch state[next] {
+			case onPath:
+				// A back edge: `next` is an ancestor on the current path, so the path from `next`
+				// back to `id` plus this edge is a cycle. The first one found wins.
+				if cycleSource == "" {
+					cycleSource = id
+				}
+			case unvisited:
+				walk(next)
+			}
+		}
+		state[id] = settled
+	}
+	for _, node := range graph.Nodes {
+		if state[node.ID] == unvisited {
+			walk(node.ID)
+		}
+	}
+	return cycleSource
+}
+
 // workflowNodeState is one node's committed execution state on the run row. The shape is the one the
 // run viewer already renders (the simulator writes the same keys): status is the shared run/node
 // vocabulary, output carries what the node produced, and an inactive state marks a node behind a
@@ -171,12 +260,23 @@ type workflowNodeState struct {
 	DisplayName string
 	StartedAt   string
 	FinishedAt  string
-	Output      Object
+	// Error is the node's failure reason, and only a failed node has one: a cancelled node was
+	// cancelled, not broken, and an idle or succeeded one has nothing to report. The run viewer
+	// renders it in its own Error section, which is why it is a field of the state rather than
+	// something the viewer has to dig out of Output — a node's Output is what it produced, and a
+	// failed node produced nothing.
+	Error  string
+	Output Object
 }
 
-// object renders the state in the shape the run viewer reads (and the simulator writes).
-func (s workflowNodeState) object() Object {
+// object renders the state in the shape the run viewer reads (and the simulator writes). The receiver
+// is a pointer because the state is large enough that copying it per render is waste, and its one
+// caller already holds it in a range variable.
+func (s *workflowNodeState) object() Object {
 	out := Object{"status": s.Status, "displayName": s.DisplayName, "startedAt": s.StartedAt, "finishedAt": s.FinishedAt}
+	if s.Error != "" {
+		out["error"] = s.Error
+	}
 	if s.Output != nil {
 		out["output"] = s.Output
 	}
@@ -199,6 +299,7 @@ func workflowStatesFromJSON(raw Object) map[string]workflowNodeState {
 			DisplayName: node.S("displayName"),
 			StartedAt:   node.S("startedAt"),
 			FinishedAt:  node.S("finishedAt"),
+			Error:       node.S("error"),
 		}
 		if output, ok := asWorkflowObject(node["output"]); ok {
 			state.Output = output
@@ -392,29 +493,54 @@ func advanceWorkflowRun(t *transaction, runID string) {
 	if graph.Start == "" {
 		// A snapshot predating the publish gate can lack a start node; there is no defined
 		// place to begin, so the run settles failed instead of hanging in running.
-		settleWorkflowRunStates(t, runID, version, "failed", "graph has no start node", nil)
+		finishWorkflowRun(t, runID, version, "failed", "graph has no start node", nil)
+		return
+	}
+	// A cyclic graph is not executable: the projection is a topological read of committed state, so a
+	// node on a cycle either waits forever for an upstream that waits for it, or — when the cycle is
+	// reachable from the start — goes round once and stops with the back edge silently dropped, which
+	// would let the run report success for a document whose author asked for a loop. The graph gate
+	// refuses to publish one; a snapshot frozen before that gate existed still reaches here, and
+	// neither outcome is honest for it. Nothing has run yet at this point, so the run settles failed
+	// with no node states — no node is recorded as having executed, which is the truth.
+	if workflowGraphCycle(graph) != "" {
+		finishWorkflowRun(t, runID, version, "failed", "graph has a cycle", nil)
 		return
 	}
 	states := workflowStatesFromJSON(run.O("nodeStates"))
+	// A committed running agent node settles from its session execution's terminal evidence before
+	// anything else runs: sessions serialize per run (one unregistered agent_session work item per
+	// run), and the next wave waits for the terminal commit. The pass returns after any outcome —
+	// a settled node lets the next tick execute its downstream wave.
+	if nodeID, running := workflowRunningAgentNode(states); running {
+		if _, cont := workflowAgentSessionOutcome(t, runID, version, nodeID, states); !cont {
+			return
+		}
+		// A settled session commits its terminal state and continues the pass; that commit bumped
+		// the row's version, so the wave it unblocks must CAS against the new one — a stale version
+		// would make the pass's final settle a silent no-op and leave the run in `running`.
+		version = workflowRunVersion(t, runID, version)
+	}
 	for {
 		projection := projectWorkflowNodes(graph, states)
+		// A failed node decides the run. Dispatching another ready node in the same wave would do
+		// real work for a run that is already terminal — for an agent that means provisioning a
+		// Workspace and waiting on a session — only to settle failed after the session ends. Stopping
+		// here lets the run settle in this pass and leaves the unrun siblings without a committed
+		// state, which is what "never executed" should look like.
+		if projection.hasFailure() {
+			break
+		}
 		node, ready := projection.readyNode()
 		if !ready {
 			break
 		}
 		if node.Kind == "agent" {
-			// Phase-1 boundary: agent execution through the control plane is the next step of
-			// the same decision. Failing the run here is the honest terminal state — the node
-			// never ran, so it is never recorded as succeeded, and the run names the gap.
-			states[node.ID] = workflowNodeState{
-				Status:      "failed",
-				DisplayName: workflowNodeDisplayName(node),
-				StartedAt:   nowRFC3339(),
-				FinishedAt:  nowRFC3339(),
-				Output:      Object{"reason": "agent_execution_not_wired"},
-			}
-			settleWorkflowRunStates(t, runID, version, "failed",
-				"agent node "+node.ID+" is not wired to execution yet", states)
+			// The session path: provision the Workspace, wait for a connected Node, build the
+			// spec from the frozen per-slot bindings, commit running and release the work item.
+			// The pass returns either way — a started session commits running, and the next tick
+			// settles it from terminal evidence.
+			startWorkflowAgentSession(t, run, node, version, states)
 			return
 		}
 		states[node.ID] = executeWorkflowNode(node, run.O("input"), states)
@@ -426,10 +552,14 @@ func advanceWorkflowRun(t *transaction, runID string) {
 	// succeeded otherwise; the failure check reads committed state, never the pass's own reasoning.
 	states = workflowInactiveStates(graph, states)
 	if projectWorkflowNodes(graph, states).hasFailure() {
-		settleWorkflowRunStates(t, runID, version, "failed", workflowRunFailureReason(graph, states), states)
+		finishWorkflowRun(t, runID, version, "failed", workflowRunFailureReason(graph, states), states)
 		return
 	}
-	settleWorkflowRunStates(t, runID, version, "succeeded", "", states)
+	if workflowAnyCancelled(states) {
+		finishWorkflowRun(t, runID, version, "cancelled", "", states)
+		return
+	}
+	finishWorkflowRun(t, runID, version, "succeeded", "", states)
 }
 
 // workflowInactiveStates adds a committed inactive state for every node the projection resolved as
@@ -452,24 +582,52 @@ func workflowInactiveStates(graph workflowGraphView, states map[string]workflowN
 // compare-and-swap that makes a late or duplicate pass a no-op (invariant 3). Zero affected rows
 // (a concurrent pass committed first) discards this pass's local view; the next tick recomputes
 // from the committed row.
+//
+// finished_at is the run's terminal timestamp, so only a terminal status writes it. This function is
+// also how a pass reports progress — committing a node `running`, or settling one and letting the
+// next wave start — and those passes used to stamp finished_at too, so a run that was still
+// executing carried the moment it "finished". The projection is what a client reads: `finishedAt`
+// non-empty is how it renders a run as over, so the field has to mean what it says. COALESCE keeps
+// the first terminal write, so a later pass re-declaring a terminal status cannot move the moment
+// the run actually stopped. started_at is not this function's business: it is set once, where the
+// run first leaves `pending`.
 func settleWorkflowRunStates(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) {
+	// The statuses a run never leaves. `pending`, `running` and `awaiting_input` are the others the
+	// column admits, and all three are states a run is still in.
+	terminal := status == "succeeded" || status == "failed" || status == "cancelled"
 	if states == nil {
-		t.exec(`UPDATE workflow_runs SET status=$2, error=$3, finished_at=now(), version=version+1, updated_at=now()
-			WHERE id=$1 AND version=$4 AND deleted_at IS NULL`, runID, status, runErr, version)
+		t.exec(`UPDATE workflow_runs SET status=$2, error=$3,
+			finished_at=CASE WHEN $5 THEN COALESCE(finished_at,now()) ELSE finished_at END,
+			version=version+1, updated_at=now()
+			WHERE id=$1 AND version=$4 AND deleted_at IS NULL`, runID, status, runErr, version, terminal)
 		return
 	}
 	encoded := Object{}
 	for id, state := range states {
 		encoded[id] = state.object()
 	}
-	t.exec(`UPDATE workflow_runs SET node_states=$2, status=$3, error=$4, finished_at=now(), version=version+1, updated_at=now()
-		WHERE id=$1 AND version=$5 AND deleted_at IS NULL`, runID, jsonText(encoded), status, runErr, version)
+	t.exec(`UPDATE workflow_runs SET node_states=$2, status=$3, error=$4,
+		finished_at=CASE WHEN $6 THEN COALESCE(finished_at,now()) ELSE finished_at END,
+		version=version+1, updated_at=now()
+		WHERE id=$1 AND version=$5 AND deleted_at IS NULL`, runID, jsonText(encoded), status, runErr, version, terminal)
+}
+
+// workflowRunVersion re-reads the row's version after a mid-pass settle bumped it: one pass commits
+// more than once (a settled session, then the wave it unblocks), and every later commit CASes
+// against the version the earlier one left behind. A row that vanished keeps the caller's version,
+// so the following settle fails its CAS and the pass writes nothing.
+func workflowRunVersion(t *transaction, runID string, fallback int64) int64 {
+	if row := t.one("SELECT version FROM workflow_runs WHERE id=$1", runID); row != nil {
+		return row.N("version")
+	}
+	return fallback
 }
 
 // executeWorkflowNode commits one ready non-agent node's result from committed state. start reports
-// what the run was kicked off with; condition evaluates its cases against prior node outputs and
-// commits the selected branch (first match wins, else when nothing matched); output is a terminal
-// marker whose produce stays in the node state for the run viewer (D7: 成果交付延后).
+// the variable roots desktop's Start node exposes; condition evaluates its cases against prior node
+// outputs and commits the selected branch (first match wins, else when nothing matched, and a failure
+// when a rule cannot be evaluated); output is a terminal marker whose produce stays in the node state
+// for the run viewer (D7: 成果交付延后).
 func executeWorkflowNode(node workflowNodeView, input Object, states map[string]workflowNodeState) workflowNodeState {
 	now := nowRFC3339()
 	state := workflowNodeState{
@@ -480,18 +638,55 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 	}
 	switch node.Kind {
 	case "start":
-		state.Output = Object{"input": input}
+		state.Output = workflowStartOutput(node, input)
 	case "condition":
-		state.Output = Object{"selectedBranch": evaluateWorkflowCondition(node, states)}
+		branch, err := evaluateWorkflowCondition(node, states)
+		if err != nil {
+			// A condition that cannot evaluate the document it was given fails the node and the run,
+			// exactly as desktop's ConditionRuntime does. Falling through to else would hide a
+			// malformed or unassigned-variable reference behind a branch the author never chose.
+			state.Status = "failed"
+			state.Error = err.Error()
+			state.Output = Object{"reason": err.Error()}
+			return state
+		}
+		state.Output = Object{"selectedBranch": branch}
 	case "output":
 		state.Output = Object{}
 	default:
 		// Unreachable: the ready pass only yields executable kinds, and the agent case returned
 		// earlier. A future kind that reaches here must not be recorded as success.
 		state.Status = "failed"
+		state.Error = "unsupported_node_kind"
 		state.Output = Object{"reason": "unsupported_node_kind"}
 	}
 	return state
+}
+
+// workflowStartOutput is the Start node's variable pool in the shape desktop declares it: `input` is
+// the kickoff prompt (the reserved free-text selector), and every declared input variable is a root
+// named by the variable itself. Before circus#210 Cloud nested the whole run input under `input`, so
+// `[start, name]` resolved to nothing and `[start, input]` answered for the entire form — the same
+// document meant different things on the two sides.
+//
+// The run form's values are keyed by variable name, so flattening them is exact. A key literally
+// named `input` is dropped: desktop reserves that root, and letting a user variable shadow the
+// kickoff selector would make the same selector mean a run value on Cloud and a prompt on desktop.
+func workflowStartOutput(node workflowNodeView, input Object) Object {
+	output := make(Object, len(input)+1)
+	for key, value := range input {
+		if key == "input" {
+			continue
+		}
+		output[key] = value
+	}
+	// Cloud does not persist the per-run prompt override, so the authored prompt is the only kickoff
+	// text available to the variable pool. The launch field still shows that same default. The text is
+	// used verbatim, whitespace included, because desktop's start.input is the kickoff prompt as the
+	// author wrote it; trimming here would make the same selector compare differently on the two
+	// sides.
+	output["input"] = node.Data.S("input")
+	return output
 }
 
 // workflowNodeDisplayName is the label the run viewer shows: the author's title, or the node kind

@@ -95,6 +95,8 @@ type Store struct {
 	// WorkflowAssets downloads the pinned package of a workflow plugin for asset import. Nil
 	// keeps the import loop idle, so a control-plane-only deployment never leaves the cluster.
 	WorkflowAssets WorkflowAssetSource
+	// ModelEgress is the immutable deployment admission policy for personal connection writes.
+	ModelEgress ModelEgress
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error
@@ -166,6 +168,15 @@ type Store struct {
 	// Signals carries at-most-once work hints to the lease-holding Controller's Watch stream;
 	// clone requests stay durable in PostgreSQL whether or not a hint is delivered.
 	Signals *ControlHub
+
+	// GitSubmissions signs browser submission grants for the Credential Store; nil means the
+	// deployment has no Credential Store and creating or rotating a credential answers 503.
+	GitSubmissions *GitCredentialSubmissions
+	// GitCredentialStore is the Credential Store's management interface (metadata and revoke).
+	GitCredentialStore GitCredentialStore
+	// GitRefs is the Git Server ref query, used to validate publish sources and list Workspace
+	// branches. Repository Operations themselves are driven by the repository worker.
+	GitRefs GitRefReader
 }
 
 // WorkflowRunSimulator produces the execution trace for one workflow run. Cloud has no
@@ -277,6 +288,9 @@ func (t *transaction) list(q string, args ...any) []Object {
 		// and are filtered out of public lists, so clients never see this column.
 		if o["issueRunId"] == nil {
 			delete(o, "issueRunId")
+		}
+		if o["workflowRunId"] == nil {
+			delete(o, "workflowRunId")
 		}
 		out = append(out, o)
 	}
@@ -573,17 +587,6 @@ func (s *Store) RegisterIdentity(ctx context.Context, tid, source, subject, name
 	})
 }
 
-// ConfigureCredential is deliberately a deployment-only management path, never a public secret API.
-func (s *Store) ConfigureCredential(ctx context.Context, tid, owner, ref string) (Object, error) {
-	return s.transact(ctx, func(t *transaction) Object {
-		membership(t, tid, owner, false)
-		require(strings.TrimSpace(ref) != "" && len(ref) <= 1024, 400, "invalid_secret_ref")
-		id := newID()
-		t.exec("INSERT INTO credential_refs(id,tenant_id,owner_user_id,purpose,secret_ref) VALUES($1,$2,$3,'git',$4)", id, tid, owner, ref)
-		return Object{"id": id, "tenantId": tid, "ownerUserId": owner, "purpose": "git"}
-	})
-}
-
 func membership(t *transaction, tid, uid string, admin bool) Object {
 	require(validID(tid) && validID(uid), 404, "not_found")
 	m := t.one("SELECT m.* FROM tenant_memberships m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1 AND m.user_id=$2 AND m.status='active' AND t.status='active' AND t.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL", tid, uid)
@@ -602,7 +605,7 @@ func project(t *transaction, tid, uid, pid string) Object {
 // workspace loads authorized runtime content. Safe summaries use runtimeOverview instead.
 func workspace(t *transaction, tid, uid, wid string, admin bool) Object {
 	require(validID(wid), 404, "not_found")
-	w := t.one("SELECT * FROM workspaces WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL AND issue_run_id IS NULL", wid, tid)
+	w := t.one("SELECT * FROM workspaces WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL AND issue_run_id IS NULL AND workflow_run_id IS NULL", wid, tid)
 	require(w != nil, 404, "not_found")
 	require(runtimeUsable(t, w, uid), 403, "runtime_use_forbidden")
 	if admin {

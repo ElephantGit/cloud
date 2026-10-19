@@ -36,6 +36,7 @@
 **仓库**
 
 - [Git Server 与 Project 仓库](repositories/git-server.md)：仓库 Binding 与 Operation、监听、授权、ref 规则
+- [外部 Git 线](repositories/external-git.md)：Repo Executor、Credential Store、同步与显式发布、凭据生命周期、授权与失败收敛
 
 **协作**
 

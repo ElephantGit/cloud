@@ -28,9 +28,12 @@ side, then the Git Server's listeners, identities and authorization rules.
   to `active`, the same transaction gives back the cancelled sync; cancelled publishes are not
   restored and must be started again by the user.
 
-The Repo Executor that performs repository Operations is not in this repository. Cloud records the
-Operations and authorizes Git access by Operation state; today a Workspace's `clone` step still clones
-directly from the external repository URL.
+The Repo Executor that performs repository Operations is this repository's `cmd/repo-executor`; it
+receives Git access by Operation state, a sync writes only this Binding's snapshot prefix and
+tracking ref, and a publish only reads its source. The whole line's sync, publish, credential and
+settlement rules are in [The external Git line](external-git.en.md). A Workspace's `clone` step still
+clones directly from the external repository URL: public repositories clone anonymously, and a
+Project with a credential refuses new remote work until the Node-side credential provider exists.
 
 ## Listeners
 
@@ -77,7 +80,7 @@ deletion starts must still be able to settle):
 
 | Operation | Grant |
 |---|---|
-| `repository_sync` | Create snapshot refs under this Binding's snapshot prefix |
+| `repository_sync` | Create snapshot refs under this Binding's snapshot prefix and move this Binding's tracking ref from the grant's expected old value to the new commit |
 | `repository_publish` | Read-only; a publish only reads its source from the Project repository |
 
 **Outcomes.** Every denial is the same `403`, a missing repository included, so a sandbox cannot probe
@@ -101,8 +104,9 @@ push already inside pre-receive. A long fetch is not re-authorized mid-transfer.
 - `pre-receive` resolves the same grant **again** before any ref is written and checks every ref
   against its rule. No ref can be deleted and no ref outside the table can be written; if any single
   update is not accepted, the whole push is refused.
-- Today sandbox executions only produce the delivery rule and sync Operations only the snapshot prefix;
-  the sources of grants for workspace branches and tracking refs are not wired in yet.
+- Sandbox executions only produce the delivery rule; an external-line sync produces the snapshot
+  prefix and this Binding's tracking ref. The source of grants for workspace branches is not wired in
+  yet.
 - Repository policy and the hook path are applied through `GIT_CONFIG_*` environment variables on every
   git process rather than written into the repository, so neither a restart nor an old repository can
   weaken them. Both repository listeners refuse ref deletion; the repository listener also refuses
@@ -120,10 +124,11 @@ The ref query listener is open only to Cloud's fixed identity and is read-only:
 - `GET ...?prefix=<prefix>`: the refs and commits inside one namespace instance (one delivery, all of one
   Binding's refs or its snapshot or tracking refs, one Workspace).
 
-Using delivery refs as the basis for registering Revisions is still under decision (see the proposed ADR
-below). Revisions are still verified and registered from
-[bundles in object storage](../agent-runs/revisions.en.md), and the Cloud server does not call the ref
-query yet.
+Cloud calls the ref query in three places: after a sync reports `applied` to verify the snapshot and
+tracking refs, before creating a publish to confirm the source ref, and when listing a Workspace's
+collaboration branches as publish sources. Using delivery refs as the basis for registering Revisions
+is still under decision (see the proposed ADR below); Revisions are still verified and registered
+from [bundles in object storage](../agent-runs/revisions.en.md).
 
 ## Operations
 

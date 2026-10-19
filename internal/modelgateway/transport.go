@@ -76,7 +76,7 @@ func (d *secureDialer) dial(ctx context.Context, network, address string) (net.C
 // UpstreamConfig fixes deployment-owned DNS and exact development fixture exemptions.
 type UpstreamConfig struct {
 	DevelopmentHosts []string
-	DNS              DNSConfig
+	DNS              egress.DNSConfig
 	Policy           *egress.Policy
 }
 
@@ -93,10 +93,10 @@ func NewUpstreamClient(config UpstreamConfig) (*http.Client, error) {
 		}
 		allowed[strings.ToLower(host)] = struct{}{}
 	}
-	var resolver *httpsResolver
+	var resolver *egress.DNSResolver
 	if !config.Policy.Enterprise() {
 		var err error
-		resolver, err = newHTTPSResolver(config.DNS)
+		resolver, err = egress.NewDNSResolver(config.DNS)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +108,7 @@ func NewUpstreamClient(config UpstreamConfig) (*http.Client, error) {
 
 type upstreamTransport struct {
 	*http.Transport
-	resolver *httpsResolver
+	resolver *egress.DNSResolver
 	policy   *egress.Policy
 }
 
@@ -116,7 +116,7 @@ type upstreamTransport struct {
 func (t *upstreamTransport) CloseIdleConnections() {
 	t.Transport.CloseIdleConnections()
 	if t.resolver != nil {
-		t.resolver.client.CloseIdleConnections()
+		t.resolver.CloseIdleConnections()
 	}
 }
 

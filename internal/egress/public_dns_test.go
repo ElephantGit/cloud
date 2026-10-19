@@ -1,4 +1,4 @@
-package modelgateway
+package egress
 
 import (
 	"context"
@@ -13,15 +13,14 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
-func TestHTTPSResolverObtainsBothFamiliesAndRejectsMixedAnswersBeforeDial(t *testing.T) {
+func TestDNSResolverObtainsBothFamiliesAndRetainsEveryAnswer(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		ipv6 string
-		want error
 	}{
-		{"public", "2606:4700:4700::1111", nil},
-		{"mixed-private", "fd00::1", endpointForbidden},
-		{"mixed-benchmark", "2001:2::b", endpointForbidden},
+		{"public", "2606:4700:4700::1111"},
+		{"private", "fd00::1"},
+		{"benchmark", "2001:2::b"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			questions := make(chan dnsmessage.Type, 8)
@@ -51,7 +50,7 @@ func TestHTTPSResolverObtainsBothFamiliesAndRejectsMixedAnswersBeforeDial(t *tes
 				_, _ = w.Write(packed)
 			}))
 			t.Cleanup(server.Close)
-			resolver := &httpsResolver{endpoint: server.URL, client: server.Client()}
+			resolver := &DNSResolver{endpoint: server.URL, client: server.Client()}
 			addresses, err := resolver.LookupNetIP(context.Background(), "ip", "models.example.invalid")
 			want := []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr(test.ipv6)}
 			if err != nil || !reflect.DeepEqual(addresses, want) {
@@ -60,18 +59,11 @@ func TestHTTPSResolverObtainsBothFamiliesAndRejectsMixedAnswersBeforeDial(t *tes
 			if got := []dnsmessage.Type{<-questions, <-questions}; !reflect.DeepEqual(got, []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA}) {
 				t.Fatal("resolver did not query both address families")
 			}
-			if test.want != nil {
-				d := secureDialer{resolver: resolver}
-				_, err := d.dial(context.Background(), "tcp", "models.example.invalid:443")
-				if !errors.Is(err, test.want) {
-					t.Fatalf("mixed DNS was not rejected before dialing: %v", err)
-				}
-			}
 		})
 	}
 }
 
-func TestHTTPSResolverFailsClosedWithoutSystemFallback(t *testing.T) {
+func TestDNSResolverFailsClosedWithoutSystemFallback(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		serve func(http.ResponseWriter, *http.Request)
@@ -89,16 +81,16 @@ func TestHTTPSResolverFailsClosedWithoutSystemFallback(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(test.serve))
 			t.Cleanup(server.Close)
 			client := server.Client()
-			client.CheckRedirect = func(*http.Request, []*http.Request) error { return endpointResolutionFailed }
-			resolver := &httpsResolver{endpoint: server.URL, client: client}
-			if _, err := resolver.LookupNetIP(context.Background(), "ip", "localhost"); !errors.Is(err, endpointResolutionFailed) {
-				t.Fatalf("failed trusted lookup fell back to localhost: %v", err)
+			client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrResolution }
+			resolver := &DNSResolver{endpoint: server.URL, client: client}
+			if _, err := resolver.LookupNetIP(context.Background(), "ip", "localhost"); !errors.Is(err, ErrResolution) {
+				t.Fatalf("failed trusted lookup fell back to the system resolver: %v", err)
 			}
 		})
 	}
 }
 
-func TestHTTPSResolverConfigurationCannotBootstrapThroughPrivateDNS(t *testing.T) {
+func TestDNSResolverConfigurationCannotBootstrapThroughPrivateDNS(t *testing.T) {
 	for _, config := range []DNSConfig{
 		{HTTPSURL: "http://dns.example.invalid/query", BootstrapIPs: []string{"1.1.1.1"}},
 		{HTTPSURL: "https://dns.example.invalid/query", BootstrapIPs: []string{"127.0.0.1"}},
@@ -106,20 +98,30 @@ func TestHTTPSResolverConfigurationCannotBootstrapThroughPrivateDNS(t *testing.T
 		{HTTPSURL: "https://dns.example.invalid/query", BootstrapIPs: []string{"dns.example.invalid"}},
 		{HTTPSURL: "https://dns.example.invalid/query"},
 	} {
-		if _, err := newHTTPSResolver(config); err == nil {
+		if _, err := NewDNSResolver(config); err == nil {
 			t.Fatal("unsafe DNS bootstrap accepted")
 		}
 	}
-	resolver, err := newHTTPSResolver(DNSConfig{HTTPSURL: "https://dns.example.invalid/query", BootstrapIPs: []string{"1.1.1.1"}})
+	resolver, err := NewDNSResolver(DNSConfig{HTTPSURL: "https://dns.example.invalid/query", BootstrapIPs: []string{"1.1.1.1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(resolver.client.CloseIdleConnections)
+	t.Cleanup(resolver.CloseIdleConnections)
 	transport := resolver.client.Transport.(*http.Transport)
 	if transport.Proxy != nil {
 		t.Fatal("DNS can use an environmental proxy")
 	}
-	if _, err := transport.DialContext(context.Background(), "tcp", "other.example.invalid:443"); !errors.Is(err, endpointResolutionFailed) {
+	if _, err := transport.DialContext(context.Background(), "tcp", "other.example.invalid:443"); !errors.Is(err, ErrResolution) {
 		t.Fatal("DNS transport dialed an undeclared target")
+	}
+}
+
+func TestDeploymentDNSConfigReturnsMutableCopyOfDefaults(t *testing.T) {
+	t.Setenv("MODEL_GATEWAY_DNS_HTTPS_URL", "")
+	t.Setenv("MODEL_GATEWAY_DNS_BOOTSTRAP_IPS", "")
+	first := DeploymentDNSConfig()
+	first.BootstrapIPs[0] = "203.0.113.1"
+	if again := DeploymentDNSConfig(); again.BootstrapIPs[0] != "1.1.1.1" {
+		t.Fatal("deployment DNS configuration shares mutable default state")
 	}
 }

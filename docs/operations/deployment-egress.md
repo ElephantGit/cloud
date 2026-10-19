@@ -2,10 +2,11 @@
 
 [English](deployment-egress.en.md) | 中文
 
-Cloud 的个人模型连接保存门禁、工作流资产 HTTPS 下载和 model-gateway 转发读取同一份包外
+Cloud 的个人模型连接保存门禁、工作流资产 HTTPS 下载、model-gateway 转发和 Repo Executor 的外部 Git 访问读取同一份包外
 `deployment-egress.json`。Cloud server 与 model-gateway 使用相同的
 `-deployment-egress /absolute/path/deployment-egress.json` 参数，或相同的 `ORA_DEPLOYMENT_EGRESS_FILE`
-环境变量；参数优先。文件只在启动时读取，必须只读挂载，不可由用户、插件或个人连接 API 修改。不配置路径时保持公网模式。
+环境变量；参数优先。Repo Executor 只读环境变量：`REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE` 优先，否则用
+`ORA_DEPLOYMENT_EGRESS_FILE`，路径必须是绝对路径。文件只在启动时读取，必须只读挂载，不可由用户、插件或个人连接 API 修改。不配置路径时保持公网模式。
 策略形状与拒绝规则见
 [模型转发与 Cloud 资产下载共用部署方出网白名单和显式解析](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261017-deployment-owned-egress-and-explicit-resolution.md)（approved）。
 
@@ -46,8 +47,8 @@ Node/Workspace 网络池，以及宿主接口、网桥和网关的双栈地址�
 
 ## 公网模式与解析一致性
 
-显式公网文件为 `{"schemaVersion":1,"mode":"public"}`，不接受 enterprise 专用字段。Cloud 和 model-gateway 都读取
-`MODEL_GATEWAY_DNS_HTTPS_URL` 和 `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`（逗号分隔的公网数字地址）。两个进程必须拿到相同的值。未设置时两者采用
+显式公网文件为 `{"schemaVersion":1,"mode":"public"}`，不接受 enterprise 专用字段。Cloud、model-gateway 和 Repo Executor 都读取
+`MODEL_GATEWAY_DNS_HTTPS_URL` 和 `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`（逗号分隔的公网数字地址）。三个进程必须拿到相同的值。未设置时三者采用
 Cloudflare DoH 默认值 `https://cloudflare-dns.com/dns-query` 与 `1.1.1.1,1.0.0.1`。企业模式忽略这两项。
 
 所有新业务连接都重新解析并验证全部地址，再拨数字地址，并按规范化后的原域名校验 TLS。禁用环境 HTTP/SOCKS 代理和重定向。企业模式的业务传输不尝试
@@ -57,16 +58,17 @@ HTTP/2。仅企业模式设置 30 分钟连接存活上限，到期会关闭活�
 
 启动配置错误指出字段路径及原因，例如 `targets[1].allowedCidrs: empty`，不输出字段值、地址或配置原文；未知字段名也不回显，避免把任意输入当作诊断内容。
 
-更换配置时先停止 Cloud server 和全部 model-gateway，确认旧进程退出，再替换共同文件并启动。仅编辑文件不改变已经加载的快照；加载失败不会自动恢复旧文件或切回公网模式。回滚也是显式选择旧文件并执行同样的停启流程。进程退出会终止进行中的模型流和资产请求。
+更换配置时先停止 Cloud server、全部 model-gateway 和全部 Repo Executor，确认旧进程退出，再替换共同文件并启动。仅编辑文件不改变已经加载的快照；加载失败不会自动恢复旧文件或切回公网模式，Repo Executor 加载失败会拒绝启动。回滚也是显式选择旧文件并执行同样的停启流程。进程退出会终止进行中的模型流、资产请求和外部 Git 任务。
 
-Cloud server 的 `GET /healthz`，以及 model-gateway **凭据监听**上的 `GET /healthz`，响应头为 `X-Ora-Egress-Schema: 1` 与
+Cloud server 的 `GET /healthz`、model-gateway **凭据监听**上的 `GET /healthz`，以及 Repo Executor **健康监听**（`REPO_EXECUTOR_HEALTH_ADDR`，默认 `:8084`，明文，只在部署网络内）上的 `GET /healthz`，响应头为 `X-Ora-Egress-Schema: 1` 与
 `X-Ora-Egress-Digest`（SHA-256）。摘要涵盖规范化策略；公网模式另包含实际 DoH 配置，不包含 Key，也不返回策略正文。`model-gateway -healthcheck`
-不报告这两项。部署入口应同时检查两端健康状态及摘要是否一致；摘要一致不替代每次实际出网的独立校验。
+不报告这两项。部署入口应同时检查这些健康状态及摘要是否一致；摘要一致不替代每次实际出网的独立校验。
 
 企业模式下，创建或修改个人模型连接会在短事务中检查身份、归属、版本和已完成的幂等记录，事务外完成 DNS 与地址准入，再在写事务中重新检查当前权威状态。
 DNS 拒绝返回 `400 invalid_model_url`，不写新连接版本。已完成的合法幂等重放、纯停用、删除和清 Key 不依赖这次准入。保存通过也不让之后的转发跳过当次出网检查。
 
 固定内部对象存储的 object-key 取包继续走部署客户端，不能当作被拒 HTTPS 的回退。此策略不覆盖 Node 插件安装、marketplace Git 同步或身份认证。
 
-部署工具可先运行 `/app/model-gateway -check-egress -deployment-egress <file>`。该入口使用实际服务的解析器和公网 DNS 环境配置，只向标准输出打印
-`schemaVersion` 与 `digest` 的 JSON，不查询 DNS、不连接数据库、不加载凭据、不监听端口。无效配置以非零状态退出。应用后再与两端 healthz 的摘要比较。
+部署工具可先运行 `/app/model-gateway -check-egress -deployment-egress <file>` 或
+`/app/repo-executor -check-egress -deployment-egress <file>`。该入口使用实际服务的解析器和公网 DNS 环境配置，只向标准输出打印
+`schemaVersion` 与 `digest` 的 JSON，不查询 DNS、不连接数据库、不加载凭据、不监听端口。无效配置以非零状态退出。应用后再与各 healthz 的摘要比较。

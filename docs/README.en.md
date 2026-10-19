@@ -38,6 +38,7 @@ package live in that directory's `README.md`; the authoritative source for busin
 **Repositories**
 
 - [Git Server and Project repositories](repositories/git-server.en.md): repository Bindings and Operations, listeners, authorization, ref rules
+- [The external Git line](repositories/external-git.en.md): Repo Executor, Credential Store, sync and explicit publish, the credential lifecycle, authorization and failure convergence
 
 **Collaboration**
 

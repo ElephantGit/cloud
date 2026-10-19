@@ -1,0 +1,97 @@
+package core
+
+import "strings"
+
+// Condition expected-value templates, ported from desktop's engine/variable_template.rs and
+// engine/condition.rs. A rule's expected value may reference the run's variable pool, and the form
+// of the reference decides the result type: a value that is only `{{#node.var#}}` keeps the bound
+// JSON type, while a template mixed with literal text always renders a string. Resolution is eager,
+// so an unset variable or a malformed placeholder fails the condition instead of comparing text that
+// was never expanded.
+
+// resolveWorkflowExpected expands a template expected value. The bool reports whether the rule
+// carried a `value` at all; explicit null is a value desktop compares against.
+func resolveWorkflowExpected(rule Object, states map[string]workflowNodeState) (expected any, hasExpected bool, err error) {
+	raw, present := rule["value"]
+	if !present {
+		return nil, false, nil
+	}
+	text, isText := raw.(string)
+	if !isText || !strings.Contains(text, "{{#") {
+		return raw, true, nil
+	}
+	if selector, ok := exclusiveWorkflowTemplate(text); ok {
+		value, assigned, err := resolveWorkflowSelector(selector, states)
+		if err != nil {
+			return nil, false, err
+		}
+		if !assigned {
+			return nil, false, workflowConditionFailure("condition_variable_unset",
+				"condition variable %s has not been assigned yet", selector.qualified())
+		}
+		return value, true, nil
+	}
+	rendered, err := renderWorkflowTemplate(text, states)
+	if err != nil {
+		return nil, false, err
+	}
+	return rendered, true, nil
+}
+
+// exclusiveWorkflowTemplate reads a string that is exactly one `{{#selector#}}` placeholder. It
+// returns false for anything else — including a malformed one, which the mixed renderer then reports
+// with the same selector diagnosis desktop's template renderer gives.
+func exclusiveWorkflowTemplate(text string) (workflowSelector, bool) {
+	trimmed := strings.TrimSpace(text)
+	inner, ok := strings.CutPrefix(trimmed, "{{#")
+	if !ok {
+		return workflowSelector{}, false
+	}
+	inner, ok = strings.CutSuffix(inner, "#}}")
+	if !ok || strings.Contains(inner, "{{#") || strings.Contains(inner, "#}}") {
+		return workflowSelector{}, false
+	}
+	return buildWorkflowSelector(strings.Split(inner, "."))
+}
+
+// renderWorkflowTemplate renders every placeholder in a mixed template: strings verbatim, every
+// other value as JSON. An unterminated placeholder or an invalid selector is an error, never a
+// silent blank, matching desktop's render_variable_template.
+func renderWorkflowTemplate(text string, states map[string]workflowNodeState) (string, error) {
+	var rendered strings.Builder
+	rest := text
+	for {
+		open := strings.Index(rest, "{{#")
+		if open < 0 {
+			rendered.WriteString(rest)
+			return rendered.String(), nil
+		}
+		rendered.WriteString(rest[:open])
+		afterOpen := rest[open+len("{{#"):]
+		closeAt := strings.Index(afterOpen, "#}}")
+		if closeAt < 0 {
+			return "", workflowConditionFailure("condition_invalid_template",
+				"condition template has an unterminated variable reference")
+		}
+		selectorText := afterOpen[:closeAt]
+		selector, ok := buildWorkflowSelector(strings.Split(selectorText, "."))
+		if !ok {
+			return "", workflowConditionFailure("condition_invalid_template",
+				"condition template selector %s is not a node id and root variable", selectorText)
+		}
+		value, assigned, err := resolveWorkflowSelector(selector, states)
+		if err != nil {
+			return "", err
+		}
+		if !assigned {
+			return "", workflowConditionFailure("condition_variable_unset",
+				"condition variable %s has not been assigned yet", selector.qualified())
+		}
+		if text, ok := value.(string); ok {
+			rendered.WriteString(text)
+		} else {
+			rendered.WriteString(canonicalJSON(value))
+		}
+		rest = afterOpen[closeAt+len("#}}"):]
+	}
+}

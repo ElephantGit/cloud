@@ -9,6 +9,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -413,14 +414,25 @@ func TestWorkflowAdvanceConditionNotEmptyOnEmptyRunInput(t *testing.T) {
 	}
 }
 
-// not_contains must not match an absent variable, and the run has to prove it end to end: the
-// selector names a path the start node never produced, and the case is written with not_contains, the
-// one negated comparator whose absence handling is not simply the inner verdict flipped.
+// A comparator on an absent variable fails the node and the run, as desktop's ConditionRuntime does.
+// not_contains is the case that used to be special-cased: #67 made it answer false so its negated
+// form would agree with not_equals, but desktop raises UnsetVariable for both. Parity means the run
+// says which selector was never assigned instead of quietly taking else.
 func TestWorkflowAdvanceConditionNotContainsOnAbsentVariable(t *testing.T) {
 	store := dispatcherDB(t)
 	runID := wfConditionScene(t, store, "absent", []any{"s", "never_written"}, "not_contains")
 
-	if branch := wfSelectedBranch(t, store, runID); branch != workflowBranchElse {
-		t.Fatalf("condition selected %q; want else — not_contains matched an absent variable", branch)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	if status != "failed" {
+		t.Fatalf("run status = %q; want failed", status)
+	}
+	if !strings.Contains(runErr, "s.never_written") || !strings.Contains(runErr, "has not been assigned") {
+		t.Fatalf("run error = %q; want the unset selector named", runErr)
+	}
+	if got := wfNodeStatus(t, states, "c"); got != "failed" {
+		t.Fatalf("condition status = %q; want failed", got)
 	}
 }

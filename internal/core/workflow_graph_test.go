@@ -493,12 +493,6 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},
 		},
-		{
-			// desktop resolves this and keeps the bound type; Cloud would compare the literal text.
-			name: "an expected value carrying a selector template",
-			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})}),
-			want: []any{Object{"code": "condition_value_template_unsupported", "nodeId": "c", "field": "cases.conditions.value"}},
-		},
 	}
 
 	exercised := map[string]bool{}
@@ -522,13 +516,16 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 		t.Fatalf("these cases exercise %v; the declared list is %v — the two must name the same set", exercised, declared)
 	}
 
-	// Refusing is not the same as refusing everything. The two documents the editor legitimately
-	// publishes — a filled-in node, and one the author has added but not configured yet, which falls
-	// through to else — must both pass.
+	// Refusing is not the same as refusing everything. The documents the editor legitimately
+	// publishes — a filled-in node, one the author has added but not configured yet (falls through to
+	// else), and an expected value carrying a selector template (circus#210 now evaluates it the way
+	// desktop does) — must all pass.
 	for name, node := range map[string]Object{
-		"a filled-in condition node":               graphCondition("c", []any{graphConditionCase("yes", "and", filled)}),
-		"a condition node with no cases yet":       graphCondition("c", []any{}),
-		"a condition node with an unfinished case": graphCondition("c", []any{graphConditionCase("yes", "and", []any{})}),
+		"an expected value carrying a selector template": graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "{{#s.input.name#}}")})}),
+		"a mixed expected-value template":                graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "equals", "branch {{#s.input.name#}}")})}),
+		"a filled-in condition node":                     graphCondition("c", []any{graphConditionCase("yes", "and", filled)}),
+		"a condition node with no cases yet":             graphCondition("c", []any{}),
+		"a condition node with an unfinished case":       graphCondition("c", []any{graphConditionCase("yes", "and", []any{})}),
 	} {
 		got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
 		if len(got) != 0 {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -616,9 +617,10 @@ func workflowRunVersion(t *transaction, runID string, fallback int64) int64 {
 }
 
 // executeWorkflowNode commits one ready non-agent node's result from committed state. start reports
-// what the run was kicked off with; condition evaluates its cases against prior node outputs and
-// commits the selected branch (first match wins, else when nothing matched); output is a terminal
-// marker whose produce stays in the node state for the run viewer (D7: 成果交付延后).
+// the variable roots desktop's Start node exposes; condition evaluates its cases against prior node
+// outputs and commits the selected branch (first match wins, else when nothing matched, and a failure
+// when a rule cannot be evaluated); output is a terminal marker whose produce stays in the node state
+// for the run viewer (D7: 成果交付延后).
 func executeWorkflowNode(node workflowNodeView, input Object, states map[string]workflowNodeState) workflowNodeState {
 	now := nowRFC3339()
 	state := workflowNodeState{
@@ -629,9 +631,19 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 	}
 	switch node.Kind {
 	case "start":
-		state.Output = Object{"input": input}
+		state.Output = workflowStartOutput(node, input)
 	case "condition":
-		state.Output = Object{"selectedBranch": evaluateWorkflowCondition(node, states)}
+		branch, err := evaluateWorkflowCondition(node, states)
+		if err != nil {
+			// A condition that cannot evaluate the document it was given fails the node and the run,
+			// exactly as desktop's ConditionRuntime does. Falling through to else would hide a
+			// malformed or unassigned-variable reference behind a branch the author never chose.
+			state.Status = "failed"
+			state.Error = err.Error()
+			state.Output = Object{"reason": err.Error()}
+			return state
+		}
+		state.Output = Object{"selectedBranch": branch}
 	case "output":
 		state.Output = Object{}
 	default:
@@ -642,6 +654,29 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 		state.Output = Object{"reason": "unsupported_node_kind"}
 	}
 	return state
+}
+
+// workflowStartOutput is the Start node's variable pool in the shape desktop declares it: `input` is
+// the kickoff prompt (the reserved free-text selector), and every declared input variable is a root
+// named by the variable itself. Before circus#210 Cloud nested the whole run input under `input`, so
+// `[start, name]` resolved to nothing and `[start, input]` answered for the entire form — the same
+// document meant different things on the two sides.
+//
+// The run form's values are keyed by variable name, so flattening them is exact. A key literally
+// named `input` is dropped: desktop reserves that root, and letting a user variable shadow the
+// kickoff selector would make the same selector mean a run value on Cloud and a prompt on desktop.
+func workflowStartOutput(node workflowNodeView, input Object) Object {
+	output := make(Object, len(input)+1)
+	for key, value := range input {
+		if key == "input" {
+			continue
+		}
+		output[key] = value
+	}
+	// Cloud does not persist the per-run prompt override, so the authored prompt is the only kickoff
+	// text available to the variable pool. The launch field still shows that same default.
+	output["input"] = strings.TrimSpace(node.Data.S("input"))
+	return output
 }
 
 // workflowNodeDisplayName is the label the run viewer shows: the author's title, or the node kind

@@ -235,17 +235,18 @@ func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 // written out rather than derived because it is a statement about the two implementations, not about
 // Cloud's own code: each entry is a place where the evaluator would otherwise answer silently —
 // an unknown operator is a no-match, an unknown logic falls back to `and`, a missing case id becomes
-// the else branch, a one-segment selector becomes the whole node output, and an expected value
-// carrying `{{#selector#}}` is compared as literal text where desktop resolves it and keeps the
-// bound type (circus#202 A 条件 2, #141 结论 5). Every one of them is decidable from the document
-// alone, which is what makes refusing at publish possible; the differences that depend on a
-// *resolved* value's type at run time are not, and are named in the ADR instead.
+// the else branch, and a one-segment selector becomes the whole node output (circus#202 A 条件 2,
+// #141 结论 5). Every one of them is decidable from the document alone, which is what makes refusing
+// at publish possible; the differences that depend on a *resolved* value's type at run time are not,
+// and are named in the ADR instead.
 //
 // A condition node with no cases, or a case with no rules, is deliberately NOT on this list: falling
 // through to else is what an unfinished node is meant to do, and both sides already agree on it.
 //
-// When the parity work lands (circus#210, split out by circus#202 A 条件 3) these refusals come off
-// one at a time, each with the cross-check case that proves the two sides now answer the same thing.
+// circus#210 closed the first entry: an expected value carrying `{{#selector#}}` now resolves the
+// same way desktop does — an exclusive placeholder keeps the bound JSON type, a mixed one renders a
+// string, and an unset selector fails the node — so the gate no longer refuses it. The remaining
+// entries stay until the evaluator stops silently reinterpreting each one.
 var workflowUnsupportedConditionConfigs = []string{
 	"condition_cases_not_a_list",
 	"condition_case_not_an_object",
@@ -255,7 +256,6 @@ var workflowUnsupportedConditionConfigs = []string{
 	"condition_rule_not_an_object",
 	"condition_selector_unsupported",
 	"condition_operator_unsupported",
-	"condition_value_template_unsupported",
 }
 
 // validateConditionConfig refuses the condition configuration the first phase does not evaluate the
@@ -330,9 +330,6 @@ func validateConditionRule(nodeID string, raw any) []workflowGraphProblem {
 	}
 	if _, ok := workflowConditionOperators[r.S("operator")]; !ok {
 		problems = append(problems, workflowGraphProblem{Code: "condition_operator_unsupported", NodeID: nodeID, Field: "cases.conditions.operator"})
-	}
-	if text, ok := r["value"].(string); ok && strings.Contains(text, "{{#") && strings.Contains(text, "#}}") {
-		problems = append(problems, workflowGraphProblem{Code: "condition_value_template_unsupported", NodeID: nodeID, Field: "cases.conditions.value"})
 	}
 	return problems
 }

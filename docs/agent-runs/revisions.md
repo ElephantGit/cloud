@@ -85,7 +85,7 @@ Cloud：事务外经 ref 查询核验交付 ref、HEAD 核验 JSONL ──▶ �
 - `revision_delivered`：最终提交既不等于基础提交，也不等于前序 Revision 的最终提交；
 - `revision_unchanged`：最终提交等于基础提交，或者等于续接的前序 Revision 的最终提交；
 - `revision_failed`：失败原因属于封闭集合 `session_not_settled`、`checkout_unavailable`、`snapshot_failed`、`history_unavailable`、
-  `upload_failed`、`push_rejected`、`push_failed`。`bundle_failed` 只为历史记录保留在线上枚举里，新的结果带它会被拒绝。
+  `upload_failed`、`push_rejected`、`push_failed`。原来的 `bundle_failed`（值 4）在线上枚举里是 `reserved`，带这个值的结果按封闭集合之外的原因拒绝。
 
 声明的结果与改动情况不符，或者还带着 bundle，返回 `409 result_conflict`。
 

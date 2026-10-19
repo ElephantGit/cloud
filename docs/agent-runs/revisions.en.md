@@ -102,8 +102,9 @@ is `400 invalid_upload_checksum`. The grant covers one object key, one method an
 - `revision_delivered`: the final commit equals neither the base commit nor the prior Revision's final commit;
 - `revision_unchanged`: the final commit equals the base commit, or the final commit of the resumed prior Revision;
 - `revision_failed`: with a reason from the closed set `session_not_settled`, `checkout_unavailable`,
-  `snapshot_failed`, `history_unavailable`, `upload_failed`, `push_rejected`, `push_failed`. `bundle_failed` stays in
-  the wire enum for history only; a new result carrying it is refused.
+  `snapshot_failed`, `history_unavailable`, `upload_failed`, `push_rejected`, `push_failed`. The former
+  `bundle_failed` (value 4) is `reserved` in the wire enum; a result carrying it is refused like any reason outside
+  the closed set.
 
 A declared result that does not match whether the run changed anything, or that still carries a bundle, is
 `409 result_conflict`.

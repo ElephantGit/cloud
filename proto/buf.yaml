@@ -24,3 +24,4 @@ breaking:
       - ora/cloud/internal/v1/agent_runs.proto
     ENUM_VALUE_NO_DELETE:
       - ora/cloud/internal/v1/executions.proto
+      - ora/cloud/internal/v1/agent_executions.proto

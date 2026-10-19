@@ -157,12 +157,12 @@ message RevisionUnchanged {
 }
 
 enum RevisionFailureReason {
+  reserved 4;
+  reserved "REVISION_FAILURE_REASON_BUNDLE_FAILED";
   REVISION_FAILURE_REASON_UNSPECIFIED = 0;
   REVISION_FAILURE_REASON_SESSION_NOT_SETTLED = 1;
   REVISION_FAILURE_REASON_CHECKOUT_UNAVAILABLE = 2;
   REVISION_FAILURE_REASON_SNAPSHOT_FAILED = 3;
-  // Kept for history only; a new result carrying it is rejected.
-  REVISION_FAILURE_REASON_BUNDLE_FAILED = 4;
   REVISION_FAILURE_REASON_HISTORY_UNAVAILABLE = 5;
   REVISION_FAILURE_REASON_UPLOAD_FAILED = 6;
   // Recorded by Cloud when the declared objects are missing or differ; a Node never reports it.

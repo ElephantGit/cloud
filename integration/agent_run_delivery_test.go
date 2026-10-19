@@ -1850,6 +1850,29 @@ func TestNodeMayNotReportCloudsOwnVerificationVerdict(t *testing.T) {
 	expectStatus(t, refusal(), codes.InvalidArgument, controlpb.ErrorCode_ERROR_CODE_INVALID_INPUT)
 }
 
+// Revision D6: bundle delivery is gone and the wire reserves its old failure value 4. A Node built
+// against an older contract that still sends it gets the same refusal as any reason outside the closed
+// set, and nothing about the attempt is recorded.
+func TestNodeMayNotReportTheReservedBundleFailure(t *testing.T) {
+	f := setup(t)
+	scene := deliveringScene(t, f)
+	execution := f.deliverRevision(t, scene)
+	before := f.runVersion(scene.runID)
+
+	res := revisionFailedResult(scene, controlpb.RevisionFailureReason(4))
+	expectStatus(t, errOnly(f.deliveryTerminal(scene, execution, "", 1, res, "revision_failed")),
+		codes.InvalidArgument, controlpb.ErrorCode_ERROR_CODE_INVALID_INPUT)
+	if got := f.receipts(execution); len(got) != 0 {
+		t.Fatalf("a refused result must write no receipt, got %v", got)
+	}
+	if got := f.nodeResult(execution); len(got) != 0 {
+		t.Fatalf("a refused result must write no durable result, got %v", got)
+	}
+	if got := f.runVersion(scene.runID); got != before {
+		t.Fatalf("a refused result must not write the run: version %d → %d", before, got)
+	}
+}
+
 // D4's last clause and invariant 9 at the integration boundary: a delivery result that
 // arrives after the run left `delivering` decides nothing. The delivered shape is the one that
 // matters, because it is the only one that would otherwise register a Revision.
@@ -2307,7 +2330,7 @@ func TestDeliveryReplayMatrix(t *testing.T) {
 	expectStatus(t, errOnly(f.deliveryTerminal(scene, execution, "", 1, result, "revision_failed/something_else")),
 		codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
 	expectStatus(t, errOnly(f.deliveryTerminal(scene, execution, "", 1,
-		revisionFailedResult(scene, controlpb.RevisionFailureReason_REVISION_FAILURE_REASON_BUNDLE_FAILED), event)),
+		revisionFailedResult(scene, controlpb.RevisionFailureReason_REVISION_FAILURE_REASON_CHECKOUT_UNAVAILABLE), event)),
 		codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
 
 	if got := fmt.Sprint(f.deliveryAttempts(scene.runID)); got != fmt.Sprint(attempts) {

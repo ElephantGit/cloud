@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -40,6 +41,9 @@ func materializeControl(dir string) error {
 		present++
 	}
 	if present == len(controlMaterialNames) {
+		if err := validateControlBundle(dir); err != nil {
+			return fmt.Errorf("invalid control mTLS bundle in %s; restore the original files or remove the whole bundle to regenerate: %w", dir, err)
+		}
 		report("control mTLS bundle", false)
 		return nil
 	}
@@ -116,6 +120,51 @@ func materializeControl(dir string) error {
 	}
 	report("control mTLS bundle", true)
 	return nil
+}
+
+// validateControlBundle catches interrupted final writes and mismatched or expired
+// identities before setup reports success. It never repairs or rotates trust implicitly.
+func validateControlBundle(dir string) error {
+	certificates := make(map[string]*x509.Certificate)
+	for _, name := range []string{"ca", "server", "controller"} {
+		pair, err := tls.LoadX509KeyPair(filepath.Join(dir, name+".pem"), filepath.Join(dir, name+".key"))
+		if err != nil {
+			return fmt.Errorf("load %s identity: %w", name, err)
+		}
+		certificate, err := x509.ParseCertificate(pair.Certificate[0])
+		if err != nil {
+			return fmt.Errorf("parse %s certificate: %w", name, err)
+		}
+		certificates[name] = certificate
+	}
+	ca := certificates["ca"]
+	if err := ca.CheckSignatureFrom(ca); err != nil {
+		return fmt.Errorf("verify local CA: %w", err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	for _, identity := range []struct {
+		name  string
+		usage x509.ExtKeyUsage
+	}{
+		{"server", x509.ExtKeyUsageServerAuth},
+		{"controller", x509.ExtKeyUsageClientAuth},
+	} {
+		if _, err := certificates[identity.name].Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{identity.usage}}); err != nil {
+			return fmt.Errorf("verify %s certificate: %w", identity.name, err)
+		}
+	}
+	for _, host := range []string{"localhost", "cloud", "127.0.0.1", "::1"} {
+		if err := certificates["server"].VerifyHostname(host); err != nil {
+			return fmt.Errorf("verify server address: %w", err)
+		}
+	}
+	for _, uri := range certificates["controller"].URIs {
+		if uri.String() == localControllerIdentity {
+			return nil
+		}
+	}
+	return fmt.Errorf("controller certificate must identify %s", localControllerIdentity)
 }
 
 func createControlCertificate(template, parent *x509.Certificate, issuer ed25519.PrivateKey) ([]byte, ed25519.PrivateKey, error) {

@@ -55,8 +55,9 @@ key (`server.pem`/`server.key`), and the Controller client certificate and key (
 `spiffe://ora.local/controller/local-controller`, using the same identity shape as cluster with an independent CA.
 `.local/dev.env` sets `CLOUD_CONTROL_CERTIFICATE_FILE`, `CLOUD_CONTROL_PRIVATE_KEY_FILE`, `CLOUD_CONTROL_CLIENT_CA_FILE` and
 `CLOUD_CONTROL_CONTROLLER_IDENTITY` automatically. Existing complete bundles are kept; a partial bundle fails and must
-be restored or removed as a whole before regeneration. The CA lasts ten years and leaf certificates one year; expiry also
-requires explicit regeneration and updating the peer's materials.
+be restored or removed as a whole before regeneration. Before reuse, setup validates key matching, CA chains, purposes,
+SANs, Controller identity and validity. Invalid or expired bundles fail without rewriting files. The CA lasts ten years
+and leaf certificates one year; repair or regeneration and updating the peer's materials are explicit.
 
 For a local desktop Controller connecting to `https://localhost:8082` (`control.grpc_addr` in `configs/config.yaml`), use
 `controller.pem`, `controller.key` and `ca.pem` with Controller ID `local-controller`. Keep the CA private key `ca.key` on

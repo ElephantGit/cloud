@@ -18,7 +18,7 @@
 服务 SAN 包含 `localhost`、`cloud`、`127.0.0.1` 与 `::1`；客户端 URI 为 `spiffe://ora.local/controller/local-controller`。
 CA 有效期十年，叶证书一年。`.local/dev.env` 同时写入 `CLOUD_CONTROL_CERTIFICATE_FILE`、`CLOUD_CONTROL_PRIVATE_KEY_FILE`、
 `CLOUD_CONTROL_CLIENT_CA_FILE` 和 `CLOUD_CONTROL_CONTROLLER_IDENTITY`。完整材料重复执行时保留；部分缺失时报错，需恢复原文件或删除整套再生成，
-过期后同样需要显式重新生成并更新对端。本机 Controller 使用 `controller.pem`、`controller.key` 和 `ca.pem`，ID 为 `local-controller`；不要分发 CA 私钥。
+复用前会校验密钥匹配、CA 证书链、用途、SAN、Controller 身份及有效期；损坏或过期时明确报错并保留原文件，需要显式修复或重新生成并更新对端。本机 Controller 使用 `controller.pem`、`controller.key` 和 `ca.pem`，ID 为 `local-controller`；不要分发 CA 私钥。
 这里只补齐开发配置，server 的 TLS 1.3 双向认证要求保持不变。
 
 `configs/config.yaml` 与 `configs/gateway.yaml` 仍是服务配置的权威来源；`config.toml` 只提供每台机器不同的值，并且只通过服务本来就接受的环境变量覆盖与密钥文件生效。

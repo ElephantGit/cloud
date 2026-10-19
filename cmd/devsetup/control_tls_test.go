@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -122,6 +125,136 @@ func TestControlMaterialSupportsSecureController(t *testing.T) {
 	}
 }
 
+func TestControlMaterialRejectsInvalidExistingBundleWithoutChangingFiles(t *testing.T) {
+	type corruptionCase struct {
+		name   string
+		damage func(*testing.T, string)
+	}
+	cases := []corruptionCase{
+		{"mismatched private key", func(t *testing.T, dir string) {
+			copyControlFile(t, filepath.Join(dir, "server.key"), filepath.Join(dir, "controller.key"))
+		}},
+		{"mismatched CA private key", func(t *testing.T, dir string) {
+			copyControlFile(t, filepath.Join(dir, "controller.key"), filepath.Join(dir, "ca.key"))
+		}},
+		{"different issuer", func(t *testing.T, dir string) {
+			other := t.TempDir()
+			if err := materializeControl(other); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"controller.pem", "controller.key"} {
+				copyControlFile(t, filepath.Join(other, name), filepath.Join(dir, name))
+			}
+		}},
+		{"expired certificate", func(t *testing.T, dir string) {
+			reissueControlLeaf(t, dir, "controller", func(cert *x509.Certificate) {
+				cert.NotBefore = time.Now().Add(-2 * time.Hour)
+				cert.NotAfter = time.Now().Add(-time.Hour)
+			})
+		}},
+		{"wrong client purpose", func(t *testing.T, dir string) {
+			reissueControlLeaf(t, dir, "controller", func(cert *x509.Certificate) {
+				cert.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+			})
+		}},
+		{"wrong Controller identity", func(t *testing.T, dir string) {
+			reissueControlLeaf(t, dir, "controller", func(cert *x509.Certificate) {
+				cert.URIs = []*url.URL{{Scheme: "spiffe", Host: "ora.local", Path: "/controller/other"}}
+			})
+		}},
+		{"wrong server address", func(t *testing.T, dir string) {
+			reissueControlLeaf(t, dir, "server", func(cert *x509.Certificate) {
+				cert.DNSNames = []string{"other"}
+			})
+		}},
+	}
+	for _, name := range controlMaterialNames {
+		cases = append(cases, corruptionCase{"truncated " + name, func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("interrupted write"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := materializeControl(dir); err != nil {
+				t.Fatal(err)
+			}
+			tc.damage(t, dir)
+			before := make(map[string][]byte)
+			for _, name := range controlMaterialNames {
+				data, err := os.ReadFile(filepath.Join(dir, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				before[name] = data
+			}
+			if err := materializeControl(dir); err == nil || !strings.Contains(err.Error(), "invalid control mTLS bundle") {
+				t.Fatalf("invalid bundle must fail during setup, got %v", err)
+			}
+			for name, want := range before {
+				got, err := os.ReadFile(filepath.Join(dir, name))
+				if err != nil || !bytes.Equal(got, want) {
+					t.Fatalf("failed setup changed %s: %v", name, err)
+				}
+			}
+		})
+	}
+}
+
+func copyControlFile(t *testing.T, from, to string) {
+	t.Helper()
+	data, err := os.ReadFile(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(to, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Reissue a well-formed, CA-signed identity so rejection tests exercise the
+// certificate's contract rather than failing PEM parsing or key matching first.
+func reissueControlLeaf(t *testing.T, dir, name string, change func(*x509.Certificate)) {
+	t.Helper()
+	issuer, err := tls.LoadX509KeyPair(filepath.Join(dir, "ca.pem"), filepath.Join(dir, "ca.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := tls.LoadX509KeyPair(filepath.Join(dir, name+".pem"), filepath.Join(dir, name+".key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(issuer.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(leaf.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	change(cert)
+	key, ok := issuer.PrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		t.Fatal("expected Ed25519 CA")
+	}
+	der, privateKey, err := createControlCertificate(cert, ca, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".key"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestControlMaterialRejectsIncompleteBundle(t *testing.T) {
 	for _, missing := range controlMaterialNames {
 		t.Run(missing, func(t *testing.T) {
@@ -162,5 +295,15 @@ func TestMaterializeWritesControlEnv(t *testing.T) {
 		if !strings.Contains(string(data), name+"="+quoteEnv(value)+"\n") {
 			t.Fatalf("env missing %s", name)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "control", "controller.pem"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := materialize(cfg, filepath.Join(root, "gateway"), envPath); err == nil {
+		t.Fatal("setup must fail before rewriting env when the final certificate was truncated")
+	}
+	after, err := os.ReadFile(envPath)
+	if err != nil || !bytes.Equal(after, data) {
+		t.Fatalf("failed setup rewrote the environment: %v", err)
 	}
 }

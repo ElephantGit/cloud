@@ -1,8 +1,8 @@
 // devsetup turns config.toml into everything the local development stack
 // needs: the purpose-separated Ed25519 key pairs and PKCE key the Gateway and
 // Cloud share, the local control mTLS bundle, the external provider's client
-// secret file the Gateway reads, the
-// environment file Taskfile.yml loads (CLOUD_*/GATEWAY_* overrides plus
+// secret file the Gateway reads, the environment file Taskfile.yml loads
+// (CLOUD_*/GATEWAY_* overrides plus
 // TEST_DATABASE_URL), and the applied database schema.
 //
 // configs/*.yaml stay the authoritative service configuration; config.toml

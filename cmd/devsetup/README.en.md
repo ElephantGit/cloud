@@ -19,7 +19,9 @@ Control listener mTLS materials live under `.local/control/` (the `control/` dir
 and `::1`; the client URI is `spiffe://ora.local/controller/local-controller`. The CA lasts ten years and leaves one year.
 `.local/dev.env` also sets `CLOUD_CONTROL_CERTIFICATE_FILE`, `CLOUD_CONTROL_PRIVATE_KEY_FILE`, `CLOUD_CONTROL_CLIENT_CA_FILE`
 and `CLOUD_CONTROL_CONTROLLER_IDENTITY`. Reruns preserve complete bundles. Partial bundles fail: restore the original
-files or remove the whole bundle to regenerate. Expiry likewise requires explicit regeneration and updating the peer.
+files or remove the whole bundle to regenerate. Before reuse, setup validates key matching, CA chains, purposes, SANs,
+Controller identity and validity. Invalid or expired bundles fail without rewriting files and require explicit repair or
+regeneration and updating the peer.
 A local Controller uses `controller.pem`, `controller.key` and `ca.pem` with ID `local-controller`; never distribute the
 CA private key. This only supplies development configuration; the server's TLS 1.3 mutual authentication remains mandatory.
 

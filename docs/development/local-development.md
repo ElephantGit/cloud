@@ -47,7 +47,7 @@ task dev                              # Cloud :8080 + Gateway :8081 + Vite :5173
 客户端 URI 为 `spiffe://ora.local/controller/local-controller`，与 cluster 使用相同的身份形状，但 CA 独立。
 `.local/dev.env` 自动设置 `CLOUD_CONTROL_CERTIFICATE_FILE`、`CLOUD_CONTROL_PRIVATE_KEY_FILE`、`CLOUD_CONTROL_CLIENT_CA_FILE` 和
 `CLOUD_CONTROL_CONTROLLER_IDENTITY`，无需手工配置。整套文件已存在时保留；缺少部分文件时拒绝继续，需要恢复缺失文件或删除整套后重新生成。
-CA 有效期十年，叶证书一年；过期后也需要显式重新生成，并更新对端材料。
+复用前会校验密钥匹配、CA 证书链、用途、SAN、Controller 身份及有效期；损坏或过期时明确报错并保留原文件。CA 有效期十年，叶证书一年，需显式修复或重新生成并更新对端材料。
 
 本机 desktop Controller 连接 `https://localhost:8082`（`configs/config.yaml` 的 `control.grpc_addr`）时，使用 `controller.pem`、`controller.key`
 和 `ca.pem`，Controller ID 为 `local-controller`；CA 私钥 `ca.key` 留在开发机，不交给 Controller。

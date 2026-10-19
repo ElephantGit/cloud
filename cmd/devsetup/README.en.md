@@ -16,7 +16,7 @@ Driven by `config.toml` (copied from `config.toml.template`, ignored by Git), it
 Control listener mTLS materials live under `.local/control/` (the `control/` directory beside the `-env` file):
 `ca.key`/`ca.pem` are the local CA, `server.key`/`server.pem` are the Cloud server identity, and
 `controller.key`/`controller.pem` are the Controller client identity. Server SANs cover `localhost`, `cloud`, `127.0.0.1`
-and `::1`; the client URI is `spiffe://ora.local/controller/local-controller`. The CA lasts ten years and leaves one year.
+and `::1`; the client URI is `spiffe://ora.local/controller/local-controller`. The CA lasts ten years and leaf certificates one year.
 `.local/dev.env` also sets `CLOUD_CONTROL_CERTIFICATE_FILE`, `CLOUD_CONTROL_PRIVATE_KEY_FILE`, `CLOUD_CONTROL_CLIENT_CA_FILE`
 and `CLOUD_CONTROL_CONTROLLER_IDENTITY`. Reruns preserve complete bundles. Partial bundles fail: restore the original
 files or remove the whole bundle to regenerate. Before reuse, setup validates key matching, CA chains, purposes, SANs,

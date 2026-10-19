@@ -108,7 +108,9 @@ seconds):
   bounded. A Workspace that cannot be created fails the node as `workspace_unavailable`; a session that finds its
   frozen plugin version or slot binding missing fails as `agent_plugin_version_unfrozen` or
   `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
-  Once the run reaches a terminal state, Cloud declares the deletion of its Workspace.
+  Once the run reaches a terminal state, Cloud declares the deletion of its Workspace. In the first phase this session
+  has no Git Server access (reads and writes get `403`), and its Workspace is not listed in an IssueRun session's
+  Workspace directory; see [Git Server](../repositories/git-server.en.md).
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.

@@ -77,7 +77,8 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   等它有连上的 Node 后，按该节点引用的槽位取出创建时冻结的模型绑定，把会话工作项交给 Controller；会话的终态就是该节点的终态。同一运行同一时刻只有一个会话，
   下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
   缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败，都不会停在 `running` 或报告没有发生的成功。运行进入终态后，Cloud 声明删除
-  这次运行的 Workspace。
+  这次运行的 Workspace。第一阶段这个会话没有 Git Server 访问（读写都返回 `403`），它的 Workspace 也不进 IssueRun 会话的 Workspace
+  目录，见 [Git Server](../repositories/git-server.md)。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
 不装它。工作流 IssueRun 在生产中目前没有执行端，保持 `queued`（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。

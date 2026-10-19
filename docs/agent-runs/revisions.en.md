@@ -166,8 +166,9 @@ restores it into the checkout, so the Agent continues from where the last run le
 
 The session input also carries a `workspaceDirectory`: up to 100 of the Project's Workspaces as of session start
 (newest first; run Workspaces stay listed after deletion because their branches remain on the Git Server), each with
-its Workspace ID and kind (`main`, `isolated`, `run`), plus the Issue, run and run status for run Workspaces. It is a
-reference for the Agent in the session only, never refreshed and never used for authorization.
+its Workspace ID and kind (`main`, `isolated`, `run`), plus the Issue, run and run status for run Workspaces. A
+WorkflowRun's Workspace is not listed: its sessions have no Git Server access and the directory has no fields for it.
+The directory is a reference for the Agent in the session only, never refreshed and never used for authorization.
 
 ## Public reads
 

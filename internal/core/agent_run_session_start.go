@@ -170,7 +170,9 @@ const workspaceDirectoryLimit = 100
 
 // workspaceDirectory lists the Workspaces of the session's Project, newest first, so `ora-git list`
 // can name their branches by Issue and run (contract D7). Run Workspaces stay listed after deletion
-// because their branches remain on the Git Server. It is a snapshot taken when the session work is
+// because their branches remain on the Git Server. A WorkflowRun's Workspace is never listed: its
+// sessions get no Git Server access in the first phase and the directory has no fields for it
+// (contract D5, D7). It is a snapshot taken when the session work is
 // released, never refreshed and never used for authorization: which branches a session can read and
 // write is decided by the Git Server alone.
 func workspaceDirectory(t *transaction, wid string) []Object {
@@ -182,7 +184,7 @@ func workspaceDirectory(t *transaction, wid string) []Object {
 		JOIN workspaces self ON self.id=$1 AND self.project_id=w.project_id AND self.tenant_id=w.tenant_id
 		LEFT JOIN issue_runs r ON r.id=w.issue_run_id AND r.tenant_id=w.tenant_id
 		LEFT JOIN issues i ON i.id=r.issue_id AND i.tenant_id=r.tenant_id
-		WHERE w.deleted_at IS NULL OR w.issue_run_id IS NOT NULL
+		WHERE (w.deleted_at IS NULL OR w.issue_run_id IS NOT NULL) AND w.workflow_run_id IS NULL
 		ORDER BY w.created_at DESC, w.id DESC
 		LIMIT $2`, wid, workspaceDirectoryLimit)
 	out := make([]Object, 0, len(rows))

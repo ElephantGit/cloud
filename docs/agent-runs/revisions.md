@@ -128,8 +128,9 @@ Cloud：事务外经 ref 查询核验交付 ref、HEAD 核验 JSONL ──▶ �
 - **同一 Issue 的运行假定是串行的**，Cloud 不强制：两个重叠的运行可能选中同一个前序 Revision，下一次运行只会续接其中登记较晚的那个。
 
 会话输入另带一份 `workspaceDirectory`：会话开始时该 Project 最多 100 个 Workspace（最新在前，运行 Workspace 删除后仍列出，因为它们
-的分支还在 Git Server 上），每项带 Workspace ID、类型（`main`、`isolated`、`run`），运行 Workspace 另带 Issue、运行与运行状态。它只
-供会话里的 Agent 参考，不刷新，也从不用于授权。
+的分支还在 Git Server 上），每项带 Workspace ID、类型（`main`、`isolated`、`run`），运行 Workspace 另带 Issue、运行与运行状态。
+WorkflowRun 的 Workspace 不列入：它的会话没有 Git Server 访问，目录里也没有它的字段。目录只供会话里的 Agent 参考，不刷新，也从不用于
+授权。
 
 ## 公开读取
 

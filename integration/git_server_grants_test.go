@@ -248,3 +248,62 @@ func TestGitServerGrantsASessionItsOwnWorkspaceBranches(t *testing.T) {
 		t.Fatalf("an ended session moved %s", own)
 	}
 }
+
+// Contract D5: a WorkflowRun's Agent session gets no Git Server access in the first phase. The scene
+// starts from a session the Git Server grants and moves the same execution, work item, Workspace and
+// runtime reservation to a WorkflowRun of the same Project, changing nothing else about the bound
+// runtime: the read and the push it was granted are now both refused with the uniform 403.
+func TestGitServerDeniesAWorkflowRunSession(t *testing.T) {
+	f := setup(t)
+	s := newSessionGitScene(t, f)
+	git := s.server.git
+	checkout := t.TempDir()
+	if out, err := git(checkout, "run", "", "init", "--quiet"); err != nil {
+		t.Fatal(out)
+	}
+	if out, err := git(checkout, "run", s.execution, "ls-remote", s.remote); err != nil {
+		t.Fatalf("the IssueRun session must read the repository before the move: %s", out)
+	}
+
+	workflow, snapshot, workflowRun := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	tx, err := f.store.Pool.Begin()
+	must(t, err)
+	defer func() { _ = tx.Rollback() }()
+	for _, q := range []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO workflows(id,tenant_id,name,graph) VALUES($1,$2,'git denial','{}'::jsonb)`, []any{workflow, f.tid}},
+		{`INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph) VALUES($1,$2,$3,1,'v1','{}'::jsonb)`, []any{snapshot, f.tid, workflow}},
+		{`INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id)
+		  SELECT $1,$2,$3,$4,'git denial','running','{}'::jsonb,creator_user_id,project_id FROM workspaces WHERE id=$5`, []any{workflowRun, f.tid, workflow, snapshot, s.workspace}},
+		{`UPDATE workspaces SET issue_run_id=NULL, workflow_run_id=$2 WHERE id=$1`, []any{s.workspace, workflowRun}},
+		{`UPDATE execution_work SET run_id=NULL, workflow_run_id=$2, workflow_node_id='agent' WHERE id=(SELECT work_id FROM node_executions WHERE execution_id=$1)`, []any{s.execution, workflowRun}},
+		{`UPDATE node_executions SET operation_id=$2, workflow_node_id='agent' WHERE execution_id=$1`, []any{s.execution, workflowRun}},
+		{`UPDATE runtime_controls SET maintenance_run_id=$2 WHERE workspace_id=$1 AND maintenance_run_id=$3`, []any{s.workspace, workflowRun, s.run}},
+	} {
+		// Each statement moves exactly one row, so the scene really is the granted runtime relabelled.
+		res, err := tx.Exec(q.query, q.args...)
+		if err != nil {
+			t.Fatalf("move the session to a WorkflowRun: %v", err)
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			t.Fatalf("move the session to a WorkflowRun: %s touched %d rows (%v), want 1", q.query, n, err)
+		}
+	}
+	must(t, tx.Commit())
+
+	if out, err := git(t.TempDir(), "run", s.execution, "ls-remote", s.remote); err == nil || !strings.Contains(out, "403") {
+		t.Fatalf("a WorkflowRun session read the repository: %v %s", err, out)
+	}
+	if out, err := git(checkout, "run", "", "commit", "--quiet", "--allow-empty", "-m", "workflow work"); err != nil {
+		t.Fatal(out)
+	}
+	own := core.GitWorkspaceRefPrefix(s.workspace) + "main"
+	if out, err := git(checkout, "run", s.execution, "push", s.remote, "HEAD:"+own); err == nil || !strings.Contains(out, "403") {
+		t.Fatalf("a WorkflowRun session pushed its Workspace branch: %v %s", err, out)
+	}
+	if got := serverRef(t, f.git.Root, f.tid, s.project, own); got != "" {
+		t.Fatalf("a refused WorkflowRun push created %s at %s", own, got)
+	}
+}

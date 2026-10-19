@@ -12,10 +12,19 @@ import (
 // ports, and desktop is the reference implementation).
 //
 // The variable pool is the run's committed node outputs: a rule's variableSelector is
-// [nodeId, root, ...nested]. nodeId names a prior node, root is one variable that node exposes
-// (start: `input` plus each declared input variable; agent: `output`/`structured_output`; condition:
-// `selected_branch_id`; output: `output`), and nested walks object fields past the root. A variable a
-// prior node has not produced (unknown node, unassigned root, or a node that never ran) is absent.
+// [nodeId, root, ...nested]. nodeId names a prior node, root is one variable that node's kind
+// declares (start: `input` plus each declared input variable; agent: `output`, plus
+// `structured_output` when the node declares an output contract; output: `output`; condition: none),
+// and nested walks object fields past the root.
+//
+// Today only the start node actually writes roots. Agent and output roots are declared by the
+// contract but stay unassigned until cloud#70/#74 completes the variable passing, so a selector on
+// them reads the same declared-but-unassigned state desktop has before a node produces its output.
+// Cloud's runtime has no declaration set — the states map cannot tell an unassigned variable from one
+// the graph never declared — so the publish gate refuses selectors naming an unknown node or a root
+// its kind does not expose (`condition_selector_undeclared`), which desktop's pool reports as
+// `Undeclared` and fails. What reaches the evaluator is therefore either assigned or genuinely
+// unassigned, and a variable a prior node has not produced is absent.
 //
 // Absence is not a universal no-match: desktop's existence and emptiness operators classify it, and
 // every other operator fails the node and the run rather than silently falling through to else. The
@@ -352,8 +361,10 @@ func workflowNumberOf(value any) (float64, bool) {
 	}
 }
 
-// workflowTypeLabel names a JSON value's type for a type-mismatch message. Integer-valued floats are
-// called integers, matching desktop's type_label, so the same document reports the same mismatch.
+// workflowTypeLabel names a JSON value's type for a type-mismatch message. Cloud decodes every number
+// as float64, so it cannot tell 92 from 92.0 and labels any integral value "integer"; desktop's
+// type_label calls only is_i64/is_u64 "integer" and 92.0 "number". The difference is confined to the
+// message text — comparison and equality are unaffected.
 func workflowTypeLabel(value any) string {
 	switch value.(type) {
 	case nil:
@@ -380,6 +391,11 @@ func workflowTypeLabel(value any) string {
 // workflowJSONEqual compares two JSON values by canonical form (encoding/json sorts map keys), so
 // object comparison is order-independent and deterministic. Numeric spellings 2 and 2.0 render the
 // same way, which is desktop's equal() across integer and float representations.
+//
+// Two edge cases differ from desktop's Value equality: inside a container desktop keeps integer and
+// float distinct (`{a:2}` and `{a:2.0}` are not equal), while the canonical form unifies them; and
+// desktop's as_f64 comparison treats -0.0 and 0 as equal, while their canonical forms "-0" and "0"
+// differ. Top-level numeric comparison matches on both sides.
 func workflowJSONEqual(actual, expected any) bool {
 	a, b := canonicalJSON(actual), canonicalJSON(expected)
 	if a == "" || b == "" {

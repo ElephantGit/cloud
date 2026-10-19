@@ -11,7 +11,10 @@ import "testing"
 // Rust engine. A change to either side that breaks parity must break one of these cases.
 func TestWorkflowConditionDesktopParity(t *testing.T) {
 	// The pool shapes mirror pool_with_review(): a text root, a structured_output object, and a
-	// start node whose variables include a numeric limit.
+	// start node whose variables include a numeric limit. `agent-a` is present with an empty output,
+	// modeling desktop's declared-but-unassigned `agent-a.text` (that test declares the variable by
+	// hand). This exercises the evaluator's unset answer; a selector the graph itself does not
+	// declare is a different case, refused at publish as condition_selector_undeclared.
 	pool := map[string]workflowNodeState{
 		"review": {Status: "succeeded", Output: Object{
 			"text":              "审查完成",
@@ -21,6 +24,7 @@ func TestWorkflowConditionDesktopParity(t *testing.T) {
 			"token": "审查",
 			"limit": 90.0,
 		}},
+		"agent-a": {Status: "succeeded", Output: Object{}},
 	}
 	evaluate := func(t *testing.T, cases []any) (string, error) {
 		t.Helper()

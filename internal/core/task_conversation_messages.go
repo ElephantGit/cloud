@@ -100,12 +100,12 @@ func taskConversationSend(t *transaction, s *Store, r *PublicRequest, uid string
 	queueAhead := t.one("SELECT id FROM task_conversation_messages WHERE issue_id=$1 AND state IN ('waiting','failed') LIMIT 1", i.S("id"))
 	if queueAhead == nil {
 		live := t.one(`SELECT * FROM issue_runs WHERE issue_id=$1 AND tenant_id=$2 AND executor_type='agent' AND phase IN ('starting','running') AND status IN ('dispatched','running') AND thread_state IN ('pending','active','idle') AND cancel_requested_at IS NULL AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1`, i.S("id"), r.TenantID)
-		if live != nil && live.S("executorId") == agentID && taskRunAppendAllowed(t, live, uid) {
+		if live != nil && live.S("executorId") == agentID && taskRunAppendAllowed(t, live, uid) && taskThreadAppendBlocker(t, live, taskAppendAtQueueTail) == "" {
 			// appendThreadMessage checks the frozen initiator's model authorization again, atomically.
 			input := *r
 			input.RunID = live.S("id")
 			input.Body = Object{"content": []any{map[string]any{"type": "text", "text": body}}}
-			entry := appendThreadMessage(t, s, &input, uid)
+			entry := appendThreadMessage(t, s, &input, uid, taskAppendAtQueueTail)
 			state, runID, threadSeq = "submitted", live.S("id"), entry.N("seq")
 		}
 	}

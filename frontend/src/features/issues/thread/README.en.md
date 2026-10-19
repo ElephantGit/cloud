@@ -43,6 +43,8 @@ Depends on `src/api` (generated Thread client and types), `features/issues/api` 
 
 A revoked model authorization leaves the old run read-only. Reconfiguring the connection does not reopen that Thread; the send fault asks the user to end it and launch a new task.
 
+Task handoff barriers and pauses also disable appending to an old Thread. Direct sends from older clients receive `409 task_handoff_pending` or `409 task_paused`; subsequent input uses the task conversation queue without overtaking a waiting handoff.
+
 ## Testing
 
 `thread-panel.test.tsx` drives the panel against a fake Thread backend with the server's cursor semantics (tail / after / before): tail load, 404 → appears, load older, send (including thread_closed), end session, and an SSE event triggering an incremental read. The 404 → appears case relies on the real 2.5s poll and takes about 3 seconds.

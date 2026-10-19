@@ -82,10 +82,13 @@ func (s *Store) dispatchTaskMessage(ctx context.Context, messageID string) (stri
 		}
 		blocker := taskRunBlocker(t, message)
 		if blocker != nil {
+			if taskThreadAppendBlocker(t, blocker, message.N("seq")) != "" {
+				return Object{}
+			}
 			if blocker.S("executorId") == message.S("agentId") && threadAcceptStates[blocker.S("threadState")] && blocker.S("cancelRequestedAt") == "" {
 				ref := &PublicRequest{TenantID: message.S("tenantId"), IssueID: message.S("issueId"), RunID: blocker.S("id"), Body: Object{"content": []any{map[string]any{"type": "text", "text": message.S("body")}}}}
 				if taskRunAppendAllowed(t, blocker, message.S("userId")) {
-					entry := appendThreadMessage(t, s, ref, message.S("userId"))
+					entry := appendThreadMessage(t, s, ref, message.S("userId"), message.N("seq"))
 					taskMessageSubmit(t, message, blocker.S("id"), entry.N("seq"))
 					return Object{}
 				}

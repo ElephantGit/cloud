@@ -302,6 +302,12 @@ describe('threadPollInterval', () => {
 describe('failure messages', () => {
   it('maps the send and end faults to readable sentences', () => {
     expect(sendFailureMessage(fault('thread_closed', 409))).toBe('会话已结束，无法继续发送')
+    expect(sendFailureMessage(fault('task_handoff_pending', 409))).toBe(
+      '正在等待 Agent 交接，请在任务对话中发送后续消息',
+    )
+    expect(sendFailureMessage(fault('task_paused', 409))).toBe(
+      '任务已暂停，请先在任务对话中处理暂停或失败的消息',
+    )
     expect(sendFailureMessage(fault('content_too_large', 400))).toBe('消息过长')
     expect(sendFailureMessage(fault('model_run_initiator_required', 403))).toBe(
       '只有运行发起者可以继续发送模型请求',

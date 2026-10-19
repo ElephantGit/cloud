@@ -259,7 +259,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				// Thread D3: appending a user turn. Matched before the /runs arm because the path
 				// contains "/runs/" too, and the thread sub-resource is a different write.
 				require(r.Method == "POST", 404, "not_found")
-				out = Object{"resource": appendThreadMessage(t, s, r, uid)}
+				out = Object{"resource": appendThreadMessage(t, s, r, uid, taskAppendAtQueueTail)}
 				status = 201
 			case strings.HasSuffix(r.Path, "/thread/end"):
 				// Thread D4: the user ending the conversation. Also matched before the /runs

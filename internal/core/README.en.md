@@ -6,6 +6,8 @@
 
 ## Module map
 
+- `task_conversation_append.go`: shared handoff/pause checks for legacy Thread appends and task queues. External input checks the queue tail; workers check only earlier messages, preserving the accepted prefix before a switch. Rejection creates no entry or command.
+
 - `task_conversation_readiness.go`: safe project/personal-default-model gaps for the current member. It exposes no connection/credential identity, grants no access to another person's model session and is rechecked on dispatch.
 
 - `task_conversation_stop.go`: atomically requests cancellation and persists a task pause. Existing cancellation/delivery/release owns cleanup. The pause is independent of final Run success/failure, preserves later messages and drafts, and requires explicit recovery.

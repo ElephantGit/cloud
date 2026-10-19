@@ -176,3 +176,17 @@ The migration that lands the external Git line (executor root ADR, identity-acce
 
 Fresh-database and merge-baseline (through 0042) upgrade evidence — an upgraded database carrying real Projects, credential references and a continuity column — is `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades` in `integration/migration_upgrade_path_test.go`, which also exercises those constraints and the append-only trigger against real rows.
 
+## 0044: Model attempts record WorkflowRun bindings
+
+`0044_model_attempt_workflow_run.sql` lets `model_request_attempts` record a WorkflowRun binding,
+using the same discriminator shape as 0040: `run_id` becomes nullable, `workflow_run_id` is added,
+and exactly one of them is required. Each owner gets its own pair of references — the run to
+`issue_runs` / `workflow_runs` on `(id, tenant_id)`, and the binding to `run_model_bindings` on
+`(id, run_id)` / `(id, workflow_run_id)` — with the two uniqueness constraints the new references
+need. Registration is the only consumer; WorkflowRun statistics reads stay closed. The IssueRun
+reads keep filtering by `run_id`, which is NULL on WorkflowRun rows and therefore cannot leak into
+them. Every existing row carries `run_id` (0035 required it, and the defect made every WorkflowRun
+registration fail), so nothing is backfilled. Fresh and 0043-upgrade evidence:
+`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`; real WorkflowRun registration:
+`internal/core/model_attempt_workflow_db_test.go`.
+

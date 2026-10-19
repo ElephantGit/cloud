@@ -726,7 +726,7 @@ func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
 		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
 	})
 	published := publishWorkflow(t, f, wid, "wf-version-owned-pub")
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it", "projectRef": runProject(t, f, "wf-version-project")}, "wf-version-issue", 200).O("resource")
 
 	// The form the author's declaration produces: their own control under that key, holding nothing —
 	// and no version selector, which is what makes the key theirs to begin with.
@@ -776,7 +776,8 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 	if newest.S("id") == older.S("id") {
 		t.Fatal("the two publishes are the same snapshot, so a wrong version could pass as the right one")
 	}
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form"}, "wf-rename-issue", 200).O("resource")
+	pid := runProject(t, f, "wf-rename-project")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form", "projectRef": pid}, "wf-rename-issue", 200).O("resource")
 
 	// The submission a client that rendered the pre-rename form sends: the selection under the old key,
 	// and no `snapshotId` at all.
@@ -830,7 +831,7 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 	}
 	// A second issue, because a confirmed interaction is spent: `workflowComment` reads back the issue's
 	// form interaction and would hand back the one just confirmed.
-	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form again"}, "wf-rename-issue-2", 200).O("resource")
+	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form again", "projectRef": pid}, "wf-rename-issue-2", 200).O("resource")
 	it = workflowComment(t, f, owned, ownedIss.S("id"), "wf-rename-owned-1", "run it")
 	created = f.call("POST", confirmPath(f, ownedIss.S("id"), it.S("id")), core.Object{"values": core.Object{
 		"repository": "ora-space/cloud", "branch": "main", "version": ownedOlder.S("id"), "snapshotId": "1.2.3",
@@ -872,7 +873,7 @@ func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
 	if newest.S("id") == older.S("id") {
 		t.Fatal("the two publishes are the same snapshot, so the test cannot tell which one was read")
 	}
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form"}, "wf-assist-rename-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form", "projectRef": runProject(t, f, "wf-assist-rename-project")}, "wf-assist-rename-issue", 200).O("resource")
 
 	// The submission a client that rendered the pre-rename form sends — the selection under the old key
 	// and no `snapshotId` at all — driven through both entries in turn. Assist comes first so the 200
@@ -965,9 +966,10 @@ func TestWorkflowConfirmRefusesAVersionTheLiveFormHasLeft(t *testing.T) {
 			"graph": startInputGraph(variables), "version": live.N("version"),
 		}, "", 200)
 	}
+	pid := runProject(t, f, "wf-diverge-project")
 	newIssue := func(key string) string {
 		t.Helper()
-		return f.call("POST", f.path("/issues"), core.Object{"title": "Diverging form"}, key, 200).O("resource").S("id")
+		return f.call("POST", f.path("/issues"), core.Object{"title": "Diverging form", "projectRef": pid}, key, 200).O("resource").S("id")
 	}
 	rendered := func(iid string) []string {
 		t.Helper()
@@ -1053,7 +1055,7 @@ func TestFormDescriptorUnavailableAndInvalid(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
 	publishWorkflow(t, f, wid, "wf-prov-pub")
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Provider states"}, "wf-prov", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Provider states", "projectRef": runProject(t, f, "wf-prov-project")}, "wf-prov", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-prov-1", "configure")
 
 	original := f.store.Forms
@@ -1139,7 +1141,7 @@ func TestWorkflowConfirmValidatesAndExecutes(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
 	published := publishWorkflow(t, f, wid, "wf-confirm-pub")
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Confirm me", "description": "desc"}, "wf-confirm-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Confirm me", "description": "desc", "projectRef": runProject(t, f, "wf-confirm-project")}, "wf-confirm-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-confirm-1", "configure the review")
 
 	// Idempotency-Key is mandatory for POST, like every other mutation.
@@ -1252,7 +1254,7 @@ func TestWorkflowConfirmIdempotencyAndDoubleConfirm(t *testing.T) {
 	f := setup(t)
 	wid := reviewWorkflow(t, f)
 	publishWorkflow(t, f, wid, "wf-idem-pub")
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Idempotent"}, "wf-idem-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Idempotent", "projectRef": runProject(t, f, "wf-idem-project")}, "wf-idem-issue", 200).O("resource")
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-idem-1", "configure")
 
 	first := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": validValues()}, "wf-idem-confirm", 200).O("resource")

@@ -12,6 +12,7 @@ import (
 type importedWorkflowEvidence struct {
 	f        *fixture
 	spaceID  string
+	project  string
 	workflow string
 	snapshot core.Object
 }
@@ -59,7 +60,7 @@ func importWorkflowForInvocation(t *testing.T) *importedWorkflowEvidence {
 	if !reflect.DeepEqual(snapshots[0].O("graph"), expected) {
 		t.Fatalf("published graph differs from the package document: %v", snapshots[0])
 	}
-	return &importedWorkflowEvidence{f: f, spaceID: sid, workflow: wid, snapshot: snapshots[0]}
+	return &importedWorkflowEvidence{f: f, spaceID: sid, project: runProject(t, f, "asset-inv-project"), workflow: wid, snapshot: snapshots[0]}
 }
 
 func importedInvocationInput() core.Object {
@@ -92,7 +93,7 @@ func TestImportedWorkflowDirectoryAndRunsIgnoreImportTriggerUser(t *testing.T) {
 	trigger := f.user
 	other, otherID := f.addUser(t, "asset-evidence-admin", "Other asset administrator")
 	f.call("PUT", f.path("/members/"+otherID), core.Object{"role": "admin", "status": "active", "version": 1}, "", 200)
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Discover imported workflow"}, "asset-directory-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Discover imported workflow", "projectRef": e.project}, "asset-directory-issue", 200).O("resource").S("id")
 	formPath := f.path("/workflows/" + e.workflow + "/snapshots/" + e.snapshot.S("id") + "/form?issueId=" + iid)
 	initialForm := f.call("GET", formPath, nil, "", 200)
 	liveFormPath := f.path("/collaboration/forms/" + e.workflow + "?issueId=" + iid)
@@ -143,7 +144,7 @@ func TestImportedWorkflowDirectoryAndRunsIgnoreImportTriggerUser(t *testing.T) {
 	start := func(user core.Claims, key string) core.Object {
 		t.Helper()
 		run := callAs(t, f, user, "POST", f.path("/workflows/"+e.workflow+"/runs"), key, core.Object{
-			"snapshotId": e.snapshot.S("id"), "input": importedInvocationInput(),
+			"snapshotId": e.snapshot.S("id"), "input": importedInvocationInput(), "projectId": e.project,
 		}, 200).O("resource")
 		return e.assertRun(t, user, run.S("id"), e.snapshot)
 	}
@@ -168,7 +169,7 @@ func TestImportedWorkflowDirectoryAndRunsIgnoreImportTriggerUser(t *testing.T) {
 func TestImportedWorkflowSnapshotBindsConfirmAndDirectRuns(t *testing.T) {
 	e := importWorkflowForInvocation(t)
 	f, wid, snapshot := e.f, e.workflow, e.snapshot
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Use imported snapshot"}, "asset-inv-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Use imported snapshot", "projectRef": e.project}, "asset-inv-issue", 200).O("resource").S("id")
 	interaction := workflowComment(t, f, wid, iid, "asset-inv-comment", "@ imported release")
 	values := importedInvocationInput()
 	values["repository"], values["branch"], values["snapshotId"] = "https://example.invalid/repo.git", "main", snapshot.S("id")
@@ -187,7 +188,7 @@ func TestImportedWorkflowSnapshotBindsConfirmAndDirectRuns(t *testing.T) {
 	create := func(key string) string {
 		t.Helper()
 		return f.call("POST", f.path("/workflows/"+wid+"/runs"), core.Object{
-			"snapshotId": snapshot.S("id"), "input": importedInvocationInput(),
+			"snapshotId": snapshot.S("id"), "input": importedInvocationInput(), "projectId": e.project,
 		}, key, 200).O("resource").S("id")
 	}
 	first := create("asset-inv-direct")

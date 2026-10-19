@@ -51,8 +51,9 @@ Agent nodes do not hard-code an Agent CLI or model ID in the graph; they referen
   refused with `409 workflow_executor_unconfigured`, whose parameters list each slot, the nodes depending on it, the
   reason (such as `slot_not_configured`, `default_model_missing`, `credential_missing`) and the slot description, so
   the frontend can show everything that needs configuring at once.
-- Personal mappings for named slots are not implemented yet, so any graph referencing a named slot is currently
-  reported as unconfigured; graphs referencing only `default` are judged by the initiator's default model.
+- A named slot's mapping is each user's own configuration (`GET`, `PUT`, `DELETE /me/executor-slot-mappings/:slot`:
+  slot name to agent CLI, model connection and model). `default` cannot be stored as a mapping — it is the personal
+  default model itself, maintained separately in the personal model settings.
 
 ## Runs
 
@@ -76,6 +77,17 @@ Workflows have three start entries, all sharing one admission gate:
 If any check fails, no run, claimed interaction or activity is left behind. The executed version is frozen onto the
 run, so the run still knows which version it executed after the workflow is edited or published again.
 
+**A run's identity is frozen at creation.** All three entries share one creation function: a direct
+start takes the Project from the request body's `projectId`, while Confirm/manual take it from the
+Issue's `project_ref`. A missing Project is `409 workflow_run_project_required` for every entry;
+an unusable, archived or foreign-space Project is refused as `404`, and one being
+deleted is `409 resource_unavailable`. The run writes the initiating user (`created_by`) and that Project
+(`project_id`) into its row and never changes them — a workflow document belongs to a tenant, not to a Project, so
+there is nothing to default to, and the run's Workspace, its clone and its whole checkout land in the Project that
+was named. A run Workspace belongs to the run that created it: `workspaces.workflow_run_id` is mutually exclusive
+with an IssueRun's `issue_run_id`, and the `maintenance` reserved for it in runtime control is recorded against the
+same run identity (see [Runtime control](../runtime/runtime-control.en.md)).
+
 ## Scheduling
 
 WorkflowRuns are carried forward by a scheduling loop in the Cloud server (`AdvanceWorkflowRunsOnce`, every 10
@@ -90,9 +102,15 @@ seconds):
   scheduling transaction. `condition` activates only the outgoing edge for the chosen branch, and an outgoing edge
   with no branch label counts as `else`; nodes on branches not taken are marked inactive and never run. A run's graph
   is a directed acyclic graph with no loops or iterations.
-- **Agent nodes currently fail the run with an explicit reason.** An Agent node needs a run Workspace and a real Node
-  session, and that execution path is not wired yet; until it is, a run that reaches an Agent node fails immediately
-  with a reason that names the gap, instead of hanging in `running` or reporting success for work that never happened.
+- **An Agent node runs in a real session.** The first time a run schedules an Agent node, Cloud creates the run's
+  Workspace (isolated, owned by this run) in the Project the run froze, and once that Workspace has a connected Node
+  it takes the model binding frozen at creation for the slot the node references and hands the session work item to
+  the Controller; the session's terminal state is the node's terminal state. One session runs at a time per run —
+  a node on the next edge starts only after the previous one settles — and the wait before a session starts is
+  bounded. A Workspace that cannot be created fails the node as `workspace_unavailable`; a session that finds its
+  frozen plugin version or slot binding missing fails as `agent_plugin_version_unfrozen` or
+  `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
+  Once the run reaches a terminal state, Cloud declares the deletion of its Workspace.
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.

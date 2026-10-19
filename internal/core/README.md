@@ -64,14 +64,17 @@
 
 Workflow Confirm 和 manual IssueRun 在同一事务内通过 `insertWorkflowRun` 创建执行行，
 再写入 `issue_runs.workflow_invocation_ref`；直接启动也使用该创建函数。
+三个入口共用创建人、Project 与插件版本的冻结逻辑。直接启动的 Project 来自请求体，
+Confirm/manual 来自 Issue 的 `project_ref`；创建处统一检查 Project 权限、可用性及必填要求。
+Confirm/manual 按发起人的配置冻结执行器槽位，不能借开发模拟器跳过绑定。
 Confirm 保留活稿表单与所选快照字段不一致时的 409 门禁，校验 schema 和执行图来自所选发布快照。执行输入只含快照声明的
 Start 与全局变量；平台字段保留在 IssueRun，`input.workflowSnapshotId` 与关联运行一致。
 有引用的 IssueRun 不进入 legacy Dispatcher；开发 mock 的完成状态不能替代 WorkflowRun 状态。
 
 `projectWorkflowRunToIssueRun` 在调用方事务内从 WorkflowRun 投影状态、时间及错误，
 输出摘要写为 `system` 的 `run.message` 活动，不创建 workflow 作者评论。
-该函数已由 PostgreSQL 测试直接调用；调度器调用、执行身份和槽位绑定仍待执行器接入，
-此预备实现不代表实际 Node 执行已经完成。
+该函数已由 PostgreSQL 测试直接调用；调用点尚未接入调度器，因此关联的 IssueRun 仍保持 `queued`。
+创建身份和槽位绑定的接入不代表实际 Node 联合验收已经完成。
 
 ## 会话 Dashboard 读取
 

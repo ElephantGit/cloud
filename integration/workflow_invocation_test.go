@@ -18,7 +18,7 @@ func TestWorkflowConfirmCreatesLinkedWorkflowRun(t *testing.T) {
 	f := setup(t)
 	wid := createWorkflow(t, f, "Linked workflow", "inv-link-wf", nil)
 	snapshot := publishWorkflow(t, f, wid, "inv-link-pub")
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Linked execution"}, "inv-link-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Linked execution", "projectRef": runProject(t, f, "inv-link-project")}, "inv-link-issue", 200).O("resource").S("id")
 	interaction := workflowComment(t, f, wid, iid, "inv-link-comment", "run")
 	run := f.call("POST", confirmPath(f, iid, interaction.S("id")), core.Object{"values": core.Object{
 		"repository": "ora-space/cloud", "branch": "main", "snapshotId": snapshot.S("id"),
@@ -90,7 +90,7 @@ func TestWorkflowConfirmAdmissionRollsBackBothRuns(t *testing.T) {
 				values["topic"] = 42
 				code = "invalid_field_value"
 			}
-			iid := f.call("POST", f.path("/issues"), core.Object{"title": "Rejected start"}, "inv-gate-issue", 200).O("resource").S("id")
+			iid := f.call("POST", f.path("/issues"), core.Object{"title": "Rejected start", "projectRef": runProject(t, f, "inv-gate-project")}, "inv-gate-issue", 200).O("resource").S("id")
 			it := workflowComment(t, f, wid, iid, "inv-gate-comment", "run")
 			activities := f.scalar("SELECT count(*) FROM issue_activities WHERE issue_id=$1", iid)
 			refusal := f.call("POST", confirmPath(f, iid, it.S("id")), core.Object{"values": values}, "inv-gate-confirm", status)
@@ -128,7 +128,7 @@ func TestWorkflowConfirmFreezesHistoricalSchemaAndInput(t *testing.T) {
 	if reflect.DeepEqual(older.O("graph"), newer.O("graph")) {
 		t.Fatal("historical snapshot test needs distinct published definitions")
 	}
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Historical start"}, "inv-old-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Historical start", "projectRef": runProject(t, f, "inv-old-project")}, "inv-old-issue", 200).O("resource").S("id")
 	it := workflowComment(t, f, wid, iid, "inv-old-comment", "run old version")
 	created := f.call("POST", confirmPath(f, iid, it.S("id")), core.Object{"values": core.Object{
 		"repository": "ora-space/cloud", "branch": "main", "snapshotId": older.S("id"), "topic": "auth", "review.mode": "strict",
@@ -162,7 +162,7 @@ func TestWorkflowConfirmInvocationIdempotency(t *testing.T) {
 	f := setup(t)
 	wid := createWorkflow(t, f, "Replay workflow", "inv-idem-wf", nil)
 	publishWorkflow(t, f, wid, "inv-idem-pub")
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Replay start"}, "inv-idem-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Replay start", "projectRef": runProject(t, f, "inv-idem-project")}, "inv-idem-issue", 200).O("resource").S("id")
 	it := workflowComment(t, f, wid, iid, "inv-idem-comment", "run")
 	body := core.Object{"values": core.Object{"repository": "ora-space/cloud", "branch": "main"}}
 	path := confirmPath(f, iid, it.S("id"))
@@ -190,7 +190,7 @@ func TestWorkflowConfirmConcurrentInvocationCreatesExactlyOnePair(t *testing.T) 
 	f := setup(t)
 	wid := createWorkflow(t, f, "Concurrent workflow", "inv-race-wf", nil)
 	publishWorkflow(t, f, wid, "inv-race-pub")
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Concurrent start"}, "inv-race-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Concurrent start", "projectRef": runProject(t, f, "inv-race-project")}, "inv-race-issue", 200).O("resource").S("id")
 	it := workflowComment(t, f, wid, iid, "inv-race-comment", "run")
 	path := confirmPath(f, iid, it.S("id"))
 	start := make(chan struct{})
@@ -236,7 +236,7 @@ func TestManualWorkflowInvocationCreatesLinkedRun(t *testing.T) {
 	f := setup(t)
 	wid := createWorkflow(t, f, "Manual workflow", "inv-manual-wf", []any{invocationVariable("topic")})
 	snapshot := publishWorkflow(t, f, wid, "inv-manual-pub")
-	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Manual start"}, "inv-manual-issue", 200).O("resource").S("id")
+	iid := f.call("POST", f.path("/issues"), core.Object{"title": "Manual start", "projectRef": runProject(t, f, "inv-manual-project")}, "inv-manual-issue", 200).O("resource").S("id")
 	status, body := manualWorkflowRun(t, f, iid, wid, "inv-manual-start", core.Object{"topic": "auth"})
 	if status != 200 {
 		t.Fatalf("manual start status = %d: %v", status, body)

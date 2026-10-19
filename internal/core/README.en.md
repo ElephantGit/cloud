@@ -67,14 +67,19 @@ Workflow Confirm and manual IssueRuns create the execution row through `insertWo
 write `issue_runs.workflow_invocation_ref` in the same transaction; direct starts use the same
 insertion function. Confirm retains the 409 gate for field differences between the live form and the
 selected snapshot, then validates that published snapshot.
+All three entries share the freezing of the initiating user, Project and plugin version. A direct
+start takes its Project from the request body; Confirm/manual take it from the Issue's `project_ref`.
+Creation applies the same Project authorization, availability and required-value checks. Confirm/manual
+freeze the invoker's executor-slot bindings even when development simulation is configured.
 Execution input contains only declared Start/global variables. Platform fields stay on the IssueRun,
 whose `input.workflowSnapshotId` matches the linked execution. Linked IssueRuns bypass the legacy
 Dispatcher, including development doubles.
 
 `projectWorkflowRunToIssueRun` projects authoritative state, timestamps and errors inside the caller's
 transaction. Output summaries are `system` `run.message` activities, never workflow-authored comments.
-PostgreSQL tests call this function directly. Scheduler calls, execution identity and slot bindings
-remain executor integration work; this preflight does not establish actual Node execution.
+PostgreSQL tests call this function directly. Scheduler calls are not yet wired, so the linked IssueRun
+still stays `queued`. Freezing execution identity and slot bindings does not establish real Node
+acceptance.
 
 ## Session Dashboard reads
 

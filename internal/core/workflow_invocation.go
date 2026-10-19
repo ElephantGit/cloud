@@ -15,11 +15,13 @@ func workflowInvocationInput(graph, values Object) Object {
 }
 
 // enqueueWorkflowInvocation creates both sides of an invocation inside the caller's transaction.
-// Snapshot selection/admission and initiator resolution remain at the entry point; project/workspace
-// identity and slot binding will join the shared insertion seam when #70 supplies those columns.
+// Snapshot selection/admission and verified initiator resolution remain at the entry point. Unlike
+// the direct development simulator, an Issue invocation always freezes its real executor bindings.
 func enqueueWorkflowInvocation(t *transaction, tid, iid string, workflow, snapshot, values, issueInput Object, triggerKind string, triggerRef any, uid string) Object {
 	executionInput := workflowInvocationInput(snapshot.O("graph"), values)
-	invocation := insertWorkflowRun(t, tid, workflow.S("id"), snapshot, executionInput, workflow.S("name"))
+	i := issue(t, tid, iid)
+	invocation := insertWorkflowRun(t, tid, workflow.S("id"), snapshot, executionInput, workflow.S("name"), uid, i.S("projectRef"))
+	freezeWorkflowRunExecutors(t, invocation.S("id"), uid, snapshot.O("graph"))
 	freezeWorkflowSnapshot(issueInput, snapshot.S("id"))
 	return enqueueRunWithInvocation(t, tid, iid, "workflow", workflow.S("id"), issueInput, triggerKind, triggerRef, "user", uid, invocation.S("id"))
 }

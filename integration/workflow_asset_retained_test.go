@@ -41,7 +41,7 @@ func TestImportedWorkflowRemainsPublishableAndRunnableAfterUninstall(t *testing.
 		t.Fatalf("retained workflow did not publish its next distinct snapshot: old=%v new=%v", old, newSnapshot)
 	}
 	run := f.call("POST", f.path("/workflows/"+wid+"/runs"), core.Object{
-		"snapshotId": newSnapshot.S("id"), "input": importedInvocationInput(),
+		"snapshotId": newSnapshot.S("id"), "input": importedInvocationInput(), "projectId": e.project,
 	}, "asset-retained-run", 200).O("resource")
 	e.assertRun(t, f.user, run.S("id"), newSnapshot)
 	if graph, row := readOldSnapshot(); graph != frozenGraph || row != frozenRow {

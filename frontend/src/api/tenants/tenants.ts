@@ -3860,7 +3860,7 @@ export function useGetApiV1TenantsTidIssuesIidRuns<TData = Awaited<ReturnType<ty
 
 
 /**
- * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Real Space Agent starts share task admission with conversation input. A persisted task pause or unresolved failed task message returns 409 task_paused; an accepted waiting task message returns 409 task_handoff_pending. Rejected starts create no Run and do not consume the pending-executor slot. The dispatcher rechecks task ordering, prior results and confirmed release before provisioning. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
  * @summary POST /api/v1/tenants/:tid/issues/:iid/runs
  */
 export const postApiV1TenantsTidIssuesIidRuns = (

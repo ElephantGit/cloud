@@ -9,20 +9,36 @@ import (
 // without starving; runs beyond the bound are claimed on the next tick.
 const agentDispatchBatchSize = 100
 
+// A queued message keeps its accepted order even if its Run is materialized after a direct Run.
+// Later appends to that Run cannot move its original input behind newer work.
+const agentRunTaskSource = ` FROM issue_runs ir
+	LEFT JOIN LATERAL (
+	  SELECT created_at,id FROM task_conversation_messages WHERE run_id=ir.id ORDER BY seq LIMIT 1
+	) origin ON true `
+
 // Every Agent claim path uses the same issue-scoped admission predicate. It bars a newer run
 // behind earlier queued work, any run that still owns execution or cleanup, and a previous failure
 // requiring explicit recovery. A business terminal status is insufficient: a residual Workspace
 // can remain after release gave up, and a delivery failure must not silently restore older work.
 const agentRunTaskClaimGuard = `
 	AND NOT EXISTS (SELECT 1 FROM task_conversations paused WHERE paused.issue_id=ir.issue_id AND paused.paused_run_id IS NOT NULL)
+	AND NOT EXISTS (SELECT 1 FROM task_conversation_messages m WHERE m.issue_id=ir.issue_id AND m.state='failed')
+	AND NOT EXISTS (
+	  SELECT 1 FROM task_conversation_messages m WHERE m.issue_id=ir.issue_id AND m.state='waiting'
+	    AND (m.created_at,m.id)<(COALESCE(origin.created_at,ir.created_at),COALESCE(origin.id,ir.id))
+	)
 	AND NOT EXISTS (
 	  SELECT 1 FROM issue_runs peer
+	  LEFT JOIN LATERAL (
+	    SELECT created_at,id FROM task_conversation_messages WHERE run_id=peer.id ORDER BY seq LIMIT 1
+	  ) peer_origin ON true
 	  WHERE peer.issue_id=ir.issue_id AND peer.id<>ir.id
 	    AND peer.executor_type='agent' AND peer.deleted_at IS NULL
 	    AND (
 	      peer.status IN ('dispatched','running')
 	      OR (peer.phase IS NOT NULL AND peer.phase<>'done')
-	      OR ((peer.created_at,peer.id)<(ir.created_at,ir.id) AND (
+	      OR ((COALESCE(peer_origin.created_at,peer.created_at),COALESCE(peer_origin.id,peer.id))
+	          <(COALESCE(origin.created_at,ir.created_at),COALESCE(origin.id,ir.id)) AND (
 	        peer.status IN ('queued','deferred')
 	        OR (peer.status IN ('failed','cancelled') AND NOT EXISTS (
 	          SELECT 1 FROM task_conversations c
@@ -87,7 +103,7 @@ func isSpaceAgentRun(t *transaction, tid, agentID string) bool {
 func (d *AgentRunDispatcher) Dispatch(ctx context.Context, runID string) error {
 	_, err := d.store.transact(ctx, func(t *transaction) Object {
 		o := t.one(`
-			SELECT ir.id FROM issue_runs ir
+			SELECT ir.id `+agentRunTaskSource+`
 			WHERE ir.id = $1
 			  AND ir.executor_type = 'agent'
 			  AND ir.status = 'queued'
@@ -121,13 +137,13 @@ func (d *AgentRunDispatcher) Dispatch(ctx context.Context, runID string) error {
 // row backing the executor.
 func (s *Store) scanQueuedAgentRuns(ctx context.Context, limit int) ([]string, error) {
 	rows, err := s.Pool.QueryContext(ctx, `
-		SELECT ir.id FROM issue_runs ir
+		SELECT ir.id `+agentRunTaskSource+`
 		WHERE ir.executor_type = 'agent'
 		  AND ir.status = 'queued'
 		  AND ir.phase IS NULL
 		  AND ir.deleted_at IS NULL
 		  AND EXISTS (SELECT 1 FROM space_agents sa WHERE sa.id = ir.executor_id AND sa.tenant_id = ir.tenant_id)`+agentRunTaskClaimGuard+`
-		ORDER BY ir.created_at, ir.id
+		ORDER BY COALESCE(origin.created_at,ir.created_at), COALESCE(origin.id,ir.id)
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

@@ -136,3 +136,7 @@ Agent 运行额外带两部分投影：
 - [Agent 运行的对话记为 Thread](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/0-durable-agent-thread-with-user-turns.md)
 - [Workspace 创建与启动增加 plugin 步骤；IssueRun 的运行 Workspace 由 Cloud 发起建删](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20260928-plugin-step-and-run-workspace-release.md)
 - [用户可在 Cloud 配置 git 提交身份](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20260928-user-git-commit-identity.md)
+
+## 任务消息与直接启动的顺序
+
+真实 Space Agent 的手动运行和评论 target 在同一创建事务检查任务暂停、未解决的 failed 消息和已接受的 waiting 消息：暂停/失败返回 `409 task_paused`，待执行输入返回 `409 task_handoff_pending`，拒绝不占用 pending Run 名额。任务队列按已接受的消息顺序取得新运行资格；实际领取和周期扫描再次检查暂停、消息顺序与旧运行的成果/释放屏障，不能靠另一入口绕过。消息派生的 Run 使用原消息接收顺序，不因稍后才创建 Run 而落到较新的直接输入之后。

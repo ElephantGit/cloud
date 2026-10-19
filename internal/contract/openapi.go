@@ -196,9 +196,10 @@ func Document() map[string]any {
 	runProps["workflowInvocationRef"] = optional(uuid())
 	// ThreadEntry is one ordered record of an Agent run's Thread (Thread D1/D2/D3). `seq` is the
 	// run-scoped conversation order, starting at 1 and gapless; `record` is the verbatim ora-history
-	// line, which Cloud stores and returns without ever rewriting it. `turnId` and `status` describe
-	// the per-turn lifecycle and exist only for a user turn — a `queued` entry becomes `delivered`
-	// when the Node echoes that turn_id — so Node and system entries carry neither. The Node's own
+	// line, which Cloud stores and returns without ever rewriting it. `turnId` correlates Node output
+	// with its actual user turn even when future user inputs are already queued. `status` describes
+	// the per-turn lifecycle and exists only for a user turn — a `queued` entry becomes `delivered`
+	// when the Node echoes that turn_id. Node and system rows omit status. The Node's own
 	// execution id and sequence are deliberately not part of this resource.
 	s["ThreadEntry"] = object(obj{
 		"seq":             obj{"type": "integer", "format": "int64", "minimum": 1},
@@ -1182,6 +1183,9 @@ func description(r router.Route) string {
 		// The Thread POST's own fault vocabulary. It is stated here rather than added to the shared
 		// per-status descriptions, which every unrelated route also carries.
 		base += "Appends one user turn to an agent run's Thread and returns the entry that was created, with the Cloud-generated turnId the Node will echo back. Authorized like a comment: any active tenant member who can read the Issue. content accepts text blocks only and their total text must not exceed 64 KiB, otherwise 400 content_too_large; an unrecognized block type is 400 invalid_field_type, never a silent drop. Accepted while the Thread is pending, active or idle and no cancellation has been requested; a Thread that is ending or ended, and a run whose cancellation request is already recorded, both answer 409 thread_closed — a turn accepted after a cancellation would be persisted and never executed. Task handoff barriers also apply to this endpoint: a waiting message for another Agent or initiator returns 409 task_handoff_pending, and a persisted task pause or earlier failed task message returns 409 task_paused. Neither rejection creates a Thread entry or command; later input must use the task conversation queue. The entry and the delivery command for it commit together with the idempotency record, so a failure anywhere in that transaction leaves nothing behind and the same key may be retried as a first request. A missing or mismatched tenant, Issue or run is 404 not_found. "
+	}
+	if r.Method == "POST" && strings.Contains(r.Path, "/issues/") && strings.HasSuffix(r.Path, "/runs") {
+		base += "Real Space Agent starts share task admission with conversation input. A persisted task pause or unresolved failed task message returns 409 task_paused; an accepted waiting task message returns 409 task_handoff_pending. Rejected starts create no Run and do not consume the pending-executor slot. The dispatcher rechecks task ordering, prior results and confirmed release before provisioning. "
 	}
 	if strings.HasSuffix(r.Path, "/thread/end") {
 		// The user-initiated end's own fault vocabulary, stated here rather than in the shared

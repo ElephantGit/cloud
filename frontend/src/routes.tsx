@@ -19,6 +19,7 @@ import { ProjectDetailPage } from '@/features/projects/project-detail-page'
 import { ProjectsPage } from '@/features/projects/projects-page'
 import { RuntimesPage } from '@/features/runtimes/runtimes-page'
 import { GeneralSettingsPage } from '@/features/settings/general-settings-page'
+import { GitCredentialsPage } from '@/features/repositories/credential-page'
 import { GitIdentityPage } from '@/features/settings/git-identity-page'
 import { ModelConnectionsPage } from '@/features/model-connections/model-connections-page'
 import { SettingsLayout } from '@/features/settings/settings-layout'
@@ -150,6 +151,7 @@ export const routes: RouteObject[] = [
           { path: 'members', element: <WithSlug component={MembersPage} /> },
           { path: 'billing', element: <WithSlug component={BillingPage} /> },
           { path: 'git-identity', element: <GitIdentityPage /> },
+          { path: 'git-credentials', element: <GitCredentialsPage /> },
           { path: 'model-connections', element: <ModelConnectionsPage /> },
         ],
       },

@@ -19,9 +19,11 @@ Git Server（`cmd/git-server`，实现在 `internal/gitserver`）为每个 Proje
   或结果待确认（`uncertain`）的 Operation 照常收尾，`delete_project` 等它们全部结束才开始删除。删除因 Node 拒绝停止而中止、
   Project 回到 `active` 时，同一事务把被取消的同步补回来；被取消的发布不恢复，需要用户重新发起。
 
-执行仓库 Operation 的 Repo Executor 不在本仓库里。Cloud 负责记录 Operation、按 Operation 状态授权 Git 访问。Workspace 的
-`clone` 步骤只从 Binding 的当前快照 clone（见 [Workspace 生命周期](../runtime/workspaces.md#clone-步骤从-binding-快照-clone)），
-Node 不接触外部仓库，仓库凭据也不参与任何 Node 工作。
+执行仓库 Operation 的 Repo Executor 是本仓库的 `cmd/repo-executor`，它按 Operation 状态获得 Git 访问授权；同步只写入本
+Binding 的快照前缀和跟踪 ref，发布只读取源。整条线的同步、发布、凭据与收敛规则见
+[外部 Git 线](external-git.md)。Workspace 的 `clone` 步骤只从 Binding 的当前快照 clone（见
+[Workspace 生命周期](../runtime/workspaces.md#clone-步骤从-binding-快照-clone)），Node 不接触外部仓库，仓库凭据也不参与任何
+Node 工作。
 
 ## 监听
 
@@ -68,7 +70,7 @@ clone）；执行输入的仓库地址指向这个租户和 Project；操作的�
 
 | Operation | 授权 |
 |---|---|
-| `repository_sync` | 在本 Binding 的快照前缀下新建快照 ref |
+| `repository_sync` | 在本 Binding 的快照前缀下新建快照 ref，并把本 Binding 的跟踪 ref 从授权记录的期望旧值推到新提交 |
 | `repository_publish` | 只读，发布只需要从 Project 仓库读取源 |
 
 **结果。** 任何拒绝都是同一个 `403`，仓库不存在也一样，沙盒无法借此探测仓库、执行或 Node 是否存在。数据库故障返回 `503`，
@@ -88,7 +90,7 @@ clone）；执行输入的仓库地址指向这个租户和 Project；操作的�
 
 - `pre-receive` 在写入任何 ref 之前**重新**解析同一份授权，逐个 ref 核对规则。任何 ref 都不能删除，也不能写表外的 ref；只要有
   一个更新不被接受，整次推送拒绝。
-- 目前沙盒执行产生 Workspace 分支与交付两种规则，同步 Operation 只产生快照前缀；跟踪 ref 的授权来源尚未接入。
+- 沙盒执行产生 Workspace 分支与交付两种规则；外部线的同步 Operation 产生快照前缀和本 Binding 的跟踪 ref。
 - 仓库策略和 hook 路径通过每个 git 进程的 `GIT_CONFIG_*` 环境变量生效，不写进仓库，所以重启或旧仓库都无法削弱它们。两个仓库
   监听都禁止删除 ref；仓库监听同时禁止非快进，服务仓库监听放开非快进，让跟踪 ref 能跟随外部的 force-push，其他 namespace 的
   非快进仍由 hook 拒绝。
@@ -104,9 +106,12 @@ ref 查询监听只对 Cloud 的固定身份开放，只读：
 Cloud server 用 `git_server.*` 配置里的地址和自己的客户端证书调用 ref 查询（`internal/gitrefquery`，只用 `?ref=`），在任何数据库
 事务之外核验 Revision 的交付 ref 指向 Node 声明的最终提交，再登记 Revision（见 [Revision](../agent-runs/revisions.md#交付流程)）。
 只有 `404 ref_not_found` 算作 ref 确实不存在；其他响应、传输失败或超时都让核验暂不可用、之后重试，不作结论。查询不跟随重定向。
-没有配置 Git Server 时，clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算，Cloud 也不调用 ref 查询。
+没有配置 Git Server 时，clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算，Cloud 也不经这个客户端调用 ref 查询。
 
 这条交付路径实现的是已 `approved` 的 Revision 决策（见文末）。
+
+外部 Git 线用 `repository.git_refs_*` 配置的另一个客户端（`internal/gitrefs`）在三个地方调用 ref 查询：同步报告 `applied`
+后核对快照与跟踪 ref，创建发布前确认源 ref，以及列出 Workspace 的协作分支供选择发布源（见 [外部 Git 线](external-git.md)）。
 
 ## 运维
 

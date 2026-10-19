@@ -11,14 +11,18 @@ the [documentation map](README.en.md)).
 ## Participants
 
 ```text
-Browser
-  │  HTTPS, session cookie
-  ▼
+Browser ── credential submission (one-time grant) ──▶ Credential Store
+  │                                                        ▲
+  │  HTTPS, session cookie                                 │ redeem (mTLS)
+  ▼                                                        │
 Gateway ─────────── personal key writes ──────────▶ model-gateway
   │  /api/v1/* + service JWT + user JWT                  ▲
   ▼                                                      │ model requests (short-lived token)
 Cloud server ◀──── mTLS gRPC, dialed out ──── Controller │
-  │                                              │       │
+  │  │                                           │       │
+  │  ├── mTLS task ──▶ Repo Executor ──▶ external Git repository
+  │  │                     └──▶ git-server (snapshot / tracking refs)
+  │  └── ref query ───▶ git-server
   ▼                                              │ Substrate effects / Node protocol
 PostgreSQL                                       ▼       │
                                    Sandbox Server ──▶ sandbox: Node + Agent
@@ -34,6 +38,8 @@ PostgreSQL                                       ▼       │
   cannot reach Cloud, the Gateway or the database directly.
 - The Cloud server reaches only git-server's ref query listener, with its own client certificate, to check a delivery
   ref before registering a Revision (see [Git Server](repositories/git-server.en.md#ref-queries)).
+- External Git is reached only by the Repo Executor; a token submitted by the browser goes only to the Credential Store,
+  and Cloud reads credential metadata and issues short-lived, single-use authorizations without ever seeing plaintext.
 
 | Participant | Repository | Responsibility |
 |---|---|---|
@@ -41,6 +47,9 @@ PostgreSQL                                       ▼       │
 | Gateway (`cmd/gateway`) | This repository | The browser's only entry point: external login (Huawei IDaaS, GitHub), sessions, the proxy |
 | model-gateway (`cmd/model-gateway`) | This repository | Custody of personal model keys and forwarding of model requests |
 | git-server (`cmd/git-server`) | This repository | Every Project's code hub, authorized per request from Cloud's state |
+| Repo Executor (`cmd/repo-executor`) | This repository | The only process reaching external Git repositories: sync, explicit publish and read-only probes; stateless, no database |
+| Credential Store (`cmd/credential-store`) | This repository | Independent custody of external Git tokens: browser submission, executor redemption, Cloud management and revocation; ciphertext only |
+| git-credential-ora (`cmd/git-credential-ora`) | This repository | The Repo Executor's fixed Git credential helper; delivers the credential only when the requested repository equals the staged scope |
 | PostgreSQL | — | The only authoritative business store |
 | Object storage | — | Revision session JSONL (Revisions registered before the switch to Git also have bundles) |
 | Controller (`ora-controller`) | desktop | Dials out to Cloud only; claims work, performs Substrate effects, holds Node sessions and relays events and commands |
@@ -69,6 +78,9 @@ PostgreSQL                                       ▼       │
 7. **Each contract has one source.** The HTTP contract is `api/openapi.json`, generated from `router.Routes` and
    `internal/contract`; the Controller contract is `proto/`. The frontend client and desktop's client are both generated
    from them.
+8. **External Git has one exit and credential plaintext has one path.** Only the Repo Executor reaches external
+   repositories and only the Credential Store holds token plaintext; Cloud records metadata and issues short-lived,
+   single-use authorizations.
 
 ## The path of a request
 
@@ -120,7 +132,7 @@ an unknown outcome only gets an end request and keeps its residual responsibilit
 |---|---|---|
 | Identity and tenancy | Users, identity mappings, tenants, Spaces, members | [Internal credentials](identity/authentication.en.md), [Gateway](identity/gateway.en.md), [Users, tenants and members](identity/tenancy.en.md) |
 | Runtime | Projects, Workspaces, operations, effects, sandboxes, Nodes, runtime control, force-stop | [Workspace lifecycle](runtime/workspaces.en.md), [Runtime control](runtime/runtime-control.en.md), [Controller contract](runtime/controller-integration.en.md) |
-| Repositories | Repository Bindings, repository Operations, Project repositories | [Git Server](repositories/git-server.en.md) |
+| Repositories | Repository Bindings, repository Operations, external sync and publish, Git credentials, Project repositories | [Git Server](repositories/git-server.en.md), [External Git line](repositories/external-git.en.md) |
 | Collaboration | Issues, status columns, comments, activities, interactions | [Issue board](collaboration/issues.en.md), [Issue collaboration](collaboration/interactions.en.md) |
 | Agent runs | IssueRuns, run Workspaces, Threads, Revisions, the residual ledger | [Agent IssueRuns](agent-runs/issue-runs.en.md) and the other documents in that directory |
 | Models | Personal model connections, run bindings, short-lived grants, the request ledger | [Personal model connections](models/model-access.en.md), [model-gateway](models/model-gateway.en.md) |
@@ -137,6 +149,7 @@ The Cloud server process runs a set of periodic loops for the progress and settl
 | Workflow plugin asset import | `plugins.asset_import_interval` (30 seconds by default) | [Workflows](workflows/workflows.en.md#plugin-asset-import) |
 | Agent run dispatch, session start, Thread ending, cancellation, delivery give-up, delete re-declaration, delete give-up | 10 seconds | [Agent IssueRuns](agent-runs/issue-runs.en.md#background-loops) |
 | WorkflowRun scheduling | 10 seconds | [Workflows](workflows/workflows.en.md#scheduling) |
+| Repository Operation leases, publish checks, credential verifications and revocation retries | 2 seconds | [External Git line](repositories/external-git.en.md#failure-and-sweeping) |
 
 They all do a bounded read-only scan outside the global lock and then open one short transaction per object that decides again
 and transitions with a compare-and-set, so running a pass twice never has a second effect.

@@ -28,8 +28,10 @@ side, then the Git Server's listeners, identities and authorization rules.
   to `active`, the same transaction gives back the cancelled sync; cancelled publishes are not
   restored and must be started again by the user.
 
-The Repo Executor that performs repository Operations is not in this repository. Cloud records the
-Operations and authorizes Git access by Operation state. A Workspace's `clone` step clones only the
+The Repo Executor that performs repository Operations is this repository's `cmd/repo-executor`; it
+receives Git access by Operation state, a sync writes only this Binding's snapshot prefix and
+tracking ref, and a publish only reads its source. The whole line's sync, publish, credential and
+settlement rules are in [The external Git line](external-git.en.md). A Workspace's `clone` step clones only the
 Binding's current snapshot (see [Workspace lifecycle](../runtime/workspaces.en.md#the-clone-step-clones-the-binding-snapshot)):
 Nodes never reach the external repository, and repository credentials take part in no Node work.
 
@@ -91,7 +93,7 @@ deletion starts must still be able to settle):
 
 | Operation | Grant |
 |---|---|
-| `repository_sync` | Create snapshot refs under this Binding's snapshot prefix |
+| `repository_sync` | Create snapshot refs under this Binding's snapshot prefix and move this Binding's tracking ref from the grant's expected old value to the new commit |
 | `repository_publish` | Read-only; a publish only reads its source from the Project repository |
 
 **Outcomes.** Every denial is the same `403`, a missing repository included, so a sandbox cannot probe
@@ -115,8 +117,8 @@ push already inside pre-receive. A long fetch is not re-authorized mid-transfer.
 - `pre-receive` resolves the same grant **again** before any ref is written and checks every ref
   against its rule. No ref can be deleted and no ref outside the table can be written; if any single
   update is not accepted, the whole push is refused.
-- Today sandbox executions produce the Workspace branch and delivery rules, and sync Operations only the
-  snapshot prefix; the source of grants for tracking refs is not wired in yet.
+- Sandbox executions produce the Workspace branch and delivery rules; an external-line sync produces the
+  snapshot prefix and this Binding's tracking ref.
 - Repository policy and the hook path are applied through `GIT_CONFIG_*` environment variables on every
   git process rather than written into the repository, so neither a restart nor an old repository can
   weaken them. Both repository listeners refuse ref deletion; the repository listener also refuses
@@ -140,9 +142,14 @@ Revision's delivery ref names the final commit the Node declared, then registers
 [Revisions](../agent-runs/revisions.en.md#the-delivery-flow)). Only `404 ref_not_found` counts as the ref being
 absent; any other response, a transport failure or a timeout makes verification unavailable for now and it is retried,
 never concluded. The query never follows redirects. Without a configured Git Server, clone steps stay `blocked`
-(`git_server_unconfigured`), deliveries settle as `skipped`, and Cloud never calls the ref query.
+(`git_server_unconfigured`), deliveries settle as `skipped`, and Cloud makes no ref query through this client.
 
 This delivery path implements an `approved` Revision decision (see below).
+
+The external Git line calls the ref query through a second client (`internal/gitrefs`) configured by
+`repository.git_refs_*`, in three places: after a sync reports `applied` to verify the snapshot and tracking
+refs, before creating a publish to confirm the source ref, and when listing a Workspace's collaboration
+branches as publish sources (see [The external Git line](external-git.en.md)).
 
 ## Operations
 

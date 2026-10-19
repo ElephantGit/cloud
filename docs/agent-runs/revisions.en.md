@@ -132,7 +132,7 @@ again. Delivery retry and give-up limits are in [Agent IssueRuns](issue-runs.en.
 
 Each delivery ref belongs to at most one Revision (the partial unique index `revisions_delivery_ref`). Bundle-shaped
 Revisions registered before the switch to Git are kept as they are, and a database constraint keeps the two shapes
-mutually exclusive (migration `0044`).
+mutually exclusive (migration `0045`).
 
 ## Resuming a prior Revision
 

@@ -500,6 +500,15 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
+			// An expected-value template names the same variable pool as variableSelector, so its
+			// placeholder must hold to the same declarations. `selectedBranch` is exactly what Cloud's
+			// condition node writes at run time, but desktop declares no root on a condition node, so a
+			// template reading it would resolve on Cloud and fail desktop.
+			name: "an expected-value template on an undeclared root",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"s", "input"}, "equals", "{{#c.selectedBranch#}}")})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.value"}},
+		},
+		{
 			name: "an operator neither side knows",
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "matches", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},

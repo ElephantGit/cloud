@@ -408,6 +408,18 @@ func validateConditionRule(nodeID string, raw any, declaredRoots map[string]map[
 	if _, ok := workflowConditionOperators[r.S("operator")]; !ok {
 		problems = append(problems, workflowGraphProblem{Code: "condition_operator_unsupported", NodeID: nodeID, Field: "cases.conditions.operator"})
 	}
+	// An expected-value template names the same variable pool as variableSelector, so a placeholder
+	// must hold to the same declarations. Cloud's condition node writes `selectedBranch` at run time,
+	// but desktop declares no root on a condition node, so without this check a template like
+	// {{#c.selectedBranch#}} would resolve on Cloud and fail desktop; the gate refuses it the same way
+	// it refuses a bare selector. Only strings can carry a placeholder.
+	if text, ok := r["value"].(string); ok {
+		for _, selector := range workflowTemplateSelectors(text) {
+			if !declaredRoots[selector.nodeID][selector.root] {
+				problems = append(problems, workflowGraphProblem{Code: "condition_selector_undeclared", NodeID: nodeID, Field: "cases.conditions.value"})
+			}
+		}
+	}
 	return problems
 }
 

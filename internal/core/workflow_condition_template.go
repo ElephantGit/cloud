@@ -56,6 +56,31 @@ func exclusiveWorkflowTemplate(text string) (workflowSelector, bool) {
 	return buildWorkflowSelector(strings.Split(inner, "."))
 }
 
+// workflowTemplateSelectors returns the placeholder selectors a `value` template references, so the
+// publish gate can hold a template to the same declaredRoots contract as `variableSelector`. It
+// reads every `{{#node.root#}}` occurrence the renderer expands; a placeholder that is not a
+// well-formed selector is skipped, because the renderer already reports that shape as an error at
+// evaluation time and the gate's only concern here is a reference desktop would never declare.
+func workflowTemplateSelectors(text string) []workflowSelector {
+	var selectors []workflowSelector
+	rest := text
+	for {
+		open := strings.Index(rest, "{{#")
+		if open < 0 {
+			return selectors
+		}
+		afterOpen := rest[open+len("{{#"):]
+		closeAt := strings.Index(afterOpen, "#}}")
+		if closeAt < 0 {
+			return selectors
+		}
+		if selector, ok := buildWorkflowSelector(strings.Split(afterOpen[:closeAt], ".")); ok {
+			selectors = append(selectors, selector)
+		}
+		rest = afterOpen[closeAt+len("#}}"):]
+	}
+}
+
 // renderWorkflowTemplate renders every placeholder in a mixed template: strings verbatim, every
 // other value as JSON. An unterminated placeholder or an invalid selector is an error, never a
 // silent blank, matching desktop's render_variable_template.

@@ -717,7 +717,8 @@ func ownedOperation(t *transaction, r *PublicRequest, uid string) Object {
 		delete(req, "clone")
 	}
 	// A clone step that ended with repository_sync_failed keeps the sync Operation's ID for Cloud and
-	// operators; the public view carries only the sync's safe error code (operation D2).
+	// operators, never for the public view; a run shows the sync's safe error code through its
+	// preparation instead (operation D2).
 	delete(o.O("result"), "syncOperationId")
 	return o
 }

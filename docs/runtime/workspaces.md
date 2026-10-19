@@ -125,7 +125,8 @@ Workspace 不从外部仓库 clone，只从 Project 的 Binding 在 Git Server �
   只有身份与生命周期，不带外部仓库地址、默认分支或凭据引用。
 - **没有快照时不派发。** Binding 还没有快照时，Cloud 在领取或进入步骤的同一事务里按 Binding 最近一次同步决定，不消耗 clone 次数：
   同步尚未结束时操作进入 `retry_wait`（`snapshot_not_ready`，10 秒后再领取）；同步已经以非成功终态结束时操作 `failed`
-  （`repository_sync_failed`，公开的操作结果只带同步的安全错误码 `syncErrorCode`），失败的 `create_project` 照常让 Project 进入
+  （`repository_sync_failed`，只记录该同步 Operation 的 ID，不另存错误码；公开的操作结果不带这个 ID，运行的
+  `preparation.syncErrorCode` 按记录的 ID 取该同步自己的错误码），失败的 `create_project` 照常让 Project 进入
   `active`。没有配置 Git Server 时操作停在 `blocked`（`git_server_unconfigured`）。被停放的操作不会让这次领取落空，领取继续找下一个
   可领取的操作。Cloud 从不回退到外部仓库，也不在这里触发同步；创建运行 Workspace 不会隐式同步。
 - **公开读取不暴露输入。** 公开的操作资源里没有冻结的 clone 输入。

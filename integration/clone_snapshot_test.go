@@ -127,12 +127,13 @@ func TestCloneStepEndsWithTheBindingSyncFailure(t *testing.T) {
 	}
 	recorded := core.Object{}
 	must(t, json.Unmarshal([]byte(op.S("result")), &recorded))
-	if recorded.S("syncOperationId") != failed["operationId"] || recorded.S("syncErrorCode") != "credential_rejected" || len(recorded) != 2 {
-		t.Fatalf("the failure must record the sync and its code: %s, want %v", op.S("result"), failed["operationId"])
+	// Only the sync's ID is recorded; its code stays on the sync Operation itself.
+	if recorded.S("syncOperationId") != failed["operationId"] || len(recorded) != 1 {
+		t.Fatalf("the failure must record only the sync's ID: %s, want %v", op.S("result"), failed["operationId"])
 	}
-	// The public view keeps the safe code and leaves the internal sync Operation's ID to Cloud.
-	if public := f.call("GET", f.path("/operations/"+oid), nil, "", 200).O("result"); public.S("syncErrorCode") != "credential_rejected" || len(public) != 1 {
-		t.Fatalf("the public operation must carry only the sync's code, got %v", public)
+	// The public view leaves the internal sync Operation's ID to Cloud and keeps no copy of its code.
+	if public := f.call("GET", f.path("/operations/"+oid), nil, "", 200).O("result"); len(public) != 0 {
+		t.Fatalf("the public operation must carry neither the sync's ID nor a copy of its code, got %v", public)
 	}
 	if f.scalar("SELECT count(*) FROM clone_executions WHERE operation_id=$1", oid) != 0 {
 		t.Fatal("a failed sync must never fall back to a clone")

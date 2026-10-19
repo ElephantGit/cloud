@@ -73,9 +73,9 @@ func freezeCloneInput(t *transaction, o Object) bool {
 	// D2): the external line records a successful sync and its snapshot in one transaction without
 	// taking any lock the claim holds, and two statements at READ COMMITTED could see no snapshot and
 	// then that sync's success, failing a step that has a snapshot to clone.
-	b := t.one(`SELECT b.id AS binding_id,s.commit_oid,s.snapshot_ref,ls.id AS sync_id,ls.state AS sync_state,ls.error_code AS sync_error_code
+	b := t.one(`SELECT b.id AS binding_id,s.commit_oid,s.snapshot_ref,ls.id AS sync_id,ls.state AS sync_state
 	 FROM repository_bindings b LEFT JOIN repository_snapshots s ON s.binding_id=b.id
-	 LEFT JOIN LATERAL (SELECT id,state,error_code FROM repository_operations WHERE binding_id=b.id AND type=$2 ORDER BY created_at DESC,id DESC LIMIT 1) ls ON true
+	 LEFT JOIN LATERAL (SELECT id,state FROM repository_operations WHERE binding_id=b.id AND type=$2 ORDER BY created_at DESC,id DESC LIMIT 1) ls ON true
 	 WHERE b.project_id=$1`, o.S("projectId"), RepositorySync)
 	if b == nil {
 		// Every Project is created with its Binding; parking keeps a defect from failing every claim.
@@ -106,7 +106,9 @@ func freezeCloneInput(t *transaction, o Object) bool {
 // awaitSnapshot decides a clone step whose Binding has no current snapshot by the Binding's latest
 // sync (operation D2), read together with the snapshot: while it may still produce one the step waits
 // without consuming an attempt; once it ended without success the step fails with that sync
-// recorded. It never falls back to the external repository and never starts a sync itself.
+// recorded. Only the sync's ID is recorded: its error code stays on the sync itself, where a run's
+// preparation reads it (operation D2). It never falls back to the external repository and never
+// starts a sync itself.
 func awaitSnapshot(t *transaction, o, b Object) {
 	switch b.S("syncState") {
 	case "pending", "leased", "running":
@@ -119,9 +121,6 @@ func awaitSnapshot(t *transaction, o, b Object) {
 	result := Object{}
 	if id := b.S("syncId"); id != "" {
 		result["syncOperationId"] = id
-		if code := b.S("syncErrorCode"); code != "" {
-			result["syncErrorCode"] = code
-		}
 	}
 	t.exec("UPDATE operations SET result=$2 WHERE id=$1", o.S("id"), jsonText(result))
 	failWorkspaceClone(t, o, repositorySyncFailed)

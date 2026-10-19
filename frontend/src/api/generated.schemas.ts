@@ -1205,7 +1205,6 @@ export interface OperationRequest {
 export interface OperationResult {
   forceStopId?: string;
   resourceId?: string;
-  syncErrorCode?: string;
 }
 
 export interface Operation {

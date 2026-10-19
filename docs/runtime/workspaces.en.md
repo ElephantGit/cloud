@@ -149,11 +149,12 @@ on the Git Server:
 - **No snapshot, no dispatch.** While the Binding has no snapshot, Cloud decides by the Binding's latest sync, in the
   same transaction as the claim or the step entry, without consuming a clone attempt: while that sync is unfinished
   the operation goes to `retry_wait` (`snapshot_not_ready`, claimable again after 10 seconds); once it ended without
-  success the operation `failed` (`repository_sync_failed`; the public operation result carries only the sync's safe
-  `syncErrorCode`), and a failed `create_project` still leaves the Project `active`. Without a configured Git Server
-  the operation is `blocked` (`git_server_unconfigured`). A parked operation never empties the claim: the claim moves
-  on to the next claimable operation. Cloud never falls back to the external repository and never starts a sync here;
-  creating a run Workspace never syncs implicitly.
+  success the operation `failed` (`repository_sync_failed`; it records only the sync Operation's ID and no copy of
+  its error code; the public operation result omits that ID, and a run's `preparation.syncErrorCode` reads the
+  recorded sync's own code), and a failed `create_project` still leaves the Project `active`. Without a configured
+  Git Server the operation is `blocked` (`git_server_unconfigured`). A parked operation never empties the claim: the
+  claim moves on to the next claimable operation. Cloud never falls back to the external repository and never starts
+  a sync here; creating a run Workspace never syncs implicitly.
 - **Public reads do not expose the input.** The public operation resource leaves out the frozen clone input.
 
 When Cloud parks a run Workspace creation as `blocked`, it freezes the creation's abandonment deadline in the same

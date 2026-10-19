@@ -29,13 +29,22 @@ func preparationSyncErrorCode(t *transaction, run, progress Object) any {
 	if progress.S("errorCode") != repositorySyncFailed || run.S("workspaceId") == "" {
 		return nil
 	}
-	// The clone step recorded the very sync it failed on (operation D2); the latest failed sync of
-	// the Binding answers for operations that ended before that record existed.
-	if op := t.one("SELECT result FROM operations WHERE workspace_id=$1 AND kind='create_workspace' AND error_code=$2 ORDER BY created_at DESC,id DESC LIMIT 1", run.S("workspaceId"), repositorySyncFailed); op.O("result").S("syncErrorCode") != "" {
-		return op.O("result").S("syncErrorCode")
+	// The clone step recorded the very sync it failed on, and only its ID (operation D2): the code is
+	// that sync's own error_code, read in the Workspace's Project so a recorded ID never reaches
+	// another tenant's sync. A recorded sync without a code (superseded or cancelled) has none to
+	// show. The latest failed sync of the Binding answers only for operations that recorded no ID.
+	var o Object
+	op := t.one("SELECT result FROM operations WHERE workspace_id=$1 AND kind='create_workspace' AND error_code=$2 ORDER BY created_at DESC,id DESC LIMIT 1", run.S("workspaceId"), repositorySyncFailed)
+	if id := op.O("result").S("syncOperationId"); id != "" {
+		if !validID(id) {
+			return nil
+		}
+		o = t.one(`SELECT o.error_code FROM repository_operations o JOIN workspaces w ON w.project_id=o.project_id AND w.tenant_id=o.tenant_id
+		 WHERE w.id=$1 AND o.id=$2 AND o.type='repository_sync'`, run.S("workspaceId"), id)
+	} else {
+		o = t.one(`SELECT o.error_code FROM repository_operations o JOIN workspaces w ON w.project_id=o.project_id AND w.tenant_id=o.tenant_id
+		 WHERE w.id=$1 AND o.type='repository_sync' AND o.state='failed' ORDER BY o.finished_at DESC,o.id DESC LIMIT 1`, run.S("workspaceId"))
 	}
-	o := t.one(`SELECT o.error_code FROM repository_operations o JOIN workspaces w ON w.project_id=o.project_id
-	 WHERE w.id=$1 AND o.type='repository_sync' AND o.state='failed' ORDER BY o.finished_at DESC,o.id DESC LIMIT 1`, run.S("workspaceId"))
 	if o == nil || o.S("errorCode") == "" {
 		return nil
 	}

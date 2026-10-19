@@ -256,6 +256,7 @@ func TestWorkflowConditionOperators(t *testing.T) {
 	}{
 		{"equals match", []any{"s", "flag"}, "equals", true, true},
 		{"is is equals", []any{"s", "flag"}, "is", true, true},
+		{"is_not is not_equals", []any{"s", "flag"}, "is_not", false, true},
 		{"equals mismatch", []any{"s", "flag"}, "equals", false, false},
 		{"not_equals mismatch", []any{"s", "flag"}, "not_equals", true, false},
 		{"not_equals match", []any{"s", "flag"}, "not_equals", false, true},

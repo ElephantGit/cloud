@@ -537,6 +537,61 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 	}
 }
 
+// TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet pins the accepted set to desktop's
+// `ComparisonOperator::parse` from both sides. A spelling only one side knows is the divergence the
+// publish gate exists to prevent: Cloud would admit a document desktop then reads as an operator it
+// does not have, and the two would branch differently on the same rule.
+//
+// The direction labels the comparator helpers are built with — "starts", "ends", "greater",
+// "greater_eq", "less", "less_eq" — read like operator spellings but are Go-side names for one
+// comparison, never wire operators, so a document that writes one is refused like any other
+// unknown operator. The map keys are checked directly as well: the gate reads that map rather than
+// restating the list, so a key added there reaches the gate with nothing else to stop it.
+func TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet(t *testing.T) {
+	selector := []any{"s", "input", "flag"}
+	// desktop's wire spellings, in the order `ComparisonOperator::parse` lists them.
+	desktop := []string{
+		"equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with",
+		"empty", "not_empty", "greater_than", "greater_than_or_equal", "less_than",
+		"less_than_or_equal", "is", "is_not", "exists", "not_exists",
+	}
+
+	for _, operator := range desktop {
+		t.Run("accepts "+operator, func(t *testing.T) {
+			node := graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, true)})})
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
+			if len(got) != 0 {
+				t.Fatalf("%q is desktop's operator but was refused: %v", operator, got)
+			}
+		})
+	}
+
+	// The comparison names the evaluator builds its operators from, which no document may write.
+	for _, operator := range []string{"starts", "ends", "greater", "greater_eq", "less", "less_eq"} {
+		t.Run("refuses "+operator, func(t *testing.T) {
+			node := graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, true)})})
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph([]any{graphStart("s"), node}, []any{graphEdge("s", "c")}, nil))))
+			want := []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("problems = %v, want %v", got, want)
+			}
+		})
+	}
+
+	known := map[string]bool{}
+	for _, operator := range desktop {
+		known[operator] = true
+	}
+	if len(workflowConditionOperators) != len(known) {
+		t.Fatalf("the evaluator's table has %d operators; desktop's parse has %d", len(workflowConditionOperators), len(known))
+	}
+	for operator := range workflowConditionOperators {
+		if !known[operator] {
+			t.Fatalf("the evaluator's table accepts %q, which desktop's parse does not", operator)
+		}
+	}
+}
+
 // TestRequireValidWorkflowGraphIsOneStableFault covers the wire contract of the publish refusal: one
 // code whatever went wrong, and every problem carried as a parameter so the editor can mark each
 // node. A client that branched on a per-violation code would break the day a new rule was added.

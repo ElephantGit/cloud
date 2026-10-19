@@ -321,6 +321,11 @@ func TestDeleteProjectWaitsForARunningRepositoryOperation(t *testing.T) {
 			created := f.create("delete-waits-" + kind)
 			pid, wid := created.O("resource").S("id"), created.O("workspace").S("id")
 			f.drain()
+			if kind == "publish" {
+				// A publish Operation always names a credential: the preset takes the Binding's.
+				credential := f.storedGitCredential(f.uid, "team", "https://example.invalid/repo")
+				must(t, firstErr(f.store.Pool.Exec("UPDATE repository_bindings SET credential_ref_id=$2 WHERE project_id=$1", pid, credential)))
+			}
 			running, err := f.preset().Operation(context.Background(), pid, kind, "running", "")
 			must(t, err)
 			p := f.call("GET", f.path("/projects/"+pid), nil, "", 200)

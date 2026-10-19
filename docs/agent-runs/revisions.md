@@ -9,7 +9,7 @@ Node 把最终提交推送到 Project 仓库后得到的**交付 ref**，以及�
 Revision 只在 Cloud 亲自核对过交付 ref 和会话 JSONL 之后才登记；运行 Workspace 只在 Revision 登记之后（或交付被明确放弃之后）
 才释放。运行生命周期见 [Agent IssueRun](issue-runs.md)。
 
-本文描述的 Git 交付与续接实现的是仍处于 `proposed` 的决策（见文末相关决策）；ADR 批准之前，这部分行为可能随评审调整。
+本文描述的 Git 交付与续接实现的是已 `approved` 的决策（见文末相关决策）。
 
 ## 依赖的部署组件
 
@@ -144,5 +144,5 @@ WorkflowRun 的 Workspace 不列入：它的会话没有 Git Server 访问，目
 
 - [Cloud 持有对象存储配置并签发限定上传授权，Revision 在 Cloud 校验对象后才登记](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/0-cloud-owned-object-store-and-verified-revisions.md)
 - [同一 Issue 的新运行先续接最近一次 Revision，再启动 Agent](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261010-resume-run-from-latest-issue-revision.md)
-- [Revision 的代码改动只经 Git Server 交付：Cloud 经 ref 查询核验后登记交付 ref，续作只从前序自己的交付 ref 恢复](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中；它取代 20261012 的 Git Server 交付决策）
-- [clone 输入替换为 Git Server 快照输入；Git Server 按执行类型给出写入规则；交付与会话输入去掉 bundle，删除下载授权](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中）
+- [Revision 的代码改动只经 Git Server 交付：Cloud 经 ref 查询核验后登记交付 ref，续作只从前序自己的交付 ref 恢复](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md)（approved；它取代 20261012 的 Git Server 交付决策）
+- [clone 输入替换为 Git Server 快照输入；Git Server 按执行类型给出写入规则；交付与会话输入去掉 bundle，删除下载授权](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md)（approved）

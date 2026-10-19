@@ -142,7 +142,7 @@ absent; any other response, a transport failure or a timeout makes verification 
 never concluded. The query never follows redirects. Without a configured Git Server, clone steps stay `blocked`
 (`git_server_unconfigured`), deliveries settle as `skipped`, and Cloud never calls the ref query.
 
-This delivery path implements a Revision decision that is still `proposed` (see below).
+This delivery path implements an `approved` Revision decision (see below).
 
 ## Operations
 
@@ -161,6 +161,6 @@ This delivery path implements a Revision decision that is still `proposed` (see 
 
 - [Git Server is the Project's code hub: a separate HTTPS service where certificates only authenticate and authorization is decided per request from Cloud's current state](https://github.com/ora-space/specs/blob/main/decisions/cloud/git-server/0-project-code-hub-git-server-over-https.md) (approved)
 - [Git Server becomes every Project's code hub: ref namespaces, rule-set grants and the contract for two kinds of writer](https://github.com/ora-space/specs/blob/main/decisions/cloud/git-server/20261016-project-repository-as-code-hub-and-ref-contract.md) (approved)
-- [A Workspace's clone step consumes the Binding's current snapshot](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111))
-- [The clone input becomes a Git Server snapshot input; the Git Server derives write rules from the execution kind](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111))
-- [A Revision's code changes are delivered only through the Git Server, and Cloud registers the delivery ref after a ref query](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111); supersedes the 20261012 delivery decision)
+- [A Workspace's clone step consumes the Binding's current snapshot](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md) (approved)
+- [The clone input becomes a Git Server snapshot input; the Git Server derives write rules from the execution kind](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md) (approved)
+- [A Revision's code changes are delivered only through the Git Server, and Cloud registers the delivery ref after a ref query](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md) (approved; supersedes the 20261012 delivery decision)

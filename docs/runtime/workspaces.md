@@ -204,4 +204,4 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 - [Internal Control gRPC 增加 Workspace 操作与 Controller 代报 Node](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260926-workspace-operations-and-controller-reported-nodes.md)
 - [Project 归属 Space：以成员身份取代个人所有作为可见与授权边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/0-project-space-scoping.md)
 - [仓库访问凭据按团队、个人或未知归属管理](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md)（approved）
-- [Workspace 的 clone 步骤改为消费 Binding 当前快照，删除租户级 clone](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中；本文 clone 步骤一节描述的就是它的实现）
+- [Workspace 的 clone 步骤改为消费 Binding 当前快照，删除租户级 clone](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（approved；本文 clone 步骤一节描述的就是它的实现）

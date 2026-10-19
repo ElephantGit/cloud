@@ -106,7 +106,7 @@ Cloud server 用 `git_server.*` 配置里的地址和自己的客户端证书调
 只有 `404 ref_not_found` 算作 ref 确实不存在；其他响应、传输失败或超时都让核验暂不可用、之后重试，不作结论。查询不跟随重定向。
 没有配置 Git Server 时，clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算，Cloud 也不调用 ref 查询。
 
-这条交付路径实现的是仍处于 `proposed` 的 Revision 决策（见文末）。
+这条交付路径实现的是已 `approved` 的 Revision 决策（见文末）。
 
 ## 运维
 
@@ -119,6 +119,6 @@ Cloud server 用 `git_server.*` 配置里的地址和自己的客户端证书调
 
 - [Git Server 是 Project 的代码中心：独立 HTTPS 服务，证书只认证身份，授权按 Cloud 当前状态逐请求判定](https://github.com/ora-space/specs/blob/main/decisions/cloud/git-server/0-project-code-hub-git-server-over-https.md)（approved）
 - [Git Server 成为每个 Project 的代码中心：ref namespace、规则集授权与两类写入者的契约](https://github.com/ora-space/specs/blob/main/decisions/cloud/git-server/20261016-project-repository-as-code-hub-and-ref-contract.md)（approved）
-- [Workspace 的 clone 步骤改为消费 Binding 当前快照](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中）
-- [clone 输入替换为 Git Server 快照输入；Git Server 按执行类型给出写入规则](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中）
-- [Revision 的代码改动只经 Git Server 交付，Cloud 经 ref 查询核验后登记交付 ref](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md)（proposed，在 [specs#111](https://github.com/ora-space/specs/pull/111) 评审中；取代 20261012 的交付决策）
+- [Workspace 的 clone 步骤改为消费 Binding 当前快照](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（approved）
+- [clone 输入替换为 Git Server 快照输入；Git Server 按执行类型给出写入规则](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md)（approved）
+- [Revision 的代码改动只经 Git Server 交付，Cloud 经 ref 查询核验后登记交付 ref](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md)（approved；取代 20261012 的交付决策）

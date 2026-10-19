@@ -12,8 +12,7 @@ A Revision is registered only after Cloud itself has checked the delivery ref an
 Workspace is released only after the Revision is registered (or delivery was explicitly given up). The run
 lifecycle is in [Agent IssueRuns](issue-runs.en.md).
 
-The Git delivery and resume described here implement decisions that are still `proposed` (see Related decisions
-at the end); until those ADRs are approved, this behavior may change with their review.
+The Git delivery and resume described here implement `approved` decisions (see Related decisions at the end).
 
 ## Deployment dependencies
 
@@ -184,5 +183,5 @@ download. The session JSONL archive can be read as described in [Session reads](
 
 - [Cloud owns the object storage configuration and issues scoped upload grants; a Revision is registered only after Cloud verifies the objects](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/0-cloud-owned-object-store-and-verified-revisions.md)
 - [A new run on the same Issue first resumes its latest Revision, then starts the Agent](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261010-resume-run-from-latest-issue-revision.md)
-- [A Revision's code changes are delivered only through the Git Server: Cloud registers the delivery ref after a ref query, and resuming restores only from the prior's own delivery ref](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111); it supersedes the 20261012 Git Server delivery decision)
-- [The clone input becomes a Git Server snapshot input; the Git Server derives write rules from the execution kind; delivery and session inputs drop bundles and the download grant](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md) (proposed, under review in [specs#111](https://github.com/ora-space/specs/pull/111))
+- [A Revision's code changes are delivered only through the Git Server: Cloud registers the delivery ref after a ref query, and resuming restores only from the prior's own delivery ref](https://github.com/ora-space/specs/blob/main/decisions/cloud/revision/20261017-git-native-delivery-refs-and-resume.md) (approved; it supersedes the 20261012 Git Server delivery decision)
+- [The clone input becomes a Git Server snapshot input; the Git Server derives write rules from the execution kind; delivery and session inputs drop bundles and the download grant](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261016-snapshot-clone-input-and-execution-ref-grants.md) (approved)

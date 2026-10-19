@@ -97,10 +97,14 @@ func TestWorkflowRunLifecycle(t *testing.T) {
 	if states.O("start").S("status") != "succeeded" || states.O("agent-1").S("status") != "succeeded" {
 		t.Fatalf("run node_states missing nodes: %v", states)
 	}
-	// The run echoes the kickoff input as its start-node output: the one thing the sim can say truthfully.
-	output := states.O("start").O("output").O("input")
+	// The start node reports the run form the way desktop's variable pool does: each run-form variable
+	// is its own root, and `input` is the authored kickoff prompt (unset in this fixture).
+	output := states.O("start").O("output")
 	if output.S("branch") != "main" {
-		t.Fatalf("start output did not echo input: %v", output)
+		t.Fatalf("start output did not expose the run input variable: %v", output)
+	}
+	if prompt, ok := output["input"].(string); !ok || prompt != "" {
+		t.Fatalf("start output input = %v; want the authored kickoff prompt as a string", output["input"])
 	}
 	// definitionSnapshot is the frozen graph, not the live document: the run carries its own copy.
 	ds := run.O("definitionSnapshot")

@@ -91,7 +91,7 @@ func TestWorkflowAdvanceSucceedsLinearRun(t *testing.T) {
 		}
 	}
 	if start := states["s"].(map[string]any)["output"].(map[string]any); start["input"] == nil {
-		t.Fatal("start node output does not report the run input")
+		t.Fatal("start node output does not carry the kickoff prompt root")
 	}
 }
 

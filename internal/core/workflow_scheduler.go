@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"strings"
 	"time"
 )
 
@@ -682,8 +681,11 @@ func workflowStartOutput(node workflowNodeView, input Object) Object {
 		output[key] = value
 	}
 	// Cloud does not persist the per-run prompt override, so the authored prompt is the only kickoff
-	// text available to the variable pool. The launch field still shows that same default.
-	output["input"] = strings.TrimSpace(node.Data.S("input"))
+	// text available to the variable pool. The launch field still shows that same default. The text is
+	// used verbatim, whitespace included, because desktop's start.input is the kickoff prompt as the
+	// author wrote it; trimming here would make the same selector compare differently on the two
+	// sides.
+	output["input"] = node.Data.S("input")
 	return output
 }
 

@@ -418,13 +418,15 @@ func TestWorkflowConditionCaseLogic(t *testing.T) {
 
 // The start node's output is the variable pool desktop declares: `input` is the kickoff prompt and
 // each run-form variable is its own root, so selector [start, name] resolves the value the author
-// selected in the editor instead of walking the whole form under [start, input, name].
+// selected in the editor instead of walking the whole form under [start, input, name]. The prompt is
+// kept verbatim, whitespace included: desktop's start.input is the authored text, and trimming it
+// here would let the same selector compare differently on the two sides.
 func TestWorkflowStartOutputMatchesDesktopVariableRoots(t *testing.T) {
 	node := wfNode("s", "start", "")
 	node["data"].(Object)["input"] = "  review the diff  "
 	output := workflowStartOutput(workflowNodeView{ID: "s", Kind: "start", Data: node["data"].(Object)},
 		Object{"flag": true, "count": 2.0, "input": "shadowed"})
-	want := Object{"flag": true, "count": 2.0, "input": "review the diff"}
+	want := Object{"flag": true, "count": 2.0, "input": "  review the diff  "}
 	if canonicalJSON(output) != canonicalJSON(want) {
 		t.Fatalf("start output = %s; want %s", canonicalJSON(output), canonicalJSON(want))
 	}

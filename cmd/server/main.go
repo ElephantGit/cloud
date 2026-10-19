@@ -73,7 +73,7 @@ func run() (runErr error) {
 	if policy.Enterprise() && os.Getenv("MODEL_GATEWAY_DEVELOPMENT_ALLOW_HOSTS") != "" {
 		return errors.New("enterprise egress conflicts with development hosts")
 	}
-	dns := modelgateway.DeploymentDNSConfig()
+	dns := egress.DeploymentDNSConfig()
 	upstream, e := modelgateway.NewUpstreamClient(modelgateway.UpstreamConfig{DNS: dns, Policy: policy})
 	if e != nil {
 		return e

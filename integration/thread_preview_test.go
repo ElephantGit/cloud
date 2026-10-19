@@ -88,9 +88,9 @@ func TestThreadPreviewRPCDoesNotCreateReceipt(t *testing.T) {
 	}
 }
 
-func TestMigration0040PreservesExistingThreadContent(t *testing.T) {
-	pool, _ := testSchema(t, "test_preview40_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0040_thread_preview_positions.sql"))
+func TestMigration0046PreservesExistingThreadContent(t *testing.T) {
+	pool, _ := testSchema(t, "test_preview46_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0046_thread_preview_positions.sql"))
 	seed := seedOwnershipChain(t, pool)
 	_, err := pool.Exec(`INSERT INTO thread_entries(run_id,seq,source,kind,record) VALUES($1,1,'node','update','{"type":"update","original":true}')`, seed.runID)
 	must(t, err)

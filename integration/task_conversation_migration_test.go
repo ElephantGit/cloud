@@ -9,8 +9,8 @@ import (
 )
 
 // The new task queue must leave every existing run untouched while constraining new messages.
-func TestMigration0039TaskConversationFreshAndUpgrade(t *testing.T) {
-	fresh, _ := testSchema(t, "test_tconv39f_")
+func TestMigration0045TaskConversationFreshAndUpgrade(t *testing.T) {
+	fresh, _ := testSchema(t, "test_tconv45f_")
 	migratedTwice(t, newStoreOnSchema(t, fresh))
 	for _, table := range []string{"task_conversations", "task_conversation_messages", "task_conversation_scan_state"} {
 		if !tableExists(t, fresh, table) {
@@ -29,8 +29,8 @@ func TestMigration0039TaskConversationFreshAndUpgrade(t *testing.T) {
 		t.Fatal("fresh Thread schema is missing Node's optional text projection")
 	}
 
-	pool, _ := testSchema(t, "test_tconv39u_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0039_task_agent_conversations.sql"))
+	pool, _ := testSchema(t, "test_tconv45u_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0045_task_agent_conversations.sql"))
 	seed := seedOwnershipChain(t, pool)
 	var before, after string
 	must(t, pool.QueryRow("SELECT row_to_json(r)::text FROM issue_runs r WHERE id=$1", seed.runID).Scan(&before))
@@ -63,9 +63,9 @@ func TestMigration0039TaskConversationFreshAndUpgrade(t *testing.T) {
 	wantPGError(t, insert(uuid.NewString(), strings.Repeat("x", 65537)), "23514")
 }
 
-func TestMigration0041DoesNotInventTaskPauses(t *testing.T) {
-	pool, _ := testSchema(t, "test_pause41_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0041_task_conversation_manual_pause.sql"))
+func TestMigration0047DoesNotInventTaskPauses(t *testing.T) {
+	pool, _ := testSchema(t, "test_pause47_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0047_task_conversation_manual_pause.sql"))
 	seed := seedOwnershipChain(t, pool)
 	_, err := pool.Exec("INSERT INTO task_conversations(issue_id,tenant_id,last_seq) VALUES($1,$2,0)", seed.issueID, seed.tenantID)
 	must(t, err)

@@ -6,10 +6,6 @@
 
 ## 迁移目录
 
-`0041_task_conversation_manual_pause.sql` 增加可空 `paused_run_id`，避免用户停止与正常完成同时发生时，后续队列悄悄恢复；旧任务不自动暂停。
-
-`0040_thread_preview_positions.sql` 仅为持久 Thread 条目增加可空的 Node 历史位置，用于最终记录覆盖实时预览；不保存预览正文、不推测旧行位置。升级与重复执行由集成测试覆盖。
-
 迁移脚本严格按照数字序号递增顺序执行。序列是 **append-only**：`0001–0007` 是 upstream 基线（与 `upstream/main` 逐字节一致、不可修改），`0008–0012` 是本地 Issue 迁移，`0013` 起为后续兼容迁移。
 
 - **`0001_core.sql`**（upstream）：基础领域 Schema：
@@ -185,6 +181,14 @@ Controller 契约的字段。只新增，不回填。
 
 给 `plugin_catalog_entries` 追加 `agent_configuration`（jsonb，声明关联加逐字节静态副本）与 `agent_configuration_issue`（text，有界原因）。`agent_configuration` 只在条目声明了 `[agent_configuration]` 且静态副本校验通过时写入，目录快照因此自包含，读取声明不需要市场 checkout 或发行包；声明无效只记有界原因，不产生可消费声明。“未声明”与“声明无效”是两个事实，后者不影响包本身可安装。纯前向、可重复执行，不改写既有行。新库/升级/重复执行见 TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades。语义见 [插件市场的 Agent 声明](../../../docs/plugins/marketplace.md#agent-声明的快照与冻结)。
 
-## 0039：任务级 Agent 对话与可见正文投影
+## 0045：任务级 Agent 对话与可见正文投影
 
-`task_conversations` 保存任务内消息序号与显式失败恢复确认；`task_conversation_messages` 保存发送者、目标、输入、等待/提交/取消/失败状态及运行/Thread 引用。`thread_entries` 可选的 `visible_text` 仅由 Node 提供，和原始 `record` 分开保存，超过 64 KiB 在 Node 的 UTF-8 边界截断并标记。迁移不回填旧消息、旧 Thread 或运行，不改写原记录。新库、升级与重复执行见 `TestMigration0039TaskConversationFreshAndUpgrade`。
+`task_conversations` 保存任务内消息序号与显式失败恢复确认；`task_conversation_messages` 保存发送者、目标、输入、等待/提交/取消/失败状态及运行/Thread 引用。`thread_entries` 可选的 `visible_text` 仅由 Node 提供，和原始 `record` 分开保存，超过 64 KiB 在 Node 的 UTF-8 边界截断并标记。迁移不回填旧消息、旧 Thread 或运行，不改写原记录。新库、升级与重复执行见 `TestMigration0045TaskConversationFreshAndUpgrade`。
+
+## 0046：定型 Thread 的历史位置
+
+`0046_thread_preview_positions.sql` 仅为持久 Thread 条目增加可空的 Node 历史位置，用于最终记录覆盖实时预览；不保存预览正文、不推测旧行位置。升级与重复执行由集成测试覆盖。
+
+## 0047：任务对话的手动暂停
+
+`0047_task_conversation_manual_pause.sql` 增加可空 `paused_run_id`，避免用户停止与正常完成同时发生时，后续队列悄悄恢复；旧任务不自动暂停。

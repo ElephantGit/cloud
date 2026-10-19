@@ -36,7 +36,8 @@ Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执�
 - 运行开始时，按**发起者自己**的配置解析每个被引用的槽位，不回退到 `default`、不采用作者的建议、也不借用别人的配置。任何一个槽位解析
   不了，启动就以 `409 workflow_executor_unconfigured` 拒绝，参数里逐个列出槽位、依赖它的节点、原因（例如 `slot_not_configured`、
   `default_model_missing`、`credential_missing`）以及槽位说明，前端可以一次性展示所有需要补的配置。
-- 个人的具名槽位映射还没有实现，所以目前引用了具名槽位的图都会报告为未配置；只引用 `default` 的图按发起者的默认模型判断。
+- 具名槽位的映射是每个用户自己的配置（`GET`、`PUT`、`DELETE /me/executor-slot-mappings/:slot`：槽位名到 agent CLI、模型连接与模型）。`default` 不能被
+  存成一条映射——它就是个人默认模型本身，单独在个人模型设置里维护。
 
 ## 运行
 
@@ -72,8 +73,11 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   推进不产生效果；没有提交结果的节点不会被记成成功。
 - `start`、`condition`、`output` 是已提交状态的纯函数，在调度事务里直接计算并提交结果。`condition` 只激活与所选分支对应的出边，没有标注分支的
   出边视为 `else`；未被选中的分支上的节点标为未激活，永远不会执行。运行的图是有向无环图，没有循环和迭代。
-- **Agent 节点目前会让运行以明确的原因失败。** Agent 节点需要一个运行 Workspace 和一次真实的 Node 会话，这条执行链路还没有接入；在此之前，
-  调度到 Agent 节点的运行立即失败并说明原因，而不是停在 `running` 或报告没有发生的成功。
+- **Agent 节点在一次真实会话里执行。** 运行第一次调度到 Agent 节点时，Cloud 在运行冻结的 Project 里创建这次运行的 Workspace（isolated，属于该运行），
+  等它有连上的 Node 后，按该节点引用的槽位取出创建时冻结的模型绑定，把会话工作项交给 Controller；会话的终态就是该节点的终态。同一运行同一时刻只有一个会话，
+  下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
+  缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败，都不会停在 `running` 或报告没有发生的成功。运行进入终态后，Cloud 声明删除
+  这次运行的 Workspace。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
 不装它。工作流 IssueRun 在生产中目前没有执行端，保持 `queued`（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。

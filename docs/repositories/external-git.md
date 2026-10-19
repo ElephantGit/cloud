@@ -48,8 +48,8 @@
 Revision 以 `revision_not_publishable` 拒绝）、目标分支、期望旧值 `expectedOldOid` 和凭据引用；`expectedOldOid` 必须与
 源提交不同。
 
-1. Cloud 先经 ref 查询确认源 ref 确实指向这个提交，再创建 Operation。源提交是否可从源 ref 到达由执行器检查，因为 Cloud
-   不读取 Git 对象。
+1. Cloud 先经 ref 查询确认源 ref 存在（不存在时以 `409 source_ref_not_found` 拒绝），再创建 Operation；它不比对源 ref
+   的当前提交。源提交是否可从源 ref 到达由执行器检查，因为 Cloud 不读取 Git 对象。
 2. 凭据的当前版本必须已具备 `publish` 能力。个人凭据由所有者批准；租户管理员用别人的个人凭据发布时需要所有者在
    `awaiting_approval` 上批准，管理员不能代批。团队凭据由租户管理员直接发布。批准把字段与凭据版本绑定，有效期 24 小时；
    期间凭据出现新版本时，这次发布以 `credential_changed` 取消或拒绝。

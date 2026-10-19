@@ -70,9 +70,10 @@ commit Cloud verified when registering it; a bundle-shaped Revision without a de
 with `revision_not_publishable`), the target branch, the expected old value
 `expectedOldOid`, and the credential reference; `expectedOldOid` must differ from the source commit.
 
-1. Cloud first confirms through the ref query that the source ref really names that commit, then
-   creates the Operation. Whether the source commit is reachable from the source ref is checked by
-   the executor, because Cloud reads no Git objects.
+1. Cloud first confirms through the ref query that the source ref exists (refusing with
+   `409 source_ref_not_found` when it does not), then creates the Operation; it does not compare the
+   source ref's current commit. Whether the source commit is reachable from the source ref is checked
+   by the executor, because Cloud reads no Git objects.
 2. The credential's current version must already have the `publish` capability. A personal credential
    is approved by its owner; when a tenant administrator publishes with somebody else's personal
    credential, the owner approves on `awaiting_approval` and an administrator cannot approve on their

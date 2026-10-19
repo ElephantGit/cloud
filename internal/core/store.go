@@ -97,6 +97,8 @@ type Store struct {
 	// GitServer is where Workspaces clone from and Revisions are delivered to. Nil means clone
 	// steps block as git_server_unconfigured and deliveries are skipped.
 	GitServer *GitServer
+	// ModelEgress is the immutable deployment admission policy for personal connection writes.
+	ModelEgress ModelEgress
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error

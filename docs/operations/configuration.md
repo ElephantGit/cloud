@@ -78,6 +78,12 @@
 环境变量列在 [model-gateway](../models/model-gateway.md#启动与停止)。它读取 Cloud 配置文件里的 `database.*` 与 `auth.*`，用后者校验 Gateway
 转发来的凭据写入请求。
 
+## 共享出网
+
+Cloud server 和 model-gateway 用启动参数 `-deployment-egress <path>` 或环境变量 `ORA_DEPLOYMENT_EGRESS_FILE` 指向同一份包外 JSON；参数优先。
+省略时为公网模式。公网 DNS 仍是 `MODEL_GATEWAY_DNS_HTTPS_URL` 与 `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`，两个进程必须拿到相同的值。文件格式、企业白名单和更换方式见
+[部署方共享出网配置](deployment-egress.md)。这项不写进 `configs/config.yaml`。
+
 ## git-server
 
 完整说明见 [`cmd/git-server`](../../cmd/git-server/README.md)：

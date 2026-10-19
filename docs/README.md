@@ -64,6 +64,7 @@
 
 - [配置参考](operations/configuration.md)
 - [部署与运维](operations/deployment.md)
+- [部署方共享出网配置](operations/deployment-egress.md)
 
 **开发**
 

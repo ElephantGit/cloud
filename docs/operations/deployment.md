@@ -82,13 +82,17 @@ cluster 的 Compose 把服务分在三个网络上，生产部署应保持同样
 
 生产连接使用 TLS，不要使用样例里的本地 trust 配置。
 
+## 共享出网
+
+Cloud server 与全部 model-gateway 只读挂载同一份 `deployment-egress.json`，用 `-deployment-egress` 或 `ORA_DEPLOYMENT_EGRESS_FILE` 指向它。更换时先停止这两个进程并确认旧进程已退出，再替换文件并启动；只改文件不会改变已经加载的快照。策略见 [部署方共享出网配置](deployment-egress.md)。
+
 ## 健康检查
 
 | 进程 | 检查 |
 |---|---|
-| Cloud server | `GET /healthz`：数据库不可达返回 `503 database_unavailable`；报告对象存储与 Git Server 是否已配置（`objectStore`、`gitServer`），不代表它们在线 |
+| Cloud server | `GET /healthz`：数据库不可达返回 `503 database_unavailable`；报告对象存储与 Git Server 是否已配置（`objectStore`、`gitServer`），不代表它们在线。响应头还有 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 | Gateway | `GET /healthz`：PostgreSQL 探活 |
-| model-gateway | `model-gateway -healthcheck`：正常校验 HTTPS 和公开 CA，检查数据库就绪，不读取用户 Key 或主密钥 |
+| model-gateway | `model-gateway -healthcheck`：正常校验 HTTPS 和公开 CA，检查数据库就绪，不读取用户 Key 或主密钥，也不报告出网摘要。凭据监听上的 `GET /healthz` 才带与 Cloud 相同的 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 | git-server | `git-server -healthcheck`：访问 ref 监听的 `/healthz`，用部署 CA 校验服务端证书，不读取私钥 |
 
 健康检查只报告依赖是否就绪，不暴露配置内容。

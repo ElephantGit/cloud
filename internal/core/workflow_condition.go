@@ -21,6 +21,11 @@ type workflowConditionOperator = func(resolved any, absent bool, expected any) b
 
 // workflowConditionOperators is desktop's full wire operator set (condition.rs
 // ComparisonOperator::parse). `is`/`is_not` are the same comparisons as `equals`/`not_equals`.
+//
+// Only the keys are wire spellings. The direction labels the comparator helpers are built with
+// ("starts", "greater_eq", …) name one comparison on the Go side and are not operators a document
+// may write: the gate reads this map, so a document spelling one is refused as an unknown operator
+// rather than quietly evaluated as the comparison it feeds.
 var workflowConditionOperators = map[string]workflowConditionOperator{
 	"equals":                workflowCompareEquals,
 	"is":                    workflowCompareEquals,

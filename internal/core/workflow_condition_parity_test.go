@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // Cross-checks for circus#210: the same graph input and the same condition document must produce the
 // same branch on Cloud and on desktop. Each case mirrors a test in desktop's
@@ -125,6 +128,32 @@ func TestWorkflowConditionDesktopParity(t *testing.T) {
 				t.Fatalf("selected %q; want %q (desktop: %s)", got, tc.want, tc.desktop)
 			}
 		})
+	}
+}
+
+// An explicit `"value": null` is the missing operand, not a value to compare: desktop's
+// WireConditionRule.value is Option<Value> and serde reads a JSON null as None, so a comparison
+// operator reports a type mismatch instead of comparing against null. This goes through a decoded
+// JSON document so the wire spelling is what is pinned, not a Go nil the test author typed.
+func TestWorkflowConditionExplicitNullExpected(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"cases": [{
+			"id": "c",
+			"logic": "and",
+			"conditions": [{
+				"variableSelector": ["s", "nothing"],
+				"operator": "equals",
+				"value": null
+			}]
+		}]
+	}`), &doc); err != nil {
+		t.Fatal(err)
+	}
+	states := map[string]workflowNodeState{"s": {Status: "succeeded", Output: Object{"nothing": nil}}}
+	node := workflowNodeView{ID: "c", Kind: "condition", Data: Object(doc)}
+	if branch, err := evaluateWorkflowCondition(node, states); err == nil {
+		t.Fatalf("explicit null expected value matched %q; want a type-mismatch error as desktop's None", branch)
 	}
 }
 

@@ -136,8 +136,9 @@ func resolveWorkflowSelector(selector workflowSelector, states map[string]workfl
 }
 
 // workflowConditionOperand is one rule's fully resolved inputs: the variable, the expected value and
-// the names both are reported with. hasExpected distinguishes a missing `value` from an explicit
-// null, which desktop compares as a real JSON value.
+// the names both are reported with. hasExpected is false for a missing `value` and for an explicit
+// JSON null alike, matching desktop's Option<Value>: serde reads null as None, and a comparison
+// operator then reports the missing operand instead of comparing against null.
 type workflowConditionOperand struct {
 	actual      any
 	present     bool

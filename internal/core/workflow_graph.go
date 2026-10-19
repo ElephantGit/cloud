@@ -306,7 +306,10 @@ func workflowDeclaredRoots(nodes []any) map[string]map[string]bool {
 		case "agent":
 			set["output"] = true
 			// The contract lives in the node's `agentConfig`, the same place desktop's wire node reads
-			// it from; a contract present with a null value declares nothing extra.
+			// it from; a contract present with a null value declares nothing extra. desktop declares
+			// structured_output only for an OutputContract::Structured, while this accepts any non-null
+			// contract; the difference is unreachable today because outputContract is refused by
+			// node_config_unsupported, so tighten it when cloud#70/#74 makes contracts reachable.
 			if contract, present := data.O("agentConfig")["outputContract"]; present && contract != nil {
 				set["structured_output"] = true
 			}

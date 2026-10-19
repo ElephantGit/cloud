@@ -268,7 +268,7 @@ func TestWorkflowConditionOperators(t *testing.T) {
 		{"is is equals", []any{"s", "flag"}, "is", true, true, false},
 		{"is_not is not_equals", []any{"s", "flag"}, "is_not", false, true, false},
 		{"equals mismatch", []any{"s", "flag"}, "equals", false, false, false},
-		{"equals null", []any{"s", "nothing"}, "equals", nil, true, false},
+		{"equals null is a type error", []any{"s", "nothing"}, "equals", nil, false, true},
 		{"not_equals mismatch", []any{"s", "flag"}, "not_equals", true, false, false},
 		{"not_equals match", []any{"s", "flag"}, "not_equals", false, true, false},
 		{"contains string match", []any{"s", "text"}, "contains", "lo wo", true, false},
@@ -347,8 +347,9 @@ func TestWorkflowConditionOperators(t *testing.T) {
 	}
 }
 
-// A rule with no expected value is not the same as one whose expected value is null: desktop
-// compares explicit null, and reports the missing operand for everything else.
+// A rule with no expected value and one whose expected value is an explicit JSON null behave the
+// same: desktop's WireConditionRule.value is Option<Value>, serde reads null as None, and a
+// comparison operator reports the missing operand rather than comparing against null.
 func TestWorkflowConditionMissingExpectedValue(t *testing.T) {
 	states := map[string]workflowNodeState{"s": {Status: "succeeded", Output: Object{"flag": true}}}
 	rule := Object{"variableSelector": []any{"s", "flag"}, "operator": "equals"}

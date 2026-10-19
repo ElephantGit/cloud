@@ -10,10 +10,12 @@ import "strings"
 // was never expanded.
 
 // resolveWorkflowExpected expands a template expected value. The bool reports whether the rule
-// carried a `value` at all; explicit null is a value desktop compares against.
+// carried a comparison value; a missing `value` and an explicit JSON null are both reported as
+// absent, because desktop's WireConditionRule.value is Option<Value> and serde reads a null as None,
+// which a comparison operator then reports as a type mismatch rather than comparing against null.
 func resolveWorkflowExpected(rule Object, states map[string]workflowNodeState) (expected any, hasExpected bool, err error) {
 	raw, present := rule["value"]
-	if !present {
+	if !present || raw == nil {
 		return nil, false, nil
 	}
 	text, isText := raw.(string)
@@ -90,6 +92,10 @@ func renderWorkflowTemplate(text string, states map[string]workflowNodeState) (s
 		if text, ok := value.(string); ok {
 			rendered.WriteString(text)
 		} else {
+			// canonicalJSON renders an integer-valued float as its integer spelling (2.0 -> 2), while
+			// desktop's serde_json keeps the JSON number spelling (2.0). Cloud cannot tell 2 from 2.0
+			// after decoding, so a mixed template is not byte-identical to desktop for such values;
+			// the rendered values still compare equal as JSON.
 			rendered.WriteString(canonicalJSON(value))
 		}
 		rest = afterOpen[closeAt+len("#}}"):]

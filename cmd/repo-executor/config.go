@@ -15,6 +15,7 @@ import (
 // file references and limits only; no credential is ever configured here.
 type config struct {
 	Addr                                  string
+	HealthAddr                            string
 	CertFile, KeyFile, ClientCAFile       string
 	AuthorizationPublicKeysFile           string
 	GitServerURL, GitServerCAFile         string
@@ -25,7 +26,9 @@ type config struct {
 	MaxTaskBytes                          int64
 	SyncTimeoutMax, PublishTimeoutMax     time.Duration
 	ProbeTimeoutMax                       time.Duration
-	EgressAllow, EgressDenyHosts          []string
+	EgressDenyHosts                       []string
+	Development                           bool
+	DevelopmentHosts                      []string
 	LogLevel                              string
 }
 
@@ -39,6 +42,7 @@ func loadConfig(lookup func(string) string) (config, error) {
 	}
 	c := config{
 		Addr:                        value("ADDR", ":8471"),
+		HealthAddr:                  value("HEALTH_ADDR", ":8084"),
 		CertFile:                    value("CERT_FILE", "/etc/repo-executor/tls/executor.pem"),
 		KeyFile:                     value("KEY_FILE", "/etc/repo-executor/tls/executor.key"),
 		ClientCAFile:                value("CLIENT_CA_FILE", "/etc/repo-executor/tls/dispatcher-ca.pem"),
@@ -51,8 +55,9 @@ func loadConfig(lookup func(string) string) (config, error) {
 		WorkRoot:                    value("WORK_ROOT", "/var/lib/repo-executor/tasks"),
 		HelperPath:                  value("HELPER_PATH", "/usr/local/bin/git-credential-ora"),
 		GitProgram:                  value("GIT_PROGRAM", "git"),
-		EgressAllow:                 list(value("EGRESS_ALLOW", "")),
 		EgressDenyHosts:             list(value("EGRESS_DENY_HOSTS", "")),
+		Development:                 value("DEVELOPMENT", "") == "true",
+		DevelopmentHosts:            list(value("DEVELOPMENT_ALLOW_HOSTS", "")),
 		LogLevel:                    value("LOG_LEVEL", "info"),
 	}
 	var err error
@@ -77,6 +82,11 @@ func loadConfig(lookup func(string) string) (config, error) {
 	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
 		return config{}, errors.New("REPO_EXECUTOR_ADDR is not a listen address")
 	}
+	// The health listener reports the egress schema and digest to `ora verify`; it carries no task
+	// data and is never published outside the deployment network.
+	if _, _, err := net.SplitHostPort(c.HealthAddr); err != nil {
+		return config{}, errors.New("REPO_EXECUTOR_HEALTH_ADDR is not a listen address")
+	}
 	for _, u := range []struct{ key, value string }{{"GIT_SERVER_URL", c.GitServerURL}, {"CREDENTIAL_STORE_URL", c.CredentialStoreURL}} {
 		parsed, err := url.Parse(u.value)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
@@ -85,6 +95,11 @@ func loadConfig(lookup func(string) string) (config, error) {
 	}
 	if !filepath.IsAbs(c.WorkRoot) {
 		return config{}, errors.New("REPO_EXECUTOR_WORK_ROOT must be absolute")
+	}
+	// Listing fixture hosts without enabling development mode is a configuration mistake, not a
+	// silent no-op: the caller meant to widen the policy and must say so explicitly.
+	if len(c.DevelopmentHosts) != 0 && !c.Development {
+		return config{}, errors.New("fixture hosts require REPO_EXECUTOR_DEVELOPMENT=true")
 	}
 	return c, nil
 }

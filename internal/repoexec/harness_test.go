@@ -33,6 +33,7 @@ import (
 
 	"github.com/wanglongan587/cloud/internal/cloneauth"
 	"github.com/wanglongan587/cloud/internal/core"
+	"github.com/wanglongan587/cloud/internal/egress"
 	"github.com/wanglongan587/cloud/internal/gitserver"
 )
 
@@ -272,12 +273,26 @@ func newFixture(t *testing.T) *fixture {
 	}
 	observed, logs := observer.New(zap.DebugLevel)
 	f.logs = logs
-	egress, err := NewEgress(net.DefaultResolver, []string{f.ext.hostPort()}, nil)
+	// The fixture runs on loopback, which the shared policy always refuses. The isolated test stack
+	// therefore uses the exact-host development exception: public mode plus this one name.
+	fixtureHost, _, err := net.SplitHostPort(f.ext.hostPort())
 	if err != nil {
 		t.Fatal(err)
 	}
+	publicPolicy, err := egress.Parse([]byte(`{"schemaVersion":1,"mode":"public"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	egressPolicy, err := NewEgress(&EgressConfig{
+		Policy: publicPolicy, DNS: egress.DNSConfig{HTTPSURL: "https://dns.example.invalid/query", BootstrapIPs: []string{"1.1.1.1"}},
+		Development: true, DevelopmentHosts: []string{fixtureHost},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(egressPolicy.Close)
 	f.cfg = Config{
-		PublicKeys: []ed25519.PublicKey{f.public}, Redeemer: f.redeemer, Egress: egress,
+		PublicKeys: []ed25519.PublicKey{f.public}, Redeemer: f.redeemer, Egress: egressPolicy,
 		GitServerURL: f.gs.URL, GitServerCAFile: gitCA.file, CertFile: executor.cert, KeyFile: executor.key,
 		ExternalCAFile: f.ext.caFile, WorkRoot: filepath.Join(t.TempDir(), "work"), HelperPath: helperBinary, GitProgram: "git",
 		MaxTaskBytes: 64 << 20, Limits: Limits{Sync: 30 * time.Minute, Publish: 5 * time.Minute, Probe: 5 * time.Minute},

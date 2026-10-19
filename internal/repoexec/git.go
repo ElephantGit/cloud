@@ -116,6 +116,15 @@ type git struct {
 	config  []string
 }
 
+// withConfig copies g with extra configuration for one command. The copy shares the program,
+// directory and environment, so a per-subprocess option (the pinned external addresses) never
+// leaks into the next command.
+func (g *git) withConfig(extra ...string) *git {
+	copied := *g
+	copied.config = append(append(make([]string, 0, len(g.config)+len(extra)), g.config...), extra...)
+	return &copied
+}
+
 // output is what one Git process wrote and how it ended.
 type output struct {
 	stdout    string

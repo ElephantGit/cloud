@@ -323,7 +323,12 @@ type taskRun struct {
 // run executes one Git command and enforces the size limit synchronously afterwards as well, so a
 // transfer finishing between two polls cannot slip past it.
 func (t *taskRun) run(ctx context.Context, args ...string) output {
-	o := t.git.run(ctx, args...)
+	return t.runGit(ctx, t.git, args...)
+}
+
+// runGit executes one command with the given Git configuration under the same size accounting.
+func (t *taskRun) runGit(ctx context.Context, g *git, args ...string) output {
+	o := g.run(ctx, args...)
 	if o.ok() && directorySize(t.dir) > t.e.maxBytes {
 		t.cancel(errTooLarge)
 		o.err, o.exit = errTooLarge, -1
@@ -346,11 +351,26 @@ func (t *taskRun) fail(ctx context.Context, code string, o *output) Result {
 	return failed(code, redact(o.stderr, t.secrets))
 }
 
-// externalRepository is the external URL handed to Git, after the egress check.
-func (t *taskRun) externalRepository(ctx context.Context) (string, *Result) {
-	if err := t.e.egress.Check(ctx, t.task.Repository); err != nil {
+// externalRepository resolves and checks the task's repository for one external Git subprocess
+// (ADR D4). Resolution happens here, per subprocess, so every command gets a freshly checked address
+// set; a name that moves after an earlier check is either pinned to what was checked or refused
+// before the next process starts.
+func (t *taskRun) externalRepository(ctx context.Context) (externalTarget, *Result) {
+	target, err := t.e.egress.resolve(ctx, t.task.Repository)
+	if err != nil {
 		r := failed(CodeEgressDenied, "repository address is not allowed")
-		return "", &r
+		return externalTarget{}, &r
 	}
-	return t.task.Repository, nil
+	return target, nil
+}
+
+// externalGit is the task's Git configuration plus the addresses checked for one external target.
+func (t *taskRun) externalGit(target externalTarget) *git {
+	return t.git.withConfig(target.pins()...)
+}
+
+// runExternal runs one Git command against the external repository with the checked addresses
+// pinned for that process.
+func (t *taskRun) runExternal(ctx context.Context, target externalTarget, args ...string) output {
+	return t.runGit(ctx, t.externalGit(target), args...)
 }

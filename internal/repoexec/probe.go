@@ -25,11 +25,11 @@ func (t *taskRun) probe(ctx context.Context) Result {
 	if refusal != nil {
 		return *refusal
 	}
-	args := []string{"ls-remote", "--refs", "--", external}
+	args := []string{"ls-remote", "--refs", "--", external.URL}
 	if t.task.TargetRef != "" {
 		args = append(args, t.task.TargetRef)
 	}
-	o := t.run(ctx, args...)
+	o := t.runExternal(ctx, external, args...)
 	if !o.ok() {
 		code := externalFailure(o.stderr, t.anonymous)
 		if code == CodeFetchFailed || code == CodeUpstreamBranchMissing {

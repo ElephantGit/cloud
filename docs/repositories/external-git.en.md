@@ -152,9 +152,17 @@ provider exists, and never falls back to an anonymous clone or a global credenti
   creates the exclusive claim file before decrypting. The Repo Executor writes plaintext only into a
   `0700` private material directory for one task, and deletes the material and task directory when
   the task ends, failures and panics included.
-- The Repo Executor's egress allows https on port 443 only and refuses loopback, private, CGNAT,
-  link-local, multicast and metadata addresses, always refusing the Git Server and Credential Store
-  hostnames; an external remote never receives the executor certificate or the
+- The Repo Executor's egress rules come from the deployment-owned `deployment-egress.json` (the same
+  file Cloud and model-gateway load): public mode resolves through the deployment DNS, admits https
+  only and requires every address to be public; enterprise mode admits only the exact host:port
+  targets listed in the file, refusing anything else before DNS. The shared topology always refuses
+  cluster ranges and host addresses, so internal services such as the Git Server and the Credential
+  Store cannot be external repository targets. Before every external Git subprocess the executor
+  resolves and checks the whole address set, then hands the checked numeric addresses to Git through
+  `http.curloptResolve`; TLS still verifies the original host name, so a name that changes after the
+  check cannot redirect the connection. The probe's `receive-pack` uses the same dialer. A health
+  listener reports the schema and digest so a deployment can compare it with Cloud and model-gateway
+  after changing the file. An external remote never receives the executor certificate or the
   `Ora-Git-Operation-Id` header. `git-credential-ora` takes the material directory as its argument,
   and delivers a username and password only when Git's request normalizes to exactly the staged
   scope; redirects, submodules and another repository on the same host get nothing.

@@ -82,9 +82,9 @@ func (t *taskRun) publish(ctx context.Context) Result {
 		cancelPush()
 		return *refusal
 	}
-	push := t.git.run(pushCtx, "push", "--porcelain", "--no-verify",
+	push := t.externalGit(external).run(pushCtx, "push", "--porcelain", "--no-verify",
 		"--force-with-lease="+task.TargetRef+":"+task.ExpectedOldOID,
-		"--", external, task.SourceCommit+":"+task.TargetRef)
+		"--", external.URL, task.SourceCommit+":"+task.TargetRef)
 	pushEnded := pushCtx.Err() != nil
 	cancelPush()
 	outcome := outcomeUnknown
@@ -129,13 +129,14 @@ func (t *taskRun) publish(ctx context.Context) Result {
 }
 
 // lsRemoteTarget reads the target ref of the external repository; "" means absent. outer is the
-// task context, used only to attribute a failure to the task's own end.
+// task context, used only to attribute a failure to the task's own end. Each call opens its own Git
+// subprocess and therefore re-resolves and re-checks the external host first.
 func (t *taskRun) lsRemoteTarget(ctx, outer context.Context) (string, *Result) {
 	external, refusal := t.externalRepository(ctx)
 	if refusal != nil {
 		return "", refusal
 	}
-	o := t.git.run(ctx, "ls-remote", "--refs", "--", external, t.task.TargetRef)
+	o := t.runExternal(ctx, external, "ls-remote", "--refs", "--", external.URL, t.task.TargetRef)
 	if !o.ok() || o.stdoutCut {
 		r := t.fail(outer, externalFailure(o.stderr, t.anonymous), &o)
 		if ctx.Err() != nil && outer.Err() == nil {

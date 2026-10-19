@@ -57,13 +57,13 @@ cluster's Compose places services on four networks, and production deployments s
 |---|---|---|
 | Default network | Cloud, Gateway, model-gateway, git-server (ref queries), `credential-edge`, Controller, Sandbox Server, PostgreSQL, object storage | Internal service-to-service traffic |
 | Sandbox network | Sandboxes, Controller, Sandbox Server, model-gateway (`ora-model-gateway`), the git-server repository listener (`ora-git-server`), the object storage public address | Everything a sandbox may reach |
-| `repo-internal` (`internal: true`) | Cloud, the git-server service repository listener (`ora-git-service`), the Repo Executor, the Credential Store and `credential-edge` | Traffic inside the external Git line; no egress, and sandboxes never join |
+| `git-services` (`internal: true`) | Cloud, the git-server service repository listener (`ora-git-service`), the Repo Executor, the Credential Store and `credential-edge` | Traffic inside the external Git line; no egress, and sandboxes never join |
 | `repo-egress` | The Repo Executor only | The only network that reaches external Git repositories |
 
 Sandboxes can reach only the model proxy, the Git Server repository listener and the object storage public address;
 they cannot reach Cloud, the Gateway or the database directly. On the external Git line, Cloud joins both the default
-network and `repo-internal`, so its calls to the executor, the Credential Store and the ref query all stay on the
-internal network; the Credential Store joins only `repo-internal`; the Repo Executor joins `repo-internal` and
+network and `git-services`, so its calls to the executor, the Credential Store and the ref query all stay on the
+internal network; the Credential Store joins only `git-services`; the Repo Executor joins `git-services` and
 `repo-egress`, which makes it the only process with egress.
 
 Browser credential submission never passes through Cloud: `credential-edge` is an nginx that publishes only the
@@ -131,10 +131,12 @@ configuration.
 
 ## Shared egress
 
-The Cloud server and every model-gateway mount one read-only `deployment-egress.json` and point at it with
-`-deployment-egress` or `ORA_DEPLOYMENT_EGRESS_FILE`. To replace it, stop both processes, confirm the old processes have
-exited, then swap the file and start again; editing the file alone does not change the snapshot already loaded. The
-policy is in [Shared deployment egress](deployment-egress.en.md).
+The Cloud server, every model-gateway and every Repo Executor mount one read-only `deployment-egress.json`. The first
+two point at it with `-deployment-egress` or `ORA_DEPLOYMENT_EGRESS_FILE`; the Repo Executor uses
+`REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE` (which wins) or `ORA_DEPLOYMENT_EGRESS_FILE`. To replace it, stop all three
+kinds of process, confirm the old processes have exited, then swap the file and start again; editing the file alone
+does not change the snapshot already loaded. The policy is in
+[Shared deployment egress](deployment-egress.en.md).
 
 ## Health checks
 
@@ -144,10 +146,10 @@ policy is in [Shared deployment egress](deployment-egress.en.md).
 | Gateway | `GET /healthz`: PostgreSQL liveness |
 | model-gateway | `model-gateway -healthcheck`: verifies HTTPS and the public CA normally and checks database readiness, without reading user keys, the master key or the egress digest. `GET /healthz` on the credential listener is what carries the same `X-Ora-Egress-Schema` and `X-Ora-Egress-Digest` as Cloud |
 | git-server | `git-server -healthcheck`: calls `/healthz` on the ref listener and verifies the server certificate against the deployment CA, without reading private keys |
+| Repo Executor | `GET /healthz` on its health listener (`REPO_EXECUTOR_HEALTH_ADDR`, `:8084` by default, plaintext): a successful listen means the certificates, CAs and public keys are usable; the response carries the same `X-Ora-Egress-Schema` and `X-Ora-Egress-Digest` as Cloud |
 
-The Repo Executor and the Credential Store expose no separate health endpoint: a successful listen means the
-certificates, CAs, public keys and keyring are usable; task and redemption failures surface through Cloud's task state
-and the executor's and Store's logs.
+The Credential Store exposes no separate health endpoint: a successful listen means the certificates, CA, public keys
+and keyring are usable; redemption failures surface through Cloud's task state and the Store's logs.
 
 Health checks report only whether dependencies are ready and never reveal configuration.
 

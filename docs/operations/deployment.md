@@ -51,12 +51,12 @@ cluster 的 Compose 把服务分在四个网络上，生产部署应保持同样
 |---|---|---|
 | 默认网络 | Cloud、Gateway、model-gateway、git-server（ref 查询）、`credential-edge`、Controller、Sandbox Server、PostgreSQL、对象存储 | 服务之间的内部通信 |
 | 沙盒网络 | 沙盒、Controller、Sandbox Server、model-gateway（`ora-model-gateway`）、git-server 仓库监听（`ora-git-server`）、对象存储公开地址 | 沙盒能访问的全部入口 |
-| `repo-internal`（`internal: true`） | Cloud、git-server 服务仓库监听（`ora-git-service`）、Repo Executor、Credential Store、`credential-edge` | 外部 Git 线的内部通信；没有出网，沙盒从不加入 |
+| `git-services`（`internal: true`） | Cloud、git-server 服务仓库监听（`ora-git-service`）、Repo Executor、Credential Store、`credential-edge` | 外部 Git 线的内部通信；没有出网，沙盒从不加入 |
 | `repo-egress` | 只有 Repo Executor | 唯一能到达外部 Git 仓库的网络 |
 
 沙盒只能到达模型代理、Git Server 的仓库监听和对象存储的公开地址，不能直接访问 Cloud、Gateway 或数据库。外部 Git 线里，Cloud
-同时接入默认网络与 `repo-internal`，到执行器、Credential Store 和 ref 查询的调用都走内部网络；Credential Store 只接入
-`repo-internal`；Repo Executor 接入 `repo-internal` 与 `repo-egress`，因此它是唯一有出网能力的进程。
+同时接入默认网络与 `git-services`，到执行器、Credential Store 和 ref 查询的调用都走内部网络；Credential Store 只接入
+`git-services`；Repo Executor 接入 `git-services` 与 `repo-egress`，因此它是唯一有出网能力的进程。
 
 浏览器提交凭据不经过 Cloud：`credential-edge` 是 nginx，只把 Store 的提交入口发布在 `127.0.0.1:8460`（HTTPS、TLS 1.3、请求体上限
 16 KiB），清空 `X-Forwarded-For` 与 Cookie 后转发，并按 TCP 来源地址限速。
@@ -111,7 +111,10 @@ Repo Executor 与 Credential Store 不连接 PostgreSQL：前者的任务状态�
 
 ## 共享出网
 
-Cloud server 与全部 model-gateway 只读挂载同一份 `deployment-egress.json`，用 `-deployment-egress` 或 `ORA_DEPLOYMENT_EGRESS_FILE` 指向它。更换时先停止这两个进程并确认旧进程已退出，再替换文件并启动；只改文件不会改变已经加载的快照。策略见 [部署方共享出网配置](deployment-egress.md)。
+Cloud server、全部 model-gateway 与全部 Repo Executor 只读挂载同一份 `deployment-egress.json`。前两者用 `-deployment-egress` 或
+`ORA_DEPLOYMENT_EGRESS_FILE` 指向它；Repo Executor 用 `REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE`（优先）或
+`ORA_DEPLOYMENT_EGRESS_FILE`。更换时先停止这三类进程并确认旧进程已退出，再替换文件并启动；只改文件不会改变已经加载的快照。
+策略见 [部署方共享出网配置](deployment-egress.md)。
 
 ## 健康检查
 
@@ -121,9 +124,10 @@ Cloud server 与全部 model-gateway 只读挂载同一份 `deployment-egress.js
 | Gateway | `GET /healthz`：PostgreSQL 探活 |
 | model-gateway | `model-gateway -healthcheck`：正常校验 HTTPS 和公开 CA，检查数据库就绪，不读取用户 Key 或主密钥，也不报告出网摘要。凭据监听上的 `GET /healthz` 才带与 Cloud 相同的 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 | git-server | `git-server -healthcheck`：访问 ref 监听的 `/healthz`，用部署 CA 校验服务端证书，不读取私钥 |
+| Repo Executor | 健康监听（`REPO_EXECUTOR_HEALTH_ADDR`，默认 `:8084`，明文）上的 `GET /healthz`：监听成功即说明证书、CA 与公钥可用；响应头带与 Cloud 相同的 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 
-Repo Executor 与 Credential Store 没有独立的健康检查端点：监听成功即说明证书、CA、公钥和 keyring 可用；任务失败与兑换失败通过 Cloud
-的任务状态、执行器日志和 Store 日志体现。
+Credential Store 没有独立的健康检查端点：监听成功即说明证书、CA、公钥和 keyring 可用；兑换失败通过 Cloud
+的任务状态与 Store 日志体现。
 
 健康检查只报告依赖是否就绪，不暴露配置内容。
 

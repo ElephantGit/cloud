@@ -98,11 +98,13 @@ Gateway.
 
 ## Shared egress
 
-The Cloud server and model-gateway point at one out-of-package JSON file with `-deployment-egress <path>` or
-`ORA_DEPLOYMENT_EGRESS_FILE`; the flag wins. Omitting it keeps public mode. Public DNS remains
-`MODEL_GATEWAY_DNS_HTTPS_URL` and `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`, and both processes must receive the same values.
-The file format, the enterprise allowlist and how to replace the file are in
-[Shared deployment egress](deployment-egress.en.md). This is not a key in `configs/config.yaml`.
+The Cloud server, model-gateway and the Repo Executor point at one out-of-package JSON file. The first two take
+`-deployment-egress <path>` or `ORA_DEPLOYMENT_EGRESS_FILE`, and the flag wins; the Repo Executor reads the environment
+only, where `REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE` wins over `ORA_DEPLOYMENT_EGRESS_FILE`, and requires an absolute path.
+Omitting it keeps public mode. Public DNS remains `MODEL_GATEWAY_DNS_HTTPS_URL` and
+`MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`, and all three processes must receive the same values. The file format, the enterprise
+allowlist and how to replace the file are in [Shared deployment egress](deployment-egress.en.md). This is not a key in
+`configs/config.yaml`.
 
 ## git-server
 
@@ -134,10 +136,14 @@ database; keys, certificates and public keys are mounted only as read-only files
 | `REPO_EXECUTOR_CREDENTIAL_STORE_URL`, `_CREDENTIAL_STORE_CA_FILE` | `https://credential-store:8461`, required | The Credential Store redemption listener and its CA |
 | `REPO_EXECUTOR_WORK_ROOT` | `/var/lib/repo-executor/tasks` | The task directory; deployments mount a tmpfs and it is cleaned at startup |
 | `REPO_EXECUTOR_HELPER_PATH` | `/usr/local/bin/git-credential-ora` | The only credential helper Git may use |
-| `REPO_EXECUTOR_GIT_PROGRAM` | `git` | The Git executable |
+| `REPO_EXECUTOR_GIT_PROGRAM` | `git` | The Git executable (≥ 2.37, for `http.curloptResolve`) |
 | `REPO_EXECUTOR_SLOTS`, `_MAX_TASK_BYTES` | `4`, 2 GiB | Concurrent tasks and the per-task directory bound |
 | `REPO_EXECUTOR_SYNC_TIMEOUT_MAX`, `_PUBLISH_TIMEOUT_MAX`, `_PROBE_TIMEOUT_MAX` | `30m`, `5m`, same as publish | Bounds for the three task kinds |
-| `REPO_EXECUTOR_EGRESS_ALLOW`, `_EGRESS_DENY_HOSTS`, `_EXTERNAL_CA_FILE` | Empty | Egress allow list (acceptance fixtures only), internal host deny list, and a CA replacing system trust (acceptance fixtures only) |
+| `REPO_EXECUTOR_HEALTH_ADDR` | `:8084` | Plaintext health listener, deployment network only; `GET /healthz` carries the egress schema and digest |
+| `REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE` (or `ORA_DEPLOYMENT_EGRESS_FILE`) | Empty | The deployment-owned `deployment-egress.json`, an absolute path read once at startup; the prefixed variable wins. Empty keeps public mode |
+| `REPO_EXECUTOR_EGRESS_DENY_HOSTS` | Empty | Comma-separated internal host names (exact or parent domain); the Git Server and Credential Store are always denied |
+| `REPO_EXECUTOR_DEVELOPMENT`, `_DEVELOPMENT_ALLOW_HOSTS` | `false`, empty | Exact fixture-host exception in public mode only; listing hosts without `DEVELOPMENT` refuses to start |
+| `REPO_EXECUTOR_EXTERNAL_CA_FILE` | Empty | A CA replacing system trust (acceptance fixtures only) |
 | `REPO_EXECUTOR_LOG_LEVEL` | `info` | Log level |
 
 | Environment variable | Default | Description |

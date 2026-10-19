@@ -91,8 +91,10 @@ Store、Git Server），不发起任何网络请求。
 
 ## 共享出网
 
-Cloud server 和 model-gateway 用启动参数 `-deployment-egress <path>` 或环境变量 `ORA_DEPLOYMENT_EGRESS_FILE` 指向同一份包外 JSON；参数优先。
-省略时为公网模式。公网 DNS 仍是 `MODEL_GATEWAY_DNS_HTTPS_URL` 与 `MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`，两个进程必须拿到相同的值。文件格式、企业白名单和更换方式见
+Cloud server、model-gateway 和 Repo Executor 指向同一份包外 JSON。前两者用启动参数 `-deployment-egress <path>` 或环境变量
+`ORA_DEPLOYMENT_EGRESS_FILE`，参数优先；Repo Executor 只读环境变量，`REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE` 优先，否则用
+`ORA_DEPLOYMENT_EGRESS_FILE`，路径必须是绝对路径。省略时为公网模式。公网 DNS 仍是 `MODEL_GATEWAY_DNS_HTTPS_URL` 与
+`MODEL_GATEWAY_DNS_BOOTSTRAP_IPS`，三个进程必须拿到相同的值。文件格式、企业白名单和更换方式见
 [部署方共享出网配置](deployment-egress.md)。这项不写进 `configs/config.yaml`。
 
 ## git-server
@@ -124,10 +126,14 @@ Cloud server 和 model-gateway 用启动参数 `-deployment-egress <path>` 或�
 | `REPO_EXECUTOR_CREDENTIAL_STORE_URL`、`_CREDENTIAL_STORE_CA_FILE` | `https://credential-store:8461`、必填 | Credential Store 兑换监听及其 CA |
 | `REPO_EXECUTOR_WORK_ROOT` | `/var/lib/repo-executor/tasks` | 任务目录；部署挂载为 tmpfs，启动时清空 |
 | `REPO_EXECUTOR_HELPER_PATH` | `/usr/local/bin/git-credential-ora` | Git 唯一允许使用的 credential helper |
-| `REPO_EXECUTOR_GIT_PROGRAM` | `git` | Git 可执行文件 |
+| `REPO_EXECUTOR_GIT_PROGRAM` | `git` | Git 可执行文件（需 ≥ 2.37，才有 `http.curloptResolve`） |
 | `REPO_EXECUTOR_SLOTS`、`_MAX_TASK_BYTES` | `4`、2 GiB | 并发任务数与单个任务目录上限 |
 | `REPO_EXECUTOR_SYNC_TIMEOUT_MAX`、`_PUBLISH_TIMEOUT_MAX`、`_PROBE_TIMEOUT_MAX` | `30m`、`5m`、同 publish | 三类任务的上限 |
-| `REPO_EXECUTOR_EGRESS_ALLOW`、`_EGRESS_DENY_HOSTS`、`_EXTERNAL_CA_FILE` | 空 | 出口允许列表（仅验收 fixture）、内部主机名拒绝列表、替代系统信任的 CA（仅验收 fixture） |
+| `REPO_EXECUTOR_HEALTH_ADDR` | `:8084` | 明文健康监听，只在部署网络内；`GET /healthz` 带 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
+| `REPO_EXECUTOR_DEPLOYMENT_EGRESS_FILE`（或 `ORA_DEPLOYMENT_EGRESS_FILE`） | 空 | 部署方共享的 `deployment-egress.json`，绝对路径，启动时读取一次；带前缀的变量优先。空为公网模式 |
+| `REPO_EXECUTOR_EGRESS_DENY_HOSTS` | 空 | 逗号分隔的内部主机名（精确或父域）；Git Server 与 Credential Store 总是拒绝 |
+| `REPO_EXECUTOR_DEVELOPMENT`、`_DEVELOPMENT_ALLOW_HOSTS` | `false`、空 | 仅公网模式的精确 fixture 主机例外；未开 `DEVELOPMENT` 时列出主机拒绝启动 |
+| `REPO_EXECUTOR_EXTERNAL_CA_FILE` | 空 | 替代系统信任的 CA（仅验收 fixture） |
 | `REPO_EXECUTOR_LOG_LEVEL` | `info` | 日志级别 |
 
 | 环境变量 | 默认 | 说明 |

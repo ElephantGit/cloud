@@ -37,12 +37,12 @@ func (t *taskRun) sync(ctx context.Context) Result {
 		}
 	}
 
-	// Step 3: the hardened external fetch.
+	// Step 3: the hardened external fetch, with the addresses checked for this subprocess.
 	external, refusal := t.externalRepository(ctx)
 	if refusal != nil {
 		return *refusal
 	}
-	if o := t.run(ctx, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--", external, "+refs/heads/"+task.Branch+":"+syncRef); !o.ok() {
+	if o := t.runExternal(ctx, external, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--", external.URL, "+refs/heads/"+task.Branch+":"+syncRef); !o.ok() {
 		return t.fail(ctx, externalFailure(o.stderr, t.anonymous), &o)
 	}
 	refs := t.run(ctx, "for-each-ref", "--format=%(refname)")

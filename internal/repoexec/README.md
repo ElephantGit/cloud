@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Ora 中唯一访问外部 Git 仓库的程序（`proposed` 的 ADR `cloud/repo-executor/0`，实现 Git Server 代码中心契约中执行器一方的义务）。
+Ora 中唯一访问外部 Git 仓库的程序（`approved` 的 ADR `cloud/repo-executor/0`，实现 Git Server 代码中心契约中执行器一方的义务）。
 无状态：不连数据库，每个任务在私有临时目录里新建裸仓库，结束后删除任务目录与凭据材料。只报告观察到的事实，Operation 状态由 Cloud 决定。
 
 | 文件 | 职责 |
@@ -16,13 +16,18 @@ Ora 中唯一访问外部 Git 仓库的程序（`proposed` 的 ADR `cloud/repo-e
 | `publish.go` | ADR D6：从 Git Server 取源、只快进、前置 `ls-remote`、lease 推送、在独立窗口里做后置 `ls-remote` |
 | `probe.go` | ADR D7：`upload-pack` 用 `ls-remote`；`receive-pack` 用 Go HTTP 读取第一个 pkt-line 即断开 |
 | `classify.go` | porcelain 与 `ls-remote` 解析、stderr → 错误码、ADR D8 发布组合表 |
-| `egress.go` | 出口策略：仅 https、端口 443、拒绝回环 / 私有 / CGNAT / 链路本地 / ULA / 组播 / 元数据地址、内部主机名和无点主机名；允许列表（fixture）整体放行；拨号时再校验 |
+| `external_target.go` | 外部仓库地址的检查与固定：准入规则全部来自共享 `internal/egress`（企业模式只接受部署目标，public 模式经部署 DNS 且要求全部地址为公网地址），本文件只补充执行器的内部主机拒绝与仅限 public 模式的精确 fixture host 例外，并把检查过的地址固定给 Git、拨号时再校验 |
 | `workdir.go` | 工作根目录布局（`tasks/`、`credentials/`）、启动清扫、每 250ms 的大小监控 |
 | `client.go` | Cloud 侧 `Client.Run`：`NotDeliveredError`（请求未写完，任务肯定没开始）、`LostError`（已发送但没有可读结果）、`RefusedError`（429/403/400，任务没开始）；不设短于任务自身的超时，不重试 |
 
 Git Server 访问：仓库 `<GIT_SERVER_URL>/<tenantId>/<projectId>.git`；`http.<GIT_SERVER_URL>/.sslCert|sslKey|sslCAInfo|extraHeader`
 按 URL 前缀生效，外部远端（不同的 scheme/host/port）拿不到执行器证书和 Operation 头；出口策略还总是拒绝 Git Server 与
 Credential Store 的主机名。外部凭据只经 `git-credential-ora <材料目录>`，作用域是规范化后的仓库 URL，任务中的仓库地址按用户输入原样使用。
+
+外部地址固定：每个外部 Git 子进程（fetch、前置与后置 `ls-remote`、push、probe 的 `ls-remote`）启动前各自解析一次主机，
+检查全部 A/AAAA 记录，再用 `-c http.curloptResolve=<host>:<port>:<地址[,地址]>` 把结果交给 libcurl；TLS 仍按原主机名验证，
+因此名称在检查之后变化也不能把连接改向。probe 的 `receive-pack` 走 Go HTTP 客户端，由 `Egress.DialContext` 在每次新连接时
+重新解析并只拨已检查的数字地址。该选项要求 Git ≥ 2.37；不跟随重定向，也不使用环境代理。
 
 分类：同步 `applied`（含重放）、`superseded`（lease `stale info`，附 `observedOid`；若跟踪 ref 已等于本提交且快照存在则 `applied`）、
 `failed(git_server_rejected)`（Git Server 的 403 或 pre-receive 拒绝）；发布按 ADR D8 表；probe 读到广告为 `applied`。

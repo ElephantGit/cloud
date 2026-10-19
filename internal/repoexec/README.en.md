@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-The only Ora program that contacts external Git repositories (proposed ADR `cloud/repo-executor/0`; it fulfils the executor's
+The only Ora program that contacts external Git repositories (approved ADR `cloud/repo-executor/0`; it fulfils the executor's
 side of the Git Server code-hub contract). Stateless: no database, a fresh bare repository in a private temporary directory per
 task, and the task directory and credential material destroyed afterwards. It reports observed facts only; Cloud decides the
 Operation state.
@@ -18,7 +18,7 @@ Operation state.
 | `publish.go` | ADR D6: source from the Git Server, fast-forward only, pre `ls-remote`, lease push, post `ls-remote` in its own window |
 | `probe.go` | ADR D7: `ls-remote` for `upload-pack`; Go HTTP reading the first pkt-line then hanging up for `receive-pack` |
 | `classify.go` | Porcelain and `ls-remote` parsing, stderr → error code, the ADR D8 publish table |
-| `egress.go` | https only, port 443, no loopback / private / CGNAT / link-local / ULA / multicast / metadata addresses, internal or dotless names; allowlisted fixtures bypass; re-checked at dial time |
+| `external_target.go` | External repository address checks and pinning: every admission rule comes from the shared `internal/egress` policy (deployment targets only in enterprise mode; deployment DNS with public-address answers in public mode). This file adds only the executor's internal-host denial and its exact-fixture-host exception (public mode only), then pins checked addresses for Git and re-checks them at dial time |
 | `workdir.go` | Work root layout (`tasks/`, `credentials/`), startup sweep, 250 ms size monitor |
 | `client.go` | Cloud's `Client.Run`: `NotDeliveredError` (request not fully written; the task certainly did not start), `LostError` (sent, no readable result), `RefusedError` (429/403/400; did not start); no timeout shorter than the task's own, no retries |
 
@@ -26,6 +26,13 @@ Git Server access: repository `<GIT_SERVER_URL>/<tenantId>/<projectId>.git`; `ht
 apply by URL prefix, so the external remote (another scheme/host/port) never gets the executor certificate or the Operation header,
 and the egress policy always denies the Git Server and Credential Store host names. External credentials reach Git only through
 `git-credential-ora <material-dir>`, scoped to the normalized repository URL; the task's repository URL is used as entered.
+
+Address pinning: before every external Git subprocess (fetch, pre and post `ls-remote`, push, the probe's `ls-remote`) the executor
+resolves the host once, checks every A/AAAA answer, and hands the result to libcurl as
+`-c http.curloptResolve=<host>:<port>:<address[,address]>`; TLS still verifies the original host name, so a name that changes
+after the check cannot redirect the connection. The probe's `receive-pack` uses a Go HTTP client whose `Egress.DialContext`
+re-resolves and dials only checked numeric addresses on every new connection. The option needs Git ≥ 2.37; redirects and
+environment proxies are never followed.
 
 Classes: sync `applied` (replay included), `superseded` (lease `stale info`, with `observedOid`; `applied` if the tracking ref already
 holds this commit and its snapshot exists), `failed(git_server_rejected)` (Git Server 403 or pre-receive refusal); publish per the ADR D8

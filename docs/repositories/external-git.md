@@ -98,8 +98,12 @@ token 从浏览器直接进入 Credential Store，任何 Cloud 路径都不会�
   必须为空，`probe` 授权不能驱动发布。
 - 凭据兑换每份执行授权至多一次：Credential Store 先独占创建认领文件，再解密。Repo Executor 只为一次任务把明文写进
   `0700` 的私有材料目录，任务结束（包括失败和 panic）时删除材料与任务目录。
-- Repo Executor 的出口只允许 https、端口 443，拒绝回环、私有、CGNAT、链路本地、组播和元数据地址，并总是拒绝 Git Server 与
-  Credential Store 的主机名；外部远端拿不到执行器证书或 `Ora-Git-Operation-Id` 头。`git-credential-ora` 的参数固定为材料
+- Repo Executor 的出口规则来自部署方共享的 `deployment-egress.json`（与 Cloud、model-gateway 同一份）：公网模式经部署 DNS
+  解析，只接受 https 且每个地址都必须是公网地址；企业模式只接受文件里精确列出的 host:port，未命中的目标在 DNS 前拒绝。共享策略
+  的 topology 始终拒绝 cluster 网段与宿主地址，因此 Git Server、Credential Store 这类内部服务不会成为外部仓库目标。每个访问
+  外部仓库的 Git 子进程启动前重新解析并检查全部地址，再用 `http.curloptResolve` 把检查过的数字地址交给 Git，TLS 仍按原主机名
+  验证；域名在检查后改指别处也连不过去。探针的 `receive-pack` 用同一拨号器。健康监听报告 schema 与摘要，供部署方在更换配置后
+  与 Cloud、model-gateway 比对。外部远端拿不到执行器证书或 `Ora-Git-Operation-Id` 头。`git-credential-ora` 的参数固定为材料
   目录，Git 调用它时只有规范化后完全等于作用域的仓库才拿到用户名和密码，重定向、子模块或同 host 的另一个仓库都拿不到。
 
 ## 失败与清扫

@@ -180,7 +180,7 @@ func createSyncSuccessor(t *transaction, o Object, state, code string, b Object)
 	}
 	if !live || !replay && (!resync || p.S("lifecycle") != "active") {
 		if replay || resync {
-			t.exec("UPDATE repository_operations SET result=result||'{\"successorSkipped\":\"project_not_active\"}'::jsonb WHERE id=$1", o.S("id"))
+			skipSuccessor(t, o.S("id"), "project_deleting")
 		}
 		return
 	}
@@ -194,14 +194,40 @@ func createSyncSuccessor(t *transaction, o Object, state, code string, b Object)
 			fields["credential_ref_id"], fields["credential_version"], fields["binding_version"] = o["credentialRefId"], o["credentialVersion"], o["bindingVersion"]
 		}
 	}
-	if c := b.S("credentialRefId"); c != "" && fields["credential_ref_id"] == nil {
-		if problem := credentialProblem(t, b.S("tenantId"), c, b.S("repositoryUrl"), ""); problem != "" {
-			t.exec("UPDATE repository_operations SET result=result||jsonb_build_object('successorSkipped',$2::text) WHERE id=$1", o.S("id"), problem)
+	// The successor uses the Binding's current reference, except a replayed credential_candidate,
+	// which keeps proving the candidate it started with (D5). Either way the reference is checked
+	// before the row exists (D7): a system-triggered successor that cannot use it is skipped.
+	credential, credentialVersion := b.S("credentialRefId"), int64(0)
+	candidate := replay && o.S("trigger") == "credential_candidate" && o.S("credentialRefId") != ""
+	if candidate {
+		credential, credentialVersion = o.S("credentialRefId"), o.N("credentialVersion")
+	}
+	if credential != "" {
+		if problem := credentialProblem(t, b.S("tenantId"), credential, b.S("repositoryUrl"), ""); problem != "" {
+			skipSuccessor(t, o.S("id"), successorSkipReason(problem))
 			return
 		}
-		fields["credential_ref_id"], fields["credential_version"] = c, t.one("SELECT store_version FROM credential_refs WHERE id=$1", c).N("storeVersion")
+		if !candidate {
+			credentialVersion = t.one("SELECT store_version FROM credential_refs WHERE id=$1", credential).N("storeVersion")
+		}
+		fields["credential_ref_id"], fields["credential_version"] = credential, credentialVersion
 	}
 	insertSync(t, b, trigger, fields)
+}
+
+// skipSuccessor records why a system-triggered successor was not created. The reason stays inside
+// the terminal Operation; the settling transaction still commits (sync ADR D3).
+func skipSuccessor(t *transaction, operationID, reason string) {
+	t.exec("UPDATE repository_operations SET result=result||jsonb_build_object('successorSkipped',$2::text) WHERE id=$1", operationID, reason)
+}
+
+// successorSkipReason maps the credential codes of D7 to the skip reasons D3 reports: the UI only
+// distinguishes a frozen owner from any other unusable reference.
+func successorSkipReason(problem string) string {
+	if problem == "repository_credential_frozen" {
+		return "credential_frozen"
+	}
+	return "credential_unavailable"
 }
 
 // requestSyncAfterPublish makes the Binding's current snapshot catch up with a publish that

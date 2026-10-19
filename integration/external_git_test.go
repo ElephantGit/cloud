@@ -177,6 +177,50 @@ func TestRepositorySyncLeaseFencingReplayAndResyncAreAtomic(t *testing.T) {
 	}
 }
 
+// A system-triggered successor that cannot be created never rolls back the terminal state: the
+// settling transaction still commits, clears the resync request and records why (sync ADR D3).
+func TestRepositorySyncSystemSuccessorRecordsSkipReason(t *testing.T) {
+	for _, c := range []struct {
+		name, lifecycle, reason string
+		credential              bool
+	}{
+		{name: "frozen credential", lifecycle: "active", reason: "credential_frozen", credential: true},
+		{name: "project deleting", lifecycle: "deleting", reason: "project_deleting"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			pid, task := f.leasedSync()
+			must(t, firstErr(f.store.Pool.Exec("UPDATE projects SET lifecycle=$2 WHERE id=$1", pid, c.lifecycle)))
+			_, err := f.store.StartRepositoryOperation(ctx, task.OperationID, task.LeaseGeneration, strings.Repeat("0", 40), time.Minute, time.Minute)
+			must(t, err)
+			// A publish asked for a catch-up sync while this one was running.
+			must(t, firstErr(f.store.Pool.Exec("UPDATE repository_bindings SET resync_requested=true WHERE id=$1", task.BindingID)))
+			if c.credential {
+				var credential string
+				must(t, f.store.Pool.QueryRow(`INSERT INTO credential_refs(id,tenant_id,owner_user_id,purpose,attribution,secret_state,store_version,repository_scope,availability)
+				 VALUES(gen_random_uuid(),$1,$2,'git','team','stored',1,'https://example.invalid/repo','frozen') RETURNING id`, f.tid, f.uid).Scan(&credential))
+				must(t, firstErr(f.store.Pool.Exec("UPDATE repository_bindings SET credential_ref_id=$2 WHERE id=$1", task.BindingID, credential)))
+			}
+			must(t, f.store.SettleRepositorySync(ctx, task.OperationID, task.LeaseGeneration, &core.SyncResult{State: "succeeded", CommitOID: strings.Repeat("a", 40)}))
+			if state, _ := f.repositoryOperationState(task.OperationID); state != "succeeded" {
+				t.Fatalf("the settling sync ended %s, want succeeded", state)
+			}
+			if f.scalar("SELECT count(*) FROM repository_operations WHERE binding_id=$1", task.BindingID) != 1 {
+				t.Fatal("a successor was created although it could not use the credential")
+			}
+			if f.bindingOf(pid).B("resyncRequested") {
+				t.Fatal("the resync request survived a skipped successor")
+			}
+			var reason string
+			must(t, f.store.Pool.QueryRow("SELECT result->>'successorSkipped' FROM repository_operations WHERE id=$1", task.OperationID).Scan(&reason))
+			if reason != c.reason {
+				t.Fatalf("successorSkipped = %q, want %q", reason, c.reason)
+			}
+		})
+	}
+}
+
 func TestRepositorySyncConcurrentLeasesAndIdempotentTrigger(t *testing.T) {
 	f := setup(t)
 	pid := f.create("concurrent-sync").O("resource").S("id")

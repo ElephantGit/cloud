@@ -19,8 +19,10 @@ Git Server（`cmd/git-server`，实现在 `internal/gitserver`）为每个 Proje
   或结果待确认（`uncertain`）的 Operation 照常收尾，`delete_project` 等它们全部结束才开始删除。删除因 Node 拒绝停止而中止、
   Project 回到 `active` 时，同一事务把被取消的同步补回来；被取消的发布不恢复，需要用户重新发起。
 
-执行仓库 Operation 的 Repo Executor 不在本仓库里。Cloud 负责记录 Operation、按 Operation 状态授权 Git 访问；目前 Workspace
-的 `clone` 步骤仍然直接从外部仓库地址克隆。
+执行仓库 Operation 的 Repo Executor 是本仓库的 `cmd/repo-executor`，它按 Operation 状态获得 Git 访问授权；同步只写入本
+Binding 的快照前缀和跟踪 ref，发布只读取源。整条线的同步、发布、凭据与收敛规则见
+[外部 Git 线](external-git.md)。Workspace 的 `clone` 步骤仍然直接从外部仓库地址克隆：公开仓库可以匿名克隆，带凭据的项目在
+Node 侧凭据接入之前拒绝新的远端工作。
 
 ## 监听
 
@@ -59,7 +61,7 @@ Git Server（`cmd/git-server`，实现在 `internal/gitserver`）为每个 Proje
 
 | Operation | 授权 |
 |---|---|
-| `repository_sync` | 在本 Binding 的快照前缀下新建快照 ref |
+| `repository_sync` | 在本 Binding 的快照前缀下新建快照 ref，并把本 Binding 的跟踪 ref 从授权记录的期望旧值推到新提交 |
 | `repository_publish` | 只读，发布只需要从 Project 仓库读取源 |
 
 **结果。** 任何拒绝都是同一个 `403`，仓库不存在也一样，沙盒无法借此探测仓库、执行或 Node 是否存在。数据库故障返回 `503`，
@@ -79,7 +81,7 @@ Git Server（`cmd/git-server`，实现在 `internal/gitserver`）为每个 Proje
 
 - `pre-receive` 在写入任何 ref 之前**重新**解析同一份授权，逐个 ref 核对规则。任何 ref 都不能删除，也不能写表外的 ref；只要有
   一个更新不被接受，整次推送拒绝。
-- 目前沙盒执行只产生交付规则，同步 Operation 只产生快照前缀；工作区分支和跟踪 ref 的授权来源尚未接入。
+- 沙盒执行只产生交付规则；外部线的同步 Operation 产生快照前缀和本 Binding 的跟踪 ref。工作区分支的授权来源尚未接入。
 - 仓库策略和 hook 路径通过每个 git 进程的 `GIT_CONFIG_*` 环境变量生效，不写进仓库，所以重启或旧仓库都无法削弱它们。两个仓库
   监听都禁止删除 ref；仓库监听同时禁止非快进，服务仓库监听放开非快进，让跟踪 ref 能跟随外部的 force-push，其他 namespace 的
   非快进仍由 hook 拒绝。
@@ -92,8 +94,9 @@ ref 查询监听只对 Cloud 的固定身份开放，只读：
 - `GET ...?ref=<ref>`：返回任意 namespace 里一个 ref 指向的提交；
 - `GET ...?prefix=<前缀>`：列出一个 namespace 实例内的 ref 与提交（一个交付、一个 Binding 的全部、快照或跟踪 ref、一个 Workspace）。
 
-把交付 ref 作为 Revision 登记依据的方案还在决策中（见下方 proposed 的 ADR）；当前的 Revision 仍按
-[对象存储里的 bundle](../agent-runs/revisions.md) 校验登记，Cloud server 还没有调用 ref 查询。
+Cloud 在三个地方调用 ref 查询：同步报告 `applied` 后核对快照与跟踪 ref，创建发布前确认源 ref，以及列出 Workspace 的协作
+分支供选择发布源。把交付 ref 作为 Revision 登记依据的方案还在决策中（见下方 proposed 的 ADR）；当前的 Revision 仍按
+[对象存储里的 bundle](../agent-runs/revisions.md) 校验登记。
 
 ## 运维
 

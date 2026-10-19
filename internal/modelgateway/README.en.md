@@ -12,7 +12,7 @@ token digests. Controller and Node receive only opaque references and temporary 
 | `credentials.go` | Gateway-only credential writes with separately verified service/user claims |
 | `grants.go` | Purpose-specific model-access mTLS grants, same-token renewal and revocation |
 | `forward.go`, `events.go`, `envelopes.go`, `response_io.go` | Restricted protocol/model forwarding, envelope validation, safe errors and blocked-write cancellation |
-| `transport.go`, `dns.go` | `NewUpstreamClient(UpstreamConfig)` fixes deployment-owned `DNSConfig`; authenticated HTTPS DNS and numeric public-IP dialing, without environmental proxies or redirects |
+| `transport.go`, `dns.go`, `connection.go` | `NewUpstreamClient` dials under the deployment egress policy: public mode uses authenticated HTTPS DNS, enterprise mode uses the policy's TCP DNS or static addresses, without environmental proxies or redirects |
 | `diagnostics.go` | Finite typed error categories without inspecting upstream text; `Options.Logger` records only the category |
 | `attempt.go`, `usage.go` | Durable HTTP-attempt intent, monotonic timing, protocol usage snapshots and bounded idempotent finalization |
 | `config.go`, `health.go` | Deployment references, listener purposes and verified-TLS readiness |
@@ -65,10 +65,12 @@ Accounting follows [OpenAI Chat Completions](https://developers.openai.com/api/r
 [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) and
 [thinking usage](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost).
 
-Production DNS never falls back to the system resolver. Public numeric IPs bootstrap HTTPS DNS with
-normal TLS verification. Every A/AAAA answer must pass address policy before numeric dialing, while
+Production resolution never falls back to the system resolver. Public mode bootstraps HTTPS DNS from
+public numeric IPs with normal TLS verification; enterprise mode uses the policy file's DNS-over-TCP
+resolver or static addresses. Every A/AAAA answer must pass address policy before numeric dialing, while
 TLS verifies the original model hostname. Only exact deployment-owned development fixture hosts use
-system DNS; user connection settings cannot enable this exemption. Both `2001:2::/48` and `198.18.0.0/15` are denied.
+system DNS, and that exemption cannot be combined with enterprise mode. Both `2001:2::/48` and
+`198.18.0.0/15` are denied. See [Shared deployment egress](../../docs/operations/deployment-egress.en.md).
 
 Raw keys stay in this service's memory. Ciphertext uses fresh nonces; runtime tokens persist only as
 digests. Backups need the database and master-key volume. Startup refuses a key that cannot open

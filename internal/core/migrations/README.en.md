@@ -111,6 +111,10 @@ only validate schema. `TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackf
 
 `0036_workflow_asset_imports.sql` records asset imports for `kind='workflow'` plugins: `workflow_asset_imports` holds one row per (space, plugin) with the `requested_revision` each administrator install/reinstall advances, the import progress and its lease; `workflow_asset_documents` holds one row per document path, and only an `outcome='imported'` row permanently occupies (space, namespace, identifier, document path) — failed documents are retried on the next trigger. The imported workflows and published snapshots are ordinary user data; these two tables only record provenance, idempotency and per-document outcomes. Forward-only and additive; no existing table changes.
 
+## 0037: Repository Bindings and Operations
+
+Moves a Project's external repository out of the Project's columns and into its own Binding: `repository_bindings` (exactly one per Project: `repository_url`, `branch`, credential references, `resync_requested`), `repository_operations` (the complete sync and publish state machine, whose states are the contract's D5 item 3, so later lines add columns and never states) and `repository_snapshots` (the Binding's current snapshot, allowed to lag the tracking ref and never to lead it). An existing Project's repository becomes its Binding here, and only then are the four repository columns dropped from `projects`. Invariants: at most one unfinished sync per Binding (a partial unique index), and a snapshot ref that must be composed from the Binding and the commit.
+
 ## 0038: Bounded abandonment of a blocked run Workspace creation
 
 Adds issue_runs.workspace_blocked_at, workspace_deadline_at, workspace_blocked_source (blocked_write / first_observed) with a provisioning-phase partial index, and widens agent_run_residuals' reason constraint to agent_start_failed / workspace_unavailable. The first transaction persisting `blocked` anchors the absolute deadline; legacy blocked creations have no immutable first-blocked evidence, are not backfilled, and receive one default window from the first policy scan as first_observed. Defer, manual retry, re-claiming, restarts and configuration changes never renew; only the creation's real terminal ends the window. Purely forward and retry-safe, without rewriting historical outcomes. Fresh/upgrade/repeat coverage: TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades.
@@ -161,14 +165,26 @@ with `agent_plugin_version_unfrozen` rather than guessing; whether those rows sh
 refused or executed under some other rule remains an open owner decision this migration records no
 answer to.
 
-## 0043: WorkflowRun invocation references
+## 0043: External Git line
 
-`0043_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
+The migration that lands the external Git line (executor root ADR, identity-access Credential Store, sync and publish ADRs) and the one **destructive switch** the contract allows: no transition flag and no data migration.
+
+- Credential references now point into the independent Credential Store: `secret_ref` may be empty, and `name`, `secret_state`, `store_version`, `requested_capabilities`, `capability_evidence`, the pending browser submission (`pending_submission_id`/`pending_store_version`/`pending_submission_expires_at`), `store_revocation_pending` and `revoked_at` are added. A pre-switch row can never be redeemed again, so it is **revoked** rather than deleted: it keeps its audit trail and its `capabilities` are emptied. Revocation is two steps (Cloud first, then the Store); the capability vocabulary is `read`/`publish`; a stored reference always has a `store_version`; a pending submission is always the next version; and a reference that is not revoked must carry a repository scope.
+- Adds `credential_verifications` (push-capability checks, which run once like an Operation so the probe authorization they carry is used at most once) and `repository_operation_events` (an append-only audit of publish and sync settlements whose trigger refuses UPDATE and DELETE).
+- The Binding's continuity column `repository_credential_ref_id` folds into the single surviving `credential_ref_id` (the continuity column wins), and `version` is added to fence candidate-credential switches.
+- Sync and publish Operations gain their lease, credential, result and publish columns (`lease_generation`/`lease_owner`/`authorization_id`, `expected_tracking_oid`, the approval triple, `check_attempts`/`next_check_at`), constrained so that entering running means one authorization exists, a publish shape is either complete or entirely empty, and at most one publish is in flight per branch.
+
+Fresh-database and merge-baseline (through 0042) upgrade evidence — an upgraded database carrying real Projects, credential references and a continuity column — is `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades` in `integration/migration_upgrade_path_test.go`, which also exercises those constraints and the append-only trigger against real rows.
+
+## 0044: WorkflowRun invocation references
+
+`0044_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
 workflow IssueRun (including running and deferred) as failed, with
 `workflow_execution_unavailable_before_invocation_linkage`. It then adds a tenant-scoped composite
 foreign key and a unique invocation reference. The CHECK requires a reference for non-terminal
 workflow executors and forbids it for other executors. Historical terminal workflow rows may retain
 NULL references and remain editable; their input and outcomes are preserved without inventing runs.
 The CHECK is unconditionally validated, so fresh and upgraded databases enforce the same schema.
-The number follows the 0042 migration already on main. Fresh, seeded upgrade, repeated migration,
-constraint validation and historical update coverage is in `integration/workflow_invocation_migration_test.go`.
+The number follows the 0043 external Git line migration already on main. Fresh, seeded upgrade,
+repeated migration, constraint validation and historical update coverage is in
+`integration/workflow_invocation_migration_test.go`.

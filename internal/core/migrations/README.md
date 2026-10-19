@@ -110,6 +110,10 @@ Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs
 
 `0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
 
+## 0037：仓库 Binding 与 Operation
+
+把 Project 的外部仓库从 Project 列搬进它自己的 Binding：`repository_bindings`（每 Project 恰一行，`repository_url`/`branch`/凭据引用、`resync_requested`）、`repository_operations`（同步与发布的完整状态机，状态取值就是契约的 D5 item 3，后续线路只加列、不加状态）与 `repository_snapshots`（Binding 当前快照，允许落后于跟踪 ref、绝不领先）。既有 Project 的仓库在这一步原样迁成它的 Binding，然后才删掉 `projects` 上的四个仓库列。不变量：同一 Binding 至多一个未完成同步（部分唯一索引）、快照 ref 必须由 Binding 与提交拼出。
+
 ## 0038：运行 Workspace 创建 blocked 的有界放弃
 
 新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。
@@ -150,13 +154,24 @@ Controller 契约的字段。只新增，不回填。
 把空间当前版本写进去会记录一个从未成立的事实；这类运行在首个 agent 节点以 `agent_plugin_version_unfrozen`
 失败而不是猜测。这些行应回填、拒绝还是按其他规则执行，仍是 owner 待决事项，本迁移不记录答案。
 
-## 0043：WorkflowRun 调用引用
+## 0043：外部 Git 线
 
-`0043_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
+外部 Git 线（执行器根 ADR、identity-access Credential Store、同步与发布 ADR）落地的迁移，也是契约允许的那一次**破坏性切换**：没有过渡开关、没有数据迁移。
+
+- 凭据引用改为指向独立 Credential Store：`secret_ref` 允许为空，新增 `name`、`secret_state`、`store_version`、`requested_capabilities`、`capability_evidence`、待确认提交（`pending_submission_id`/`pending_store_version`/`pending_submission_expires_at`）、`store_revocation_pending` 与 `revoked_at`。切换前的行永远无法再兑换，因此**撤销**而不是删除：保留审计轨迹，`capabilities` 清空。撤销分两步（先 Cloud 后 Store），能力词表限定为 `read`/`publish`，已存凭据必有 `store_version`，待确认提交永远是下一个版本，未撤销的引用必须有仓库范围。
+- 新增 `credential_verifications`（推送能力核验，与 Operation 一样一次执行，携带的探测授权至多用一次）与 `repository_operation_events`（发布与同步结算的 append-only 审计，触发器拒绝 UPDATE/DELETE）。
+- Binding 的连续性列 `repository_credential_ref_id` 折叠进唯一保留的 `credential_ref_id`（取连续性列优先），并新增 `version` 围栏候选凭据切换。
+- 同步与发布的 Operation 补齐租约、凭据、结果与发布列（含 `lease_generation`/`lease_owner`/`authorization_id`、`expected_tracking_oid`、发布审批三元组、`check_attempts`/`next_check_at`），并约束「进入 running 即有一次授权」「发布形状完整或完全为空」「同一分支至多一个在途发布」。
+
+新库与合并时基线（含 0042）升级（带真实 Project、凭据引用与连续性列的库）证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades`，其中也对真实行验证了上述约束与 append-only 触发器。
+
+## 0044：WorkflowRun 调用引用
+
+`0044_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
 （含 running、deferred）结算为 failed，原因是
 `workflow_execution_unavailable_before_invocation_linkage`，再添加租户一致的复合外键及唯一引用。
 CHECK 要求非终态 workflow 行具有引用，其他 executor 不得携带引用。历史终态 workflow 行可保留
 NULL 引用并继续更新；迁移保留其输入和结果，不虚构执行。CHECK 无条件 VALIDATE，空库和升级库
-采用同一份已验证约束。编号接在 main 已有的 0042 之后。
+采用同一份已验证约束。编号接在 main 已有的 0043 外部 Git 线迁移之后。
 空库、种子升级、重复迁移、约束验证状态及
 历史行更新测试见 `integration/workflow_invocation_migration_test.go`。

@@ -41,10 +41,6 @@ func validateModelConnection(body Object) Object {
 	base := strings.TrimRight(strings.TrimSpace(body.S("baseUrl")), "/")
 	u, err := url.Parse(base)
 	require(err == nil && len(base) <= 2048 && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "", 400, "invalid_model_url")
-	ip := net.ParseIP(u.Hostname())
-	require(ip == nil || !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsMulticast(), 400, "invalid_model_url")
-	host := strings.ToLower(u.Hostname())
-	require(host != "localhost" && !strings.HasSuffix(host, ".localhost") && !strings.HasSuffix(host, ".local"), 400, "invalid_model_url")
 	raw, ok := body["models"].([]any)
 	require(ok && len(raw) > 0 && len(raw) <= 100, 400, "invalid_model_list")
 	models := make([]Object, 0, len(raw))
@@ -69,6 +65,16 @@ func validateModelConnection(body Object) Object {
 		require(ok, 400, "invalid_field_type")
 	}
 	return Object{"name": name, "protocol": protocol, "baseUrl": base, "authMode": auth, "models": models, "enabled": enabled}
+}
+
+func validatePublicModelConnection(body Object) Object {
+	data := validateModelConnection(body)
+	u, _ := url.Parse(data.S("baseUrl")) // The shared validator already checked the URL structure.
+	ip := net.ParseIP(u.Hostname())
+	require(ip == nil || !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsMulticast(), 400, "invalid_model_url")
+	host := strings.ToLower(u.Hostname())
+	require(host != "localhost" && !strings.HasSuffix(host, ".localhost") && !strings.HasSuffix(host, ".local"), 400, "invalid_model_url")
+	return data
 }
 
 func personalModelReplay(t *transaction, uid, key, hash string) Object {
@@ -149,7 +155,7 @@ func personalModelsPublic(t *transaction, r *PublicRequest, uid string) (out Obj
 	var c Object
 	switch r.Method {
 	case "POST":
-		data := validateModelConnection(r.Body)
+		data := modelWriteData(t, r.Body)
 		id := newID()
 		t.exec(`INSERT INTO personal_model_connections(id,user_id,name,protocol,base_url,auth_mode,models,enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, uid, data.S("name"), data.S("protocol"), data.S("baseUrl"), data.S("authMode"), jsonText(data["models"]), data.B("enabled"))
 		c = modelConnection(t, uid, id)
@@ -157,7 +163,13 @@ func personalModelsPublic(t *transaction, r *PublicRequest, uid string) (out Obj
 	case "PUT":
 		c = modelConnection(t, uid, r.ModelConnectionID)
 		version(c, r.Body.N("version"))
-		data := validateModelConnection(r.Body)
+		var data Object
+		if pureModelDisable(c, r.Body) {
+			data = modelConnectionView(c)
+			data["enabled"] = false
+		} else {
+			data = modelWriteData(t, r.Body)
+		}
 		t.exec(`UPDATE personal_model_connections SET name=$2,protocol=$3,base_url=$4,auth_mode=$5,models=$6,enabled=$7,version=version+1,updated_at=now() WHERE id=$1`, c.S("id"), data.S("name"), data.S("protocol"), data.S("baseUrl"), data.S("authMode"), jsonText(data["models"]), data.B("enabled"))
 		if !data.B("enabled") {
 			revokeConnectionModelGrants(t, c.S("id"))

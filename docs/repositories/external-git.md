@@ -125,9 +125,9 @@ token 从浏览器直接进入 Credential Store，任何 Cloud 路径都不会�
 
 ## 相关决策
 
-以下 ADR 目前都是 `proposed`，本文描述的是本仓库代码当前的行为，不代表决策已经批准：
+以下 ADR 都是 `approved`，本仓库实现其中对应的部分：
 
-- [Repo Executor 是访问外部 Git 的唯一边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/repo-executor/0-repo-executor-sole-external-git-boundary.md)（proposed）
-- [Git 凭据由独立的 Credential Store 保管](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20261016-git-credentials-in-independent-credential-store.md)（proposed）
-- [仓库 Binding 与快照同步](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261016-repository-binding-and-snapshot-sync.md)（proposed）
-- [显式的只快进发布](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261017-explicit-fast-forward-publish.md)（proposed）
+- [Repo Executor 是访问外部 Git 的唯一边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/repo-executor/0-repo-executor-sole-external-git-boundary.md)（approved）
+- [Git 凭据由独立的 Credential Store 保管](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20261016-git-credentials-in-independent-credential-store.md)（approved）
+- [仓库 Binding 与快照同步](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261016-repository-binding-and-snapshot-sync.md)（approved）
+- [显式的只快进发布](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261017-explicit-fast-forward-publish.md)（approved）

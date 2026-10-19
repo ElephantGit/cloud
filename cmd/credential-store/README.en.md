@@ -3,7 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 Runs separately from Cloud and composes [`internal/credentialstore`](../../internal/credentialstore/README.en.md)
-(proposed ADR "Git credentials in an independent Credential Store"). It does not connect to Cloud's
+(approved ADR "Git credentials in an independent Credential Store"). It does not connect to Cloud's
 database; it reads only its own volume, the read-only keyring, TLS files and Cloud's two verification
 key sets. Startup is refused when the keyring is missing or invalid, a key set cannot be loaded, two
 listeners would trust the same identity, or addresses repeat; serving starts only after every listener

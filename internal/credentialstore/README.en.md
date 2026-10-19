@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-The Credential Store is an independent process holding user-managed HTTPS Git tokens (proposed ADR
+The Credential Store is an independent process holding user-managed HTTPS Git tokens (approved ADR
 "Git credentials in an independent Credential Store" D2 and D3, executor root decision D3). Browsers
 submit a token directly with a one-time submission grant Cloud signed; Cloud only reads metadata and
 revokes through the management interface; the Repo Executor redeems plaintext with a one-time

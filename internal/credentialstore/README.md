@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Credential Store 是独立进程，保管用户托管的 HTTPS Git token（`proposed` 的 ADR“Git 凭据由独立的 Credential Store
+Credential Store 是独立进程，保管用户托管的 HTTPS Git token（`approved` 的 ADR“Git 凭据由独立的 Credential Store
 保管”D2、D3，执行器根决策 D3）。浏览器凭 Cloud 签发的一次性提交授权直接提交 token；Cloud 只经管理接口读元数据、撤销；
 Repo Executor 凭一次性执行授权兑换明文，每份授权至多一次；KEK 运维身份在密钥轮换后重新包裹 DEK。每个调用方是一个独立
 身份、一个独立监听，没有身份同时持有两项能力。

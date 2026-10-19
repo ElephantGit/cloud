@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Wires `internal/repoexec`, `cloneauth` and the Credential Store redemption client (proposed ADR `cloud/repo-executor/0`). Stateless,
+Wires `internal/repoexec`, `cloneauth` and the Credential Store redemption client (approved ADR `cloud/repo-executor/0`). Stateless,
 no database. It sweeps the work root at startup; on SIGINT/SIGTERM it cancels in-flight tasks (which still destroy their task
 directories and credential material and write their results) and waits up to 30 seconds.
 

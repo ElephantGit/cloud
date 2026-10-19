@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-组合 `internal/repoexec`、`cloneauth` 与 Credential Store 的兑换客户端（`proposed` 的 ADR `cloud/repo-executor/0`）。无状态，
+组合 `internal/repoexec`、`cloneauth` 与 Credential Store 的兑换客户端（`approved` 的 ADR `cloud/repo-executor/0`）。无状态，
 不连数据库。启动时清扫工作根目录；收到 SIGINT/SIGTERM 后取消进行中的任务（它们仍会销毁任务目录与凭据材料并写出结果），
 最多等待 30 秒。
 

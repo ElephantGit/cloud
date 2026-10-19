@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-独立于 Cloud 运行，组合 [`internal/credentialstore`](../../internal/credentialstore/README.md)（`proposed` 的 ADR
+独立于 Cloud 运行，组合 [`internal/credentialstore`](../../internal/credentialstore/README.md)（`approved` 的 ADR
 “Git 凭据由独立的 Credential Store 保管”）。不连接 Cloud 的数据库，只读取自己的卷、只读 keyring、TLS 文件和 Cloud 的两组
 验证公钥。启动时 keyring 缺失或无效、公钥无法加载、两个监听信任同一身份、或地址重复都会拒绝启动；监听全部绑定成功后才开始
 服务。停止时（SIGINT/SIGTERM）排空四个监听，最多 10 秒。启动时和之后每 5 分钟清扫一次超过 1 小时保留期的旧版本密文与

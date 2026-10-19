@@ -188,10 +188,9 @@ operations](../operations/deployment.en.md).
 
 ## Related decisions
 
-The following ADRs are all `proposed` today; this document describes the current behavior of this
-repository's code, not an approved decision:
+The following ADRs are all `approved`; this repository implements the corresponding parts:
 
-- [The Repo Executor is the sole boundary for external Git access](https://github.com/ora-space/specs/blob/main/decisions/cloud/repo-executor/0-repo-executor-sole-external-git-boundary.md) (proposed)
-- [Git credentials live in an independent Credential Store](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20261016-git-credentials-in-independent-credential-store.md) (proposed)
-- [Repository Binding and snapshot sync](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261016-repository-binding-and-snapshot-sync.md) (proposed)
-- [Explicit fast-forward publish](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261017-explicit-fast-forward-publish.md) (proposed)
+- [The Repo Executor is the sole boundary for external Git access](https://github.com/ora-space/specs/blob/main/decisions/cloud/repo-executor/0-repo-executor-sole-external-git-boundary.md) (approved)
+- [Git credentials live in an independent Credential Store](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20261016-git-credentials-in-independent-credential-store.md) (approved)
+- [Repository Binding and snapshot sync](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261016-repository-binding-and-snapshot-sync.md) (approved)
+- [Explicit fast-forward publish](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20261017-explicit-fast-forward-publish.md) (approved)

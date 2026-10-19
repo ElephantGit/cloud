@@ -157,6 +157,24 @@ func TestWorkflowConditionExplicitNullExpected(t *testing.T) {
 	}
 }
 
+// A template that resolves to null is a present operand, unlike a literal `value: null`: desktop's
+// Option<Value> reads the literal null as None, but a placeholder resolves to Some(Value::Null),
+// which the operator then compares. resolveWorkflowExpected keeps hasExpected=true for the template
+// even though the bound value is JSON null, while the literal is reported absent.
+func TestWorkflowExpectedNullLiteralVersusTemplate(t *testing.T) {
+	states := map[string]workflowNodeState{"s": {Status: "succeeded", Output: Object{"nothing": nil}}}
+
+	literal, hasExpected, err := resolveWorkflowExpected(Object{"value": nil}, states)
+	if err != nil || hasExpected || literal != nil {
+		t.Fatalf("literal null = (%v, %v, %v); want an absent operand", literal, hasExpected, err)
+	}
+
+	templated, hasExpected, err := resolveWorkflowExpected(Object{"value": "{{#s.nothing#}}"}, states)
+	if err != nil || !hasExpected {
+		t.Fatalf("template null = (%v, %v, %v); want a present null value", templated, hasExpected, err)
+	}
+}
+
 // The selector shape is part of parity: desktop indexes [node, root, ...nested] against the node's
 // variable roots, so [start, limit] reads a run-form variable and [start, input] reads the kickoff
 // prompt. The old Cloud shape nested the whole form under input, which made [start, limit] resolve

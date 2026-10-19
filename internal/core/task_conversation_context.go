@@ -1,5 +1,7 @@
 package core
 
+import "unicode/utf8"
+
 // Earlier Agent prose arrives as an explicit Node projection; Cloud never parses ACP content or
 // guesses whether a tool/thought record is user-facing text. This reader freezes only completed
 // runs and never treats a prior Workspace or Git Revision as proof that chat history was restored.
@@ -62,19 +64,36 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 		if row.B("truncated") || row.B("overflow") && index == len(rows)-1 {
 			turn["assistantTruncated"] = true
 		}
-		candidate := append([]Object{turn}, chosen...)
-		probe := make(Object, len(input)+1)
-		for k, value := range input {
-			probe[k] = value
-		}
-		probe["conversationHistory"] = candidate
-		// Leave room for a frozen Revision reference added only at Session Start. JSON escaping is
-		// measured by the real prompt renderer rather than guessing from plain-text byte counts.
-		if len(renderAgentInitialTurn(probe, nil)) > taskConversationPromptBudget-1024 {
+		if !conversationTurnFits(input, turn, chosen) {
 			truncated = true
+			turn["assistantTruncated"] = true
+			text := turn.S("assistant")
+			// Search encoded prompt size, not raw text size: JSON escaping can expand a legal
+			// projection several times. Each probe ends on a UTF-8 boundary.
+			low, high := 0, len(text)
+			for low < high {
+				mid := low + (high-low+1)/2
+				end := mid
+				for end > 0 && end < len(text) && !utf8.RuneStart(text[end]) {
+					end--
+				}
+				turn["assistant"] = text[:end]
+				if conversationTurnFits(input, turn, chosen) {
+					low = mid
+				} else {
+					high = mid - 1
+				}
+			}
+			for low > 0 && low < len(text) && !utf8.RuneStart(text[low]) {
+				low--
+			}
+			turn["assistant"] = text[:low]
+			if conversationTurnFits(input, turn, chosen) {
+				chosen = append([]Object{turn}, chosen...)
+			}
 			break
 		}
-		chosen = candidate
+		chosen = append([]Object{turn}, chosen...)
 	}
 	if len(chosen) != 0 {
 		input["conversationHistory"] = chosen
@@ -82,4 +101,16 @@ func conversationHistory(t *transaction, input Object, tid, iid string) {
 	if truncated || unavailable {
 		input["conversationHistoryIncomplete"] = true
 	}
+}
+
+// Leave room for a frozen Revision reference added only at Session Start and for the missing
+// history annotation. The renderer owns JSON escaping and all surrounding prompt metadata.
+func conversationTurnFits(input, turn Object, chosen []Object) bool {
+	probe := make(Object, len(input)+2)
+	for k, value := range input {
+		probe[k] = value
+	}
+	probe["conversationHistory"] = append([]Object{turn}, chosen...)
+	probe["conversationHistoryIncomplete"] = true
+	return len(renderAgentInitialTurn(probe, nil)) <= taskConversationPromptBudget-1024
 }

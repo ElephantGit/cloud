@@ -359,8 +359,10 @@ func TestWorkflowConditionMissingExpectedValue(t *testing.T) {
 
 // Case logic: "and" requires every rule, "or" any rule, the first matching case wins; a case with no
 // rules is an authored shell and falls through; a malformed rule, an unknown operator and an unknown
-// logic are errors rather than silent else branches, while an exists rule on a node that never ran
-// matches nothing (absence is that operator's normal answer).
+// logic are errors rather than silent else branches. An exists rule on a node the states do not
+// contain matches nothing: the evaluator has no declaration set, so this is the runtime answer for
+// snapshots frozen before the publish gate. A new publish naming that node is refused as
+// condition_selector_undeclared instead.
 func TestWorkflowConditionCaseLogic(t *testing.T) {
 	states := map[string]workflowNodeState{"s": {Status: "succeeded", Output: Object{"flag": true, "count": 2.0}}}
 	pick := func(cases any) (string, error) {
@@ -401,11 +403,14 @@ func TestWorkflowConditionCaseLogic(t *testing.T) {
 	if _, err := pick(badLogic); err == nil {
 		t.Fatal("unknown logic selected a branch; want an error")
 	}
+	// `nope` is not a node in the states. Cloud answers absent and the rule matches nothing; desktop
+	// would call the selector Undeclared and fail the node. Snapshots frozen before the publish gate
+	// still reach this path, so the runtime answer is pinned here; a new publish is refused instead.
 	ghost := []any{Object{"id": "ghost", "logic": "or", "conditions": []any{
 		Object{"variableSelector": []any{"nope", "flag"}, "operator": "exists", "value": nil},
 	}}}
 	if got, err := pick(ghost); err != nil || got != workflowBranchElse {
-		t.Fatalf("rule on a node that never ran = %q, %v; want else", got, err)
+		t.Fatalf("exists rule on an undeclared node = %q, %v; want else", got, err)
 	}
 	// Desktop resolves every rule before combining them, so an unset variable in a later rule of an
 	// already-matching or-case still fails instead of being short-circuited away.

@@ -414,6 +414,40 @@ func TestWorkflowAdvanceConditionNotEmptyOnEmptyRunInput(t *testing.T) {
 	}
 }
 
+// A failed node decides the run in the pass that produced it. Here the condition fails and an agent
+// sibling is ready in the same wave; the pass must stop before dispatching it. Dispatching would
+// provision a Workspace and start a session for a run that is already terminal, and it would give the
+// agent a committed state — the row would then claim work that could only end in a failure the
+// condition had already decided.
+func TestWorkflowAdvanceDoesNotDispatchSiblingAfterFailure(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := seedWorkflowRunScene(t, store, wfGraph(
+		[]Object{
+			wfNode("s", "start", ""),
+			wfOneRuleNode("c", "matched", []any{"s", "never_written"}, "equals"),
+			wfNode("a", "agent", "worker"),
+		},
+		[][3]string{{"s", "c", ""}, {"s", "a", ""}},
+	))
+
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	if status != "failed" {
+		t.Fatalf("run status = %q; want failed", status)
+	}
+	if !strings.Contains(runErr, "s.never_written") {
+		t.Fatalf("run error = %q; want the condition's evaluation error", runErr)
+	}
+	if got := wfNodeStatus(t, states, "c"); got != "failed" {
+		t.Fatalf("condition status = %q; want failed", got)
+	}
+	if state, ran := states["a"]; ran {
+		t.Fatalf("sibling agent committed %v; want no state — it must not be dispatched for a failed run", state)
+	}
+}
+
 // A comparator on an absent variable fails the node and the run, as desktop's ConditionRuntime does.
 // not_contains is the case that used to be special-cased: #67 made it answer false so its negated
 // form would agree with not_equals, but desktop raises UnsetVariable for both. Parity means the run

@@ -524,6 +524,14 @@ func advanceWorkflowRun(t *transaction, runID string) {
 	}
 	for {
 		projection := projectWorkflowNodes(graph, states)
+		// A failed node decides the run. Dispatching another ready node in the same wave would do
+		// real work for a run that is already terminal — for an agent that means provisioning a
+		// Workspace and waiting on a session — only to settle failed after the session ends. Stopping
+		// here lets the run settle in this pass and leaves the unrun siblings without a committed
+		// state, which is what "never executed" should look like.
+		if projection.hasFailure() {
+			break
+		}
 		node, ready := projection.readyNode()
 		if !ready {
 			break

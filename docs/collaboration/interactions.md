@@ -54,12 +54,14 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 工作流的执行边界只有一个：显式的**确认**。
 
 ```text
-选中工作流 ──▶ 读取表单描述 ──▶ 填写（可选 AI 辅助）──▶ 确认 ──▶ IssueRun
+选中工作流 ──▶ 读取表单描述 ──▶ 填写（可选 AI 辅助）──▶ 确认 ──▶ WorkflowRun + IssueRun
    不执行        不执行             不执行、不建运行        唯一的执行边界
 ```
 
 - **表单描述**（`GET /tenants/:tid/collaboration/forms/:formRef?issueId=…`）是面向 Issue 的渲染描述：`formRef`、标题、说明和
   字段列表。它不是工作流的 schema，也不绑定任何 schema 技术。字段分三段：平台字段、工作流 Start 节点声明的变量、图的全局变量。
+  初次打开时读取当前文档；在平台版本选择器中选择已发布版本后，前端通过
+  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…` 重新读取所选快照的表单。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
   的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准。
 - **AI 辅助**（`POST .../issues/:iid/collaboration/assist`）只返回字段级的建议补丁和建议的上下文引用：从不创建运行，也不写入
@@ -67,8 +69,8 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 - **确认**（`POST .../issues/:iid/interactions/:ixid/confirm`）是唯一把工作流交互变成执行意图的转换：
   - 前端校验只是体验，Cloud 在确认时**重新**解析目标，并按**被确认的那个已发布版本**的表单校验提交的值；没有任何已发布版本的
     工作流不能确认，因为不能执行未发布的草稿。
-  - 用户看到的表单来自当前文档；如果它与被确认版本的字段已经不一致，确认被拒绝并列出变化的字段
-    （`409 workflow_version_fields_changed`），而不是用用户没见过的 schema 校验他填的值。
+  - Cloud 仍比较当前活稿与所选发布版本的字段；即使前端已展示所选快照的表单，两者不一致时仍拒绝确认并列出变化的字段
+    （`409 workflow_version_fields_changed`）。前端提示先发布当前活稿或选择其他版本；按快照读取表单并未取消这条检查。
   - 提交的值作为交互的输入保存，被执行的版本冻结进运行输入；运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
   - 同一事务里创建一个 WorkflowRun 和一个 IssueRun，IssueRun 的 `workflowInvocationRef` 指向该 WorkflowRun（与租户一起的复合外键，且唯一）；直接运行、manual 工作流 IssueRun 与确认共用同一个创建函数。已关联的 IssueRun 不交给 `ExecutionDispatcher`。
   - 用 `run_id IS NULL` 的比较并交换认领交互，重复确认返回 `409 interaction_already_confirmed`；对非表单交互确认返回

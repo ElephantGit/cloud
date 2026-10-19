@@ -69,7 +69,7 @@ Cloud's own background loops, see [Agent IssueRuns](../agent-runs/issue-runs.en.
 A workflow has exactly one execution boundary: an explicit **confirm**.
 
 ```text
-select workflow ──▶ read form descriptor ──▶ fill in (optional AI assist) ──▶ confirm ──▶ IssueRun
+select workflow ──▶ read form descriptor ──▶ fill in (optional AI assist) ──▶ confirm ──▶ WorkflowRun + IssueRun
   no execution        no execution             no execution, no run              the only execution boundary
 ```
 
@@ -77,6 +77,9 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   Issue-facing rendering description: `formRef`, title, description and a list of fields. It is not the
   workflow's schema and binds to no schema technology. Fields come in three bands: platform fields, the
   variables declared by the workflow's Start node, and the graph's global variables.
+  Opening the form initially reads the current document. Selecting a published version in the platform
+  version selector reloads the chosen snapshot's form through
+  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…`.
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
@@ -90,10 +93,11 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   - Frontend validation is only for user experience. On confirm Cloud resolves the target **again** and
     validates the submitted values against the form of **the published version being confirmed**; a
     workflow with no published version cannot be confirmed, because an unpublished draft cannot run.
-  - The form the user saw comes from the current document; if its fields no longer match the confirmed
-    version's, the confirm is refused with the changed fields listed
-    (`409 workflow_version_fields_changed`), rather than validating the user's values against a schema
-    they never saw.
+  - Cloud still compares the live draft's fields with the selected published version's fields. A
+    difference rejects confirm and lists the changed fields (`409 workflow_version_fields_changed`),
+    even when the frontend has rendered the selected snapshot's form. The frontend asks the user to
+    publish the current draft or choose another version; reading the snapshot's form does not remove
+    this check.
   - The submitted values are kept as the interaction's input and the executed version is frozen into the
     run input, so the run still knows which version it executed after the workflow is edited or
     published again.

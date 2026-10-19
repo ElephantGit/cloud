@@ -190,3 +190,7 @@ registration fail), so nothing is backfilled. Fresh and 0043-upgrade evidence:
 `TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`; real WorkflowRun registration:
 `internal/core/model_attempt_workflow_db_test.go`.
 
+
+## 0045: Agent declaration catalog columns
+
+Adds `agent_configuration` (jsonb, the declaration association plus its byte-exact static copy) and `agent_configuration_issue` (text, a bounded reason) to `plugin_catalog_entries`. `agent_configuration` is written only when the listing declared an `[agent_configuration]` section and the static copy validated, so the catalog snapshot is self-contained and declaration reads never need the marketplace checkout or the release package; an invalid association records only a bounded reason and produces no consumable declaration — "not declared" and "declared but invalid" are different facts, and the latter does not make the package uninstallable. Forward-only and retry-safe; no existing row changes. Fresh/upgrade/repeat coverage: TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades. Semantics: [Agent declaration snapshots in the marketplace](../../../docs/plugins/marketplace.en.md#agent-declaration-snapshots-and-freezing).

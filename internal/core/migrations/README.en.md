@@ -130,7 +130,6 @@ code that grants on it. Additive: columns, constraints and indexes, no backfill.
 
 `TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` covers fresh, 0038 upgrade and rerun.
 
-
 ## 0040: Executor slot bindings
 
 `0040_executor_slot_bindings.sql` lets executor slots reach the runtime. A `run_model_bindings` row's

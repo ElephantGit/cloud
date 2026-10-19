@@ -93,11 +93,7 @@ func TestRevisionUpgradePreservesPublishedWorkflowSchema(t *testing.T) {
 		must(t, err)
 	}
 	must(t, tx.Commit())
-	// The run document strips the identity columns a later migration (0039) added: they land as
-	// NULL on published rows, which is an intended shape change, not a data change — the
-	// comparison keeps guarding the row data the published schema carried.
-	const documents = `SELECT jsonb_build_object('workflow',to_jsonb(w),'snapshot',to_jsonb(s),'run',to_jsonb(r) - ARRAY['created_by','project_id'])::text FROM workflows w JOIN workflow_snapshots s ON s.workflow_id=w.id JOIN workflow_runs r ON r.snapshot_id=s.id WHERE r.id=$1`
-	// The run document strips the columns later migrations added to the published row: 0038's
+	// The run document strips the columns later migrations added to the published row: 0039's
 	// identity columns and 0042's frozen plugin version. They land as NULL on published rows,
 	// which is an intended shape change, not a data change — the comparison keeps guarding the
 	// row data the published schema carried.

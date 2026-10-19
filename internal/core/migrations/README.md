@@ -126,7 +126,6 @@ Workspace 可以属于 WorkflowRun；`execution_work` 同样变为「恰有一�
 
 `TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` 验证空库、从 0038 升级及重复迁移。
 
-
 ## 0040：执行器槽位绑定
 
 `0040_executor_slot_bindings.sql` 让执行器槽位抵达运行时。`run_model_bindings` 的所有者变为判别对

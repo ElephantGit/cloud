@@ -493,6 +493,13 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
+			// Desktop's pool declares the system globals; Cloud neither provides their values nor
+			// declares them, so `sys` is not a node in the graph and the selector is undeclared.
+			name: "a selector on a node the graph does not contain",
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"sys", "workflow_id"}, "equals", "wf-1")})}),
+			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
+		},
+		{
 			name: "an operator neither side knows",
 			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, "matches", true)})}),
 			want: []any{Object{"code": "condition_operator_unsupported", "nodeId": "c", "field": "cases.conditions.operator"}},

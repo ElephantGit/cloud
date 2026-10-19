@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // writeListing drops a manifest (and optional siblings) under registry/<dir>.
@@ -234,6 +235,27 @@ func TestScanRecordsBoundedIssuesForInvalidCopies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBoundIssueCutsOnARuneBoundary(t *testing.T) {
+	// Byte 200 (index 199) falls inside a multi-byte rune: the bounded reason must still be
+	// valid UTF-8, or PostgreSQL would reject it as a text parameter and one entry's problem
+	// would fail the whole catalog sync transaction — the exact failure this bound exists to
+	// prevent ("record a bounded reason; the other valid entries still sync").
+	reason := strings.Repeat("a", 198) + "界" + strings.Repeat("b", 40)
+	if len(reason) <= agentConfigurationIssueMaximum {
+		t.Fatalf("the fixture must exceed the bound: %d bytes", len(reason))
+	}
+	bounded := boundIssue(reason)
+	if !utf8.ValidString(bounded) {
+		t.Fatalf("bounded reason is not valid UTF-8: %q", bounded)
+	}
+	if want := strings.Repeat("a", 198); bounded != want {
+		t.Fatalf("the cut must drop the partial rune, not keep it: %q", bounded)
+	}
+	if boundIssue("copy unreadable") != "copy unreadable" {
+		t.Fatal("a short reason must pass through unchanged")
 	}
 }
 

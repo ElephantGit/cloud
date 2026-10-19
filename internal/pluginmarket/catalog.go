@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -255,7 +256,8 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 	// The manifest path grammar is platform-independent and its segments cannot name a parent,
 	// an absolute location, or a separator escape, so Join stays inside dir; the Lstat below also
 	// refuses anything but a regular file, so a link target outside the entry cannot be read.
-	info, e := os.Lstat(copyPath) // #nosec G703 -- the copy path grammar contains the join.
+	info, e := os.Lstat(copyPath) // #nosec G703 -- the copy path grammar validated at
+	// manifest parse keeps the join inside the entry: no parent, absolute or separator escape.
 	if e != nil {
 		return nil, boundIssue("copy unreadable: " + e.Error())
 	}
@@ -265,7 +267,8 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 	if info.Size() > maxAgentDeclarationBytes {
 		return nil, boundIssue(fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes))
 	}
-	source, e := os.ReadFile(copyPath) // #nosec G703 -- the copy path grammar contains the join.
+	source, e := os.ReadFile(copyPath) // #nosec G703 -- same containment argument as the
+	// Lstat above: the validated copy path grammar keeps the read inside the entry directory.
 	if e != nil {
 		return nil, boundIssue("copy unreadable: " + e.Error())
 	}
@@ -302,8 +305,12 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 
 // boundIssue truncates one recorded reason so no copy content can grow the catalog row.
 func boundIssue(reason string) string {
-	if len(reason) <= agentConfigurationIssueMaximum {
-		return reason
+	if len(reason) > agentConfigurationIssueMaximum {
+		reason = reason[:agentConfigurationIssueMaximum]
 	}
-	return reason[:agentConfigurationIssueMaximum]
+	// A byte cut can split a multi-byte rune, and platform error strings can carry raw bytes;
+	// dropping invalid sequences keeps the bounded reason valid UTF-8 so one entry's problem
+	// cannot fail the whole catalog sync transaction — the exact failure this bound exists to
+	// prevent ("record a bounded reason; the other valid entries still sync").
+	return strings.ToValidUTF8(reason, "")
 }

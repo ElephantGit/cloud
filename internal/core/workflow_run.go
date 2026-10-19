@@ -67,7 +67,28 @@ func composeWorkflowRun(t *transaction, run Object) Object {
 	}
 	summary["workflowName"] = workflowName
 	summary["definitionSnapshot"] = graph
+	// The frozen per-slot bindings (mappings decision D3: the run uses these forever). Detail
+	// read only — the history list stays a plain projection of the run row, like definitionSnapshot.
+	summary["modelBindings"] = workflowRunBindings(t, run.S("id"))
 	return summary
+}
+
+// workflowRunBindings projects a run's frozen per-slot model bindings, ordered by slot name so
+// the detail page reads deterministically. `revoked` is the only mutable part: the binding row
+// itself (connection name, model, protocol) is the frozen truth the session will run against.
+func workflowRunBindings(t *transaction, runID string) []any {
+	rows := t.list("SELECT slot_name, connection_name, model, revoked_at FROM run_model_bindings WHERE workflow_run_id=$1 ORDER BY slot_name", runID)
+	out := make([]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Object{
+			"slot":           r.S("slotName"),
+			"connectionName": r.S("connectionName"),
+			"modelId":        r.O("model").S("id"),
+			"modelName":      r.O("model").S("name"),
+			"revoked":        r["revokedAt"] != nil,
+		})
+	}
+	return out
 }
 
 // createWorkflowRun records one execution against one frozen snapshot. Cloud has no
@@ -83,7 +104,10 @@ func composeWorkflowRun(t *transaction, run Object) Object {
 // which is why the uid is part of the request rather than inferred later.
 //
 // The run's Project comes from the caller (D3): see resolveWorkflowRunProject for why it is stated
-// rather than inferred, and why a request that names none is refused rather than accepted.
+// rather than inferred, and why a request that names none is refused rather than accepted. The plugin
+// version is read here rather than at session start for the same reason — see
+// resolveWorkflowRunPluginVersion — so that upgrading the space's plugin while the run is in flight
+// cannot change what it executes.
 func createWorkflowRun(t *transaction, r *PublicRequest, uid string) Object {
 	w := workflow(t, r.TenantID, r.WorkflowID)
 	name := w.S("name")
@@ -101,10 +125,18 @@ func createWorkflowRun(t *transaction, r *PublicRequest, uid string) Object {
 	require(r.Identity != nil, 401, "user_credential_required")
 	createdBy := identityWithAlias(t, r.Identity).S("id")
 	projectID := resolveWorkflowRunProject(t, r, uid)
-	t.exec("INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", id, r.TenantID, r.WorkflowID, s.S("id"), name, "pending", jsonText(input), createdBy, projectID)
+	pluginVersion := resolveWorkflowRunPluginVersion(t, r.TenantID, projectID)
+	t.exec("INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id,plugin_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", id, r.TenantID, r.WorkflowID, s.S("id"), name, "pending", jsonText(input), createdBy, projectID, pluginVersion)
 	if t.simulator != nil {
 		nodeStates, rounds, status := t.simulator.SimulateWorkflowRun(s.O("graph"), input)
 		t.exec("UPDATE workflow_runs SET node_states=$1,rounds=$2,status=$3,started_at=now(),finished_at=now(),version=version+1,updated_at=now() WHERE id=$4", jsonText(nodeStates), jsonText(rounds), status, id)
+	} else {
+		// The run-creation gate (mappings decision D2): every slot the snapshot references must
+		// resolve against the invoker's personal configuration before the run exists, and each
+		// resolution freezes one binding. Same transaction as the run INSERT — any gap rolls back
+		// the whole creation, so no run ever survives with an unresolved slot. A simulated run
+		// (dev fixtures) filled its whole trace above and never executes, so it freezes nothing.
+		freezeWorkflowRunExecutors(t, id, createdBy, s.O("graph"))
 	}
 	return composeWorkflowRun(t, t.one("SELECT * FROM workflow_runs WHERE id=$1 AND tenant_id=$2", id, r.TenantID))
 }
@@ -147,4 +179,29 @@ func resolveWorkflowRunProject(t *transaction, r *PublicRequest, uid string) any
 	p := project(t, r.TenantID, uid, pid)
 	require(p.S("lifecycle") != "deleting", 409, "resource_unavailable")
 	return p.S("id")
+}
+
+// resolveWorkflowRunPluginVersion reads the plugin version the run will execute with, so the creation
+// transaction freezes it alongside the rest of the run's identity (D3). The plugin lives in the
+// Project's space, which is why this takes the Project the same transaction just froze: the Project is
+// what names the space to read the version from, and creation no longer admits a run without one.
+//
+// It is the same read the session start used to make, moved earlier rather than changed. The version
+// is whatever the space's desired state says at creation; nothing here consults the observed state, so
+// an install still converging freezes the version it is converging to, and a removal freezes the
+// version it is removing from — both are what the run's author asked for at the moment they asked.
+//
+// A missing plugin freezes nothing rather than refusing the creation. The run's Workspace provisions
+// and its first agent node then fails honestly with `agent_plugin_version_unfrozen`, which is where
+// every other permanent gap in a run's identity is reported. Refusing at creation is a defensible
+// alternative — the executor-slot gate beside this does refuse — but it would turn a request the API
+// accepts today into a 400, so it stays an owner decision rather than a change made here.
+func resolveWorkflowRunPluginVersion(t *transaction, tenantID string, projectID any) any {
+	pv := t.one(`SELECT p.desired_version FROM projects pr JOIN space_plugins p ON p.space_id=pr.space_id
+		AND p.source_namespace=split_part($3,'/',1) AND p.identifier=split_part($3,'/',2)
+		WHERE pr.id=$1 AND pr.tenant_id=$2 AND pr.deleted_at IS NULL`, projectID, tenantID, opencodeAgentCLI)
+	if pv == nil || pv.S("desiredVersion") == "" {
+		return nil
+	}
+	return pv.S("desiredVersion")
 }

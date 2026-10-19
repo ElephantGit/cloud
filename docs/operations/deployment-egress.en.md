@@ -66,10 +66,15 @@ addresses). The two processes must receive the same values. When unset, both use
 
 Every new application connection resolves and checks all answers again, dials a numeric address, and verifies TLS
 against the normalized original name. Environment HTTP/SOCKS proxies and redirects are disabled. Enterprise
-application transport does not attempt HTTP/2. A connection lasts at most 5 minutes and idles out at 60 seconds;
-expiry closes an active connection and does not automatically resend a model generation.
+application transport does not attempt HTTP/2. Only enterprise connections have a 30-minute hard lifetime;
+expiry closes active connections without automatically resending model generations. Public mode retains its
+existing behavior without a hard lifetime. Both modes use a 60-second idle timeout.
 
 ## Updates, revocation and health
+
+Startup configuration errors identify the field path and reason, such as `targets[1].allowedCidrs: empty`,
+without field values, addresses or raw configuration. Unknown field names are not echoed either, so arbitrary
+operator input cannot become diagnostic content.
 
 To change the file, stop the Cloud server and every model-gateway, confirm the old processes have exited, then replace
 the shared file and start again. Editing the file alone does not change the snapshot already loaded; a failed load

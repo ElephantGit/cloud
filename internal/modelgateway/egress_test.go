@@ -186,11 +186,14 @@ func TestEnterpriseModelAndAssetShareTransportPolicy(t *testing.T) {
 }
 
 func TestConnectionLifetimeClosesActiveAndIdleSockets(t *testing.T) {
+	if upstreamConnectionLifetime != 30*time.Minute {
+		t.Fatal("enterprise connection lifetime must be 30 minutes")
+	}
 	for _, active := range []bool{false, true} {
 		t.Run(fmt.Sprint(active), func(t *testing.T) {
 			left, right := net.Pipe()
 			defer right.Close()
-			leased := leaseConnection(left, time.Hour)
+			leased := leaseConnection(left, upstreamConnectionLifetime)
 			defer leased.Close()
 			// Fire the actual expiry callback deterministically rather than sleeping for the production bound.
 			conn := leased.(*leasedConnection)
@@ -211,6 +214,43 @@ func TestConnectionLifetimeClosesActiveAndIdleSockets(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPublicConnectionsHaveNoHardLifetime(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
+	d := &secureDialer{resolver: fixedResolver{netip.MustParseAddr("127.0.0.1")}, dialer: net.Dialer{}, allowed: map[string]struct{}{"fixture.invalid": {}}}
+	conn, err := d.dial(t.Context(), "tcp", net.JoinHostPort("fixture.invalid", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	if _, leased := conn.(*leasedConnection); leased {
+		t.Fatal("public connection acquired an enterprise hard expiry")
+	}
+}
+
+func TestEnterpriseDialHasBoundedLifetime(t *testing.T) {
+	s, ip, port := enterpriseTLS(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	_, policy, _ := enterpriseClient(t, s, ip, port)
+	d := &secureDialer{policy: policy}
+	conn, err := d.dial(t.Context(), "tcp", net.JoinHostPort(s.Certificate().DNSNames[0], port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, leased := conn.(*leasedConnection); !leased {
+		t.Fatal("enterprise connection has no lifetime bound")
 	}
 }
 

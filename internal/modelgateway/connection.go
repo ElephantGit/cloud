@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// Hard expiry bounds even active streams; reconnecting requires fresh DNS/address admission.
+// Enterprise hard expiry bounds even active streams; reconnecting requires fresh DNS/address admission.
 // It deliberately does not retry an interrupted model generation.
-const upstreamConnectionLifetime = 5 * time.Minute
+const upstreamConnectionLifetime = 30 * time.Minute
 
 type leasedConnection struct {
 	net.Conn

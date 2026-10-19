@@ -61,7 +61,10 @@ func (d *secureDialer) dial(ctx context.Context, network, address string) (net.C
 	for _, a := range addresses {
 		connection, dialErr := d.dialer.DialContext(ctx, network, net.JoinHostPort(a.String(), port))
 		if dialErr == nil {
-			return leaseConnection(connection, upstreamConnectionLifetime), nil
+			if d.policy.Enterprise() {
+				return leaseConnection(connection, upstreamConnectionLifetime), nil
+			}
+			return connection, nil
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

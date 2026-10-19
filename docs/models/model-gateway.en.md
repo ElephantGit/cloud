@@ -61,8 +61,9 @@ effect.
   Resolution uses the file's DNS-over-TCP resolver or that target's static addresses, reads neither system DNS nor the
   public DoH settings above. Enterprise mode together with `MODEL_GATEWAY_DEVELOPMENT_ALLOW_HOSTS` refuses to start.
   Application transport does not attempt HTTP/2.
-- Neither mode uses environment proxies or follows redirects. A connection lasts at most 5 minutes and idles out at 60
-  seconds; expiry closes an active connection and does not automatically resend a model generation.
+- Neither mode uses environment proxies or follows redirects. Idle connections expire after 60 seconds in both modes.
+  Only enterprise connections have a 30-minute hard lifetime; public connections retain their existing unbounded lifetime.
+  Enterprise expiry closes an active connection and does not automatically resend a model generation.
 - Refusal codes distinguish policy refusal, resolution failure, TLS verification failure, timeout, redirect and an
   unreachable upstream; logs record only the safe category, never the raw URL, resolved addresses, request body,
   authentication headers or the provider's error text.

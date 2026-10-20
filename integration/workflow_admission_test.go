@@ -31,7 +31,7 @@ func agentRunGraph(slot string, legacy bool, slots []any) core.Object {
 			core.Object{
 				"id": "start", "type": "workflow", "deletable": false,
 				"position": core.Object{"x": 0, "y": 0},
-				"data":     core.Object{"kind": "start", "title": "开始", "description": ""},
+				"data":     core.Object{"kind": "start", "title": "开始", "description": "", "input": ""},
 			},
 			core.Object{
 				"id": "agent-1", "type": "workflow",

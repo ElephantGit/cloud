@@ -3,8 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 Two kinds of grant that Cloud signs and the executor and the Credential Store verify (ADR
-`repo-executor/0` D2; the identity-access Credential Store decision). The format is kept from the
-earlier implementation: `base64url(payload) "." base64url(Ed25519 signature)` (RawURLEncoding), the
+`repo-executor/0` D2; the identity-access Credential Store decision). The format is `base64url(payload) "." base64url(Ed25519 signature)` (RawURLEncoding), the
 signature covering the exact payload bytes, so verification never depends on canonical JSON.
 Verifiers hold a public-key set for rotation; private keys exist only in Cloud.
 

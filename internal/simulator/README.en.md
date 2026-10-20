@@ -17,7 +17,7 @@
 
 #### HTTP interface
 
-The Substrate double listens on loopback only, for the simulator and tests; it does not define the production Substrate's interface:
+The simulator mounts the Substrate double on a loopback HTTP server for development and tests; it does not define the production Substrate's interface:
 
 | Method and path | Request | Response and invariants |
 |---|---|---|
@@ -38,7 +38,7 @@ local fixture mapping, never real Git credentials. Plugin installs are Node exec
 ### Controller double (`controller.go`)
 - Simulates the external control plane worker. The lease, operations and Node registration use the retired `/internal/v1/...` JSON endpoints, which only
   `router.NewDevelopment` opens and the production server answers with `410`; executions and Agent runs use gRPC:
-  - Periodically acquires and renews controller leases via `/internal/v1/controller-lease/acquire`.
+  - Acquires leases via `/internal/v1/controller-lease/acquire` and renews via `/internal/v1/controller-lease/renew`.
   - Claims pending operations via `/internal/v1/operations/claim`.
   - Plans and executes required effects against Substrate.
   - Reports effect execution outcomes via `/internal/v1/operations/{oid}/effects/{eid}/result`.
@@ -47,7 +47,7 @@ local fixture mapping, never real Git credentials. Plugin installs are Node exec
 
 ### Agent session double (`agent.go`)
 
-Every bounded Controller step services run work, Thread commands and Node evidence so quiesce cannot starve its end command. Disk-backed `AgentNode` freezes input, deduplicates commands and echoes/ends a session. Delivery creates cumulative bundles and sealed JSONL from real Git and session data, uploads with checksum-signed PUT headers and refreshes expired grants for the same keys. Terminal protojson evidence survives Controller/Node restart; grants never enter the journal. Real PostgreSQL and S3 tests prove A's loop, not production Rust relay or a real D Agent.
+Every bounded Controller step services run work, Thread commands and Node evidence so quiesce cannot starve its end command. Disk-backed `AgentNode` freezes input, deduplicates commands and echoes/ends a session. Delivery creates cumulative bundles and sealed JSONL from real Git and session data, uploads with checksum-signed PUT headers and refreshes expired grants for the same keys. Terminal protojson evidence survives Controller/Node restart; grants never enter the journal. PostgreSQL and S3 tests exercise these doubles' recovery paths; they do not establish production Rust relay or real Agent execution.
 
 Uploads carry signed `If-None-Match: *` and cannot replace the first object. A 412 after a lost response preserves that object and submits the declaration for Cloud verification; it does not prove matching bytes. Controller cancellation returns its cause without journaling a delivery terminal fact, so restart can continue the original execution. Actual Node terminal failures remain durable.
 
@@ -59,7 +59,7 @@ Before the first PUT, the Node durably freezes bundle/JSONL bytes and metadata u
 
 ## Boundaries and invariants
 
-- **Development and testing only**: This package is an execution double. It is never deployed to production environments or imported by production daemon binaries.
-- **Contract fidelity**: The simulator interacts with the core cloud server strictly over standard HTTP APIs and respects all leasing, fencing, and idempotency contracts.
+- **Development and testing only**: This package supplies execution doubles; production configurations must not enable them.
+- **Contract fidelity**: The simulator interacts with the core cloud server through development HTTP and gRPC adapters and respects all leasing, fencing, and idempotency contracts.
 
 See [cmd/simulator](../../cmd/simulator/README.en.md), [Workspace lifecycle](../../docs/runtime/workspaces.en.md), and [Integration tests](../../integration/README.en.md).

@@ -12,7 +12,7 @@ token digests. Controller and Node receive only opaque references and temporary 
 | `credentials.go` | Gateway-only credential writes with separately verified service/user claims |
 | `grants.go` | Purpose-specific model-access mTLS grants, same-token renewal and revocation |
 | `forward.go`, `events.go`, `envelopes.go`, `response_io.go` | Restricted protocol/model forwarding, envelope validation, safe errors and blocked-write cancellation |
-| `transport.go`, `dns.go`, `connection.go` | `NewUpstreamClient` dials under the deployment egress policy: public mode uses authenticated HTTPS DNS, enterprise mode uses the policy's TCP DNS or static addresses, without environmental proxies or redirects |
+| `transport.go`, `connection.go`, `internal/egress` | `NewUpstreamClient` dials under the deployment egress policy: public mode uses authenticated HTTPS DNS, enterprise mode uses the policy's TCP DNS or static addresses, without environmental proxies or redirects |
 | `diagnostics.go` | Finite typed error categories without inspecting upstream text; `Options.Logger` records only the category |
 | `attempt.go`, `usage.go` | Durable HTTP-attempt intent, monotonic timing, protocol usage snapshots and bounded idempotent finalization |
 | `config.go`, `health.go` | Deployment references, listener purposes and verified-TLS readiness |

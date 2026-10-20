@@ -31,6 +31,9 @@ func workflowRunList(t *transaction, r *PublicRequest) Object {
 // kept identical so a history row and a detail page never disagree about what a run is.
 func workflowRunSummary(run Object) Object {
 	rounds, _ := run["rounds"].([]any)
+	// The OpenAPI schema declares both run timestamps nullable, and the page relies on a nil
+	// value to mean "not yet reached". S() would turn a NULL column into "", which is not a
+	// date-time and would render as an empty timestamp; pass the raw value through instead.
 	return Object{
 		"id":         run.S("id"),
 		"tenantId":   run.S("tenantId"),
@@ -42,8 +45,8 @@ func workflowRunSummary(run Object) Object {
 		"nodeStates": run.O("nodeStates"),
 		"rounds":     rounds,
 		"error":      run.S("error"),
-		"startedAt":  run.S("startedAt"),
-		"finishedAt": run.S("finishedAt"),
+		"startedAt":  run["startedAt"],
+		"finishedAt": run["finishedAt"],
 		"createdAt":  run.S("createdAt"),
 		"updatedAt":  run.S("updatedAt"),
 	}

@@ -14,6 +14,8 @@
 | `repository_*.go`、`git_*.go` | Binding、同步/发布 Operation、GitGrant 与凭据元数据 | [外部 Git 线](../../docs/repositories/external-git.md) |
 | `issue*.go`、`collaboration*.go`、`form_descriptor.go` | Issue 聚合、时间线、交互和消费方协作端口 | [Issue 协作](../../docs/collaboration/interactions.md) |
 | `agent_run_*.go`、`execution*.go`、`thread*.go`、`business_hooks.go` | 运行生命周期、执行登记、Thread 与同事务结算钩子 | [IssueRun](../../docs/agent-runs/issue-runs.md)、[Controller](../../docs/runtime/controller-integration.md) |
+| `agent_run_residual.go`、`agent_run_residual_reclaim.go` | 原身份/目标覆盖与证据资格、单一回收责任和唯一 owned-delete operation、effect/许可及完成检查 | [残留回收](../../docs/agent-runs/residual-reclamation.md) |
+| `agent_run_residual_fact.go`、`agent_run_residual_loop.go` | 不改旧责任的追加事实、重放与持久冲突阻挡；独立于 Run phase 的账本扫描和原 operation 恢复 | [残留回收](../../docs/agent-runs/residual-reclamation.md) |
 | `task_conversation_*.go`、`thread_preview.go` | 任务级有序消息、同任务 Agent 串行交接与暂停屏障、从 Node 可见正文冻结的后续提示、配置缺口提示和有界进程内实时预览；Agent 初始提示只读冻结的运行输入 | [Thread](../../docs/agent-runs/threads.md)、[IssueRun](../../docs/agent-runs/issue-runs.md) |
 | `revision*.go`、`session_*.go` | Revision 登记、归档读取、会话列表与统计 | [Revision](../../docs/agent-runs/revisions.md)、[会话读取](../../docs/agent-runs/session-reads.md) |
 | `model_*.go` | 个人配置、冻结绑定、授权摘要与请求观察；不解密 API Key | [模型访问](../../docs/models/model-access.md) |
@@ -30,3 +32,7 @@
 - `Store` 的端口与策略时长由命令装配。开发协作端口见 [collab](../collab/README.md)；物理执行证据不由模拟结果代替。
 
 迁移目录与完整文件名见 [migrations](migrations/README.md)。包内 `*_db_test.go` 需独立真实 PostgreSQL schema；跨 HTTP、Git 与存储边界的覆盖在 [integration](../../integration/README.md)。
+
+残留事实继续由原入口接管：`agent_run_provisioning_fact.go` 处理创建侧，`node_execution.go` 与 `revision.go` 处理原执行终态和交付，
+`runtime_control_delivery.go` 接收已有 `runtime_ack` 的完整运行时证据。`run_workspace.go`、`control.go` 及 effect/许可路径检查原责任绑定；
+不新增 RPC/proto 或公开的系统删除开关。当前仅为 Cloud 第 1 步实现，A1–A6 的保守资格和后续未实现范围见上述专页，不代表物理或联合验收完成。

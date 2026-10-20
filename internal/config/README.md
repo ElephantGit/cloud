@@ -16,4 +16,6 @@
 
 配置文件保存部署引用，原始私钥和机密通过独立文件加载，不写进配置正文、日志或数据库。包负责启动期配置有效性；业务窗口的冻结、数据库时钟与恢复判定在 Core。对象存储开启不等于在线健康探测。
 
+`issue_runs.residual_reconcile_interval` 控制 Cloud 残留账本恢复扫描的间隔，缺省为 `1m`；环境变量 `CLOUD_ISSUE_RUNS_RESIDUAL_RECONCILE_INTERVAL` 可覆盖它。显式零、负数和非法时长均拒绝启动，没有关闭开关。该间隔只安排扫描，不是资源清理成功的超时判据。Cloud 只接收既有入口提供的真实事实，不新增 Controller 发现契约；证据未到时账本保持 open。
+
 测试覆盖默认值、环境覆盖、非法时长、TLS、对象存储与仓库配置。参见 [server](../../cmd/server/README.md)、[有界启动](../../docs/agent-runs/startup-settlement.md) 与 [部署出网配置](../../docs/operations/deployment-egress.md)。

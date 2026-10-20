@@ -259,6 +259,15 @@ func run() (runErr error) {
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
+	// Residual recovery remains independent of a run's business terminal state. Cloud consumes
+	// existing, identity-bound facts; a missing fact leaves its ledger open rather than treating
+	// a timer or reconnection as cleanup proof. This loop shares cancellation and shutdown joining
+	// with the delivery/release passes above and has no disable switch.
+	syncGroup.Add(1)
+	go func() {
+		defer syncGroup.Done()
+		pluginmarket.RunSyncLoop(ctx, store.ReconcileAgentRunResidualsOnce, cfg.IssueRuns.ResidualReconcileInterval, pluginmarket.ContextSleep, log)
+	}()
 	// Workflow advance loop: the Cloud-side scheduler (specs#99 D1 条件②/④, landing order step 3).
 	// A bounded rescan of pending and running workflow runs, each advanced in its own short
 	// transaction; the ready set is recomputed from committed state only, so the pass is idempotent

@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 // runtimeControlCommand is a finite, lease-fenced Controller contract. The Controller may
 // acknowledge Node evidence, but cannot assign a holder, epoch or target chosen by a user.
 func runtimeControlCommand(t *transaction, r *ControlRequest) Object {
@@ -15,6 +17,15 @@ func runtimeControlCommand(t *transaction, r *ControlRequest) Object {
 		for _, id := range unfinished {
 			v, ok := id.(string)
 			require(ok && v != "" && len(v) <= 256, 400, "invalid_runtime_evidence")
+		}
+		if row := residualForWorkspace(t, c.S("workspaceId")); row != nil {
+			sandbox := t.one("SELECT generation FROM sandbox_instances WHERE id=$1", n.S("sandboxInstanceId"))
+			appendResidualFact(t, row.S("runId"), "runtime:"+n.S("id")+":"+fmt.Sprint(c.N("controlEpoch"))+":"+fmt.Sprint(c.N("version")), Object{
+				"kind": "runtime_closed", "state": "observed", "workspaceId": c.S("workspaceId"),
+				"sandboxId": n.S("sandboxInstanceId"), "generation": sandbox.N("generation"),
+				"controlEpoch": c.N("controlEpoch"), "controlVersion": c.N("version"),
+				"inputClosed": closed, "unfinishedExecutionIds": unfinished,
+			})
 		}
 		if closed && (c.S("state") == "held" || c.S("state") == "acquiring") {
 			// Node expiry is conservative. Observed closed input cannot be reopened by a late renew,

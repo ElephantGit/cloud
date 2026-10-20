@@ -16,6 +16,8 @@ The production entrypoint composes configuration, databases, HTTP/gRPC adapters 
 
 `main.go` owns loops with one cancellation context and WaitGroup: optional catalog sync and workflow asset imports, Agent dispatch/startup, blocked windows, Thread end/cancellation, delivery/release recovery and Workflow scheduling. Core methods still decide state; loops do not make process-local state authoritative.
 
+The residual-ledger recovery loop calls `ReconcileAgentRunResidualsOnce` immediately at startup and then at `issue_runs.residual_reconcile_interval` (default `1m`), sharing that cancellation context and WaitGroup. It retains recovery responsibility after the business run ends and consumes existing fact entrypoints without adding a Controller discovery RPC or contract. Missing evidence leaves the ledger open; timeouts, reconnection and forced stops do not establish successful cleanup.
+
 Cleanup differs between shutdown and failure paths:
 
 - Signal-exit branch (SIGINT/SIGTERM): cancel background tasks and send the Controller drain signal; stop gRPC gracefully, forcing it to stop at the shared 10-second shutdown deadline, then call HTTP Shutdown with that same deadline, join background loops, close the database and flush logs.

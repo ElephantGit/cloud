@@ -16,4 +16,6 @@ Without an explicit path it searches `./configs`, `../configs` and `.` for `conf
 
 Configuration stores deployment references; raw private keys and secrets load from separate files and never enter configuration bodies, logs or databases. This package validates startup configuration; Core owns durable window freezing, database clocks and recovery decisions. Enabled object storage does not establish online health.
 
+`issue_runs.residual_reconcile_interval` sets the cadence of Cloud's residual-ledger recovery pass and defaults to `1m`; `CLOUD_ISSUE_RUNS_RESIDUAL_RECONCILE_INTERVAL` overrides it. Explicit zero, negative and malformed durations reject startup, and there is no disable switch. The interval only schedules scans; it is not a timeout proving successful resource cleanup. Cloud consumes real facts through existing entrypoints without adding a Controller discovery contract; missing evidence leaves the ledger open.
+
 Tests cover defaults, environment overrides, invalid durations, TLS, storage and repository configuration. See [server](../../cmd/server/README.en.md), [Bounded startup](../../docs/agent-runs/startup-settlement.en.md) and [Deployment egress](../../docs/operations/deployment-egress.en.md).

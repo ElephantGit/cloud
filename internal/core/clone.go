@@ -187,6 +187,9 @@ func recordedSubmission(t *transaction, r *ControlRequest, hash string, apply fu
 		return old.O("response")
 	}
 	out := apply()
+	if t.residualFactConflict {
+		out["residualFactConflict"] = true
+	}
 	t.exec("INSERT INTO control_submissions(submission_id,holder_id,request_hash,response) VALUES($1,$2,$3,$4)", r.SubmissionID, r.Service.Subject, hash, jsonText(out))
 	return out
 }
@@ -265,6 +268,9 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 	require(e != nil, 404, "not_found")
 	outcome := result.S("outcome")
 	require((outcome == "clone_ready" || outcome == "clone_failed") && result.O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
+	if !acceptResidualExecutionFact(t, e, result) {
+		return e
+	}
 	if previous := e.O("result"); len(previous) > 0 {
 		require(jsonText(previous) == jsonText(result), 409, "result_conflict")
 	} else {

@@ -14,6 +14,8 @@ This package owns business state, authorization, transactions and recovery decis
 | `repository_*.go`, `git_*.go` | Bindings, sync/publish Operations, GitGrant and credential metadata | [External Git line](../../docs/repositories/external-git.en.md) |
 | `issue*.go`, `collaboration*.go`, `form_descriptor.go` | Issue aggregates, timeline, interactions and consuming collaboration ports | [Issue collaboration](../../docs/collaboration/interactions.en.md) |
 | `agent_run_*.go`, `execution*.go`, `thread*.go`, `business_hooks.go` | Run lifecycle, execution registry, Thread and transaction-scoped settlement hooks | [IssueRun](../../docs/agent-runs/issue-runs.en.md), [Controller](../../docs/runtime/controller-integration.en.md) |
+| `agent_run_residual.go`, `agent_run_residual_reclaim.go` | Original identity/target coverage and evidence eligibility, one reclamation responsibility and one owned-delete operation, effect/permit and completion checks | [Residual reclamation](../../docs/agent-runs/residual-reclamation.en.md) |
+| `agent_run_residual_fact.go`, `agent_run_residual_loop.go` | Appended facts without rewriting old responsibility, replay and durable conflict blocking; ledger scans independent of Run phase and original-operation recovery | [Residual reclamation](../../docs/agent-runs/residual-reclamation.en.md) |
 | `task_conversation_*.go`, `thread_preview.go` | Ordered task messages, serial same-task Agent handoff and pause barriers, follow-up prompts frozen from Node visible text, configuration-gap hints and a bounded in-process live preview; initial Agent prompts read only the frozen run input | [Thread](../../docs/agent-runs/threads.en.md), [IssueRun](../../docs/agent-runs/issue-runs.en.md) |
 | `revision*.go`, `session_*.go` | Revision registration, archives, session listing and statistics | [Revision](../../docs/agent-runs/revisions.en.md), [Session reads](../../docs/agent-runs/session-reads.en.md) |
 | `model_*.go` | Personal configuration, frozen bindings, grant digests and request observations; no API Key decryption | [Model access](../../docs/models/model-access.en.md) |
@@ -30,3 +32,9 @@ This package owns business state, authorization, transactions and recovery decis
 - Commands wire Store ports and policy durations. See [collab](../collab/README.en.md) for development ports; simulated results do not replace physical execution evidence.
 
 See [migrations](migrations/README.en.md) for complete migration filenames. Package `*_db_test.go` tests need isolated real PostgreSQL schemas; [integration](../../integration/README.en.md) covers HTTP, Git and storage boundaries.
+
+Residual facts retain their original intake: `agent_run_provisioning_fact.go` handles creation facts, `node_execution.go` and `revision.go` handle
+original execution terminals and delivery, and `runtime_control_delivery.go` accepts full runtime evidence through existing `runtime_ack`.
+`run_workspace.go`, `control.go` and effect/permit paths enforce the original responsibility binding. No new RPC/proto or public system-delete
+flag is introduced. This is Cloud step 1 only; see the dedicated page for conservative A1–A6 eligibility and remaining scope, without implying
+physical or joint acceptance.

@@ -16,6 +16,8 @@
 
 `main.go` 用同一个取消 context 与 WaitGroup 拥有循环：可选市场同步和工作流资产导入、Agent 派发/启动、blocked 窗口、Thread 结束/取消、交付/释放恢复，以及 Workflow 调度。具体状态判定仍由各 Core 方法负责；循环不把进程内状态当作权威。
 
+残留账本恢复循环调用 `ReconcileAgentRunResidualsOnce`，启动即运行一次，之后按 `issue_runs.residual_reconcile_interval`（缺省 `1m`）重试，并参与同一 context 的取消与 WaitGroup 等待。它在业务运行结束后继续承担恢复责任，只消费既有事实入口，不新增 Controller 发现 RPC 或契约；证据收不到就保留 open，不按超时、重连或强停推定清理成功。
+
 停机与失败路径的清理范围不同：
 
 - 信号退出分支（SIGINT/SIGTERM）：取消后台任务，发送 Controller drain 信号；gRPC 先优雅停止，到达与 HTTP 共用的 10 秒停机 deadline 时强制停止，然后调用 HTTP Shutdown，等待后台循环结束，再关闭数据库和刷新日志。

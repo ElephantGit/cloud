@@ -50,6 +50,7 @@ package live in that directory's `README.md`; the authoritative source for busin
 - [Agent IssueRuns: an Agent run from start to finish](agent-runs/issue-runs.en.md)
 - [Threads: the conversation of an Agent run](agent-runs/threads.en.md)
 - [Bounded startup: waiting limits and settling unknown outcomes](agent-runs/startup-settlement.en.md)
+- [Agent Run residual reclamation: Cloud authority and evidence](agent-runs/residual-reclamation.en.md)
 - [Revisions: delivery, verified registration and resume](agent-runs/revisions.en.md)
 - [Session reads: session lists, archives and model request statistics](agent-runs/session-reads.en.md)
 

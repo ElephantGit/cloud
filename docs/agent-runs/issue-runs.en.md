@@ -20,6 +20,7 @@ This document is the overview; individual parts are covered in:
 | Creation (@Agent, the Project gate, the input snapshot) | [Issue collaboration](../collaboration/interactions.en.md#task-mode-agent) |
 | Thread entries, user turns, idleness and ending | [Threads](threads.en.md) |
 | Startup waiting limits and settling unknown outcomes | [Bounded startup](startup-settlement.en.md) |
+| D4/D5 residual ledger, system cleanup responsibility and evidence boundaries | [Residual reclamation](residual-reclamation.en.md) |
 | Object storage, upload grants, Revision registration and resume | [Revisions](revisions.en.md) |
 | Session lists, archives and model request statistics | [Session reads](session-reads.en.md) |
 
@@ -66,6 +67,12 @@ is cloned from the Project's default branch, it never appears in any public Work
 and it accepts no other run or interactive session.
 
 ## Background loops
+
+After D4/D5 business settlement, independent ledger reconciliation continues and grants one durable system owned-delete responsibility only
+when evidence qualifies. Retries keep the same operation; cleanup does not settle the Run again. The current scope is
+[Cloud step 1 of residual reclamation](residual-reclamation.en.md). Controlled operator endpoints, retained-data/external dispositions,
+Controller/Sandbox Server physical acceptance, joint acceptance and D8 historical takeover remain incomplete. Neither `done` nor a completed
+reconciliation pass proves that resources were reclaimed.
 
 Besides the synchronous transitions taken while evidence is taken over, the Cloud server process runs a
 set of loops every 10 seconds for the progress and settlement that have no external event to follow:

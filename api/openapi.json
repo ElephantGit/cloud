@@ -1243,7 +1243,7 @@
             "type": "string"
           },
           "grant": {
-            "description": "One-time submission grant, presented to the Credential Store as `Authorization: Ora-Submission \u003cgrant\u003e`. It authorizes writing one version, expires within five minutes and is not a credential.",
+            "description": "One-time submission grant, presented to the Credential Store as `Authorization: Ora-Submission <grant>`. It authorizes writing one version, expires within five minutes and is not a credential.",
             "type": "string"
           },
           "ingressUrl": {
@@ -6118,7 +6118,7 @@
     "securitySchemes": {
       "serviceCredential": {
         "bearerFormat": "EdDSA JWT",
-        "description": "Pinned issuer/kid/kind=service/role, aud=ora-cloud, exp and iat required, \u003c=5 minute lifetime. Public API requires gateway; internal control requires controller; nodes require scoped node role.",
+        "description": "Pinned issuer/kid/kind=service/role, aud=ora-cloud, exp and iat required, <=5 minute lifetime. Public API requires gateway; internal control requires controller; nodes require scoped node role.",
         "scheme": "bearer",
         "type": "http"
       },
@@ -7274,7 +7274,7 @@
     },
     "/api/v1/me/executor-slot-mappings": {
       "get": {
-        "description": "Personal executor-slot mappings of the verified user: slot name -\u003e executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
+        "description": "Personal executor-slot mappings of the verified user: slot name -> executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
         "operationId": "get_api_v1_me_executor-slot-mappings",
         "parameters": [
           {
@@ -7419,7 +7419,7 @@
     },
     "/api/v1/me/executor-slot-mappings/{slot}": {
       "delete": {
-        "description": "Personal executor-slot mappings of the verified user: slot name -\u003e executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
+        "description": "Personal executor-slot mappings of the verified user: slot name -> executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
         "operationId": "delete_api_v1_me_executor-slot-mappings_slot",
         "parameters": [
           {
@@ -7577,7 +7577,7 @@
         ]
       },
       "put": {
-        "description": "Personal executor-slot mappings of the verified user: slot name -\u003e executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
+        "description": "Personal executor-slot mappings of the verified user: slot name -> executor (agent CLI fixed to official/ora-space.opencode for now). Only the owner reads and writes; `default` is deliberately absent because it is the personal default model (PUT /me/model-default). The connection must be owned, enabled and contain the selected model at write time. A mapping survives its connection being deleted, disabled or losing the model — `available` computes what the run-creation gate would conclude today and `unavailableReason` names it (model_connection_unavailable, model_credential_required, model_not_found). DELETE requires a user-scoped Idempotency-Key; writes require the current resource version (a slot with no mapping is version 0).",
         "operationId": "put_api_v1_me_executor-slot-mappings_slot",
         "parameters": [
           {
@@ -25306,7 +25306,7 @@
                     "type": "string"
                   },
                   "sourceRef": {
-                    "description": "refs/heads/workspaces/\u003cworkspaceId\u003e/\u003cbranch\u003e or refs/ora/deliveries/\u003cdeliveryWorkId\u003e of this Project.",
+                    "description": "refs/heads/workspaces/<workspaceId>/<branch> or refs/ora/deliveries/<deliveryWorkId> of this Project.",
                     "type": "string"
                   },
                   "targetBranch": {
@@ -25619,7 +25619,7 @@
     },
     "/api/v1/tenants/{tid}/projects/{pid}/repository/workspaces/{wid}/branches": {
       "get": {
-        "description": "Lists one Workspace's branches (refs/heads/workspaces/\u003cworkspaceId\u003e/*) of the Project repository through the Git Server ref query, for choosing a publish source. The answer is the query's moment only.",
+        "description": "Lists one Workspace's branches (refs/heads/workspaces/<workspaceId>/*) of the Project repository through the Git Server ref query, for choosing a publish source. The answer is the query's moment only.",
         "operationId": "get_api_v1_tenants_tid_projects_pid_repository_workspaces_wid_branches",
         "parameters": [
           {
@@ -34361,6 +34361,605 @@
         "tags": [
           "internal"
         ]
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks": {
+      "post": {
+        "operationId": "scheduledTaskPostCreateascheduledtask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Create a scheduled task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "scheduledTaskGetListscheduledtasks",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "List scheduled tasks",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks/{stid}": {
+      "get": {
+        "operationId": "scheduledTaskGetGetonescheduledtask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Get one scheduled task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "scheduledTaskPatchUpdateonescheduledtask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Update one scheduled task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "scheduledTaskDeleteDeleteonescheduledtask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Delete one scheduled task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks/{stid}/history": {
+      "get": {
+        "operationId": "scheduledTaskGetReadrunandmissedhistory",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Read run and missed history",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks/{stid}/enable": {
+      "post": {
+        "operationId": "scheduledTaskPostEnablethetask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Enable the task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks/{stid}/disable": {
+      "post": {
+        "operationId": "scheduledTaskPostDisablethetask",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Disable the task",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{tid}/scheduled-tasks/{stid}/revoke-consent": {
+      "post": {
+        "operationId": "scheduledTaskPostRevokeunattendedconsentanddisable",
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Revoke unattended consent and disable",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

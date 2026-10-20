@@ -11,7 +11,7 @@
 | `credentials.go` | Gateway 独占的写入/清除边界，双重签名身份和当前个人归属 |
 | `grants.go` | 专用 mTLS 模型身份的授权、同令牌续期与撤销 |
 | `forward.go`、`events.go`、`envelopes.go`、`response_io.go` | 限定模型与路径、校验协议封装、HTTP/SSE 错误过滤及撤销时打断阻塞写入 |
-| `transport.go`、`dns.go`、`connection.go` | `NewUpstreamClient` 按部署出网策略拨号：公网模式用认证 HTTPS DNS，企业模式用策略里的 TCP DNS 或静态地址；禁用环境代理和重定向 |
+| `transport.go`、`connection.go`、`internal/egress` | `NewUpstreamClient` 按部署出网策略拨号：公网模式用认证 HTTPS DNS，企业模式用策略里的 TCP DNS 或静态地址；禁用环境代理和重定向 |
 | `diagnostics.go` | 只按类型生成有限错误类别，不读取上游错误文本；`Options.Logger` 仅记录类别 |
 | `attempt.go`、`usage.go` | 每次上游 HTTP attempt 的持久化登记、单调时钟计时、协议 usage 快照与有界幂等收尾 |
 | `config.go`、`health.go` | 部署引用、监听用途和正常验证证书的就绪检查 |

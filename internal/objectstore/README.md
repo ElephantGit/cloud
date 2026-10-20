@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`internal/objectstore` 只服务 Revision 这一条链路:为一次交付尝试签发**单对象键、单方法、限时**的上传
+`internal/objectstore` 提供 Revision 交付、会话归档与工作流资产的对象存储访问：为一次交付尝试签发**单对象键、单方法、限时**的上传
 授权(Cloud Revision D2/D3),以及在注册 Revision 之前用 HEAD 校验已上传对象的**存在性、大小与
 SHA-256**(D4 step 2)。已登记的会话归档还可通过私有端点 GET 读取，并核验实际字节的大小与摘要。
 它不决定任何业务语义——授权给谁、何时给、校验失败后怎么处置都由 `internal/core` 持有。
@@ -23,6 +23,7 @@ SHA-256**(D4 step 2)。已登记的会话归档还可通过私有端点 GET 读�
 - `read.go`:`ReadVerified` 用配置的私有端点签名 GET；不跟随重定向，不自动解压，传播取消，超时 30s。
   声明大小、响应长度及实际读入字节都受调用方上限约束；实际字节大小和 SHA-256 必须与登记值一致。
   返回有限的不可用、损坏、超限分类，不返回端点、签名 URL 或底层传输错误。
+- `ReadHashed`：供 `internal/workflowasset` 读取已知 SHA-256、未知大小的包；仍限制响应和实际读取量并核验摘要。
 - `presign_test.go`:离线确定性单测,见"测试"。
 
 ## 依赖与调用方

@@ -41,7 +41,7 @@ task test:race
 
 See [Local development](../docs/development/local-development.en.md), [Authoritative persistence](../docs/core/persistence.en.md), and [Taskfile.yml](../Taskfile.yml).
 
-Upstream reconciliation coverage: `tenant_upstream_migration_test.go` verifies 0016-to-0017 row preservation for runtimes, clones and plugins. `project_space_test.go` checks a different member can create and list ready Node-cloned runtimes. Plugin tests use separate tenants for isolation and reject reads immediately after membership revocation.
+Upgrade and authorization regression coverage: `tenant_upstream_migration_test.go` verifies 0016-to-0017 row preservation for runtimes, clones and plugins. `project_space_test.go` checks a different member can create and list ready Node-cloned runtimes. Plugin tests use separate tenants for isolation and reject reads immediately after membership revocation.
 
 ## Revision and business-hook acceptance
 

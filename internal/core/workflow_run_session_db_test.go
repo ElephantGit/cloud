@@ -813,3 +813,203 @@ func TestWorkflowLiveModelBindingRefusesAnotherSlotsBinding(t *testing.T) {
 		t.Fatalf("another slot's binding for this execution: err=%v; want model_grant_revoked", err)
 	}
 }
+
+// A session whose Node can no longer report settles instead of holding the run `running` forever.
+// The two shapes below are one fact to the scheduler — the Node is gone — and it is the fact the
+// IssueRun release paths already judge (runWorkspaceNodeUnknown): a heartbeat stale past the
+// configured window, and the state a force stop leaves behind, its sandbox terminated and the
+// executions it hosted marked in the same transaction. Neither is an end reason any Node reported,
+// so the node fails under Cloud's own code and the run fails with it.
+func TestWorkflowSessionNodeGoneSettlesTheNodeFailed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		nodeGone func(t *testing.T, store *Store, wsID string)
+	}{
+		{
+			name: "heartbeat stale past the window",
+			nodeGone: func(t *testing.T, store *Store, wsID string) {
+				if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, wsID); err != nil {
+					t.Fatalf("age the Node heartbeat: %v", err)
+				}
+			},
+		},
+		{
+			// runtime_force_stop.go's settlement, shape for shape: the sandbox and the Node hosted on
+			// it end together, the executions it was hosting are marked as terminated by the stop, and
+			// the Workspace stops.
+			name: "force stop terminated the sandbox",
+			nodeGone: func(t *testing.T, store *Store, wsID string) {
+				if _, err := store.Pool.Exec(`UPDATE node_instances SET ended_at=clock_timestamp(),connection_state='ended',version=version+1 WHERE workspace_id=$1`, wsID); err != nil {
+					t.Fatalf("end the Node: %v", err)
+				}
+				if _, err := store.Pool.Exec(`UPDATE sandbox_instances SET terminated_at=clock_timestamp(),observed_state='terminated' WHERE workspace_id=$1`, wsID); err != nil {
+					t.Fatalf("terminate the sandbox: %v", err)
+				}
+				if _, err := store.Pool.Exec(`INSERT INTO runtime_force_stops(id,tenant_id,workspace_id,actor_user_id,reason,state,control_epoch,runtime_generation)
+					SELECT gen_random_uuid(), w.tenant_id, w.id, w.creator_user_id, 'force stop', 'terminating', 0, w.runtime_generation FROM workspaces w WHERE w.id=$1`, wsID); err != nil {
+					t.Fatalf("register the force stop: %v", err)
+				}
+				if _, err := store.Pool.Exec(`UPDATE node_executions SET terminated_by_force_stop_id=(SELECT id FROM runtime_force_stops WHERE workspace_id=$1) WHERE workspace_id=$1 AND result IS NULL`, wsID); err != nil {
+					t.Fatalf("mark the hosted executions: %v", err)
+				}
+				if _, err := store.Pool.Exec(`UPDATE workspaces SET desired_state='stopped',observed_state='stopped',admission_open=false WHERE id=$1`, wsID); err != nil {
+					t.Fatalf("stop the Workspace: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := dispatcherDB(t)
+			store.DeliveryUnreachableAfter = 30 * time.Minute
+			runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance 1: %v", err)
+			}
+			wsID := settleSessionWorkspace(t, store, runID)
+			nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+			dispatchSession(t, store, runID, "a", nodeService, spec)
+			tc.nodeGone(t, store, wsID)
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance after the Node is gone: %v", err)
+			}
+			status, runErr, states, _ := readWorkflowRun(t, store, runID)
+			if status != "failed" || runErr != workflowSessionNodeUnavailable {
+				t.Fatalf("run settled %q error %q states=%v; want failed/%s", status, runErr, states, workflowSessionNodeUnavailable)
+			}
+			agent, _ := asWorkflowObject(states["a"])
+			if agent == nil || agent.S("status") != "failed" || agent.S("error") != workflowSessionNodeUnavailable {
+				t.Fatalf("node a = %v; want failed under %s", states["a"], workflowSessionNodeUnavailable)
+			}
+			if reason := agent.O("output").S("reason"); reason != workflowSessionNodeUnavailable {
+				t.Fatalf("node a output = %v; want reason %s", agent.O("output"), workflowSessionNodeUnavailable)
+			}
+			if agent.S("finishedAt") == "" {
+				t.Fatalf("node a = %v; a settled node carries finishedAt", states["a"])
+			}
+			// The settlement is Cloud's own diagnosis of evidence that never arrived, never a success
+			// inferred from its absence (invariant 5), and the run is terminal like any other: its
+			// unregistered work is gone and its Workspace deletion is declared.
+			assertRunWorkspaceReleased(t, store, runID)
+		})
+	}
+}
+
+// The window is the boundary, not the silence itself. A session may legitimately run for hours, so a
+// Node that has not been heard from for a few minutes is a Node whose session is still running and
+// the pass holds it — settling on any silence would fail runs whose Nodes are merely quiet. The same
+// run settles once the silence outlives the configured window.
+func TestWorkflowSessionNodeSilenceWithinWindowHolds(t *testing.T) {
+	store := dispatcherDB(t)
+	store.DeliveryUnreachableAfter = time.Hour
+	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	dispatchSession(t, store, runID, "a", nodeService, spec)
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '5 minutes' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatalf("age the Node heartbeat inside the window: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance within the window: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	agent, _ := asWorkflowObject(states["a"])
+	if status != "running" || runErr != "" || agent == nil || agent.S("status") != "running" {
+		t.Fatalf("five minutes of silence settled the run %q error %q states=%v; want it held", status, runErr, states)
+	}
+	// The same run, once the silence has outlived the window the deployment configured.
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatalf("age the Node heartbeat past the window: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance past the window: %v", err)
+	}
+	status, runErr, states, _ = readWorkflowRun(t, store, runID)
+	agent, _ = asWorkflowObject(states["a"])
+	if status != "failed" || runErr != workflowSessionNodeUnavailable || agent == nil || agent.S("status") != "failed" {
+		t.Fatalf("past the window: run %q error %q states=%v; want failed/%s", status, runErr, states, workflowSessionNodeUnavailable)
+	}
+}
+
+// An unconfigured window fails closed here exactly as it does in the IssueRun release paths: with no
+// configured tolerance for a silent Node, Cloud holds the session rather than failing a node on a
+// limit nobody set, and a deployment that never set the key loses only the settlement — the run stays
+// in the `running` it was already in, with nothing half-written. cmd/server configures the window for
+// every real deployment.
+func TestWorkflowSessionUnconfiguredWindowHoldsTheNode(t *testing.T) {
+	store := dispatcherDB(t) // DeliveryUnreachableAfter is zero: the unconfigured deployment
+	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	dispatchSession(t, store, runID, "a", nodeService, spec)
+	// The most conclusive loss there is: the sandbox is gone and the Node with it.
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET ended_at=clock_timestamp(),connection_state='ended' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Pool.Exec(`UPDATE sandbox_instances SET terminated_at=clock_timestamp(),observed_state='terminated' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance with no window configured: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	agent, _ := asWorkflowObject(states["a"])
+	if status != "running" || runErr != "" || agent == nil || agent.S("status") != "running" {
+		t.Fatalf("an unconfigured window settled the run %q error %q states=%v; want it held", status, runErr, states)
+	}
+}
+
+// A real terminal result that arrives after Cloud settled the node is kept, and changes nothing. The
+// run is already terminal, so the receipt commits no state and no pass rewrites the run from it
+// (invariant 3) — but the executed work stays on the execution row, because that row is the only
+// record of what actually ran. Cloud refused to infer an outcome for a Node it could not hear; it
+// does not discard the outcome when the Node does report.
+func TestWorkflowSessionResultAfterTheNodeSettledIsKept(t *testing.T) {
+	store := dispatcherDB(t)
+	store.DeliveryUnreachableAfter = 30 * time.Minute
+	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	execution := dispatchSession(t, store, runID, "a", nodeService, spec)
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance past the window: %v", err)
+	}
+	status, runErr, states, version := readWorkflowRun(t, store, runID)
+	if status != "failed" || runErr != workflowSessionNodeUnavailable {
+		t.Fatalf("run settled %q error %q; want failed/%s", status, runErr, workflowSessionNodeUnavailable)
+	}
+	// The Node comes back and reports the session's real end, which Cloud never heard.
+	reportSessionEnd(t, store, runID, execution, nodeService, "idle_timeout")
+	afterStatus, afterErr, afterStates, afterVersion := readWorkflowRun(t, store, runID)
+	if afterStatus != status || afterErr != runErr {
+		t.Fatalf("the late result moved the run to %q error %q; want %q error %q", afterStatus, afterErr, status, runErr)
+	}
+	if afterVersion != version {
+		t.Fatalf("the late result bumped the version to %d; want %d", afterVersion, version)
+	}
+	if jsonText(afterStates) != jsonText(states) {
+		t.Fatalf("the late result rewrote the node states:\n got %v\nwant %v", afterStates, states)
+	}
+	var raw []byte
+	if err := store.Pool.QueryRow(`SELECT result FROM node_executions WHERE execution_id=$1`, execution).Scan(&raw); err != nil {
+		t.Fatalf("read the execution result: %v", err)
+	}
+	kept := Object{}
+	if err := json.Unmarshal(raw, &kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept.S("outcome") != "agent_session_ended" || kept.S("reason") != "idle_timeout" {
+		t.Fatalf("execution result = %v; want the reported session end kept as evidence", kept)
+	}
+}

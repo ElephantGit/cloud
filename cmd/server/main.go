@@ -262,9 +262,12 @@ func run() (runErr error) {
 	// Workflow advance loop: the Cloud-side scheduler (specs#99 D1 条件②/④, landing order step 3).
 	// A bounded rescan of pending and running workflow runs, each advanced in its own short
 	// transaction; the ready set is recomputed from committed state only, so the pass is idempotent
-	// and a replica that crashes mid-tick resumes exactly where the committed state says. In its
-	// first step it executes start/condition/output inline and settles runs honestly; agent nodes
-	// fail the run fast with an explicit reason until the execution wiring lands in the next step.
+	// and a replica that crashes mid-tick resumes exactly where the committed state says. start,
+	// condition and output execute inline; an agent node runs as a real session through the control
+	// plane and settles from that session's terminal evidence. The settlement reads the Node
+	// unreachability window the delivery loops above configure — the same `DeliveryUnreachableAfter`
+	// D5 and D8 judge, not a second limit — so an in-flight session whose Node is gone fails its node
+	// instead of holding the run in `running`, and an unconfigured window fails closed by holding it.
 	{
 		const workflowAdvanceInterval = 10 * time.Second
 		syncGroup.Add(1)

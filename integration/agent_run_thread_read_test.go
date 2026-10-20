@@ -491,12 +491,14 @@ func TestThreadReadReportsIdleSinceAndWindowCursors(t *testing.T) {
 	}
 }
 
-// runResourceFields is the public IssueRun field set: every `issue_runs` column except the six the
+// runResourceFields is the public IssueRun field set: every `issue_runs` column except the ones the
 // 0018 B-skeleton strips, plus the `revision` metadata projection Cloud Revision D5
-// adds to every run read (null until a Revision is registered), and the `resume_revision_id` column the
-// resume decision exposes (null unless the run resumed a Revision).
+// adds to every run read (null until a Revision is registered), the `resume_revision_id` column the
+// resume decision exposes (null unless the run resumed a Revision), and `cancel_requested_at`, which
+// IssueRun D6 deliberately publishes because it is the user's own request rather than an internal
+// control column.
 var runResourceFields = []string{
-	"attempt", "completedAt", "createdAt", "delegatedFromRunId", "deletedAt", "dispatchedAt", "error",
+	"attempt", "cancelRequestedAt", "completedAt", "createdAt", "delegatedFromRunId", "deletedAt", "dispatchedAt", "error",
 	"executionContextRef", "executorId", "executorType", "externalExecutionId", "failureReason",
 	"fireAt", "id", "input", "issueId", "leaseExpiresAt", "maxAttempts", "parentRunId", "preparation", "queuedAt",
 	"rerunOfRunId", "result", "resumeRevisionId", "retryOfRunId", "revision", "startedAt", "status", "tenantId", "triggerEvidenceKind",

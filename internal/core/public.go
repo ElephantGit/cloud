@@ -273,6 +273,15 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				require(r.Method == "POST", 404, "not_found")
 				out = endThreadByUser(t, s, r)
 				status = 202
+			case strings.HasSuffix(r.Path, "/cancel"):
+				// IssueRun D6: the user's cancellation request. Matched before the /runs arm because
+				// the path contains "/runs/" too, and recording a request is not creating a run. Also
+				// answered 202, for the same reason as the Thread end: the request is accepted for
+				// asynchronous shutdown and the run has not changed state yet. The response is the
+				// recorded instant rather than a wrapped resource — this endpoint creates none.
+				require(r.Method == "POST", 404, "not_found")
+				out = cancelAgentRunByUser(t, r)
+				status = 202
 			case strings.Contains(r.Path, "/runs"):
 				switch r.Method {
 				case "POST":

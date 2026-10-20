@@ -43,9 +43,10 @@ func stageIdleThread(t *testing.T, store *Store, runID string, age time.Duration
 	}
 }
 
-// requestCancel records the cancellation request the ending reaction consumes. No Cloud API writes
-// this column yet, so a test states the request directly; the reaction under test is the
-// shipped one either way.
+// requestCancel records the cancellation request the ending reaction consumes. The public endpoint
+// (`POST .../runs/{rid}/cancel`) writes this column, but the cases here are about what the reaction
+// does with a request, so they state it directly; the writer→reaction seam is
+// agent_run_cancel_db_test.go's subject, where the request is written through the endpoint instead.
 func requestCancel(t *testing.T, store *Store, runID string) {
 	t.Helper()
 	if _, err := store.Pool.Exec(`UPDATE issue_runs SET cancel_requested_at=now(), version=version+1, updated_at=now() WHERE id=$1`, runID); err != nil {

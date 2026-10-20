@@ -157,6 +157,11 @@ type Store struct {
 	// are deployment configuration values, not columns, and both are judged entirely on the database
 	// clock. Zero (the zero-value Store) means that condition never gives up, so the scan is a no-op
 	// rather than a zero-length window that would abandon every delivery the moment it was declared.
+	//
+	// DeliveryUnreachableAfter is the deployment's one tolerance for a silent Node, not a
+	// delivery-only limit: D8's delete give-up reuses it, and so does the workflow scheduler, which
+	// settles an in-flight session whose Node is gone with it. A second limit would let two passes
+	// disagree about whether the same Node is still there.
 	DeliveryGiveUpAfter      time.Duration
 	DeliveryUnreachableAfter time.Duration
 

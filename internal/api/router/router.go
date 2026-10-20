@@ -170,6 +170,7 @@ func Routes() []Route {
 		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/preview", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/messages", "", []string{"content"}},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/thread/end", "", nil},
+		{"POST", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/cancel", "", nil},
 		{"GET", TaskConversationPath, "", nil},
 		{"POST", TaskConversationMessagesPath, "", []string{"agentId", "body"}},
 		{"POST", "/api/v1/tenants/:tid/issues/:iid/conversation/messages/:mid/cancel", "", nil},

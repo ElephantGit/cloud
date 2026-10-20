@@ -41,4 +41,4 @@ Workflow 确认从创建 interaction 开始锁住重复提交、返回修改与�
 
 组件测试用 MSW；属性栏和 Task Mode→Thread 经 `issue-detail-page.test.tsx` 覆盖。测试区分加载、空列表、拒绝、重试；创建、普通评论和目标提交失败保留草稿，作用域切换则清空草稿。
 
-Workflow 测试覆盖双击互斥、确认失败后复用 interaction（含切换版本）、版本字段/default/回显切换、作者同名 select 不发快照表单请求、字段差异拒绝的操作提示、读取等待与失败，以及 WorkflowRun 状态和详情链接。
+Workflow 测试覆盖双击互斥、确认失败后复用 interaction（含切换版本）、版本字段/default/回显切换、作者同名 select 不发快照表单请求、按所选版本自身的字段通过与被拒、读取等待与失败，以及 WorkflowRun 状态和详情链接。

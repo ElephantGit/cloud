@@ -41,4 +41,4 @@ Historical runs without a WorkflowRun reference retain their IssueRun status, ma
 
 Component tests use MSW; properties and Task Mode→Thread are covered by `issue-detail-page.test.tsx`. Loading, empty, refused and retry states are distinct; creation, ordinary-comment and target failures retain drafts, while scope changes clear them.
 
-Workflow tests cover double-click exclusion, rejected confirms reusing an interaction across version switches, snapshot fields/defaults/echoes, an author's same-named select making no snapshot-form request, actionable field-divergence feedback, pending and failed reads, and WorkflowRun status and detail links.
+Workflow tests cover double-click exclusion, rejected confirms reusing an interaction across version switches, snapshot fields/defaults/echoes, an author's same-named select making no snapshot-form request, acceptance and refusal by the selected version's own fields, pending and failed reads, and WorkflowRun status and detail links.

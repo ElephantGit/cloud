@@ -47,10 +47,7 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		}
 		if strings.HasPrefix(r.Action, "node_") {
 			require(r.Service.Role == "node", 403, "service_forbidden")
-			result := nodeCommand(t, r)
-			// Adapter negotiation belongs to Controller gRPC, not the legacy Node HTTP contract.
-			delete(result, "modelAdapter")
-			return result
+			return nodeCommand(t, r)
 		}
 		require(r.Service.Role == "controller", 403, "service_forbidden")
 		if strings.HasPrefix(r.Action, "lease_") {

@@ -92,5 +92,5 @@ func modelAdapterMessage(o core.Object) *controlpb.ModelAdapterCapabilities {
 			}
 		}
 	}
-	return &controlpb.ModelAdapterCapabilities{ContractVersion: uint32(o.N("contractVersion")), Target: o.S("target"), Protocols: protocols}
+	return &controlpb.ModelAdapterCapabilities{ContractVersion: boundedSchemaVersion(o.N("contractVersion")), Target: o.S("target"), Protocols: protocols}
 }

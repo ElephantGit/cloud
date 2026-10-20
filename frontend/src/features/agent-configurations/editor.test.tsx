@@ -3,28 +3,39 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
+import type { ModelConnection } from '@/features/model-connections/api'
 import { server } from '@/test/msw-server'
 import type { AgentConfiguration } from './api'
 import { AgentConfigurationEditor } from './editor'
-import { agentConnection, agentContext } from './test-fixtures'
+import { agentConnection, agentContext, opencodeContext } from './test-fixtures'
 
 const PATH = '/api/v1/me/agent-configurations/space1/official/ora-space.claude'
 const CONNECTIONS = '/api/v1/me/model-connections'
+const MODEL_DEFAULT = '/api/v1/me/model-default'
 
-function serveConnections() {
-  server.use(
-    http.get(CONNECTIONS, () => HttpResponse.json({ items: [agentConnection()], nextCursor: '' })),
-  )
+function serveConnections(items: ModelConnection[] = [agentConnection()]) {
+  server.use(http.get(CONNECTIONS, () => HttpResponse.json({ items, nextCursor: '' })))
 }
 
-function mountEditor(context = agentContext()) {
-  serveConnections()
+function mountEditor(
+  context = agentContext(),
+  {
+    pluginId = 'official/ora-space.claude',
+    connections = [agentConnection()],
+  }: { pluginId?: string; connections?: ModelConnection[] } = {},
+) {
+  serveConnections(connections)
+  server.use(
+    http.get(MODEL_DEFAULT, () =>
+      HttpResponse.json({ connectionId: 'mc1', modelId: 'vendor/model', version: 2 }),
+    ),
+  )
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const onSaved = vi.fn<() => void>()
   const onReload = vi.fn<() => Promise<void>>(async () => {})
-  const scope = { spaceId: 'space1', pluginId: 'official/ora-space.claude' }
+  const scope = { spaceId: 'space1', pluginId }
   function element(current: AgentConfiguration) {
     return (
       <QueryClientProvider client={client}>
@@ -284,5 +295,62 @@ describe('personal Agent configuration editor', () => {
       ),
     ).not.toContain(secret)
     expect(screen.queryByText(secret)).not.toBeInTheDocument()
+  })
+})
+
+describe('global default credentials', () => {
+  it('targets the existing default connection although the plugin stores none', async () => {
+    let cleared = ''
+    server.use(
+      http.delete(CONNECTIONS + '/mc1/credential', ({ request }) => {
+        cleared = request.url
+        return HttpResponse.json({ resource: agentConnection({ credentialConfigured: false }) })
+      }),
+    )
+    mountEditor(opencodeContext(), { pluginId: 'official/ora-space.opencode' })
+    const user = userEvent.setup()
+    expect(await screen.findByText('API Key 已配置', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('API Key 属于所选连接：Personal Messages')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '清除 API Key' }))
+    await waitFor(() => expect(cleared).toContain('/mc1/credential'))
+  })
+
+  it('offers the write-only control when the default connection has no key', async () => {
+    let submitted: unknown
+    const keyless = agentConnection({ credentialConfigured: false })
+    server.use(
+      http.put(CONNECTIONS + '/mc1/credential', async ({ request }) => {
+        submitted = await request.json()
+        return HttpResponse.json({ resource: agentConnection({ credentialConfigured: true }) })
+      }),
+    )
+    mountEditor(opencodeContext(), {
+      pluginId: 'official/ora-space.opencode',
+      connections: [keyless],
+    })
+    const user = userEvent.setup()
+    expect(await screen.findByText('API Key 未配置', { exact: false })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('API Key'), 'synthetic-key')
+    await user.click(screen.getByRole('button', { name: '保存 API Key' }))
+    await waitFor(() => expect(submitted).toEqual({ apiKey: 'synthetic-key', version: 1 }))
+  })
+
+  it('follows the connection chosen in the default draft', async () => {
+    const second = agentConnection({
+      id: 'mc2',
+      name: 'Second Messages',
+      models: [
+        { id: 'vendor/second', name: 'Second Model', contextWindow: 64000, maxTokens: 4096 },
+      ],
+    })
+    mountEditor(opencodeContext(), {
+      pluginId: 'official/ora-space.opencode',
+      connections: [agentConnection(), second],
+    })
+    const user = userEvent.setup()
+    expect(await screen.findByText('API Key 属于所选连接：Personal Messages')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: '默认连接' }))
+    await user.click(await screen.findByRole('option', { name: 'Second Messages' }))
+    expect(screen.getByText('API Key 属于所选连接：Second Messages')).toBeInTheDocument()
   })
 })

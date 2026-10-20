@@ -8,13 +8,19 @@ import {
 } from './api'
 import { ConnectionChoice } from './fields'
 
-/** Versioned default selector; only enabled, credential-backed connections are offered. */
+/**
+ * Versioned default selector; only enabled, credential-backed connections are offered.
+ * The optional callback reports the connection the draft now points at, so a plugin
+ * entry can offer credential controls for the same shared default without copying it.
+ */
 export function ModelDefaultForm({
   connections,
   selection,
+  onConnectionChange,
 }: {
   connections: ModelConnection[]
   selection: ModelDefault
+  onConnectionChange?: (connectionId: string) => void
 }) {
   const ready = connections.filter(
     (connection) => connection.enabled && connection.credentialConfigured,
@@ -66,6 +72,7 @@ export function ModelDefaultForm({
             onChange={(id) => {
               setConnectionId(id)
               setModelId('')
+              onConnectionChange?.(id)
             }}
           />
           <ConnectionChoice

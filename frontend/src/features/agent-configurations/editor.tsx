@@ -15,7 +15,11 @@ export function AgentConfigurationEditor(props: AgentEditorProps) {
         配置只属于当前账号。修改影响之后的新运行；保存成功还需通过运行时的能力和模型检查。
       </p>
       {draft.usesGlobalDefault && globalDefault.data && connections.data && (
-        <ModelDefaultForm connections={connections.data} selection={globalDefault.data} />
+        <ModelDefaultForm
+          connections={connections.data}
+          selection={globalDefault.data}
+          onConnectionChange={editor.followDefaultConnection}
+        />
       )}
       <AgentOptionsForm context={props.context} editor={editor} />
       <EditorMessages editor={editor} />
@@ -25,7 +29,7 @@ export function AgentConfigurationEditor(props: AgentEditorProps) {
       {editor.confirmClear && <ClearAgentOptions editor={editor} />}
       <AgentConnectionTools
         context={props.context}
-        selected={connections.data?.find((connection) => connection.id === draft.connectionId)}
+        selected={editor.credentialTarget}
         onCreated={editor.createdConnection}
       />
     </section>

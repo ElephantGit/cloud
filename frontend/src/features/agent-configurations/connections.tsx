@@ -69,7 +69,13 @@ export function AgentConnectionTools({
       ? 'anthropic-messages'
       : 'openai-completions'
   return (
-    <section aria-label="个人连接管理" className="space-y-3 border-t pt-4">
+    <section aria-label="个人连接管理" className="space-y-4 border-t pt-4">
+      <h3 className="text-sm font-medium">个人连接管理</h3>
+      <p className="text-xs text-muted-foreground">
+        {selected
+          ? `API Key 属于所选连接：${selected.name}`
+          : '选择模型连接或新建一个，再配置它的 API Key。'}
+      </p>
       <Button type="button" variant="outline" onClick={() => setCreating((current) => !current)}>
         新建个人连接
       </Button>

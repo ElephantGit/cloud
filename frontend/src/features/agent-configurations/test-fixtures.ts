@@ -19,6 +19,20 @@ export function agentConnection(overrides: Partial<ModelConnection> = {}): Model
   }
 }
 
+/**
+ * OpenCode context: the plugin stores no connection, so its model comes from the
+ * user's shared global default and credentials follow that default.
+ */
+export function opencodeContext(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
+  return agentContext({
+    pluginId: 'official/ora-space.opencode',
+    connectionId: null,
+    modelId: null,
+    modelDefault: { connectionId: 'mc1', modelId: 'vendor/model', version: 2 },
+    ...overrides,
+  })
+}
+
 /** A fresh compiled declaration/context; callers may emulate another revision without shared state. */
 export function agentContext(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {

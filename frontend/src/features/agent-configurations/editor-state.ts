@@ -14,8 +14,29 @@ import {
   agentConfigurationBody,
   agentConfigurationDraft,
   agentConfigurationNumbers,
+  type AgentConfigurationDraft,
   type AgentSettingValue,
 } from './draft'
+
+/**
+ * Resolves the connection whose write-only credential controls this session shows.
+ * Global-default plugins persist no connection, so the default draft or an inline
+ * creation names the target until the user chooses another connection there.
+ */
+function useCredentialTarget(draft: AgentConfigurationDraft) {
+  const [focus, setFocus] = useState<string>()
+  const connections = useModelConnections()
+  const globalDefault = useModelDefault(draft.usesGlobalDefault)
+  const connectionId = draft.usesGlobalDefault
+    ? (focus ?? globalDefault.data?.connectionId)
+    : draft.connectionId
+  return {
+    connections,
+    globalDefault,
+    target: connections.data?.find((connection) => connection.id === connectionId),
+    focus: setFocus,
+  }
+}
 
 /** Input to an editing session; successful writes are the only implicit remount boundary. */
 export type AgentEditorProps = {
@@ -34,8 +55,7 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
   const [reloadFailed, setReloadFailed] = useState(false)
   const save = useSaveAgentConfiguration(scope)
   const clear = useClearAgentConfiguration(scope)
-  const connections = useModelConnections()
-  const globalDefault = useModelDefault(draft.usesGlobalDefault)
+  const { connections, globalDefault, target, focus } = useCredentialTarget(draft)
   const body = agentConfigurationBody(draft)
   const busy = save.isPending || clear.isPending
   const canSave =
@@ -68,6 +88,10 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     setDraft((current) => ({ ...current, connectionId, modelId }))
   }
   function createdConnection(connection: ModelConnection) {
+    if (draft.usesGlobalDefault) {
+      focus(connection.id)
+      return
+    }
     selectConnection(connection.id, connection.models[0]?.id ?? '')
   }
   function submit(event: React.FormEvent) {
@@ -96,11 +120,13 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     clear,
     connections,
     globalDefault,
+    credentialTarget: target,
     reload,
     choose,
     changeSetting,
     selectConnection,
     createdConnection,
+    followDefaultConnection: focus,
     submit,
     clearOptions,
   }

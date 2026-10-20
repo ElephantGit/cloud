@@ -11,12 +11,6 @@ import (
 // occurrence 的 `(task_id, scheduled_at)` 主键使多副本、重启与重复扫描天然幂等（D2 不变量 2）。
 
 const (
-	// scheduledTaskEvalInterval 是到期评估的周期。ADR 只要求持久调度；取与既有控制面循环一致的
-	// 10 秒量级，迟到阈值（10 分钟）远大于它，一个周期内的观察延迟不改变任何语义。
-	scheduledTaskEvalInterval = 10 * time.Second
-	// scheduledTaskDeadlineInterval 是截止扫描的周期。截止只在会话未结束时写入（D4 边界），
-	// 扫描周期不改变「60 分钟」的承诺。
-	scheduledTaskDeadlineInterval = time.Minute
 	// scheduledTaskEvalBatchSize 限制单个评估 pass 处理的任务数，其余等下一个 pass。
 	scheduledTaskEvalBatchSize = 100
 )
@@ -34,20 +28,18 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 	var taskIDs []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
 			return err
 		}
 		taskIDs = append(taskIDs, id)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return err
 	}
-	rows.Close()
 	for _, taskID := range taskIDs {
 		if _, err := s.transact(ctx, func(t *transaction) Object {
 			admitScheduledTaskDue(t, taskID)
@@ -120,17 +112,17 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 
 	// 资格校验（D5）：失败映射到根决策 D7 的原因集并终止该 occurrence，不重试不回退。
 	if !creatorMembershipActive(t, taskID, task.S("tenantId"), task.S("creatorUserId")) {
-		failScheduledOccurrence(t, taskID, due, "target_unavailable")
+		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
 		return
 	}
 	agent, ready := scheduledTaskAgentReady(t, task.S("tenantId"), task.S("agentId"))
 	if !ready {
-		failScheduledOccurrence(t, taskID, due, "target_unavailable")
+		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
 		return
 	}
 	agentRunGate(t, issue, agent)
 	if !creatorModelReady(t, task.S("creatorUserId"), agent.S("pluginId")) {
-		failScheduledOccurrence(t, taskID, due, "model_unavailable")
+		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
 		return
 	}
 
@@ -143,8 +135,8 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 
 	// 运行创建复用既有编排：buildRunContext + snapshotAgentRunInput + enqueueAdmittedRun
 	//（内部完成 bindRunModel 的模型冻结与 409 pending_run_exists 兜底）。触发证据指向本任务。
-	context := buildRunContext(t, issue, task.S("prompt"), "agent", task.S("agentId"), nil, nil)
-	input := snapshotAgentRunInput(context, agent)
+	runContext := buildRunContext(t, issue, task.S("prompt"), "agent", task.S("agentId"), nil, nil)
+	input := snapshotAgentRunInput(runContext, agent)
 	run := enqueueAdmittedRun(t, task.S("tenantId"), task.S("issueId"), "agent", task.S("agentId"),
 		input, "scheduled_task", taskID+"@"+dueText, "user", task.S("creatorUserId"))
 
@@ -200,20 +192,18 @@ func (s *Store) WriteScheduledTaskDeadlinesOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 	var due []dueRun
 	for rows.Next() {
 		var entry dueRun
 		if err := rows.Scan(&entry.taskID, &entry.scheduledAt, &entry.runID); err != nil {
-			rows.Close()
 			return err
 		}
 		due = append(due, entry)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return err
 	}
-	rows.Close()
 	for _, entry := range due {
 		if _, err := s.transact(ctx, func(t *transaction) Object {
 			run := t.one(`SELECT * FROM issue_runs

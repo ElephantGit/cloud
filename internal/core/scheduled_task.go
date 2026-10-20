@@ -224,6 +224,11 @@ func creatorModelReady(t *transaction, creatorID, pluginID string) bool {
 		  AND c.enabled AND c.deleted_at IS NULL AND c.credential_id IS NOT NULL`, creatorID) != nil
 }
 
+// scheduledFailureReason maps an eligibility failure kind to the root decision D7 reason set.
+func failScheduledOccurrenceWithReason(t *transaction, taskID string, due time.Time, kind string) {
+	failScheduledOccurrence(t, taskID, due, scheduledFailureReason(kind))
+}
+
 // scheduledFailureReason maps an eligibility failure to the root decision D7 reason set. Unknown
 // inputs never widen the set: anything not specifically a model or consent problem is the target
 // being unavailable.

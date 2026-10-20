@@ -64,12 +64,12 @@ function readNodeEntry(value: unknown): RunNodeEntry | undefined {
     return undefined
   }
   const entry: RunNodeEntry = { status }
-  const startedAt = value['startedAt']
-  if (typeof startedAt === 'string') {
+  const startedAt = readTimestamp(value['startedAt'])
+  if (startedAt !== undefined) {
     entry.startedAt = startedAt
   }
-  const finishedAt = value['finishedAt']
-  if (typeof finishedAt === 'string') {
+  const finishedAt = readTimestamp(value['finishedAt'])
+  if (finishedAt !== undefined) {
     entry.finishedAt = finishedAt
   }
   const error = value['error']
@@ -89,6 +89,16 @@ function readNodeEntry(value: unknown): RunNodeEntry | undefined {
 /** A non-null, non-array object: the only shape a node state entry may be. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * A timestamp worth showing, or `undefined` when the field is absent or blank.
+ *
+ * The backend writes `startedAt`/`finishedAt` as `""` for a node that never ran
+ * (or has not reached that instant), so the empty string is "unset", not a time.
+ */
+function readTimestamp(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
 }
 
 /** Narrows a persisted status string to one this viewer can render. */

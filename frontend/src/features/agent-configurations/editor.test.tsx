@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelConnection } from '@/features/model-connections/api'
+import { getGetApiV1MeModelDefaultQueryKey } from '@/api/me/me'
 import { server } from '@/test/msw-server'
 import type { AgentConfiguration } from './api'
 import { AgentConfigurationEditor } from './editor'
@@ -299,6 +300,32 @@ describe('personal Agent configuration editor', () => {
 })
 
 describe('global default credentials', () => {
+  it('keeps credentials on the mounted default draft when the server default changes in the background', async () => {
+    const second = agentConnection({ id: 'mc2', name: 'Second Messages' })
+    const page = mountEditor(opencodeContext(), {
+      pluginId: 'official/ora-space.opencode',
+      connections: [agentConnection(), second],
+    })
+    await screen.findByText('API Key 属于所选连接：Personal Messages')
+    server.use(
+      http.get(MODEL_DEFAULT, () =>
+        HttpResponse.json({
+          connectionId: 'mc2',
+          modelId: 'vendor/model',
+          version: 3,
+        }),
+      ),
+    )
+    await act(async () => {
+      await page.client.invalidateQueries({ queryKey: getGetApiV1MeModelDefaultQueryKey() })
+    })
+    expect(screen.getByRole('combobox', { name: '默认连接' })).toHaveTextContent(
+      'Personal Messages',
+    )
+    expect(await screen.findByText('当前默认：Second Messages · Private Model')).toBeInTheDocument()
+    expect(screen.getByText('API Key 属于所选连接：Personal Messages')).toBeInTheDocument()
+  })
+
   it('targets the existing default connection although the plugin stores none', async () => {
     let cleared = ''
     server.use(

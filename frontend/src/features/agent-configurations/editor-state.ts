@@ -27,6 +27,10 @@ function useCredentialTarget(draft: AgentConfigurationDraft) {
   const [focus, setFocus] = useState<string>()
   const connections = useModelConnections()
   const globalDefault = useModelDefault(draft.usesGlobalDefault)
+  // This editing baseline is captured when the default form can first mount; later reads keep its draft.
+  if (draft.usesGlobalDefault && focus === undefined && connections.data && globalDefault.data) {
+    setFocus(globalDefault.data.connectionId)
+  }
   const connectionId = draft.usesGlobalDefault
     ? (focus ?? globalDefault.data?.connectionId)
     : draft.connectionId

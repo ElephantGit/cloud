@@ -94,22 +94,30 @@ afterEach(() => {
 describe('runPollInterval', () => {
   it('polls a run that can still change and stops once it settles', () => {
     expect(WORKFLOW_RUN_POLL_MS).toBe(5000)
-    expect(runPollInterval(undefined)).toBe(false)
+    expect(runPollInterval(undefined, false)).toBe(false)
     for (const status of ['pending', 'running', 'awaiting_input'] as const) {
-      expect(runPollInterval(status)).toBe(WORKFLOW_RUN_POLL_MS)
+      expect(runPollInterval(status, false)).toBe(WORKFLOW_RUN_POLL_MS)
     }
     for (const status of ['succeeded', 'failed', 'cancelled'] as const) {
-      expect(runPollInterval(status)).toBe(false)
+      expect(runPollInterval(status, false)).toBe(false)
     }
+  })
+
+  it('keeps polling after a failed read so the next attempt can recover', () => {
+    expect(runPollInterval(undefined, true)).toBe(WORKFLOW_RUN_POLL_MS)
   })
 })
 
 describe('runsPollInterval', () => {
   it('polls the history while any listed run can still change', () => {
-    expect(runsPollInterval(undefined)).toBe(false)
-    expect(runsPollInterval([])).toBe(false)
-    expect(runsPollInterval([settledRun(), runFixture()])).toBe(WORKFLOW_RUN_POLL_MS)
-    expect(runsPollInterval([settledRun(), { ...settledRun(), id: 'run-2' }])).toBe(false)
+    expect(runsPollInterval(undefined, false)).toBe(false)
+    expect(runsPollInterval([], false)).toBe(false)
+    expect(runsPollInterval([settledRun(), runFixture()], false)).toBe(WORKFLOW_RUN_POLL_MS)
+    expect(runsPollInterval([settledRun(), { ...settledRun(), id: 'run-2' }], false)).toBe(false)
+  })
+
+  it('keeps polling after a failed read so the next attempt can recover', () => {
+    expect(runsPollInterval(undefined, true)).toBe(WORKFLOW_RUN_POLL_MS)
   })
 })
 
@@ -233,6 +241,31 @@ describe('useWorkflowRun', () => {
     await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))
 
     await settleUntil(() => expect(reads).toBe(2))
+  })
+
+  it('keeps polling after a failed read so the next attempt can recover', async () => {
+    // A transient failure is not evidence the run settled: the poll must
+    // survive it, or an error on the first read would freeze the page forever.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let reads = 0
+    server.use(
+      http.get(RUN_URL, () => {
+        reads += 1
+        if (reads === 1) return HttpResponse.json({ message: 'boom' }, { status: 500 })
+        return HttpResponse.json(settledRun())
+      }),
+    )
+    const { result } = renderHook(() => useWorkflowRun(TEST_TENANT_ID, WORKFLOW_ID, RUN_ID), {
+      wrapper: wrapperFor(newQueryClient()),
+    })
+
+    await settleUntil(() => expect(result.current.isError).toBe(true))
+    expect(result.current.data).toBeUndefined()
+
+    await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))
+
+    await settleUntil(() => expect(result.current.data?.status).toBe('succeeded'))
+    expect(reads).toBe(2)
   })
 
   it('leaves the cached run alone when a read returns the same thing', async () => {

@@ -324,29 +324,43 @@ export interface RestoreWorkflowSnapshotInput {
 export const WORKFLOW_RUN_POLL_MS = 5000
 
 /**
- * How often a run read polls, given the status it last returned.
+ * How often a run read polls, given the outcome of the last attempt.
  *
  * A settled run stops the poll: nothing can change it again, so re-reading it
  * would only spend requests. A status this build does not recognise keeps
  * polling on purpose — freezing on a value the viewer cannot classify would
- * silently stop updating a run the server is still advancing.
+ * silently stop updating a run the server is still advancing. A failed read
+ * keeps polling too: the failure says nothing about whether the run settled,
+ * only that this attempt did not see it, so the next attempt must still happen.
  *
- * @param status - Status of the last successful read, or `undefined` before one lands.
+ * @param status - Status of the last successful read, or `undefined` when no read has succeeded yet.
+ * @param failed - Whether the last attempt failed instead of returning a run.
  * @returns The interval in milliseconds, or `false` when there is nothing to keep up with.
  */
-export function runPollInterval(status: WorkflowRunStatus | undefined): number | false {
-  if (status === undefined) return false
+export function runPollInterval(
+  status: WorkflowRunStatus | undefined,
+  failed: boolean,
+): number | false {
+  if (status === undefined) return failed ? WORKFLOW_RUN_POLL_MS : false
   return isTerminalRunStatus(status) ? false : WORKFLOW_RUN_POLL_MS
 }
 
 /**
  * How often the run history polls: while any listed run can still change.
  *
- * @param items - Runs of the last successful page, or `undefined` before one lands.
+ * A failed read keeps polling for the same reason the single-run read does:
+ * the failure says nothing about whether the listed runs settled, so the next
+ * attempt must still happen.
+ *
+ * @param items - Runs of the last successful page, or `undefined` when no read has succeeded yet.
+ * @param failed - Whether the last attempt failed instead of returning a page.
  * @returns The interval in milliseconds, or `false` when every listed run is settled.
  */
-export function runsPollInterval(items: WorkflowRun[] | undefined): number | false {
-  if (items === undefined) return false
+export function runsPollInterval(
+  items: WorkflowRun[] | undefined,
+  failed: boolean,
+): number | false {
+  if (items === undefined) return failed ? WORKFLOW_RUN_POLL_MS : false
   return items.some((run) => !isTerminalRunStatus(run.status)) ? WORKFLOW_RUN_POLL_MS : false
 }
 
@@ -508,7 +522,8 @@ export function useWorkflowRuns(tenantId: string | undefined, workflowId: string
       ),
     enabled: !!tenantId && !!workflowId,
     select: (page) => [...page.items].toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    refetchInterval: (query) => runsPollInterval(query.state.data?.items),
+    refetchInterval: (query) =>
+      runsPollInterval(query.state.data?.items, query.state.status === 'error'),
     structuralSharing: shareRunPage,
   })
 }
@@ -541,7 +556,8 @@ export function useWorkflowRun(
         signal,
       ),
     enabled: !!tenantId && !!workflowId && !!runId,
-    refetchInterval: (query) => runPollInterval(query.state.data?.status),
+    refetchInterval: (query) =>
+      runPollInterval(query.state.data?.status, query.state.status === 'error'),
     structuralSharing: shareRunRead,
   })
 }

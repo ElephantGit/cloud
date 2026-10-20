@@ -222,6 +222,15 @@ func TestPersonalAgentRunFreezeAndUnavailableAdapter(t *testing.T) {
 		if len(plugins) != 1 || plugins[0].S("version") != "1.0.0" {
 			t.Fatalf("queued release drifted: %v", plugins)
 		}
+		operation := created.O("operation")
+		enterPluginStep(tx, operation)
+		operation = tx.one("SELECT * FROM operations WHERE id=$1", operation.S("id"))
+		spaceBefore := tx.spacePluginRow(s.space, "official", "ora-space.claude")
+		pluginInstanceWriteback(tx, operation, claudeAgentCLI, "installed", "1.0.0", nil, before.N("selectionRevision"))
+		spaceAfter := tx.spacePluginRow(s.space, "official", "ora-space.claude")
+		if jsonText(spaceBefore) != jsonText(spaceAfter) {
+			t.Fatalf("frozen run overwrote current space evidence: before=%v after=%v", spaceBefore, spaceAfter)
+		}
 		return nil
 	})
 	if err != nil {
@@ -384,8 +393,10 @@ func TestPersonalAgentOpenCodeUsesGlobalDefaultAndRepairsRemovedSettings(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := &PublicRequest{Method: "PUT", Path: "/api/v1/me/agent-configurations/" + s.space + "/official/ora-space.opencode",
-		SpaceID: s.space, AgentPluginID: opencodeAgentCLI, Identity: s.claims, Key: uuid.NewString(), Body: s.body(0)}
+	request := &PublicRequest{
+		Method: "PUT", Path: "/api/v1/me/agent-configurations/" + s.space + "/official/ora-space.opencode",
+		SpaceID: s.space, AgentPluginID: opencodeAgentCLI, Identity: s.claims, Key: uuid.NewString(), Body: s.body(0),
+	}
 	_, _, err = s.store.Public(context.Background(), request)
 	expectModelFault(t, err, "agent_use_model_default")
 	delete(request.Body, "connectionId")

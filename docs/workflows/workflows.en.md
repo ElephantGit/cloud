@@ -88,6 +88,14 @@ was named. A run Workspace belongs to the run that created it: `workspaces.workf
 with an IssueRun's `issue_run_id`, and the `maintenance` reserved for it in runtime control is recorded against the
 same run identity (see [Runtime control](../runtime/runtime-control.en.md)).
 
+**Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
+the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency
+key) returns the same instant. The request writes only `workflow_runs.cancel_requested_at` — never the run's status,
+node states, session or Workspace; the scheduler settles it on its next pass (see below). Runs that are `pending` or
+`running` accept the request; a terminal run answers `409 run_not_cancellable`. Authorization follows the executor
+bindings frozen on the run: on a bound run only the initiator and the tenant's administrators may cancel, and any
+other member answers `403 workflow_run_cancel_forbidden`; an unbound run keeps the Issue Thread's member rule.
+
 ## Scheduling
 
 WorkflowRuns are carried forward by a scheduling loop in the Cloud server (`AdvanceWorkflowRunsOnce`, every 10
@@ -118,14 +126,30 @@ seconds):
   (`runWorkspaceNodeUnknown`), so the two run kinds cannot answer "is the Node still there?" differently; an
   unconfigured window does not degrade into a zero-length one, and the session is held rather than failed on the
   spot. `node_unavailable` is Cloud's own diagnosis — it is also the published operation failure code for an
-  unreachable Node — and not a session end reason a Node reported. Once the run reaches a terminal state, Cloud
-  declares the deletion of its Workspace.
+  unreachable Node — and not a session end reason a Node reported. **When a session has started and its Node is still
+  reachable, but there is neither a committed result nor a successful `turnEnded` receipt**, the node fails as
+  `session_turn_deadline_exceeded` once its execution row's `created_at` is older than `workflow.session_turn_timeout`
+  (2 hours by default), and the run reaches a terminal state. That too is Cloud's own diagnosis, timed per execution row
+  (a retry's new row re-times), using only the database clock — replay, restart and replica passes never reset it.
+  Results win: a committed result settles by its own reason, an unreachable Node is still `node_unavailable`, and only
+  when neither holds does the window apply. A result that arrives after the window already settled the run is kept on the
+  execution row and never rewrites the terminal run. Once the run reaches a terminal state, Cloud declares the deletion
+  of its Workspace.
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
   receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the
   session has no terminal state within the confirmation window after the end request was released, the node fails
   as `session_end_deadline_exceeded`, the run reaches a terminal state and its Workspace is released — no run stays
   `running` forever.
+- **A cancellation request is settled by the scheduler, within a bound.** Once the request is recorded, a `pending`
+  run no longer starts — it stamps no `started_at`, validates no graph, creates no Workspace and settles `cancelled`
+  directly — and a `running` run dispatches no further node. An in-flight session keeps a committed result as the
+  node's own terminal state (that result is what actually ran) while the run still settles `cancelled`; with no result
+  yet the scheduler reuses that node's existing end request, or releases `end_session{cancelled}` when there is none,
+  and the wait stays bounded by `issue_runs.agent_end_confirm_timeout`, after which the node and the run settle
+  `cancelled`. A Node that can no longer report is a cancellation too, not `node_unavailable`. Every terminal path
+  declares the run Workspace's deletion, and a result arriving after the run is terminal is kept on the execution row
+  without rewriting the run.
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.

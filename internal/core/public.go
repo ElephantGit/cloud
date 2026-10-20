@@ -388,6 +388,15 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 			}
 		case strings.Contains(r.Path, "/workflows"):
 			switch {
+			case strings.HasSuffix(r.Path, "/cancel"):
+				// D4/D6: the user's cancellation request for a WorkflowRun. Matched before the /runs
+				// arm because the path contains "/runs/" too, and recording a request is not creating
+				// a run. Answered 202 like the IssueRun request: the request is accepted for
+				// asynchronous settlement by the scheduler, and the response is the recorded instant
+				// rather than a wrapped resource — this endpoint creates none.
+				require(r.Method == "POST", 404, "not_found")
+				out = cancelWorkflowRunByUser(t, r, uid)
+				status = 202
 			case strings.HasSuffix(r.Path, "/runs"):
 				out = Object{"resource": createWorkflowRun(t, r, uid)}
 			case strings.HasSuffix(r.Path, "/publish"):

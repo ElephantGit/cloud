@@ -49,6 +49,9 @@ func workflowRunSummary(run Object) Object {
 		"finishedAt": run["finishedAt"],
 		"createdAt":  run.S("createdAt"),
 		"updatedAt":  run.S("updatedAt"),
+		// The user's own D6 request, made through POST …/runs/{rid}/cancel: the run page has to be
+		// able to show that a cancellation is pending, and a repeat of the request reads it back.
+		"cancelRequestedAt": run["cancelRequestedAt"],
 	}
 }
 

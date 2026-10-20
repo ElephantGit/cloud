@@ -65,6 +65,11 @@ Project 缺失时统一返回 `409 workflow_run_project_required`，不可用、
 `workspaces.workflow_run_id` 与 IssueRun 的 `issue_run_id` 互斥，运行时控制里为它预留的 `maintenance` 同样按运行身份记录（见
 [运行时控制](../runtime/runtime-control.md)）。
 
+**取消是请求，不是状态切换。** `POST .../workflows/:wfid/runs/:rid/cancel` 在运行行上记录请求，返回 `202` 和记录的时刻；重复请求（即使换一个幂等键）
+返回同一个时刻。请求只写 `workflow_runs.cancel_requested_at`，不改动运行的状态、节点状态、会话或 Workspace——结算由调度器在下一轮完成（见下文）。
+`pending` 和 `running` 的运行接受请求；已经进入终态的运行返回 `409 run_not_cancellable`。授权按运行上冻结的模型绑定判断：带绑定的运行只有发起人和
+租户管理员可以取消，其他成员返回 `403 workflow_run_cancel_forbidden`；没有绑定的运行沿用 Issue 线程的成员规则。
+
 ## 调度
 
 WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce`，每 10 秒一轮）：
@@ -81,11 +86,20 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   节点以 `node_unavailable` 结算失败，运行随之进入终态：依据是 Node 的可达性，而不是会话已经跑了多久——心跳超过 `issue_runs.delivery_unreachable_after`（默认 30 分钟），
   或者沙箱连同其上的 Node 一起消失（强制停止留下的正是这个状态），都表示 Node 已经不在了。这个判断和它的窗口与 IssueRun 交付、释放路径用的是同一个
   （`runWorkspaceNodeUnknown`），两种运行不会对"Node 还在吗"给出不同答案；窗口未配置时不会退化成零长度窗口，会话保持等待而不是被立刻误判为失败。
-  `node_unavailable` 是 Cloud 自己下的判断（也是 Node 不可达时公开的操作失败码），不是 Node 上报的会话结束原因。运行进入终态后，Cloud 声明删除
-  这次运行的 Workspace。
+  `node_unavailable` 是 Cloud 自己下的判断（也是 Node 不可达时公开的操作失败码），不是 Node 上报的会话结束原因。
+  **会话已经开始、Node 仍然可达，但既没有提交结果、也没有成功的 `turnEnded` 回执时**，执行行的 `created_at` 超过
+  `workflow.session_turn_timeout`（默认 2 小时）后节点以 `session_turn_deadline_exceeded` 失败，运行进入终态。这也是 Cloud 自己下的
+  判断，按执行行计时（重试产生的新执行行重新计时），只使用数据库时钟，回放、重启和副本推进都不会重置。判断顺序是结果优先：
+  已提交的结果按它自己的原因结算，Node 不可达仍报 `node_unavailable`，两者都不成立时才轮到窗口；窗口把运行带入终态之后才到达的结果
+  保留在执行行上，不改写已经终态的运行。运行进入终态后，Cloud 声明删除这次运行的 Workspace。
 - **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
   命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
   `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。
+- **取消请求由调度器结算，并且有界。** 记录请求后，`pending` 的运行不再启动：不写 `started_at`、不校验图、不创建 Workspace，直接以 `cancelled` 结束；
+  `running` 的运行不再派发新节点。正在执行的会话，已提交的结果保留为节点自己的终态（那个结果就是实际跑出来的东西），运行仍以 `cancelled` 结束；还没有结果时，
+  调度器复用该节点已有的结束请求（没有就放出 `end_session{cancelled}`），等待上限仍是 `issue_runs.agent_end_confirm_timeout`，超过后节点和运行都以
+  `cancelled` 结束；Node 已不可达时取消优先于 `node_unavailable`，同样以 `cancelled` 收尾。每种终态都声明删除运行的 Workspace；请求记录之后才到达的结果
+  保留在执行行上，不改写已经终态的运行。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
 不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进。

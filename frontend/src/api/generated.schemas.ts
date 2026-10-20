@@ -2577,6 +2577,8 @@ export interface WorkflowRunModelBinding {
 }
 
 export interface WorkflowRun {
+  /** @nullable */
+  cancelRequestedAt: string | null;
   createdAt: string;
   /**
      * The frozen graph document this run executed against, from the snapshot it captured.
@@ -4328,6 +4330,12 @@ export type PostApiV1TenantsTidWorkflowsWfidRunsBody = {
 
 export type PostApiV1TenantsTidWorkflowsWfidRuns200 = {
   resource: WorkflowRun;
+};
+
+export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancel202 = {
+  cancelRequestedAt: string;
 };
 
 export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams = {

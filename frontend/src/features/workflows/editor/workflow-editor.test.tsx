@@ -157,6 +157,7 @@ function runResultFixture(): WorkflowRun {
     rounds: [],
     error: '',
     definitionSnapshot: null,
+    cancelRequestedAt: null,
     startedAt: '2026-09-20T02:00:00.000Z',
     finishedAt: '2026-09-20T02:00:10.000Z',
     createdAt: '2026-09-20T10:00:00+08:00',

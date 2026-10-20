@@ -482,6 +482,14 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	}
 	switch run.S("status") {
 	case "pending":
+		// A request recorded before the run is claimed settles it here: cancel-before-start is the
+		// whole cancellation, so the run never stamps started_at, never validates its graph and never
+		// provisions a Workspace. The claim below would otherwise turn a cancellation into a start
+		// followed by a stop.
+		if run["cancelRequestedAt"] != nil {
+			finishWorkflowRun(t, runID, run.N("version"), "cancelled", "", nil)
+			return
+		}
 		// The claim is the CAS: zero affected rows means another pass claimed it first.
 		if t.execRows(`UPDATE workflow_runs SET status='running', started_at=now(), version=version+1, updated_at=now()
 			WHERE id=$1 AND status='pending' AND deleted_at IS NULL`, runID) == 0 {
@@ -496,6 +504,13 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	case "running":
 		// Recompute from committed state; a crash between ticks resumes exactly here.
 	default:
+		return
+	}
+	// D4: once a request is recorded while the run is non-terminal, the run's terminal status is
+	// `cancelled`, and no further node is dispatched. The reaction is read from committed state like
+	// every other scheduler decision, so replay, restart and replica passes settle the same way.
+	if run["cancelRequestedAt"] != nil {
+		advanceCancelledWorkflowRun(t, run, run.N("version"), workflowStatesFromJSON(run.O("nodeStates")), unreachableAfter)
 		return
 	}
 	version := run.N("version")

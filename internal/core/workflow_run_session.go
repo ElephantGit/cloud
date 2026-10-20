@@ -66,10 +66,12 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 	if e != nil {
 		return commitWorkflowAgentTerminal(t, runID, version, nodeID, states, e.O("result"))
 	}
-	// Dispatched but not yet terminal: the Node owns the session until it reports.
-	if t.one(`SELECT execution_id FROM node_executions
-		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session'`, runID, nodeID) != nil {
-		return states, false
+	// Dispatched but not yet terminal: the Node owns the session until it reports. A successful
+	// initial turn ends the session — Cloud releases one EndSession command and waits for the
+	// terminal result, which stays the node's only evidence (D4).
+	if e := t.one(`SELECT execution_id FROM node_executions
+		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session'`, runID, nodeID); e != nil {
+		return workflowSessionEndRequest(t, runID, version, nodeID, e.S("executionId"), states)
 	}
 	// Never dispatched: the startup deadline applies. A node committed running with no registered
 	// execution past the never dispatched fails honestly — never recorded as succeeded (invariant 5).
@@ -84,6 +86,64 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 		finishWorkflowRun(t, runID, version, "failed", "session start deadline exceeded", states)
 	}
 	return states, false
+}
+
+// workflowSessionEndRequest drives one dispatched session toward its terminal result. A WorkflowRun
+// session is single-turn: the initial turn's `turnEnded` receipt is the node's completion signal, so
+// the scheduler releases one EndSession command with `idle_timeout` through the existing Controller
+// relay, and the Node ends the session and reports its result (D4). The trigger is this recompute
+// rather than the takeover hook so a crash between ticks re-reads the receipt and re-releases the
+// same command (the per-node uniqueness in 0049 makes that a replay, not a second request).
+//
+// The wait is bounded (D7). Once the command has been outstanding longer than the confirmation
+// window, the node fails with a named reason and the run is finished, which declares the Workspace
+// deletion. Without this a Node that never claims the command would leave the run `running` forever
+// — the same permanent stall this path exists to remove. The deadline is measured from the command's
+// own `created_at`, so retries and replicas all read the same window.
+func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID, executionID string, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND kind='end_session'", runID, nodeID)
+	if cmd == nil {
+		if !workflowSessionTurnEnded(t, executionID) {
+			return states, false
+		}
+		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, "end_session", Object{"reason": "idle_timeout"})
+	}
+	window := startupDuration(t.store.AgentEndConfirmTimeout, 5*time.Minute)
+	// The comparison runs on the database clock, the same clock `created_at` came from: a process
+	// clock skew must not be able to shorten or extend the confirmation window.
+	if t.one(`SELECT id FROM thread_commands WHERE id=$1
+		AND created_at<=clock_timestamp()-make_interval(secs=>$2)`, cmd.S("id"), window.Seconds()) == nil {
+		return states, false
+	}
+	state := states[nodeID]
+	state.Status = "failed"
+	state.FinishedAt = nowRFC3339()
+	state.Error = "session_end_deadline_exceeded"
+	state.Output = Object{"reason": "session_end_deadline_exceeded"}
+	states[nodeID] = state
+	finishWorkflowRun(t, runID, version, "failed", "session end deadline exceeded", states)
+	return states, false
+}
+
+// workflowSessionTurnEnded reports whether the session execution's most recent receipt is a
+// successful `turnEnded` — the same idle evidence the Thread lifecycle reads (Thread D4). It reads
+// the latest receipt rather than scanning for any turn end: a turn the agent followed with another
+// record is not the end of the conversation, and a `cancelled` stop reason is not idle evidence
+// either (a cancellation is settled by the authoritative session end). The type tag is the closed
+// record discriminator Cloud already validates on takeover; Cloud still does not interpret the
+// record's business fields.
+func workflowSessionTurnEnded(t *transaction, executionID string) bool {
+	last := t.one(`SELECT (event::jsonb->>'record')::jsonb AS record
+		FROM node_event_receipts WHERE execution_id=$1 ORDER BY sequence DESC LIMIT 1`, executionID)
+	if last == nil {
+		return false
+	}
+	record := last.O("record")
+	// `stop_reason` is the field as `ora-history` serializes it: serde's container-level
+	// `rename_all = "camelCase"` renames the enum variants (`turnEnded`), not the variant fields,
+	// which stay snake_case. Reading the camelCase spelling silently yields "" and would count a
+	// cancelled turn as idle evidence.
+	return record.S("type") == "turnEnded" && record.S("stop_reason") != "cancelled"
 }
 
 // workflowSessionEndReason maps a session execution's terminal reason onto the node/run

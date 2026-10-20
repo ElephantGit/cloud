@@ -394,7 +394,13 @@ export function mergeRunRead(previous: WorkflowRun | undefined, next: WorkflowRu
 function prefersNextRead(previous: WorkflowRun, next: WorkflowRun): boolean {
   const settled = isTerminalRunStatus(next.status)
   if (settled !== isTerminalRunStatus(previous.status)) return settled
-  return next.updatedAt >= previous.updatedAt
+  return runUpdatedAt(next) >= runUpdatedAt(previous)
+}
+
+/** The run's `updatedAt` as an epoch, so ordering does not lean on the server's string format. */
+function runUpdatedAt(run: WorkflowRun): number {
+  const parsed = Date.parse(run.updatedAt)
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
 }
 
 /**

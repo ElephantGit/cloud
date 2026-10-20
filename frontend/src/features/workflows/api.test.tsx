@@ -151,6 +151,13 @@ describe('mergeRunRead', () => {
     expect(mergeRunRead(held, next)).toBe(next)
   })
 
+  it('treats a read whose timestamp does not parse as older', () => {
+    const held = runFixture({ status: 'running', updatedAt: '2026-09-20T02:00:10.000Z' })
+    const next = runFixture({ status: 'running', updatedAt: 'not-a-timestamp' })
+
+    expect(mergeRunRead(held, next)).toBe(held)
+  })
+
   it('keeps a node entry only the losing read carried', () => {
     const held = runFixture({
       updatedAt: '2026-09-20T02:00:05.000Z',

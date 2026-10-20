@@ -97,6 +97,19 @@ describe('WorkflowRunDetailPage', () => {
     expect(screen.getByText('在画布上选择一个节点查看详情')).toBeInTheDocument()
   })
 
+  it('hides the started and finished times while the run has not set them', async () => {
+    renderRun(async () =>
+      HttpResponse.json(
+        runFixture({ status: 'pending', startedAt: '', finishedAt: '', nodeStates: {} }),
+      ),
+    )
+
+    await screen.findByRole('heading', { name: '巡检运行' })
+    expect(screen.getByText('创建于', { exact: false })).toBeInTheDocument()
+    expect(screen.queryByText('开始于', { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText('结束于', { exact: false })).not.toBeInTheDocument()
+  })
+
   it('opens a read-only inspector when a node is clicked', async () => {
     renderRun(async () => HttpResponse.json(runFixture()))
     await screen.findByRole('heading', { name: '巡检运行' })

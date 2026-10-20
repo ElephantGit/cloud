@@ -55,6 +55,14 @@ describe('RunInspector', () => {
     expect(screen.queryByRole('region', { name: '错误' })).not.toBeInTheDocument()
   })
 
+  it('shows no execution times for a node the run never reached', () => {
+    // An inactive node still has a trace row, but its blank timestamps are not
+    // evidence of a start or finish, so the execution section stays hidden.
+    renderWithProviders(<RunInspector data={TOOL_DATA} entry={{ status: 'inactive' }} />)
+
+    expect(screen.queryByRole('region', { name: '执行信息' })).not.toBeInTheDocument()
+  })
+
   it('notes the display name the trace labelled the node with', () => {
     const entry: RunNodeEntry = { status: 'succeeded', displayName: 'Agent 伪名' }
     renderWithProviders(<RunInspector data={TOOL_DATA} entry={entry} />)

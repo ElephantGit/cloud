@@ -134,10 +134,10 @@ func CompileAgentConfiguration(source []byte) (*CompiledAgentConfiguration, erro
 		return nil, err
 	}
 	if structure.schemaVersion != agentDeclarationSchemaVersion {
-		return nil, agentError("unsupported_schema_version", strconv.FormatUint(uint64(structure.schemaVersion), 10))
+		return nil, agentError("unsupported_schema_version", "unsupported declaration version")
 	}
 	if structure.contractVersion != agentModelAccessContractVersion {
-		return nil, agentError("unsupported_contract_version", strconv.FormatUint(uint64(structure.contractVersion), 10))
+		return nil, agentError("unsupported_contract_version", "unsupported model access version")
 	}
 	if len(structure.protocols) == 0 {
 		return nil, agentError("empty_protocols", "")
@@ -190,7 +190,7 @@ func agentStructure(root *agentJSONObject) (agentDeclarationStructure, error) {
 		switch key {
 		case "schemaVersion", "agent", "settings":
 		default:
-			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member "+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown declaration member")
 		}
 	}
 	rawVersion, ok := root.get("schemaVersion")
@@ -224,7 +224,7 @@ func agentModelAccessStructure(root *agentJSONObject) (agentDeclarationStructure
 	}
 	for key := range contribution.members {
 		if key != "modelAccess" {
-			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member agent."+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown agent member")
 		}
 	}
 	rawAccessValue, _ := contribution.get("modelAccess")
@@ -236,7 +236,7 @@ func agentModelAccessStructure(root *agentJSONObject) (agentDeclarationStructure
 		switch key {
 		case "contractVersion", "protocols", "modelCardinality":
 		default:
-			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown member agent.modelAccess."+key)
+			return agentDeclarationStructure{}, agentError("invalid_structure", "unknown modelAccess member")
 		}
 	}
 	rawContract, ok := rawAccess.get("contractVersion")
@@ -346,61 +346,61 @@ func compileAgentSetting(id string, raw any) (CompiledAgentSetting, error) {
 	}
 	setting, ok := raw.(*agentJSONObject)
 	if !ok {
-		return invalid("Setting " + id + " must be an object")
+		return invalid("Setting must be an object")
 	}
 	for key := range setting.members {
 		switch key {
 		case "type", "title", "description", "required", "order", "default":
 		default:
-			return invalid("Setting " + id + " declares unknown member " + key)
+			return invalid("Setting declares unknown member")
 		}
 	}
 	rawType, ok := setting.get("type")
 	if !ok {
-		return invalid("Setting " + id + " must declare a type")
+		return invalid("Setting must declare a type")
 	}
 	settingType, ok := rawType.(string)
 	if !ok {
-		return invalid("Setting " + id + " type must be a string")
+		return invalid("Setting type must be a string")
 	}
 	switch settingType {
 	case "string", "number", "boolean":
 	default:
-		return invalid("Setting " + id + " declares unsupported type " + settingType)
+		return invalid("Setting declares unsupported type")
 	}
 	rawTitle, ok := setting.get("title")
 	if !ok {
-		return invalid("Setting " + id + " must declare a title")
+		return invalid("Setting must declare a title")
 	}
 	title, ok := rawTitle.(string)
 	if !ok {
-		return invalid("Setting " + id + " title must be a string")
+		return invalid("Setting title must be a string")
 	}
-	if err := validateAgentText(id, "title", title, settingTitleMaximumCharacters); err != nil {
+	if err := validateAgentText("title", title, settingTitleMaximumCharacters); err != nil {
 		return CompiledAgentSetting{}, err
 	}
 	rawDescription, ok := setting.get("description")
 	if !ok {
-		return invalid("Setting " + id + " must declare a description")
+		return invalid("Setting must declare a description")
 	}
 	description, ok := rawDescription.(string)
 	if !ok {
-		return invalid("Setting " + id + " description must be a string")
+		return invalid("Setting description must be a string")
 	}
-	if err := validateAgentText(id, "description", description, settingDescriptionMaximumRunes); err != nil {
+	if err := validateAgentText("description", description, settingDescriptionMaximumRunes); err != nil {
 		return CompiledAgentSetting{}, err
 	}
 	required := false
 	if rawRequired, present := setting.get("required"); present {
 		value, ok := rawRequired.(bool)
 		if !ok {
-			return invalid("Setting " + id + " required must be a boolean")
+			return invalid("Setting required must be a boolean")
 		}
 		required = value
 	}
 	var order *int64
 	if rawOrder, present := setting.get("order"); present {
-		value, err := agentInteger(rawOrder, id, "order")
+		value, err := agentInteger(rawOrder, "order")
 		if err != nil {
 			return CompiledAgentSetting{}, err
 		}
@@ -408,7 +408,7 @@ func compileAgentSetting(id string, raw any) (CompiledAgentSetting, error) {
 	}
 	var defaultValue any
 	if rawDefault, present := setting.get("default"); present {
-		if err := validateAgentDefault(id, settingType, rawDefault); err != nil {
+		if err := validateAgentDefault(settingType, rawDefault); err != nil {
 			return CompiledAgentSetting{}, err
 		}
 		defaultValue = rawDefault
@@ -425,21 +425,21 @@ func compileAgentSetting(id string, raw any) (CompiledAgentSetting, error) {
 }
 
 // validateAgentText applies the shared non-blank and character-count limits.
-func validateAgentText(id, field, value string, maximumCharacters int) error {
+func validateAgentText(field, value string, maximumCharacters int) error {
 	if len(bytes.TrimSpace([]byte(value))) == 0 {
-		return agentError("invalid_settings", "Setting "+id+" "+field+" must not be blank")
+		return agentError("invalid_settings", "Setting "+field+" must not be blank")
 	}
 	if utf8.RuneCountInString(value) > maximumCharacters {
-		return agentError("invalid_settings", "Setting "+id+" "+field+" exceeds "+strconv.Itoa(maximumCharacters)+" characters")
+		return agentError("invalid_settings", "Setting "+field+" exceeds "+strconv.Itoa(maximumCharacters)+" characters")
 	}
 	return nil
 }
 
 // validateAgentDefault accepts a scalar only when it matches the declared type; an explicit null
 // default is present-but-mismatched, not absent.
-func validateAgentDefault(id, settingType string, value any) error {
+func validateAgentDefault(settingType string, value any) error {
 	mismatch := func(expected string) error {
-		return agentError("invalid_settings", "Setting "+id+" default must be "+expected)
+		return agentError("invalid_settings", "Setting default must be "+expected)
 	}
 	switch settingType {
 	case "string":
@@ -490,14 +490,14 @@ func agentU32(value any) (uint32, bool) {
 }
 
 // agentInteger accepts a JSON number that fits the desktop's i64 order field.
-func agentInteger(value any, id, field string) (int64, error) {
+func agentInteger(value any, field string) (int64, error) {
 	number, ok := value.(jsonNumber)
 	if !ok {
-		return 0, agentError("invalid_settings", "Setting "+id+" "+field+" must be an integer")
+		return 0, agentError("invalid_settings", "Setting "+field+" must be an integer")
 	}
 	integral, err := strconv.ParseInt(number.text, 10, 64)
 	if err != nil {
-		return 0, agentError("invalid_settings", "Setting "+id+" "+field+" must be an integer")
+		return 0, agentError("invalid_settings", "Setting "+field+" must be an integer")
 	}
 	return integral, nil
 }

@@ -130,6 +130,9 @@ Cloud does exactly three things on this chain:
 
 "Not declared" and "declared but invalid" are different facts: the former carries no association fields, the
 latter records a bounded reason on the entry and still leaves the package installable.
+Reasons use fixed diagnostics without echoing declaration values or server paths. Control characters
+are removed and UTF-8 remains valid before persistence, so one malformed declaration cannot block
+the other entries in a source sync.
 
 ## The Agent roster
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -259,7 +260,7 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 	info, e := os.Lstat(copyPath) // #nosec G703 -- the copy path grammar validated at
 	// manifest parse keeps the join inside the entry: no parent, absolute or separator escape.
 	if e != nil {
-		return nil, boundIssue("copy unreadable: " + e.Error())
+		return nil, "copy unreadable"
 	}
 	if !info.Mode().IsRegular() {
 		return nil, "copy must be a regular file"
@@ -270,7 +271,7 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 	source, e := os.ReadFile(copyPath) // #nosec G703 -- same containment argument as the
 	// Lstat above: the validated copy path grammar keeps the read inside the entry directory.
 	if e != nil {
-		return nil, boundIssue("copy unreadable: " + e.Error())
+		return nil, "copy unreadable"
 	}
 	if !utf8.Valid(source) {
 		return nil, "copy is not valid UTF-8"
@@ -312,5 +313,12 @@ func boundIssue(reason string) string {
 	// dropping invalid sequences keeps the bounded reason valid UTF-8 so one entry's problem
 	// cannot fail the whole catalog sync transaction — the exact failure this bound exists to
 	// prevent ("record a bounded reason; the other valid entries still sync").
-	return strings.ToValidUTF8(reason, "")
+	// PostgreSQL text also rejects NUL, which is valid UTF-8. Other control characters have
+	// no diagnostic value in this public single-line field either.
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(reason, ""))
 }

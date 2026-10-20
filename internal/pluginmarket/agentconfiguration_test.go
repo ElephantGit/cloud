@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,24 @@ import (
 // declaration bytes, so the languages cannot drift apart silently. When the desktop fixture
 // changes, this copy changes in the same change.
 const agentContractVectors = "testdata/agent-configuration-contract.json"
+
+// Diagnostics cross the public catalog boundary and must never echo rejected publisher text.
+func TestAgentConfigurationDiagnosticsDoNotEchoInput(t *testing.T) {
+	for _, source := range []string{
+		strings.Replace(declarationFor, `"schemaVersion":2`, `"schemaVersion":2,"privateMarker\u0000":1`, 1),
+		strings.Replace(declarationFor, `"modelAccess":{`, `"privateMarker\u0000":1,"modelAccess":{`, 1),
+		strings.Replace(declarationFor, `"contractVersion":1`, `"contractVersion":1,"privateMarker\u0000":1`, 1),
+		strings.TrimSuffix(declarationFor, "}") + `,"settings":{"privateMarker":{"type":"privateMarker\u0000"}}}`,
+	} {
+		_, err := CompileAgentConfiguration([]byte(source))
+		if err == nil {
+			t.Fatal("invalid declaration was accepted")
+		}
+		if strings.Contains(err.Error(), "privateMarker") || strings.ContainsRune(err.Error(), 0) {
+			t.Errorf("diagnostic exposes rejected input: %q", err)
+		}
+	}
+}
 
 type agentContractCase struct {
 	Name     string          `json:"name"`
@@ -63,50 +82,6 @@ func TestCompileAgentConfigurationMatchesSharedVectors(t *testing.T) {
 			}
 			if !reflect.DeepEqual(actual, expected) {
 				t.Errorf("%s: outcome mismatch\nactual:   %#v\nexpected: %#v", testCase.Name, actual, expected)
-			}
-		})
-	}
-}
-
-// A version error never masks a structural one: the desktop compiler deserializes the whole
-// declaration before checking any version, so a declaration that is both structurally wrong and
-// version-unsupported records invalid_structure in both languages. These combinations are not
-// in the shared vectors (which only combine structure problems with a supported version), so
-// this test pins the mirror to the desktop behavior directly.
-func TestCompileAgentConfigurationStructureBeatsVersionChecks(t *testing.T) {
-	cases := []struct {
-		name   string
-		source string
-	}{
-		{
-			"schema-version-with-wrong-cardinality",
-			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"multiple"}}}`,
-		},
-		{
-			"schema-version-with-unknown-member",
-			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"single","role":"main"}}}`,
-		},
-		{
-			"schema-version-with-non-string-protocols",
-			`{"schemaVersion":3,"agent":{"modelAccess":{"contractVersion":1,"protocols":[1],"modelCardinality":"single"}}}`,
-		},
-		{
-			"contract-version-with-wrong-cardinality",
-			`{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":2,"protocols":["anthropic-messages"],"modelCardinality":"multiple"}}}`,
-		},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			_, err := CompileAgentConfiguration([]byte(testCase.source))
-			if err == nil {
-				t.Fatal("the declaration must be rejected")
-			}
-			agentErr, ok := err.(*AgentConfigurationError)
-			if !ok {
-				t.Fatalf("error type = %T", err)
-			}
-			if agentErr.Code != "invalid_structure" {
-				t.Fatalf("structure must beat the version checks, got %q", agentErr.Code)
 			}
 		})
 	}

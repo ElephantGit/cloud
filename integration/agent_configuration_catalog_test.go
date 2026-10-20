@@ -70,10 +70,27 @@ func TestAgentConfigurationCatalogSyncFreezesAndDispatches(t *testing.T) {
 	commitListing("a", "declared-agent", listing("1.0.0", validDigest), "agent-configuration.json", declaration)
 	commitListing("b", "mismatched", strings.ReplaceAll(strings.ReplaceAll(listing("1.0.0", "66"+validDigest[2:]), "declared-agent", "mismatched"), "\"A declared agent.\"", "\"Mismatched.\""), "agent-configuration.json", declaration)
 	commitListing("c", "undeclared", "resolver = 1\nidentifier = \"undeclared\"\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Undeclared.\"\nurl = \""+packageServer.URL+"/undeclared.orax\"\nsha256 = \""+strings.Repeat("22", 32)+"\"\n", "", "")
+	// A rejected member containing NUL must not poison the PostgreSQL text parameter and
+	// roll back the valid entries in this same source snapshot.
+	malformed := strings.Replace(declaration, `"schemaVersion":2`, `"schemaVersion":2,"privateMarker\u0000":1`, 1)
+	malformedHash := sha256.Sum256([]byte(malformed))
+	commitListing("d", "malformed", strings.ReplaceAll(listing("1.0.0", hex.EncodeToString(malformedHash[:])), "declared-agent", "malformed"), "agent-configuration.json", malformed)
+	commitListing("e", "missing-copy", strings.ReplaceAll(listing("1.0.0", validDigest), "declared-agent", "missing-copy"), "", "")
 	runGit(t, "-C", repo, "add", ".")
 	runGit(t, "-C", repo, "commit", "-m", "declaration marketplace")
 
 	syncer := f.syncMarketplace(t, repo)
+	for identifier, expected := range map[string]string{
+		"malformed":    "declaration invalid: invalid_structure: unknown declaration member",
+		"missing-copy": "copy unreadable",
+	} {
+		var metadata *string
+		var reason string
+		must(t, f.store.Pool.QueryRow(`SELECT agent_configuration::text,agent_configuration_issue FROM plugin_catalog_entries WHERE identifier=$1`, identifier).Scan(&metadata, &reason))
+		if metadata != nil || reason != expected {
+			t.Fatalf("%s: invalid declaration must persist only a safe reason: metadata=%v reason=%q", identifier, metadata, reason)
+		}
+	}
 
 	// The sync consumes only the static copies; every package stays un-downloaded.
 	if got := packageRequests.Load(); got != 0 {

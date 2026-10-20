@@ -189,7 +189,7 @@ func TestScanRecordsBoundedIssuesForInvalidCopies(t *testing.T) {
 		name   string
 		issues string
 	}{
-		{"missing-copy", ""},
+		{"missing-copy", "copy unreadable"},
 		{"digest-mismatch", "digest does not match"},
 		{"invalid-declaration", "declaration invalid"},
 	}
@@ -224,6 +224,9 @@ func TestScanRecordsBoundedIssuesForInvalidCopies(t *testing.T) {
 				t.Fatalf("catalog = %+v", entries)
 			}
 			entry := entries[0]
+			if testCase.name == "missing-copy" && entry.AgentConfigurationIssue != "copy unreadable" {
+				t.Fatalf("unreadable copy must not expose server paths: %q", entry.AgentConfigurationIssue)
+			}
 			if entry.AgentConfiguration != nil {
 				t.Fatalf("no consumable declaration may survive: %+v", entry.AgentConfiguration)
 			}
@@ -256,6 +259,12 @@ func TestBoundIssueCutsOnARuneBoundary(t *testing.T) {
 	}
 	if boundIssue("copy unreadable") != "copy unreadable" {
 		t.Fatal("a short reason must pass through unchanged")
+	}
+}
+
+func TestBoundIssueRemovesControls(t *testing.T) {
+	if got := boundIssue("bad\x00\n\r\t\x7f\u0085copy\xff"); got != "badcopy" {
+		t.Fatalf("catalog reason must be bounded database-safe text: %q", got)
 	}
 }
 

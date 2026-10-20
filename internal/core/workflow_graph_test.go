@@ -227,6 +227,37 @@ func TestValidateWorkflowGraph(t *testing.T) {
 				[]any{graphEdge("s", "a")}, nil),
 		},
 		{
+			// The editor's default for a node with nothing selected is an empty list, which enables
+			// nothing; refusing it would block every real desktop export (circus#204).
+			name: "an agent node with empty skills and mcps",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"skills": []any{}, "mcps": []any{}})},
+				[]any{graphEdge("s", "a")}, nil),
+		},
+		{
+			// A non-empty list does enable behavior the first phase will not execute, so it stays a
+			// refusal, reported in the order the list declares.
+			name: "an agent node with non-empty skills and mcps",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"skills": []any{"review"}, "mcps": []any{"todo"}})},
+				[]any{graphEdge("s", "a")}, nil),
+			want: []any{
+				Object{"code": "node_config_unsupported", "nodeId": "a", "field": "skills"},
+				Object{"code": "node_config_unsupported", "nodeId": "a", "field": "mcps"},
+			},
+		},
+		{
+			// interactive: false is the editor's "not interactive" default and asks for nothing.
+			name: "an agent node with interactive false",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"interactive": false})},
+				[]any{graphEdge("s", "a")}, nil),
+		},
+		{
+			// interactive: true does enable behavior the first phase will not execute.
+			name: "an agent node with interactive true",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"interactive": true})},
+				[]any{graphEdge("s", "a")}, nil),
+			want: []any{Object{"code": "node_config_unsupported", "nodeId": "a", "field": "interactive"}},
+		},
+		{
 			name:  "no start node",
 			graph: workflowGraph([]any{Object{"id": "a", "data": Object{"kind": "output"}}}, []any{}, nil),
 			want:  []any{Object{"code": "start_node_count"}},

@@ -1261,3 +1261,50 @@ func TestMigration0043ExternalGitLineAppliesFreshAndUpgrades(t *testing.T) {
 	_, e = pool.Exec(`DELETE FROM repository_operation_events WHERE operation_id=$1`, operation)
 	wantPGError(t, e, "P0001")
 }
+
+// 0044 lets the attempt ledger record a WorkflowRun-owned binding without inventing an IssueRun.
+// It takes 0040's discriminator shape: run_id becomes nullable, workflow_run_id is added, and each
+// owner gets its own tenant-scoped run and binding reference. A fresh database and one that stopped
+// at 0043 reach the same shape, and rerunning the migration changes nothing.
+func TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades(t *testing.T) {
+	shape := func(pool *sql.DB) (nullables, ownerFKs, legacyFKs, ownerCheck, indexes, identities int) {
+		t.Helper()
+		must(t, pool.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema()
+			AND table_name='model_request_attempts' AND column_name IN ('run_id','workflow_run_id') AND is_nullable='YES'`).Scan(&nullables))
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conrelid='model_request_attempts'::regclass AND contype='f'
+			AND conname IN ('model_attempt_issue_run_scope','model_attempt_workflow_run_scope','model_attempt_issue_binding','model_attempt_workflow_binding')`).Scan(&ownerFKs))
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conrelid='model_request_attempts'::regclass AND contype='f'
+			AND conname IN ('model_request_attempts_run_id_tenant_id_fkey','model_request_attempts_binding_id_run_id_fkey')`).Scan(&legacyFKs))
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conrelid='model_request_attempts'::regclass AND contype='c'
+			AND conname='model_attempt_owner_exclusive'`).Scan(&ownerCheck))
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND tablename='model_request_attempts'
+			AND indexname IN ('model_attempt_run_order','model_attempt_workflow_run_order')`).Scan(&indexes))
+		must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint WHERE contype='u'
+			AND ((conrelid='workflow_runs'::regclass AND conname='workflow_run_tenant_identity')
+			  OR (conrelid='run_model_bindings'::regclass AND conname='model_binding_workflow_run_identity'))`).Scan(&identities))
+		return nullables, ownerFKs, legacyFKs, ownerCheck, indexes, identities
+	}
+	assertShape := func(t *testing.T, pool *sql.DB, stage string) {
+		t.Helper()
+		if n, fk, legacy, check, idx, id := shape(pool); n != 2 || fk != 4 || legacy != 0 || check != 1 || idx != 2 || id != 2 {
+			t.Fatalf("%s: nullable owners %d owner fks %d legacy fks %d exclusive check %d indexes %d identities %d",
+				stage, n, fk, legacy, check, idx, id)
+		}
+	}
+
+	freshPool, _ := testSchema(t, "test_ma44f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	assertShape(t, freshPool, "fresh")
+
+	pool, _ := testSchema(t, "test_ma44_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0044_model_attempt_workflow_run.sql"))
+	if n, fk, legacy, check, idx, id := shape(pool); n != 0 || fk != 0 || legacy != 2 || check != 0 || idx != 1 || id != 0 {
+		t.Fatalf("before 0044: nullable owners %d owner fks %d legacy fks %d exclusive check %d indexes %d identities %d",
+			n, fk, legacy, check, idx, id)
+	}
+	if columnNullable(t, pool, "model_request_attempts", "run_id") {
+		t.Fatal("before 0044 run_id must still be required")
+	}
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertShape(t, pool, "upgrade")
+}

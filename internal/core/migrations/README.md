@@ -165,13 +165,24 @@ Controller 契约的字段。只新增，不回填。
 
 新库与合并时基线（含 0042）升级（带真实 Project、凭据引用与连续性列的库）证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades`，其中也对真实行验证了上述约束与 append-only 触发器。
 
-## 0044：WorkflowRun 调用引用
+## 0044：模型尝试登记 WorkflowRun 绑定
 
-`0044_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
+`0044_model_attempt_workflow_run.sql` 让 `model_request_attempts` 记录 WorkflowRun 的绑定，采用与
+0040 相同的判别形状：`run_id` 改为可空，新增 `workflow_run_id`，两者恰有其一。运行与绑定各按所有者
+一对：分别引用 `issue_runs`/`workflow_runs` 的 `(id, tenant_id)`，以及 `run_model_bindings` 的
+`(id, run_id)`/`(id, workflow_run_id)`，并补上后者所需的两个唯一约束。首期只登记，不开放 WorkflowRun
+的统计读取；IssueRun 的读取继续按 `run_id` 过滤，WorkflowRun 行的 `run_id` 为空，不会进入既有读取。
+既有行都带 `run_id`（0035 要求非空，且任何 WorkflowRun 登记都无法写入），无需回填。新库与 0043 升级证据见
+`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
+`internal/core/model_attempt_workflow_db_test.go`。
+
+## 0045：WorkflowRun 调用引用
+
+`0045_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
 （含 running、deferred）结算为 failed，原因是
 `workflow_execution_unavailable_before_invocation_linkage`，再添加租户一致的复合外键及唯一引用。
 CHECK 要求非终态 workflow 行具有引用，其他 executor 不得携带引用。历史终态 workflow 行可保留
 NULL 引用并继续更新；迁移保留其输入和结果，不虚构执行。CHECK 无条件 VALIDATE，空库和升级库
-采用同一份已验证约束。编号接在 main 已有的 0043 外部 Git 线迁移之后。
+采用同一份已验证约束。编号接在 main 已有的 0044 模型尝试登记迁移之后。
 空库、种子升级、重复迁移、约束验证状态及
 历史行更新测试见 `integration/workflow_invocation_migration_test.go`。

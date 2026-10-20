@@ -71,7 +71,7 @@ Store、Git Server），不发起任何网络请求。
 | `session.ttl` | IDaaS `12h`，其他 `30 天` | 绝对有效期，上限 90 天 |
 | `session.cleanup_interval`、`retention`、`cleanup_batch` | `10m`、`168h`、`500` | 过期会话的清理 |
 | `login.provider` | `github` | 外部 provider：`huawei-idaas` 或 `github`；只读取它的 secret |
-| `login.development_provider` | `false` | 注册本地开发登录；只能与 `public.development` 同时开启 |
+| `login.development_provider` | `false` | 注册本地开发登录；配置校验要求 `public.development: true` 且 `public.base_url` 为 loopback HTTP origin（可带端口）；HTTPS 即使开启开发模式也会被拒绝 |
 | `login.attempt_ttl` | `10m` | 登录尝试有效期，1 分钟到 1 小时 |
 | `login.rate_limit_per_minute`、`rate_limit_burst` | `30`、同前 | 登录开始与回调的限流 |
 | `login.pkce_key_file` | 必填 | 至少 32 字节随机数据；所有副本相同 |

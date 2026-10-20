@@ -106,6 +106,7 @@ func enqueueRunWithInvocation(t *transaction, tid, iid, executorType, executorID
 	}
 	// This opaque reference is server-owned even for agents that do not use personal models.
 	delete(input, "modelBindingId")
+	delete(input, "agentConfiguration")
 	// A workflow run's frozen version is written by the admission gate in the caller's own transaction,
 	// so a caller can never choose it. Every other executor has no use for the key, and dropping it
 	// keeps a caller-supplied value from being persisted as if the server had said it.

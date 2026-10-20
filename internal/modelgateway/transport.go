@@ -2,6 +2,8 @@ package modelgateway
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"net"
 	"net/http"
@@ -83,6 +85,21 @@ type UpstreamConfig struct {
 // NewUpstreamClient disables environmental proxies and redirects, and enforces the deployment
 // policy on every request and new connection. Exact fixture host exemptions are deployment-owned, development only.
 func NewUpstreamClient(config UpstreamConfig) (*http.Client, error) {
+	return newUpstreamClient(config, nil)
+}
+
+// NewUpstreamClientWithRoots builds the same client but verifies upstream identity against roots
+// instead of the platform pool. Hermetic transport tests use it against a controlled HTTPS server
+// and keep every other check exactly as deployed; production wiring only calls NewUpstreamClient,
+// so upstream identity always comes from the deployment's system roots.
+func NewUpstreamClientWithRoots(config UpstreamConfig, roots *x509.CertPool) (*http.Client, error) {
+	if roots == nil {
+		return nil, errors.New("upstream TLS trust requires an explicit root pool")
+	}
+	return newUpstreamClient(config, roots)
+}
+
+func newUpstreamClient(config UpstreamConfig, roots *x509.CertPool) (*http.Client, error) {
 	if config.Policy.Enterprise() && len(config.DevelopmentHosts) != 0 {
 		return nil, errors.New("enterprise egress conflicts with development hosts")
 	}
@@ -103,6 +120,9 @@ func NewUpstreamClient(config UpstreamConfig) (*http.Client, error) {
 	}
 	d := &secureDialer{resolver: resolver, fixtures: net.DefaultResolver, dialer: net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}, allowed: allowed, policy: config.Policy}
 	transport := &http.Transport{Proxy: nil, DialContext: d.dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 60 * time.Second, MaxIdleConns: 64, MaxConnsPerHost: 32, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: !config.Policy.Enterprise()}
+	if roots != nil {
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots}
+	}
 	return &http.Client{Transport: &upstreamTransport{Transport: transport, resolver: resolver, policy: config.Policy}, CheckRedirect: func(*http.Request, []*http.Request) error { return endpointRedirectForbidden }}, nil
 }
 

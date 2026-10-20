@@ -259,7 +259,7 @@ func pluginInstanceWriteback(t *transaction, op Object, pluginID, state, version
 	if !ok {
 		return
 	}
-	row := t.one(`SELECT wi.workspace_id,wi.desired_revision,p.space_id,ws.tenant_id FROM workspace_plugin_instances wi JOIN workspaces ws ON ws.id=wi.workspace_id JOIN projects p ON p.id=ws.project_id WHERE wi.workspace_id=$1 AND wi.source_namespace=$2 AND wi.identifier=$3`,
+	row := t.one(`SELECT wi.workspace_id,wi.desired_revision,p.space_id,ws.tenant_id,ws.issue_run_id,ws.workflow_run_id FROM workspace_plugin_instances wi JOIN workspaces ws ON ws.id=wi.workspace_id JOIN projects p ON p.id=ws.project_id WHERE wi.workspace_id=$1 AND wi.source_namespace=$2 AND wi.identifier=$3`,
 		op.S("workspaceId"), namespace, identifier)
 	if row == nil || row.S("spaceId") == "" {
 		return
@@ -278,6 +278,11 @@ func pluginInstanceWriteback(t *transaction, op Object, pluginID, state, version
 		op.S("workspaceId"), namespace, identifier, state, nullable(version), err)
 	if terminal {
 		t.exec("UPDATE workspace_plugin_instances SET maintenance_operation_id=NULL,pending_reason=NULL WHERE workspace_id=$1 AND source_namespace=$2 AND identifier=$3", op.S("workspaceId"), namespace, identifier)
+	}
+	// Frozen runs may legitimately install a version older than the space's current selection.
+	// Their observed version must not overwrite that shared selection's aggregate evidence.
+	if row.S("issueRunId") != "" || row.S("workflowRunId") != "" {
+		return
 	}
 	// Run Workspace instances are execution facts for that run. They do not change the Space aggregate,
 	// so one disposable install failure cannot retire an Agent the Space still has selected.

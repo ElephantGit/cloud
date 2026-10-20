@@ -74,6 +74,26 @@ server downloads workflow plugin assets with the same checked client and the sam
 
 ## Forwarding
 
+The Claude Code 2.1.303 Messages surface is bounded below; supported beta tokens are defined
+once in the [protocol policy](../../internal/modelgateway/anthropic.go). Unknown or duplicate
+Anthropic protocol-header values fail. Client diagnostic headers, session identifiers and the
+browser-access marker never reach the supplier.
+
+The same pinned CLI also declares `structured-outputs-2025-12-15` and
+`thinking-display-updates-2026-08-18` when queries are created through Agent SDK 0.3.303 /
+ACP adapter 0.94.0. Both are included in the bounded whitelist. An upgrade must verify its
+observed protocol surface before extending the policy.
+
+| Method and path | Query | Behavior |
+|---|---|---|
+| POST /runtime/anthropic/v1/messages | None, or exactly beta=true | Forward the frozen model, replace authentication, preserve supported version/beta headers |
+| GET /runtime/anthropic/v1/models | None, or exactly limit=1000 | Recheck authorization and return only the bound model without an upstream request |
+
+The listing is a view of the platform's frozen model, not evidence of supplier discovery. It
+decrypts no key and records no inference attempt. count_tokens and other queries, paths and
+methods are explicitly refused. Refusing optional probes does not relax inference, authorization
+or outbound policy.
+
 - Only the model and paths fixed by the grant are forwarded, and the protocol's request envelope is validated;
   successful JSON and SSE bytes are forwarded unchanged, with SSE flushed event by event.
 - Error events inside an HTTP 200 are normalized into safe errors too; ACP authentication failures

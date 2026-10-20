@@ -8,6 +8,7 @@ token digests. Controller and Node receive only opaque references and temporary 
 
 | Files | Responsibility |
 |---|---|
+| anthropic.go | Pinned Claude query/protocol-header policy and the frozen model listing |
 | `crypto.go`, `key_verification.go` | AES-256-GCM records, retry fingerprints and existing-key verification |
 | `credentials.go` | Gateway-only credential writes with separately verified service/user claims |
 | `grants.go` | Purpose-specific model-access mTLS grants, same-token renewal and revocation |
@@ -22,6 +23,19 @@ a dedicated model-access client certificate; data requests require temporary run
 Those purposes are not interchangeable. Original keys must never appear in responses or diagnostics.
 SSE events flush continuously; error events inside HTTP200 are sanitized too. Revocation interrupts
 the upstream and a blocked downstream write. Each watcher has one request owner, cancellation and a join.
+
+The Anthropic surface targets Claude Code 2.1.303. POST messages accepts no query or exactly
+beta=true; the version is fixed to 2023-06-01 and beta tokens are limited to the nine in
+anthropic.go. Duplicate or unknown tokens fail. Other client headers are dropped; the CLI's
+browser-access marker is validated and discarded. GET models (no query or limit=1000) rechecks
+current authorization and returns only the frozen model without an upstream call, key decryption
+or inference-attempt record. Optional endpoints such as count_tokens remain explicitly unsupported.
+This listing describes the authorized set, not a supplier discovery result.
+
+TestPinnedClaudeMessagesCompatibility accepts CLAUDE_COMPAT_BINARY pointing to the upstream-lock-
+verified 2.1.303 CLI. It uses a private HOME/config directory, synthetic credentials and a controlled
+supplier through the production ModelHandler. An unset binary path produces an explicit skip;
+ordinary protocol fixtures are not presented as real CLI evidence.
 
 Forwarding calls Core `BeginModelAttempt` before `Upstream.Do`. Failure returns the safe
 `model_metrics_unavailable` error without dispatching. A row records one gateway dispatch intent,

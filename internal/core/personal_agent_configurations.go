@@ -9,8 +9,14 @@ import (
 
 // personalAgentConfiguration retains cleared rows so an old editor can never regain its revision.
 func personalAgentConfiguration(t *transaction, uid, pluginID string) Object {
-	if row := t.one(`SELECT declaration_fingerprint,settings,connection_id,model_id,revision,cleared,updated_at
+	if row := t.one(`SELECT declaration_fingerprint,settings::text AS settings_json,connection_id,model_id,revision,cleared,updated_at
 		FROM personal_agent_configurations WHERE user_id=$1 AND plugin_id=$2`, uid, pluginID); row != nil {
+		values, err := decodeAgentJSONValue([]byte(row.S("settingsJson")))
+		if err != nil {
+			panic(databaseFailure{err})
+		}
+		row["settings"] = values
+		delete(row, "settingsJson")
 		return row
 	}
 	return Object{"revision": int64(0), "cleared": true, "settings": Object{}}

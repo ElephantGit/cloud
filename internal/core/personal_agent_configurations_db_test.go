@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -345,4 +346,30 @@ func TestPersonalAgentInvalidDeclarationCannotUseLegacyFallback(t *testing.T) {
 		return nil
 	})
 	expectModelFault(t, err, "agent_declaration_invalid")
+}
+
+func TestPersonalAgentNumericSettingsPreserveLiteral(t *testing.T) {
+	s := newPersonalAgentScene(t)
+	source := strings.Replace(personalAgentDeclaration, `"type":"string"`, `"type":"number","default":9007199254740993`, 1)
+	declaration, err := pluginmarket.CompileAgentConfiguration([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.store.Pool.Exec(`UPDATE space_plugins SET selected_release=jsonb_set(selected_release,'{agentConfiguration}',$2::jsonb) WHERE space_id=$1`,
+		s.space, jsonText(Object{"schemaVersion": 2, "declarationSha256": declaration.Fingerprint, "declaration": source}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := s.body(0)
+	body["declarationFingerprint"], body["settings"] = declaration.Fingerprint, Object{}
+	if _, err := s.request("PUT", "", uuid.NewString(), body); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.request("GET", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := view.O("settings")["style"]; got != json.Number("9007199254740993") {
+		t.Fatalf("stored default rounded: %v", got)
+	}
 }

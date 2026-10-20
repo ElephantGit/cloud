@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 
@@ -43,8 +44,16 @@ func agentSettingDefault(value any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeAgentJSONValue(encoded)
+}
+
+// decodeAgentJSONValue preserves numeric literals across defaults, storage and run freezing.
+// Decoding into float64 here would silently round valid integers above JavaScript's safe range.
+func decodeAgentJSONValue(encoded []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
 	var decoded any
-	err = json.Unmarshal(encoded, &decoded)
+	err := decoder.Decode(&decoded)
 	return decoded, err
 }
 

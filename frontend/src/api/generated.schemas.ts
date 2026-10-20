@@ -4122,6 +4122,54 @@ export type GetApiV1TenantsTidResourceStatus200 = {
   nextCursor: string;
 };
 
+export type PostApiV1TenantsTidScheduledTasksBody = {
+  agentId: string;
+  approval: string;
+  issueId: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  timezone: string;
+};
+
+export type PostApiV1TenantsTidScheduledTasks202 = {
+  operation: Operation;
+  resource: Project;
+};
+
+export type DeleteApiV1TenantsTidScheduledTasksStidBody = { [key: string]: unknown };
+
+export type DeleteApiV1TenantsTidScheduledTasksStid202 = {
+  operation: Operation;
+  resource: Project;
+};
+
+export type PatchApiV1TenantsTidScheduledTasksStidBody = {
+  /** @minimum 0 */
+  version: number;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidDisableBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidDisable202 = {
+  operation: Operation;
+  resource: Project;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidEnableBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidEnable202 = {
+  operation: Operation;
+  resource: Project;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidRevokeConsentBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidRevokeConsent202 = {
+  operation: Operation;
+  resource: Project;
+};
+
 export type GetApiV1TenantsTidSpacesParams = {
 /**
  * @minimum 1

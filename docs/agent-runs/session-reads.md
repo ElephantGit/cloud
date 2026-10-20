@@ -57,10 +57,13 @@
 登记，之后写入完成观察。客户端重试是一次新的尝试；SSE 分块和 Thread 记录都不是请求次数。台账不含请求正文、密钥、请求头、供应商的原始
 错误或用户的文件路径。服务崩溃留下的 `started` 观察保持未知，不推断成功、失败或用量为零。
 
-两个读取接口都只读，校验当前成员、Issue 和 Agent 运行，与归档是否可用无关：
+两个读取接口在 IssueRun 和 WorkflowRun 下各有一组路径，都只读，与归档是否可用无关：IssueRun 路径校验当前成员、Issue 与
+Agent 运行；WorkflowRun 路径校验当前成员，且运行属于路径里的 workflow、未被删除。租户成员只要能读该运行就能读统计，不限运行
+发起者；归档的 workflow 连同它的运行历史一起不可读。
 
 - `GET .../runs/:rid/statistics` 聚合这次运行的全部已登记尝试，不接受查询参数。
-- `GET .../runs/:rid/model-calls` 按 `(startedAt, id)` 升序分页列出尝试，只接受 `limit`（默认 50、最大 100）和同一运行内的 UUID `after`。
+- `GET .../runs/:rid/model-calls` 按 `(startedAt, id)` 升序分页列出尝试，只接受 `limit`（默认 50、最大 100）和同一运行内的 UUID
+  `after`；游标绑定该运行，不能跨运行使用。
 
 统计的来源固定为 `model_gateway`、范围为 `recorded_http_attempts`：它不是历史会话的完整请求数，也不是账单。
 

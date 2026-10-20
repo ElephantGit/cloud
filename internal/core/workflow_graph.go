@@ -214,21 +214,41 @@ func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
 // decision rules out: an author who set `retry` would read a publish that succeeded as "my retry
 // policy is in effect", and nothing would ever apply it.
 //
-// A key present with a JSON null is not a refusal. The decision's reason for refusing these fields is
-// that they change execution behavior, and a null changes none; refusing it would be the same
-// mistake in the other direction, rejecting a document for a value that asks for nothing. The same
-// reading is what `validSlotHint` applies to an absent-or-null `hint`.
+// A key present with a JSON null is not a refusal, and neither is the value the editor writes when
+// nothing is enabled: an empty `skills`/`mcps` list or `interactive: false`. The decision's reason
+// for refusing these fields is that they change execution behavior, and a null changes none, exactly
+// like an empty list or a false flag; refusing them would be the same mistake in the other
+// direction, rejecting a document for a value that asks for nothing. The same reading is what
+// `validSlotHint` applies to an absent-or-null `hint`.
 func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	config := data.O("agentConfig")
 	for _, field := range workflowUnsupportedAgentConfigFields {
 		value, present := config[field]
-		if !present || value == nil {
+		if !present || value == nil || !agentConfigFieldEnabled(field, value) {
 			continue
 		}
 		problems = append(problems, workflowGraphProblem{Code: "node_config_unsupported", NodeID: nodeID, Field: field})
 	}
 	return problems
+}
+
+// agentConfigFieldEnabled reports whether a non-null agent-config value still enables behavior the
+// first phase does not execute. `skills` and `mcps` are lists whose empty form is the editor's
+// "nothing selected" default, and `interactive` is a boolean whose `false` is the same; those are the
+// only fields with a "nothing selected" form, so every other non-null value is enabled. A value of
+// the wrong shape is enabled: the validator refuses by name and does not re-check the schema.
+func agentConfigFieldEnabled(field string, value any) bool {
+	switch field {
+	case "skills", "mcps":
+		list, ok := value.([]any)
+		return !ok || len(list) != 0
+	case "interactive":
+		enabled, ok := value.(bool)
+		return !ok || enabled
+	default:
+		return true
+	}
 }
 
 // workflowUnsupportedConditionConfigs is the list of condition-node configuration Cloud cannot

@@ -375,7 +375,7 @@ export interface CreateWorkflowRunInput {
   name?: string
   /** The exact snapshot to execute, or omit to pin the latest published one. */
   snapshotId?: string
-  /** Kickoff input delivered to the start node. */
+  /** The run's input object: form values keyed by variable name, plus the reserved `input` kickoff text. */
   input?: Record<string, unknown>
 }
 

@@ -79,6 +79,9 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
   缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败，都不会停在 `running` 或报告没有发生的成功。运行进入终态后，Cloud 声明删除
   这次运行的 Workspace。
+- **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
+  命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
+  `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
 不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进。
@@ -108,6 +111,7 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 
 - [工作流由 Cloud 侧调度器执行：WorkflowRun 是执行聚合](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
 - [工作流 agent 节点按执行器槽位引用执行器，图里不再存 agent CLI 与模型 ID](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md)（approved）
+- [工作流会话在初始回合结束后由 Cloud 调度器结束，结束请求有界等待](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261019-workflow-session-end-after-initial-turn.md)
 - [插件资产导入产出已发布快照：资产生命周期不改写快照，运行只冻结 snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow 插件资产由 Cloud 自行取包、逐文档导入为可编辑副本](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）

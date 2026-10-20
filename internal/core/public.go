@@ -52,6 +52,10 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 	if r.Method == "GET" && (r.Path == runPath+"/statistics" || r.Path == runPath+"/model-calls") {
 		return s.sessionModelRead(ctx, r)
 	}
+	workflowRunPath := "/api/v1/tenants/" + r.TenantID + "/workflows/" + r.WorkflowID + "/runs/" + r.RunID
+	if r.Method == "GET" && r.WorkflowID != "" && (r.Path == workflowRunPath+"/statistics" || r.Path == workflowRunPath+"/model-calls") {
+		return s.workflowModelRead(ctx, r)
+	}
 	status := 200
 	var dispatches []dispatchTarget
 	var events []SpaceEvent

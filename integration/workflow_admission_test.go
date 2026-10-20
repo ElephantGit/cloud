@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"slices"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/wanglongan587/cloud/internal/core"
+	"github.com/wanglongan587/cloud/internal/workflowasset"
 )
 
 // agentRunGraph is a start -> agent document whose agent node asks for `slot` (empty means the
@@ -31,7 +33,7 @@ func agentRunGraph(slot string, legacy bool, slots []any) core.Object {
 			core.Object{
 				"id": "start", "type": "workflow", "deletable": false,
 				"position": core.Object{"x": 0, "y": 0},
-				"data":     core.Object{"kind": "start", "title": "开始", "description": ""},
+				"data":     core.Object{"kind": "start", "title": "开始", "description": "", "input": ""},
 			},
 			core.Object{
 				"id": "agent-1", "type": "workflow",
@@ -214,6 +216,75 @@ func TestWorkflowPublishRefusesUnusedAgentConfiguration(t *testing.T) {
 		"graph": agentRunGraph("", false, nil), "version": live.N("version"),
 	}, "", 200)
 	f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-cfg-pub-2", 200)
+}
+
+// TestWorkflowAcceptsDesktopDefaultAgentConfig covers circus#204: the desktop editor's default for an
+// agent node with nothing configured is `skills: []`, `mcps: []`, `interactive: false`, which mean
+// "not enabled" and must not be refused as first-phase-unused configuration. The agent node mirrors a
+// real desktop export (schemaVersion 3, the pre-slot `executor`, `roleId`, and the three defaults),
+// and the document is exercised through both gate entry points — direct publish and workflow asset
+// import — so the acceptance is proven at the freeze point an author actually uses.
+func TestWorkflowAcceptsDesktopDefaultAgentConfig(t *testing.T) {
+	f := setup(t)
+	agentConfig := core.Object{
+		"schemaVersion": 3,
+		"executor":      core.Object{"agentCli": "official/ora-space.codeagentcli", "modelId": "gpt-5"},
+		"roleId":        "Implementer",
+		"skills":        []any{},
+		"mcps":          []any{},
+		"prompt":        "生成一行内容。",
+		"interactive":   false,
+	}
+	nodes := []any{
+		core.Object{"id": "start", "type": "workflow", "data": core.Object{"kind": "start", "title": "开始", "description": ""}},
+		core.Object{"id": "agent-1", "type": "workflow", "data": core.Object{"kind": "agent", "title": "内容生成器", "description": "", "agentConfig": agentConfig}},
+	}
+	edges := []any{core.Object{"id": "e1", "kind": "data", "source": "start", "target": "agent-1"}}
+
+	// Direct publish accepts the editor's default: publishing is the freeze point, and the default
+	// enables nothing.
+	draft := f.call("POST", f.path("/workflows"), core.Object{
+		"name": "Default config", "graph": core.Object{"nodes": nodes, "edges": edges},
+	}, "cfg-default-create", 200).O("resource")
+	f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "cfg-default-pub", 200)
+
+	// The same document imported as a workflow asset is accepted too, with the three defaults kept
+	// exactly as the editor wrote them rather than rewritten or stripped.
+	docJSON, err := json.Marshal(core.Object{"name": "Default Kit", "nodes": nodes, "edges": edges})
+	must(t, err)
+	repo := workflowMarketplace(t, f.root)
+	pkg := workflowPackage(t, map[string]string{"default.json": string(docJSON)})
+	packages := newWorkflowPackages(t, map[string][]byte{"/packages/default-kit-1.0.0.orax": pkg})
+	publishWorkflowRelease(t, repo, "default-kit", "1.0.0", packages.server.URL+"/packages/default-kit-1.0.0.orax", pkg)
+	f.syncMarketplace(t, repo)
+	f.store.WorkflowAssets = workflowasset.NewFetcher(nil, packages.server.Client().Transport)
+	sid := f.defaultSpaceID()
+	f.installWorkflowPlugin(t, sid, "official/default-kit", "")
+	must(t, f.importWorkflowAssets(t))
+	item := f.assetImport(t, sid, "official/default-kit")
+	if item == nil || item.S("state") != "completed" {
+		t.Fatalf("package import = %v", item)
+	}
+	doc := assetDocuments(item)["assets/workflows/default.json"]
+	if doc.S("outcome") != "imported" || doc.S("workflowId") == "" || doc.N("snapshotVersion") != 1 {
+		t.Fatalf("document outcome = %v", doc)
+	}
+	// The stored snapshot keeps the three defaults exactly as the editor wrote them: acceptance is not
+	// normalization, and nothing strips the "not enabled" values on the way in.
+	var stored string
+	must(t, f.store.Pool.QueryRow("SELECT graph::text FROM workflow_snapshots WHERE workflow_id=$1 AND version=1", doc.S("workflowId")).Scan(&stored))
+	var storedGraph core.Object
+	must(t, json.Unmarshal([]byte(stored), &storedGraph))
+	storedAgentConfig := core.Object(storedGraph["nodes"].([]any)[1].(map[string]any)).O("data").O("agentConfig")
+	if skills, ok := storedAgentConfig["skills"].([]any); !ok || len(skills) != 0 {
+		t.Fatalf("stored agentConfig skills = %#v, want []", storedAgentConfig["skills"])
+	}
+	if mcps, ok := storedAgentConfig["mcps"].([]any); !ok || len(mcps) != 0 {
+		t.Fatalf("stored agentConfig mcps = %#v, want []", storedAgentConfig["mcps"])
+	}
+	if interactive, ok := storedAgentConfig["interactive"].(bool); !ok || interactive {
+		t.Fatalf("stored agentConfig interactive = %#v, want false", storedAgentConfig["interactive"])
+	}
 }
 
 // TestWorkflowRunSnapshotIsScopedToItsWorkflow covers the snapshot a run may name: an id belonging to

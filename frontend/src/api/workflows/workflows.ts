@@ -31,6 +31,8 @@ import type {
   GetApiV1TenantsTidWorkflowsParams,
   GetApiV1TenantsTidWorkflowsWfidRuns200,
   GetApiV1TenantsTidWorkflowsWfidRunsParams,
+  GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200,
+  GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams,
   GetApiV1TenantsTidWorkflowsWfidSnapshots200,
   GetApiV1TenantsTidWorkflowsWfidSnapshotsParams,
   GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams,
@@ -42,6 +44,7 @@ import type {
   PostApiV1TenantsTidWorkflowsWfidRunsBody,
   PutApiV1TenantsTidWorkflowsWfidBody,
   PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody,
+  SessionModelStatistics,
   Workflow,
   WorkflowRun,
   WorkflowSnapshot,
@@ -825,6 +828,228 @@ export function useGetApiV1TenantsTidWorkflowsWfidRunsRid<TData = Awaited<Return
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetApiV1TenantsTidWorkflowsWfidRunsRidQueryOptions(tid,wfid,rid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Read-only active-member content-free model HTTP attempts for a WorkflowRun, ascending (startedAt, id). after must identify an attempt owned by this run. Only singleton nonempty limit and after parameters accepted. Request/response bodies, credentials, headers, provider messages and storage paths are never returned. firstOutputMs measures the gateway-observed first effective output, not model TTFT. A started attempt may represent an ongoing request or missing final observation. private, no-store.
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls
+ */
+export const getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls = (
+    tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/model-calls`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryKey = (tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams,) => {
+    return [
+    `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/model-calls`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError = ErrorType<Error>>(tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryKey(tid,wfid,rid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>> = ({ signal }) => getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls(tid,wfid,rid,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && wfid !== null && wfid !== undefined && rid !== null && rid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>>
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    params: undefined |  GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls
+ */
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidModelCalls>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryOptions(tid,wfid,rid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Read-only active-member model statistics for a WorkflowRun. Covers all recorded model-gateway HTTP attempts owned by this WorkflowRun, independently of request-page pagination. The run must belong to the named workflow and be live; any active tenant member who can read the run can read its statistics. This is not a historical request backfill or billing ledger. Each metric exposes its own known/total coverage; absent values remain null, including a run with no observations. Input/cache semantics follow the source protocol; reasoning is an output subset. No query parameters accepted; private, no-store.
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/statistics
+ */
+export const getApiV1TenantsTidWorkflowsWfidRunsRidStatistics = (
+    tid: string,
+    wfid: string,
+    rid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<SessionModelStatistics>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/statistics`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryKey = (tid: string,
+    wfid: string,
+    rid: string,) => {
+    return [
+    `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/statistics`
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError = ErrorType<Error>>(tid: string,
+    wfid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryKey(tid,wfid,rid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>> = ({ signal }) => getApiV1TenantsTidWorkflowsWfidRunsRidStatistics(tid,wfid,rid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && wfid !== null && wfid !== undefined && rid !== null && rid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>>
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidStatistics<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidStatistics<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidStatistics<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/statistics
+ */
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidStatistics<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidStatistics>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidWorkflowsWfidRunsRidStatisticsQueryOptions(tid,wfid,rid,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

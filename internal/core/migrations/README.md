@@ -175,10 +175,10 @@ Controller 契约的字段。只新增，不回填。
 `TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
 `internal/core/model_attempt_workflow_db_test.go`。
 
-## 0044：退役租户级 clone
+## 0045：退役租户级 clone
 
-Workspace 改为从 Git Server 快照 clone 后的切换，不迁移数据。删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留。可重复执行。仍有租户级 clone 的数据库升级见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0044RetiresTenantLevelClonesKeepingWorkspaceClones`。
+Workspace 改为从 Git Server 快照 clone 后的切换，不迁移数据。删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留。可重复执行。仍有租户级 clone 的数据库升级见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0045RetiresTenantLevelClonesKeepingWorkspaceClones`。
 
-## 0045：经 Git 交付的 Revision
+## 0046：经 Git 交付的 Revision
 
 Revision 改为经 Git 交付后的切换，不迁移数据。`revisions` 增加 `delivery_ref`，`revisions_bundle_shape` 换成 `revisions_shape`：`delivery_ref` 为 NULL 时仍是原有的 bundle 形状，非 NULL 时必须是格式正确的 `refs/ora/deliveries/<UUID>` 且不带任何 bundle 列；部分唯一索引 `revisions_delivery_ref` 保证一个交付 ref 只属于一个 Revision。既有 bundle 行不改写，可重复执行。约束对真实行的拒绝见 `integration/agent_run_resume_test.go` 的 `TestRevisionShapeKeepsGitAndBundleRowsApart`。

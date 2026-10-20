@@ -164,7 +164,7 @@ func Document() map[string]any {
 	issueProps["properties"] = obj{"type": "object", "additionalProperties": true}
 	issueProps["labels"] = array(ref("Label"))
 	issueProps["assigneeType"] = enumeration("user", "agent", "team")
-	s["IssueRun"] = resource("id tenantId issueId version executorType executorId externalExecutionId executionContextRef workflowInvocationRef triggerEvidenceKind triggerEvidenceRefId status parentRunId retryOfRunId rerunOfRunId delegatedFromRunId attempt maxAttempts input result error failureReason triggerSummary queuedAt dispatchedAt startedAt completedAt fireAt leaseExpiresAt createdAt updatedAt deletedAt resumeRevisionId", "executionContextRef workflowInvocationRef triggerEvidenceRefId parentRunId retryOfRunId rerunOfRunId delegatedFromRunId result dispatchedAt startedAt completedAt fireAt leaseExpiresAt deletedAt resumeRevisionId")
+	s["IssueRun"] = resource("id tenantId issueId version executorType executorId externalExecutionId executionContextRef workflowInvocationRef triggerEvidenceKind triggerEvidenceRefId status parentRunId retryOfRunId rerunOfRunId delegatedFromRunId attempt maxAttempts input result error failureReason triggerSummary queuedAt dispatchedAt startedAt completedAt fireAt leaseExpiresAt createdAt updatedAt deletedAt resumeRevisionId cancelRequestedAt", "executionContextRef workflowInvocationRef triggerEvidenceRefId parentRunId retryOfRunId rerunOfRunId delegatedFromRunId result dispatchedAt startedAt completedAt fireAt leaseExpiresAt deletedAt resumeRevisionId cancelRequestedAt")
 	runProps := properties(s, "IssueRun")
 	runProps["executorType"] = enumeration("agent", "team", "workflow")
 	runProps["status"] = enumeration("queued", "dispatched", "running", "completed", "failed", "cancelled", "deferred")
@@ -853,6 +853,8 @@ func responseSchema(r router.Route) (schema obj, status string) {
 			"nextCursor":      obj{"type": "integer", "format": "int64", "nullable": true, "description": "The window's last seq, to be sent back as `after`. Null for an empty window."},
 			"prevCursor":      obj{"type": "integer", "format": "int64", "nullable": true, "description": "The window's first seq, to be sent back as `before`. Null for an empty window."},
 		}, "items", "threadState", "idleSince", "nextCursor", "prevCursor", "initiatorUserId", "model", "canAppend", "canEnd"), "200"
+	case strings.HasSuffix(r.Path, "/runs/:rid/cancel"):
+		return object(obj{"cancelRequestedAt": timestamp()}, "cancelRequestedAt"), "202"
 	case strings.Contains(r.Path, "/runs"):
 		if r.Method == "GET" && strings.HasSuffix(r.Path, "/runs") {
 			return object(obj{"items": array(ref("IssueRun")), "nextCursor": str()}, "items", "nextCursor"), "200"
@@ -1197,6 +1199,12 @@ func description(r router.Route) string {
 		// The user-initiated end's own fault vocabulary, stated here rather than in the shared
 		// per-status descriptions that unrelated routes also carry.
 		base += "Ends an agent run's Thread at the user's request, which is what makes the Thread's upper lifecycle reachable from the UI rather than only from an expired idle window or a cancellation. The body is an empty JSON object and any field is 400 unknown_field. Accepted while the Thread is pending, active or idle, answering 202 with the Thread's new state ending; a Thread already ending or ended answers 409 thread_closed. The transition and the EndSession command it releases commit together with the idempotency record, so a failure anywhere in that transaction leaves nothing behind and the same key may be retried as a first request. This endpoint never advances the Thread to ended, never marks a queued turn discarded and never touches the run's phase, status, result or Workspace: ending a Thread asks the session to stop and the session's own terminal state decides what follows. Authorized like a comment: any active tenant member who can read the Issue; a missing or mismatched tenant, Issue or run, a soft-deleted run, a run that is not an agent run, and a run whose session has not been declared yet are all 404 not_found. "
+	}
+	if strings.HasSuffix(r.Path, "/runs/:rid/cancel") {
+		// The cancellation request's own fault vocabulary, stated here rather than in the shared
+		// per-status descriptions that unrelated routes also carry. The path is spelled out because
+		// the task-conversation message cancel also ends in `/cancel` and has its own contract.
+		base += "Records the user's cancellation request on a live agent run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never moves the run's phase, status, Thread or Workspace, never settles a Revision and never deletes anything — the run's session shuts down on its own evidence, its Thread reaches ending on the next reconciliation, and delivery and release proceed as they otherwise would. Accepted for a run that is queued, or in provisioning, starting or running; a run that has already left those phases answers 409 run_not_cancellable, because its session is over and what remains is delivery and release rather than a live conversation. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since moved on, so the recorded instant is never replaced. Authorized like ending the Thread, except that on a run carrying a model Binding only that Binding's initiator and the tenant's administrators may cancel: an active tenant member who is neither answers 403 model_run_cancel_forbidden. A missing or mismatched tenant, Issue or run, a soft-deleted run, and a run that is not an agent run are all 404 not_found. "
 	}
 	if strings.HasSuffix(r.Path, "/thread") {
 		// The Thread GET's own fault vocabulary and cursor semantics, stated here rather than in the

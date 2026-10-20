@@ -241,11 +241,11 @@ async function reviewAndConfirm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '确认执行' }))
 }
 
-/** Renders the composer and confirms once against a server that answers the field-divergence 409. */
-async function confirmIntoFieldsChanged() {
+/** Renders the composer and confirms once against a server that refuses the submission. */
+async function confirmIntoRejection(code: string, status: number) {
   server.use(
     http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
-      HttpResponse.json({ code: 'workflow_version_fields_changed' }, { status: 409 }),
+      HttpResponse.json({ code, params: { field: 'prompt' } }, { status }),
     ),
   )
   const user = userEvent.setup()
@@ -666,22 +666,11 @@ describe('WorkflowInteractionComposer', () => {
     expect(formRead).not.toHaveBeenCalled()
   })
 
-  it('explains how to resolve workflow version field divergence after confirm', async () => {
-    serveComposer({ descriptor: launchDescriptor })
-    const { onConfirmed } = await confirmIntoFieldsChanged()
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。',
-    )
-    expect(screen.queryByText('workflow_version_fields_changed')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '返回修改' })).toBeEnabled()
-    expect(onConfirmed).not.toHaveBeenCalled()
-  })
-
   it('keeps the same interaction when a rejected confirm is retried after switching snapshot', async () => {
     const { comment, confirm } = serveComposer({ descriptor: launchDescriptor })
     serveOldSnapshot()
-    const { user, onConfirmed } = await confirmIntoFieldsChanged()
-    await screen.findByText('所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。')
+    const { user, onConfirmed } = await confirmIntoRejection('required_field_missing', 400)
+    await screen.findByText('确认失败，请重试。')
     await user.click(screen.getByRole('button', { name: '返回修改' }))
     await user.click(selectTrigger('运行版本'))
     await user.click(await screen.findByRole('option', { name: 'v2 · 发布 2' }))

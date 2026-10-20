@@ -93,11 +93,10 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   - Frontend validation is only for user experience. On confirm Cloud resolves the target **again** and
     validates the submitted values against the form of **the published version being confirmed**; a
     workflow with no published version cannot be confirmed, because an unpublished draft cannot run.
-  - Cloud still compares the live draft's fields with the selected published version's fields. A
-    difference rejects confirm and lists the changed fields (`409 workflow_version_fields_changed`),
-    even when the frontend has rendered the selected snapshot's form. The frontend asks the user to
-    publish the current draft or choose another version; reading the snapshot's form does not remove
-    this check.
+  - Cloud validates against the selected published version's own fields alone, no longer comparing
+    them with the live draft. Choosing an older version runs that snapshot: a submission that matches
+    its form is accepted even when its fields differ from the current draft, and a missing required
+    field or a field that version never declared is refused by that version's schema.
   - The submitted values are kept as the interaction's input and the executed version is frozen into the
     run input, so the run still knows which version it executed after the workflow is edited or
     published again.

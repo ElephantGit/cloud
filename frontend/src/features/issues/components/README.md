@@ -33,7 +33,7 @@ Workflow 确认从创建 interaction 开始锁住重复提交、返回修改与�
 
 初始表单按 `formRef + issueId` 读取活稿。只有 `snapshotId` select 的全部选项都属于该 Workflow 的已发布快照时，才识别为平台版本选择器；列表读取完成前不开放表单，失败可重试。作者自定义的同名文本字段或含自定义选项的 select 仍是普通输入。
 
-用户切换平台版本选择器时，按 tenant/workflow/snapshot/issue 读取既有 snapshot form 接口，清空旧字段草稿并初始化新版本默认值；选择器保留响应回显的 snapshotId，不采用它仍指向最新版本的默认值。加载或失败期间不能审阅旧字段，失败可重试。读取表单不代表服务端准入通过，Confirm 的 `workflow_version_fields_changed` 门禁保持不变；收到该拒绝时，界面提示所选版本字段与当前草稿不一致，并引导先发布草稿或选择其他版本。
+用户切换平台版本选择器时，按 tenant/workflow/snapshot/issue 读取既有 snapshot form 接口，清空旧字段草稿并初始化新版本默认值；选择器保留响应回显的 snapshotId，不采用它仍指向最新版本的默认值。加载或失败期间不能审阅旧字段，失败可重试。读取表单不代表服务端准入通过，但 Confirm 只按所选版本自身的字段校验，不再与活稿比较：选中的旧版本哪怕字段和当前草稿不同，也按它自己的表单执行，所选版本缺必填字段或收到它未声明的字段时由服务端按该版本拒绝。
 
 历史运行没有 WorkflowRun 引用时，确认行仍显示 IssueRun 状态，不请求 WorkflowRun，也不显示运行详情链接；有关联的运行始终以 WorkflowRun 状态为准。
 

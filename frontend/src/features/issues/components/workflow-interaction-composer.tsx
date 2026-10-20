@@ -23,7 +23,6 @@ import type {
   FormField,
   FormValues,
 } from '@/features/issues/types'
-import { faultCode } from '@/lib/api-client'
 
 /** Seeds the editable values from the descriptor's declared defaults. */
 function seedValues(descriptor: FormDescriptor, snapshotId?: string): FormValues {
@@ -45,13 +44,6 @@ function isSnapshotSelector(field: FormField, publishedIds: string[]): boolean {
     !!field.options?.length &&
     field.options.every((option) => publishedIds.includes(option.value))
   )
-}
-
-function confirmFailure(error: unknown): string {
-  if (faultCode(error) === 'workflow_version_fields_changed') {
-    return '所选版本的字段与当前草稿不一致，请先发布当前草稿或选择其他版本。'
-  }
-  return '确认失败，请重试。'
 }
 
 /** Required fields the user has not filled yet — the only client-side gate on Review (Issue collaboration D9). */
@@ -385,7 +377,7 @@ function useWorkflowSubmission({
   return {
     submit,
     isPending: submission.isPending || submission.isSuccess,
-    errorMessage: submission.isError ? confirmFailure(submission.error) : undefined,
+    errorMessage: submission.isError ? '确认失败，请重试。' : undefined,
   }
 }
 

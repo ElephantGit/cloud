@@ -69,8 +69,8 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 - **确认**（`POST .../issues/:iid/interactions/:ixid/confirm`）是唯一把工作流交互变成执行意图的转换：
   - 前端校验只是体验，Cloud 在确认时**重新**解析目标，并按**被确认的那个已发布版本**的表单校验提交的值；没有任何已发布版本的
     工作流不能确认，因为不能执行未发布的草稿。
-  - Cloud 仍比较当前活稿与所选发布版本的字段；即使前端已展示所选快照的表单，两者不一致时仍拒绝确认并列出变化的字段
-    （`409 workflow_version_fields_changed`）。前端提示先发布当前活稿或选择其他版本；按快照读取表单并未取消这条检查。
+  - Cloud 只按所选发布版本自身的字段校验，不再与当前活稿比较。选择旧版本就是按那份快照执行：即使它的字段与活稿不同，
+    提交符合该版本表单即可通过；缺少该版本必填字段或提交它未声明的字段时，按该版本的 schema 拒绝。
   - 提交的值作为交互的输入保存，被执行的版本冻结进运行输入；运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
   - 同一事务里创建一个 WorkflowRun 和一个 IssueRun，IssueRun 的 `workflowInvocationRef` 指向该 WorkflowRun（与租户一起的复合外键，且唯一）；直接运行、manual 工作流 IssueRun 与确认共用同一个创建函数。已关联的 IssueRun 不交给 `ExecutionDispatcher`。
   - 用 `run_id IS NULL` 的比较并交换认领交互，重复确认返回 `409 interaction_already_confirmed`；对非表单交互确认返回

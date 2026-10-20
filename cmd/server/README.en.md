@@ -16,6 +16,10 @@ The production entrypoint composes configuration, databases, HTTP/gRPC adapters 
 
 `main.go` owns loops with one cancellation context and WaitGroup: optional catalog sync and workflow asset imports, Agent dispatch/startup, blocked windows, Thread end/cancellation, delivery/release recovery and Workflow scheduling. Core methods still decide state; loops do not make process-local state authoritative.
 
-On SIGINT/SIGTERM or a serving failure, cancel work, drain HTTP/gRPC, join loops, then close the database and flush logs. HTTP shutdown is bounded to 10 seconds; startup failure also reclaims already-started tasks.
+Cleanup differs between shutdown and failure paths:
+
+- Signal-exit branch (SIGINT/SIGTERM): cancel background tasks and send the Controller drain signal; stop gRPC gracefully, forcing it to stop at the shared 10-second shutdown deadline, then call HTTP Shutdown with that same deadline, join background loops, close the database and flush logs.
+- Serving-failure branch: cancel background tasks and join the loops before returning, then close the database and flush logs. This branch does not call HTTP Shutdown or gRPC Stop/GracefulStop and does not guarantee that the other service's in-flight requests drain.
+- Startup failure: after background loops have started, errors from `wireRepository`, `net.Listen`, `Control.TLS` or `NewSecure` return directly without joining the loops. Registered defers run in reverse order, closing the database before cancelling the context; cleanup of already-started tasks is not guaranteed.
 
 See [Deployment](../../docs/operations/deployment.en.md) and [Configuration](../../docs/operations/configuration.en.md) for operations, and [IssueRun](../../docs/agent-runs/issue-runs.en.md), [Workflows](../../docs/workflows/workflows.en.md) and [External Git line](../../docs/repositories/external-git.en.md) for execution semantics. Local tests verify composition boundaries.

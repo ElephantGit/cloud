@@ -52,6 +52,10 @@ Claude Code 2.1.303 的 Messages 兼容面如下；允许的 beta 标记由
 [协议策略](../../internal/modelgateway/anthropic.go)集中定义。未知或重复的 Anthropic 协议头值被拒绝，
 客户端诊断头、会话标识及 browser-access 标记不会转发到供应商。
 
+同一固定 CLI 通过 Agent SDK 0.3.303 / ACP adapter 0.94.0 创建查询时还会声明
+`structured-outputs-2025-12-15` 与 `thinking-display-updates-2026-08-18`；它们同样在受限白名单中。
+升级版本仍须先验证实际协议面，不能按客户端传入内容自动放开。
+
 | 方法与路径 | 查询 | 行为 |
 |---|---|---|
 | POST /runtime/anthropic/v1/messages | 无，或精确 beta=true | 按冻结模型转发，替换认证，保留受支持版本/beta 协议头 |

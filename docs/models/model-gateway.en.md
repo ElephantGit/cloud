@@ -79,6 +79,11 @@ once in the [protocol policy](../../internal/modelgateway/anthropic.go). Unknown
 Anthropic protocol-header values fail. Client diagnostic headers, session identifiers and the
 browser-access marker never reach the supplier.
 
+The same pinned CLI also declares `structured-outputs-2025-12-15` and
+`thinking-display-updates-2026-08-18` when queries are created through Agent SDK 0.3.303 /
+ACP adapter 0.94.0. Both are included in the bounded whitelist. An upgrade must verify its
+observed protocol surface before extending the policy.
+
 | Method and path | Query | Behavior |
 |---|---|---|
 | POST /runtime/anthropic/v1/messages | None, or exactly beta=true | Forward the frozen model, replace authentication, preserve supported version/beta headers |

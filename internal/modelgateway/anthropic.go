@@ -20,6 +20,8 @@ var claudeBetaHeaders = map[string]bool{
 	"prompt-caching-scope-2026-01-05":          true,
 	"mid-conversation-tool-changes-2026-07-01": true,
 	"effort-2025-11-24":                        true,
+	"structured-outputs-2025-12-15":            true,
+	"thinking-display-updates-2026-08-18":      true,
 }
 
 // runtimeModelRoute accepts only inference and the frozen binding's local model listing.

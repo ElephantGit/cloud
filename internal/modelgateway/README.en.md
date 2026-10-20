@@ -25,7 +25,7 @@ SSE events flush continuously; error events inside HTTP200 are sanitized too. Re
 the upstream and a blocked downstream write. Each watcher has one request owner, cancellation and a join.
 
 The Anthropic surface targets Claude Code 2.1.303. POST messages accepts no query or exactly
-beta=true; the version is fixed to 2023-06-01 and beta tokens are limited to the seven in
+beta=true; the version is fixed to 2023-06-01 and beta tokens are limited to the nine in
 anthropic.go. Duplicate or unknown tokens fail. Other client headers are dropped; the CLI's
 browser-access marker is validated and discarded. GET models (no query or limit=1000) rechecks
 current authorization and returns only the frozen model without an upstream call, key decryption

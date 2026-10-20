@@ -812,6 +812,74 @@ func TestNormalizeWorkflowGlobals(t *testing.T) {
 	}
 }
 
+// TestNormalizedSnapshotGraphText pins the importer's byte-for-byte contract: the snapshot text is
+// the caller's raw document unless normalizeWorkflowGlobals rewrote a legacy file or array[file]
+// value, and only that rewrite is re-encoded.
+func TestNormalizedSnapshotGraphText(t *testing.T) {
+	cases := []struct {
+		name    string
+		graph   Object
+		raw     string
+		rewrite bool
+	}{
+		{
+			name: "a legacy file value is re-encoded",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.report", "valueType": "file", "value": "docs/report.md"},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.report","valueType":"file","value":"docs/report.md"}]}`,
+			rewrite: true,
+		},
+		{
+			name: "a legacy array[file] value is re-encoded",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.reports", "valueType": "array[file]", "value": []any{"docs/a.md", "docs/b.md"}},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.reports","valueType":"array[file]","value":["docs/a.md","docs/b.md"]}]}`,
+			rewrite: true,
+		},
+		{
+			name: "an already-canonical file value keeps the raw text",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.report", "valueType": "file", "value": Object{"kind": "workspace_file", "path": "docs/report.md"}},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.report","valueType":"file","value":{"kind":"workspace_file","path":"docs/report.md"}}]}`,
+			rewrite: false,
+		},
+		{
+			name: "a non-file global keeps the raw text",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "g.region", "valueType": "string", "value": "eu"},
+			}},
+			raw:     `{"globalVariables":[{"name":"g.region","valueType":"string","value":"eu"}]}`,
+			rewrite: false,
+		},
+		{
+			name:    "a graph without globals keeps the raw text",
+			graph:   Object{"nodes": []any{}},
+			raw:     `{"nodes":[]}`,
+			rewrite: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizedSnapshotGraphText(decodeGraph(t, tc.graph), tc.raw)
+			if !tc.rewrite {
+				if got != tc.raw {
+					t.Fatalf("normalizedSnapshotGraphText = %s, want the raw text unchanged", got)
+				}
+				return
+			}
+			if got == tc.raw {
+				t.Fatal("a legacy file value was not rewritten")
+			}
+			if !strings.Contains(got, `"kind":"workspace_file"`) {
+				t.Fatalf("normalizedSnapshotGraphText = %s, want a workspace_file reference", got)
+			}
+		})
+	}
+}
+
 // TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet pins the accepted set to desktop's
 // `ComparisonOperator::parse` from both sides. A spelling only one side knows is the divergence the
 // publish gate exists to prevent: Cloud would admit a document desktop then reads as an operator it

@@ -176,6 +176,20 @@ func normalizeWorkflowGlobals(graph Object) Object {
 	return graph
 }
 
+// normalizedSnapshotGraphText returns the text to freeze into a snapshot: the caller's verbatim
+// document, unless normalizeWorkflowGlobals actually rewrote a legacy file or array[file] value, in
+// which case the normalized graph is re-encoded. Keeping the raw text when nothing changed preserves
+// the importer's byte-for-byte document storage: re-encoding a document whose numbers round-trip only
+// through float64 could corrupt literals jsonb can still store, so the raw bytes are kept unless the
+// snapshot must carry canonical file references. The graph must already pass validateWorkflowGraph.
+func normalizedSnapshotGraphText(graph Object, raw string) string {
+	before := jsonText(graph)
+	if after := jsonText(normalizeWorkflowGlobals(graph)); after != before {
+		return after
+	}
+	return raw
+}
+
 // validateWorkflowGlobals refuses global declarations the run could not honor, mirroring desktop's
 // into_global_variables so a graph Cloud publishes is a graph desktop accepts. Each problem names the
 // global it concerns. The rules, in order: the list itself must be a list, every entry an object, the

@@ -118,8 +118,9 @@ func insertWorkflowSnapshot(t *transaction, w Object, name string) Object {
 	return insertSnapshotGraph(t, w, name, jsonText(w.O("graph")))
 }
 
-// insertSnapshotGraph is the one snapshot write. The graph text is passed separately because the
-// importer stores the package document verbatim instead of re-encoding the graph it just parsed.
+// insertSnapshotGraph is the one snapshot write. The graph text is passed separately so a caller can
+// freeze a graph it did not build from the live document: the importer passes the package document
+// verbatim, re-encoding it only when normalizeWorkflowGlobals rewrote a legacy file reference.
 func insertSnapshotGraph(t *transaction, w Object, name, graph string) Object {
 	next := t.one("SELECT COALESCE(MAX(version),0)+1 AS version FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2", w.S("tenantId"), w.S("id")).N("version")
 	id := newID()

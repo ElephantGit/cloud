@@ -76,9 +76,11 @@ whose `input.workflowSnapshotId` matches the linked execution. Linked IssueRuns 
 Dispatcher, including development doubles.
 
 `projectWorkflowRunToIssueRun` projects authoritative state, timestamps and errors inside the caller's
-transaction. Output summaries are `system` `run.message` activities, never workflow-authored comments.
-PostgreSQL tests call this function directly. Scheduler calls are not yet wired, so the linked IssueRun
-still stays `queued`. Freezing execution identity and slot bindings does not establish real Node
+transaction. Every actual status-update path calls it only after affecting a row; projection contract
+conflicts roll back the whole transaction. `awaiting_input` and direct runs without a linked IssueRun
+leave collaboration records unchanged. Output summaries are `system` `run.message` activities bounded
+to 20000 bytes of valid UTF-8, never workflow-authored comments.
+Freezing execution identity and slot bindings does not establish real Node
 acceptance.
 
 ## Session Dashboard reads

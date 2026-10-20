@@ -81,7 +81,10 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   这次运行的 Workspace。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
-不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进；把 WorkflowRun 状态投影回 IssueRun 的调用点还没有接入调度器，在此之前 IssueRun 保持 `queued`（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。
+不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进。
+WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时间和错误投影回关联的 IssueRun；未更新到行时不投影，契约冲突使事务回滚。
+`awaiting_input` 不改变 IssueRun，未关联 IssueRun 的直接运行也不产生协作记录。输出摘要作为 `system` 的 `run.message` 活动写入，
+最多 20000 字节且保持合法 UTF-8，不创建工作流作者评论（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。
 
 ## 插件资产导入
 

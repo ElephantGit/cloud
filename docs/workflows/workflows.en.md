@@ -114,7 +114,12 @@ seconds):
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.
-A workflow IssueRun is linked through `workflow_invocation_ref` to the WorkflowRun created in the same transaction, and the scheduling loop above advances that run. Projecting WorkflowRun status back onto the IssueRun is not yet called from the scheduler, so until then the IssueRun stays `queued` (see
+A workflow IssueRun is linked through `workflow_invocation_ref` to the WorkflowRun created in the same transaction,
+and the scheduling loop above advances that run. After a WorkflowRun status update affects a row, its state,
+timestamps and errors are projected onto the linked IssueRun in that same transaction. An update affecting no rows
+does not project; contract conflicts roll back the transaction. `awaiting_input` leaves the IssueRun unchanged,
+and direct runs without a linked IssueRun create no collaboration records. Output summaries are `system`
+`run.message` activities, bounded to 20000 bytes of valid UTF-8, never workflow-authored comments (see
 [Issue collaboration](../collaboration/interactions.en.md#ports-issues-own-only-the-consuming-side-contract)).
 
 ## Plugin asset import

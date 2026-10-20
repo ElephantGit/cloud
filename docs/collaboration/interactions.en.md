@@ -126,6 +126,12 @@ Agent runs do not go through `ExecutionDispatcher`; Cloud's own scheduling carri
 [Agent IssueRuns](../agent-runs/issue-runs.en.md)). Runs started directly from a workflow are a different
 aggregate, WorkflowRun; see [Workflows](../workflows/workflows.en.md).
 
+For a linked workflow IssueRun, actual WorkflowRun status updates advance it in the same transaction:
+updates affecting no rows do not project, `awaiting_input` leaves it unchanged, and contract conflicts
+roll back the transaction. Output summaries are `system` `run.message` activities bounded to 20000
+bytes of valid UTF-8, never workflow-authored comments. Direct workflow runs without a linked IssueRun
+create none of these collaboration records.
+
 **Development fixtures.** `collaboration.development_fixtures: true` (environment variable
 `CLOUD_COLLABORATION_DEVELOPMENT_FIXTURES`) installs the in-process doubles from `internal/collab` on the
 Store: Agent and team targets with fixed IDs, a deterministic context builder (at most the 10 latest

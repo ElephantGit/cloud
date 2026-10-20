@@ -72,8 +72,9 @@ Start 与全局变量；平台字段保留在 IssueRun，`input.workflowSnapshot
 有引用的 IssueRun 不进入 legacy Dispatcher；开发 mock 的完成状态不能替代 WorkflowRun 状态。
 
 `projectWorkflowRunToIssueRun` 在调用方事务内从 WorkflowRun 投影状态、时间及错误，
-输出摘要写为 `system` 的 `run.message` 活动，不创建 workflow 作者评论。
-该函数已由 PostgreSQL 测试直接调用；调用点尚未接入调度器，因此关联的 IssueRun 仍保持 `queued`。
+各实际状态更新路径仅在更新到行后调用它；投影契约冲突使整个事务回滚。
+`awaiting_input` 和没有关联 IssueRun 的直接运行不改变协作记录。
+输出摘要写为 `system` 的 `run.message` 活动，最多 20000 字节且保持合法 UTF-8，不创建 workflow 作者评论。
 创建身份和槽位绑定的接入不代表实际 Node 联合验收已经完成。
 
 ## 会话 Dashboard 读取

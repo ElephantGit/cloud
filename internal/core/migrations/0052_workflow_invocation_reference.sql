@@ -7,12 +7,11 @@ SET status = 'failed',
 WHERE executor_type = 'workflow' AND workflow_invocation_ref IS NULL
   AND status NOT IN ('completed', 'failed', 'cancelled');
 
-ALTER TABLE workflow_runs
-  ADD CONSTRAINT workflow_runs_id_tenant_uniq UNIQUE (id, tenant_id);
-
 ALTER TABLE issue_runs
   ADD CONSTRAINT issue_runs_workflow_invocation_fk
-    -- workflow_invocation_ref had no writer before this migration, so dangling references are not expected and the FK fails closed.
+    -- The composite reference targets workflow_run_tenant_identity, the tenant-scoped UNIQUE(id,
+    -- tenant_id) that 0044 already added; no new constraint is needed. workflow_invocation_ref had
+    -- no writer before this migration, so dangling references are not expected and the FK fails closed.
     FOREIGN KEY (workflow_invocation_ref, tenant_id) REFERENCES workflow_runs(id, tenant_id),
   ADD CONSTRAINT issue_runs_workflow_invocation_uniq UNIQUE (workflow_invocation_ref),
   ADD CONSTRAINT issue_runs_workflow_invocation_shape

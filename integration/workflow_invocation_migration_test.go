@@ -40,7 +40,6 @@ func assertInvocationConstraintValidation(t *testing.T, pool *sql.DB) {
 		{"issue_runs", "issue_runs_workflow_invocation_shape", true},
 		{"issue_runs", "issue_runs_workflow_invocation_fk", true},
 		{"issue_runs", "issue_runs_workflow_invocation_uniq", true},
-		{"workflow_runs", "workflow_runs_id_tenant_uniq", true},
 	} {
 		var validated bool
 		must(t, pool.QueryRow(`SELECT convalidated FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2`, constraint.table, constraint.name).Scan(&validated))

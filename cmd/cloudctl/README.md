@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`cloudctl` 是 Ora Cloud 受限的运维管理工具。它在公共 API 调用路径之外运行，使用数据库操作员凭据管理数据库迁移以及初始租户和管理员的引导配置。
+`cloudctl` 是 Ora Cloud 受限的运维管理工具。它在公共 API 调用路径之外运行，使用数据库操作员凭据管理数据库迁移、初始租户和管理员的引导配置，以及残留资源的显式处置。
 
 ## 命令与职责
 
@@ -26,9 +26,41 @@ cloudctl -config <path> -command bootstrap -name '<tenant-name>' -source '<idp-s
 - 返回包含 `tenantId` 和 `userId` 的 JSON 数据载荷。
 
 Git 凭据的提交与引用管理见 [外部 Git 线](../../docs/repositories/external-git.md)。
+
+### `residual`
+
+全局 `-config` 必须放在 `residual` 前，动作参数放在动作后。所有动作都必须提供 `--tenant-id`。查询及业务命令不需要 DDL 权限；受控主机和数据库凭据决定谁能使用这个入口。core 取 PostgreSQL `session_user` 作为认证主体；可选 `--operator-label` 只是人工自述，不能选择或覆盖认证主体。CLI 不接收数据库密码参数，沿用现有配置加载方式。
+
+```sh
+cloudctl -config <path> residual list --tenant-id <tenant> --project-id <project> --limit 100
+cloudctl -config <path> residual get --tenant-id <tenant> --workspace-id <workspace>
+cloudctl -config <path> residual get --tenant-id <tenant> --intent-id <intent>
+```
+
+- `list` 支持 `--project-id`、`--run-id`、`--workspace-id`、`--operation-id`、`--reclaim-id` 相交过滤，以及 `--limit`（默认 100）和 `--after`。返回 `items/nextCursor`；operation 过滤可命中 D8 原 failed delete 或当前绑定的删除操作。
+- `get` 接受一个根/从属 `--intent-id`，或精确的 `--run-id`、`--workspace-id`、`--reclaim-id`。原资源选择器可用其他资源 ID 进一步限制范围；意图选择器不能混用资源选择器。查询返回审计、目标证据和 `openTargets`，供外部确认引用。
+
+终止和删数据是两次独立命令，各自需要 reason、幂等 key 和真实确认。`terminate` 至少指定 Run 或 Workspace；提供的其他 ID 必须属于同一个原资源。D8 还必须提供原 failed delete 的 `--operation-id`。Project/tenant 不能作为批量写入范围。
+
+```sh
+cloudctl -config <path> residual terminate --tenant-id <tenant> --run-id <run> --workspace-id <workspace> --reason 'operator abandoned execution' --key <terminate-key> --impact-confirmed
+cloudctl -config <path> residual delete-data --tenant-id <tenant> --intent-id <root-intent> --reason 'delete retained data' --key <new-delete-key> --data-delete-confirmed
+```
+
+`terminate` 登记终止授权，默认保留数据；命令受理不代表沙盒已经终止。只有每个目标都有真实终止及迟到 ensure 已被封闭的双确认，根意图才可成功并报告 `terminated_data_retained`。后续 `delete-data` 只接受这个已完成的根意图，单独登记从属意图和唯一删除操作；实际删除确认后才能报告 `released`。它不接受裸 Workspace 删除，也不以外部确认代替真实终止证据。
+
+无法由系统确认的未完成意图可通过下列命令显式转移剩余责任。先从 `get` 读取 `openTargets`，为每个未完成目标各提供一次 `--external-fact`；键必须是原样的 `sandbox:<id>` 或 `data:<workspace-id>`，值是工单或其他外部处置事实引用。重复目标、空引用、空说明及未确认责任转移会被拒绝；core 继续核对是否遗漏目标。
+
+```sh
+cloudctl -config <path> residual confirm-external --tenant-id <tenant> --intent-id <unfinished-intent> --reason 'external disposal' --key <external-key> --evidence-note 'host decommissioned; data responsibility accepted' --external-fact 'sandbox:<id>=ticket-123' --external-fact 'data:<workspace-id>=ticket-456' --responsibility-transferred
+```
+
+外部确认只接受已存在且未完成的意图，保存独立的 `externally_confirmed` 处置，不制造 `terminated`、`lateEnsureFenced` 或 `removed` 物理证据，不授权同卷复用。幂等 key 在租户内跨写动作唯一：相同输入返回同一责任的当前进度；同键改动作、目标、reason 或确认返回 `idempotency_conflict`。
+
 ## 边界与不变量
 
-- **部署边界**：`cloudctl` 不通过 HTTP 暴露，也不由 server 守护进程调用。它必须能够直接连接 PostgreSQL，并拥有 Schema 迁移权限。
+- **部署边界**：`cloudctl` 不通过 HTTP 暴露，也不由 server 守护进程调用。它必须能够直接连接 PostgreSQL；只有迁移命令需要 Schema 迁移权限。残留管理不新增 tenant admin/member 的公共权限，隐藏 Run Workspace 的公开 HTTP 入口继续拒绝访问。
 - **结构化输出**：所有命令执行结果均以结构化 JSON 格式输出到 `stdout`，错误信息输出到 `stderr`，便于与 CI/CD 自动化部署流水线集成。
+- **错误与凭据**：残留命令保留 core 的稳定 Fault code；未知基础设施错误仅输出 `internal_error`，配置或连接失败输出安全的通用 code，不输出连接串或密码。参数错误为 `invalid_cli_arguments`；`--impact-confirmed=false` 等同于未确认。
 
 参见 [cmd 入口总览](../README.md)、[数据库迁移目录](../../internal/core/migrations/README.md) 与 [内部凭据与服务信任](../../docs/identity/authentication.md)。

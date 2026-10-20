@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// executionWorkLiveRuns excludes business-closed IssueRuns without discarding their recovery
+// evidence. The execution API also serves unphased callers; only deletion or the lifecycle's
+// release/done stages revoke their ability to register new work. Claim and dispatch apply the same
+// predicate, but only to work owned by an IssueRun: workflow work lives in workflow_runs.
+const executionWorkLiveRuns = "SELECT id FROM issue_runs WHERE deleted_at IS NULL AND (phase IS NULL OR phase NOT IN ('releasing','done'))"
+
 // EnqueueExecutionWork releases one Agent session or Revision delivery for Controllers to claim.
 // Repeating the same unregistered input returns the original item. A different input conflicts.
 func (s *Store) EnqueueExecutionWork(ctx context.Context, runID, kind string, input, target Object, availableAt time.Time) (Object, error) {
@@ -123,10 +129,15 @@ func claimWorkItem(t *transaction) Object {
 	// The alias is deliberate rather than coalescing over run_id: the row is serialized with
 	// row_to_json, which keeps both copies of a repeated column name, and which one the decoder ends
 	// up with is not something this query should depend on.
+	//
+	// The eligibility fence covers IssueRun-owned work only. Workflow work leaves run_id NULL and its
+	// run lives in workflow_runs, so joining it to the issue_runs predicate would hide every workflow
+	// item from the queue.
 	work := t.one(`SELECT ew.*, coalesce(ew.run_id, ew.workflow_run_id) AS claimed_run_id
 		FROM execution_work ew
 		WHERE execution_id IS NULL AND available_at<=clock_timestamp()
 		  AND NOT EXISTS(SELECT 1 FROM agent_run_residuals ar WHERE ar.run_id=ew.run_id)
+		  AND (ew.run_id IS NULL OR ew.run_id IN (` + executionWorkLiveRuns + `))
 		ORDER BY created_at,id LIMIT 1`)
 	if work != nil && (request == nil || work.S("createdAt") < request.S("createdAt")) {
 		return Object{"work": work}

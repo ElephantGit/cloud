@@ -121,6 +121,12 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
 
 - `ClaimWork` 是**纯读**：返回最早的一个可领取的工作项，归属在 `RecordDispatch` 的事务里才决定，所以 Controller 在领取和
   登记之间崩溃不会留下需要恢复的东西。
+- 属于 IssueRun 的会话与交付工作（工作项带 `run_id`）在其 Run 进入 `releasing`、`done` 或被软删除后，`ClaimWork`
+  跳过这些未登记工作；有 residual 的 Run 也不参与领取。WorkflowRun 的会话工作带 `workflow_run_id`，不受 IssueRun
+  收尾资格约束，仍可领取和登记。新 `RecordDispatch` 在与业务结算共用的事务锁内重新核验 Run 资格与 residual，结算前的
+  旧领取快照不能再登记会话或交付。工作行与执行记录仍保留；已有执行继续走原有幂等、查询和结果接管路径，仍受各自的
+  residual 等检查约束。退出领取队列不证明 Node 已终止或 Workspace 已物理删除（见
+  [Agent 运行收尾](../agent-runs/issue-runs.md#阶段)）。
 - `RecordDispatch` 在派发之前登记执行：Cloud 而不是 Controller 决定输入和目标 Node，登记时核对输入与操作或工作项冻结的输入
   一致、目标就是当前 Node、没有未决的同类执行。同一执行、同样输入的重放返回原登记，矛盾的输入返回冲突。
 - `TakeOverNodeEvent` 按执行身份和**连续序号**接管 Node 事件并保存收据，重复事件必须与原收据逐字节一致；会话和交付的终态事件

@@ -52,6 +52,12 @@ Cloud in the transaction that takes over the previous phase's evidence.
   [Bounded abandonment of a blocked creation](startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)).
 - **`done` does not mean the run Workspace was deleted**; only a successful delete operation does (see
   [the delete-side limit](#limits)).
+- Once a Run enters `releasing` or `done`, or is soft-deleted, `ClaimWork` no longer returns its
+  unregistered session and delivery work, so stale work cannot block later runs. A new `RecordDispatch`
+  rechecks eligibility under the business transaction lock; a claim taken before settlement cannot
+  bypass it. Work and execution records remain, and existing executions retain their original identity
+  and recovery paths with their existing checks. This does not mean the Node has terminated or the
+  Workspace has been reclaimed. See the [Controller contract](../runtime/controller-integration.en.md#services).
 
 A run Workspace belongs to exactly this run (`workspaces.issue_run_id` and `issue_runs.workspace_id`
 reference each other uniquely; a WorkflowRun's run Workspace likewise belongs only to it, see

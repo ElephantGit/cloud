@@ -32,7 +32,12 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		copyRequest.verification = prepared
 		r = &copyRequest
 	}
-	out, err := s.transact(ctx, func(t *transaction) Object {
+	out, err := s.transact(ctx, func(t *transaction) (response Object) {
+		defer func() {
+			if t.residualFactConflict && response != nil {
+				response["residualFactConflict"] = true
+			}
+		}()
 		if r.Action == "access" || r.Action == "admit" {
 			require(r.Service.Role == "controller", 403, "service_forbidden")
 			if r.Action == "admit" || r.Body.S("action") == "execute" {
@@ -54,6 +59,10 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 			return cloneCommand(t, r)
 		}
 		leaseValid(t, r)
+		t.residualFactSource = Object{
+			"kind": "controller", "holderId": r.Service.Subject,
+			"epoch": r.Body.N("epoch"), "submissionId": r.SubmissionID,
+		}
 		refreshRuntimeControls(t)
 		if r.Action == "effect_permit" {
 			return effectPermit(t, r)
@@ -87,6 +96,9 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		// return the recorded response, not fail the version check it already passed.
 		return submitted(t, r, func() Object { return operationCommand(t, r) })
 	})
+	if err == nil && out.B("residualFactConflict") {
+		return nil, &Fault{Status: 409, Code: "residual_fact_conflict", Params: Object{}}
+	}
 	return out, err
 }
 
@@ -285,21 +297,18 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 	e := t.one("SELECT * FROM external_effects WHERE id=$1 AND operation_id=$2", r.EffectID, o.S("id"))
 	require(e != nil, 404, "not_found")
 	require(e.S("kind") != "plugin_ensure" && e.S("kind") != "plugin_delete", 409, "invalid_step")
+	residual := residualEffectRow(t, e)
 	state := r.Body.S("state")
 	require(state == "running" || state == "succeeded" || state == "failed" || state == "absent", 400, "invalid_effect_state")
 	result := r.Body.O("result")
 	external := r.Body.S("externalId")
 	if state == "absent" {
-		require(e.S("state") == "planned", 409, "external_state_conflict")
 		state = "planned"
 	} else {
 		require(external != "" && len(external) <= 200, 400, "external_id_required")
-		if e.S("externalId") != "" {
+		if e.S("externalId") != "" && residual == nil {
 			require(external == e.S("externalId"), 409, "external_binding_conflict")
 		}
-	}
-	if e.S("state") == "succeeded" {
-		require(state == "succeeded" && jsonText(result) == jsonText(e.O("result")), 409, "external_state_conflict")
 	}
 	if state == "succeeded" {
 		switch e.S("kind") {
@@ -318,6 +327,21 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 		case "plugin_delete":
 			require(result.B("removed"), 400, "invalid_cleanup_evidence")
 		}
+	}
+	if residual != nil {
+		fact := Object{
+			"kind": "effect", "effectKind": e.S("kind"), "state": state,
+			"externalId": external, "result": result,
+		}
+		if !acceptResidualEffectFact(t, residual, e, fact) {
+			return Object{"effect": e, "operation": t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))}
+		}
+	}
+	if r.Body.S("state") == "absent" {
+		require(e.S("state") == "planned", 409, "external_state_conflict")
+	}
+	if e.S("state") == "succeeded" {
+		require(state == "succeeded" && jsonText(result) == jsonText(e.O("result")), 409, "external_state_conflict")
 	}
 	if state == "failed" && (e.S("kind") == "plugin_ensure" || e.S("kind") == "plugin_delete") {
 		// A failed install/remove surfaces on the space row immediately so the

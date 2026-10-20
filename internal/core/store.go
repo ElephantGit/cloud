@@ -250,6 +250,8 @@ type transaction struct {
 	workSignals           []string
 	commandSignals        []string
 	events                []SpaceEvent
+	residualFactConflict  bool
+	residualFactSource    Object
 }
 
 func (t *transaction) exec(q string, args ...any) {

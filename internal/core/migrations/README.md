@@ -67,7 +67,9 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - `CheckSchema` 只读检查缺失迁移、checksum 不符和未知数据库版本，发现不一致拒绝启动。生产服务不执行 DDL，运维用 [cloudctl](../../../cmd/cloudctl/README.md) 应用迁移。
 - 文件描述各自应用时的变化，不能单独当成最终 schema。例如 0013 的可空空间归属被 0017 取代；0016 保留旧存储/工作树记录但停用旧步骤。
 - 0017 不静默拆分多空间或改写重复 slug，不满足一租户一空间约束的数据须先处理。
-- 0042 不为历史运行猜测插件版本，无冻结版本的执行由代码拒绝。0043 撤销旧凭据引用并保留审计，不把旧 secret 引用当成可兑换凭据。0046–0048 不回填旧消息、旧 Thread、历史位置或暂停状态，`visible_text` 与原始 `record` 分开保存。
+- 0042 不为历史运行猜测插件版本，无冻结版本的执行由代码拒绝。0043 撤销旧凭据引用并保留审计，不把旧 secret 引用当成可兑换凭据。
+- 0045 增加 `agent_configuration`（关联与逐字节静态副本）和 `agent_configuration_issue`（有界原因），不回填既有行；只保存校验通过的可消费声明，区分未声明与声明无效，后者不阻止包安装。语义见 [插件市场](../../../docs/plugins/marketplace.md)，空库、升级与重复应用覆盖见 `TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades`。
+- 0046–0048 不回填旧消息、旧 Thread、历史位置或暂停状态；`visible_text` 与原始 `record` 分开保存，旧任务不自动暂停。空库、升级与重复应用覆盖见 `TestMigration0046TaskConversationFreshAndUpgrade` 及 integration 的迁移测试。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

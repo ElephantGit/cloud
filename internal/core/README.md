@@ -17,7 +17,7 @@
 | `task_conversation_*.go`、`thread_preview.go` | 任务级有序消息、同任务 Agent 串行交接与暂停屏障、从 Node 可见正文冻结的后续提示、配置缺口提示和有界进程内实时预览；Agent 初始提示只读冻结的运行输入 | [Thread](../../docs/agent-runs/threads.md)、[IssueRun](../../docs/agent-runs/issue-runs.md) |
 | `revision*.go`、`session_*.go` | Revision 登记、归档读取、会话列表与统计 | [Revision](../../docs/agent-runs/revisions.md)、[会话读取](../../docs/agent-runs/session-reads.md) |
 | `model_*.go` | 个人配置、冻结绑定、授权摘要与请求观察；不解密 API Key | [模型访问](../../docs/models/model-access.md) |
-| `plugins.go`、`plugin_*.go`、`workflow_asset_imports.go` | 市场快照、空间选择、Node 安装和资产导入账本 | [插件市场](../../docs/plugins/marketplace.md) |
+| `plugins.go`、`plugin_*.go`、`workflow_asset_imports.go` | 含 Agent 声明副本的市场快照、空间选择、冻结声明关联的 Node 安装计划和资产导入账本 | [插件市场](../../docs/plugins/marketplace.md) |
 | `workflow*.go` | 图、发布快照、准入、运行身份与调度器 | [工作流](../../docs/workflows/workflows.md) |
 | `hub.go`、`signals.go` | 提交后失效通知和控制信号；不承载权威状态 | [HTTP API](../../docs/core/http-api.md) |
 

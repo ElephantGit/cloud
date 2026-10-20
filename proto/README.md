@@ -11,7 +11,7 @@
 | `errors.proto` | ErrorDetail / ErrorCode |
 | `lease.proto` | ControllerLeaseService |
 | `executions.proto` | ExecutionService、领取/登记/恢复 |
-| `plugin_executions.proto` | 插件安装/移除输入与结果 |
+| `plugin_executions.proto` | 插件安装/移除输入与结果，含冻结的 Agent 声明版本与摘要关联（不含静态副本） |
 | `agent_executions.proto` | Agent 会话、Revision 输入/结果与上传授权 |
 | `agent_runs.proto` | AgentRunService、Thread 事件与命令 |
 | `operations.proto` | WorkspaceOperationService |

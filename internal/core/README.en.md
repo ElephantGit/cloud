@@ -17,7 +17,7 @@ This package owns business state, authorization, transactions and recovery decis
 | `task_conversation_*.go`, `thread_preview.go` | Ordered task messages, serial same-task Agent handoff and pause barriers, follow-up prompts frozen from Node visible text, configuration-gap hints and a bounded in-process live preview; initial Agent prompts read only the frozen run input | [Thread](../../docs/agent-runs/threads.en.md), [IssueRun](../../docs/agent-runs/issue-runs.en.md) |
 | `revision*.go`, `session_*.go` | Revision registration, archives, session listing and statistics | [Revision](../../docs/agent-runs/revisions.en.md), [Session reads](../../docs/agent-runs/session-reads.en.md) |
 | `model_*.go` | Personal configuration, frozen bindings, grant digests and request observations; no API Key decryption | [Model access](../../docs/models/model-access.en.md) |
-| `plugins.go`, `plugin_*.go`, `workflow_asset_imports.go` | Catalog snapshots, space selection, Node installation and asset import ledger | [Plugin marketplace](../../docs/plugins/marketplace.en.md) |
+| `plugins.go`, `plugin_*.go`, `workflow_asset_imports.go` | Catalog snapshots with Agent declaration copies, space selection, Node install plans with frozen declaration associations and asset import ledger | [Plugin marketplace](../../docs/plugins/marketplace.en.md) |
 | `workflow*.go` | Graphs, published snapshots, admission, run identity and scheduler | [Workflows](../../docs/workflows/workflows.en.md) |
 | `hub.go`, `signals.go` | Post-commit invalidation and control hints; no authoritative state | [HTTP API](../../docs/core/http-api.en.md) |
 

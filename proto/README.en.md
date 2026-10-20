@@ -11,7 +11,7 @@ Live previews use a separate `PublishThreadPreview` RPC with bounded execution/v
 | `errors.proto` | ErrorDetail / ErrorCode |
 | `lease.proto` | ControllerLeaseService |
 | `executions.proto` | ExecutionService, claiming/registration/recovery |
-| `plugin_executions.proto` | Plugin install/remove inputs and results |
+| `plugin_executions.proto` | Plugin install/remove inputs and results, including frozen Agent declaration version/digest associations (without static copies) |
 | `agent_executions.proto` | Agent sessions, Revision inputs/results and upload grants |
 | `agent_runs.proto` | AgentRunService, Thread events and commands |
 | `operations.proto` | WorkspaceOperationService |

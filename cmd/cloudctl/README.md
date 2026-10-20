@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`cloudctl` 是 Ora Cloud 受限的运维管理工具。它在公共 API 调用路径之外运行，使用数据库操作员凭据管理数据库迁移、初始租户及其管理员的引导配置，以及基础设施机密信息引用的注册。
+`cloudctl` 是 Ora Cloud 受限的运维管理工具。它在公共 API 调用路径之外运行，使用数据库操作员凭据管理数据库迁移以及初始租户和管理员的引导配置。
 
 ## 命令与职责
 
@@ -10,7 +10,7 @@
 ```sh
 cloudctl -config <path> -command migrate
 ```
-- 严格按照数字序号递增顺序，依次执行 `internal/core/migrations` 中所有尚未应用的前向迁移（forward migrations）。
+- 按完整文件名字典序，依次执行 `internal/core/migrations` 中所有尚未应用的前向迁移（forward migrations）。
 - 计算迁移脚本的 SHA256 校验和（checksum），并记录到 `schema_migrations` 表中。
 - 在数据库事务级咨询锁（`pg_advisory_xact_lock(67420911)`）保护下执行，确保并发或重复执行时具备确定性与安全性。
 - 如果已应用迁移的校验和不匹配，则报错并拒绝执行。
@@ -25,9 +25,7 @@ cloudctl -config <path> -command bootstrap -name '<tenant-name>' -source '<idp-s
 - 在 `tenant_memberships` 表中为该用户授予 `admin` 角色。
 - 返回包含 `tenantId` 和 `userId` 的 JSON 数据载荷。
 
-### 不再提供 `credential-ref`
-
-部署侧预置 Git 凭据的路径已删除：用户和管理员在网页上把 token 直接提交给独立的 Credential Store，Cloud 只保存引用元数据（identity-access 的 Credential Store 决策）。
+Git 凭据的提交与引用管理见 [外部 Git 线](../../docs/repositories/external-git.md)。
 ## 边界与不变量
 
 - **部署边界**：`cloudctl` 不通过 HTTP 暴露，也不由 server 守护进程调用。它必须能够直接连接 PostgreSQL，并拥有 Schema 迁移权限。

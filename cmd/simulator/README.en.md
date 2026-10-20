@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`cmd/simulator` provides a complete local demonstration harness for Ora Cloud's phase-one architecture. It spins up in-process execution doubles, an ephemeral Git repository fixture, and loopback HTTP services to validate the full project lifecycle without external cloud infrastructure.
+`cmd/simulator` provides a complete local demonstration harness for Ora Cloud. It spins up in-process execution doubles, an ephemeral Git repository fixture, and loopback HTTP services to validate the full project lifecycle without external cloud infrastructure.
 
 ## Responsibilities
 

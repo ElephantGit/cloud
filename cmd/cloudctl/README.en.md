@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`cloudctl` is the restricted operational management tool for Ora Cloud. It runs with database operator credentials outside the public API path to manage database migrations, provision initial administrative tenants.
+`cloudctl` is the restricted operational management tool for Ora Cloud. It runs with database operator credentials outside the public API path to manage database migrations and bootstrap initial tenants and administrators.
 
 ## Commands and responsibilities
 
@@ -10,7 +10,7 @@
 ```sh
 cloudctl -config <path> -command migrate
 ```
-- Applies all unapplied forward migrations from `internal/core/migrations` in strict numerical order.
+- Applies all unapplied forward migrations from `internal/core/migrations` in lexicographic order of complete filenames.
 - Computes SHA256 checksums of migration scripts and records them in `schema_migrations`.
 - Runs within transactional database-level advisory locks (`pg_advisory_xact_lock(67420911)`), making concurrent or repeated execution deterministic and safe.
 - Rejects checksum mismatches on previously applied migrations with an error.
@@ -25,9 +25,7 @@ cloudctl -config <path> -command bootstrap -name '<tenant-name>' -source '<idp-s
 - Assigns the user the `admin` role in `tenant_memberships`.
 - Returns a JSON payload containing `tenantId` and `userId`.
 
-### `credential-ref` is gone
-
-The deployment-preset Git credential path was removed: users and administrators submit tokens from the browser straight to the independent Credential Store, and Cloud keeps only reference metadata (identity-access Credential Store decision).
+See [External Git line](../../docs/repositories/external-git.en.md) for Git credential submission and reference management.
 ## Boundaries and invariants
 
 - **Deployment boundary**: `cloudctl` is not exposed via HTTP and is not invoked by the server daemon. It requires direct network access to PostgreSQL with schema migration permissions.

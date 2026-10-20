@@ -17,7 +17,7 @@
 
 #### HTTP 接口
 
-Substrate 替身只监听 loopback，供模拟器和测试使用，不是生产 Substrate 的接口定义：
+模拟器把 Substrate 替身挂在 loopback HTTP 服务，供开发和测试使用，不是生产 Substrate 的接口定义：
 
 | 方法与路径 | 请求 | 返回与不变量 |
 |---|---|---|
@@ -38,7 +38,7 @@ Cloud 拒绝计划插件 effect，替身里残留的 `plugin_ensure` 分支不�
 ### Controller 执行替身 (`controller.go`)
 - 模拟外部控制平面工作进程。租约、操作与 Node 注册走已退役的 `/internal/v1/...` JSON 接口，只有 `router.NewDevelopment` 打开它们，生产 server 一律返回
   `410`；execution 与 Agent 运行走 gRPC：
-  - 定期通过 `/internal/v1/controller-lease/acquire` 获取并续约 Controller 独占租约。
+  - 通过 `/internal/v1/controller-lease/acquire` 获取租约，经 `/internal/v1/controller-lease/renew` 续约。
   - 通过 `/internal/v1/operations/claim` 认领待处理的操作任务。
   - 针对 Substrate 规划并执行所需的 Effect。
   - 通过 `/internal/v1/operations/{oid}/effects/{eid}/result` 上报 Effect 执行结果。
@@ -47,7 +47,7 @@ Cloud 拒绝计划插件 effect，替身里残留的 `plugin_ensure` 分支不�
 
 ### Agent 会话替身 (`agent.go`)
 
-Controller 每次有界 Step 都领取运行工作、投递 Thread 命令并接管 Node 证据，避免 quiesce 饿死结束命令。`AgentNode` 用磁盘日志固定输入、去重 command_id，回显并结束会话；交付从封存会话和真实 Git checkout 创建累计 bundle/JSONL，取得 checksum 签名头后真实 PUT，授权过期则刷新同键。终态按 protojson 写日志，上传授权不落盘；替换 Controller/Node 后重放原证据。真实 PostgreSQL + S3 测试证明 A 闭环，不能替代生产 Rust relay 或 D 真实 Agent 验收。
+Controller 每次有界 Step 都领取运行工作、投递 Thread 命令并接管 Node 证据，避免 quiesce 饿死结束命令。`AgentNode` 用磁盘日志固定输入、去重 command_id，回显并结束会话；交付从封存会话和真实 Git checkout 创建累计 bundle/JSONL，取得 checksum 签名头后真实 PUT，授权过期则刷新同键。终态按 protojson 写日志，上传授权不落盘；替换 Controller/Node 后重放原证据。PostgreSQL 与 S3 测试覆盖替身恢复路径，不能代替生产 Rust relay 或真实 Agent 执行证据。
 
 上传携带签名的 `If-None-Match: *`，不能覆盖首次对象。回复丢失后的 412 保留对象并把声明交给 Cloud 核对，不能仅凭 412 推断摘要相同。Controller 取消会返回取消原因且不写交付终态，重启后仍可继续原执行；实际 Node 的终态失败继续持久化。
 
@@ -59,7 +59,7 @@ Controller 每次有界 Step 都领取运行工作、投递 Thread 命令并接�
 
 ## 边界与不变量
 
-- **仅限开发与测试**：本包属于工程执行替身。绝对禁止部署到生产环境，生产环境守护进程二进制也绝不导入此包。
-- **契约保真度**：模拟器严格通过标准 HTTP API 与 Cloud 核心服务器交互，并遵守所有租约、栅栏和幂等契约。
+- **仅限开发与测试**：本包提供执行替身，生产配置不得启用。
+- **契约保真度**：模拟器通过开发 HTTP 与 gRPC 适配层与 Cloud 核心服务器交互，并遵守所有租约、栅栏和幂等契约。
 
 参见 [cmd/simulator 工具](../../cmd/simulator/README.md)、[Workspace 生命周期](../../docs/runtime/workspaces.md) 与 [集成测试套件](../../integration/README.md)。

@@ -3,7 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 Cloud 签发、执行器与 Credential Store 验证的两类授权（ADR `repo-executor/0` D2；identity-access 的 Credential Store 决策）。
-格式沿用旧实现：`base64url(payload) "." base64url(Ed25519 签名)`（RawURLEncoding），签名覆盖原始 payload 字节，验证不依赖
+格式：`base64url(payload) "." base64url(Ed25519 签名)`（RawURLEncoding），签名覆盖原始 payload 字节，验证不依赖
 JSON 规范化。验证方持有公钥集合以便轮换；私钥只在 Cloud。
 
 | 文件 | 职责 |

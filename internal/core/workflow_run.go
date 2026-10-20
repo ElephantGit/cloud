@@ -126,7 +126,9 @@ func createWorkflowRun(t *transaction, r *PublicRequest, uid string) Object {
 	id := created.S("id")
 	if t.simulator != nil {
 		nodeStates, rounds, status := t.simulator.SimulateWorkflowRun(s.O("graph"), input)
-		t.exec("UPDATE workflow_runs SET node_states=$1,rounds=$2,status=$3,started_at=now(),finished_at=now(),version=version+1,updated_at=now() WHERE id=$4", jsonText(nodeStates), jsonText(rounds), status, id)
+		if t.execRows("UPDATE workflow_runs SET node_states=$1,rounds=$2,status=$3,started_at=now(),finished_at=now(),version=version+1,updated_at=now() WHERE id=$4", jsonText(nodeStates), jsonText(rounds), status, id) > 0 {
+			projectWorkflowRunToIssueRun(t, r.TenantID, id, workflowIssueOutputSummary(s.O("graph"), nodeStates, ""))
+		}
 	} else {
 		// The run-creation gate (mappings decision D2): every slot the snapshot references must
 		// resolve against the invoker's personal configuration before the run exists, and each

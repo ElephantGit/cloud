@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -254,5 +255,156 @@ func TestManualWorkflowInvocationCreatesLinkedRun(t *testing.T) {
 	}
 	if n := f.scalar("SELECT count(*) FROM issue_runs ir JOIN workflow_runs wr ON wr.id=ir.workflow_invocation_ref AND wr.tenant_id=ir.tenant_id WHERE ir.issue_id=$1", iid); n != 1 {
 		t.Fatalf("manual start created %d valid linked pairs, want 1", n)
+	}
+}
+
+// confirmInvocationScene crosses the public comment/form boundary. Unlike the fixture's direct
+// workflow-run POST, Confirm leaves execution pending for the real scheduler used by these tests.
+func confirmInvocationScene(t *testing.T, f *fixture, graph core.Object, key string) (wid, iid string, confirmed core.Object) {
+	t.Helper()
+	wid = f.call("POST", f.path("/workflows"), core.Object{
+		"name": "Scheduled invocation", "graph": graph,
+	}, key+"-workflow", 200).O("resource").S("id")
+	publishWorkflow(t, f, wid, key+"-publish")
+	iid = launchIssue(t, f, runProject(t, f, key+"-project"), "Scheduled invocation", key+"-issue").S("id")
+	interaction := workflowComment(t, f, wid, iid, key+"-comment", "run this workflow")
+	confirmed = f.call("POST", confirmPath(f, iid, interaction.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main",
+	}}, key+"-confirm", 200).O("resource")
+	if confirmed.S("status") != "queued" || confirmed.S("workflowInvocationRef") == "" {
+		t.Fatalf("Confirm must enqueue a linked invocation before scheduling: %v", confirmed)
+	}
+	return wid, iid, confirmed
+}
+
+// assertInvocationProjection reads both public run resources and the issue timeline, so a scheduler
+// state change without its IssueRun projection or lifecycle activity cannot satisfy the test.
+func assertInvocationProjection(t *testing.T, f *fixture, wid, iid string, confirmed core.Object, workflowStatus, issueStatus string, actions []string) (core.Object, core.Object) {
+	t.Helper()
+	workflow := f.call("GET", f.path("/workflows/"+wid+"/runs/"+confirmed.S("workflowInvocationRef")), nil, "", 200)
+	var issueRun core.Object
+	for _, candidate := range issueItems(f.call("GET", f.path("/issues/"+iid+"/runs"), nil, "", 200)) {
+		if candidate.S("id") == confirmed.S("id") {
+			issueRun = candidate
+			break
+		}
+	}
+	if workflow.S("status") != workflowStatus || issueRun.S("status") != issueStatus {
+		t.Fatalf("scheduler projection disagrees: workflow=%v issue=%v; want %s/%s", workflow, issueRun, workflowStatus, issueStatus)
+	}
+	if issueRun.S("workflowInvocationRef") != workflow.S("id") || issueRun.S("executorId") != wid || issueRun.S("executorType") != "workflow" {
+		t.Fatalf("projected IssueRun lost its execution identity: %v", issueRun)
+	}
+	if workflow.S("startedAt") == "" || issueRun.S("startedAt") != workflow.S("startedAt") || issueRun.S("completedAt") != workflow.S("finishedAt") {
+		t.Fatalf("projected lifecycle timestamps disagree: workflow=%v issue=%v", workflow, issueRun)
+	}
+	if issueRun.S("failureReason") != workflow.S("error") || issueRun.S("error") != workflow.S("error") {
+		t.Fatalf("projected failure reason disagrees: workflow=%v issue=%v", workflow, issueRun)
+	}
+	var got []string
+	for _, item := range issueItems(f.call("GET", f.path("/issues/"+iid+"/timeline"), nil, "", 200)) {
+		details := item.O("details")
+		if item.S("kind") != "activity" || details.S("runId") != confirmed.S("id") {
+			continue
+		}
+		got = append(got, item.S("action"))
+		if details.S("executorType") != "workflow" || details.S("executorId") != wid {
+			t.Fatalf("activity lost its executor identity: %v", item)
+		}
+		if item.S("action") != "run.enqueued" && details.S("workflowInvocationRef") != workflow.S("id") {
+			t.Fatalf("scheduler activity lost its workflow invocation identity: %v", item)
+		}
+		if item.S("action") == "run.failed" && details.S("failureReason") != workflow.S("error") {
+			t.Fatalf("failure activity lost the authoritative reason: %v", item)
+		}
+	}
+	if !reflect.DeepEqual(got, actions) {
+		t.Fatalf("invocation lifecycle activities = %v, want %v", got, actions)
+	}
+	return workflow, issueRun
+}
+
+func TestWorkflowConfirmSchedulerProjectsRunningOnce(t *testing.T) {
+	f := setup(t)
+	seedPersonalModel(t, f)
+	wid, iid, confirmed := confirmInvocationScene(t, f, runGraph(), "inv-scheduler-running")
+	// The Project is still provisioning: session startup waits without Node or cluster execution.
+	// A second advance exercises the running-state retry, which must not emit another run.started.
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	workflow, _ := assertInvocationProjection(t, f, wid, iid, confirmed, "running", "running", []string{"run.enqueued", "run.started"})
+	if len(workflow.O("nodeStates")) != 0 || workflow.S("finishedAt") != "" {
+		t.Fatalf("waiting invocation fabricated committed nodes or terminal evidence: %v", workflow)
+	}
+}
+
+func TestWorkflowConfirmSchedulerCompletesAndAllowsNextInvocation(t *testing.T) {
+	f := setup(t)
+	graph := startInputGraph(nil)
+	graph["nodes"] = append(graph["nodes"].([]any), core.Object{
+		"id": "output-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+		"data": core.Object{"kind": "output", "title": "Done"},
+	})
+	graph["edges"] = []any{core.Object{"id": "output-edge", "source": "start-1", "target": "output-1"}}
+	wid, iid, confirmed := confirmInvocationScene(t, f, graph, "inv-scheduler-completed")
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	workflow, _ := assertInvocationProjection(t, f, wid, iid, confirmed, "succeeded", "completed", []string{"run.enqueued", "run.started", "run.completed"})
+	for _, node := range []string{"start-1", "output-1"} {
+		if workflow.O("nodeStates").O(node).S("status") != "succeeded" {
+			t.Fatalf("completed invocation did not execute node %s: %v", node, workflow)
+		}
+	}
+	if workflow.S("finishedAt") == "" {
+		t.Fatal("completed invocation has no terminal timestamp")
+	}
+
+	// workflowComment returns the first form, so find the fresh unclaimed form explicitly on this
+	// same Issue. Terminal projection must release the pending-executor dedup for this Confirm.
+	f.call("POST", f.path("/issues/"+iid+"/comments"), core.Object{
+		"body": "run this workflow again", "targets": []any{core.Object{"type": "workflow", "id": wid}},
+	}, "inv-scheduler-completed-next-comment", 200)
+	var nextInteraction core.Object
+	for _, interaction := range issueItems(f.call("GET", f.path("/issues/"+iid+"/interactions"), nil, "", 200)) {
+		if interaction.S("mode") == "form" && interaction.S("runId") == "" {
+			nextInteraction = interaction
+			break
+		}
+	}
+	if nextInteraction == nil {
+		t.Fatal("second workflow comment did not create an unclaimed form")
+	}
+	next := f.call("POST", confirmPath(f, iid, nextInteraction.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main",
+	}}, "inv-scheduler-completed-next-confirm", 200).O("resource")
+	if next.S("status") != "queued" || next.S("id") == confirmed.S("id") || next.S("workflowInvocationRef") == "" || next.S("workflowInvocationRef") == confirmed.S("workflowInvocationRef") {
+		t.Fatalf("second Confirm did not create a new linked queued invocation: first=%v next=%v", confirmed, next)
+	}
+}
+
+func TestWorkflowConfirmSchedulerProjectsConditionFailure(t *testing.T) {
+	f := setup(t)
+	graph := startInputGraph(nil)
+	// input is a declared Start root and is always a string. Publishing admits the selector, but
+	// traversing a nested object path on that string deterministically fails during real execution.
+	graph["nodes"] = append(graph["nodes"].([]any), core.Object{
+		"id": "condition-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+		"data": core.Object{"kind": "condition", "title": "Invalid nested input", "cases": []any{core.Object{
+			"id": "matched", "logic": "and", "conditions": []any{core.Object{
+				"variableSelector": []any{"start-1", "input", "missing"}, "operator": "equals", "value": "value",
+			}},
+		}}},
+	})
+	graph["edges"] = []any{core.Object{"id": "condition-edge", "source": "start-1", "target": "condition-1"}}
+	wid, iid, confirmed := confirmInvocationScene(t, f, graph, "inv-scheduler-failed")
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	workflow, _ := assertInvocationProjection(t, f, wid, iid, confirmed, "failed", "failed", []string{"run.enqueued", "run.started", "run.message", "run.failed"})
+	failed := workflow.O("nodeStates").O("condition-1")
+	if failed.S("status") != "failed" || !strings.Contains(workflow.S("error"), "start-1.input.missing") || failed.S("error") != workflow.S("error") || workflow.S("finishedAt") == "" {
+		t.Fatalf("condition failure did not preserve its node reason and terminal evidence: %v", workflow)
 	}
 }

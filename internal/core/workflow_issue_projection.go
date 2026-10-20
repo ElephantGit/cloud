@@ -1,9 +1,37 @@
 package core
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
+
+// workflowIssueOutputSummary selects existing output-node results or the run error. Callers bound
+// the UTF-8 message before projection so execution settlement cannot fail on activity size alone.
+func workflowIssueOutputSummary(graph, states Object, runErr string) string {
+	message := strings.TrimSpace(runErr)
+	if message == "" {
+		outputs := Object{}
+		for _, node := range readWorkflowGraph(graph).Nodes {
+			if state := states.O(node.ID); node.Kind == "output" && state.S("status") == "succeeded" && len(state.O("output")) > 0 {
+				outputs[node.ID] = state.O("output")
+			}
+		}
+		if len(outputs) > 0 {
+			message = jsonText(outputs)
+		}
+	}
+	if len(message) > 20000 {
+		end := 20000
+		for !utf8.RuneStart(message[end]) {
+			end--
+		}
+		message = message[:end]
+	}
+	return message
+}
 
 // projectWorkflowRunToIssueRun mirrors the committed-in-this-transaction workflow state onto its
-// optional IssueRun. The scheduler must call it after its state compare-and-set, in the same
+// optional IssueRun. Execution callers invoke it only after a successful state write, in the same
 // Store.transact boundary, so a projection or activity failure rolls back the workflow transition.
 // Direct workflow runs have no IssueRun and are a no-op. The caller supplies the execution's output
 // summary because per-node output has no canonical summary field in workflow_runs. awaiting_input

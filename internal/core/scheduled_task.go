@@ -256,6 +256,3 @@ func scheduledTaskBusy(t *transaction, taskID, issueID, agentID, due string) boo
 		WHERE issue_id=$1 AND executor_type='agent' AND executor_id=$2
 		  AND status IN ('queued','dispatched') AND deleted_at IS NULL`, issueID, agentID) != nil
 }
-
-// strings.Contains helpers live in the api layer; the store never sees raw paths.
-var _ = strings.TrimSpace

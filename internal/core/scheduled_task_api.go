@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -156,8 +157,7 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 	}
 	revision := task.N("revision")
 	contentChanged := prompt != task.S("prompt") || agentID != task.S("agentId") ||
-		timezone != task.S("timezone") || scheduleDocJSONChanged(scheduleDoc, task["schedule"])
-	if contentChanged {
+		timezone != task.S("timezone") || scheduleDocJSONChanged(scheduleDoc, task["schedule"])	if contentChanged {
 		revision = task.N("revision") + 1
 	}
 
@@ -185,7 +185,7 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 // scheduleDocJSONChanged compares the stored schedule document with the candidate after
 // canonicalizing both through the parser, so key order and absent optional fields never read as an
 // edit.
-func scheduleDocJSONChanged(candidate, stored Object) bool {
+func scheduleDocJSONChanged(candidate, stored any) bool {
 	parsedCandidate, errC := parseScheduledTaskSchedule(candidate)
 	parsedStored, errS := parseScheduledTaskSchedule(stored)
 	if errC != nil || errS != nil {

@@ -164,6 +164,17 @@ Controller 契约的字段。只新增，不回填。
 
 新库与合并时基线（含 0042）升级（带真实 Project、凭据引用与连续性列的库）证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades`，其中也对真实行验证了上述约束与 append-only 触发器。
 
+## 0044：模型尝试登记 WorkflowRun 绑定
+
+`0044_model_attempt_workflow_run.sql` 让 `model_request_attempts` 记录 WorkflowRun 的绑定，采用与
+0040 相同的判别形状：`run_id` 改为可空，新增 `workflow_run_id`，两者恰有其一。运行与绑定各按所有者
+一对：分别引用 `issue_runs`/`workflow_runs` 的 `(id, tenant_id)`，以及 `run_model_bindings` 的
+`(id, run_id)`/`(id, workflow_run_id)`，并补上后者所需的两个唯一约束。首期只登记，不开放 WorkflowRun
+的统计读取；IssueRun 的读取继续按 `run_id` 过滤，WorkflowRun 行的 `run_id` 为空，不会进入既有读取。
+既有行都带 `run_id`（0035 要求非空，且任何 WorkflowRun 登记都无法写入），无需回填。新库与 0043 升级证据见
+`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
+`internal/core/model_attempt_workflow_db_test.go`。
+
 ## 0044：退役租户级 clone
 
 Workspace 改为从 Git Server 快照 clone 后的切换，不迁移数据。删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留。可重复执行。仍有租户级 clone 的数据库升级见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0044RetiresTenantLevelClonesKeepingWorkspaceClones`。

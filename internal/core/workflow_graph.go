@@ -166,6 +166,7 @@ func validateWorkflowAcyclic(graph Object) []workflowGraphProblem {
 func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	seen := map[string]bool{}
+	declaredRoots := workflowDeclaredRoots(nodes)
 	starts := 0
 	for _, raw := range nodes {
 		node, ok := raw.(map[string]any)
@@ -199,7 +200,7 @@ func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
 			// delete anyway.
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
-			problems = append(problems, validateConditionConfig(id, o.O("data"))...)
+			problems = append(problems, validateConditionConfig(id, o.O("data"), declaredRoots)...)
 		}
 	}
 	if starts != 1 {
@@ -235,17 +236,24 @@ func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 // written out rather than derived because it is a statement about the two implementations, not about
 // Cloud's own code: each entry is a place where the evaluator would otherwise answer silently —
 // an unknown operator is a no-match, an unknown logic falls back to `and`, a missing case id becomes
-// the else branch, a one-segment selector becomes the whole node output, and an expected value
-// carrying `{{#selector#}}` is compared as literal text where desktop resolves it and keeps the
-// bound type (circus#202 A 条件 2, #141 结论 5). Every one of them is decidable from the document
-// alone, which is what makes refusing at publish possible; the differences that depend on a
-// *resolved* value's type at run time are not, and are named in the ADR instead.
+// the else branch, and a one-segment selector becomes the whole node output (circus#202 A 条件 2,
+// #141 结论 5). Every one of them is decidable from the document alone, which is what makes refusing
+// at publish possible; the differences that depend on a *resolved* value's type at run time are not,
+// and are named in the ADR instead.
 //
 // A condition node with no cases, or a case with no rules, is deliberately NOT on this list: falling
 // through to else is what an unfinished node is meant to do, and both sides already agree on it.
 //
-// When the parity work lands (circus#210, split out by circus#202 A 条件 3) these refusals come off
-// one at a time, each with the cross-check case that proves the two sides now answer the same thing.
+// circus#210 closed the first entry: an expected value carrying `{{#selector#}}` now resolves the
+// same way desktop does — an exclusive placeholder keeps the bound JSON type, a mixed one renders a
+// string, and an unset selector fails the node — so the gate no longer refuses it.
+//
+// `condition_selector_undeclared` is the one entry about the variable pool rather than the operator:
+// desktop declares every node's roots up front, so a selector naming a node or root the graph never
+// declares is `Undeclared` and fails the node, while Cloud's evaluator has no declaration set and
+// would answer "absent" — `exists` would return false and the run would take a branch the author
+// could not have written. The node exists and its kind exposes a fixed set of roots, so the gate can
+// decide this from the document alone, which is what makes refusing at publish the right side.
 var workflowUnsupportedConditionConfigs = []string{
 	"condition_cases_not_a_list",
 	"condition_case_not_an_object",
@@ -254,14 +262,69 @@ var workflowUnsupportedConditionConfigs = []string{
 	"condition_rules_not_a_list",
 	"condition_rule_not_an_object",
 	"condition_selector_unsupported",
+	"condition_selector_undeclared",
 	"condition_operator_unsupported",
-	"condition_value_template_unsupported",
+}
+
+// workflowDeclaredRoots maps each graph node to the variable roots its kind exposes, the declaration
+// set desktop's WorkflowVariablePool::from_graph builds before a run starts. The roots follow the
+// approved contract rather than what today's nodes happen to write: an agent exposes `output` and
+// `structured_output` when it declares an output contract, an output node exposes `output`, a start
+// node exposes `input` plus its declared form variables, and a condition node exposes none. The
+// agent and output values arrive with cloud#70/#74; until then a selector on them is declared but
+// unassigned, the same state desktop has before the node produces its output.
+//
+// The map is keyed by node id and holds an empty set for kinds that expose no roots, so a selector
+// on a condition node is refused rather than accidentally matching an absent key.
+func workflowDeclaredRoots(nodes []any) map[string]map[string]bool {
+	roots := make(map[string]map[string]bool, len(nodes))
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		o := Object(node)
+		id := o.S("id")
+		if id == "" {
+			continue
+		}
+		data := o.O("data")
+		set := map[string]bool{}
+		switch data.S("kind") {
+		case "start":
+			set["input"] = true
+			declared, _ := data["inputVariables"].([]any)
+			for _, rawVariable := range declared {
+				variable, ok := rawVariable.(map[string]any)
+				if !ok {
+					continue
+				}
+				if name := Object(variable).S("name"); name != "" {
+					set[name] = true
+				}
+			}
+		case "agent":
+			set["output"] = true
+			// The contract lives in the node's `agentConfig`, the same place desktop's wire node reads
+			// it from; a contract present with a null value declares nothing extra. desktop declares
+			// structured_output only for an OutputContract::Structured, while this accepts any non-null
+			// contract; the difference is unreachable today because outputContract is refused by
+			// node_config_unsupported, so tighten it when cloud#70/#74 makes contracts reachable.
+			if contract, present := data.O("agentConfig")["outputContract"]; present && contract != nil {
+				set["structured_output"] = true
+			}
+		case "output":
+			set["output"] = true
+		}
+		roots[id] = set
+	}
+	return roots
 }
 
 // validateConditionConfig refuses the condition configuration the first phase does not evaluate the
 // way desktop does. Every problem names the node and the field, so the author is told which branch
 // of which node to fix rather than that the graph is invalid somewhere.
-func validateConditionConfig(nodeID string, data Object) []workflowGraphProblem {
+func validateConditionConfig(nodeID string, data Object, declaredRoots map[string]map[string]bool) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	raw, present := data["cases"]
 	if !present || raw == nil {
@@ -297,7 +360,7 @@ func validateConditionConfig(nodeID string, data Object) []workflowGraphProblem 
 			continue
 		}
 		for _, rawRule := range rules {
-			problems = append(problems, validateConditionRule(nodeID, rawRule)...)
+			problems = append(problems, validateConditionRule(nodeID, rawRule, declaredRoots)...)
 		}
 	}
 	return problems
@@ -306,7 +369,7 @@ func validateConditionConfig(nodeID string, data Object) []workflowGraphProblem 
 // validateConditionRule checks one rule of one case. The operator set is read from the evaluator's
 // own table rather than restated, so the gate cannot admit an operator the evaluator would then
 // no-match — the two lists are the same list.
-func validateConditionRule(nodeID string, raw any) []workflowGraphProblem {
+func validateConditionRule(nodeID string, raw any, declaredRoots map[string]map[string]bool) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	r, ok := asWorkflowObject(raw)
 	if !ok {
@@ -319,20 +382,43 @@ func validateConditionRule(nodeID string, raw any) []workflowGraphProblem {
 	// The selector needs the node AND a path into its output. The editor hands a new comparison an
 	// empty list, and one element names the whole output, which desktop refuses and Cloud would read
 	// as everything the node produced.
-	if len(selector) < 2 {
+	wellFormed := len(selector) >= 2
+	if !wellFormed {
 		problems = append(problems, workflowGraphProblem{Code: "condition_selector_unsupported", NodeID: nodeID, Field: "cases.conditions.variableSelector"})
 	}
 	for _, element := range selector {
 		if text, ok := element.(string); !ok || text == "" {
 			problems = append(problems, workflowGraphProblem{Code: "condition_selector_unsupported", NodeID: nodeID, Field: "cases.conditions.variableSelector"})
+			wellFormed = false
 			break
+		}
+	}
+	// A well-formed selector must still name a node the graph declares and a root that node's kind
+	// exposes. Desktop declares the pool from the graph, so anything else is Undeclared there and
+	// fails the node; Cloud has no declarations at run time and would quietly answer "absent", so the
+	// gate refuses the document instead. Malformed selectors already failed above; reporting them
+	// twice would only bury the fixable problem.
+	if wellFormed {
+		node, nodeOK := selector[0].(string)
+		root, rootOK := selector[1].(string)
+		if !nodeOK || !rootOK || !declaredRoots[node][root] {
+			problems = append(problems, workflowGraphProblem{Code: "condition_selector_undeclared", NodeID: nodeID, Field: "cases.conditions.variableSelector"})
 		}
 	}
 	if _, ok := workflowConditionOperators[r.S("operator")]; !ok {
 		problems = append(problems, workflowGraphProblem{Code: "condition_operator_unsupported", NodeID: nodeID, Field: "cases.conditions.operator"})
 	}
-	if text, ok := r["value"].(string); ok && strings.Contains(text, "{{#") && strings.Contains(text, "#}}") {
-		problems = append(problems, workflowGraphProblem{Code: "condition_value_template_unsupported", NodeID: nodeID, Field: "cases.conditions.value"})
+	// An expected-value template names the same variable pool as variableSelector, so a placeholder
+	// must hold to the same declarations. Cloud's condition node writes `selectedBranch` at run time,
+	// but desktop declares no root on a condition node, so without this check a template like
+	// {{#c.selectedBranch#}} would resolve on Cloud and fail desktop; the gate refuses it the same way
+	// it refuses a bare selector. Only strings can carry a placeholder.
+	if text, ok := r["value"].(string); ok {
+		for _, selector := range workflowTemplateSelectors(text) {
+			if !declaredRoots[selector.nodeID][selector.root] {
+				problems = append(problems, workflowGraphProblem{Code: "condition_selector_undeclared", NodeID: nodeID, Field: "cases.conditions.value"})
+			}
+		}
 	}
 	return problems
 }

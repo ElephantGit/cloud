@@ -83,6 +83,7 @@ func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, n
 		if input.S("modelBindingId") != "" {
 			require(current.B("modelProxy"), 409, "model_proxy_required")
 		}
+		require(declaredAgentCapable(current, input.O("agentConfiguration")), 409, "agent_adapter_required")
 		// An IssueRun runs exactly one agent session in its life. A WorkflowRun runs one per agent
 		// node (D4 executes them serially through one Workspace), so its sessions are bounded by the
 		// work item this dispatch consumes — the unregistered item is gone once dispatched (below),

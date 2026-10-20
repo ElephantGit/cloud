@@ -93,6 +93,9 @@ type WorkflowConfig struct {
 // PluginConfig is the cloud-side plugin marketplace configuration. Leaf keys
 // are bound to CLOUD_PLUGINS_* environment overrides like every other section.
 type PluginConfig struct {
+	// PersonalAgentTarget opts into deployed v1 adapters for one exact Linux execution target.
+	// Empty keeps declared-agent admission disabled during host rollout.
+	PersonalAgentTarget string `mapstructure:"personal_agent_target"`
 	// MarketplaceURL is the git repository the marketplace catalog is synced from.
 	MarketplaceURL string `mapstructure:"marketplace_url"`
 	// MarketplaceBranch is the branch checked out and fast-forwarded on every sync.
@@ -280,6 +283,9 @@ const DefaultAssetImportInterval = 30 * time.Second
 // marketplace address and branch must be present and well-formed so a typo
 // fails at startup instead of surfacing as a silently empty catalog.
 func validatePlugins(p PluginConfig) error {
+	if p.PersonalAgentTarget != "" && p.PersonalAgentTarget != "x86_64-unknown-linux-gnu" && p.PersonalAgentTarget != "aarch64-unknown-linux-gnu" {
+		return fmt.Errorf("plugins.personal_agent_target must name a supported Linux target")
+	}
 	if p.AssetImportEnabled && p.AssetImportInterval <= 0 {
 		return fmt.Errorf("plugins.asset_import_interval must be a positive duration when plugins.asset_import_enabled is true")
 	}

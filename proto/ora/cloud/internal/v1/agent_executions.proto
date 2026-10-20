@@ -98,6 +98,16 @@ message AgentModelConfiguration {
   uint64 configuration_revision = 8;
   // Canonical scalar JSON preserves number lexemes that protobuf Struct would round.
   string settings_json = 9;
+  string protocol = 10;
+  AgentBoundModel model = 11;
+}
+
+// Model catalog metadata frozen in the binding, independent of live personal configuration.
+message AgentBoundModel {
+  string id = 1;
+  string name = 2;
+  uint64 context_window = 3;
+  uint64 max_tokens = 4;
 }
 
 enum AgentSessionEndReason {

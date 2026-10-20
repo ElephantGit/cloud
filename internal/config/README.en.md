@@ -4,6 +4,8 @@
 
 `Load` uses a local Viper instance to load and validate service configuration, returning `Config`. There is no global mutable configuration.
 
+An empty `plugins.personal_agent_target` disables declared personal-Agent admission. An explicit supported Linux target opts in only after Controller/Node and plugin adapters are deployed; execution still checks the current incarnation's target, contract and protocol.
+
 | File | Responsibility |
 |---|---|
 | `config.go` | Main types, defaults, explicit environment bindings and common validation |

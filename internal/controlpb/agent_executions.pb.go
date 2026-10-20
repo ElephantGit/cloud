@@ -672,7 +672,9 @@ type AgentModelConfiguration struct {
 	AdapterVersion         uint32                 `protobuf:"varint,7,opt,name=adapter_version,json=adapterVersion,proto3" json:"adapter_version,omitempty"`
 	ConfigurationRevision  uint64                 `protobuf:"varint,8,opt,name=configuration_revision,json=configurationRevision,proto3" json:"configuration_revision,omitempty"`
 	// Canonical scalar JSON preserves number lexemes that protobuf Struct would round.
-	SettingsJson  string `protobuf:"bytes,9,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"`
+	SettingsJson  string           `protobuf:"bytes,9,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"`
+	Protocol      string           `protobuf:"bytes,10,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Model         *AgentBoundModel `protobuf:"bytes,11,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +772,89 @@ func (x *AgentModelConfiguration) GetSettingsJson() string {
 	return ""
 }
 
+func (x *AgentModelConfiguration) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *AgentModelConfiguration) GetModel() *AgentBoundModel {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+// Model catalog metadata frozen in the binding, independent of live personal configuration.
+type AgentBoundModel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ContextWindow uint64                 `protobuf:"varint,3,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"`
+	MaxTokens     uint64                 `protobuf:"varint,4,opt,name=max_tokens,json=maxTokens,proto3" json:"max_tokens,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentBoundModel) Reset() {
+	*x = AgentBoundModel{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentBoundModel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentBoundModel) ProtoMessage() {}
+
+func (x *AgentBoundModel) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentBoundModel.ProtoReflect.Descriptor instead.
+func (*AgentBoundModel) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AgentBoundModel) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AgentBoundModel) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AgentBoundModel) GetContextWindow() uint64 {
+	if x != nil {
+		return x.ContextWindow
+	}
+	return 0
+}
+
+func (x *AgentBoundModel) GetMaxTokens() uint64 {
+	if x != nil {
+		return x.MaxTokens
+	}
+	return 0
+}
+
 // The only terminal result of a session execution. It is taken over only after every Thread event
 // before it, so the Thread's last entry lands before the session is known to have ended.
 type AgentSessionEnded struct {
@@ -783,7 +868,7 @@ type AgentSessionEnded struct {
 
 func (x *AgentSessionEnded) Reset() {
 	*x = AgentSessionEnded{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[8]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +880,7 @@ func (x *AgentSessionEnded) String() string {
 func (*AgentSessionEnded) ProtoMessage() {}
 
 func (x *AgentSessionEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[8]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +893,7 @@ func (x *AgentSessionEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSessionEnded.ProtoReflect.Descriptor instead.
 func (*AgentSessionEnded) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{8}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AgentSessionEnded) GetReason() AgentSessionEndReason {
@@ -853,7 +938,7 @@ type DeliverRevisionSpec struct {
 
 func (x *DeliverRevisionSpec) Reset() {
 	*x = DeliverRevisionSpec{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -865,7 +950,7 @@ func (x *DeliverRevisionSpec) String() string {
 func (*DeliverRevisionSpec) ProtoMessage() {}
 
 func (x *DeliverRevisionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -878,7 +963,7 @@ func (x *DeliverRevisionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverRevisionSpec.ProtoReflect.Descriptor instead.
 func (*DeliverRevisionSpec) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{9}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeliverRevisionSpec) GetSessionExecutionId() string {
@@ -957,7 +1042,7 @@ type StoredObject struct {
 
 func (x *StoredObject) Reset() {
 	*x = StoredObject{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -969,7 +1054,7 @@ func (x *StoredObject) String() string {
 func (*StoredObject) ProtoMessage() {}
 
 func (x *StoredObject) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -982,7 +1067,7 @@ func (x *StoredObject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoredObject.ProtoReflect.Descriptor instead.
 func (*StoredObject) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{10}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StoredObject) GetKey() string {
@@ -1019,7 +1104,7 @@ type RevisionDelivered struct {
 
 func (x *RevisionDelivered) Reset() {
 	*x = RevisionDelivered{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1031,7 +1116,7 @@ func (x *RevisionDelivered) String() string {
 func (*RevisionDelivered) ProtoMessage() {}
 
 func (x *RevisionDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1044,7 +1129,7 @@ func (x *RevisionDelivered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionDelivered.ProtoReflect.Descriptor instead.
 func (*RevisionDelivered) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{11}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RevisionDelivered) GetFinalCommit() string {
@@ -1090,7 +1175,7 @@ type RevisionUnchanged struct {
 
 func (x *RevisionUnchanged) Reset() {
 	*x = RevisionUnchanged{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1102,7 +1187,7 @@ func (x *RevisionUnchanged) String() string {
 func (*RevisionUnchanged) ProtoMessage() {}
 
 func (x *RevisionUnchanged) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1115,7 +1200,7 @@ func (x *RevisionUnchanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionUnchanged.ProtoReflect.Descriptor instead.
 func (*RevisionUnchanged) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{12}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RevisionUnchanged) GetFinalCommit() string {
@@ -1155,7 +1240,7 @@ type RevisionFailed struct {
 
 func (x *RevisionFailed) Reset() {
 	*x = RevisionFailed{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1167,7 +1252,7 @@ func (x *RevisionFailed) String() string {
 func (*RevisionFailed) ProtoMessage() {}
 
 func (x *RevisionFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1180,7 +1265,7 @@ func (x *RevisionFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionFailed.ProtoReflect.Descriptor instead.
 func (*RevisionFailed) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{13}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RevisionFailed) GetReason() RevisionFailureReason {
@@ -1210,7 +1295,7 @@ type UploadGrant struct {
 
 func (x *UploadGrant) Reset() {
 	*x = UploadGrant{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1222,7 +1307,7 @@ func (x *UploadGrant) String() string {
 func (*UploadGrant) ProtoMessage() {}
 
 func (x *UploadGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1235,7 +1320,7 @@ func (x *UploadGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadGrant.ProtoReflect.Descriptor instead.
 func (*UploadGrant) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{14}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UploadGrant) GetObjectKey() string {
@@ -1316,7 +1401,7 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x0eprior_revision\x18\x06 \x01(\v2$.ora.cloud.internal.v1.PriorRevisionR\rpriorRevision\x12(\n" +
 	"\x10model_binding_id\x18\a \x01(\tR\x0emodelBindingId\x12X\n" +
 	"\x13workspace_directory\x18\b \x03(\v2'.ora.cloud.internal.v1.WorkspaceListingR\x12workspaceDirectory\x12_\n" +
-	"\x13agent_configuration\x18\t \x01(\v2..ora.cloud.internal.v1.AgentModelConfigurationR\x12agentConfiguration\"\x81\x03\n" +
+	"\x13agent_configuration\x18\t \x01(\v2..ora.cloud.internal.v1.AgentModelConfigurationR\x12agentConfiguration\"\xdb\x03\n" +
 	"\x17AgentModelConfiguration\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12%\n" +
 	"\x0eplugin_version\x18\x02 \x01(\tR\rpluginVersion\x12\x16\n" +
@@ -1326,7 +1411,16 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x17declaration_fingerprint\x18\x06 \x01(\tR\x16declarationFingerprint\x12'\n" +
 	"\x0fadapter_version\x18\a \x01(\rR\x0eadapterVersion\x125\n" +
 	"\x16configuration_revision\x18\b \x01(\x04R\x15configurationRevision\x12#\n" +
-	"\rsettings_json\x18\t \x01(\tR\fsettingsJson\"\x81\x01\n" +
+	"\rsettings_json\x18\t \x01(\tR\fsettingsJson\x12\x1a\n" +
+	"\bprotocol\x18\n" +
+	" \x01(\tR\bprotocol\x12<\n" +
+	"\x05model\x18\v \x01(\v2&.ora.cloud.internal.v1.AgentBoundModelR\x05model\"{\n" +
+	"\x0fAgentBoundModel\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12%\n" +
+	"\x0econtext_window\x18\x03 \x01(\x04R\rcontextWindow\x12\x1d\n" +
+	"\n" +
+	"max_tokens\x18\x04 \x01(\x04R\tmaxTokens\"\x81\x01\n" +
 	"\x11AgentSessionEnded\x12D\n" +
 	"\x06reason\x18\x01 \x01(\x0e2,.ora.cloud.internal.v1.AgentSessionEndReasonR\x06reason\x12\x1b\n" +
 	"\x06detail\x18\x02 \x01(\tH\x00R\x06detail\x88\x01\x01B\t\n" +
@@ -1406,7 +1500,7 @@ func file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP() []byte {
 }
 
 var file_ora_cloud_internal_v1_agent_executions_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ora_cloud_internal_v1_agent_executions_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_ora_cloud_internal_v1_agent_executions_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_ora_cloud_internal_v1_agent_executions_proto_goTypes = []any{
 	(AgentSessionEndReason)(0),      // 0: ora.cloud.internal.v1.AgentSessionEndReason
 	(RevisionFailureReason)(0),      // 1: ora.cloud.internal.v1.RevisionFailureReason
@@ -1418,15 +1512,16 @@ var file_ora_cloud_internal_v1_agent_executions_proto_goTypes = []any{
 	(*WorkspaceListing)(nil),        // 7: ora.cloud.internal.v1.WorkspaceListing
 	(*AgentSessionSpec)(nil),        // 8: ora.cloud.internal.v1.AgentSessionSpec
 	(*AgentModelConfiguration)(nil), // 9: ora.cloud.internal.v1.AgentModelConfiguration
-	(*AgentSessionEnded)(nil),       // 10: ora.cloud.internal.v1.AgentSessionEnded
-	(*DeliverRevisionSpec)(nil),     // 11: ora.cloud.internal.v1.DeliverRevisionSpec
-	(*StoredObject)(nil),            // 12: ora.cloud.internal.v1.StoredObject
-	(*RevisionDelivered)(nil),       // 13: ora.cloud.internal.v1.RevisionDelivered
-	(*RevisionUnchanged)(nil),       // 14: ora.cloud.internal.v1.RevisionUnchanged
-	(*RevisionFailed)(nil),          // 15: ora.cloud.internal.v1.RevisionFailed
-	(*UploadGrant)(nil),             // 16: ora.cloud.internal.v1.UploadGrant
-	nil,                             // 17: ora.cloud.internal.v1.UploadGrant.HeadersEntry
-	(*timestamppb.Timestamp)(nil),   // 18: google.protobuf.Timestamp
+	(*AgentBoundModel)(nil),         // 10: ora.cloud.internal.v1.AgentBoundModel
+	(*AgentSessionEnded)(nil),       // 11: ora.cloud.internal.v1.AgentSessionEnded
+	(*DeliverRevisionSpec)(nil),     // 12: ora.cloud.internal.v1.DeliverRevisionSpec
+	(*StoredObject)(nil),            // 13: ora.cloud.internal.v1.StoredObject
+	(*RevisionDelivered)(nil),       // 14: ora.cloud.internal.v1.RevisionDelivered
+	(*RevisionUnchanged)(nil),       // 15: ora.cloud.internal.v1.RevisionUnchanged
+	(*RevisionFailed)(nil),          // 16: ora.cloud.internal.v1.RevisionFailed
+	(*UploadGrant)(nil),             // 17: ora.cloud.internal.v1.UploadGrant
+	nil,                             // 18: ora.cloud.internal.v1.UploadGrant.HeadersEntry
+	(*timestamppb.Timestamp)(nil),   // 19: google.protobuf.Timestamp
 }
 var file_ora_cloud_internal_v1_agent_executions_proto_depIdxs = []int32{
 	3,  // 0: ora.cloud.internal.v1.ContentBlock.text:type_name -> ora.cloud.internal.v1.TextContent
@@ -1436,18 +1531,19 @@ var file_ora_cloud_internal_v1_agent_executions_proto_depIdxs = []int32{
 	6,  // 4: ora.cloud.internal.v1.AgentSessionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
 	7,  // 5: ora.cloud.internal.v1.AgentSessionSpec.workspace_directory:type_name -> ora.cloud.internal.v1.WorkspaceListing
 	9,  // 6: ora.cloud.internal.v1.AgentSessionSpec.agent_configuration:type_name -> ora.cloud.internal.v1.AgentModelConfiguration
-	0,  // 7: ora.cloud.internal.v1.AgentSessionEnded.reason:type_name -> ora.cloud.internal.v1.AgentSessionEndReason
-	6,  // 8: ora.cloud.internal.v1.DeliverRevisionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
-	12, // 9: ora.cloud.internal.v1.RevisionDelivered.history:type_name -> ora.cloud.internal.v1.StoredObject
-	12, // 10: ora.cloud.internal.v1.RevisionUnchanged.history:type_name -> ora.cloud.internal.v1.StoredObject
-	1,  // 11: ora.cloud.internal.v1.RevisionFailed.reason:type_name -> ora.cloud.internal.v1.RevisionFailureReason
-	17, // 12: ora.cloud.internal.v1.UploadGrant.headers:type_name -> ora.cloud.internal.v1.UploadGrant.HeadersEntry
-	18, // 13: ora.cloud.internal.v1.UploadGrant.expires_at:type_name -> google.protobuf.Timestamp
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	10, // 7: ora.cloud.internal.v1.AgentModelConfiguration.model:type_name -> ora.cloud.internal.v1.AgentBoundModel
+	0,  // 8: ora.cloud.internal.v1.AgentSessionEnded.reason:type_name -> ora.cloud.internal.v1.AgentSessionEndReason
+	6,  // 9: ora.cloud.internal.v1.DeliverRevisionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
+	13, // 10: ora.cloud.internal.v1.RevisionDelivered.history:type_name -> ora.cloud.internal.v1.StoredObject
+	13, // 11: ora.cloud.internal.v1.RevisionUnchanged.history:type_name -> ora.cloud.internal.v1.StoredObject
+	1,  // 12: ora.cloud.internal.v1.RevisionFailed.reason:type_name -> ora.cloud.internal.v1.RevisionFailureReason
+	18, // 13: ora.cloud.internal.v1.UploadGrant.headers:type_name -> ora.cloud.internal.v1.UploadGrant.HeadersEntry
+	19, // 14: ora.cloud.internal.v1.UploadGrant.expires_at:type_name -> google.protobuf.Timestamp
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_ora_cloud_internal_v1_agent_executions_proto_init() }
@@ -1458,14 +1554,14 @@ func file_ora_cloud_internal_v1_agent_executions_proto_init() {
 	file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[2].OneofWrappers = []any{
 		(*ContentBlock_Text)(nil),
 	}
-	file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[8].OneofWrappers = []any{}
+	file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ora_cloud_internal_v1_agent_executions_proto_rawDesc), len(file_ora_cloud_internal_v1_agent_executions_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

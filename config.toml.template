@@ -47,6 +47,8 @@ client_secret = ""
 display_name_field = "userName"
 
 [plugins]
+# Enable only after Node/Controller and both plugin adapters are deployed; empty disables admission.
+personal_agent_target = ""
 # Plugin marketplace the cloud server keeps a catalog snapshot of. `task setup` turns these
 # values into CLOUD_PLUGINS_* overrides in .local/dev.env, which configs/config.yaml already
 # accepts. Leave the section unchanged to use the default marketplace.

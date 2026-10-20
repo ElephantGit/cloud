@@ -158,13 +158,18 @@ func (s *Store) sessionStartSpec(t *transaction, o, snap Object, turnID, content
 	if bindingID := snap.S("modelBindingId"); bindingID != "" {
 		spec["modelBindingId"] = bindingID
 	}
-	if frozen := t.one("SELECT * FROM run_agent_configurations WHERE run_id=$1", runID); frozen != nil {
+	if frozen := t.one("SELECT *,settings::text AS settings_json FROM run_agent_configurations WHERE run_id=$1", runID); frozen != nil {
+		binding := t.one("SELECT protocol,model FROM run_model_bindings WHERE id=$1 AND run_id=$2", snap.S("modelBindingId"), runID)
+		if binding == nil {
+			return nil, fmt.Errorf("session start: frozen agent has no model binding")
+		}
 		spec["agentConfiguration"] = Object{
 			"pluginId": frozen.S("pluginId"), "pluginVersion": frozen.S("pluginVersion"),
 			"target": frozen.S("target"), "packageSha256": frozen.S("packageSha256"),
 			"schemaVersion": frozen.N("declarationSchemaVersion"), "declarationFingerprint": frozen.S("declarationFingerprint"),
 			"adapterVersion": frozen.N("adapterContractVersion"), "configurationRevision": frozen.N("configurationRevision"),
-			"settings": frozen.O("settings"),
+			"settingsJson": frozen.S("settingsJson"),
+			"protocol":     binding.S("protocol"), "model": binding.O("model"),
 		}
 	}
 	if prior != nil {
@@ -291,7 +296,7 @@ func (s *Store) scanStartingAgentRuns(ctx context.Context, limit int) ([]string,
 		         JOIN workspaces w ON w.id=n.workspace_id AND w.runtime_generation=si.generation
 		         WHERE n.workspace_id=ir.workspace_id AND n.initialized AND n.connection_state='connected'
 		           AND n.ended_at IS NULL AND si.terminated_at IS NULL
-		           AND n.last_seen_at>clock_timestamp()-interval '30 seconds' AND NOT n.model_proxy)))))))
+		           AND n.last_seen_at>clock_timestamp()-interval '30 seconds' AND (NOT n.model_proxy OR `+declaredAdapterMismatchSQL+`))))))))
 		ORDER BY ir.created_at, ir.id LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

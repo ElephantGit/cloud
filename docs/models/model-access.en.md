@@ -7,6 +7,8 @@ Agent runs they trigger use that model. The key is kept by the platform, and eve
 are proxied through [model-gateway](model-gateway.en.md): the sandbox running the Agent never receives the
 original key, only a short-lived token valid for that run alone.
 
+Declared Agent admission is disabled by default. After host rollout, `plugins.personal_agent_target` opts into one exact Linux target. Cloud freezes package/declaration/adapter identities, configuration revision, model metadata and numeric literals. Controller and Node must prove matching target, contract and protocol before execution. Validated Settings JSON travels as text to avoid rounding integers or decimals; runtime authority exists only in mTLS grants and the live plugin startup channel. An incompatible current Node settles as unavailable; disconnected or stale Nodes are not definitive refusals.
+
 This document covers four things on the Cloud side: connections and the default model, key custody, the
 binding fixed for a run, and short-lived grants for model requests.
 

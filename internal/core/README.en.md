@@ -1,129 +1,32 @@
-# internal/core: Authoritative Domain Engine
+# internal/core: authoritative domain and persistence
 
 [中文](README.md) | [English](README.en.md)
 
-`internal/core` is the authoritative domain and state-machine layer of Ora Cloud. It owns all business aggregates, state transitions, transaction boundaries, cryptographic token verification, and PostgreSQL persistence orchestration.
+This package owns business state, authorization, transactions and recovery decisions. HTTP and gRPC adapters translate requests into Store calls; see the [document map](../../docs/README.en.md) for cross-module contracts.
 
-## Module map
+## Code map
 
-- `task_conversation_append.go`: shared handoff/pause checks for legacy Thread appends and task queues. External input checks the queue tail; workers check only earlier messages, preserving the accepted prefix before a switch. Rejection creates no entry or command.
+| File group | Package responsibility | Cross-module documentation |
+|---|---|---|
+| `store.go`, `public.go`, `control.go` | Injected SQL pool, transaction wrapper, dispatch, idempotency and Fault | [Persistence and transactions](../../docs/core/persistence.en.md) |
+| `auth.go`, `tenant.go`, `join.go`, `space*.go` | Verified identity resolution, tenant and membership scope | [Identity and tenancy](../../docs/identity/tenancy.en.md) |
+| `node*.go`, `runtime_*.go`, `run_workspace.go` | Node facts, control sessions, fencing and run Workspaces | [Runtime control](../../docs/runtime/runtime-control.en.md) |
+| `repository_*.go`, `git_*.go` | Bindings, sync/publish Operations, GitGrant and credential metadata | [External Git line](../../docs/repositories/external-git.en.md) |
+| `issue*.go`, `collaboration*.go`, `form_descriptor.go` | Issue aggregates, timeline, interactions and consuming collaboration ports | [Issue collaboration](../../docs/collaboration/interactions.en.md) |
+| `agent_run_*.go`, `execution*.go`, `thread*.go`, `business_hooks.go` | Run lifecycle, execution registry, Thread and transaction-scoped settlement hooks | [IssueRun](../../docs/agent-runs/issue-runs.en.md), [Controller](../../docs/runtime/controller-integration.en.md) |
+| `task_conversation_*.go`, `thread_preview.go` | Ordered task messages, serial same-task Agent handoff and pause barriers, follow-up prompts frozen from Node visible text, configuration-gap hints and a bounded in-process live preview; initial Agent prompts read only the frozen run input | [Thread](../../docs/agent-runs/threads.en.md), [IssueRun](../../docs/agent-runs/issue-runs.en.md) |
+| `revision*.go`, `session_*.go` | Revision registration, archives, session listing and statistics | [Revision](../../docs/agent-runs/revisions.en.md), [Session reads](../../docs/agent-runs/session-reads.en.md) |
+| `model_*.go` | Personal configuration, frozen bindings, grant digests and request observations; no API Key decryption | [Model access](../../docs/models/model-access.en.md) |
+| `plugins.go`, `plugin_*.go`, `workflow_asset_imports.go` | Catalog snapshots, space selection, Node installation and asset import ledger | [Plugin marketplace](../../docs/plugins/marketplace.en.md) |
+| `workflow*.go` | Graphs, published snapshots, admission, run identity and scheduler | [Workflows](../../docs/workflows/workflows.en.md) |
+| `hub.go`, `signals.go` | Post-commit invalidation and control hints; no authoritative state | [HTTP API](../../docs/core/http-api.en.md) |
 
-- `task_conversation_readiness.go`: safe project/personal-default-model gaps for the current member. It exposes no connection/credential identity, grants no access to another person's model session and is rechecked on dispatch.
+## Store and transaction boundaries
 
-- `task_conversation_stop.go`: atomically requests cancellation and persists a task pause. Existing cancellation/delivery/release owns cleanup. The pause is independent of final Run success/failure, preserves later messages and drafts, and requires explicit recovery.
+- `NewStore` obtains `*sql.DB` from injected GORM and wires the real Workflow Directory/Forms; it neither connects nor migrates nor creates a global database. `NewDevelopmentStore` additionally permits the retired clone fixture.
+- `transact` takes `pg_advisory_xact_lock(67420911)` inside PostgreSQL, handles domain Faults and post-commit notifications. Hooks must use the supplied transaction, never start a nested Store transaction.
+- Network, Git, filesystem and object-store calls happen outside transactions; callers recheck identity, version and authorization afterwards. Archive reads, publish-source checks and credential confirmation have dedicated entrypoints.
+- `Object` is the boundary JSON value. `Fault` and `ErrorCode` convert expected failures and database errors into safe public errors. Domain panics are converted only at the transaction control boundary; unexpected panics must not be swallowed.
+- Commands wire Store ports and policy durations. See [collab](../collab/README.en.md) for development ports; simulated results do not replace physical execution evidence.
 
-- `thread_preview.go`: bounded process-local optional previews, replaced by execution/version. Admission verifies lease and live execution; authorized reads remove settled positions. It creates no receipt or Ack. Expiry or a different replica explicitly degrades to durable Thread data. `thread_preview_test.go` covers bounds, expiry, reordering and final dominance.
-
-- `task_conversation_messages.go`, `task_conversation_queue.go`, and `task_conversation_context.go` own ordered task messages, serialized Agent handoff, and later prompts frozen from Node-projected assistant text. A failed message blocks later handoffs; an undelivered result requires an explicit discard before continuing from a saved Revision. Real PostgreSQL tests cover concurrent idempotency, authorization, release evidence, failure pauses, and missing history.
-
-The initial Agent prompt carries the frozen task title, description, recent comments and explicit references, including the no-ContextBuilder path. Startup does not re-read mutable task context. `agent_initial_context_test.go` checks context preservation and does not invent fields absent from legacy snapshots.
-
-- [migrations](migrations/README.en.md) defines the forward-only, linear PostgreSQL schema migration scripts and checksum verification.
-- [plugins.go](plugins.go) persists and reads the plugin catalog snapshot (the `pluginmarket.CatalogSink` implementation) and owns the space plugin selection state machine (install/remove fan-out, the aggregation rule, SSE invalidation broadcasts).
-- [session_list.go](session_list.go) and [session_history.go](session_history.go) provide tenant Agent
-  session discovery, current-member authorization and complete registered JSONL archive reads.
-
-## Architecture and runtime model
-
-### Aggregates and relationships
-- **Users & Identities**: Users are identified by stable IdP claims (`source`, `subject`). Huawei login keeps the IDaaS `uuid` as its subject and associates a directory-selected person through the verified `globalUserId`; employee numbers grant no access. Conflicting identity mappings are never merged automatically.
-- **Tenants, Spaces & Memberships**: Each tenant has exactly one visible collaboration space, and a user may join and switch among many tenants. `tenant_memberships` is the sole authority for the peer `admin` and `member` roles and membership status. Public deployments use invitation or application links; corporate deployments verify active employees through Tianzhou.
-- **Projects**: Each project belongs to a tenant and its sole collaboration space. `(tenant_id, owner_user_id)` remains the durable resource and credential ownership boundary, while any active tenant member can access tenant projects. Each Workspace clones the project repository into its own data at its `requested_ref`; `project_storage` rows are retained history only.
-- **Repository Bindings & Operations**: A project's external repository (URL, branch to sync, credential references) lives on its sole `repository_bindings` row, read under the project's published field names through `projectView`. The transaction that creates a project also creates its Binding and one `pending` sync with trigger `project_created` (`repository_operations`). CHECK constraints fix the sync and publish states and their terminal states, and a partial unique index allows at most one unfinished sync per Binding; `repository_snapshots` records each Binding's current verified snapshot. Entering `deleting` cancels the Operations that have not reached `running` and clears the resync request in the same transaction; when a Node refuses quiesce and the project returns to `active`, that transaction gives the owed sync back (a `pending` sync with trigger `deletion_aborted`, or the resync request while a sync is still running), while cancelled publishes stay cancelled. `delete_project` starts only once no Operation is unfinished, and a failed `create_project` always leaves the project `active`. `AuthorizeGitOperation` decides the Repo Executor's Git access from the Operation's current state.
-- **Workspaces & Tasks**: Each project has at most one active `main` workspace (enforced by the `one_main` partial unique index). Additional workspaces are `isolated` and map 1:1 with `tasks`.
-- **Operations & Effects**: Mutations (such as project creation, workspace start/stop, or deletion) execute as durable `operations` (`queued`, `running`, `retry_wait`, `blocked`, `done`, `failed`). Operations decompose into durable `effects` representing external tasks executed by Substrate and Controller.
-- **Clone Requests**: independent work items accepted idempotently by `(tenant_id, actor_user_id, request_id)`, outside the operation/effect model; a Controller claims them over the internal control contract, registers the dispatch (`clone_executions`) and takes over the Node result (`clone_event_receipts`). The public `/clones` routes are visible to the submitting user only; `state` is projected from the request state and the execution result.
-- **Nodes & Sessions**: `node_instances` records Nodes on runtime workspaces. Agent conversations
-  persist in `issue_runs`, `thread_entries` and execution receipts; `revisions` registers delivered
-  complete JSONL objects in storage.
-
-### Concurrency and locking
-- **Transactional advisory lock**: Phase-one serializes domain mutations using PostgreSQL's `SELECT pg_advisory_xact_lock(67420911)` within `Store.transact`. This eliminates race conditions during aggregate state transitions while keeping locking database-local.
-- **Single active operation per project**: Enforced by `idleProject`: a new project operation cannot be scheduled if another operation is currently `queued`, `running`, `retry_wait`, or `blocked`.
-- **Optimistic concurrency**: Mutations on mutable entities require an explicit `version` parameter. A missing version returns `428 version_required`; a mismatched version returns `409 version_conflict`.
-- **Controller leases**: Controller workers acquire exclusive leases via `/internal/v1/controller-lease/acquire`, renewed periodically. Work dispatching uses monotonic `epoch` fencing to reject stale controller instances.
-
-### Idempotency
-- Creation and joining writes require an `Idempotency-Key` header. Tenant-scoped records use `(tenant_id, user_id)`; pre-membership join records use `user_id`.
-- Requests compute a SHA256 hash of the method, path, and normalized body.
-- An identical request replaying an existing key returns the previously stored HTTP response.
-- A differing request using the same key is rejected with `409 idempotency_conflict`.
-
-### Authentication and trust
-- `Authenticator` validates JWT tokens using Ed25519/RS256 public keys loaded at startup:
-  - **Service tokens**: Carry `kind="service"` and `role` (`gateway`, `controller`, or `node`).
-  - **User tokens**: Carry `kind="user"` and are forwarded in the `X-Ora-User-Token` header by the gateway. The router ensures `user.Caller == service.Subject`.
-
-### Error handling
-- The domain exclusively raises `*Fault` values containing a machine-readable `Code`, dynamic `Params`, and an HTTP `Status`.
-- `ErrorCode(err)` converts domain and internal database errors into client-safe `Fault` objects, mapping unexpected errors to `500 internal_error` without leaking database schema or credential information.
-
-## Boundaries and invariants
-
-- **No long-lived transactions**: Transactions must never encompass network calls, Git operations, Substrate calls, or child process execution.
-- **No in-memory state**: All state transitions must be committed to PostgreSQL before returning success.
-- **Tenant isolation**: Project and runtime reads verify active tenant membership and scope queries by a trusted `tenant_id`. `owner_user_id` remains for resource, credential, and execution ownership; it does not exclude another member of the same tenant.
-
-See [Database migrations](migrations/README.en.md), [Authoritative persistence](../../docs/core/persistence.en.md), and [Internal credentials](../../docs/identity/authentication.en.md).
-
-## Personal model connections
-
-`model_connections.go`, `model_credentials.go`, `model_run_binding.go` and `model_grants.go`
-own private metadata, immutable ciphertext references, run snapshots and temporary-token digests.
-Core never receives or decrypts upstream API keys. See [personal model connections](../../docs/models/model-access.en.md)
-for freezing, authorization, renewal and revocation rules.
-
-## Session Dashboard reads
-
-`GET /api/v1/tenants/:tid/agent-sessions` lists persisted Agent IssueRuns, excluding deleted runs
-and Issues. Filters are `projectId`, one `status`, the exact plugin identifier `agent`, and creation
-times `from` (inclusive) / `to` (exclusive, RFC 3339). `limit` defaults to 50 and caps at 100.
-Ordering is descending `(createdAt,id)`; `after` is the preceding page's `nextCursor` UUID and must
-resolve to a visible Agent Run in the current tenant. `before` is unsupported.
-
-Both new readers dispatch before the general `Public` transaction. `sessionReadIdentity` resolves
-existing identities and Huawei aliases and checks conflicts, active user status and current tenant
-membership without provisioning users, binding aliases or refreshing runtime state. The list projects
-Issue/project identity, Agent plugin, status, timestamps and a nullable frozen model summary.
-`historyAvailable` means an unexpired Revision registration exists; storage reachability and size
-bounds are checked only when reading the archive.
-
-`GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/history` calls `Store.SessionHistory`. A short
-transaction checks membership, Issue, Agent Run and unexpired registration. Private signed S3 GET
-runs outside the transaction. Only the registered key is accepted, with the exact layout
-`revisions/{tenant}/{run}/{work UUID}/session.jsonl`; callers cannot supply a URL or path. Actual
-bytes must match the registered size and SHA-256, with a 32 MiB / 100000-object bound and valid UTF-8
-JSONL. The read refuses redirects, propagates cancellation and has a 30-second storage timeout.
-A second short transaction rechecks current authorization and unchanged registration before return.
-
-The response is `{source:"archive",records:[...],sizeBytes,sha256}`. Records retain file order,
-duplicate `seq` updates, original fields and JSON numeric precision for consumer-side history replay.
-Absent/expired registration returns `404 history_unavailable`; oversized input returns
-`413 history_too_large`; invalid bytes or JSONL return `502 history_invalid`; storage failures return
-`502 history_unavailable`. No storage URL, object key or credential is exposed.
-
-This version does not represent Chat or Workflow Runs as Agent sessions and never scans personal
-session directories. Live views keep using the existing Thread projection; space SSE is an invalidation
-hint. Neither Thread nor an archive guarantees token/cost usage, parent-child relationships, or every
-tool's input/output and timing. Missing data stays unavailable. Record `seq` and Cloud Thread paging
-`seq` are separate sequences and must remain distinct during replay.
-
-`session_history*_test.go` uses synthetic data, real HTTP and isolated PostgreSQL schemas for access,
-scoped keys, read-only identities, revocation/replacement during I/O, byte/checksum/JSONL bounds,
-cancellation and numeric preservation. `session_list_test.go` covers list scope and pagination.
-No real user conversation is a product test fixture.
-
-## Model request statistics
-
-`model_attempts.go` records intent before outbound HTTP using the live grant's tenant, run, execution and frozen model.
-Append-only migration `0035_model_attempt_statistics.sql` adds `model_request_attempts` with composite scope foreign keys;
-existing sessions are not backfilled. Rows contain statuses, protocol/model, safe error codes, gateway timing and nullable
-usage counters, never request/response content or credentials. Failed intent persistence blocks forwarding. Finalization
-may close a revoked grant's existing attempt; identical completion is idempotent and conflicting completion is rejected.
-
-`session_model_statistics.go` serves authorized run `/statistics` and `/model-calls` reads independently of archives.
-Statistics aggregate every recorded HTTP attempt in the run; calls page ascending `(startedAt,id)`, default 50, maximum 100.
-Every metric carries `value/knownCount/totalCount/availability`: missing stays null, measured zero stays zero, and unfinished
-usage snapshots remain partial. `started` may mean an active request or a lost final observation, never inferred success,
-failure or zero consumption. Reads do not provision identities or refresh lifecycle state. Real PG tests cover immutable
-concurrent completion, coverage, pagination and database-enforced read-only access.
+See [migrations](migrations/README.en.md) for complete migration filenames. Package `*_db_test.go` tests need isolated real PostgreSQL schemas; [integration](../../integration/README.en.md) covers HTTP, Git and storage boundaries.

@@ -3,7 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 只以 smart HTTP 提供 Project 仓库（`/{tenantId}/{projectId}.git`），见根决策 `cloud/git-server/0` 与
-`proposed` 的后续决策“Git Server 成为每个 Project 的代码中心”。每项权限都由 `internal/core` 与 PostgreSQL 判定，
+`approved` 的后续决策“Git Server 成为每个 Project 的代码中心”。每项权限都由 `internal/core` 与 PostgreSQL 判定，
 本包不保存授权状态。
 
 | 文件 | 职责 |

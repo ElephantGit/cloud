@@ -3,7 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 Serves Project repositories (`/{tenantId}/{projectId}.git`) over smart HTTP only (root decision
-`cloud/git-server/0` and the proposed follow-up "Git Server as each Project's code hub").
+`cloud/git-server/0` and the approved follow-up "Git Server as each Project's code hub").
 `internal/core` and PostgreSQL decide every permission; this package holds no authorization state.
 
 | Files | Responsibility |

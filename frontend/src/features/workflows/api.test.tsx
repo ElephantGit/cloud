@@ -39,6 +39,7 @@ function runFixture(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
     definitionSnapshot: null,
     startedAt: '2026-09-20T02:00:00.000Z',
     finishedAt: null,
+    cancelRequestedAt: null,
     createdAt: '2026-09-20T02:00:00.000Z',
     updatedAt: '2026-09-20T02:00:05.000Z',
     ...overrides,

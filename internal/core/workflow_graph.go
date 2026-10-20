@@ -134,6 +134,48 @@ func workflowGlobalVariables(graph Object) []Object {
 	return out
 }
 
+// normalizeWorkflowGlobals returns the graph with file and array[file] global values canonicalized the
+// way desktop's into_global_variables does before freezing: a legacy path string becomes its
+// {kind: "workspace_file", path} reference. Every other declaration is left as the author wrote it,
+// and a file value that is already a canonical reference normalizes to itself. Publishing calls this
+// after validation and before freezing, so the snapshot — and every consumer of it, a condition's
+// variable pool included — sees the same shape desktop's pool produces. The graph must already pass
+// validateWorkflowGraph: a value that reaches here was accepted there, so it is known to normalize.
+func normalizeWorkflowGlobals(graph Object) Object {
+	declared, ok := graph["globalVariables"].([]any)
+	if !ok {
+		return graph
+	}
+	globals := make([]any, len(declared))
+	for i, item := range declared {
+		globals[i] = item
+		variable, ok := asWorkflowObject(item)
+		if !ok {
+			continue
+		}
+		valueType := variable.S("valueType")
+		if valueType != "file" && valueType != "array[file]" {
+			continue
+		}
+		value, hasValue := variable["value"]
+		if !hasValue || value == nil {
+			continue
+		}
+		normalized, ok := normalizeWorkflowValue(value, valueType)
+		if !ok {
+			continue
+		}
+		copied := Object{}
+		for k, v := range variable {
+			copied[k] = v
+		}
+		copied["value"] = normalized
+		globals[i] = copied
+	}
+	graph["globalVariables"] = globals
+	return graph
+}
+
 // validateWorkflowGlobals refuses global declarations the run could not honor, mirroring desktop's
 // into_global_variables so a graph Cloud publishes is a graph desktop accepts. Each problem names the
 // global it concerns. The rules, in order: the list itself must be a list, every entry an object, the

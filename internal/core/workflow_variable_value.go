@@ -6,10 +6,11 @@ import (
 )
 
 // The workflow variable value vocabulary, ported from desktop's variable_value.rs so a graph's global
-// declarations are accepted or refused on Cloud by the same rules desktop applies. Only the publish
-// gate and the run's ambient pool read these: Cloud never stores a normalized value — the frozen
-// snapshot keeps the authored value verbatim — so every normalization here is the accept/reject
-// decision, not a rewrite.
+// declarations are accepted or refused on Cloud by the same rules desktop applies. The publish gate
+// and the run's ambient pool read these. Most normalizations here are the accept/reject decision, not
+// a rewrite: the frozen snapshot keeps the authored value verbatim. The one rewrite is the publish
+// gate's normalizeWorkflowGlobals, which stores the normalized file and array[file] reference so a
+// condition reads the same shape desktop's variable pool produces.
 
 // workflowSupportedVariableType reports whether a wire type belongs to the workflow variable
 // vocabulary, desktop's is_supported_variable_type.
@@ -26,8 +27,8 @@ func workflowSupportedVariableType(valueType string) bool {
 // normalizeWorkflowValue reports whether a value is acceptable for its declared type, mirroring
 // desktop's normalize_workflow_value: file and array[file] also migrate a legacy path string into a
 // canonical workspace-file reference, and every other type checks the value against the type. The
-// normalized value is returned for the file types so a caller may inspect it, but Cloud never
-// persists it.
+// normalized value is returned for the file types so normalizeWorkflowGlobals can store it; callers
+// that only validate discard it.
 func normalizeWorkflowValue(value any, valueType string) (any, bool) {
 	switch valueType {
 	case "file":

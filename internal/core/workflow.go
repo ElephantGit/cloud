@@ -102,7 +102,9 @@ func workflowSnapshotList(t *transaction, r *PublicRequest) Object {
 func publishWorkflow(t *transaction, r *PublicRequest) Object {
 	w := t.one("SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL FOR UPDATE", r.WorkflowID, r.TenantID)
 	require(w != nil, 404, "not_found")
-	requireValidWorkflowGraph(w.O("graph"))
+	graph := w.O("graph")
+	requireValidWorkflowGraph(graph)
+	w["graph"] = normalizeWorkflowGlobals(graph)
 	name := w.S("name")
 	if r.Body.S("name") != "" {
 		name = validText(r.Body.S("name"), 200)

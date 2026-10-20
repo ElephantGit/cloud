@@ -158,6 +158,15 @@ func (s *Store) sessionStartSpec(t *transaction, o, snap Object, turnID, content
 	if bindingID := snap.S("modelBindingId"); bindingID != "" {
 		spec["modelBindingId"] = bindingID
 	}
+	if frozen := t.one("SELECT * FROM run_agent_configurations WHERE run_id=$1", runID); frozen != nil {
+		spec["agentConfiguration"] = Object{
+			"pluginId": frozen.S("pluginId"), "pluginVersion": frozen.S("pluginVersion"),
+			"target": frozen.S("target"), "packageSha256": frozen.S("packageSha256"),
+			"schemaVersion": frozen.N("declarationSchemaVersion"), "declarationFingerprint": frozen.S("declarationFingerprint"),
+			"adapterVersion": frozen.N("adapterContractVersion"), "configurationRevision": frozen.N("configurationRevision"),
+			"settings": frozen.O("settings"),
+		}
+	}
 	if prior != nil {
 		spec["priorRevision"] = prior
 	}

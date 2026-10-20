@@ -145,6 +145,13 @@ func sessionObject(spec *controlpb.AgentSessionSpec) (core.Object, error) {
 	if id := spec.GetModelBindingId(); id != "" {
 		out["modelBindingId"] = id
 	}
+	if configuration := spec.GetAgentConfiguration(); configuration != nil {
+		frozen, err := agentConfigurationObject(configuration)
+		if err != nil {
+			return nil, err
+		}
+		out["agentConfiguration"] = frozen
+	}
 	if prior := spec.GetPriorRevision(); prior != nil {
 		out["priorRevision"] = priorObject(prior)
 	}
@@ -193,6 +200,7 @@ func sessionMessage(o core.Object) *controlpb.AgentSessionSpec {
 	return &controlpb.AgentSessionSpec{
 		AgentPluginId: o.S("agentPluginId"), AgentPluginVersion: o.S("agentPluginVersion"), CheckoutExecutionId: o.S("checkoutExecutionId"),
 		ModelBindingId:     o.S("modelBindingId"),
+		AgentConfiguration: agentConfigurationMessage(o.O("agentConfiguration")),
 		GitIdentity:        &controlpb.GitIdentity{Name: git.S("name"), Email: git.S("email")},
 		InitialTurn:        &controlpb.UserTurn{TurnId: turn.S("turnId"), Content: contentMessages(rows(turn["content"]))},
 		PriorRevision:      priorMessage(o.O("priorRevision")),

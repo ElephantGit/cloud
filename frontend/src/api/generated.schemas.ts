@@ -878,6 +878,8 @@ export const IssueRunStatus = {
 export interface IssueRun {
   attempt: number;
   /** @nullable */
+  cancelRequestedAt: string | null;
+  /** @nullable */
   completedAt: string | null;
   createdAt: string;
   /** @nullable */
@@ -3531,6 +3533,12 @@ export type PostApiV1TenantsTidIssuesIidRunsBody = {
 
 export type PostApiV1TenantsTidIssuesIidRuns200 = {
   resource: IssueRun;
+};
+
+export type PostApiV1TenantsTidIssuesIidRunsRidCancelBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidIssuesIidRunsRidCancel202 = {
+  cancelRequestedAt: string;
 };
 
 export type GetApiV1TenantsTidIssuesIidRunsRidModelCallsParams = {

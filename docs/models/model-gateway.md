@@ -48,6 +48,18 @@ model-gateway（`cmd/model-gateway`，实现在 `internal/modelgateway`）是独
 
 ## 转发
 
+Claude Code 2.1.303 的 Messages 兼容面如下；允许的 beta 标记由
+[协议策略](../../internal/modelgateway/anthropic.go)集中定义。未知或重复的 Anthropic 协议头值被拒绝，
+客户端诊断头、会话标识及 browser-access 标记不会转发到供应商。
+
+| 方法与路径 | 查询 | 行为 |
+|---|---|---|
+| POST /runtime/anthropic/v1/messages | 无，或精确 beta=true | 按冻结模型转发，替换认证，保留受支持版本/beta 协议头 |
+| GET /runtime/anthropic/v1/models | 无，或精确 limit=1000 | 重新核验授权并返回绑定的唯一模型，不访问上游 |
+
+目录是平台已冻结模型的视图，不表示供应商发现成功；它不读取 Key，不计为推理尝试。
+count_tokens、其他查询、路径与方法明确拒绝。可选探测的拒绝不放宽推理、授权或出网策略。
+
 - 只转发授权里固定的模型和固定的路径，并校验协议的请求封装；成功的 JSON 和 SSE 字节原样转发，SSE 逐个事件刷新。
 - HTTP 200 里夹带的错误事件也归一为安全错误；ACP 的认证失败（`Authentication required`、`Not logged in`）归类为
   `agent_authentication_required`，其他供应商的原始文本不公开。

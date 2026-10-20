@@ -7,6 +7,7 @@
 
 | 文件 | 职责 |
 |---|---|
+| anthropic.go | Claude 固定版本的 query/协议头白名单与单模型授权目录 |
 | `crypto.go`、`key_verification.go` | AES-256-GCM 密文、不可变记录绑定、重试指纹及旧加密身份检查 |
 | `credentials.go` | Gateway 独占的写入/清除边界，双重签名身份和当前个人归属 |
 | `grants.go` | 专用 mTLS 模型身份的授权、同令牌续期与撤销 |
@@ -20,6 +21,17 @@
 模型数据监听需要临时令牌。三个入口不可互换。所有响应和错误禁止出现真实 Key。
 成功的 SSE 逐事件刷新，HTTP 200 内的错误事件也归一为安全错误；撤销同时打断上游和阻塞的下游写入。
 每个授权观察任务归属于一个请求，取消后必须等待它退出。
+
+Anthropic 兼容面固定到 Claude Code 2.1.303：推理只接受 POST messages 的空 query 或
+精确 beta=true；协议版本固定 2023-06-01，beta token 仅允许 anthropic.go 列出的七项，
+重复或未知值拒绝。其他客户端头不转发；CLI 的 browser-access 标记只验证并丢弃。
+GET models（空 query 或 limit=1000）在重新核验当前授权后返回绑定的唯一模型，不请求上游、
+不解密 Key、不登记推理 attempt。count_tokens 等可选接口保持未实现并明确拒绝。
+上述目录是冻结模型集合的视图，不伪装供应商发现能力。
+
+TestPinnedClaudeMessagesCompatibility 可用 CLAUDE_COMPAT_BINARY 指向经上游锁文件校验的
+2.1.303 CLI 做受控验证：独立 HOME/配置目录、合成凭据和本地供应商，实际请求经生产
+ModelHandler；未设置该路径时显式跳过，不以普通协议夹具替代真实 CLI 证据。
 
 模型转发在 `Upstream.Do` 前调用 Core `BeginModelAttempt`，失败时返回安全的
 `model_metrics_unavailable`，不会请求上游。一次登记表示一次网关发送意图；它不能证明远端已经

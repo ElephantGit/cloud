@@ -1,11 +1,14 @@
 package pluginmarket
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // writeListing drops a manifest (and optional siblings) under registry/<dir>.
@@ -115,5 +118,168 @@ func TestScanReportsWalkFailure(t *testing.T) {
 	_, _, e := Scan(filepath.Join(t.TempDir(), "missing"), "official", "https://example.invalid/market.git")
 	if e == nil {
 		t.Fatal("a missing registry root must be a fatal scan error")
+	}
+}
+
+// declarationFor is the shared minimal declaration bytes every copy test uses.
+const declarationFor = `{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"single"}}}`
+
+// declarationDigestOf hashes the fixture declaration the way the release pipeline would.
+func declarationDigestOf(t *testing.T, source string) string {
+	t.Helper()
+	compiled, e := CompileAgentConfiguration([]byte(source))
+	if e != nil {
+		t.Fatalf("fixture declaration must compile: %v", e)
+	}
+	return compiled.Fingerprint
+}
+
+// writeCopy writes one static declaration copy beside a listing.
+func writeCopy(t *testing.T, dir, name string, content []byte) {
+	t.Helper()
+	if e := os.WriteFile(filepath.Join(dir, name), content, 0o600); e != nil {
+		t.Fatal(e)
+	}
+}
+
+func TestScanResolvesValidatedDeclarationCopies(t *testing.T) {
+	root := t.TempDir()
+	digest := strings.Repeat("ab", 32)
+	valid := writeListing(t, root, "a", "declared", "resolver = 1\nidentifier = \"declared\"\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Declared.\"\nurl = \"https://example.invalid/d.orax\"\nsha256 = \""+digest+"\"\n\n[agent_configuration]\nschema_version = 2\ndeclaration_sha256 = \""+declarationDigestOf(t, declarationFor)+"\"\ncopy = \"agent-configuration.json\"\n")
+	writeCopy(t, valid, "agent-configuration.json", []byte(declarationFor))
+	writeListing(t, root, "b", "undeclared", "resolver = 1\nidentifier = \"undeclared\"\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Undeclared.\"\nurl = \"https://example.invalid/u.orax\"\nsha256 = \""+digest+"\"\n")
+	entries, skipped, e := Scan(filepath.Join(root, "registry"), "official", "https://example.invalid/market.git")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	var declared, undeclared *Entry
+	for i := range entries {
+		switch entries[i].Identifier {
+		case "declared":
+			declared = &entries[i]
+		case "undeclared":
+			undeclared = &entries[i]
+		}
+	}
+	if declared == nil || undeclared == nil {
+		t.Fatalf("catalog = %+v", entries)
+	}
+	if declared.AgentConfiguration == nil || declared.AgentConfigurationIssue != "" {
+		t.Fatalf("valid association must be consumable: %+v", declared.AgentConfiguration)
+	}
+	if declared.AgentConfiguration.Declaration != declarationFor {
+		t.Fatalf("the exact copy bytes must be retained: %q", declared.AgentConfiguration.Declaration)
+	}
+	if declared.AgentConfiguration.DeclarationSha256 != declarationDigestOf(t, declarationFor) {
+		t.Fatalf("association digest mismatch: %+v", declared.AgentConfiguration)
+	}
+	// "Not declared" and "declared but invalid" are different facts; both stay visible.
+	if undeclared.AgentConfiguration != nil || undeclared.AgentConfigurationIssue != "" {
+		t.Fatalf("undeclared listing must carry neither field: %+v", undeclared)
+	}
+}
+
+func TestScanRecordsBoundedIssuesForInvalidCopies(t *testing.T) {
+	digest := strings.Repeat("ab", 32)
+	tampered := `{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":1,"protocols":["openai-completions"],"modelCardinality":"single"}}}`
+	cases := []struct {
+		name   string
+		issues string
+	}{
+		{"missing-copy", "copy unreadable"},
+		{"digest-mismatch", "digest does not match"},
+		{"invalid-declaration", "declaration invalid"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			// The declared digest matches the copy bytes in every case, so each failure surfaces at
+			// its own check: a missing copy, bytes that are not what the release associated, and
+			// bytes that are exactly what was declared but do not compile.
+			copyBytes := []byte(declarationFor)
+			declaredDigest := declarationDigestOf(t, declarationFor)
+			if testCase.name == "digest-mismatch" {
+				copyBytes = []byte(tampered)
+			}
+			if testCase.name == "invalid-declaration" {
+				copyBytes = []byte(`{"schemaVersion":3}`)
+				sum := sha256.Sum256(copyBytes)
+				declaredDigest = hex.EncodeToString(sum[:])
+			}
+			entryDir := writeListing(t, root, "a", "broken", "resolver = 1\nidentifier = \"broken\"\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Broken.\"\nurl = \"https://example.invalid/b.orax\"\nsha256 = \""+digest+"\"\n\n[agent_configuration]\nschema_version = 2\ndeclaration_sha256 = \""+declaredDigest+"\"\ncopy = \"agent-configuration.json\"\n")
+			if testCase.name != "missing-copy" {
+				writeCopy(t, entryDir, "agent-configuration.json", copyBytes)
+			}
+			entries, skipped, e := Scan(filepath.Join(root, "registry"), "official", "https://example.invalid/market.git")
+			if e != nil {
+				t.Fatal(e)
+			}
+			if len(skipped) != 0 {
+				t.Fatalf("an invalid copy must not skip the listing: %v", skipped)
+			}
+			if len(entries) != 1 || entries[0].Identifier != "broken" {
+				t.Fatalf("catalog = %+v", entries)
+			}
+			entry := entries[0]
+			if testCase.name == "missing-copy" && entry.AgentConfigurationIssue != "copy unreadable" {
+				t.Fatalf("unreadable copy must not expose server paths: %q", entry.AgentConfigurationIssue)
+			}
+			if entry.AgentConfiguration != nil {
+				t.Fatalf("no consumable declaration may survive: %+v", entry.AgentConfiguration)
+			}
+			if entry.AgentConfigurationIssue == "" || !strings.Contains(entry.AgentConfigurationIssue, testCase.issues) {
+				if testCase.issues == "" {
+					t.Fatalf("an unbounded issue reason must be recorded: %q", entry.AgentConfigurationIssue)
+				} else {
+					t.Fatalf("issue must name %q: %q", testCase.issues, entry.AgentConfigurationIssue)
+				}
+			}
+		})
+	}
+}
+
+func TestBoundIssueCutsOnARuneBoundary(t *testing.T) {
+	// Byte 200 (index 199) falls inside a multi-byte rune: the bounded reason must still be
+	// valid UTF-8, or PostgreSQL would reject it as a text parameter and one entry's problem
+	// would fail the whole catalog sync transaction — the exact failure this bound exists to
+	// prevent ("record a bounded reason; the other valid entries still sync").
+	reason := strings.Repeat("a", 198) + "界" + strings.Repeat("b", 40)
+	if len(reason) <= agentConfigurationIssueMaximum {
+		t.Fatalf("the fixture must exceed the bound: %d bytes", len(reason))
+	}
+	bounded := boundIssue(reason)
+	if !utf8.ValidString(bounded) {
+		t.Fatalf("bounded reason is not valid UTF-8: %q", bounded)
+	}
+	if want := strings.Repeat("a", 198); bounded != want {
+		t.Fatalf("the cut must drop the partial rune, not keep it: %q", bounded)
+	}
+	if boundIssue("copy unreadable") != "copy unreadable" {
+		t.Fatal("a short reason must pass through unchanged")
+	}
+}
+
+func TestBoundIssueRemovesControls(t *testing.T) {
+	if got := boundIssue("bad\x00\n\r\t\x7f\u0085copy\xff"); got != "badcopy" {
+		t.Fatalf("catalog reason must be bounded database-safe text: %q", got)
+	}
+}
+
+func TestScanRejectsDirectoryCopiesAsNonRegular(t *testing.T) {
+	root := t.TempDir()
+	digest := strings.Repeat("ab", 32)
+	entryDir := writeListing(t, root, "a", "dircopy", "resolver = 1\nidentifier = \"dircopy\"\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Dir copy.\"\nurl = \"https://example.invalid/d.orax\"\nsha256 = \""+digest+"\"\n\n[agent_configuration]\nschema_version = 2\ndeclaration_sha256 = \""+declarationDigestOf(t, declarationFor)+"\"\ncopy = \"nested/agent.json\"\n")
+	if e := os.MkdirAll(filepath.Join(entryDir, "nested", "agent.json"), 0o700); e != nil {
+		t.Fatal(e)
+	}
+	entries, _, e := Scan(filepath.Join(root, "registry"), "official", "https://example.invalid/market.git")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(entries) != 1 || entries[0].AgentConfiguration != nil || entries[0].AgentConfigurationIssue == "" {
+		t.Fatalf("a directory copy must record an issue without a consumable declaration: %+v", entries)
 	}
 }

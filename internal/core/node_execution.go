@@ -58,6 +58,13 @@ func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, n
 	// either way, so the ownership check re-reads whichever column the row carries.
 	work := t.one("SELECT * FROM execution_work WHERE (run_id=$1 OR workflow_run_id=$1) AND execution_id IS NULL AND kind=$2", runID, input.S("kind"))
 	require(work != nil, 409, "dispatch_conflict")
+	// A claim is only a snapshot. Recheck business eligibility under the same transaction lock as
+	// settlement so a pre-release claim cannot register a fresh session or delivery afterwards. Only
+	// IssueRun-owned work carries run_id; workflow work names its run in workflow_run_id and this
+	// predicate does not read the workflow_runs lifecycle.
+	if work.S("runId") != "" {
+		require(t.one(executionWorkLiveRuns+" AND id=$1", runID) != nil, 409, "dispatch_conflict")
+	}
 	require(jsonText(work.O("input")) == jsonText(input), 409, "dispatch_conflict")
 	target := work.O("target")
 	require(target.S("nodeId") == node, 409, "dispatch_conflict")

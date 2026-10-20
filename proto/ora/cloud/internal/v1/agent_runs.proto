@@ -10,6 +10,8 @@ import "ora/cloud/internal/v1/executions.proto";
 // upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
 // ExecutionService and are fenced by the caller's lease `epoch`.
 service AgentRunService {
+  // Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
+  rpc PublishThreadPreview(PublishThreadPreviewRequest) returns (PublishThreadPreviewResponse);
   // Takes over a contiguous batch of Thread events of one session execution in one transaction.
   // Only after this succeeds may the Controller acknowledge those sequences to the Node.
   rpc TakeOverThreadEvents(TakeOverThreadEventsRequest) returns (TakeOverThreadEventsResponse);
@@ -34,7 +36,33 @@ message ThreadEvent {
   // The Node replaced an oversized record with a shortened one; the session history keeps the
   // original.
   bool truncated = 4;
+  // Node-projected assistant text. Cloud never parses ACP content to derive this field.
+  optional string visible_text = 5;
+  // The text projection was clipped at a UTF-8 boundary for bounded context transfer.
+  bool visible_text_truncated = 6;
+  // Stable ora-history position, assigned before the record settles.
+  optional uint32 history_sequence = 7;
 }
+
+message ThreadPreviewBlock {
+  uint32 history_sequence = 1;
+  string turn_id = 2;
+  // One Node-owned pending history record JSON object, at most 64 KiB.
+  string record = 3;
+}
+
+message PublishThreadPreviewRequest {
+  int64 epoch = 1;
+  string operation_id = 2;
+  string execution_id = 3;
+  // Monotonically increasing within this execution; complete replacement, never a text delta.
+  int64 version = 4;
+  // Up to 32 blocks and 256 KiB total. Empty clears all still-open previews.
+  repeated ThreadPreviewBlock blocks = 5;
+  bool incomplete = 6;
+}
+
+message PublishThreadPreviewResponse {}
 
 message TakeOverThreadEventsRequest {
   string submission_id = 1;

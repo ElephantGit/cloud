@@ -7,6 +7,8 @@
 消费方（`ora-space/desktop` 的 `ora-controller`）以本仓库的 commit 锁定契约并生成自己的客户端，
 不复制 `.proto`。
 
+实时预览使用独立 `PublishThreadPreview` RPC，按执行和版本替换有界快照，不参与 Ack；`ThreadEvent.history_sequence` 将已定型记录关联到预览位置。Controller 消费方升级生成代码后才可协商启用该旁路。
+
 | 文件 | 内容 |
 |---|---|
 | `errors.proto` | `ErrorDetail{ErrorCode}`：附在 `google.rpc.Status` detail 上的错误分类；gRPC 状态码是主分类，枚举细分 |

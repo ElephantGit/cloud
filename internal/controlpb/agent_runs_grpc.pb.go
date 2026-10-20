@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	AgentRunService_PublishThreadPreview_FullMethodName         = "/ora.cloud.internal.v1.AgentRunService/PublishThreadPreview"
 	AgentRunService_TakeOverThreadEvents_FullMethodName         = "/ora.cloud.internal.v1.AgentRunService/TakeOverThreadEvents"
 	AgentRunService_ClaimThreadCommands_FullMethodName          = "/ora.cloud.internal.v1.AgentRunService/ClaimThreadCommands"
 	AgentRunService_RecordThreadCommandDelivered_FullMethodName = "/ora.cloud.internal.v1.AgentRunService/RecordThreadCommandDelivered"
@@ -34,6 +35,8 @@ const (
 // upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
 // ExecutionService and are fenced by the caller's lease `epoch`.
 type AgentRunServiceClient interface {
+	// Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
+	PublishThreadPreview(ctx context.Context, in *PublishThreadPreviewRequest, opts ...grpc.CallOption) (*PublishThreadPreviewResponse, error)
 	// Takes over a contiguous batch of Thread events of one session execution in one transaction.
 	// Only after this succeeds may the Controller acknowledge those sequences to the Node.
 	TakeOverThreadEvents(ctx context.Context, in *TakeOverThreadEventsRequest, opts ...grpc.CallOption) (*TakeOverThreadEventsResponse, error)
@@ -52,6 +55,16 @@ type agentRunServiceClient struct {
 
 func NewAgentRunServiceClient(cc grpc.ClientConnInterface) AgentRunServiceClient {
 	return &agentRunServiceClient{cc}
+}
+
+func (c *agentRunServiceClient) PublishThreadPreview(ctx context.Context, in *PublishThreadPreviewRequest, opts ...grpc.CallOption) (*PublishThreadPreviewResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishThreadPreviewResponse)
+	err := c.cc.Invoke(ctx, AgentRunService_PublishThreadPreview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *agentRunServiceClient) TakeOverThreadEvents(ctx context.Context, in *TakeOverThreadEventsRequest, opts ...grpc.CallOption) (*TakeOverThreadEventsResponse, error) {
@@ -103,6 +116,8 @@ func (c *agentRunServiceClient) GrantRevisionUpload(ctx context.Context, in *Gra
 // upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
 // ExecutionService and are fenced by the caller's lease `epoch`.
 type AgentRunServiceServer interface {
+	// Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
+	PublishThreadPreview(context.Context, *PublishThreadPreviewRequest) (*PublishThreadPreviewResponse, error)
 	// Takes over a contiguous batch of Thread events of one session execution in one transaction.
 	// Only after this succeeds may the Controller acknowledge those sequences to the Node.
 	TakeOverThreadEvents(context.Context, *TakeOverThreadEventsRequest) (*TakeOverThreadEventsResponse, error)
@@ -123,6 +138,9 @@ type AgentRunServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentRunServiceServer struct{}
 
+func (UnimplementedAgentRunServiceServer) PublishThreadPreview(context.Context, *PublishThreadPreviewRequest) (*PublishThreadPreviewResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishThreadPreview not implemented")
+}
 func (UnimplementedAgentRunServiceServer) TakeOverThreadEvents(context.Context, *TakeOverThreadEventsRequest) (*TakeOverThreadEventsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TakeOverThreadEvents not implemented")
 }
@@ -154,6 +172,24 @@ func RegisterAgentRunServiceServer(s grpc.ServiceRegistrar, srv AgentRunServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&AgentRunService_ServiceDesc, srv)
+}
+
+func _AgentRunService_PublishThreadPreview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishThreadPreviewRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentRunServiceServer).PublishThreadPreview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentRunService_PublishThreadPreview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentRunServiceServer).PublishThreadPreview(ctx, req.(*PublishThreadPreviewRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _AgentRunService_TakeOverThreadEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -235,6 +271,10 @@ var AgentRunService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "ora.cloud.internal.v1.AgentRunService",
 	HandlerType: (*AgentRunServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PublishThreadPreview",
+			Handler:    _AgentRunService_PublishThreadPreview_Handler,
+		},
 		{
 			MethodName: "TakeOverThreadEvents",
 			Handler:    _AgentRunService_TakeOverThreadEvents_Handler,

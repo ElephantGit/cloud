@@ -175,6 +175,11 @@ Controller 契约的字段。只新增，不回填。
 `TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
 `internal/core/model_attempt_workflow_db_test.go`。
 
+
+## 0045：Agent 声明的目录快照列
+
+给 `plugin_catalog_entries` 追加 `agent_configuration`（jsonb，声明关联加逐字节静态副本）与 `agent_configuration_issue`（text，有界原因）。`agent_configuration` 只在条目声明了 `[agent_configuration]` 且静态副本校验通过时写入，目录快照因此自包含，读取声明不需要市场 checkout 或发行包；声明无效只记有界原因，不产生可消费声明。“未声明”与“声明无效”是两个事实，后者不影响包本身可安装。纯前向、可重复执行，不改写既有行。新库/升级/重复执行见 TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades。语义见 [插件市场的 Agent 声明](../../../docs/plugins/marketplace.md#agent-声明的快照与冻结)。
+
 ## 0045：退役租户级 clone
 
 Workspace 改为从 Git Server 快照 clone 后的切换，不迁移数据。删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留。可重复执行。仍有租户级 clone 的数据库升级见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0045RetiresTenantLevelClonesKeepingWorkspaceClones`。

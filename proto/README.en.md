@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README.en.md)
 
+Live previews use a separate `PublishThreadPreview` RPC with bounded execution/version replacements and no Ack. `ThreadEvent.history_sequence` links settled records to preview positions. Controller consumers must update generated clients before negotiating the optional path.
+
 `proto/ora/cloud/internal/v1/` is the single source of the internal control contract
 (package `ora.cloud.internal.v1`) between Cloud and a Controller. Cloud is the server for every RPC
 and owns authoritative persistence; a Controller only dials out and exposes no service to Cloud.

@@ -56,7 +56,7 @@ func pluginSnapshot(t *transaction, o Object) (plugins, meta []Object) {
 			plugins = append(plugins, item)
 			meta = append(meta, Object{"pluginId": item.S("pluginId"), "desiredRevision": row.N("desiredRevision")})
 		}
-		return plugins, meta
+		return frozenAgentPluginSnapshot(t, o, plugins, meta)
 	}
 }
 

@@ -18,16 +18,19 @@ func defaultExecutorGap(t *transaction, uid string) (reason string, connection, 
 	return personalExecutorGap(t, uid, d.S("connectionId"), d.S("modelId"))
 }
 
-// bindRunModel freezes the initiating user's personal configuration only for the production
-// OpenCode plugin. It runs in enqueueRun's transaction so missing configuration rolls back the
-// comment, interaction, activity and run together. Unrelated agents keep their existing contract.
+// bindRunModel freezes personal model and declared Agent configuration in the run's creation
+// transaction. Missing configuration rolls back the comment, interaction, activity and run.
 func bindRunModel(t *transaction, runID, uid string, input Object) {
-	if input.S("agentPluginId") != opencodeAgentCLI {
+	handled, c, m := declaredAgentRunModel(t, runID, uid, input)
+	if !handled && input.S("agentPluginId") != opencodeAgentCLI {
 		return
 	}
 	// The faults are unchanged from before the policy was shared: this path has always named the one
 	// thing the user has to fix, and a caller of the OpenCode route must keep seeing the same codes.
-	reason, c, m := defaultExecutorGap(t, uid)
+	reason := ""
+	if !handled {
+		reason, c, m = defaultExecutorGap(t, uid)
+	}
 	switch reason {
 	case "":
 	case slotReasonConnectionDown:

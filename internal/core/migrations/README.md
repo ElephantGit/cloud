@@ -61,6 +61,9 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0047_thread_preview_positions.sql](0047_thread_preview_positions.sql) | 定型 Thread 条目的 Node 历史位置 |
 | [0048_task_conversation_manual_pause.sql](0048_task_conversation_manual_pause.sql) | 任务对话的手动暂停 |
 | [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun 的会话命令归属与节点范围 |
+| [0050_personal_agent_configurations.sql](0050_personal_agent_configurations.sql) | 个人 Agent 配置的持续 revision 与私有运行快照 |
+
+0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
 ## 不可变性与升级
 

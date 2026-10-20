@@ -157,7 +157,8 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 	}
 	revision := task.N("revision")
 	contentChanged := prompt != task.S("prompt") || agentID != task.S("agentId") ||
-		timezone != task.S("timezone") || scheduleDocJSONChanged(scheduleDoc, task["schedule"])	if contentChanged {
+		timezone != task.S("timezone") || scheduleDocJSONChanged(scheduleDoc, task["schedule"])
+	if contentChanged {
 		revision = task.N("revision") + 1
 	}
 

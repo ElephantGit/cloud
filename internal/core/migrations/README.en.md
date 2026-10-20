@@ -6,7 +6,7 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 52 SQL files.
+There are currently 54 SQL files.
 
 | SQL file | Schema change |
 |---|---|
@@ -61,7 +61,9 @@ There are currently 52 SQL files.
 | [0047_thread_preview_positions.sql](0047_thread_preview_positions.sql) | Node history positions for settled Thread entries |
 | [0048_task_conversation_manual_pause.sql](0048_task_conversation_manual_pause.sql) | Manual pause for task conversations |
 | [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun session-command ownership and node scope |
-| [0051_agent_run_residual_reclamation.sql](0051_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
+| [0050_personal_agent_configurations.sql](0050_personal_agent_configurations.sql) | Persistent personal Agent configuration revisions and private run snapshots |
+| [0051_workflow_run_cancel.sql](0051_workflow_run_cancel.sql) | WorkflowRun cancellation requests |
+| [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 
 ## Immutability and upgrades
 
@@ -73,8 +75,9 @@ There are currently 52 SQL files.
 - 0045 adds `agent_configuration` (association and byte-exact static copy) and `agent_configuration_issue` (bounded reason) without backfilling existing rows. Only validated declarations are consumable; absence and invalid declarations are distinct, and invalid declarations do not block package installation. See [Plugin marketplace](../../../docs/plugins/marketplace.en.md) and `TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades` for fresh/upgrade/repeat coverage.
 - 0046–0048 backfill no old messages, Threads, history positions or pause state; `visible_text` is stored separately from the raw `record`, and old tasks are not paused automatically. Fresh, upgrade and repeated application are covered by `TestMigration0046TaskConversationFreshAndUpgrade` and the integration migration tests.
 - 0049 lets `thread_commands` accept a WorkflowRun owner and requires a graph node on workflow commands; each node holds at most one `end_session`, so the scheduler can replay it safely. Every old row carries `run_id` and is not backfilled. Semantics are in [workflows](../../../docs/workflows/workflows.en.md); coverage is in the `TestWorkflowSessionEndsAfterSuccessfulTurn` DB tests.
+- 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
+- 0051 adds the cancellation-request instant to `workflow_runs` and backfills no old row; the request records intent only and is settled by the scheduler on later passes. Semantics are in [workflows](../../../docs/workflows/workflows.en.md#scheduling); coverage is in the `TestWorkflowRunCancelBeforeStartNeverStarts` DB tests.
+- 0052 only adds residual-ledger columns: defaults initialize existing D4/D5 rows as `reconciling`, without backfilling targets or evidence, rewriting old `reason`, `responsibility` or business settlement, or backfilling D8. Legacy rows with non-null `cleared_at` cause an explicit migration error and rollback pending compatibility handling (A2). Reentrant DDL preserves progressed rows. The schema accepts `released`, `terminated_data_retained` and `externally_confirmed`; this step's automatic path implements only `released`, leaving the other dispositions to later controlled entry points. The authorization transaction checks the operation's tenant and Workspace relationships; a UUID foreign key alone does not establish resource scope. See [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go) for fresh, upgrade, DDL replay and constraint coverage.
 - New migrations must verify fresh databases, upgrades from the preceding schema, repeated application and key constraints. See [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) and domain upgrade tests in integration.
-
-0051 only adds residual-ledger columns: defaults initialize existing D4/D5 rows as `reconciling`, without backfilling targets or evidence, rewriting old `reason`, `responsibility` or business settlement, or backfilling D8. Legacy rows with non-null `cleared_at` cause an explicit migration error and rollback pending compatibility handling (A2). Reentrant DDL preserves progressed rows. The schema accepts `released`, `terminated_data_retained` and `externally_confirmed`; this step's automatic path implements only `released`, leaving the other dispositions to later controlled entry points. The authorization transaction checks the operation's tenant and Workspace relationships; a UUID foreign key alone does not establish resource scope. See [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go) for fresh, upgrade, DDL replay and constraint coverage.
 
 See [Persistence](../../../docs/core/persistence.en.md) for ownership/transactions, and [Workflows](../../../docs/workflows/workflows.en.md) / [External Git line](../../../docs/repositories/external-git.en.md) for runtime semantics.

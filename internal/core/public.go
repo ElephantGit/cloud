@@ -21,6 +21,8 @@ type PublicRequest struct {
 	FormIssueID string
 	// ModelConnectionID addresses an owner-scoped personal connection outside tenant routing.
 	ModelConnectionID string
+	// AgentPluginID is the canonical plugin in the caller's personal configuration.
+	AgentPluginID string
 	// Session filters are independent of resource IDs used by public route dispatch.
 	SessionProjectID, SessionStatus, SessionAgent, SessionFrom, SessionTo string
 	// GitCredentialID addresses a tenant's Git credential reference.
@@ -66,6 +68,11 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		uid := u.S("id")
 		if r.Path == "/api/v1/me" {
 			return u
+		}
+		if strings.HasPrefix(r.Path, "/api/v1/me/agent-configurations/") {
+			var out Object
+			out, status = personalAgentConfigurationsPublic(t, r, uid)
+			return out
 		}
 		if strings.HasPrefix(r.Path, "/api/v1/me/model-connections") || r.Path == "/api/v1/me/model-default" {
 			var out Object
@@ -382,6 +389,15 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 			}
 		case strings.Contains(r.Path, "/workflows"):
 			switch {
+			case strings.HasSuffix(r.Path, "/cancel"):
+				// D4/D6: the user's cancellation request for a WorkflowRun. Matched before the /runs
+				// arm because the path contains "/runs/" too, and recording a request is not creating
+				// a run. Answered 202 like the IssueRun request: the request is accepted for
+				// asynchronous settlement by the scheduler, and the response is the recorded instant
+				// rather than a wrapped resource — this endpoint creates none.
+				require(r.Method == "POST", 404, "not_found")
+				out = cancelWorkflowRunByUser(t, r, uid)
+				status = 202
 			case strings.HasSuffix(r.Path, "/runs"):
 				out = Object{"resource": createWorkflowRun(t, r, uid)}
 			case strings.HasSuffix(r.Path, "/publish"):

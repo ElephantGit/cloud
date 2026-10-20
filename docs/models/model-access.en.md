@@ -60,6 +60,14 @@ The original API key only ever enters model-gateway:
   key and disabling or deleting a connection revoke, in the same transaction, every short-lived grant issued for
   that connection.
 
+## Personal Agent configurations
+
+`/api/v1/me/agent-configurations/:spaceId/:pluginNamespace/:pluginIdentifier` reads, saves and clears the current user's plugin configuration; `POST .../repair` explicitly confirms a changed declaration. The space supplies the selected-release context. Ownership remains one configuration per user and canonical Plugin ID; administrators cannot access another user's values.
+
+Reads return the current declaration alongside the saved configuration. A changed fingerprint retains old values and marks repair as required. Writes check configuration revision, space-selection version and declaration fingerprint; repair submits a complete configuration against the current declaration. Every write requires a user-scoped idempotency key, and a replay under the same key returns the original response with numeric setting literals unchanged. Clear retains a tombstone with an increasing revision, leaves connections intact and does not revoke existing runs. OpenCode stores only plugin options; its model selection remains the original global default resource with its own version.
+
+Settings accept declared scalar fields only, and configuration requests do not carry connection credentials. Connection/model references must belong to the current user and match the declaration's protocols; Claude requires Messages. Saving configuration does not establish connectivity or deployed adapter support.
+
 ## Run bindings
 
 An Agent run of `official/ora-space.opencode` gets a run binding (`run_model_bindings`) generated **in the same
@@ -69,7 +77,7 @@ same time.
 
 - When the initiator has no default model, no configured key, or an unusable connection, the whole comment,
   interaction and run roll back together, returning `409 model_default_required`, `model_credential_required` or
-  `model_connection_unavailable` respectively. Other Agents are unaffected.
+  `model_connection_unavailable` respectively. Undeclared legacy OpenCode releases retain this behavior.
 - Later changes to the connection or the default model do not change runs already created.
 - A run may carry several bindings: a workflow run freezes one per slot its graph references, in the creation
   transaction, and each node's session redeems only the binding of the slot it references (see
@@ -83,6 +91,10 @@ same time.
 
 For a run using a personal model, only the initiator can append to the Thread, the initiator or a current
 administrator can end it, and other members can still read it (see [Threads](../agent-runs/threads.en.md)).
+
+Declared Agent runs additionally validate personal configuration, declaration identity and the deployment's exact target/adapter contract capability, then write private `run_agent_configurations` facts in the same transaction. Missing capability returns `agent_adapter_unavailable`; Claude without a declaration returns `agent_declaration_required`. Deployment composition must supply the capability only after the actual Node/Controller adapter path can consume frozen inputs.
+
+The private snapshot holds package identity, declaration identity, configuration revision and resolved options. Shared run details expose only the plugin, version and configuration revision. A delayed Workspace installation uses the originally frozen release even if the space selection was upgraded or removed. Later configuration edits do not rewrite the snapshot; connection revocation continues through the existing run binding.
 
 ## Short-lived grants
 
@@ -108,6 +120,8 @@ never masquerades as a normal end. Model access uses the checkout already cloned
 credentials.
 
 ## Related decisions
+
+- [Personal Agent configurations resolved per plugin and frozen at run creation](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261017-personal-agent-configurations.md) (partially implemented; the ADR also governs adapter and end-to-end obligations)
 
 - [Personal model connections are configured by users; the platform keeps the keys and proxies each run's model requests](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/0-personal-model-connections-and-run-scoped-proxy.md)
 - [A personal-model Thread is appended only by its initiator; members read it and administrators may end it](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261010-personal-model-initiator-controls-input.md)

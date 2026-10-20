@@ -6,7 +6,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 52 个 SQL 文件。
+当前共 54 个 SQL 文件。
 
 | SQL 文件 | schema 变化 |
 |---|---|
@@ -61,7 +61,9 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0047_thread_preview_positions.sql](0047_thread_preview_positions.sql) | 定型 Thread 条目的 Node 历史位置 |
 | [0048_task_conversation_manual_pause.sql](0048_task_conversation_manual_pause.sql) | 任务对话的手动暂停 |
 | [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun 的会话命令归属与节点范围 |
-| [0051_agent_run_residual_reclamation.sql](0051_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
+| [0050_personal_agent_configurations.sql](0050_personal_agent_configurations.sql) | 个人 Agent 配置的持续 revision 与私有运行快照 |
+| [0051_workflow_run_cancel.sql](0051_workflow_run_cancel.sql) | WorkflowRun 的取消请求 |
+| [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
 
 ## 不可变性与升级
 
@@ -73,8 +75,9 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0045 增加 `agent_configuration`（关联与逐字节静态副本）和 `agent_configuration_issue`（有界原因），不回填既有行；只保存校验通过的可消费声明，区分未声明与声明无效，后者不阻止包安装。语义见 [插件市场](../../../docs/plugins/marketplace.md)，空库、升级与重复应用覆盖见 `TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades`。
 - 0046–0048 不回填旧消息、旧 Thread、历史位置或暂停状态；`visible_text` 与原始 `record` 分开保存，旧任务不自动暂停。空库、升级与重复应用覆盖见 `TestMigration0046TaskConversationFreshAndUpgrade` 及 integration 的迁移测试。
 - 0049 让 `thread_commands` 接受 WorkflowRun 归属，并要求工作流命令带图节点；每个节点至多一条 `end_session`，调度器可安全重放。旧行全部带 `run_id`，不回填。语义见 [工作流](../../../docs/workflows/workflows.md)，覆盖见 `TestWorkflowSessionEndsAfterSuccessfulTurn` 等 DB 测试。
+- 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
+- 0051 给 `workflow_runs` 增加取消请求时刻，不回填旧行；请求只记录意图，由调度器在后续轮次结算。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `TestWorkflowRunCancelBeforeStartNeverStarts` 等 DB 测试。
+- 0052 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
-
-0051 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

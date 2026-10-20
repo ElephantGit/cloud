@@ -524,10 +524,11 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
-			// Desktop's pool declares the system globals; Cloud neither provides their values nor
-			// declares them, so `sys` is not a node in the graph and the selector is undeclared.
+			// A selector on a node the graph does not contain. System globals and user globals are now
+			// declared too, so `sys.workflow_id` is no longer the absent node it once was; a genuinely
+			// absent id is still refused.
 			name: "a selector on a node the graph does not contain",
-			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"sys", "workflow_id"}, "equals", "wf-1")})}),
+			node: graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule([]any{"ghost", "output"}, "exists", nil)})}),
 			want: []any{Object{"code": "condition_selector_undeclared", "nodeId": "c", "field": "cases.conditions.variableSelector"}},
 		},
 		{
@@ -586,9 +587,10 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 		return graphCondition("c", []any{graphConditionCase("yes", "and", []any{graphRule(selector, operator, value)})})
 	}
 	positive := []struct {
-		name  string
-		nodes []any
-		edges []any
+		name    string
+		nodes   []any
+		edges   []any
+		globals []any
 	}{
 		{
 			name:  "an expected value carrying a selector template",
@@ -633,10 +635,123 @@ func TestWorkflowPublishRefusesUnsupportedConditionConfigs(t *testing.T) {
 			nodes: []any{graphStart("s"), outputNode, oneRule([]any{"o", "output"}, "not_empty", nil)},
 			edges: []any{graphEdge("s", "o"), graphEdge("o", "c")},
 		},
+		{
+			// The system globals are always declared, so a selector on them is never refused even
+			// though the graph carries no `sys` node.
+			name:  "a selector on a system global",
+			nodes: []any{graphStart("s"), oneRule([]any{"sys", "workflow_id"}, "equals", "wf-1")},
+			edges: []any{graphEdge("s", "c")},
+		},
+		{
+			// A user global declares its writer's second segment, so [g, region] resolves the same
+			// way desktop's pool resolves it.
+			name:    "a selector on a declared user global",
+			nodes:   []any{graphStart("s"), oneRule([]any{"g", "region"}, "equals", "eu")},
+			edges:   []any{graphEdge("s", "c")},
+			globals: []any{Object{"name": "g.region", "valueType": "string", "value": "eu"}},
+		},
 	}
 	for _, tc := range positive {
 		t.Run(tc.name, func(t *testing.T) {
-			got := problemObjects(validateWorkflowGraph(decodeGraph(t, workflowGraph(tc.nodes, tc.edges, nil))))
+			graph := workflowGraph(tc.nodes, tc.edges, nil)
+			if tc.globals != nil {
+				graph["globalVariables"] = tc.globals
+			}
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, graph)))
+			if len(got) != 0 {
+				t.Fatalf("refused: %v", got)
+			}
+		})
+	}
+}
+
+// TestWorkflowPublishRefusesInvalidGlobals is the global-declaration matrix: every rule the publish
+// gate enforces on `globalVariables`, mirroring desktop's into_global_variables, has a case that
+// violates it, and the documents desktop accepts are admitted. The cases pin the wire codes so a
+// client can rely on them.
+func TestWorkflowPublishRefusesInvalidGlobals(t *testing.T) {
+	nodes := []any{graphStart("s"), graphCondition("c", []any{})}
+	edges := []any{graphEdge("s", "c")}
+	graphWithGlobals := func(globals any) Object {
+		g := workflowGraph(nodes, edges, nil)
+		g["globalVariables"] = globals
+		return g
+	}
+	cases := []struct {
+		name    string
+		globals any
+		want    []any
+	}{
+		{
+			name:    "a non-list declaration",
+			globals: "not a list",
+			want:    []any{Object{"code": "globals_not_a_list"}},
+		},
+		{
+			name:    "an entry that is not an object",
+			globals: []any{7},
+			want:    []any{Object{"code": "global_not_an_object"}},
+		},
+		{
+			name:    "an unqualified name",
+			globals: []any{Object{"name": "region", "valueType": "string", "value": "eu"}},
+			want:    []any{Object{"code": "global_name_invalid", "name": "region"}},
+		},
+		{
+			name:    "a name with a leading dot",
+			globals: []any{Object{"name": ".region", "valueType": "string", "value": "eu"}},
+			want:    []any{Object{"code": "global_name_invalid", "name": ".region"}},
+		},
+		{
+			name: "a duplicated name",
+			globals: []any{
+				Object{"name": "g.region", "valueType": "string", "value": "eu"},
+				Object{"name": "g.region", "valueType": "string", "value": "us"},
+			},
+			want: []any{Object{"code": "global_name_duplicate", "name": "g.region"}},
+		},
+		{
+			name:    "an unsupported type",
+			globals: []any{Object{"name": "g.region", "valueType": "datetime", "value": "2024-01-01"}},
+			want:    []any{Object{"code": "global_type_unsupported", "name": "g.region"}},
+		},
+		{
+			name:    "a non-system global without an initial value",
+			globals: []any{Object{"name": "g.region", "valueType": "string"}},
+			want:    []any{Object{"code": "global_value_missing", "name": "g.region"}},
+		},
+		{
+			name:    "a value that does not match the declared type",
+			globals: []any{Object{"name": "g.count", "valueType": "integer", "value": "many"}},
+			want:    []any{Object{"code": "global_value_mismatch", "name": "g.count"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, graphWithGlobals(tc.globals))))
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("problems = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// A system global needs no initial value, and a matching value (or none) is admitted.
+	admitted := []struct {
+		name    string
+		globals any
+	}{
+		{
+			name:    "system globals without values",
+			globals: []any{Object{"name": "sys.workflow_id", "valueType": "string"}, Object{"name": "sys.timestamp", "valueType": "number"}},
+		},
+		{
+			name:    "a user global with a matching value",
+			globals: []any{Object{"name": "g.region", "valueType": "string", "value": "eu"}},
+		},
+	}
+	for _, tc := range admitted {
+		t.Run(tc.name, func(t *testing.T) {
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, graphWithGlobals(tc.globals))))
 			if len(got) != 0 {
 				t.Fatalf("refused: %v", got)
 			}

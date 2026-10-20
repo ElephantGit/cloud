@@ -92,10 +92,10 @@ function WorkflowRunDetailBody({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2">
           <RunStatusBadge status={run.status} />
           <RunTimestamp label={t('workflows.run.created')} iso={run.createdAt} />
-          {run.startedAt !== null && (
+          {run.startedAt !== null && run.startedAt !== '' && (
             <RunTimestamp label={t('workflows.run.started')} iso={run.startedAt} />
           )}
-          {run.finishedAt !== null && (
+          {run.finishedAt !== null && run.finishedAt !== '' && (
             <RunTimestamp label={t('workflows.run.finished')} iso={run.finishedAt} />
           )}
           <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">

@@ -194,32 +194,14 @@ func runWorkspaceNodeUnknown(t *transaction, runID, wid string, window time.Dura
 		wid, runID, window.Seconds()) != nil
 }
 
-// releaseGivenUp reports whether D8's single give-up condition holds for a run still in `releasing`:
-// the run Workspace still holds a sandbox and that sandbox's Node state has been unknown for longer
-// than `DeliveryUnreachableAfter` (D5's window, reused verbatim — D8 introduces no second limit and no
-// "delete failed N times" count).
-//
-// The live-sandbox requirement is what makes the shared heartbeat judgement the right one here. A
-// Workspace usually has a sandbox for the whole `releasing` phase, because the delete cannot confirm
-// quiescence without a Node; a Workspace whose sandbox is already terminated has finished the step
-// that needed it and is being taken through `cleanup`, which runs against the Substrate with no Node
-// involved. That case is not an unknown Node — there is no Node left to be unknown — and abandoning it
-// would report a release as failed while a live Controller was still completing it. So a silent Node
-// only counts as D8's condition while the sandbox it belongs to is still there.
-//
-// The window is judged in the caller's transaction, on the database clock, exactly as D5 judges its
-// own, and an unconfigured window fails closed. An explicit quiesce refusal does not reach here at
-// all: refusing leaves the Node connected and freshly seen, so the heartbeat is present and the
-// condition is false — which is D8's "a failed delete is not a reason to give up", not an extra rule.
+// releaseGivenUp reports whether D8's single give-up condition holds for a run still in `releasing`.
+// The judgement itself — the run Workspace still holds a sandbox and that sandbox's Node state has
+// been unknown for longer than `DeliveryUnreachableAfter` (D5's window, reused verbatim; D8 introduces
+// no second limit and no "delete failed N times" count) — lives in runWorkspaceReleaseGivenUp, which
+// the workflow scheduler's release pass asks for the same fact. Neither run kind can drift into a
+// second definition of "the release should be abandoned".
 func (s *Store) releaseGivenUp(t *transaction, o Object) bool {
-	wid := o.S("workspaceId")
-	if !validID(wid) {
-		return false
-	}
-	if t.one(`SELECT 1 FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL`, wid) == nil {
-		return false
-	}
-	return runWorkspaceNodeUnknown(t, o.S("id"), wid, s.DeliveryUnreachableAfter)
+	return runWorkspaceReleaseGivenUp(t, o.S("id"), o.S("workspaceId"), s.DeliveryUnreachableAfter)
 }
 
 // giveUpRunWorkspaceRelease is D8's terminal transition, run on the caller-owned *transaction: an
@@ -295,13 +277,12 @@ func (s *Store) settleRunWorkspaceDeleted(t *transaction, runID string) error {
 	}
 	o := t.one("SELECT * FROM issue_runs WHERE id=$1 AND deleted_at IS NULL", runID)
 	if o == nil {
-		// D8: a run Workspace may belong to a WorkflowRun. A delete_workspace terminal firing
-		// under a WorkflowRun reaches this hook with the WorkflowRun's id; the scheduler owns the
-		// run-level facts, so settlement writes nothing — but it must ACCEPT the fact, or the
-		// terminal transaction aborts and a workflow run's delete can never settle. An id that is
-		// neither a live issue run nor a live workflow run is still an invariant violation.
+		// A run Workspace may belong to a WorkflowRun: the same delete_workspace terminal fires this
+		// hook with the WorkflowRun's id, and the release fact it proves is the WorkflowRun's
+		// (`settleWorkflowRunWorkspaceDeleted`, 0055). An id that is neither a live issue run nor a
+		// live workflow run is still an invariant violation.
 		if t.one("SELECT id FROM workflow_runs WHERE id=$1 AND deleted_at IS NULL", runID) != nil {
-			return nil
+			return settleWorkflowRunWorkspaceDeleted(t, runID)
 		}
 		return fmt.Errorf("runWorkspaceDeleted: issue_run %s not found", runID)
 	}

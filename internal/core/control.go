@@ -468,12 +468,24 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 	if next == "done" {
 		t.exec("UPDATE operations SET step='done',state='succeeded',error_code=NULL,retry_at=NULL,result=jsonb_build_object('resourceId',COALESCE(workspace_id,project_id)),version=version+1,updated_at=now() WHERE id=$1", o.S("id"))
 		finishRuntimeMaintenance(t, o.S("id"))
-		if w := t.one("SELECT issue_run_id FROM workspaces WHERE id=$1", nullable(wid)); w.S("issueRunId") != "" {
-			switch o.S("kind") {
-			case "create_workspace":
-				runWorkspaceSettled(t, w.S("issueRunId"), "ready")
-			case "delete_workspace":
-				runWorkspaceDeleted(t, w.S("issueRunId"))
+		if w := t.one("SELECT issue_run_id, workflow_run_id FROM workspaces WHERE id=$1", nullable(wid)); w != nil {
+			// A Workspace belongs to at most one run of either kind (0039's XOR), so at most one binding
+			// fires. `create_workspace` settlement is IssueRun business: a workflow run reads its
+			// Workspace's readiness from the row itself. `delete_workspace` is the one terminal every run
+			// Workspace shares, and both kinds record their own release fact from it.
+			runID := w.S("issueRunId")
+			if runID == "" {
+				runID = w.S("workflowRunId")
+			}
+			if runID != "" {
+				switch o.S("kind") {
+				case "create_workspace":
+					if w.S("issueRunId") != "" {
+						runWorkspaceSettled(t, runID, "ready")
+					}
+				case "delete_workspace":
+					runWorkspaceDeleted(t, runID)
+				}
 			}
 		}
 	} else {

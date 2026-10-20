@@ -51,8 +51,8 @@ Cloud 在接管上一阶段证据的事务里写入。
 ## 后台循环
 
 D4/D5 业务收尾后的残留由独立账本对账继续处理，证据足够才授予一份持久的系统 owned-delete 责任；重试保持同一 operation，
-完成回收不重新结算 Run。当前仅覆盖 [残留回收的 Cloud 第 1 步](residual-reclamation.md)：受控运维入口、保留数据/外部确认、
-Controller/Sandbox Server 物理验收、跨仓联合验收和 D8 历史接管仍未完成；`done` 或对账已运行均不证明资源已回收。
+完成回收不重新结算 Run。部署运维可用 `cloudctl residual` 显式登记受控回收（只终止并保留数据、单独删数据或外部确认），
+也可以接管 D8 历史残留，见[残留回收](residual-reclamation.md)。`done` 或对账已运行均不证明资源已回收。
 
 除了接管证据时的同步转换，Cloud server 进程里有一组每 10 秒执行一次的循环，负责那些没有外部事件可跟随的推进和收尾：
 

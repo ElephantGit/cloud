@@ -201,16 +201,8 @@ func workflowSessionEndReason(reason string) string {
 // downstream casualties on the next pass); a succeeded node commits and reports that the run can
 // continue advancing in the same pass — the next wave executes downstream of it.
 func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
-	state := states[nodeID]
-	state.Status = workflowSessionEndReason(result.S("reason"))
-	state.FinishedAt = nowRFC3339()
-	state.Output = Object{"reason": result.S("reason")}
-	// Only a failed node carries an error: a cancelled node was cancelled, not broken.
-	if state.Status == "failed" {
-		state.Error = result.S("reason")
-	}
-	states[nodeID] = state
-	switch state.Status {
+	applyWorkflowAgentTerminal(states, nodeID, result)
+	switch states[nodeID].Status {
 	case "failed":
 		finishWorkflowRun(t, runID, version, "failed", result.S("reason"), states)
 		return states, false

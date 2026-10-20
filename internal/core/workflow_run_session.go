@@ -139,7 +139,11 @@ func workflowSessionTurnEnded(t *transaction, executionID string) bool {
 		return false
 	}
 	record := last.O("record")
-	return record.S("type") == "turnEnded" && record.S("stopReason") != "cancelled"
+	// `stop_reason` is the field as `ora-history` serializes it: serde's container-level
+	// `rename_all = "camelCase"` renames the enum variants (`turnEnded`), not the variant fields,
+	// which stay snake_case. Reading the camelCase spelling silently yields "" and would count a
+	// cancelled turn as idle evidence.
+	return record.S("type") == "turnEnded" && record.S("stop_reason") != "cancelled"
 }
 
 // workflowSessionEndReason maps a session execution's terminal reason onto the node/run

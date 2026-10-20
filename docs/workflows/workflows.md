@@ -78,7 +78,7 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
   缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败，都不会停在 `running` 或报告没有发生的成功。运行进入终态后，Cloud 声明删除
   这次运行的 Workspace。
-- **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stopReason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
+- **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
   命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
   `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。
 

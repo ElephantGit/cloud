@@ -10,10 +10,12 @@ import (
 // `idle_timeout` (circus decision #292 option A). These tests drive the Cloud half: the receipt
 // trigger, the command's owner and node scope, and the bounded wait.
 
-// turnEndedRecord builds the `ora-history` record the Node writes when its turn ends. `stopReason`
-// is part of the record; `cancelled` is the one value that is not idle evidence (Thread D4).
+// turnEndedRecord builds the `ora-history` record the Node writes when its turn ends. The record
+// serializes variant fields in snake_case (`stop_reason`) even though the type tag is camelCase
+// (`turnEnded`), as the real receipts from the acceptance stack do; `cancelled` is the one value
+// that is not idle evidence (Thread D4).
 func turnEndedRecord(stopReason string) Object {
-	return Object{"at": "2026-10-19T10:00:00+00:00", "seq": int64(1), "type": "turnEnded", "stopReason": stopReason}
+	return Object{"at": "2026-10-19T10:00:00+00:00", "seq": int64(1), "type": "turnEnded", "stop_reason": stopReason}
 }
 
 // takeOverWorkflowEvents relays one Node history batch for a WorkflowRun session through the

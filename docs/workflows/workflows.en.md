@@ -110,7 +110,7 @@ seconds):
   `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
   Once the run reaches a terminal state, Cloud declares the deletion of its Workspace.
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
-  receipt arrives (with a `stopReason` other than `cancelled`), the scheduler ends the session through the existing
+  receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the
   session has no terminal state within the confirmation window after the end request was released, the node fails
   as `session_end_deadline_exceeded`, the run reaches a terminal state and its Workspace is released — no run stays

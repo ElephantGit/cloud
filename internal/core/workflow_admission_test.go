@@ -102,6 +102,30 @@ func TestRequireWorkflowRunInput(t *testing.T) {
 	}
 }
 
+// TestRequireWorkflowRunInputKickoffShadowsInputVariable pins the desktop shadow semantics for a Start
+// variable literally named `input`: the reserved kickoff selector overwrites the declared variable, so
+// the declared type is never judged while the reserved key stays string-only. Without the shadow a
+// graph declaring `input` as a number would reject every run — a string kickoff fails the declared
+// type, and a number fails the reserved-string check — a Cloud-only dead end desktop runs fine.
+func TestRequireWorkflowRunInputKickoffShadowsInputVariable(t *testing.T) {
+	graph := inputGraph(t, []any{
+		Object{"name": "topic", "valueType": "string", "required": true},
+		Object{"name": "input", "valueType": "number"},
+	})
+
+	// A string `input` is the kickoff and is admitted even though the declared `input` variable is a
+	// number: the reserved selector shadows it, so the number's type is not judged.
+	noFault(t, func() { requireWorkflowRunInput(graph, Object{"topic": "auth", "input": "review the diff"}) })
+
+	// The reserved key is still string-only: a number fails the reserved check even though a declared
+	// `input` variable of that type would have been legal on its own.
+	fault := faultOf(t, func() { requireWorkflowRunInput(graph, Object{"topic": "auth", "input": 7}) })
+	want := &Fault{Code: "invalid_field_value", Status: 400, Params: Object{"field": "input"}}
+	if !reflect.DeepEqual(fault, want) {
+		t.Fatalf("fault = %+v, want %+v", fault, want)
+	}
+}
+
 // TestRequireWorkflowRunInputReadsTheGraphItIsGiven covers the reason the check takes a graph rather
 // than reading the live document: the schema that governs a run is the one the version it executes
 // was published with. A variable the live document added after that publish must not be demanded of

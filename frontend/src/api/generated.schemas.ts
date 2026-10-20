@@ -2373,7 +2373,7 @@ export interface WorkflowAssetImportList {
 export type WorkflowRunDefinitionSnapshot = { [key: string]: unknown } | null;
 
 /**
- * The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff — including every run created before the key was stored — evaluates against the Start node's authored instruction instead.
+ * The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead.
  */
 export type WorkflowRunInput = { [key: string]: unknown };
 
@@ -2415,7 +2415,7 @@ export interface WorkflowRun {
   /** @nullable */
   finishedAt: string | null;
   id: string;
-  /** The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff — including every run created before the key was stored — evaluates against the Start node's authored instruction instead. */
+  /** The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead. */
   input: WorkflowRunInput;
   /**
      * The frozen per-slot model bindings this run executes against, ordered by slot name. Present on a detail read. Each binding is frozen at run creation and used for the run's whole lifetime; only `revoked` can turn true (the owning connection's grant was revoked).

@@ -691,10 +691,12 @@ func workflowStartOutput(node workflowNodeView, input Object) Object {
 // run's own submitted `input` wins; the authored Start instruction is the fallback.
 //
 // The two sources exist because runs outlive the code that created them. A run created before Cloud
-// persisted the kickoff carries only the authored prompt in its input object, and the frozen snapshot
-// is what it would have executed then, so falling back to that node's `data.input` keeps historical
-// runs evaluating exactly as they did (circus#287). The fallback reads the snapshot's node, never the
-// live workflow document.
+// persisted the per-run kickoff has no reserved `input` key in its own input object — the prompt it
+// executed then lived in the frozen snapshot's Start node, not the run row — so falling back to that
+// node's `data.input` keeps historical runs evaluating exactly as they did (circus#287). The fallback
+// reads the snapshot's node, never the live workflow document. Cloud's canonical document stores the
+// prompt under `data.input` only; the legacy `data.instruction` desktop also reads is migrated to
+// `input` by the frontend when a document is read, so the server never has to fall back to it.
 //
 // The text is used verbatim, whitespace included: desktop's start.input is the kickoff prompt as the
 // author or the run submitted it, and trimming here would make the same selector compare differently

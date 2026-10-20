@@ -5301,7 +5301,7 @@
           },
           "input": {
             "additionalProperties": true,
-            "description": "The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff — including every run created before the key was stored — evaluates against the Start node's authored instruction instead.",
+            "description": "The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead.",
             "type": "object"
           },
           "modelBindings": {

@@ -49,12 +49,19 @@ func workflowRunSnapshot(t *transaction, tid, wid, sid string) Object {
 // requireWorkflowRunInput refuses a run whose input does not answer the variables the frozen graph
 // declares: a required Start variable with no value, or a value of the wrong type for its control.
 //
-// Only the declared variables are checked, and keys the graph does not declare are left alone. A run's
-// input is an execution input object, not a form submission: it carries the platform's own material
-// (context references, the issue context, a frozen executor reference) alongside the workflow's
-// parameters, so treating an extra key as an error would refuse input the platform itself writes. The
-// @ form is the one place where the set of keys *is* the contract, and it rejects unknown keys on its
-// own — see validateFormValues.
+// The reserved `input` kickoff selector is checked before the declared variables: when present it must
+// be a string, and a null is treated as absent, the way desktop's kickoff_input is. Then only the
+// declared variables are checked, and keys the graph does not declare are left alone. A run's input is
+// an execution input object, not a form submission: it carries the platform's own material (context
+// references, the issue context, a frozen executor reference) alongside the workflow's parameters, so
+// treating an extra key as an error would refuse input the platform itself writes. The @ form is the
+// one place where the set of keys *is* the contract, and it rejects unknown keys on its own — see
+// validateFormValues.
+//
+// A variable that declares the name `input` is shadowed by the reserved selector: the kickoff carries
+// the value `[start, input]` resolves to (see workflowStartOutput), so the declared variable's type is
+// never judged here — desktop likewise lets the kickoff overwrite a declared variable of the same name
+// rather than refusing it.
 //
 // The check reads the snapshot's graph, never the live document, so a version published months ago
 // still accepts exactly what it accepted then.
@@ -72,6 +79,14 @@ func requireWorkflowRunInput(graph, input Object) {
 	fields := workflowInputFields(graph)
 	for i := range fields {
 		field := &fields[i]
+		// A declared variable named `input` is shadowed by the reserved selector, whose value the Start
+		// output resolves from WorkflowStartKickoff rather than from this field. Desktop lets the kickoff
+		// overwrite a declared variable of the same name, so judging the declared type here would make a
+		// legal graph unstartable: a string kickoff fails a non-string declaration, and a value of the
+		// declared type fails the reserved-string check above.
+		if field.Key == "input" {
+			continue
+		}
 		v, present := input[field.Key]
 		if !present || v == nil {
 			if field.Required {

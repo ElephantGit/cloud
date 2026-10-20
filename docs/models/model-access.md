@@ -39,13 +39,21 @@
   服务密钥 ID，不对原始 Key 或随机密文计算请求指纹。
 - 写入和清除都要求用户作用域的 `Idempotency-Key` 和当前资源版本。清除 Key、停用或删除连接，都在同一个事务里撤销这个连接已签发的全部临时授权。
 
+## 个人 Agent 配置
+
+`/api/v1/me/agent-configurations/:spaceId/:pluginNamespace/:pluginIdentifier` 读取、保存和清除当前用户的插件配置；`POST .../repair` 显式确认变更后的声明。空间只提供选定发行的上下文，配置按用户与 canonical Plugin ID 单份保存，管理员没有他人的读写权。
+
+读取同时返回当前声明和原配置，指纹不匹配时保留旧值并标记需修复。保存检查配置 revision、空间选择版本和声明指纹；修复必须按当前声明完整提交。所有写操作要求用户作用域的幂等键。清除保留递增 revision 的空记录，不删除连接，也不撤销旧运行。OpenCode 配置仅保存选项，其模型选择由原全局默认资源按自身 version 修改。
+
+Settings 只接受声明中的标量字段；普通配置请求不承载连接凭据。连接和模型引用必须属于当前用户且协议与声明匹配，Claude 只接受 Messages。保存配置不证明模型可连接，也不证明部署已有 adapter。
+
 ## 运行绑定
 
 `official/ora-space.opencode` 的 Agent 运行在**创建运行的同一个事务里**生成一份运行绑定（`run_model_bindings`），固定：发起者、连接及其版本、
 协议、上游地址、认证方式、模型和密文引用；同时固定发起者的 Git 作者身份。
 
 - 发起者没有默认模型、没有配置 Key 或连接不可用时，整条评论、交互和运行一起回滚，分别返回 `409 model_default_required`、
-  `model_credential_required`、`model_connection_unavailable`。其他 Agent 的行为不受影响。
+  `model_credential_required`、`model_connection_unavailable`。无新声明的旧 OpenCode 保持这一行为。
 - 之后修改连接或默认模型，不会改变已经创建的运行。
 - 一次运行可以有多份绑定：工作流运行在创建事务里为图引用的**每个槽位**各冻结一份，每个节点的会话只取用它引用的那个槽位的绑定（见
   [工作流](../workflows/workflows.md#执行器槽位)）。
@@ -55,6 +63,10 @@
   [有界启动](../agent-runs/startup-settlement.md)。
 
 使用个人模型的运行，Thread 只能由发起者追加，发起者或当前管理员可以结束，其他成员仍可读取（见 [Thread](../agent-runs/threads.md)）。
+
+带 Agent 声明的运行还校验个人配置、声明指纹及部署提供的精确 target/adapter 契约能力，并在同一事务写入私有 `run_agent_configurations`。没有该能力时返回 `agent_adapter_unavailable`；Claude 没有声明时返回 `agent_declaration_required`。部署组装必须在实际 Node/Controller adapter 路径可消费冻结输入后才提供能力。
+
+私有快照保存包身份、声明身份、配置 revision 和解析后的选项；公开运行详情只显示插件、版本与配置 revision。延迟创建 Workspace 的安装计划继续取原冻结发行，空间升级或卸载不改变这次执行。后续普通配置编辑不改写快照，连接撤销仍由原运行绑定统一管理。
 
 ## 临时授权
 
@@ -73,6 +85,8 @@
 Git 凭据。
 
 ## 相关决策
+
+- [个人 Agent 配置按插件解析并在创建运行时冻结](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261017-personal-agent-configurations.md)（部分实现，adapter 与端到端义务仍由该 ADR 约束）
 
 - [个人模型连接由用户配置，平台保管密钥并为每次运行代理模型请求](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/0-personal-model-connections-and-run-scoped-proxy.md)
 - [个人模型 Thread 只由发起者追加，成员可读且管理员可结束](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261010-personal-model-initiator-controls-input.md)

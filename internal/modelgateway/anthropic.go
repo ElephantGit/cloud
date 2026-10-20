@@ -22,6 +22,7 @@ var claudeBetaHeaders = map[string]bool{
 	"effort-2025-11-24":                        true,
 	"structured-outputs-2025-12-15":            true,
 	"thinking-display-updates-2026-08-18":      true,
+	"per-turn-control-2026-07-01":              true,
 }
 
 // runtimeModelRoute accepts only inference and the frozen binding's local model listing.

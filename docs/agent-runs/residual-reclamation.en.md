@@ -57,6 +57,8 @@ Entries with insufficient evidence remain open.
 Authorized cleanup follows existing quiesce → terminate → cleanup. A quiesce refusal leaves the original operation in `retry_wait`, retaining
 the original authority and guards for evidence collection and retry (A3). It neither restores new execution eligibility, escalates to force-stop,
 nor creates another operation.
+When the existing Controller requests `blocked` for unconfirmed termination, this system responsibility instead persists claimable `retry_wait`;
+actual plans and permits still recheck evidence.
 
 A failed `sandbox_terminate` / `workspace_data_delete` effect bound to this responsibility is a retryable observation, not a disposal conclusion.
 After fresh evidence, the same effect may advance to success while retaining both observations. Historical provisioning/execution failures,

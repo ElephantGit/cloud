@@ -47,6 +47,7 @@ execution、clone、work 和数据目标。迟到事实可以补充原目标，�
 
 获授权后沿已有 quiesce → terminate → cleanup 推进。quiesce 拒绝使原 operation 留在 `retry_wait`，保留原责任及保护，稍后重新取证再试（A3）。
 它不恢复新执行资格，不升级为强停，也不重新创建 operation。
+既有 Controller 因终止未确认而请求 `blocked` 时，此系统责任也保存为可领取的 `retry_wait`；实际计划和许可仍重新检查证据。
 
 该责任绑定的 `sandbox_terminate` / `workspace_data_delete` effect 失败是可重试观察，不是已处置结论。
 重新取证后同一 effect 可推进到成功，失败与成功证据均保留；历史创建/执行失败、外部身份和已成功结论仍受冲突保护。

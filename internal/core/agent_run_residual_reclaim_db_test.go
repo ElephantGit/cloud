@@ -159,7 +159,17 @@ func seedResidualRetryCleanupEffect(t *testing.T, kind string) {
 	}
 	failed := Object{"state": "failed", "externalId": "residual-cleanup-retry", "result": Object{"error": "temporary_storage_unavailable"}}
 	op = seedResidualAction(t, scene, op, "effect_result", failed, cleanupID).O("operation")
-	op = seedResidualAction(t, scene, op, "defer", Object{"state": "retry_wait", "errorCode": "node_unavailable", "retrySeconds": 1}, "").O("operation")
+	deferredState, deferredCode := "retry_wait", "node_unavailable"
+	if kind == "sandbox_terminate" {
+		// The existing Controller uses blocked for an unconfirmed termination. A residual
+		// responsibility must normalize that request to a claimable retry_wait, not strand
+		// the hidden Workspace behind an unavailable public/operator retry action.
+		deferredState, deferredCode = "blocked", "termination_unconfirmed"
+	}
+	op = seedResidualAction(t, scene, op, "defer", Object{"state": deferredState, "errorCode": deferredCode, "retrySeconds": 1}, "").O("operation")
+	if op.S("state") != "retry_wait" || op.S("errorCode") != deferredCode {
+		t.Fatalf("owned cleanup defer is not retryable: %v", op)
+	}
 	seedResidualExec(t, scene.store, `UPDATE operations SET retry_at=clock_timestamp()-interval '1 second' WHERE id=$1`, op.S("id"))
 	_, err := scene.store.Control(t.Context(), &ControlRequest{Action: "lease_release", Body: Object{"epoch": 1}, Service: scene.claims})
 	if err != nil {

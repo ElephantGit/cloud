@@ -132,6 +132,12 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
 		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		if row := residualOperation(t, o); row != nil && row.S("reclaimMode") == "owned_delete" && row.S("reclaimState") == "reclaiming" && row["reclaimConflictedAt"] == nil {
+			// A3 has no public/operator retry path for this hidden Workspace. Preserve the
+			// same retryable operation even when the existing Controller requests blocked
+			// for an unconfirmed termination; plan/permit still require fresh real evidence.
+			state = "retry_wait"
+		}
 		if o.S("step") == "clone" && code == "clone_failed" {
 			deferWorkspaceClone(t, o)
 			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))

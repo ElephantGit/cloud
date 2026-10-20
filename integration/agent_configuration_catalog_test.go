@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -168,6 +169,10 @@ func TestAgentConfigurationCatalogSyncFreezesAndDispatches(t *testing.T) {
 		t.Fatalf("a catalog update must not rewrite the frozen selection: %s", frozenText)
 	}
 
+	// An undeclared release installs beside it and must reach the Node with no association at
+	// all: the Node rejects an empty one, so an invented association blocks every such install.
+	f.call("POST", f.pluginSpacePath(sid)+"/plugins", core.Object{"identifier": "official/undeclared"}, "select-undeclared", 200)
+
 	// The workspace install plan carries the frozen association, not the latest catalog content.
 	// The fixture controller drives the real claim/dispatch/result boundary, so the durable
 	// evidence below crossed the production codec and the input-equality gate.
@@ -190,8 +195,24 @@ func TestAgentConfigurationCatalogSyncFreezesAndDispatches(t *testing.T) {
 	if !strings.Contains(inputText, validDigest) || strings.Contains(inputText, secondDigest) {
 		t.Fatalf("the durable execution input must carry the frozen, not the latest, association: %s", inputText)
 	}
-	if state := f.scalar("SELECT count(*) FROM workspace_plugin_instances WHERE workspace_id=$1 AND identifier='declared-agent' AND observed_state='installed'", wid); state != 1 {
-		t.Fatal("the install execution must settle the workspace plugin instance")
+	expected := map[string]any{"schemaVersion": float64(2), "declarationSha256": validDigest}
+	for name, text := range map[string]string{"frozen plan": requestText, "execution input": inputText} {
+		plugins := plannedPlugins(t, text)
+		declared, undeclared := plugins["official/declared-agent"], plugins["official/undeclared"]
+		if declared == nil || undeclared == nil {
+			t.Fatalf("%s must plan both plugins: %s", name, text)
+		}
+		if !reflect.DeepEqual(declared["agentConfiguration"], expected) {
+			t.Fatalf("%s must carry the declared association verbatim: %#v", name, declared["agentConfiguration"])
+		}
+		if association, present := undeclared["agentConfiguration"]; present {
+			t.Fatalf("%s must omit the association of an undeclared plugin, got %#v", name, association)
+		}
+	}
+	for _, identifier := range []string{"declared-agent", "undeclared"} {
+		if state := f.scalar("SELECT count(*) FROM workspace_plugin_instances WHERE workspace_id=$1 AND identifier=$2 AND observed_state='installed'", wid, identifier); state != 1 {
+			t.Fatalf("the install execution must settle the %s workspace plugin instance", identifier)
+		}
 	}
 
 	if got := packageRequests.Load(); got != 0 {
@@ -199,7 +220,7 @@ func TestAgentConfigurationCatalogSyncFreezesAndDispatches(t *testing.T) {
 	}
 
 	// The space's plugin state still resolves against the frozen release.
-	if state := f.call("GET", f.pluginSpacePath(sid)+"/plugins", nil, "", 200); len(state["items"].([]any)) != 1 {
+	if state := f.call("GET", f.pluginSpacePath(sid)+"/plugins", nil, "", 200); len(state["items"].([]any)) != 2 {
 		t.Fatalf("space plugin list: %+v", state)
 	}
 }
@@ -264,6 +285,21 @@ func TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades(t *testin
 }
 
 // deref renders one optional string for a failure message.
+// plannedPlugins indexes the plugins of a frozen plan or execution input by plugin id.
+func plannedPlugins(t *testing.T, text string) map[string]map[string]any {
+	t.Helper()
+	var document struct {
+		Plugins []map[string]any `json:"plugins"`
+	}
+	must(t, json.Unmarshal([]byte(text), &document))
+	out := map[string]map[string]any{}
+	for _, plugin := range document.Plugins {
+		id, _ := plugin["pluginId"].(string)
+		out[id] = plugin
+	}
+	return out
+}
+
 func deref(value *string) string {
 	if value == nil {
 		return "<nil>"

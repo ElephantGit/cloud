@@ -13,7 +13,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // PublicRequest is populated only after service and final-user credentials are verified.
 type PublicRequest struct {
-	Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, ConversationMessageID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, Key, After, Before, Query, GroupBy string
+Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, ConversationMessageID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, ScheduledTaskID, Key, After, Before, Query, GroupBy string
 	// FormIssueID is the optional `issueId` query parameter of the form-descriptor route. It is
 	// deliberately its own field rather than a fallback into IssueID: IssueID drives dispatch in both
 	// readPublic and Public, so a query parameter folded into it would let `GET /issues?issueId=…`
@@ -231,6 +231,13 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				if p.S("spaceId") != "" {
 					events = append(events, SpaceEvent{Type: "project.archived", SpaceID: p.S("spaceId"), ProjectID: p.S("id")})
 				}
+			}
+		case strings.Contains(r.Path, "/scheduled-tasks"):
+			// Cloud Scheduled Task 的管理端点（D1：管理仅创建者，读取跟随绑定 issue 可见性，
+			// 不存在与无权限统一 404）。分支放在 issue 臂之前，因为路径不含 :iid。
+			out = scheduledTaskPublic(t, r, uid)
+			if r.Method == "POST" && !strings.HasSuffix(r.Path, "/history") {
+				status = 200
 			}
 		case r.IssueID != "" || strings.HasSuffix(r.Path, "/issues"):
 			switch {
@@ -478,6 +485,9 @@ func window(t *transaction, q string, args []any, r *PublicRequest) Object {
 }
 
 func readPublic(t *transaction, r *PublicRequest, uid string) Object {
+	if strings.Contains(r.Path, "/scheduled-tasks") {
+		return scheduledTaskPublicRead(t, r, uid)
+	}
 	if strings.Contains(r.Path, "/git-credentials") {
 		out, _ := gitCredentialsPublic(t, r, uid)
 		return out

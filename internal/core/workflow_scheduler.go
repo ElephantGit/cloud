@@ -473,7 +473,8 @@ func (p *workflowProjection) incomingEdges(nodeID string) []Object {
 // window, carried through to the session settlement (see AdvanceWorkflowRunsOnce).
 func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Duration) {
 	run := t.one(`
-		SELECT r.*, s.graph FROM workflow_runs r
+		SELECT r.*, s.graph, (EXTRACT(EPOCH FROM r.created_at)*1000)::bigint AS created_at_ms
+		FROM workflow_runs r
 		JOIN workflow_snapshots s ON s.id = r.snapshot_id
 		WHERE r.id=$1 AND r.deleted_at IS NULL`, runID)
 	if run == nil {
@@ -487,7 +488,8 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			return
 		}
 		run = t.one(`
-			SELECT r.*, s.graph FROM workflow_runs r
+			SELECT r.*, s.graph, (EXTRACT(EPOCH FROM r.created_at)*1000)::bigint AS created_at_ms
+			FROM workflow_runs r
 			JOIN workflow_snapshots s ON s.id = r.snapshot_id
 			WHERE r.id=$1`, runID)
 	case "running":
@@ -515,6 +517,10 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 		return
 	}
 	states := workflowStatesFromJSON(run.O("nodeStates"))
+	// The ambient variables a condition reads but no node commits: the runtime-owned sys.* pair and
+	// the user globals frozen in the snapshot. They are derived from the run row on every pass, so a
+	// retry, recovery or re-dispatch reads the same frozen values the run was created with.
+	ambient := workflowAmbientStates(run, run.O("graph"))
 	// A committed running agent node settles from its session execution's terminal evidence before
 	// anything else runs: sessions serialize per run (one unregistered agent_session work item per
 	// run), and the next wave waits for the terminal commit. The pass returns after any outcome —
@@ -550,7 +556,7 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			startWorkflowAgentSession(t, run, node, version, states)
 			return
 		}
-		states[node.ID] = executeWorkflowNode(node, run.O("input"), states)
+		states[node.ID] = executeWorkflowNode(node, run.O("input"), states, ambient)
 	}
 	// The wave stopped with no executable node left. Persist the projection's inactive nodes —
 	// behind a branch that was not taken, they never ran and never will — so the run row alone
@@ -632,10 +638,11 @@ func workflowRunVersion(t *transaction, runID string, fallback int64) int64 {
 
 // executeWorkflowNode commits one ready non-agent node's result from committed state. start reports
 // the variable roots desktop's Start node exposes; condition evaluates its cases against prior node
-// outputs and commits the selected branch (first match wins, else when nothing matched, and a failure
-// when a rule cannot be evaluated); output is a terminal marker whose produce stays in the node state
-// for the run viewer (D7: 成果交付延后).
-func executeWorkflowNode(node workflowNodeView, input Object, states map[string]workflowNodeState) workflowNodeState {
+// outputs overlaid with the run's ambient variables (sys.* and frozen user globals) and commits the
+// selected branch (first match wins, else when nothing matched, and a failure when a rule cannot be
+// evaluated); output is a terminal marker whose produce stays in the node state for the run viewer
+// (D7: 成果交付延后).
+func executeWorkflowNode(node workflowNodeView, input Object, states, ambient map[string]workflowNodeState) workflowNodeState {
 	now := nowRFC3339()
 	state := workflowNodeState{
 		Status:      "succeeded",
@@ -647,7 +654,7 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 	case "start":
 		state.Output = workflowStartOutput(node, input)
 	case "condition":
-		branch, err := evaluateWorkflowCondition(node, states)
+		branch, err := evaluateWorkflowCondition(node, workflowConditionStates(states, ambient))
 		if err != nil {
 			// A condition that cannot evaluate the document it was given fails the node and the run,
 			// exactly as desktop's ConditionRuntime does. Falling through to else would hide a
@@ -668,6 +675,90 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 		state.Output = Object{"reason": "unsupported_node_kind"}
 	}
 	return state
+}
+
+// workflowAmbientStates builds the pseudo-node states a condition reads but no graph node commits:
+// the runtime-owned sys.* pair and the user globals frozen in the snapshot. The keys are writers (a
+// global's first name segment, or "sys"), so a selector addresses them exactly as it addresses a node.
+// sys.workflow_id is the run's workflow id and sys.timestamp is the run's creation time in epoch
+// milliseconds, both read from the frozen run row so every pass — retry, recovery, re-dispatch —
+// agrees. User-authored sys.* declarations are skipped rather than merged: the runtime owns those two
+// names, which is desktop's retain-and-repush behavior.
+func workflowAmbientStates(run, graph Object) map[string]workflowNodeState {
+	ambient := map[string]workflowNodeState{}
+	for _, variable := range workflowGlobalVariables(graph) {
+		name := variable.S("name")
+		if name == "sys.workflow_id" || name == "sys.timestamp" {
+			continue
+		}
+		writer, root, ok := workflowGlobalSelector(name)
+		if !ok {
+			continue
+		}
+		value, present := variable["value"]
+		if !present || value == nil {
+			continue
+		}
+		setWorkflowAmbientRoot(ambient, writer, root, value)
+	}
+	ambient["sys"] = workflowNodeState{
+		Status: "succeeded",
+		Output: Object{
+			"workflow_id": run.S("workflowId"),
+			"timestamp":   float64(run.N("createdAtMs")),
+		},
+	}
+	return ambient
+}
+
+// setWorkflowAmbientRoot records one global's value under its writer's pseudo-node output, creating
+// the pseudo-node on first use. Two globals in one namespace share the writer and union their roots.
+func setWorkflowAmbientRoot(ambient map[string]workflowNodeState, writer, root string, value any) {
+	state, ok := ambient[writer]
+	if !ok {
+		state = workflowNodeState{Status: "succeeded", Output: Object{}}
+	}
+	state.Output[root] = value
+	ambient[writer] = state
+}
+
+// workflowConditionStates returns the states a condition evaluates against: the committed node states
+// overlaid with the run's ambient variables. The overlay is per-root rather than per-node because a
+// global's writer is a namespace, not a node — a graph may declare a global `start.foo` beside a real
+// start node, and desktop's flat pool keeps `start.foo` (global) and `start.input` (node) as distinct
+// keys. Committed roots win on a collision, the same way desktop's node pass overwrites a same-named
+// global value. The result is a fresh map so the ambient pseudo-nodes are never persisted into
+// node_states.
+func workflowConditionStates(states, ambient map[string]workflowNodeState) map[string]workflowNodeState {
+	if len(ambient) == 0 {
+		return states
+	}
+	out := make(map[string]workflowNodeState, len(states)+len(ambient))
+	for id, state := range ambient {
+		out[id] = state
+	}
+	for id, state := range states {
+		if existing, ok := out[id]; ok {
+			existing.Output = mergeWorkflowOutput(existing.Output, state.Output)
+			out[id] = existing
+			continue
+		}
+		out[id] = state
+	}
+	return out
+}
+
+// mergeWorkflowOutput merges an ambient pseudo-node's output with a committed node's, letting the
+// committed roots win. The ambient output is nil when no global shares the node's id.
+func mergeWorkflowOutput(ambient, committed Object) Object {
+	merged := make(Object, len(ambient)+len(committed))
+	for key, value := range ambient {
+		merged[key] = value
+	}
+	for key, value := range committed {
+		merged[key] = value
+	}
+	return merged
 }
 
 // workflowStartOutput is the Start node's variable pool in the shape desktop declares it: `input` is

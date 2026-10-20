@@ -86,10 +86,11 @@ type workflowGraphProblem struct {
 	Slot   string
 	Kind   string
 	Field  string
+	Name   string
 }
 
 // Object renders one problem for the fault's `problems` list, omitting the fields that do not apply.
-// It takes its receiver by pointer because a problem is five strings and is rendered in a loop.
+// It takes its receiver by pointer because a problem is several strings and is rendered in a loop.
 func (p *workflowGraphProblem) Object() Object {
 	out := Object{"code": p.Code}
 	if p.NodeID != "" {
@@ -104,6 +105,9 @@ func (p *workflowGraphProblem) Object() Object {
 	if p.Field != "" {
 		out["field"] = p.Field
 	}
+	if p.Name != "" {
+		out["name"] = p.Name
+	}
 	return out
 }
 
@@ -113,6 +117,79 @@ func (p *workflowGraphProblem) Object() Object {
 func workflowNodes(graph Object) []any {
 	nodes, _ := graph["nodes"].([]any)
 	return nodes
+}
+
+// workflowGlobalVariables reads the graph's global-variable declarations. Like workflowNodes it never
+// interprets the document further: an entry that is not an object contributes nothing here, and
+// publishing reports the rest. It is shared by the publish gate (declaration and validation) and the
+// run's ambient variable pool, so both read the same frozen list.
+func workflowGlobalVariables(graph Object) []Object {
+	declared, _ := graph["globalVariables"].([]any)
+	out := []Object{}
+	for _, item := range declared {
+		if variable, ok := asWorkflowObject(item); ok {
+			out = append(out, variable)
+		}
+	}
+	return out
+}
+
+// validateWorkflowGlobals refuses global declarations the run could not honor, mirroring desktop's
+// into_global_variables so a graph Cloud publishes is a graph desktop accepts. Each problem names the
+// global it concerns. The rules, in order: the list itself must be a list, every entry an object, the
+// name a qualified name (at least one dot and neither leading nor trailing dot), names must not
+// repeat, the type must be supported, and — unless it is one of the two runtime-owned `sys.*`
+// variables — the global must carry an initial value whose type matches its declaration. A present
+// `sys.*` value is still checked against the type before the runtime discards it, exactly as desktop
+// does. An absent or null `globalVariables` declares no globals and is not a problem.
+func validateWorkflowGlobals(graph Object) []workflowGraphProblem {
+	problems := []workflowGraphProblem{}
+	raw, present := graph["globalVariables"]
+	if !present || raw == nil {
+		return problems
+	}
+	declared, ok := raw.([]any)
+	if !ok {
+		return append(problems, workflowGraphProblem{Code: "globals_not_a_list"})
+	}
+	seen := map[string]bool{}
+	for _, item := range declared {
+		variable, ok := asWorkflowObject(item)
+		if !ok {
+			problems = append(problems, workflowGraphProblem{Code: "global_not_an_object"})
+			continue
+		}
+		name := strings.TrimSpace(variable.S("name"))
+		if !strings.Contains(name, ".") || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
+			problems = append(problems, workflowGraphProblem{Code: "global_name_invalid", Name: name})
+			continue
+		}
+		if seen[name] {
+			problems = append(problems, workflowGraphProblem{Code: "global_name_duplicate", Name: name})
+			continue
+		}
+		seen[name] = true
+		valueType := variable.S("valueType")
+		if !workflowSupportedVariableType(valueType) {
+			problems = append(problems, workflowGraphProblem{Code: "global_type_unsupported", Name: name})
+			continue
+		}
+		// A null value is the same as no value — desktop's Option<Value> reads both as None.
+		value, hasValue := variable["value"]
+		if hasValue && value == nil {
+			hasValue = false
+		}
+		if !hasValue && name != "sys.workflow_id" && name != "sys.timestamp" {
+			problems = append(problems, workflowGraphProblem{Code: "global_value_missing", Name: name})
+			continue
+		}
+		if hasValue {
+			if _, ok := normalizeWorkflowValue(value, valueType); !ok {
+				problems = append(problems, workflowGraphProblem{Code: "global_value_mismatch", Name: name})
+			}
+		}
+	}
+	return problems
 }
 
 // validateWorkflowGraph reports every way a graph violates the canonical schema, in document order so
@@ -129,7 +206,9 @@ func validateWorkflowGraph(graph Object) []workflowGraphProblem {
 	if _, ok := graph["edges"].([]any); !ok {
 		problems = append(problems, workflowGraphProblem{Code: "edges_not_a_list"})
 	}
-	problems = append(problems, validateWorkflowNodes(nodes)...)
+	globals := workflowGlobalVariables(graph)
+	problems = append(problems, validateWorkflowGlobals(graph)...)
+	problems = append(problems, validateWorkflowNodes(nodes, globals)...)
 	problems = append(problems, validateWorkflowEdges(graph, nodes)...)
 	problems = append(problems, validateWorkflowAcyclic(graph)...)
 	problems = append(problems, validateWorkflowSlots(graph, nodes)...)
@@ -163,10 +242,10 @@ func validateWorkflowAcyclic(graph Object) []workflowGraphProblem {
 // validateWorkflowNodes checks node identity, kind, agent configuration and the start-node count. The
 // editor allows at most one Start node, and a run needs exactly one entry point, so zero and two are
 // both refused: a graph with none is unfinished, and one with two has no defined place to begin.
-func validateWorkflowNodes(nodes []any) []workflowGraphProblem {
+func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	seen := map[string]bool{}
-	declaredRoots := workflowDeclaredRoots(nodes)
+	declaredRoots := workflowDeclaredRoots(nodes, globals)
 	starts := 0
 	for _, raw := range nodes {
 		node, ok := raw.(map[string]any)
@@ -294,9 +373,16 @@ var workflowUnsupportedConditionConfigs = []string{
 // agent and output values arrive with cloud#70/#74; until then a selector on them is declared but
 // unassigned, the same state desktop has before the node produces its output.
 //
+// The map also holds the pool's two global sources, keyed by the same first-segment writer a selector
+// uses: the runtime-owned `sys.workflow_id` and `sys.timestamp` are always declared, and each user
+// global declares its writer's second segment. A global names a three-segment key like `foo.bar.baz`,
+// but desktop's pool resolves a selector by its first two segments only, so such a global is declared
+// yet unreachable there — Cloud therefore declares only two-segment globals and refuses a selector on
+// the longer name the same way desktop reports it Undeclared.
+//
 // The map is keyed by node id and holds an empty set for kinds that expose no roots, so a selector
 // on a condition node is refused rather than accidentally matching an absent key.
-func workflowDeclaredRoots(nodes []any) map[string]map[string]bool {
+func workflowDeclaredRoots(nodes []any, globals []Object) map[string]map[string]bool {
 	roots := make(map[string]map[string]bool, len(nodes))
 	for _, raw := range nodes {
 		node, ok := raw.(map[string]any)
@@ -338,7 +424,43 @@ func workflowDeclaredRoots(nodes []any) map[string]map[string]bool {
 		}
 		roots[id] = set
 	}
+	declareWorkflowRoot(roots, "sys", "workflow_id")
+	declareWorkflowRoot(roots, "sys", "timestamp")
+	for _, variable := range globals {
+		if writer, root, ok := workflowGlobalSelector(variable.S("name")); ok {
+			declareWorkflowRoot(roots, writer, root)
+		}
+	}
 	return roots
+}
+
+// declareWorkflowRoot records one writer-owned root, creating the writer's set on first use. The
+// writer is either a graph node id or a global's first name segment, so a global namespace that
+// shares a node's id unions its root into the node's set — the same flat key space desktop's pool
+// uses.
+func declareWorkflowRoot(roots map[string]map[string]bool, writer, root string) {
+	set, ok := roots[writer]
+	if !ok {
+		set = map[string]bool{}
+		roots[writer] = set
+	}
+	set[root] = true
+}
+
+// workflowGlobalSelector splits a validated global name into the writer and root a selector would
+// address. It reports ok=false unless the name is exactly two dot-separated segments, because
+// desktop's selector resolution joins only the first two segments — a three-segment global is
+// declared under its full name and never reachable, so Cloud must not declare it reachable either.
+func workflowGlobalSelector(name string) (writer, root string, ok bool) {
+	i := strings.IndexByte(name, '.')
+	if i <= 0 || i == len(name)-1 {
+		return "", "", false
+	}
+	writer, root = name[:i], name[i+1:]
+	if strings.Contains(root, ".") {
+		return "", "", false
+	}
+	return writer, root, true
 }
 
 // validateConditionConfig refuses the condition configuration the first phase does not evaluate the

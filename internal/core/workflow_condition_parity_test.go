@@ -219,7 +219,7 @@ func TestWorkflowConditionFailureFailsTheNode(t *testing.T) {
 		}},
 	}}}
 	states := map[string]workflowNodeState{"s": {Status: "succeeded", Output: Object{}}}
-	state := executeWorkflowNode(node, nil, states)
+	state := executeWorkflowNode(node, nil, states, nil)
 	if state.Status != "failed" || state.Error == "" {
 		t.Fatalf("state = %+v; want a failed node carrying the evaluation error", state)
 	}

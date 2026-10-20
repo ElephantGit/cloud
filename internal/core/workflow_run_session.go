@@ -93,7 +93,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 // the scheduler releases one EndSession command with `idle_timeout` through the existing Controller
 // relay, and the Node ends the session and reports its result (D4). The trigger is this recompute
 // rather than the takeover hook so a crash between ticks re-reads the receipt and re-releases the
-// same command (the per-node uniqueness in 0045 makes that a replay, not a second request).
+// same command (the per-node uniqueness in 0049 makes that a replay, not a second request).
 //
 // The wait is bounded (D7). Once the command has been outstanding longer than the confirmation
 // window, the node fails with a named reason and the run is finished, which declares the Workspace

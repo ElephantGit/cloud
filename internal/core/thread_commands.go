@@ -27,7 +27,7 @@ func enqueueThreadCommand(t *transaction, runID, kind string, body Object) Objec
 
 // enqueueWorkflowThreadCommand releases one session command for a WorkflowRun's graph node. It is
 // the WorkflowRun counterpart of enqueueThreadCommand: the row registers against workflow_runs
-// (0045's discriminator), and the graph node scopes the command to the session it addresses — a run
+// (0049's discriminator), and the graph node scopes the command to the session it addresses — a run
 // executes one agent node at a time but several over its life (D4). Repeating the same request
 // returns the original row; a different request for the same node conflicts.
 func enqueueWorkflowThreadCommand(t *transaction, runID, nodeID, kind string, body Object) Object {
@@ -62,7 +62,7 @@ func validateThreadCommand(kind string, body Object) {
 func claimThreadCommands(t *transaction, limit int64) Object {
 	require(limit >= 1 && limit <= 100, 400, "invalid_limit")
 	// A command names its run in one of two columns: an IssueRun command carries run_id, a
-	// WorkflowRun command carries workflow_run_id and leaves run_id NULL (0045's exactly-one-owner
+	// WorkflowRun command carries workflow_run_id and leaves run_id NULL (0049's exactly-one-owner
 	// CHECK). The Controller matches a command to its control binding by the run id it is handed and
 	// echoes the same id back on delivery, so the claim projects one value. The alias is deliberate
 	// rather than `c.*`: row_to_json keeps both copies of a repeated column name, and which one the

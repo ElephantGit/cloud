@@ -76,12 +76,16 @@ completion observation afterwards. A client retry is a new attempt; SSE chunks a
 counts. The ledger holds no request body, key, headers, raw provider error or user file path. A `started`
 observation left behind by a service crash stays unknown; nothing infers success, failure or zero usage from it.
 
-Both read endpoints are read-only, check current membership, the Issue and the Agent run, and do not depend on
-whether an archive exists:
+Both read endpoints exist under IssueRuns and WorkflowRuns, are read-only and do not depend on whether an
+archive exists: the IssueRun paths check current membership, the Issue and the Agent run; the WorkflowRun paths
+check current membership and that the run belongs to the workflow in the path and is not deleted. Any tenant
+member who can read the run can read its statistics, not only its starter; an archived workflow hides its run
+history with it.
 
 - `GET .../runs/:rid/statistics` aggregates every recorded attempt of the run and accepts no query parameters.
 - `GET .../runs/:rid/model-calls` pages through the attempts in ascending `(startedAt, id)` and accepts only
-  `limit` (50 by default, at most 100) and a UUID `after` from the same run.
+  `limit` (50 by default, at most 100) and a UUID `after` from the same run; the cursor is bound to that run
+  and cannot be used across runs.
 
 The source is fixed as `model_gateway` and the scope as `recorded_http_attempts`: this is neither the complete
 request count of historical sessions nor a bill.

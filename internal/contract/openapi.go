@@ -585,7 +585,7 @@ func isList(r router.Route) bool {
 	if isRepositoryRoute(r) {
 		return repositoryList(r)
 	}
-	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath || r.Path == "/api/v1/me/executor-slot-mappings" {
+	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath || r.Path == router.WorkflowModelCallsPath || r.Path == "/api/v1/me/executor-slot-mappings" {
 		return r.Method == "GET"
 	}
 	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/clones"))
@@ -595,10 +595,10 @@ func responseSchema(r router.Route) (schema obj, status string) {
 	if isRepositoryRoute(r) {
 		return repositoryResponse(r)
 	}
-	if r.Path == router.SessionStatisticsPath {
+	if r.Path == router.SessionStatisticsPath || r.Path == router.WorkflowStatisticsPath {
 		return ref("SessionModelStatistics"), "200"
 	}
-	if r.Path == router.SessionModelCallsPath {
+	if r.Path == router.SessionModelCallsPath || r.Path == router.WorkflowModelCallsPath {
 		return object(obj{"items": array(ref("SessionModelAttempt")), "nextCursor": str()}, "items", "nextCursor"), "200"
 	}
 	if r.Path == router.AgentSessionsPath {
@@ -1090,6 +1090,12 @@ func description(r router.Route) string {
 	}
 	if r.Path == router.SessionModelCallsPath {
 		return "Read-only active-member content-free model HTTP attempts for an Agent run, ascending (startedAt, id). after must identify an attempt in this run. Only singleton nonempty limit and after parameters accepted. Request/response bodies, credentials, headers, provider messages and storage paths are never returned. firstOutputMs measures the gateway-observed first effective output, not model TTFT. A started attempt may represent an ongoing request or missing final observation. private, no-store."
+	}
+	if r.Path == router.WorkflowStatisticsPath {
+		return "Read-only active-member model statistics for a WorkflowRun. Covers all recorded model-gateway HTTP attempts owned by this WorkflowRun, independently of request-page pagination. The run must belong to the named workflow and be live; any active tenant member who can read the run can read its statistics. This is not a historical request backfill or billing ledger. Each metric exposes its own known/total coverage; absent values remain null, including a run with no observations. Input/cache semantics follow the source protocol; reasoning is an output subset. No query parameters accepted; private, no-store."
+	}
+	if r.Path == router.WorkflowModelCallsPath {
+		return "Read-only active-member content-free model HTTP attempts for a WorkflowRun, ascending (startedAt, id). after must identify an attempt owned by this run. Only singleton nonempty limit and after parameters accepted. Request/response bodies, credentials, headers, provider messages and storage paths are never returned. firstOutputMs measures the gateway-observed first effective output, not model TTFT. A started attempt may represent an ongoing request or missing final observation. private, no-store."
 	}
 	if r.Path == router.AgentSessionsPath {
 		return "Read-only active-member session index. Agent IssueRuns only, newest (createdAt, id) first. Filters: projectId, exact agent plugin identifier, status, inclusive from and exclusive to RFC3339 instants. after must identify an accessible Agent run in this tenant. No log bodies or model credentials are included. Unknown, empty or repeated query parameters are rejected."

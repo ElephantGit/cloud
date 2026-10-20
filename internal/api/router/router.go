@@ -59,6 +59,14 @@ const SessionStatisticsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/statis
 // SessionModelCallsPath pages content-free model HTTP attempt observations.
 const SessionModelCallsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/model-calls"
 
+// WorkflowStatisticsPath aggregates all recorded model HTTP attempts for an authorized
+// WorkflowRun. It mirrors SessionStatisticsPath; the ledger owner discriminator keeps the two
+// scopes disjoint.
+const WorkflowStatisticsPath = "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/statistics"
+
+// WorkflowModelCallsPath pages content-free model HTTP attempt observations for a WorkflowRun.
+const WorkflowModelCallsPath = "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls"
+
 // PublishPath, WorkspaceBranchesPath and CredentialConfirmPath are the public routes whose
 // answer depends on another service: the Git Server's ref query (publish source, Workspace
 // branches) or the Credential Store's metadata (confirm). They are served by dedicated Store
@@ -137,6 +145,8 @@ func Routes() []Route {
 		{"GET", "/api/v1/tenants/:tid/workflows/:wfid/runs", "", nil},
 		{"POST", "/api/v1/tenants/:tid/workflows/:wfid/runs", "", []string{"name", "snapshotId", "input", "projectId"}},
 		{"GET", "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid", "", nil},
+		{"GET", WorkflowStatisticsPath, "", nil},
+		{"GET", WorkflowModelCallsPath, "", nil},
 		{"GET", "/api/v1/tenants/:tid/issue-views", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issue-views", "", []string{"name", "filter"}},
 		{"PUT", "/api/v1/tenants/:tid/issue-views/:vid", "", []string{"name", "filter", "version"}},
@@ -744,10 +754,10 @@ func validSessionQuery(c *gin.Context, path string) bool {
 		return false
 	}
 	for key, values := range query {
-		if path == SessionHistoryPath || path == SessionStatisticsPath || len(values) != 1 || values[0] == "" {
+		if path == SessionHistoryPath || path == SessionStatisticsPath || path == WorkflowStatisticsPath || len(values) != 1 || values[0] == "" {
 			return false
 		}
-		if path == SessionModelCallsPath && key != "limit" && key != "after" {
+		if (path == SessionModelCallsPath || path == WorkflowModelCallsPath) && key != "limit" && key != "after" {
 			return false
 		}
 		switch key {
@@ -760,5 +770,6 @@ func validSessionQuery(c *gin.Context, path string) bool {
 }
 
 func isSessionReadPath(path string) bool {
-	return path == AgentSessionsPath || path == SessionHistoryPath || path == SessionStatisticsPath || path == SessionModelCallsPath
+	return path == AgentSessionsPath || path == SessionHistoryPath || path == SessionStatisticsPath || path == SessionModelCallsPath ||
+		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath
 }

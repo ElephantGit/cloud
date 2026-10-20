@@ -134,7 +134,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	}
 
 	// 运行创建复用既有编排：buildRunContext + snapshotAgentRunInput + enqueueAdmittedRun
-	//（内部完成 bindRunModel 的模型冻结与 409 pending_run_exists 兜底）。触发证据指向本任务。
+	// （内部完成 bindRunModel 的模型冻结与 409 pending_run_exists 兜底）。触发证据指向本任务。
 	runContext := buildRunContext(t, issue, task.S("prompt"), "agent", task.S("agentId"), nil, nil)
 	input := snapshotAgentRunInput(runContext, agent)
 	run := enqueueAdmittedRun(t, task.S("tenantId"), task.S("issueId"), "agent", task.S("agentId"),

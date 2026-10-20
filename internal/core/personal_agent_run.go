@@ -57,7 +57,7 @@ func resolveDeclaredAgentRun(t *transaction, uid, spaceID, pluginID, pluginVersi
 	selection, declaration := agentConfigurationContext(t, uid, spaceID, pluginID)
 	require(selection.S("desiredVersion") == pluginVersion, 409, "agent_release_conflict")
 	configuration := personalAgentConfiguration(t, uid, pluginID)
-	if pluginID != opencodeAgentCLI || len(declaration.Settings) > 0 {
+	if pluginID != opencodeAgentCLI || len(declaration.Settings) > 0 || !configuration.B("cleared") {
 		require(!configuration.B("cleared"), 409, "agent_configuration_required")
 		require(configuration.S("declarationFingerprint") == declaration.Fingerprint, 409, "agent_configuration_repair_required")
 	}

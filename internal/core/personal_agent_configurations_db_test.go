@@ -373,3 +373,48 @@ func TestPersonalAgentNumericSettingsPreserveLiteral(t *testing.T) {
 		t.Fatalf("stored default rounded: %v", got)
 	}
 }
+
+func TestPersonalAgentOpenCodeUsesGlobalDefaultAndRepairsRemovedSettings(t *testing.T) {
+	s := newPersonalAgentScene(t)
+	_, err := s.store.transact(context.Background(), func(tx *transaction) Object {
+		tx.exec(`UPDATE space_plugins SET identifier='ora-space.opencode',
+			selected_release=jsonb_set(selected_release,'{id}','"official/ora-space.opencode"') WHERE space_id=$1`, s.space)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &PublicRequest{Method: "PUT", Path: "/api/v1/me/agent-configurations/" + s.space + "/official/ora-space.opencode",
+		SpaceID: s.space, AgentPluginID: opencodeAgentCLI, Identity: s.claims, Key: uuid.NewString(), Body: s.body(0)}
+	_, _, err = s.store.Public(context.Background(), request)
+	expectModelFault(t, err, "agent_use_model_default")
+	delete(request.Body, "connectionId")
+	delete(request.Body, "modelId")
+	_, _, err = s.store.Public(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Method, request.Body = "GET", nil
+	view, _, err := s.store.Public(context.Background(), request)
+	if err != nil || view.O("modelDefault").S("connectionId") != s.connection.S("id") || view.S("connectionId") != "" {
+		t.Fatalf("duplicated default: %v %v", view, err)
+	}
+	source := `{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"single"}}}`
+	declaration, err := pluginmarket.CompileAgentConfiguration([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
+		tx.exec(`UPDATE space_plugins SET selected_release=jsonb_set(selected_release,'{agentConfiguration}',$2::jsonb) WHERE space_id=$1`,
+			s.space, jsonText(Object{"schemaVersion": 2, "declarationSha256": declaration.Fingerprint, "declaration": source}))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, opencodeAgentCLI, "1.0.0")
+		return nil
+	})
+	expectModelFault(t, err, "agent_configuration_repair_required")
+}

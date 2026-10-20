@@ -42,20 +42,20 @@ func nilIfEmpty(s string) any {
 // history, not here.
 func scheduledTaskOut(task Object) Object {
 	return Object{
-		"id":                   task.S("id"),
-		"issueId":              task.S("issueId"),
-		"name":                 task.S("name"),
-		"prompt":               task.S("prompt"),
-		"agentId":              task.S("agentId"),
-		"schedule":             task["schedule"],
-		"timezone":             task.S("timezone"),
-		"revision":             task["revision"],
-		"enabled":              task.B("enabled"),
-		"unattendedPolicy":     task.S("unattendedPolicy"),
+		"id":                    task.S("id"),
+		"issueId":               task.S("issueId"),
+		"name":                  task.S("name"),
+		"prompt":                task.S("prompt"),
+		"agentId":               task.S("agentId"),
+		"schedule":              task["schedule"],
+		"timezone":              task.S("timezone"),
+		"revision":              task["revision"],
+		"enabled":               task.B("enabled"),
+		"unattendedPolicy":      task.S("unattendedPolicy"),
 		"unattendedConsentedAt": task["unattendedConsentedAt"],
-		"disabledReason":       nilIfEmpty(task.S("disabledReason")),
-		"createdAt":            task["createdAt"],
-		"updatedAt":            task["updatedAt"],
+		"disabledReason":        nilIfEmpty(task.S("disabledReason")),
+		"createdAt":             task["createdAt"],
+		"updatedAt":             task["updatedAt"],
 	}
 }
 
@@ -284,10 +284,10 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 	out := make([]Object, 0, len(entries))
 	for _, entry := range entries {
 		item := Object{
-			"scheduledAt": entry["scheduledAt"],
-			"outcome":     entry["outcome"],
+			"scheduledAt":  entry["scheduledAt"],
+			"outcome":      entry["outcome"],
 			"taskRevision": entry["taskRevision"],
-			"observedAt":  entry["observedAt"],
+			"observedAt":   entry["observedAt"],
 		}
 		switch entry.S("outcome") {
 		case "missed":

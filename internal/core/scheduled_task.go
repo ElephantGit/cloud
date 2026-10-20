@@ -42,10 +42,10 @@ func parseScheduledTaskSchedule(raw any) (scheduledTaskSchedule, error) {
 		return scheduledTaskSchedule{}, err
 	}
 	var shape struct {
-		Kind          string `json:"kind"`
-		IntervalHours int    `json:"intervalHours"`
-		Hour          int    `json:"hour"`
-		Minute        int    `json:"minute"`
+		Kind          string   `json:"kind"`
+		IntervalHours int      `json:"intervalHours"`
+		Hour          int      `json:"hour"`
+		Minute        int      `json:"minute"`
 		Weekdays      []string `json:"weekdays"`
 	}
 	if err := json.Unmarshal(body, &shape); err != nil {

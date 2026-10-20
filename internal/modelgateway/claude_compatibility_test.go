@@ -31,6 +31,7 @@ func TestPinnedClaudeMessagesCompatibility(t *testing.T) {
 		t.Fatal("pinned CLI version unavailable")
 	}
 	var calls atomic.Int64
+	var observedBeta atomic.Value
 	service, _ := anthropicFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.URL.RawQuery != "beta=true" || r.Header.Get("Anthropic-Beta") != pinnedClaudeBetas {
@@ -45,10 +46,21 @@ func TestPinnedClaudeMessagesCompatibility(t *testing.T) {
 			"{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}",
 			"{\"type\":\"message_stop\"}",
 		} {
-			_, _ = io.WriteString(w, "data: "+event+"\n\n")
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal([]byte(event), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.WriteString(w, "event: "+envelope.Type+"\ndata: "+event+"\n\n")
 		}
 	}))
-	proxy := httptest.NewServer(http.HandlerFunc(service.ModelHandler))
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			observedBeta.Store(r.Header.Get("Anthropic-Beta"))
+		}
+		service.ModelHandler(w, r)
+	}))
 	defer proxy.Close()
 	root := t.TempDir()
 	env := map[string]string{
@@ -75,7 +87,7 @@ func TestPinnedClaudeMessagesCompatibility(t *testing.T) {
 	}
 	output, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("pinned CLI failed: %v (stdout bytes=%d)", err, len(output))
+		t.Fatalf("pinned CLI failed: %v (stdout bytes=%d upstream calls=%d beta=%v)", err, len(output), calls.Load(), observedBeta.Load())
 	}
 	var result core.Object
 	if err := json.Unmarshal(output, &result); err != nil || result.B("is_error") || result.S("subtype") != "success" || calls.Load() != 1 {

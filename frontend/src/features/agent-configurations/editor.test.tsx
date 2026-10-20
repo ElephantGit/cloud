@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
@@ -49,10 +49,36 @@ function mountEditor(context = agentContext()) {
 async function enter(user: ReturnType<typeof userEvent.setup>, label: string, value: string) {
   const input = screen.getByLabelText(label)
   await user.clear(input)
-  await user.type(input, value)
+  await user.paste(value)
 }
 
 describe('personal Agent configuration editor', () => {
+  it('keeps exact numeric text through the rendered control and the real HTTP serialization', async () => {
+    let submitted = ''
+    server.use(
+      http.put(PATH, async ({ request }) => {
+        submitted = await request.text()
+        return HttpResponse.json({ resource: { revision: 2, cleared: false, settings: {} } })
+      }),
+    )
+    mountEditor(
+      agentContext({
+        settings: { style: 'exact', budget: 9007199254740992 },
+        numericValues: { budget: '9007199254740993' },
+      }),
+    )
+    const user = userEvent.setup()
+    expect(screen.getByLabelText('预算')).toHaveAttribute('value', '9007199254740993')
+    fireEvent.change(screen.getByLabelText('预算'), {
+      target: { value: '0.123456789012345678901' },
+    })
+    const save = screen.getByRole('button', { name: '保存我的配置' })
+    expect(save).toBeEnabled()
+    expect(save.closest('form')?.checkValidity()).toBe(true)
+    await user.click(save)
+    await waitFor(() => expect(submitted).toContain('"budget":0.123456789012345678901'))
+  })
+
   it('creates a library connection inline and selects its model without saving options implicitly', async () => {
     const created = agentConnection({
       id: 'mc2',

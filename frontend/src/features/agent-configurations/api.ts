@@ -11,9 +11,17 @@ import {
 } from '@/api/me/me'
 import { mutationHeaders, useIdempotencyKeys } from '@/features/spaces/api'
 import { faultCode } from '@/lib/api-client'
+import {
+  agentConfigurationResponse,
+  serializeAgentConfiguration,
+  type AgentNumberLiterals,
+} from './numbers'
 
 /** One user's configuration, resolved in the selected space's pinned release context. */
-export type AgentConfiguration = PersonalAgentConfigurationContext
+export type AgentConfiguration = PersonalAgentConfigurationContext & {
+  numericValues?: AgentNumberLiterals
+  numericDefaults?: AgentNumberLiterals
+}
 /** Complete, versioned non-secret options submitted to the server. */
 export type AgentConfigurationWrite =
   PutApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierBody
@@ -38,7 +46,14 @@ export function useAgentConfiguration(scope: AgentConfigurationScope, enabled: b
   const [source, identifier] = pluginIdentity(scope.pluginId)
   return useQuery({
     queryKey: agentConfigurationKey(scope),
-    queryFn: ({ signal }) => getConfiguration(scope.spaceId, source, identifier, undefined, signal),
+    queryFn: ({ signal }) =>
+      getConfiguration(
+        scope.spaceId,
+        source,
+        identifier,
+        { transformResponse: agentConfigurationResponse },
+        signal,
+      ),
     enabled,
     retry: false,
   })
@@ -50,8 +65,15 @@ export function useSaveAgentConfiguration(scope: AgentConfigurationScope) {
   const keyFor = useIdempotencyKeys()
   const [source, identifier] = pluginIdentity(scope.pluginId)
   return useMutation({
-    mutationFn: (input: { body: AgentConfigurationWrite; repair: boolean }) => {
-      const options = { headers: mutationHeaders(keyFor(input)) }
+    mutationFn: (input: {
+      body: AgentConfigurationWrite
+      repair: boolean
+      numbers: AgentNumberLiterals
+    }) => {
+      const options = {
+        headers: mutationHeaders(keyFor(input)),
+        transformRequest: () => serializeAgentConfiguration(input.body, input.numbers),
+      }
       const write = input.repair ? repairConfiguration : putConfiguration
       return write(scope.spaceId, source, identifier, input.body, options)
     },

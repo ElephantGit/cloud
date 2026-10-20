@@ -8,6 +8,7 @@ Owns My Configuration for the space's selected Agent release: non-secret options
 | --- | --- |
 | `api.ts` | Personally scoped queries, versioned writes and bounded failure messages |
 | `draft.ts` | Typed options, defaults, edit baselines and removed-field comparison |
+| `numbers.ts` | Numeric response literals and exact request serialization for integers and decimals |
 | `dialog.tsx` | Member-accessible entry that reads only when opened |
 | `editor-state.ts` | Editing sessions, explicit conflict reconciliation and clear confirmation |
 | `editor.tsx` | Composition of options and separate connection forms |

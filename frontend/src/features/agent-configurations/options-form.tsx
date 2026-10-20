@@ -35,9 +35,7 @@ export function AgentOptionsForm({
         />
       )}
       {!editor.body && (
-        <p className="text-xs text-muted-foreground">
-          请完成模型和必填选项；数字需在浏览器可精确表示的范围内。
-        </p>
+        <p className="text-xs text-muted-foreground">请完成模型和必填选项，并检查数字格式。</p>
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={!editor.canSave}>

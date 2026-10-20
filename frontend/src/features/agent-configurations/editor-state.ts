@@ -10,7 +10,12 @@ import {
   type AgentConfiguration,
   type AgentConfigurationScope,
 } from './api'
-import { agentConfigurationBody, agentConfigurationDraft, type AgentSettingValue } from './draft'
+import {
+  agentConfigurationBody,
+  agentConfigurationDraft,
+  agentConfigurationNumbers,
+  type AgentSettingValue,
+} from './draft'
 
 /** Input to an editing session; successful writes are the only implicit remount boundary. */
 export type AgentEditorProps = {
@@ -67,7 +72,11 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
   }
   function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (canSave && body) save.mutate({ body, repair: draft.requiresRepair }, { onSuccess: onSaved })
+    if (canSave && body)
+      save.mutate(
+        { body, repair: draft.requiresRepair, numbers: agentConfigurationNumbers(draft) },
+        { onSuccess: onSaved },
+      )
   }
   function clearOptions() {
     clear.mutate({ revision: draft.revision }, { onSuccess: onSaved })

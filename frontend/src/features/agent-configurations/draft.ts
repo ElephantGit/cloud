@@ -1,4 +1,5 @@
 import type { AgentConfiguration, AgentConfigurationWrite } from './api'
+import { agentNumberLiteral, type AgentNumberLiterals } from './numbers'
 
 /** Scalar values supported by the static declaration, kept in an editable draft only. */
 export type AgentSettingValue = string | number | boolean
@@ -54,13 +55,16 @@ function draftSettingValues(
   const values: AgentSettingDraft = {}
   for (const setting of context.declaration.settings) {
     const value = source[setting.id]
+    const exact = kept ? undefined : context.numericValues?.[setting.id]
+    const defaultLiteral = context.numericDefaults?.[setting.id]
     const previousType = kept?.schema.find((field) => field.id === setting.id)?.settingType
     if (
       matches(setting, value) ||
       (previousType === 'number' && setting.settingType === 'number' && typeof value === 'string')
     ) {
-      values[setting.id] = value
-    } else if (matches(setting, setting.default)) values[setting.id] = setting.default
+      values[setting.id] = exact ?? value
+    } else if (matches(setting, setting.default))
+      values[setting.id] = defaultLiteral ?? setting.default
   }
   return values
 }
@@ -71,16 +75,32 @@ type SettingWrite =
 function settingWrite(setting: AgentSetting, raw: AgentSettingValue | undefined): SettingWrite {
   if (raw === undefined || (raw === '' && setting.settingType !== 'string'))
     return { kind: 'missing' }
-  const value = setting.settingType === 'number' && typeof raw === 'string' ? Number(raw) : raw
-  if (!matches(setting, value)) return { kind: 'invalid' }
+  if (setting.settingType === 'number') return numericSettingWrite(raw)
+  if (!matches(setting, raw) || (setting.required && raw === '')) return { kind: 'invalid' }
+  return { kind: 'value', value: raw }
+}
+
+function numericSettingWrite(raw: AgentSettingValue): SettingWrite {
+  if (typeof raw === 'boolean') return { kind: 'invalid' }
+  if (typeof raw === 'string' && !agentNumberLiteral(raw)) return { kind: 'invalid' }
+  const value = Number(raw)
   if (
-    typeof value === 'number' &&
-    (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))
-  ) {
+    !Number.isFinite(value) ||
+    (typeof raw === 'number' && Number.isInteger(value) && !Number.isSafeInteger(value))
+  )
     return { kind: 'invalid' }
-  }
-  if (setting.required && value === '') return { kind: 'invalid' }
   return { kind: 'value', value }
+}
+
+/** The validated numeric controls remain exact when the HTTP boundary builds JSON. */
+export function agentConfigurationNumbers(draft: AgentConfigurationDraft): AgentNumberLiterals {
+  const numbers: AgentNumberLiterals = {}
+  for (const setting of draft.schema) {
+    const value = draft.values[setting.id]
+    if (setting.settingType === 'number' && typeof value === 'string' && agentNumberLiteral(value))
+      numbers[setting.id] = value
+  }
+  return numbers
 }
 
 /** Resolves form controls into strict scalar JSON without coercing blank numbers to zero. */

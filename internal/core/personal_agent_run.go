@@ -49,6 +49,7 @@ func resolveDeclaredAgentRun(t *transaction, uid, spaceID, pluginID, pluginVersi
 	namespace, identifier, ok := pluginIdentity(pluginID)
 	require(ok, 400, "invalid_plugin_id")
 	selected := t.spacePluginRow(spaceID, namespace, identifier)
+	require(selected.O("selectedRelease").S("agentConfigurationIssue") == "", 409, "agent_declaration_invalid")
 	if selected == nil || selected.O("selectedRelease").O("agentConfiguration").S("declaration") == "" {
 		require(pluginID != claudeAgentCLI, 409, "agent_declaration_required")
 		return nil, nil, nil

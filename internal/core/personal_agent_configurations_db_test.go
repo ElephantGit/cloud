@@ -300,3 +300,49 @@ func TestPersonalAgentConfigurationAcrossSpaces(t *testing.T) {
 		t.Fatalf("first context must now require repair: %v %v", view, err)
 	}
 }
+
+func TestPersonalAgentThreadOwnershipAndPermanentRevocation(t *testing.T) {
+	s := newPersonalAgentScene(t)
+	if _, err := s.request("PUT", "", uuid.NewString(), s.body(0)); err != nil {
+		t.Fatal(err)
+	}
+	s.store.PersonalAgentRuntime = &PersonalAgentRuntime{Target: "linux", ContractVersion: 1, Protocols: []string{"anthropic-messages"}}
+	_, err := s.store.transact(context.Background(), func(tx *transaction) Object {
+		input := Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"}
+		bindRunModel(tx, s.seed.run, s.uid, input)
+		run := tx.one("SELECT * FROM issue_runs WHERE id=$1", s.seed.run)
+		run["threadState"] = "idle"
+		owner := threadModelPermissions(tx, run, s.uid)
+		adminID := tx.one("SELECT user_id FROM tenant_memberships WHERE tenant_id=$1 AND role='admin'", s.seed.tenant).S("userId")
+		admin := threadModelPermissions(tx, run, adminID)
+		if !owner.B("canAppend") || !owner.B("canEnd") || admin.B("canAppend") || !admin.B("canEnd") {
+			t.Fatalf("owner=%v admin=%v", owner, admin)
+		}
+		revokeConnectionModelGrants(tx, s.connection.S("id"))
+		tx.exec("UPDATE personal_model_connections SET enabled=true WHERE id=$1", s.connection.S("id"))
+		revoked := threadModelPermissions(tx, run, s.uid)
+		if revoked.B("canAppend") || !revoked.B("canEnd") {
+			t.Fatalf("revocation revived or prevented cleanup: %v", revoked)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPersonalAgentInvalidDeclarationCannotUseLegacyFallback(t *testing.T) {
+	s := newPersonalAgentScene(t)
+	_, err := s.store.Pool.Exec(`UPDATE space_plugins SET selected_release=(selected_release-'agentConfiguration') ||
+		'{"agentConfigurationIssue":"invalid declaration"}'::jsonb WHERE space_id=$1`, s.space)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.request("GET", "", "", nil)
+	expectModelFault(t, err, "agent_declaration_invalid")
+	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, claudeAgentCLI, "1.0.0")
+		return nil
+	})
+	expectModelFault(t, err, "agent_declaration_invalid")
+}

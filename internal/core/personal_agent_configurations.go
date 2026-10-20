@@ -26,6 +26,7 @@ func agentConfigurationContext(t *transaction, uid, spaceID, pluginID string) (O
 	require(selection != nil && selection.S("desiredState") == "installed", 409, "agent_plugin_unavailable")
 	release := selection.O("selectedRelease")
 	require(release.S("kind") == "agent" && release.S("version") == selection.S("desiredVersion"), 409, "agent_plugin_unavailable")
+	require(release.S("agentConfigurationIssue") == "", 409, "agent_declaration_invalid")
 	association := release.O("agentConfiguration")
 	require(association.S("declaration") != "", 409, "agent_declaration_required")
 	compiled, err := pluginmarket.CompileAgentConfiguration([]byte(association.S("declaration")))

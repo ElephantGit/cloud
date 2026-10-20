@@ -78,5 +78,8 @@ func threadModelPermissions(t *transaction, run Object, uid string) Object {
 		out["canAppend"] = false
 		out["canEnd"] = false
 	}
+	if taskThreadAppendBlocker(t, run, taskAppendAtQueueTail) != "" {
+		out["canAppend"] = false
+	}
 	return out
 }

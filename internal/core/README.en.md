@@ -6,6 +6,18 @@
 
 ## Module map
 
+- `task_conversation_append.go`: shared handoff/pause checks for legacy Thread appends and task queues. External input checks the queue tail; workers check only earlier messages, preserving the accepted prefix before a switch. Rejection creates no entry or command.
+
+- `task_conversation_readiness.go`: safe project/personal-default-model gaps for the current member. It exposes no connection/credential identity, grants no access to another person's model session and is rechecked on dispatch.
+
+- `task_conversation_stop.go`: atomically requests cancellation and persists a task pause. Existing cancellation/delivery/release owns cleanup. The pause is independent of final Run success/failure, preserves later messages and drafts, and requires explicit recovery.
+
+- `thread_preview.go`: bounded process-local optional previews, replaced by execution/version. Admission verifies lease and live execution; authorized reads remove settled positions. It creates no receipt or Ack. Expiry or a different replica explicitly degrades to durable Thread data. `thread_preview_test.go` covers bounds, expiry, reordering and final dominance.
+
+- `task_conversation_messages.go`, `task_conversation_queue.go`, and `task_conversation_context.go` own ordered task messages, serialized Agent handoff, and later prompts frozen from Node-projected assistant text. A failed message blocks later handoffs; an undelivered result requires an explicit discard before continuing from a saved Revision. Real PostgreSQL tests cover concurrent idempotency, authorization, release evidence, failure pauses, and missing history.
+
+The initial Agent prompt carries the frozen task title, description, recent comments and explicit references, including the no-ContextBuilder path. Startup does not re-read mutable task context. `agent_initial_context_test.go` checks context preservation and does not invent fields absent from legacy snapshots.
+
 - [migrations](migrations/README.en.md) defines the forward-only, linear PostgreSQL schema migration scripts and checksum verification.
 - [plugins.go](plugins.go) persists and reads the plugin catalog snapshot (the `pluginmarket.CatalogSink` implementation) and owns the space plugin selection state machine (install/remove fan-out, the aggregation rule, SSE invalidation broadcasts).
 - [session_list.go](session_list.go) and [session_history.go](session_history.go) provide tenant Agent

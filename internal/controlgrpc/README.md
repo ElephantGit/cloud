@@ -8,6 +8,8 @@
 
 ## 调用方身份
 
+`AgentRunService.PublishThreadPreview` 是可选旁路：调用 `Store.PublishThreadPreview` 核对相同身份、租约与活执行，写入有界内存快照。它不进入持久 submission/receipt，不返回 Node Ack。ThreadEvent 的 `history_sequence` 只作为最终记录对应预览的位置元数据转交核心。
+
 生产入口要求 TLS 1.3 双向认证，即连接两端均验证可信证书。Controller 证书须包含配置的服务 URI，
 且 ControllerId 必须与 `x-ora-controller-id` 一致；metadata 不能选择另一个服务身份。
 证书缺失或范围不匹配即拒绝，生产没有明文回退。`NewDevelopment` 仅用于显式的进程内测试夹具，

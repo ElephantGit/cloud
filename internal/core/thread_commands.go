@@ -88,7 +88,23 @@ func takeOverThreadEvents(t *transaction, r *ControlRequest) Object {
 		}
 		require(seq == expected, 409, "receipt_conflict")
 		expected++
-		canon := jsonText(Object{"record": record, "sequence": seq, "truncated": ev.B("truncated"), "turnId": ev.S("turnId")})
+		canonEvent := Object{"record": record, "sequence": seq, "truncated": ev.B("truncated"), "turnId": ev.S("turnId")}
+		if _, present := ev["historySequence"]; present {
+			require(ev.N("historySequence") >= 0 && ev.N("historySequence") <= 4294967295, 400, "invalid_event")
+			canonEvent["historySequence"] = ev.N("historySequence")
+		}
+		// Optional projection metadata is added only when present: an older Node replaying an event
+		// after an upgrade must compare equal to the receipt Cloud stored before this field existed.
+		if text, present := ev["visibleText"]; present {
+			reported, ok := text.(string)
+			require(ok && len(reported) <= 65536, 400, "invalid_event")
+			canonEvent["visibleText"] = reported
+		}
+		if ev.B("visibleTextTruncated") {
+			require(ev.S("visibleText") != "", 400, "invalid_event")
+			canonEvent["visibleTextTruncated"] = true
+		}
+		canon := jsonText(canonEvent)
 		if seq <= last {
 			old := t.one("SELECT event FROM node_event_receipts WHERE execution_id=$1 AND sequence=$2", execution, seq)
 			require(old != nil && old.S("event") == canon, 409, "receipt_conflict")

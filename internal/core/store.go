@@ -165,6 +165,9 @@ type Store struct {
 	// space; current tenant membership gates visibility and authorization.
 	Events *SpaceHub
 
+	// ThreadPreviews contains optional, bounded live content; PostgreSQL Thread rows remain authoritative.
+	ThreadPreviews *ThreadPreviewHub
+
 	// Signals carries at-most-once work hints to the lease-holding Controller's Watch stream;
 	// clone requests stay durable in PostgreSQL whether or not a hint is delivered.
 	Signals *ControlHub
@@ -196,11 +199,12 @@ func NewStore(db *gorm.DB) (*Store, error) {
 		return nil, fmt.Errorf("get database pool: %w", err)
 	}
 	return &Store{
-		Pool:      pool,
-		Events:    NewSpaceHub(),
-		Signals:   NewControlHub(),
-		Directory: WorkflowDirectory{Pool: pool},
-		Forms:     WorkflowFormDescriptors{Pool: pool},
+		Pool:           pool,
+		Events:         NewSpaceHub(),
+		ThreadPreviews: NewThreadPreviewHub(),
+		Signals:        NewControlHub(),
+		Directory:      WorkflowDirectory{Pool: pool},
+		Forms:          WorkflowFormDescriptors{Pool: pool},
 	}, nil
 }
 

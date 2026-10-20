@@ -174,3 +174,7 @@ projections:
 - [An Agent run's conversation is recorded as a Thread](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/0-durable-agent-thread-with-user-turns.md)
 - [Workspace creation and start gain a plugin step; Cloud creates and deletes IssueRun run Workspaces](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20260928-plugin-step-and-run-workspace-release.md)
 - [Users can configure a Git commit identity in Cloud](https://github.com/ora-space/specs/blob/main/decisions/cloud/identity-access/20260928-user-git-commit-identity.md)
+
+## Ordering task messages and direct starts
+
+Manual runs and comment targets for real Space Agents check task pauses, unresolved failed messages and accepted waiting messages in the creation transaction. Pauses/failures return `409 task_paused`; pending input returns `409 task_handoff_pending`, without consuming the pending-Run slot. The task worker admits its specific accepted message in order. Actual claims and retry scans recheck pauses, message order and prior result/release barriers. Already admitted runs drain before the task worker materializes later runs by message sequence; transaction-start timestamps do not determine acceptance order between runs and messages.

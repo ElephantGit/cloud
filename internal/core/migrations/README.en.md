@@ -195,15 +195,27 @@ registration fail), so nothing is backfilled. Fresh and 0043-upgrade evidence:
 
 Adds `agent_configuration` (jsonb, the declaration association plus its byte-exact static copy) and `agent_configuration_issue` (text, a bounded reason) to `plugin_catalog_entries`. `agent_configuration` is written only when the listing declared an `[agent_configuration]` section and the static copy validated, so the catalog snapshot is self-contained and declaration reads never need the marketplace checkout or the release package; an invalid association records only a bounded reason and produces no consumable declaration — "not declared" and "declared but invalid" are different facts, and the latter does not make the package uninstallable. Forward-only and retry-safe; no existing row changes. Fresh/upgrade/repeat coverage: TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades. Semantics: [Agent declaration snapshots in the marketplace](../../../docs/plugins/marketplace.en.md#agent-declaration-snapshots-and-freezing).
 
-## 0046: WorkflowRun invocation references
+## 0046: Task Agent conversations and visible-text projection
 
-`0046_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
+`task_conversations` stores task-local message positions and explicit failure recovery acknowledgment. `task_conversation_messages` stores author, target, text, waiting/submitted/cancelled/failed state, and Run/Thread references. Optional `thread_entries.visible_text` comes only from Node, separate from the original `record`, with a 64 KiB UTF-8 clipping mark. No old message, Thread, or Run is backfilled or rewritten. Fresh/upgrade/repeat coverage: `TestMigration0046TaskConversationFreshAndUpgrade`.
+
+## 0047: Settled Thread history positions
+
+`0047_thread_preview_positions.sql` adds only a nullable Node history position to durable Thread rows so final records supersede previews. Preview content is never stored and legacy positions are not invented. Integration tests cover upgrade and repeated application.
+
+## 0048: Manual task conversation pause
+
+`0048_task_conversation_manual_pause.sql` adds nullable `paused_run_id` so a stop racing a normal Agent completion cannot silently resume the queue. Existing tasks are never automatically paused.
+
+## 0049: WorkflowRun invocation references
+
+`0049_workflow_invocation_reference.sql` first settles every non-terminal unlinked historical
 workflow IssueRun (including running and deferred) as failed, with
 `workflow_execution_unavailable_before_invocation_linkage`. It then adds a tenant-scoped composite
 foreign key and a unique invocation reference. The CHECK requires a reference for non-terminal
 workflow executors and forbids it for other executors. Historical terminal workflow rows may retain
 NULL references and remain editable; their input and outcomes are preserved without inventing runs.
 The CHECK is unconditionally validated, so fresh and upgraded databases enforce the same schema.
-The number follows the 0045 agent declaration catalog migration already on main. Fresh, seeded upgrade,
+The number follows the 0048 task conversation manual pause migration already on main. Fresh, seeded upgrade,
 repeated migration, constraint validation and historical update coverage is in
 `integration/workflow_invocation_migration_test.go`.

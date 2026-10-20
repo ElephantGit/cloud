@@ -93,7 +93,7 @@ func Document() map[string]any {
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
-	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
+	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
 	// GitIdentity is the identity the caller's Agent runs commit as (identity-access git identity
 	// D1). version is 0 while isDefault is true: no identity is stated and the default applies.
 	s["GitIdentity"] = object(obj{"name": str(), "email": str(), "isDefault": boolean(), "version": number()}, "name", "email", "isDefault", "version")
@@ -196,19 +196,34 @@ func Document() map[string]any {
 	runProps["workflowInvocationRef"] = optional(uuid())
 	// ThreadEntry is one ordered record of an Agent run's Thread (Thread D1/D2/D3). `seq` is the
 	// run-scoped conversation order, starting at 1 and gapless; `record` is the verbatim ora-history
-	// line, which Cloud stores and returns without ever rewriting it. `turnId` and `status` describe
-	// the per-turn lifecycle and exist only for a user turn — a `queued` entry becomes `delivered`
-	// when the Node echoes that turn_id — so Node and system entries carry neither. The Node's own
+	// line, which Cloud stores and returns without ever rewriting it. `turnId` correlates Node output
+	// with its actual user turn even when future user inputs are already queued. `status` describes
+	// the per-turn lifecycle and exists only for a user turn — a `queued` entry becomes `delivered`
+	// when the Node echoes that turn_id. Node and system rows omit status. The Node's own
 	// execution id and sequence are deliberately not part of this resource.
 	s["ThreadEntry"] = object(obj{
-		"seq":       obj{"type": "integer", "format": "int64", "minimum": 1},
-		"source":    enumeration("node", "user", "system"),
-		"kind":      str(),
-		"record":    obj{"type": "object", "additionalProperties": true},
-		"turnId":    optional(uuid()),
-		"status":    optional(obj{"type": "string", "enum": []string{"queued", "delivered", "discarded"}, "nullable": true, "description": "User-turn lifecycle. Null for node and system entries."}),
-		"createdAt": timestamp(),
+		"seq":             obj{"type": "integer", "format": "int64", "minimum": 1},
+		"source":          enumeration("node", "user", "system"),
+		"kind":            str(),
+		"record":          obj{"type": "object", "additionalProperties": true},
+		"turnId":          optional(uuid()),
+		"status":          optional(obj{"type": "string", "enum": []string{"queued", "delivered", "discarded"}, "nullable": true, "description": "User-turn lifecycle. Null for node and system entries."}),
+		"createdAt":       timestamp(),
+		"historySequence": optional(obj{"type": "integer", "format": "int64", "minimum": 0}),
 	}, "seq", "source", "kind", "record", "createdAt")
+	s["ThreadPreviewSnapshot"] = object(obj{
+		"available": boolean(), "executionId": str(), "version": number(), "incomplete": boolean(),
+		"blocks": array(object(obj{"historySequence": number(), "turnId": str(), "record": obj{"type": "object", "additionalProperties": true}}, "historySequence", "turnId", "record")),
+	}, "available", "executionId", "version", "incomplete", "blocks")
+	s["TaskConversationMessage"] = object(obj{
+		"id": uuid(), "seq": obj{"type": "integer", "format": "int64", "minimum": 1},
+		"userId": uuid(), "agentId": uuid(), "body": str(),
+		"state": enumeration("waiting", "submitted", "cancelled", "failed"),
+		"runId": optional(uuid()), "threadSeq": optional(obj{"type": "integer", "format": "int64"}),
+		"errorCode": optional(str()), "delivery": optional(enumeration("pending", "queued", "delivered", "discarded", "failed", "cancelled")),
+		"createdAt": timestamp(),
+	}, "id", "seq", "userId", "agentId", "body", "state", "runId", "threadSeq", "errorCode", "createdAt")
+	s["TaskAgentReadiness"] = object(obj{"agentId": uuid(), "requiresPersonalModel": boolean(), "errorCode": optional(str())}, "agentId", "requiresPersonalModel", "errorCode")
 	s["ContextRef"] = resource("id tenantId issueId refType refId createdAt", "")
 	contextRefProps := properties(s, "ContextRef")
 	contextRefProps["refType"] = contextRefTypeEnum()
@@ -446,7 +461,7 @@ func Document() map[string]any {
 				responses[code] = obj{"description": "Archive exceeds limits or cannot be verified/read", "content": obj{"application/json": obj{"schema": ref("Error")}}}
 			}
 		}
-		if r.Method == "GET" && r.Path == router.ThreadPath {
+		if r.Method == "GET" && (r.Path == router.ThreadPath || r.Path == router.TaskConversationPath) {
 			// The Thread read has its own cursor vocabulary and window: `seq` is a decimal
 			// conversation position, not a UUID, and D5 caps the window at 500 rather than the
 			// shared 100. All three parameters are described in full in the operation description.
@@ -504,6 +519,18 @@ func Document() map[string]any {
 		},
 	}}
 	paths["/healthz"] = obj{"get": obj{"operationId": "health", "tags": []string{"health"}, "summary": "PostgreSQL readiness and optional dependency configuration", "responses": obj{"200": obj{"description": "Database reachable", "content": obj{"application/json": obj{"schema": object(obj{"status": enumeration("ok"), "dependencies": object(obj{"objectStore": enumeration("configured", "unconfigured")}, "objectStore")}, "status")}}}, "503": obj{"description": "Database unavailable", "content": obj{"application/json": obj{"schema": ref("Error")}}}}}}
+	paths["/api/v1/tenants/{tid}/issues/{iid}/runs/{rid}/thread/preview/events"] = obj{"get": obj{
+		"operationId": "getThreadPreviewEvents", "tags": []string{"tenants"}, "summary": "Stream ephemeral Thread replacement snapshots", "description": "Bounded optional previews, never durable history. Credentials and active membership are checked before each snapshot; terminal records supersede previews. Disconnect does not stop the Agent.",
+		"parameters": []any{obj{"name": "tid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "iid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "rid", "in": "path", "required": true, "schema": uuid()}},
+		"security":   []any{obj{"serviceCredential": []string{}, "userCredential": []string{}}},
+		"responses": obj{
+			"200": obj{"description": "Replacement snapshot stream", "content": obj{"text/event-stream": obj{"schema": ref("ThreadPreviewSnapshot")}}},
+			"401": obj{"description": errorDescription("401"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"403": obj{"description": errorDescription("403"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"404": obj{"description": errorDescription("404"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+			"503": obj{"description": errorDescription("503"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
+		},
+	}}
 	return obj{"openapi": "3.0.3", "info": obj{"title": "Ora Cloud phase one", "version": "1.0.0", "description": "Authoritative PostgreSQL core. Simulation is separate; no production Controller/Node/Kubernetes implementation is implied."}, "servers": []any{obj{"url": "http://localhost:8080"}}, "paths": paths, "components": obj{"schemas": s, "securitySchemes": obj{"serviceCredential": obj{"type": "http", "scheme": "bearer", "bearerFormat": "EdDSA JWT", "description": "Pinned issuer/kid/kind=service/role, aud=ora-cloud, exp and iat required, <=5 minute lifetime. Public API requires gateway; internal control requires controller; nodes require scoped node role."}, "userCredential": obj{"type": "apiKey", "in": "header", "name": "X-Ora-User-Token", "description": "Separately signed EdDSA JWT: kind=user, source+sub, caller must equal authenticated service sub, aud=ora-cloud. User and membership status checked in PostgreSQL."}}}}
 }
 
@@ -791,12 +818,24 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		// Appending a user turn returns the entry it created, not the run: the caller already has
 		// the run and the message is the new resource.
 		return object(obj{"resource": ref("ThreadEntry")}, "resource"), "201"
+	case strings.HasSuffix(r.Path, "/conversation/messages"):
+		return object(obj{"resource": ref("TaskConversationMessage")}, "resource"), "201"
+	case strings.Contains(r.Path, "/conversation/messages/") && (strings.HasSuffix(r.Path, "/cancel") || strings.HasSuffix(r.Path, "/retry")):
+		return object(obj{"resource": ref("TaskConversationMessage")}, "resource"), "200"
+	case strings.HasSuffix(r.Path, "/conversation/resume"), strings.HasSuffix(r.Path, "/conversation/discard"):
+		return object(obj{"acknowledgedRunId": uuid()}, "acknowledgedRunId"), "200"
+	case strings.HasSuffix(r.Path, "/conversation/stop"):
+		return object(obj{"runId": uuid(), "state": enumeration("stopping")}, "runId", "state"), "202"
+	case strings.HasSuffix(r.Path, "/conversation"):
+		return object(obj{"items": array(ref("TaskConversationMessage")), "nextCursor": optional(obj{"type": "integer", "format": "int64"}), "prevCursor": optional(obj{"type": "integer", "format": "int64"}), "activeRunId": optional(uuid()), "pausedRunId": optional(uuid()), "blockedRunId": optional(uuid()), "canStop": boolean(), "agentReadiness": array(ref("TaskAgentReadiness"))}, "items", "nextCursor", "prevCursor"), "200"
 	case strings.HasSuffix(r.Path, "/thread/end"):
 		// Ending a Thread returns the Thread's new state, not a resource: the endpoint creates
 		// nothing to point at, and the caller's next move is to watch `threadState` reach `ended`.
 		// 202 because the request is accepted for asynchronous shutdown — the session is asked to
 		// stop, it has not stopped.
 		return object(obj{"threadState": enumeration("ending")}, "threadState"), "202"
+	case strings.HasSuffix(r.Path, "/thread/preview"):
+		return ref("ThreadPreviewSnapshot"), "200"
 	case strings.HasSuffix(r.Path, "/thread"):
 		// Reading a Thread returns one ascending-by-seq window of entries plus the run's Thread
 		// state and idle instant, all from one snapshot. `threadState` and `idleSince` are projected
@@ -966,7 +1005,7 @@ func inputSchema(name string, r router.Route) obj {
 		return obj{"type": "integer", "minimum": 1, "maximum": 3600}
 	case "protocolVersion":
 		return obj{"type": "integer", "enum": []int{1}}
-	case "initialized", "idle", "impactConfirmed":
+	case "initialized", "idle", "impactConfirmed", "acknowledgeLostWork":
 		return boolean()
 	case "result":
 		return ref("EffectResult")
@@ -1005,7 +1044,7 @@ func inputSchema(name string, r router.Route) obj {
 		return uuid()
 	case "category":
 		return enumeration("unstarted", "started", "done", "closed")
-	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId":
+	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId", "agentId", "runId":
 		return uuid()
 	case "projectId":
 		return obj{"type": "string", "format": "uuid", "description": "The Project the run's Workspace provisions in. Required: a run that names none is refused with 409 workflow_run_project_required, never persisted without one. Frozen at creation for the run's whole lifetime. Authorized against the caller's own collaboration space: an unknown, archived or foreign Project is 404."}
@@ -1143,7 +1182,10 @@ func description(r router.Route) string {
 	if strings.HasSuffix(r.Path, "/thread/messages") {
 		// The Thread POST's own fault vocabulary. It is stated here rather than added to the shared
 		// per-status descriptions, which every unrelated route also carries.
-		base += "Appends one user turn to an agent run's Thread and returns the entry that was created, with the Cloud-generated turnId the Node will echo back. Authorized like a comment: any active tenant member who can read the Issue. content accepts text blocks only and their total text must not exceed 64 KiB, otherwise 400 content_too_large; an unrecognized block type is 400 invalid_field_type, never a silent drop. Accepted while the Thread is pending, active or idle and no cancellation has been requested; a Thread that is ending or ended, and a run whose cancellation request is already recorded, both answer 409 thread_closed — a turn accepted after a cancellation would be persisted and never executed. The entry and the delivery command for it commit together with the idempotency record, so a failure anywhere in that transaction leaves nothing behind and the same key may be retried as a first request. A missing or mismatched tenant, Issue or run is 404 not_found. "
+		base += "Appends one user turn to an agent run's Thread and returns the entry that was created, with the Cloud-generated turnId the Node will echo back. Authorized like a comment: any active tenant member who can read the Issue. content accepts text blocks only and their total text must not exceed 64 KiB, otherwise 400 content_too_large; an unrecognized block type is 400 invalid_field_type, never a silent drop. Accepted while the Thread is pending, active or idle and no cancellation has been requested; a Thread that is ending or ended, and a run whose cancellation request is already recorded, both answer 409 thread_closed — a turn accepted after a cancellation would be persisted and never executed. Task handoff barriers also apply to this endpoint: a waiting message for another Agent or initiator returns 409 task_handoff_pending, and a persisted task pause or earlier failed task message returns 409 task_paused. Neither rejection creates a Thread entry or command; later input must use the task conversation queue. The entry and the delivery command for it commit together with the idempotency record, so a failure anywhere in that transaction leaves nothing behind and the same key may be retried as a first request. A missing or mismatched tenant, Issue or run is 404 not_found. "
+	}
+	if r.Method == "POST" && strings.Contains(r.Path, "/issues/") && strings.HasSuffix(r.Path, "/runs") {
+		base += "Real Space Agent starts share task admission with conversation input. A persisted task pause or unresolved failed task message returns 409 task_paused; an accepted waiting task message returns 409 task_handoff_pending. Rejected starts create no Run and do not consume the pending-executor slot. The dispatcher rechecks task ordering, prior results and confirmed release before provisioning. "
 	}
 	if strings.HasSuffix(r.Path, "/thread/end") {
 		// The user-initiated end's own fault vocabulary, stated here rather than in the shared

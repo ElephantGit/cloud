@@ -115,7 +115,7 @@ func nodeStatus(t *transaction, r *ControlRequest, n, w Object) {
 		// A business-abandoned execution still owns residual resources after it reconnects;
 		// connection evidence must not reopen their admission or imply physical cleanup.
 		t.exec(`UPDATE workspaces SET observed_state='ready',admission_open=NOT EXISTS(
-		 SELECT 1 FROM agent_run_residuals WHERE workspace_id=$1 AND cleared_at IS NULL),
+			 SELECT 1 FROM agent_run_residuals WHERE workspace_id=$1 AND (cleared_at IS NULL OR reclaim_conflicted_at IS NOT NULL)),
 		 version=version+1 WHERE id=$1`, w.S("id"))
 	}
 }
@@ -139,7 +139,7 @@ func nodeIdle(t *transaction, r *ControlRequest, n, w Object) Object {
 		restoreAdmission(t, o)
 		return Object{"accepted": false, "errorCode": "resource_in_use"}
 	}
-	checkActivities(t, w)
+	checkResidualCleanupActivities(t, w, o)
 	c := runtimeControl(t, w.S("id"))
 	require(c.S("state") == "maintenance" && c.S("maintenanceOperationId") == o.S("id") && c.B("bindingConfirmed") && c.S("boundSandboxId") == n.S("sandboxInstanceId"), 409, "runtime_input_closure_unconfirmed")
 	require(n.B("initialized") && n.S("connectionState") == "connected", 409, "idle_unconfirmed")
@@ -148,6 +148,17 @@ func nodeIdle(t *transaction, r *ControlRequest, n, w Object) Object {
 }
 
 func restoreAdmission(t *transaction, o Object) {
+	if row := residualOperation(t, o); row != nil {
+		checkResidualOperation(t, o)
+		// The original authority survives refusal. A new binding acknowledgment and idle report
+		// are required before this SAME operation can retry; admission never reopens.
+		t.exec(`UPDATE operations SET state='retry_wait',error_code='resource_in_use',retry_at=clock_timestamp(),
+		 version=version+1,updated_at=clock_timestamp() WHERE id=$1`, o.S("id"))
+		t.exec(`UPDATE runtime_controls SET binding_confirmed=false,input_closed=false,control_epoch=control_epoch+1,
+		 version=version+1,updated_at=clock_timestamp() WHERE workspace_id=$1`, row.S("workspaceId"))
+		t.exec("UPDATE node_instances SET idle_admission_epoch=NULL WHERE workspace_id=$1", row.S("workspaceId"))
+		return
+	}
 	for wid, v := range o.O("request").O("previous") {
 		raw, ok := v.(map[string]any)
 		require(ok, 500, "internal_error")

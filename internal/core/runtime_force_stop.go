@@ -102,6 +102,9 @@ func effectPermit(t *transaction, r *ControlRequest) Object {
 	} else {
 		e := t.one("SELECT e.*,o.state AS operation_state,o.controller_epoch,w.tenant_id,w.runtime_generation FROM external_effects e JOIN operations o ON o.id=e.operation_id JOIN workspaces w ON w.id=e.workspace_id WHERE e.id=$1", r.EffectID)
 		require(e != nil && e.S("operationState") == "running" && e.N("controllerEpoch") == r.Body.N("epoch"), 409, "stale_effect")
+		op := t.one("SELECT * FROM operations WHERE id=$1", e.S("operationId"))
+		requireNoResidualConflict(t, e.S("workspaceId"))
+		checkResidualEffect(t, op, e.S("kind"), e.S("workspaceId"), e)
 		wid, tid, generation = e.S("workspaceId"), e.S("tenantId"), e.N("runtimeGeneration")
 		requireNoForceStop(t, wid)
 		c := runtimeControl(t, wid)

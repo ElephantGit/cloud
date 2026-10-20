@@ -249,6 +249,8 @@ func planEffect(t *transaction, r *ControlRequest, o Object) Object {
 	reconciled(t, o)
 	kind, wid := r.Body.S("kind"), r.Body.S("workspaceId")
 	require(validID(wid), 400, "invalid_effect_scope")
+	requireNoResidualConflict(t, wid)
+	checkResidualEffect(t, o, kind, wid, nil)
 	found := false
 	for _, w := range operationWorkspaces(t, o) {
 		if w.S("id") == wid {
@@ -377,6 +379,7 @@ func completedEffect(t *transaction, o Object, kind, wid string) Object {
 
 func advance(t *transaction, r *ControlRequest, o Object) Object {
 	reconciled(t, o)
+	checkResidualOperation(t, o)
 	next := ""
 	wid := o.S("workspaceId")
 	switch o.S("step") {
@@ -407,7 +410,7 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			require(!repositoryOperationsUnfinished(t, o.S("projectId")), 409, "repository_operation_unfinished")
 		}
 		for _, w := range operationWorkspaces(t, o) {
-			checkActivities(t, w)
+			checkResidualCleanupActivities(t, w, o)
 			live := t.one("SELECT id FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL", w.S("id"))
 			if live != nil {
 				require(t.one("SELECT id FROM node_instances WHERE sandbox_instance_id=$1 AND ended_at IS NULL AND idle_admission_epoch=$2 AND connection_state='connected' AND last_seen_at>clock_timestamp()-interval '30 seconds'", live.S("id"), w.N("admissionEpoch")) != nil, 409, "idle_unconfirmed")
@@ -419,6 +422,9 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			live := t.one("SELECT id FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL", w.S("id"))
 			if live != nil {
 				completedEffect(t, o, "sandbox_terminate", w.S("id"))
+				if row := residualOperation(t, o); row != nil {
+					require(residualSandboxTerminated(t, row, live.S("id")), 409, "termination_unconfirmed")
+				}
 				t.exec("UPDATE node_instances SET ended_at=now(),connection_state='ended',version=version+1 WHERE sandbox_instance_id=$1 AND ended_at IS NULL", live.S("id"))
 				t.exec("UPDATE sandbox_instances SET observed_state='terminated',terminated_at=now() WHERE id=$1", live.S("id"))
 			}
@@ -435,6 +441,9 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			next = "cleanup"
 		}
 	case "cleanup":
+		if !completeResidualReclamation(t, o) {
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
 		// Each Workspace's data was deleted by its own effect, planned only after its sandbox ended.
 		for _, w := range operationWorkspaces(t, o) {
 			completedEffect(t, o, "workspace_data_delete", w.S("id"))

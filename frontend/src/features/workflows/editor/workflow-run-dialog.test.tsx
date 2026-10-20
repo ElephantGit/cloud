@@ -2,9 +2,16 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
-import type { WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
+import type { Project, WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
 import { WorkflowRunDialog } from '@/features/workflows/editor/workflow-run-dialog'
-import { TEST_TENANT_ID, installCloudSpaceHandlers } from '@/test/cloud-handlers'
+import {
+  TEST_PROJECT_ID,
+  TEST_TENANT_ID,
+  installCloudSpaceHandlers,
+  chooseProject,
+  installSpaceProjectHandlers,
+  projectFixture,
+} from '@/test/cloud-handlers'
 import { server } from '@/test/msw-server'
 import { renderWithProviders } from '@/test/render'
 
@@ -71,6 +78,7 @@ function runFixture(): WorkflowRun {
     rounds: [],
     error: '',
     definitionSnapshot: null,
+    cancelRequestedAt: null,
     startedAt: null,
     finishedAt: null,
     createdAt: '2026-09-20T10:00:00+08:00',
@@ -111,13 +119,19 @@ function installDialogHandlers(
 }
 
 /**
- * Mounts the dialog open, with the started-run callback under the caller's control.
+ * Mounts the dialog open in the `cloud-dev` space, with the started-run callback under the caller's
+ * control.
  *
- * The versions arrive over the network from whatever `installDialogHandlers` was given, so mounting
- * takes no list of its own.
+ * The versions and the space's Projects arrive over the network from whatever the handlers were
+ * given, so mounting takes no lists of its own; `projects` is the space's own list, which a test
+ * empties to exercise the guidance a Project-less space shows.
  */
-function renderDialog(onStarted = vi.fn<(run: WorkflowRun) => void>()) {
+function renderDialog(
+  onStarted = vi.fn<(run: WorkflowRun) => void>(),
+  projects: Project[] = [projectFixture()],
+) {
   installCloudSpaceHandlers('admin')
+  installSpaceProjectHandlers(projects)
   renderWithProviders(
     <WorkflowRunDialog
       tenantId={TEST_TENANT_ID}
@@ -126,6 +140,7 @@ function renderDialog(onStarted = vi.fn<(run: WorkflowRun) => void>()) {
       onOpenChange={() => {}}
       onStarted={onStarted}
     />,
+    { slug: 'cloud-dev' },
   )
   return onStarted
 }
@@ -190,11 +205,14 @@ describe('WorkflowRunDialog', () => {
     const requests = installDialogHandlers(versions)
     const onStarted = renderDialog()
 
+    await chooseProject()
     fireEvent.change(await screen.findByLabelText(/^topic/), { target: { value: 'release' } })
     fireEvent.click(startButton())
 
     await waitFor(() => expect(onStarted).toHaveBeenCalledTimes(1))
-    expect(requests.bodies).toEqual([{ snapshotId: 'snap-2', input: { topic: 'release' } }])
+    expect(requests.bodies).toEqual([
+      { projectId: TEST_PROJECT_ID, snapshotId: 'snap-2', input: { topic: 'release' } },
+    ])
   })
 
   it('asks the switched-to version’s fields and sends that version', async () => {
@@ -209,6 +227,7 @@ describe('WorkflowRunDialog', () => {
     const requests = installDialogHandlers(versions)
     renderDialog()
 
+    await chooseProject()
     // The version list is a listbox, not a native `<select>`: only real pointer events move it.
     const user = userEvent.setup()
     await user.click(await screen.findByRole('combobox', { name: '版本' }))
@@ -219,7 +238,10 @@ describe('WorkflowRunDialog', () => {
     fireEvent.click(startButton())
 
     await waitFor(() => expect(requests.bodies).toHaveLength(1))
-    expect(requests.bodies).toEqual([{ snapshotId: 'snap-1', input: {} }])
+    // The Project belongs to the run rather than to the version, so switching versions keeps it.
+    expect(requests.bodies).toEqual([
+      { projectId: TEST_PROJECT_ID, snapshotId: 'snap-1', input: {} },
+    ])
   })
 
   it('refuses to start while a required answer is missing', async () => {
@@ -235,6 +257,7 @@ describe('WorkflowRunDialog', () => {
     const requests = installDialogHandlers(versions)
     renderDialog()
 
+    await chooseProject()
     expect(await screen.findByText('还需要填写：topic')).toBeInTheDocument()
     expect(startButton()).toBeDisabled()
 
@@ -245,11 +268,42 @@ describe('WorkflowRunDialog', () => {
     expect(requests.bodies).toEqual([])
   })
 
+  it('keeps Start disabled until a Project is chosen', async () => {
+    const requests = installDialogHandlers([snapshotOf({ id: 'snap-2', version: 2 })])
+    renderDialog()
+
+    // The version resolves and asks nothing, so the Project is the only thing still missing.
+    expect(await findStartButton()).toBeDisabled()
+    expect(
+      await screen.findByText('先选一个项目：运行的工作区建在这个项目里。'),
+    ).toBeInTheDocument()
+    expect(requests.bodies).toEqual([])
+
+    await chooseProject()
+
+    await waitFor(() => expect(startButton()).toBeEnabled())
+    expect(screen.queryByText('先选一个项目：运行的工作区建在这个项目里。')).not.toBeInTheDocument()
+  })
+
+  it('says the space has no Project rather than offering an empty picker', async () => {
+    installDialogHandlers([snapshotOf({ id: 'snap-2', version: 2 })])
+    renderDialog(undefined, [])
+
+    // An empty list is not a choice: the member needs to know creating a Project is the next step,
+    // not stare at a disabled button with no reason why.
+    expect(
+      await screen.findByText('这个空间还没有项目，先创建一个项目再运行。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: '项目' })).not.toBeInTheDocument()
+    expect(startButton()).toBeDisabled()
+  })
+
   it('reports the server’s refusal on the form and starts nothing', async () => {
     installDialogHandlers([snapshotOf({ id: 'snap-2', version: 2 })], () =>
       HttpResponse.json({ code: 'required_field_missing' }, { status: 400 }),
     )
     const onStarted = renderDialog()
+    await chooseProject()
 
     fireEvent.click(await findStartButton())
 
@@ -268,6 +322,7 @@ describe('WorkflowRunDialog', () => {
         : HttpResponse.json({ resource: runFixture() })
     })
     const onStarted = renderDialog()
+    await chooseProject()
 
     fireEvent.click(await findStartButton())
     await waitFor(() => expect(requests.bodies).toHaveLength(1))
@@ -276,10 +331,8 @@ describe('WorkflowRunDialog', () => {
 
     // Both attempts are the same logical start, so the server can recognise the replay instead of
     // creating a second run.
-    expect(requests.bodies).toEqual([
-      { snapshotId: 'snap-2', input: {} },
-      { snapshotId: 'snap-2', input: {} },
-    ])
+    const body = { projectId: TEST_PROJECT_ID, snapshotId: 'snap-2', input: {} }
+    expect(requests.bodies).toEqual([body, body])
     expect(requests.keys[0]).not.toBeNull()
     expect(requests.keys[1]).toBe(requests.keys[0])
   })

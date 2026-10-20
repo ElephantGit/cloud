@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Play } from 'lucide-react'
-import type { WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
+import type { Project, WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/select'
 import { DynamicFormRenderer } from '@/features/issues/components/dynamic-form-renderer'
 import type { FormDescriptor } from '@/features/issues/types'
+import { useSpaceProjects } from '@/features/spaces/api'
+import { useCurrentSpace } from '@/features/spaces/current-space'
 import { useCreateWorkflowRun, useWorkflowSnapshots } from '@/features/workflows/api'
 import { useWorkflowTranslator } from '@/features/workflows/editor/use-workflow-translator'
 import { workflowErrorKey } from '@/features/workflows/error-messages'
@@ -37,11 +39,18 @@ import type { WorkflowRunField, WorkflowRunValues } from '@/features/workflows/r
 /**
  * Starts one run against a published version, collecting what that version asks for first.
  *
- * The form belongs to the version, not to the workflow: the fields, their defaults and their
- * required marks are all read from the frozen graph of whichever version is selected, so an edit
- * saved to the draft since cannot change what this run is started with. Switching versions
- * remounts the form, which is what discards the previous version's answers rather than carrying
- * them onto fields that may no longer exist.
+ * Two choices frame the form, because they are what the run freezes besides the answers. The
+ * version decides which frozen graph is asked, and therefore which questions, defaults and
+ * required marks appear — an edit saved to the draft since cannot change what this run is started
+ * with. The Project decides where the run's Workspace provisions, and it is stated rather than
+ * inferred: a workflow belongs to a space, not to a Project, so nothing else could name one. Neither
+ * choice is defaulted past what the member sees: the newest version is shown but can be changed, and
+ * no Project stands selected until the member picks one, so a run never lands in a Project nobody
+ * named.
+ *
+ * Switching versions remounts the form, which is what discards the previous version's answers rather
+ * than carrying them onto fields that may no longer exist; the chosen Project survives that, since
+ * it belongs to the run rather than to the version.
  *
  * @param props.tenantId - Tenant the workflow belongs to; scopes the API calls only.
  * @param props.workflowId - Workflow to start a run of.
@@ -64,15 +73,28 @@ export function WorkflowRunDialog({
 }) {
   const { t } = useTranslation()
   const snapshots = useWorkflowSnapshots(tenantId, workflowId)
+  const { space } = useCurrentSpace()
+  // The route resolves one space; a dialog handed another tenant's id would list Projects the run
+  // cannot be created in, so the query stays off rather than guessing.
+  const spaceId = space !== undefined && space.tenantId === tenantId ? space.id : undefined
+  const projects = useSpaceProjects(tenantId, spaceId)
   const [chosenId, setChosenId] = useState<string | null>(null)
+  const [chosenProjectId, setChosenProjectId] = useState<string | null>(null)
   const versions = snapshots.data ?? []
   // The newest version is the default, resolved on every render rather than copied into state: a
   // refetch that adds a version must not leave the dialog pinned to a choice that predates it.
   const selected = versions.find((version) => version.id === chosenId) ?? versions[0]
+  const projectChoices = (projects.data?.items ?? []).filter(isRunProject)
+  // A refetch can drop the chosen Project (deleted, or moved out of reach); the form then asks again
+  // instead of submitting an id the server would refuse.
+  const projectId = projectChoices.find((project) => project.id === chosenProjectId)?.id ?? ''
 
-  /** Closing forgets the chosen version, so the next visit opens on the newest one again. */
+  /** Closing forgets both choices, so the next visit opens on the newest version again. */
   function handleOpenChange(next: boolean): void {
-    if (!next) setChosenId(null)
+    if (!next) {
+      setChosenId(null)
+      setChosenProjectId(null)
+    }
     onOpenChange(next)
   }
 
@@ -87,11 +109,21 @@ export function WorkflowRunDialog({
           <p className="text-xs text-muted-foreground">{t('workflows.run.noPublishedSnapshot')}</p>
         ) : (
           <>
+            <ProjectPicker
+              projects={projectChoices}
+              selectedId={projectId}
+              // Until the route's space resolves, the list is not empty — it is unknown, and an
+              // empty-looking picker would claim the space has no Project.
+              pending={spaceId === undefined || projects.isLoading}
+              failed={projects.isError}
+              onSelect={setChosenProjectId}
+            />
             <VersionPicker versions={versions} selectedId={selected.id} onSelect={setChosenId} />
             <WorkflowRunForm
               key={selected.id}
               tenantId={tenantId}
               workflowId={workflowId}
+              projectId={projectId}
               snapshot={selected}
               onCancel={() => handleOpenChange(false)}
               onStarted={onStarted}
@@ -100,6 +132,76 @@ export function WorkflowRunDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Whether a Project can host a run.
+ *
+ * A Project on its way out cannot: the creation gate refuses one already being deleted, and a
+ * deleted one no longer resolves, so offering either would only produce the refusal the member
+ * would then have to read.
+ */
+function isRunProject(project: Project): boolean {
+  return project.lifecycle !== 'deleting' && project.lifecycle !== 'deleted'
+}
+
+/**
+ * The Project the run and its Workspace belong to.
+ *
+ * The run is created against the Project named here rather than one derived from anything else: a
+ * workflow is a tenant document, and the Project is what says which repository the Workspace clones
+ * and where its lifecycle is accounted for. A space with no Project to choose from says so, because
+ * the next step is creating one — an empty picker would leave the member with a disabled button and
+ * no reason why.
+ */
+function ProjectPicker({
+  projects,
+  selectedId,
+  pending,
+  failed,
+  onSelect,
+}: {
+  projects: readonly Project[]
+  selectedId: string
+  pending: boolean
+  failed: boolean
+  onSelect: (projectId: string | null) => void
+}) {
+  const { t } = useTranslation()
+  if (failed) {
+    return (
+      <p role="alert" className="text-xs text-destructive">
+        {t('workflows.run.projectsUnavailable')}
+      </p>
+    )
+  }
+  if (!pending && projects.length === 0) {
+    return <p className="text-xs text-muted-foreground">{t('workflows.run.noProjects')}</p>
+  }
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="workflow-run-project">{t('workflows.run.project')}</Label>
+      <Select
+        value={selectedId === '' ? null : selectedId}
+        disabled={pending}
+        onValueChange={(next) => onSelect(typeof next === 'string' ? next : null)}
+      >
+        <SelectTrigger id="workflow-run-project" className="w-full">
+          <SelectValue placeholder={t('workflows.run.chooseProject')} />
+        </SelectTrigger>
+        <SelectContent>
+          {projects.map((project) => (
+            <SelectItem key={project.id} value={project.id}>
+              {project.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {selectedId === '' && !pending && (
+        <p className="text-xs text-muted-foreground">{t('workflows.run.projectRequired')}</p>
+      )}
+    </div>
   )
 }
 
@@ -154,12 +256,14 @@ function versionLabel(versions: readonly WorkflowSnapshot[], snapshotId: string)
 function WorkflowRunForm({
   tenantId,
   workflowId,
+  projectId,
   snapshot,
   onCancel,
   onStarted,
 }: {
   tenantId: string
   workflowId: string
+  projectId: string
   snapshot: WorkflowSnapshot
   onCancel: () => void
   onStarted: (run: WorkflowRun) => void
@@ -175,8 +279,13 @@ function WorkflowRunForm({
   const [values, setValues] = useState<WorkflowRunValues>(() => initialWorkflowRunValues(fields))
   const missing = missingWorkflowRunFields(fields, values)
   const request = useMemo(
-    () => ({ workflowId, snapshotId: snapshot.id, input: workflowRunInput(fields, values) }),
-    [workflowId, snapshot.id, fields, values],
+    () => ({
+      workflowId,
+      projectId,
+      snapshotId: snapshot.id,
+      input: workflowRunInput(fields, values),
+    }),
+    [workflowId, projectId, snapshot.id, fields, values],
   )
 
   /** Starts the run, and hands the created run to the caller; a fault stays on this form. */
@@ -215,7 +324,10 @@ function WorkflowRunForm({
         <Button variant="outline" onClick={onCancel}>
           {t('workflows.list.cancel')}
         </Button>
-        <Button disabled={createRun.isPending || missing.length > 0} onClick={() => void submit()}>
+        <Button
+          disabled={createRun.isPending || missing.length > 0 || projectId === ''}
+          onClick={() => void submit()}
+        >
           <Play className="size-3.5" fill="currentColor" />
           {t('workflows.run.start')}
         </Button>

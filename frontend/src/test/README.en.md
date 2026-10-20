@@ -16,7 +16,7 @@ Environment setup and test doubles shared by every test. The goal is that each t
 | `issue-fixtures.ts` | `makeIssue` / `makeStatus` / `makeProject` / `makeAgentTarget`: real-contract issue, status, project and Task Mode directory fixtures. |
 | `issue-fixtures.test.ts` | Verifies the fixtures' defaults and override precedence, which other tests rely on. |
 | `msw-server.ts` | MSW node server: the mock-domain handlers plus a baseline `GET /api/v1/me → 401` (every render starts signed out) and `GET /auth/providers → ['github']` (a production-shaped gateway; tests of the developer login override it). |
-| `cloud-handlers.ts` | Shared MSW doubles for the session probe and the `cloud-dev` tenant space returned by `/me/spaces`, plus fixtures such as `TEST_USER`. |
+| `cloud-handlers.ts` | Shared MSW doubles for the session probe and the `cloud-dev` tenant space returned by `/me/spaces`, `projectFixture` / `installSpaceProjectHandlers` for that space's Projects, fixtures such as `TEST_USER`, and `chooseProject` for selecting the fixture Project in a run's start dialog. |
 | `navigation.ts` | `installFakeNavigation()`: swaps external navigation and new-tab opening, recording `destinations` and `openedTabs`; restored when the test finishes. |
 | `polling.ts` | `settleUntil(check)`: retries an assertion while `setInterval` is faked (a polling test advances its query that way) — Testing Library's `waitFor` polls on `setInterval` itself and cannot run then. |
 | `polling.test.ts` | Verifies that it retries until the assertion holds and rethrows the last failure once the attempts run out, which other polling tests rely on. |

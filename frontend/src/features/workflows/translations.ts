@@ -394,6 +394,11 @@ export const workflowTranslations = {
     'workflows.run.noPublishedSnapshot': '这个工作流还没有已发布的版本，无法运行。',
     'workflows.run.startTitle': '运行这个工作流',
     'workflows.run.startDescription': '选择要运行的版本，填写该版本的输入后启动一次运行。',
+    'workflows.run.project': '项目',
+    'workflows.run.chooseProject': '选择一个项目',
+    'workflows.run.projectRequired': '先选一个项目：运行的工作区建在这个项目里。',
+    'workflows.run.noProjects': '这个空间还没有项目，先创建一个项目再运行。',
+    'workflows.run.projectsUnavailable': '项目列表加载失败，请刷新后重试。',
     'workflows.run.version': '版本',
     'workflows.run.start': '开始运行',
     'workflows.run.noInput': '这个版本没有需要填写的输入。',
@@ -822,6 +827,13 @@ export const workflowTranslations = {
     'workflows.run.startTitle': 'Run this workflow',
     'workflows.run.startDescription':
       'Choose the version to run, answer what it asks for, and start one run.',
+    'workflows.run.project': 'Project',
+    'workflows.run.chooseProject': 'Choose a Project',
+    'workflows.run.projectRequired':
+      'Choose a Project first: the run’s Workspace is provisioned in it.',
+    'workflows.run.noProjects': 'This space has no Project yet. Create one, then start the run.',
+    'workflows.run.projectsUnavailable':
+      'The Project list could not be loaded. Refresh and try again.',
     'workflows.run.version': 'Version',
     'workflows.run.start': 'Start run',
     'workflows.run.noInput': 'This version asks for no input.',

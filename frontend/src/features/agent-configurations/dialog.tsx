@@ -12,6 +12,7 @@ import { useCurrentSpace } from '@/features/spaces/current-space'
 import {
   agentConfigurationFailure,
   useAgentConfiguration,
+  type AgentConfiguration,
   type AgentConfigurationScope,
 } from './api'
 import { AgentConfigurationEditor } from './editor'
@@ -42,21 +43,22 @@ export function AgentConfigurationDialog({ pluginId }: { pluginId: string }) {
 
 function ConfigurationContent({ scope }: { scope: AgentConfigurationScope }) {
   const query = useAgentConfiguration(scope, true)
-  const [editor, setEditor] = useState(0)
+  async function readLatest(): Promise<AgentConfiguration> {
+    const result = await query.refetch()
+    if (result.error) throw result.error
+    if (!result.data) throw new Error('agent_configuration_unavailable')
+    return result.data
+  }
   if (!query.data) {
     if (query.isError) return <p role="alert">{agentConfigurationFailure(query.error)}</p>
     return <p role="status">正在读取个人配置…</p>
   }
   return (
     <AgentConfigurationEditor
-      key={editor}
       scope={scope}
       context={query.data}
-      onSaved={() => setEditor((current) => current + 1)}
-      onReload={async () => {
-        const result = await query.refetch()
-        if (result.error) throw result.error
-      }}
+      onSaved={readLatest}
+      onReload={readLatest}
     />
   )
 }

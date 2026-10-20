@@ -33,8 +33,8 @@ function mountEditor(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const onSaved = vi.fn<() => void>()
-  const onReload = vi.fn<() => Promise<void>>(async () => {})
+  const onSaved = vi.fn<() => Promise<AgentConfiguration>>(async () => context)
+  const onReload = vi.fn<() => Promise<AgentConfiguration>>(async () => context)
   const scope = { spaceId: 'space1', pluginId }
   function element(current: AgentConfiguration) {
     return (

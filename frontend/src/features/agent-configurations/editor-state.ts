@@ -38,12 +38,15 @@ function useCredentialTarget(draft: AgentConfigurationDraft) {
   }
 }
 
-/** Input to an editing session; successful writes are the only implicit remount boundary. */
+/**
+ * Input to an editing session. The dialog owns the read query, so both callbacks
+ * resolve with the freshest authoritative context instead of triggering a remount.
+ */
 export type AgentEditorProps = {
   context: AgentConfiguration
   scope: AgentConfigurationScope
-  onReload: () => Promise<void>
-  onSaved: () => void
+  onReload: () => Promise<AgentConfiguration>
+  onSaved: () => Promise<AgentConfiguration>
 }
 
 /** Owns draft baselines and explicit reconciliation without copying live server state. */
@@ -94,16 +97,36 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     }
     selectConnection(connection.id, connection.models[0]?.id ?? '')
   }
+  /**
+   * Advances only this session's option baseline. Values stay as submitted (or fall back
+   * to defaults after a clear), and the default-model draft keeps its own state and CAS
+   * version, so an unsaved default selection never silently reverts.
+   */
+  async function adoptWrite(written: { revision: number; cleared: boolean }) {
+    setDraft((current) => ({ ...current, revision: written.revision, requiresRepair: false }))
+    try {
+      const latest = await onSaved()
+      setDraft((current) => agentConfigurationDraft(latest, written.cleared ? undefined : current))
+      setAcceptedRepair(false)
+      setConfirmClear(false)
+      setReloadFailed(false)
+    } catch {
+      setReloadFailed(true)
+    }
+  }
   function submit(event: React.FormEvent) {
     event.preventDefault()
     if (canSave && body)
       save.mutate(
         { body, repair: draft.requiresRepair, numbers: agentConfigurationNumbers(draft) },
-        { onSuccess: onSaved },
+        { onSuccess: (written) => void adoptWrite(written.resource) },
       )
   }
   function clearOptions() {
-    clear.mutate({ revision: draft.revision }, { onSuccess: onSaved })
+    clear.mutate(
+      { revision: draft.revision },
+      { onSuccess: (written) => void adoptWrite(written.resource) },
+    )
   }
   return {
     draft,

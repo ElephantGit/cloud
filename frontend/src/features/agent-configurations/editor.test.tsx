@@ -170,12 +170,19 @@ describe('personal Agent configuration editor', () => {
     const page = mountEditor()
     const user = userEvent.setup()
     await enter(user, '风格 *', 'my retained draft')
-    page.rerender(agentContext({ revision: 2, settings: { style: 'server winner' } }))
+    page.rerender(
+      agentContext({
+        revision: 2,
+        settings: { style: 'server winner', budget: 0.123 },
+        numericValues: { budget: '0.123456789012345678901' },
+      }),
+    )
     expect(screen.getByLabelText('风格 *')).toHaveValue('my retained draft')
     await user.click(screen.getByRole('button', { name: '保存我的配置' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('草稿已保留')
     await user.click(screen.getByRole('button', { name: '重新核对最新配置' }))
     expect(await screen.findByText('server winner')).toBeInTheDocument()
+    expect(screen.getByText('0.123456789012345678901')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '保存我的配置' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '保留草稿，按最新要求核对' }))
     expect(screen.getByLabelText('风格 *')).toHaveValue('my retained draft')

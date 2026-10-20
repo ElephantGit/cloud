@@ -19,7 +19,7 @@ export function AgentConfigurationReconcile({
         {Object.entries(latest.settings).map(([name, value]) => (
           <div key={name}>
             <dt className="font-medium">{name}</dt>
-            <dd className="break-all">{String(value)}</dd>
+            <dd className="break-all">{latest.numericValues?.[name] ?? String(value)}</dd>
           </div>
         ))}
       </dl>

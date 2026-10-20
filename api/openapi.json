@@ -4978,6 +4978,19 @@
             "nullable": true,
             "type": "string"
           },
+          "kind": {
+            "enum": [
+              "workbench",
+              "agent",
+              "webview",
+              "skill",
+              "mcp",
+              "hook",
+              "pack",
+              "workflow"
+            ],
+            "type": "string"
+          },
           "observedState": {
             "enum": [
               "pending",

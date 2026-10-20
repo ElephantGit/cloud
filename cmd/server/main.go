@@ -268,8 +268,11 @@ func run() (runErr error) {
 	// unreachability window the delivery loops above configure — the same `DeliveryUnreachableAfter`
 	// D5 and D8 judge, not a second limit — so an in-flight session whose Node is gone fails its node
 	// instead of holding the run in `running`, and an unconfigured window fails closed by holding it.
+	// A session whose Node is still there but which produces neither a result nor a successful turn
+	// end is bounded separately by cfg.Workflow.SessionTurnTimeout (circus#299 option A).
 	{
 		const workflowAdvanceInterval = 10 * time.Second
+		store.WorkflowSessionTurnTimeout = cfg.Workflow.SessionTurnTimeout
 		syncGroup.Add(1)
 		go func() {
 			defer syncGroup.Done()

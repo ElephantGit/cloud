@@ -116,8 +116,15 @@ seconds):
   (`runWorkspaceNodeUnknown`), so the two run kinds cannot answer "is the Node still there?" differently; an
   unconfigured window does not degrade into a zero-length one, and the session is held rather than failed on the
   spot. `node_unavailable` is Cloud's own diagnosis — it is also the published operation failure code for an
-  unreachable Node — and not a session end reason a Node reported. Once the run reaches a terminal state, Cloud
-  declares the deletion of its Workspace.
+  unreachable Node — and not a session end reason a Node reported. **When a session has started and its Node is still
+  reachable, but there is neither a committed result nor a successful `turnEnded` receipt**, the node fails as
+  `session_turn_deadline_exceeded` once its execution row's `created_at` is older than `workflow.session_turn_timeout`
+  (2 hours by default), and the run reaches a terminal state. That too is Cloud's own diagnosis, timed per execution row
+  (a retry's new row re-times), using only the database clock — replay, restart and replica passes never reset it.
+  Results win: a committed result settles by its own reason, an unreachable Node is still `node_unavailable`, and only
+  when neither holds does the window apply. A result that arrives after the window already settled the run is kept on the
+  execution row and never rewrites the terminal run. Once the run reaches a terminal state, Cloud declares the deletion
+  of its Workspace.
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
   receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the

@@ -80,8 +80,12 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   节点以 `node_unavailable` 结算失败，运行随之进入终态：依据是 Node 的可达性，而不是会话已经跑了多久——心跳超过 `issue_runs.delivery_unreachable_after`（默认 30 分钟），
   或者沙箱连同其上的 Node 一起消失（强制停止留下的正是这个状态），都表示 Node 已经不在了。这个判断和它的窗口与 IssueRun 交付、释放路径用的是同一个
   （`runWorkspaceNodeUnknown`），两种运行不会对"Node 还在吗"给出不同答案；窗口未配置时不会退化成零长度窗口，会话保持等待而不是被立刻误判为失败。
-  `node_unavailable` 是 Cloud 自己下的判断（也是 Node 不可达时公开的操作失败码），不是 Node 上报的会话结束原因。运行进入终态后，Cloud 声明删除
-  这次运行的 Workspace。
+  `node_unavailable` 是 Cloud 自己下的判断（也是 Node 不可达时公开的操作失败码），不是 Node 上报的会话结束原因。
+  **会话已经开始、Node 仍然可达，但既没有提交结果、也没有成功的 `turnEnded` 回执时**，执行行的 `created_at` 超过
+  `workflow.session_turn_timeout`（默认 2 小时）后节点以 `session_turn_deadline_exceeded` 失败，运行进入终态。这也是 Cloud 自己下的
+  判断，按执行行计时（重试产生的新执行行重新计时），只使用数据库时钟，回放、重启和副本推进都不会重置。判断顺序是结果优先：
+  已提交的结果按它自己的原因结算，Node 不可达仍报 `node_unavailable`，两者都不成立时才轮到窗口；窗口把运行带入终态之后才到达的结果
+  保留在执行行上，不改写已经终态的运行。运行进入终态后，Cloud 声明删除这次运行的 Workspace。
 - **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
   命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
   `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。

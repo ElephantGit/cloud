@@ -46,6 +46,7 @@
 | `issue_runs.agent_start_timeout`、`agent_restore_timeout`、`agent_end_confirm_timeout` | `2m`、`6m`、`5m` | 启动窗口，显式配置非正值时拒绝启动，见 [有界启动](../agent-runs/startup-settlement.md) |
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | 运行 Workspace 创建停在 `blocked` 的放弃窗口，规则同上 |
 | `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；`delivery_unreachable_after` 同时是"Node 是否还在"的判定窗口，工作流运行里进行中的会话也按它结算；非正值取默认 |
+| `workflow.session_turn_timeout` | `2h` | 工作流会话初始回合的窗口：执行行 `created_at` 超过它、既没有提交结果也没有成功的 `turnEnded` 时，节点以 `session_turn_deadline_exceeded` 失败；按执行行计时，非正值取默认，见 [工作流](../workflows/workflows.md#调度) |
 | `object_store.*` | `enabled: false` | 见 [Revision](../agent-runs/revisions.md#对象存储)：`endpoint`、`public_endpoint`、`region`、`bucket`、`path_style`、`access_key_id_file`、`secret_access_key_file`、`upload_grant_ttl` |
 | `repository.enabled` | `false` | 打开外部 Git 线与凭据路由；关闭时 Project 仍可创建，但没有同步，凭据创建返回 `503`，见 [外部 Git 线](../repositories/external-git.md) |
 | `repository.executor_url`、`executor_ca_file`、`dispatcher_cert_file`、`dispatcher_key_file` | URL 默认 `https://repo-executor:8471`，文件必填 | Repo Executor 的任务监听，以及 Cloud 调度方的 mTLS 客户端身份 |

@@ -129,6 +129,9 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
   [Agent 运行收尾](../agent-runs/issue-runs.md#阶段)）。
 - `RecordDispatch` 在派发之前登记执行：Cloud 而不是 Controller 决定输入和目标 Node，登记时核对输入与操作或工作项冻结的输入
   一致、目标就是当前 Node、没有未决的同类执行。同一执行、同样输入的重放返回原登记，矛盾的输入返回冲突。
+- `install_plugins` 的输入里，agent 插件的安装项可以带一个冻结的声明关联（`agent_configuration`，字段以 proto 为准）：它是安装计划
+  冻结时从目录快照写入的身份字段，同样参与输入一致性核对，丢失或篡改关联的派发被拒绝；静态副本不出 Cloud。链路语义见
+  [插件市场](../plugins/marketplace.md#agent-声明的快照与冻结)。
 - `TakeOverNodeEvent` 按执行身份和**连续序号**接管 Node 事件并保存收据，重复事件必须与原收据逐字节一致；会话和交付的终态事件
   也走同一个序列，不能越过尚未接管的事件。
 
@@ -155,3 +158,4 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
 - [运行时控制由 Cloud 授权、Controller 派发、Node 在真实入口持久隔离旧资格](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260927-fenced-runtime-control-delivery.md)
 - [Internal Control gRPC 增加插件、Agent 会话与 Revision 交付三类执行](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260928-agent-run-executions-thread-and-upload-grants.md)
 - [会话与交付执行输入增加前序 Revision，新增 `GrantRevisionDownload`](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261010-revision-restore-contract.md)
+- [Agent 声明随 `install_plugins` 输入携带（Agent 配置元数据决策的安装输入部分）](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261017-agent-configuration-metadata.md)

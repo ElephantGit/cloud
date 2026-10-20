@@ -165,6 +165,11 @@ generation and live sandbox.
   operation or work item, that the target is the current Node, and that no execution of the same kind is
   still undecided. Replaying the same execution with the same input returns the original registration;
   a contradicting input is a conflict.
+- Inside an `install_plugins` input, an agent plugin's install item may carry a frozen declaration
+  association (`agent_configuration`, fields per proto): an identity field written from the catalog
+  snapshot when the install plan was frozen. It takes part in the same input-equality check, so a
+  dispatch that loses or tampers with the association is refused; the static copy never leaves Cloud.
+  See [The plugin marketplace](../plugins/marketplace.en.md#agent-declaration-snapshots-and-freezing).
 - `TakeOverNodeEvent` takes over Node events by execution identity and **consecutive sequence number**
   and stores a receipt; a repeated event must match the original receipt byte for byte. Terminal events
   of sessions and deliveries use the same sequence and cannot overtake events not yet taken over.
@@ -198,3 +203,4 @@ carries out force-stops; see [Runtime control](runtime-control.en.md).
 - [Runtime control is authorized by Cloud, delivered by the Controller, and fenced at the Node's real entry points](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260927-fenced-runtime-control-delivery.md)
 - [Internal Control gRPC adds plugin, Agent session and Revision delivery executions](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260928-agent-run-executions-thread-and-upload-grants.md)
 - [Session and delivery inputs gain a prior Revision, plus `GrantRevisionDownload`](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261010-revision-restore-contract.md)
+- [Agent declarations travel with the `install_plugins` input (the install-input part of the Agent configuration metadata decision)](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261017-agent-configuration-metadata.md)

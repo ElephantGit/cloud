@@ -9,6 +9,8 @@ API, and maps the resulting `Fault` to a gRPC status. No business rule, cache or
 
 ## Caller identity
 
+`AgentRunService.PublishThreadPreview` is optional: `Store.PublishThreadPreview` checks the same identity, lease and live execution before updating bounded memory. It bypasses durable submission/receipt processing and never returns a Node Ack. ThreadEvent `history_sequence` is forwarded only as metadata linking settled records to previews.
+
 Production requires TLS 1.3 mutual authentication: both peers verify a trusted certificate.
 The Controller certificate must carry the configured service URI and its ControllerId must
 match `x-ora-controller-id`. Metadata cannot select another service identity. Missing or

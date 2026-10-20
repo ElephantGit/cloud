@@ -6,6 +6,18 @@
 
 ## 模块概览
 
+- `task_conversation_append.go`：旧 Thread 追加与任务队列共用交接/暂停检查。外部追加在队尾判断，队列工作者只判断自己之前的消息，已接收的前缀不会被后来的切换误拒绝；拒绝不产生条目或命令。
+
+- `task_conversation_readiness.go`：向当前成员展示项目与个人默认模型配置的安全缺口；不暴露连接/凭据标识，不授权追加他人的模型会话，派发时仍重新校验。
+
+- `task_conversation_stop.go`：把手动停止与任务暂停屏障原子保存；停止请求复用既有取消/交付/释放生命周期。暂停独立于 Run 最终成功或失败，后续消息与草稿保留，明确恢复后才继续。
+
+- `thread_preview.go`：有界的进程内可选预览。按执行与版本替换，接收时核对租约和活执行，读取时核对任务权限并排除已定型位置；不产生持久回执或 Ack。缓存过期或跨副本未命中时明确降级为持久 Thread。`thread_preview_test.go` 覆盖容量、过期、乱序和最终覆盖。
+
+- `task_conversation_messages.go`、`task_conversation_queue.go`、`task_conversation_context.go`：任务级有序消息、同任务 Agent 串行交接及从 Node 可见正文冻结的后续提示。失败消息阻塞后续交接；未交付成果须显式放弃后才能从已保存 Revision 继续。真实 PostgreSQL 测试覆盖并发幂等、权限、释放证据、失败暂停和缺失历史。
+
+Agent 初始提示从冻结的运行输入读取任务标题、说明、最近评论与显式引用；没有 ContextBuilder 时同样保留这些字段。不会在启动时重新读取可变任务信息。`agent_initial_context_test.go` 验证上下文不丢失及历史快照缺字段时不伪造内容。
+
 - [migrations](migrations/README.md)：定义按顺序执行、仅向前的 PostgreSQL Schema 迁移脚本和校验和验证。
 - [plugins.go](plugins.go)：插件市场目录快照的落库与读取（`pluginmarket.CatalogSink` 实现）、
   工作区插件选择状态机（安装/移除 fan-out、聚合规则、SSE 失效广播）。

@@ -35,6 +35,7 @@ function optionalString(value: unknown): boolean {
 function invalidateForThreadEvent(event: SpaceEvent, tenantId: string, queryClient: QueryClient) {
   if (!event.issueId) return
   void queryClient.invalidateQueries({ queryKey: ['issue-runs', tenantId, event.issueId] })
+  void queryClient.invalidateQueries({ queryKey: ['task-conversation', tenantId, event.issueId] })
   if (!event.runId) return
   void queryClient.invalidateQueries({
     queryKey: getGetApiV1TenantsTidIssuesIidRunsRidThreadQueryKey(
@@ -80,6 +81,9 @@ function invalidateForEvent(
 ): void {
   if (event.type === 'issue_run.thread_appended' || event.type === 'issue_run.thread_changed') {
     invalidateForThreadEvent(event, tenantId, queryClient)
+  } else if (event.type === 'issue.conversation_changed' && event.issueId) {
+    void queryClient.invalidateQueries({ queryKey: ['task-conversation', tenantId, event.issueId] })
+    void queryClient.invalidateQueries({ queryKey: ['issue-runs', tenantId, event.issueId] })
   } else if (event.type.startsWith('project.')) {
     void queryClient.invalidateQueries({
       queryKey: [`/api/v1/tenants/${tenantId}/spaces/${spaceId}/projects`],

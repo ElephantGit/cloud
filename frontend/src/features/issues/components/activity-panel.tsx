@@ -17,6 +17,7 @@ import { PendingTargets } from '@/features/issues/components/pending-targets'
 import { TargetPicker } from '@/features/issues/components/target-picker'
 import { memberNameById } from '@/features/issues/present'
 import { cn } from '@/lib/utils'
+import { ConversationMarkdown } from '@/features/conversation-content/markdown'
 import type {
   CollaborationTargetSummary,
   CommentTargetInput,
@@ -70,7 +71,7 @@ function CommentItem({
         <span className="text-sm font-medium">{author.name}</span>
         <span className="text-xs text-muted-foreground">#{entry.seq}</span>
       </div>
-      <p className="whitespace-pre-wrap text-sm text-muted-foreground">{entry.body}</p>
+      <ConversationMarkdown text={entry.body ?? ''} />
     </div>
   )
 }
@@ -87,9 +88,11 @@ function activityDetail(entry: TimelineEntry): string | null {
 function ActivityItem({
   entry,
   names,
+  onOpenRun,
 }: {
   entry: TimelineEntry
   names: ReadonlyMap<string, string>
+  onOpenRun?: ((runId: string) => void) | undefined
 }) {
   const author = entryActor(entry, names)
   const detailsExecutor = entry.details?.['executorType']
@@ -110,6 +113,18 @@ function ActivityItem({
           {detail}
         </div>
       ) : null}
+      {executorType === 'agent' && typeof entry.details?.['runId'] === 'string' && onOpenRun && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            const runId = entry.details?.['runId']
+            if (typeof runId === 'string') onOpenRun(runId)
+          }}
+        >
+          查看执行详情
+        </Button>
+      )}
     </div>
   )
 }
@@ -157,6 +172,8 @@ type ActivityPanelProps = {
   slug: string
   issueId: string
   members: TenantMember[]
+  onOpenRun?: (runId: string) => void
+  onTaskStarted?: () => void
 }
 
 /** Keeps every activity draft within one tenant, space and issue, even for cached navigation. */
@@ -166,7 +183,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
   return <IssueActivity key={`${props.slug}:${space?.id ?? ''}:${props.issueId}`} {...props} />
 }
 
-function IssueActivity({ slug, issueId, members }: ActivityPanelProps) {
+function IssueActivity({ slug, issueId, members, onOpenRun, onTaskStarted }: ActivityPanelProps) {
   const { data: timeline, isPending } = useTimeline(slug, issueId)
   const { data: interactions } = useInteractions(slug, issueId)
   const { data: runs } = useRuns(slug, issueId)
@@ -190,6 +207,7 @@ function IssueActivity({ slug, issueId, members }: ActivityPanelProps) {
         : { type: target.type, id: target.id }
     await createComment.mutateAsync({ body: message, targets: [entry] })
     setTargets((current) => current.filter((item) => item.id !== target.id))
+    if (target.type === 'agent') onTaskStarted?.()
   }
 
   return (
@@ -203,7 +221,7 @@ function IssueActivity({ slug, issueId, members }: ActivityPanelProps) {
         entry.kind === 'comment' ? (
           <CommentItem key={entry.id} entry={entry} names={names} />
         ) : (
-          <ActivityItem key={entry.id} entry={entry} names={names} />
+          <ActivityItem key={entry.id} entry={entry} names={names} onOpenRun={onOpenRun} />
         ),
       )}
 

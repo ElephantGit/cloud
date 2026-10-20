@@ -14,10 +14,10 @@
 | `types.ts` | 与后端契约对应的 Issue 领域类型；运行准备阶段直接引用生成的 `RunPreparation`，不重复维护契约 |
 | `present.ts` | 编号、负责人、状态列等显示用纯函数 |
 | `issues-page.tsx` / `issues-board.tsx` / `issues-list.tsx` | 任务页、看板（拖拽→`move` 锚点）与列表 |
-| `issue-detail-page.tsx` | 详情页：活动、版本化 Project 关联与失败重读、真实 Agent 入口及现有 Thread；为发起者摘要传入成员名称 |
+| `issue-detail-page.tsx` | 详情页：宽对话主区域、Markdown 说明与可折叠属性；版本化 Project 关联及失败重读，组合对话/执行记录/任务动态工作区 |
 | `*.test.ts(x)` | 页面与 hooks 测试 |
 
-子目录：`components/`（页面子组件）、`thread/`（Agent 会话面板）。
+子目录：`components/`（页面子组件）、`thread/`（单次 Agent 会话面板）、`conversation/`（任务级连续对话与输入）。
 
 ## 依赖与不变量
 

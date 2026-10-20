@@ -55,7 +55,7 @@ function StatusField({
           if (v !== null) onCommit({ status: v })
         }}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-full" aria-label="状态">
           <span className="flex items-center gap-2">
             <StatusIcon status={issue.status} />
             <SelectValue>
@@ -97,7 +97,7 @@ function PriorityField({
           if (next !== undefined) onCommit({ priority: next })
         }}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-full" aria-label="优先级">
           <span className="flex items-center gap-2">
             <PriorityIcon priority={issue.priority} />
             <SelectValue>

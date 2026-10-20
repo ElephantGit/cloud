@@ -175,6 +175,18 @@ func renderAgentInitialTurn(input, resume Object) string {
 		"target":      input["target"],
 		"contextRefs": input["contextRefs"],
 	}
+	// Carry the same frozen task context that the builder admitted. Reading the live Issue here
+	// would change the meaning of a queued run; dropping these fields loses the user's constraints.
+	for _, key := range []string{"issue", "recentComments"} {
+		if value, exists := input[key]; exists {
+			sections[key] = value
+		}
+	}
+	for _, key := range []string{"conversationHistory", "conversationHistoryIncomplete"} {
+		if value, exists := input[key]; exists {
+			sections[key] = value
+		}
+	}
 	if resume != nil {
 		sections["resume"] = resume
 	}

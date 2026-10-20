@@ -279,7 +279,7 @@ describe('useSpaceEvents', () => {
     unmount()
   })
 
-  it('refetches the run thread and the issue runs a thread event names, and nothing else', async () => {
+  it('refetches the Thread, runs and task conversation named by a Thread event', async () => {
     server.use(
       http.get(eventsUrl, () =>
         eventStream([
@@ -294,18 +294,44 @@ describe('useSpaceEvents', () => {
     const threadKey = [`/api/v1/tenants/${tenantId}/issues/I/runs/R/thread`]
     const runsKey = ['issue-runs', tenantId, 'I']
     const otherRunsKey = ['issue-runs', tenantId, 'J']
+    const conversationKey = ['task-conversation', tenantId, 'I']
+    const otherConversationKey = ['task-conversation', tenantId, 'J']
     const spacesKey = ['/api/v1/me/spaces']
     const { unmount, invalidated } = renderEvents(queryClient, [
       threadKey,
       runsKey,
       otherRunsKey,
+      conversationKey,
+      otherConversationKey,
       spacesKey,
     ])
 
     await waitFor(() => expect(invalidated(otherRunsKey)).toBe(true))
     expect(invalidated(threadKey)).toBe(true)
     expect(invalidated(runsKey)).toBe(true)
+    expect(invalidated(conversationKey)).toBe(true)
+    expect(invalidated(otherConversationKey)).toBe(true)
     expect(invalidated(spacesKey)).toBe(false)
+    unmount()
+  })
+
+  it('refreshes only the addressed task when its durable conversation changes', async () => {
+    server.use(
+      http.get(eventsUrl, () =>
+        eventStream([
+          'data: {"type":"issue.conversation_changed","spaceId":"S","issueId":"I"}\n\n',
+          'data: {"type":"issue.conversation_changed","spaceId":"S","issueId":8}\n\n',
+        ]),
+      ),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const conversationKey = ['task-conversation', tenantId, 'I']
+    const runsKey = ['issue-runs', tenantId, 'I']
+    const otherKey = ['task-conversation', tenantId, 'J']
+    const { unmount, invalidated } = renderEvents(queryClient, [conversationKey, runsKey, otherKey])
+    await waitFor(() => expect(invalidated(conversationKey)).toBe(true))
+    expect(invalidated(runsKey)).toBe(true)
+    expect(invalidated(otherKey)).toBe(false)
     unmount()
   })
 

@@ -357,9 +357,15 @@ func TestPersonalAgentInvalidDeclarationCannotUseLegacyFallback(t *testing.T) {
 	expectModelFault(t, err, "agent_declaration_invalid")
 }
 
-func TestPersonalAgentNumericSettingsPreserveLiteral(t *testing.T) {
+// A numeric setting must keep its literal on every path that answers with it: the first save, the
+// read-back and the replay of the same idempotency key. jsonb carries the literal exactly, so a
+// boundary that decodes the value into float64 shows up here as a rounded answer to a retry.
+func TestPersonalAgentNumericSettingsPreserveLiteralAcrossSaveReadAndReplay(t *testing.T) {
 	s := newPersonalAgentScene(t)
-	source := strings.Replace(personalAgentDeclaration, `"type":"string"`, `"type":"number","default":9007199254740993`, 1)
+	const source = `{"schemaVersion":2,"agent":{"modelAccess":{"contractVersion":1,"protocols":["anthropic-messages"],"modelCardinality":"single"}},"settings":{` +
+		`"style":{"type":"string","title":"Style","description":"Output style","required":true},` +
+		`"counter":{"type":"number","title":"Counter","description":"Large integer","default":9007199254740993},` +
+		`"ratio":{"type":"number","title":"Ratio","description":"Precise decimal","required":true}}}`
 	declaration, err := pluginmarket.CompileAgentConfiguration([]byte(source))
 	if err != nil {
 		t.Fatal(err)
@@ -370,16 +376,33 @@ func TestPersonalAgentNumericSettingsPreserveLiteral(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := s.body(0)
-	body["declarationFingerprint"], body["settings"] = declaration.Fingerprint, Object{}
-	if _, err := s.request("PUT", "", uuid.NewString(), body); err != nil {
-		t.Fatal(err)
-	}
-	view, err := s.request("GET", "", "", nil)
+	body["declarationFingerprint"], body["settings"] = declaration.Fingerprint,
+		Object{"style": "concise", "ratio": json.Number("0.123456789012345678901")}
+	key := uuid.NewString()
+	saved, err := s.request("PUT", "", key, body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := view.O("settings")["style"]; got != json.Number("9007199254740993") {
-		t.Fatalf("stored default rounded: %v", got)
+	read, err := s.request("GET", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := s.request("PUT", "", key, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := jsonText(Object{"style": "concise", "counter": json.Number("9007199254740993"), "ratio": json.Number("0.123456789012345678901")})
+	for name, settings := range map[string]Object{
+		"save":   saved.O("resource").O("settings"),
+		"read":   read.O("settings"),
+		"replay": replayed.O("resource").O("settings"),
+	} {
+		if got := jsonText(settings); got != want {
+			t.Fatalf("%s settings = %s, want %s", name, got, want)
+		}
+	}
+	if replayed.O("resource").N("revision") != saved.O("resource").N("revision") {
+		t.Fatalf("replay advanced the revision: %v then %v", saved, replayed)
 	}
 }
 

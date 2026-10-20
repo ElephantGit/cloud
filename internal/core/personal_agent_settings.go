@@ -47,8 +47,9 @@ func agentSettingDefault(value any) (any, error) {
 	return decodeAgentJSONValue(encoded)
 }
 
-// decodeAgentJSONValue preserves numeric literals across defaults, storage and run freezing.
-// Decoding into float64 here would silently round valid integers above JavaScript's safe range.
+// decodeAgentJSONValue preserves numeric literals across defaults, storage, run freezing and
+// idempotent replay. Decoding into float64 here would silently round valid integers above
+// JavaScript's safe range.
 func decodeAgentJSONValue(encoded []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()

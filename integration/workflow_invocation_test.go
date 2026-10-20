@@ -408,3 +408,49 @@ func TestWorkflowConfirmSchedulerProjectsConditionFailure(t *testing.T) {
 		t.Fatalf("condition failure did not preserve its node reason and terminal evidence: %v", workflow)
 	}
 }
+
+// TestWorkflowConfirmSchedulerProjectsCancelBeforeStart links a Confirm-created IssueRun and cancels
+// it before the scheduler claims the run: the run never starts, so the terminal projection must
+// record cancelled without fabricating a start timestamp or a run.started activity.
+func TestWorkflowConfirmSchedulerProjectsCancelBeforeStart(t *testing.T) {
+	f := setup(t)
+	seedPersonalModel(t, f)
+	wid, iid, confirmed := confirmInvocationScene(t, f, runGraph(), "inv-scheduler-cancelled")
+	runID := confirmed.S("workflowInvocationRef")
+
+	// Cancel while the run is still pending: it must settle cancelled on the next scheduler pass
+	// without ever claiming, so neither the run nor its IssueRun carries a start.
+	out := f.call("POST", f.path("/workflows/"+wid+"/runs/"+runID+"/cancel"), core.Object{}, "inv-scheduler-cancelled-cancel", 202)
+	if out.S("cancelRequestedAt") == "" {
+		t.Fatalf("cancel request reported no recorded instant: %v", out)
+	}
+	must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+
+	workflow := f.call("GET", f.path("/workflows/"+wid+"/runs/"+runID), nil, "", 200)
+	if workflow.S("status") != "cancelled" || workflow.S("startedAt") != "" || workflow.S("finishedAt") == "" {
+		t.Fatalf("cancel-before-start settled %q started=%q finished=%q; want cancelled with no start and a terminal finish",
+			workflow.S("status"), workflow.S("startedAt"), workflow.S("finishedAt"))
+	}
+	var issueRun core.Object
+	for _, candidate := range issueItems(f.call("GET", f.path("/issues/"+iid+"/runs"), nil, "", 200)) {
+		if candidate.S("id") == confirmed.S("id") {
+			issueRun = candidate
+			break
+		}
+	}
+	if issueRun.S("status") != "cancelled" || issueRun.S("startedAt") != "" || issueRun.S("completedAt") != workflow.S("finishedAt") {
+		t.Fatalf("projected IssueRun status=%q started=%q completed=%q; want cancelled with no start and the workflow finish",
+			issueRun.S("status"), issueRun.S("startedAt"), issueRun.S("completedAt"))
+	}
+	var got []string
+	for _, item := range issueItems(f.call("GET", f.path("/issues/"+iid+"/timeline"), nil, "", 200)) {
+		details := item.O("details")
+		if item.S("kind") != "activity" || details.S("runId") != confirmed.S("id") {
+			continue
+		}
+		got = append(got, item.S("action"))
+	}
+	if !reflect.DeepEqual(got, []string{"run.enqueued", "run.cancelled"}) {
+		t.Fatalf("cancel-before-start lifecycle activities = %v, want [run.enqueued run.cancelled]", got)
+	}
+}

@@ -894,6 +894,50 @@ func TestWorkflowSessionNodeGoneSettlesTheNodeFailed(t *testing.T) {
 	}
 }
 
+// A linked IssueRun mirrors the Node-unreachable settlement: when Cloud diagnoses the silent Node
+// and settles the run failed, the invocation's IssueRun projects failed with the same evidence.
+// Direct runs have no IssueRun, so this closes the gap between the projection's unit coverage and
+// the real settlement path a viewer reads through the issue.
+func TestWorkflowSessionNodeUnreachableProjectsLinkedIssueRun(t *testing.T) {
+	store := dispatcherDB(t)
+	store.DeliveryUnreachableAfter = 30 * time.Minute
+	runID, tid, uid, _, _ := seedWorkflowSessionScene(t, store)
+	wid := workflowRunWorkflowID(t, store, runID)
+	issueID, issueRunID := uuid.NewString(), uuid.NewString()
+	if _, err := store.Pool.Exec(`INSERT INTO issues(id,tenant_id,creator_user_id,title,number) VALUES($1,$2,$3,'linked invocation',1)`, issueID, tid, uid); err != nil {
+		t.Fatalf("seed linked issue: %v", err)
+	}
+	if _, err := store.Pool.Exec(`INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,workflow_invocation_ref) VALUES($1,$2,$3,'workflow',$4,'queued',$5)`, issueRunID, tid, issueID, wid, runID); err != nil {
+		t.Fatalf("seed linked IssueRun: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	dispatchSession(t, store, runID, "a", nodeService, spec)
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatalf("age the Node heartbeat: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after the Node is gone: %v", err)
+	}
+	status, runErr, _, _ := readWorkflowRun(t, store, runID)
+	if status != "failed" || runErr != workflowSessionNodeUnavailable {
+		t.Fatalf("run settled %q error %q; want failed/%s", status, runErr, workflowSessionNodeUnavailable)
+	}
+	var irStatus string
+	var started, completed sql.NullTime
+	var failureReason sql.NullString
+	if err := store.Pool.QueryRow(`SELECT status, started_at, completed_at, failure_reason FROM issue_runs WHERE id=$1`, issueRunID).
+		Scan(&irStatus, &started, &completed, &failureReason); err != nil {
+		t.Fatalf("read linked IssueRun: %v", err)
+	}
+	if irStatus != "failed" || !started.Valid || !completed.Valid || !failureReason.Valid || failureReason.String != workflowSessionNodeUnavailable {
+		t.Fatalf("linked IssueRun status=%q started=%v completed=%v reason=%v; want failed with both timestamps and %s", irStatus, started, completed, failureReason, workflowSessionNodeUnavailable)
+	}
+}
+
 // The window is the boundary, not the silence itself. A session may legitimately run for hours, so a
 // Node that has not been heard from for a few minutes is a Node whose session is still running and
 // the pass holds it — settling on any silence would fail runs whose Nodes are merely quiet. The same

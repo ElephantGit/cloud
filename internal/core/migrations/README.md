@@ -78,7 +78,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0046–0048 不回填旧消息、旧 Thread、历史位置或暂停状态；`visible_text` 与原始 `record` 分开保存，旧任务不自动暂停。空库、升级与重复应用覆盖见 `TestMigration0046TaskConversationFreshAndUpgrade` 及 integration 的迁移测试。
 - 0049 让 `thread_commands` 接受 WorkflowRun 归属，并要求工作流命令带图节点；每个节点至多一条 `end_session`，调度器可安全重放。旧行全部带 `run_id`，不回填。语义见 [工作流](../../../docs/workflows/workflows.md)，覆盖见 `TestWorkflowSessionEndsAfterSuccessfulTurn` 等 DB 测试。
 - 0051 给 `workflow_runs` 增加取消请求时刻，不回填旧行；请求只记录意图，由调度器在后续轮次结算。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `TestWorkflowRunCancelBeforeStartNeverStarts` 等 DB 测试。
-- 0052 结算升级时仍为 `queued`/`dispatched` 的、存活的 `executor_type='workflow'` IssueRun：它们没有执行器、也没有冻结的工作流身份，按 ADR D3 标记失败并写 `failure_reason='workflow_execution_unavailable'`，不做迁移；其他状态的行与软删除行保持原样。此后由工作流启动门禁把 manual 运行绑定到真实 WorkflowRun 来阻止再产生这种行。覆盖见 `TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades`。
+- 0052 结算升级时仍为 `queued`/`dispatched` 的、存活的 `executor_type='workflow'` IssueRun：它们没有执行器、也没有冻结的工作流身份，按 ADR D3 标记失败并写 `failure_reason='workflow_execution_unavailable'`，不做迁移；其他状态的行与软删除行保持原样。工作流启动门禁把 manual 运行绑定到真实 WorkflowRun 之后才会停止产生这种行；门禁（circus#71）落地前 `createRun` 仍会造出新行，而本迁移只在升级时执行一次，不会回头结算它们。覆盖见 `TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades`。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

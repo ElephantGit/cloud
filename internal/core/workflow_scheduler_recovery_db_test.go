@@ -163,8 +163,9 @@ func TestWorkflowAdvanceResumesAnInFlightSessionFromItsOwnResult(t *testing.T) {
 	if executions != 1 {
 		t.Fatalf("agent node has %d executions; want the one registered before the crash, no re-dispatch", executions)
 	}
-	// The crashed process released this work item but no Controller registered an execution for it.
-	// Recovery responsibility means the restarted process leaves it claimable, not that it drops it.
+	// This execution_work row is what the crashed process left unregistered — the node_executions row
+	// above belongs to the already-running session, not to this item. Recovery responsibility means
+	// the restarted process leaves the item claimable, not that it drops it.
 	if _, err := restarted.transact(context.Background(), func(tx *transaction) Object {
 		claimed := claimWorkItem(tx)
 		work, ok := asWorkflowObject(claimed["work"])
@@ -196,6 +197,65 @@ func TestWorkflowAdvanceResumesAnInFlightSessionFromItsOwnResult(t *testing.T) {
 	}
 	if got := wfNodeStatus(t, states, "a"); got != "succeeded" {
 		t.Fatalf("settled agent node status = %q; want succeeded from its own result", got)
+	}
+	if got := wfNodeStatus(t, states, "o"); got != "succeeded" {
+		t.Fatalf("downstream node status = %q; want succeeded after the session settled", got)
+	}
+}
+
+// The production crash midpoint has a settled Workspace and a live Node, not the minimal rows the
+// test above seeds. startWorkflowAgentSession creates the Workspace before it commits the node
+// running, and the session's Node keeps heartbeating; a restart therefore holds the in-flight node
+// because the Node can still report and the turn window has not expired. The no-Workspace shape
+// above exercises the shared judgement's fail-closed side, but only this shape proves the hold a
+// real deployment sees after a restart. The result that arrives after the restart settles the node
+// from its own execution and finishes the run.
+func TestWorkflowAdvanceHoldsAProductionSessionAcrossRestart(t *testing.T) {
+	store := dispatcherDB(t)
+	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance to provision the workspace: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	execution := dispatchSession(t, store, runID, "a", nodeService, spec)
+
+	restarted := restartStore(store)
+	if err := restarted.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after restart: %v", err)
+	}
+	status, _, states, _ := readWorkflowRun(t, restarted, runID)
+	if status != "running" {
+		t.Fatalf("run status after a restart with a live Node and no result = %q; want running", status)
+	}
+	if got := wfNodeStatus(t, states, "a"); got != "running" {
+		t.Fatalf("in-flight node status = %q; want running within the turn window", got)
+	}
+	if _, ran := states["o"]; ran {
+		t.Fatalf("node downstream of the in-flight session committed: %v", states)
+	}
+	var executions int
+	if err := restarted.Pool.QueryRow(`SELECT count(*) FROM node_executions WHERE operation_id=$1 AND workflow_node_id='a'`, runID).Scan(&executions); err != nil {
+		t.Fatal(err)
+	}
+	if executions != 1 {
+		t.Fatalf("agent node has %d executions; want the one dispatched before the crash, no re-dispatch", executions)
+	}
+	var heldWorkspace string
+	if err := restarted.Pool.QueryRow(`SELECT id FROM workspaces WHERE workflow_run_id=$1`, runID).Scan(&heldWorkspace); err != nil {
+		t.Fatalf("read the run workspace: %v", err)
+	}
+	if heldWorkspace != wsID {
+		t.Fatalf("run workspace = %s; want %s still bound", heldWorkspace, wsID)
+	}
+
+	reportSessionEnd(t, restarted, runID, execution, nodeService, "idle_timeout")
+	status, runErr, states, _ := readWorkflowRun(t, restarted, runID)
+	if status != "succeeded" || runErr != "" {
+		t.Fatalf("run settled %q error %q; want succeeded from the session's own result", status, runErr)
+	}
+	if got := wfNodeStatus(t, states, "a"); got != "succeeded" {
+		t.Fatalf("settled agent node status = %q; want succeeded", got)
 	}
 	if got := wfNodeStatus(t, states, "o"); got != "succeeded" {
 		t.Fatalf("downstream node status = %q; want succeeded after the session settled", got)

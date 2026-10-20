@@ -151,11 +151,25 @@ generation and live sandbox.
 - `ClaimWork` is a **pure read**: it returns the oldest claimable work item, and ownership is decided
   only in `RecordDispatch`'s transaction, so a Controller that crashes between claiming and registering
   leaves nothing to recover.
+- For Agent session and Revision delivery work owned by an IssueRun (a work item carrying `run_id`),
+  `ClaimWork` skips unregistered items whose Run is `releasing`, `done` or soft-deleted; Runs with
+  residuals are also excluded. WorkflowRun session work carries `workflow_run_id` instead and stays
+  claimable: the IssueRun lifecycle does not govern it. A new `RecordDispatch` rechecks Run eligibility
+  and residuals under the same transaction lock as business settlement, so an earlier claim snapshot
+  cannot register a new session or delivery afterwards. Work rows and execution records remain;
+  existing executions use the original idempotency, query and result-takeover paths, subject to their
+  existing residual and other checks. Leaving the claim queue does not prove Node termination or
+  physical Workspace deletion (see [Agent run settlement](../agent-runs/issue-runs.en.md#phases)).
 - `RecordDispatch` registers an execution before it is dispatched. Cloud, not the Controller, decides
   the input and the target Node: registration checks that the input equals the one frozen by the
   operation or work item, that the target is the current Node, and that no execution of the same kind is
   still undecided. Replaying the same execution with the same input returns the original registration;
   a contradicting input is a conflict.
+- Inside an `install_plugins` input, an agent plugin's install item may carry a frozen declaration
+  association (`agent_configuration`, fields per proto): an identity field written from the catalog
+  snapshot when the install plan was frozen. It takes part in the same input-equality check, so a
+  dispatch that loses or tampers with the association is refused; the static copy never leaves Cloud.
+  See [The plugin marketplace](../plugins/marketplace.en.md#agent-declaration-snapshots-and-freezing).
 - `TakeOverNodeEvent` takes over Node events by execution identity and **consecutive sequence number**
   and stores a receipt; a repeated event must match the original receipt byte for byte. Terminal events
   of sessions and deliveries use the same sequence and cannot overtake events not yet taken over.
@@ -189,3 +203,4 @@ carries out force-stops; see [Runtime control](runtime-control.en.md).
 - [Runtime control is authorized by Cloud, delivered by the Controller, and fenced at the Node's real entry points](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260927-fenced-runtime-control-delivery.md)
 - [Internal Control gRPC adds plugin, Agent session and Revision delivery executions](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260928-agent-run-executions-thread-and-upload-grants.md)
 - [Session and delivery inputs gain a prior Revision, plus `GrantRevisionDownload`](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20261010-revision-restore-contract.md)
+- [Agent declarations travel with the `install_plugins` input (the install-input part of the Agent configuration metadata decision)](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261017-agent-configuration-metadata.md)

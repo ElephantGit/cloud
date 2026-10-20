@@ -176,13 +176,18 @@ Controller 契约的字段。只新增，不回填。
 `TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
 `internal/core/model_attempt_workflow_db_test.go`。
 
-## 0045：WorkflowRun 调用引用
 
-`0045_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
+## 0045：Agent 声明的目录快照列
+
+给 `plugin_catalog_entries` 追加 `agent_configuration`（jsonb，声明关联加逐字节静态副本）与 `agent_configuration_issue`（text，有界原因）。`agent_configuration` 只在条目声明了 `[agent_configuration]` 且静态副本校验通过时写入，目录快照因此自包含，读取声明不需要市场 checkout 或发行包；声明无效只记有界原因，不产生可消费声明。“未声明”与“声明无效”是两个事实，后者不影响包本身可安装。纯前向、可重复执行，不改写既有行。新库/升级/重复执行见 TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades。语义见 [插件市场的 Agent 声明](../../../docs/plugins/marketplace.md#agent-声明的快照与冻结)。
+
+## 0046：WorkflowRun 调用引用
+
+`0046_workflow_invocation_reference.sql` 先将所有未关联的历史非终态 workflow IssueRun
 （含 running、deferred）结算为 failed，原因是
 `workflow_execution_unavailable_before_invocation_linkage`，再添加租户一致的复合外键及唯一引用。
 CHECK 要求非终态 workflow 行具有引用，其他 executor 不得携带引用。历史终态 workflow 行可保留
 NULL 引用并继续更新；迁移保留其输入和结果，不虚构执行。CHECK 无条件 VALIDATE，空库和升级库
-采用同一份已验证约束。编号接在 main 已有的 0044 模型尝试登记迁移之后。
+采用同一份已验证约束。编号接在 main 已有的 0045 Agent 声明目录快照列迁移之后。
 空库、种子升级、重复迁移、约束验证状态及
 历史行更新测试见 `integration/workflow_invocation_migration_test.go`。

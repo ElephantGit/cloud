@@ -6,7 +6,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 54 个 SQL 文件。
+当前共 55 个 SQL 文件。新增 [0053_agent_run_controlled_reclamation.sql](0053_agent_run_controlled_reclamation.sql)
+保存独立的部署受控意图、从属删卷意图、逐目标终止 effect 和统一命令回执；原账本仍拥有 D4/D5 责任。
 
 | SQL 文件 | schema 变化 |
 |---|---|
@@ -66,6 +67,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
 
 ## 不可变性与升级
+
+- 0053 不改 0052 的历史列、责任、证据、处置或首次 `cleared_at`，也不回填 D8；无账本的 D8 只由显式根意图承载保护与证据。根终止与从属删卷各自三态；每资源一个根、最多一个从属删除意图及固定删除 operation，命令键在 tenant 范围统一唯一。目标的成功约束要求两个布尔确认均为 true，缺字段不能以 SQL NULL 通过。新库、0052 升级与约束覆盖见 [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go)。
 
 - 已应用 SQL 不改内容、不改文件名；更正用新的前向迁移。重复应用跳过 checksum 相同的已应用文件。
 - `CheckSchema` 只读检查缺失迁移、checksum 不符和未知数据库版本，发现不一致拒绝启动。生产服务不执行 DDL，运维用 [cloudctl](../../../cmd/cloudctl/README.md) 应用迁移。

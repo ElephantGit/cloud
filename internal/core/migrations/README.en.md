@@ -6,7 +6,8 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 54 SQL files.
+There are currently 55 SQL files. The new [0053_agent_run_controlled_reclamation.sql](0053_agent_run_controlled_reclamation.sql)
+stores deployment-controlled intents, dependent data-deletion intents, per-target termination effects and shared command receipts; the ledger still owns D4/D5 responsibilities.
 
 | SQL file | Schema change |
 |---|---|
@@ -66,6 +67,8 @@ There are currently 54 SQL files.
 | [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 
 ## Immutability and upgrades
+
+- 0053 preserves 0052 history, responsibility, evidence, disposition and first `cleared_at`, and never backfills D8. Only an explicit root intent owns protection and evidence for ledgerless D8. Root termination and dependent data deletion each have three states; each resource has one root, at most one deletion intent and one fixed deletion operation. Command keys are unique throughout a tenant. Successful targets require both boolean confirmations, so a missing JSON field cannot pass through SQL NULL. Fresh, 0052-upgrade and constraint coverage is in [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go).
 
 - Never edit or rename applied SQL; corrections use new forward migrations. Repeated application skips applied files with matching checksums.
 - `CheckSchema` only reads and rejects missing migrations, checksum mismatches and unknown database versions. Production services do not run DDL; operators migrate through [cloudctl](../../../cmd/cloudctl/README.en.md).

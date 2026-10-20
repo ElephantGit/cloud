@@ -115,7 +115,8 @@ func nodeStatus(t *transaction, r *ControlRequest, n, w Object) {
 		// A business-abandoned execution still owns residual resources after it reconnects;
 		// connection evidence must not reopen their admission or imply physical cleanup.
 		t.exec(`UPDATE workspaces SET observed_state='ready',admission_open=NOT EXISTS(
-			 SELECT 1 FROM agent_run_residuals WHERE workspace_id=$1 AND (cleared_at IS NULL OR reclaim_conflicted_at IS NOT NULL)),
+			 SELECT 1 FROM agent_run_residuals WHERE workspace_id=$1 AND (cleared_at IS NULL OR reclaim_conflicted_at IS NOT NULL))
+		 AND NOT EXISTS(SELECT 1 FROM agent_run_reclamation_intents WHERE workspace_id=$1 AND root_intent_id IS NULL),
 		 version=version+1 WHERE id=$1`, w.S("id"))
 	}
 }

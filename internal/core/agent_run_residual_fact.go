@@ -11,7 +11,10 @@ func residualForWorkspace(t *transaction, workspaceID string) Object {
 	if workspaceID == "" {
 		return nil
 	}
-	return t.one("SELECT * FROM agent_run_residuals WHERE workspace_id=$1", workspaceID)
+	if row := t.one("SELECT * FROM agent_run_residuals WHERE workspace_id=$1", workspaceID); row != nil {
+		return row
+	}
+	return legacyResidualForWorkspace(t, workspaceID)
 }
 
 func residualObjects(value any) []Object {
@@ -36,7 +39,7 @@ func residualObjects(value any) []Object {
 // False means a contradictory terminal was durably audited; callers must not apply it to the
 // canonical execution/effect. Control returns the stable error only after this transaction commits.
 func appendResidualFact(t *transaction, run, key string, fact Object) bool {
-	row := t.one("SELECT * FROM agent_run_residuals WHERE run_id=$1", run)
+	row := residualForRun(t, run)
 	require(row != nil, 409, "operation_not_abandoned")
 	var previous Object
 	entries := residualObjects(row["reclaimEvidence"])
@@ -74,7 +77,7 @@ func appendResidualFact(t *transaction, run, key string, fact Object) bool {
 // later success as an A4 contradiction. Historical provisioning failures and every successful
 // conclusion remain immutable, and external binding conflicts are checked before this path.
 func residualCleanupFailureRetryable(t *transaction, row Object, key string, fact Object) bool {
-	if fact.S("state") != "failed" || fact.S("kind") != "effect" || row.S("reclaimMode") != "owned_delete" ||
+	if fact.S("state") != "failed" || fact.S("kind") != "effect" || (row.S("reclaimMode") != "owned_delete" && row.S("reclaimMode") != "controlled") ||
 		row.S("reclaimOperationId") == "" || !strings.HasPrefix(key, "effect:") {
 		return false
 	}
@@ -107,6 +110,11 @@ func appendResidualEntry(t *transaction, row Object, key string, fact Object, co
 		"key": key, "fact": fact, "source": source,
 		"receivedAt": t.one("SELECT clock_timestamp()::text AS received_at").S("receivedAt"),
 	}
+	if row.S("legacyIntentId") != "" {
+		t.exec(`UPDATE agent_run_reclamation_intents SET evidence=evidence||jsonb_build_array($2::jsonb),version=version+1,
+ conflicted_at=CASE WHEN $3 THEN COALESCE(conflicted_at,clock_timestamp()) ELSE conflicted_at END WHERE id=$1`, row.S("legacyIntentId"), jsonText(entry), conflict)
+		return
+	}
 	t.exec(`UPDATE agent_run_residuals SET reclaim_evidence=reclaim_evidence||jsonb_build_array($2::jsonb),
 	 reclaim_version=reclaim_version+1,
 	 reclaim_conflicted_at=CASE WHEN $3 THEN COALESCE(reclaim_conflicted_at,clock_timestamp()) ELSE reclaim_conflicted_at END
@@ -118,8 +126,12 @@ func residualEffectRow(t *transaction, e Object) Object {
 		return row
 	}
 	// Some legacy preallocated ensure plans have no Workspace binding on the effect row.
-	return t.one(`SELECT ar.* FROM agent_run_residuals ar JOIN operations o ON o.workspace_id=ar.workspace_id
-	 WHERE o.id=$1 AND o.tenant_id=ar.tenant_id AND o.project_id=ar.project_id`, e.S("operationId"))
+	if row := t.one(`SELECT ar.* FROM agent_run_residuals ar JOIN operations o ON o.workspace_id=ar.workspace_id
+	 WHERE o.id=$1 AND o.tenant_id=ar.tenant_id AND o.project_id=ar.project_id`, e.S("operationId")); row != nil {
+		return row
+	}
+	op := t.one("SELECT workspace_id FROM operations WHERE id=$1", e.S("operationId"))
+	return legacyResidualForWorkspace(t, op.S("workspaceId"))
 }
 
 func acceptResidualEffectFact(t *transaction, row, e, incoming Object) bool {

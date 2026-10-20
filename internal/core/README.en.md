@@ -16,6 +16,7 @@ This package owns business state, authorization, transactions and recovery decis
 | `agent_run_*.go`, `execution*.go`, `thread*.go`, `business_hooks.go` | Run lifecycle, execution registry, Thread and transaction-scoped settlement hooks | [IssueRun](../../docs/agent-runs/issue-runs.en.md), [Controller](../../docs/runtime/controller-integration.en.md) |
 | `agent_run_residual.go`, `agent_run_residual_reclaim.go` | Original identity/target coverage and evidence eligibility, one reclamation responsibility and one owned-delete operation, effect/permit and completion checks | [Residual reclamation](../../docs/agent-runs/residual-reclamation.en.md) |
 | `agent_run_residual_fact.go`, `agent_run_residual_loop.go` | Appended facts without rewriting old responsibility, replay and durable conflict blocking; ledger scans independent of Run phase and original-operation recovery | [Residual reclamation](../../docs/agent-runs/residual-reclamation.en.md) |
+| `agent_run_controlled_reclaim*.go` | Deployment-operator intents and command receipts, one root responsibility and dependent data deletion, per-target termination and external confirmation, and D8 guards without ledger backfill | [Residual reclamation](../../docs/agent-runs/residual-reclamation.en.md) |
 | `task_conversation_*.go`, `thread_preview.go` | Ordered task messages, serial same-task Agent handoff and pause barriers, follow-up prompts frozen from Node visible text, configuration-gap hints and a bounded in-process live preview; initial Agent prompts read only the frozen run input | [Thread](../../docs/agent-runs/threads.en.md), [IssueRun](../../docs/agent-runs/issue-runs.en.md) |
 | `revision*.go`, `session_*.go` | Revision registration, archives, session listing and statistics | [Revision](../../docs/agent-runs/revisions.en.md), [Session reads](../../docs/agent-runs/session-reads.en.md) |
 | `model_*.go` | Personal configuration, frozen bindings, grant digests and request observations; no API Key decryption | [Model access](../../docs/models/model-access.en.md) |
@@ -36,5 +37,11 @@ See [migrations](migrations/README.en.md) for complete migration filenames. Pack
 Residual facts retain their original intake: `agent_run_provisioning_fact.go` handles creation facts, `node_execution.go` and `revision.go` handle
 original execution terminals and delivery, and `runtime_control_delivery.go` accepts full runtime evidence through existing `runtime_ack`.
 `run_workspace.go`, `control.go` and effect/permit paths enforce the original responsibility binding. No new RPC/proto or public system-delete
-flag is introduced. This is Cloud step 1 only; see the dedicated page for conservative A1–A6 eligibility and remaining scope, without implying
-physical or joint acceptance.
+flag is introduced. Step 2 uses `cloudctl residual` with deployment database credentials and authenticated `session_user`; an operator label is
+self-reported. No HTTP route or tenant privilege is added. One root terminate and at most one dependent delete_data intent each follow three
+states. Root completion never regresses; deletion binds one operation and preserves the first `cleared_at`. External confirmation requires an
+existing unfinished intent and per-target fact references, without fabricating physical success.
+Controlled targets use existing `ListForceStops` / `ConfirmForceStop` / `GetEffectPermit` fields, independently of ordinary force-stop history
+and business completion. D8 takeover is explicit and uses original identity without ledger backfill. See the dedicated page for automatic
+A1–A6 eligibility, two-stage disposition and recovery guards. This describes the Cloud implementation contract, not passing tests;
+Controller/Sandbox physical proof and cross-repository fault acceptance remain steps 3 and 4 respectively.

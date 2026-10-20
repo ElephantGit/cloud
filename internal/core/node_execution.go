@@ -53,6 +53,9 @@ func dispatchPluginExecution(t *transaction, r *ControlRequest, operation, execu
 }
 
 func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, node string, input Object) Object {
+	if root := t.one("SELECT workspace_id FROM agent_run_reclamation_intents WHERE run_id=$1 AND root_intent_id IS NULL", runID); root != nil {
+		requireNoControlledReclamation(t, root.S("workspaceId"), "")
+	}
 	require(t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", runID) == nil, 409, "dispatch_conflict")
 	// The work item names its owner — IssueRun or WorkflowRun (D8); operation_id is that run's id
 	// either way, so the ownership check re-reads whichever column the row carries.

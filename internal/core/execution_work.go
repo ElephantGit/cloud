@@ -29,6 +29,7 @@ func enqueueExecutionWork(t *transaction, runID, kind string, input, target Obje
 		return enqueueWorkflowExecutionWork(t, runID, kind, input, target, graphNode, availableAt)
 	}
 	require(t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", runID) == nil, 409, "dispatch_conflict")
+	requireNoControlledReclamation(t, target.S("workspaceId"), "")
 	if kind == "deliver_revision" {
 		if t.one("SELECT run_id FROM revision_delivery_skips WHERE run_id=$1", runID) != nil {
 			return Object{"skipped": true}

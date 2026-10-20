@@ -14,6 +14,7 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 | `create-issue-dialog.tsx` / `issue-project-select.tsx` | Creation and detail project selection; loading or failure never clears a stored reference |
 | `issue-properties-panel.tsx` | Detail-page properties column: status, priority, assignee, parent/sub-issues, project, labels, properties, context refs |
 | `activity-panel.tsx` | Activity column: timeline and new comments/targets |
+| `issue-workspace.tsx` | Main conversation, execution history and activity tabs; URL-persisted historical Run selection and links to the existing full session inspector |
 | `target-picker.tsx` / `pending-targets.tsx` | Loading, empty, search and retry states of the real @ directory, plus pending targets |
 | `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow form rendering, AI suggestions, review and confirm |
 | `context-refs-panel.tsx` | Adding and removing context refs |
@@ -21,6 +22,8 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 | `*.test.tsx` | Component tests, including refused tasks retaining their draft and actionable settings links |
 
 ## Dependencies and invariants
+
+The workspace composes task discussion from `features/issues/conversation` and each session from `features/issues/thread`; text uses `features/conversation-content`. Changing tabs or reading old runs does not create work. A successful new Agent request returns to the current task conversation.
 
 Depends on `features/issues/api`, `features/issues/types`, `features/issues/present`, the real project list in `features/projects/api`, `features/spaces/current-space`, and `components`; used by the `features/issues` pages. Drafts (comments, targets, forms) reach the server only when their own button is pressed; property edits all go through the page's versioned `onCommit`. Project choices come from the current joined space and never fall back to demo data.
 

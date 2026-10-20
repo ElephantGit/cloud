@@ -14,6 +14,7 @@
 | `create-issue-dialog.tsx` / `issue-project-select.tsx` | 新建任务及详情的真实项目选择；列表加载或失败不能清空已存关联 |
 | `issue-properties-panel.tsx` | 详情页属性栏：状态、优先级、负责人、父/子任务、项目、标签、属性、上下文引用 |
 | `activity-panel.tsx` | 活动栏：时间线与新建评论/目标 |
+| `issue-workspace.tsx` | 主区域对话、执行记录、任务动态页签；URL 保存历史 Run 选择，活动可定位详情，完整记录链接复用会话分析页 |
 | `target-picker.tsx` / `pending-targets.tsx` | 真实 @ 目录的加载、空、搜索与重试状态，以及待提交目标 |
 | `agent-request-failure.tsx` | 安全的任务拒绝文案，项目、目标及个人模型配置引导 |
 | `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow 表单的渲染、AI 建议、审阅与确认 |
@@ -21,6 +22,8 @@
 | `*.test.tsx` | 组件测试 |
 
 ## 依赖与不变量
+
+工作区组合 `features/issues/conversation` 的任务对话及 `features/issues/thread` 的会话面板；正文使用 `features/conversation-content`。切换页签与查看历史不会创建运行，成功提交 Agent 任务后回到最新会话。执行记录由真实 Run 列表驱动，未知 Agent 展示保守名称。
 
 依赖 `features/issues/api`、`features/issues/types`、`features/issues/present`、`features/projects/api` 的真实项目列表、`features/spaces/current-space` 与 `components`；由 `features/issues` 的页面使用。草稿（评论、目标、表单）只在用户按下各自按钮时才写入服务端；属性栏的修改都经页面传入的 `onCommit`（带版本号）。项目选择来自当前已加入空间，不能回退到演示数据。
 

@@ -118,7 +118,7 @@ func requireThreadAccepting(run Object) {
 // The response is built explicitly rather than by returning the stored row: the public contract
 // names seven fields, and the entry's Node columns (`node_execution_id`, `node_sequence`) are not
 // part of it. A user turn has no Node identity — that is the Node's, allocated when it echoes.
-func appendThreadMessage(t *transaction, s *Store, r *PublicRequest, uid string) Object {
+func appendThreadMessage(t *transaction, s *Store, r *PublicRequest, uid string, beforeTaskMessageSeq int64) Object {
 	// Authorization is the Issue read path's own (Thread D3: "same as comments"): the caller is an
 	// active tenant member — Public checked membership before dispatching here — and this resolves
 	// the Issue inside the caller's tenant, so a wrong tenant or Issue is a plain not-found.
@@ -136,6 +136,9 @@ func appendThreadMessage(t *transaction, s *Store, r *PublicRequest, uid string)
 		require(binding["revokedAt"] == nil, 409, "model_connection_unavailable")
 	}
 	requireThreadAccepting(run)
+	if code := taskThreadAppendBlocker(t, run, beforeTaskMessageSeq); code != "" {
+		reject(409, code)
+	}
 
 	runID := run.S("id")
 	// seq is the run-scoped conversation order, allocated from the same MAX(seq)+1 rule the takeover

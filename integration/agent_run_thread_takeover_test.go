@@ -223,9 +223,10 @@ func TestAgentRunThreadTakeoverOverGRPC(t *testing.T) {
 	h := newControlHarness(t)
 	scene := seedAgentSessionScene(t, h.store)
 	client := controlpb.NewAgentRunServiceClient(h.conn)
+	visible := "working on the fix"
 
 	batch := []*controlpb.ThreadEvent{
-		{Sequence: 1, Record: threadLine("update", "working on the fix")},
+		{Sequence: 1, Record: threadLine("update", "working on the fix"), VisibleText: &visible},
 		{Sequence: 2, TurnId: &scene.initialTurnID, Record: userTurnLine("Fix the auth flow")},
 	}
 	resp, e := client.TakeOverThreadEvents(asController("ctrl-a"), &controlpb.TakeOverThreadEventsRequest{
@@ -264,6 +265,11 @@ func TestAgentRunThreadTakeoverOverGRPC(t *testing.T) {
 	must(t, h.store.Pool.QueryRow(`SELECT seq,kind,node_execution_id FROM thread_entries WHERE run_id=$1 AND node_sequence=1`, scene.runID).Scan(&nodeSeq, &nodeKind, &nodeCollection))
 	if nodeSeq != 2 || nodeKind != "update" || nodeCollection != scene.executionID {
 		t.Fatalf("the real record must land as seq=2/kind=update for %s, got seq=%d kind=%s execution=%s", scene.executionID, nodeSeq, nodeKind, nodeCollection)
+	}
+	var projected string
+	must(t, h.store.Pool.QueryRow("SELECT visible_text FROM thread_entries WHERE run_id=$1 AND node_sequence=1", scene.runID).Scan(&projected))
+	if projected != visible {
+		t.Fatalf("gRPC takeover lost Node's assistant projection: %q", projected)
 	}
 	// The run itself: the takeover is the only running authority.
 	var phase, status, threadState string

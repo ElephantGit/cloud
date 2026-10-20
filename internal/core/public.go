@@ -13,7 +13,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // PublicRequest is populated only after service and final-user credentials are verified.
 type PublicRequest struct {
-	Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, Key, After, Before, Query, GroupBy string
+	Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, ConversationMessageID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, Key, After, Before, Query, GroupBy string
 	// FormIssueID is the optional `issueId` query parameter of the form-descriptor route. It is
 	// deliberately its own field rather than a fallback into IssueID: IssueID drives dispatch in both
 	// readPublic and Public, so a query parameter folded into it would let `GET /issues?issueId=…`
@@ -52,9 +52,14 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 	if r.Method == "GET" && (r.Path == runPath+"/statistics" || r.Path == runPath+"/model-calls") {
 		return s.sessionModelRead(ctx, r)
 	}
+	workflowRunPath := "/api/v1/tenants/" + r.TenantID + "/workflows/" + r.WorkflowID + "/runs/" + r.RunID
+	if r.Method == "GET" && r.WorkflowID != "" && (r.Path == workflowRunPath+"/statistics" || r.Path == workflowRunPath+"/model-calls") {
+		return s.workflowModelRead(ctx, r)
+	}
 	status := 200
 	var dispatches []dispatchTarget
 	var events []SpaceEvent
+	queueConversation := false
 	result, e := s.transact(ctx, func(t *transaction) Object {
 		u := identityWithAlias(t, r.Identity)
 		uid := u.S("id")
@@ -219,11 +224,36 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 			}
 		case r.IssueID != "" || strings.HasSuffix(r.Path, "/issues"):
 			switch {
+			case strings.HasSuffix(r.Path, "/conversation/messages"):
+				require(r.Method == "POST", 404, "not_found")
+				out = Object{"resource": taskConversationSend(t, s, r, uid)}
+				status = 201
+				queueConversation = out.O("resource").S("state") == "waiting"
+			case r.ConversationMessageID != "" && strings.HasSuffix(r.Path, "/cancel"):
+				require(r.Method == "POST", 404, "not_found")
+				out = Object{"resource": taskConversationCancel(t, r, uid)}
+				queueConversation = true
+			case r.ConversationMessageID != "" && strings.HasSuffix(r.Path, "/retry"):
+				require(r.Method == "POST", 404, "not_found")
+				out = Object{"resource": taskConversationRetry(t, r, uid)}
+				queueConversation = true
+			case strings.HasSuffix(r.Path, "/conversation/resume"):
+				require(r.Method == "POST", 404, "not_found")
+				out = taskConversationResume(t, r, uid)
+				queueConversation = true
+			case strings.HasSuffix(r.Path, "/conversation/discard"):
+				require(r.Method == "POST", 404, "not_found")
+				out = taskConversationDiscard(t, r, uid)
+				queueConversation = true
+			case strings.HasSuffix(r.Path, "/conversation/stop"):
+				require(r.Method == "POST", 404, "not_found")
+				out = taskConversationStop(t, s, r, uid)
+				status = 202
 			case strings.HasSuffix(r.Path, "/thread/messages"):
 				// Thread D3: appending a user turn. Matched before the /runs arm because the path
 				// contains "/runs/" too, and the thread sub-resource is a different write.
 				require(r.Method == "POST", 404, "not_found")
-				out = Object{"resource": appendThreadMessage(t, s, r, uid)}
+				out = Object{"resource": appendThreadMessage(t, s, r, uid, taskAppendAtQueueTail)}
 				status = 201
 			case strings.HasSuffix(r.Path, "/thread/end"):
 				// Thread D4: the user ending the conversation. Also matched before the /runs
@@ -359,6 +389,9 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		return out
 	})
 	if e == nil {
+		if queueConversation {
+			_ = s.DispatchTaskConversationsOnce(ctx)
+		}
 		for _, d := range dispatches {
 			// Task Mode runs are dispatched after the comment transaction commits (the advisory
 			// lock must not span external/observer writes). Best-effort: a failure leaves the run
@@ -457,11 +490,15 @@ func readPublic(t *transaction, r *PublicRequest, uid string) Object {
 		return listSpaces(t, r, uid)
 	case strings.HasSuffix(r.Path, "/members"):
 		return page(t, "SELECT m.user_id AS id,m.tenant_id,m.user_id,m.role,m.status,m.version,u.display_name FROM tenant_memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1", []any{r.TenantID}, "m.user_id", r)
+	case strings.HasSuffix(r.Path, "/thread/preview"):
+		return threadPreviewRead(t, t.store, r)
 	case strings.HasSuffix(r.Path, "/thread"):
 		// Thread D5: reading a run's Thread. Matched before the /runs arm below because the path
 		// contains "/runs/" too and this is a different resource — the Thread, not the run. The POST
 		// side is dispatched in Public before readPublic; this arm is the GET.
 		return threadRead(t, r)
+	case strings.HasSuffix(r.Path, "/conversation"):
+		return taskConversationRead(t, r)
 	case r.WorkflowID != "" && (r.RunID != "" || strings.HasSuffix(r.Path, "/runs")):
 		// Workflow runs resolve here, before the generic issue-`/runs` case below: that case
 		// matches any path containing "/runs", so .../workflows/:wfid/runs would otherwise be

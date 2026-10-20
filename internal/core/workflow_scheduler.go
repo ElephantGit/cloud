@@ -669,9 +669,10 @@ func executeWorkflowNode(node workflowNodeView, input Object, states map[string]
 // `[start, name]` resolved to nothing and `[start, input]` answered for the entire form — the same
 // document meant different things on the two sides.
 //
-// The run form's values are keyed by variable name, so flattening them is exact. A key literally
-// named `input` is dropped: desktop reserves that root, and letting a user variable shadow the
-// kickoff selector would make the same selector mean a run value on Cloud and a prompt on desktop.
+// The run form's values are keyed by variable name, so flattening them is exact. The `input` key is
+// not flattened with the rest: it is the reserved kickoff selector, and letting a user variable
+// shadow it would make the same selector mean a run value on Cloud and a prompt on desktop. Its value
+// comes from WorkflowStartKickoff instead.
 func workflowStartOutput(node workflowNodeView, input Object) Object {
 	output := make(Object, len(input)+1)
 	for key, value := range input {
@@ -680,13 +681,43 @@ func workflowStartOutput(node workflowNodeView, input Object) Object {
 		}
 		output[key] = value
 	}
-	// Cloud does not persist the per-run prompt override, so the authored prompt is the only kickoff
-	// text available to the variable pool. The launch field still shows that same default. The text is
-	// used verbatim, whitespace included, because desktop's start.input is the kickoff prompt as the
-	// author wrote it; trimming here would make the same selector compare differently on the two
-	// sides.
-	output["input"] = node.Data.S("input")
+	if kickoff, ok := WorkflowStartKickoff(node.Data, input); ok {
+		output["input"] = kickoff
+	}
 	return output
+}
+
+// WorkflowStartKickoff resolves the Start node's kickoff text and reports whether it exists. The
+// run's own submitted `input` wins; the authored Start instruction is the fallback.
+//
+// The two sources exist because runs outlive the code that created them. A run created before Cloud
+// persisted the per-run kickoff has no reserved `input` key in its own input object — the prompt it
+// executed then lived in the frozen snapshot's Start node, not the run row — so falling back to that
+// node's `data.input` keeps historical runs evaluating exactly as they did (circus#287). The fallback
+// reads the snapshot's node, never the live workflow document. Cloud's canonical document stores the
+// prompt under `data.input` only; the legacy `data.instruction` desktop also reads is migrated to
+// `input` by the frontend when a document is read, so the server never has to fall back to it.
+//
+// The text is used verbatim, whitespace included: desktop's start.input is the kickoff prompt as the
+// author or the run submitted it, and trimming here would make the same selector compare differently
+// on the two sides. When neither source has a value the root is left out of the pool rather than set
+// to "": desktop leaves {start}.input unset when the run supplied no kickoff and the graph has no
+// instruction, and exists/not_exists must answer the same way on both sides.
+//
+// It is exported for the development simulator, which writes the Start output outside this package;
+// sharing the resolver keeps the simulated trace from drifting from what the scheduler commits.
+func WorkflowStartKickoff(data, input Object) (string, bool) {
+	if v, ok := input["input"]; ok && v != nil {
+		if text, ok := v.(string); ok {
+			return text, true
+		}
+	}
+	if v, ok := data["input"]; ok && v != nil {
+		if text, ok := v.(string); ok {
+			return text, true
+		}
+	}
+	return "", false
 }
 
 // workflowNodeDisplayName is the label the run viewer shows: the author's title, or the node kind

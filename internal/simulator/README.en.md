@@ -17,7 +17,7 @@
 
 #### HTTP interface
 
-The Substrate double listens on loopback only, for the simulator and tests; it does not define the production Substrate's interface:
+The simulator mounts the Substrate double on a loopback HTTP server for development and tests; it does not define the production Substrate's interface:
 
 | Method and path | Request | Response and invariants |
 |---|---|---|
@@ -43,7 +43,7 @@ repositories, never an external repository or real Git credentials. Plugin insta
 ### Controller double (`controller.go`)
 - Simulates the external control plane worker. The lease, operations and Node registration use the retired `/internal/v1/...` JSON endpoints, which only
   `router.NewDevelopment` opens and the production server answers with `410`; executions and Agent runs use gRPC:
-  - Periodically acquires and renews controller leases via `/internal/v1/controller-lease/acquire`.
+  - Acquires leases via `/internal/v1/controller-lease/acquire` and renews via `/internal/v1/controller-lease/renew`.
   - Claims pending operations via `/internal/v1/operations/claim`.
   - Plans and executes required effects against Substrate.
   - Reports effect execution outcomes via `/internal/v1/operations/{oid}/effects/{eid}/result`.
@@ -64,7 +64,7 @@ Before the first PUT, the Node durably freezes JSONL bytes and metadata under it
 
 ## Boundaries and invariants
 
-- **Development and testing only**: This package is an execution double. It is never deployed to production environments or imported by production daemon binaries.
-- **Contract fidelity**: The simulator interacts with the core cloud server strictly over standard HTTP APIs and respects all leasing, fencing, and idempotency contracts.
+- **Development and testing only**: This package supplies execution doubles; production configurations must not enable them.
+- **Contract fidelity**: The simulator interacts with the core cloud server through development HTTP and gRPC adapters and respects all leasing, fencing, and idempotency contracts.
 
 See [cmd/simulator](../../cmd/simulator/README.en.md), [Workspace lifecycle](../../docs/runtime/workspaces.en.md), and [Integration tests](../../integration/README.en.md).

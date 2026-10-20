@@ -5,8 +5,7 @@
 Acceptance only: it ships in the development (`devsetup`) image used by the cluster development stack
 and never in the service image. It writes the Git Server's repository volume and the Cloud database
 directly, bypassing the Git Server's authorization, so the internal and external lines can each stand
-in for the other and accept end to end on their own (approved follow-up decision "Git Server as each
-Project's code hub", step 1 of its rollout). The logic is in
+in for the other and test the end-to-end contract independently. The logic is in
 [`internal/gitpreset`](../../internal/gitpreset/README.en.md); this command only parses arguments,
 wires dependencies and sets the exit code.
 

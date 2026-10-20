@@ -3,8 +3,7 @@
 [中文](README.md) | [English](README.en.md)
 
 只用于验收，随开发镜像（`devsetup`）进入 cluster 开发栈，不进生产镜像。它直接写 Git Server 的仓库卷和 Cloud
-数据库，绕过 Git Server 的授权，让内部线和外部线各自用它替代对方，独立做端到端验收（`approved` 的后续决策
-“Git Server 成为每个 Project 的代码中心”，落地顺序第 1 步）。逻辑在 [`internal/gitpreset`](../../internal/gitpreset/README.md)，
+数据库，绕过 Git Server 的授权，让内部线和外部线各自用它替代对方，独立测试端到端契约。逻辑在 [`internal/gitpreset`](../../internal/gitpreset/README.md)，
 本命令只负责参数、依赖装配和退出码。
 
 | 子命令 | 作用 |

@@ -307,11 +307,11 @@ describe('IssueThreadPanel', () => {
     renderPanel()
 
     expect(await screen.findByText('Done')).toBeInTheDocument()
-    expect(messages().getAllByText('tool_call')).toHaveLength(199)
+    expect(messages().getAllByText('工具调用')).toHaveLength(199)
     await user.click(screen.getByRole('button', { name: '加载更早' }))
 
     expect(await screen.findByText('Fix login')).toBeInTheDocument()
-    expect(messages().getAllByText('tool_call')).toHaveLength(203)
+    expect(messages().getAllByText('工具调用')).toHaveLength(203)
     expect(reads.some((params) => params.get('before') === '6')).toBe(true)
     expect(screen.queryByRole('button', { name: '加载更早' })).not.toBeInTheDocument()
   })

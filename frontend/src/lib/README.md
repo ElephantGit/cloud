@@ -10,6 +10,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
+| `event-stream.ts` / `event-stream.test.ts` | 有界 SSE 帧读取、释放 reader 和可取消重连等待；不解释业务载荷。 |
 | `api-client.ts` | 共享 axios 实例 `AXIOS_INSTANCE` 与 orval mutator `customInstance`。跨切面 HTTP 策略唯一的落点；同时处理 react-query 的 `AbortSignal` 与 orval 的 `cancel()` 两种取消来源。请求拦截器为 POST/DELETE 补发 `Idempotency-Key`；响应拦截器把任何 401 广播给 `onUnauthorized` 的订阅者（会话拥有者据此结束会话）。认证不是 header：浏览器只持有 Gateway 的 HttpOnly 会话 Cookie，同源请求自动携带，前端从不接触 token；`faultCode` 从被拒绝的请求中取出后端 `Fault.code`（如 `not_found`、`capability_unavailable`），供各 feature 模块把错误映射到 UX。 |
 | `api-client.test.ts` | 验证响应体解包、两条取消路径、幂等键策略、不附加任何凭证头、401 监听器的触发与移除，以及 `faultCode` 的错误码提取。 |
 | `navigation.ts` | 与其它 origin 接触的唯一出口：`navigateExternal`（登录跳转到 provider）与 `openExternalTab`（在新的 `noopener` 标签页打开 provider 页面，当前页保留）；`replaceExternalNavigation` / `replaceExternalTabOpener` 供测试脚手架替换，因为 jsdom 不允许 spy `location.assign` 也没有 `window.open`。 |

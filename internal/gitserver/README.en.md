@@ -2,8 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Serves Project repositories (`/{tenantId}/{projectId}.git`) over smart HTTP only (root decision
-`cloud/git-server/0` and the approved follow-up "Git Server as each Project's code hub").
+Serves Project repositories (`/{tenantId}/{projectId}.git`) over smart HTTP only; see the cross-module [Git Server contract](../../docs/repositories/git-server.en.md).
 `internal/core` and PostgreSQL decide every permission; this package holds no authorization state.
 
 | Files | Responsibility |
@@ -36,14 +35,7 @@ ref is written and checks every ref:
 | `refs/ora/deliveries/<deliveryWorkId>` | create-only |
 
 No ref is ever deleted and no ref outside the table is written; one update that no rule admits rejects
-the whole push. Core decides sandbox executions per request from current state, and every granted execution
-reads the whole Project repository: a Workspace clone is read-only (only while it has no result, its
-operation is at the `clone` step, its Node is the Workspace's current Node and its input's
-`repositoryUrl` names the requested repository); an Agent session may create or fast-forward branches
-under the certificate Workspace's `refs/heads/workspaces/<workspaceId>/`; a Revision delivery may only
-create its own `refs/ora/deliveries/<workId>` and fast-forward its input's `workspaceRef` (only when it
-belongs to the certificate Workspace); plugin executions are always denied. A sync Operation produces
-only its Binding's snapshot prefix; the external line adds the rule source for tracking refs.
+the whole push. Core derives granted rules from the current execution or Operation; see [External Git line](../../docs/repositories/external-git.en.md).
 
 Repository policy and the hook path are applied to every git process through `GIT_CONFIG_*`
 environment variables rather than stored in repositories, so a restart (new hook directory) or an

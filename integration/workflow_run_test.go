@@ -98,13 +98,34 @@ func TestWorkflowRunLifecycle(t *testing.T) {
 		t.Fatalf("run node_states missing nodes: %v", states)
 	}
 	// The start node reports the run form the way desktop's variable pool does: each run-form variable
-	// is its own root, and `input` is the authored kickoff prompt (unset in this fixture).
+	// is its own root, and `input` is the kickoff prompt. This run submitted none, so it falls back to
+	// the authored (empty) instruction in the frozen document.
 	output := states.O("start").O("output")
 	if output.S("branch") != "main" {
 		t.Fatalf("start output did not expose the run input variable: %v", output)
 	}
 	if prompt, ok := output["input"].(string); !ok || prompt != "" {
 		t.Fatalf("start output input = %v; want the authored kickoff prompt as a string", output["input"])
+	}
+
+	// The run's own kickoff is persisted on the row and is what its Start output reports, even when
+	// the authored instruction differs. The rest of the run form keeps its roots either way.
+	override := f.call("POST", f.path("/workflows/"+wfid+"/runs"), core.Object{
+		"name": "Override run", "input": core.Object{"branch": "dev", "input": "review the diff"}, "projectId": pid,
+	}, "run-override", 200).O("resource")
+	if override.O("input").S("input") != "review the diff" {
+		t.Fatalf("run row lost the kickoff: %v", override.O("input"))
+	}
+	overrideOutput := override.O("nodeStates").O("start").O("output")
+	if overrideOutput.S("input") != "review the diff" || overrideOutput.S("branch") != "dev" {
+		t.Fatalf("start output did not read the run's kickoff: %v", overrideOutput)
+	}
+	// The reserved selector accepts a string, the type desktop's kickoff_input carries, and nothing
+	// else: another JSON type would change what [start, input] means across the two sides.
+	if refusal := f.call("POST", f.path("/workflows/"+wfid+"/runs"), core.Object{
+		"input": core.Object{"input": 7}, "projectId": pid,
+	}, "run-bad-kickoff", 400); refusal.S("code") != "invalid_field_value" {
+		t.Fatalf("non-string kickoff refusal = %v; want invalid_field_value", refusal)
 	}
 	// definitionSnapshot is the frozen graph, not the live document: the run carries its own copy.
 	ds := run.O("definitionSnapshot")
@@ -130,8 +151,8 @@ func TestWorkflowRunLifecycle(t *testing.T) {
 		t.Fatalf("run read-back changed the trace: %v", one)
 	}
 	listed := issueItems(f.call("GET", f.path("/workflows/"+wfid+"/runs"), nil, "", 200))
-	if len(listed) != 2 {
-		t.Fatalf("run list has %d rows, want 2", len(listed))
+	if len(listed) != 3 {
+		t.Fatalf("run list has %d rows, want 3", len(listed))
 	}
 	// The generic list returns full rows; page it with limit to prove the envelope carries nextCursor.
 	page := f.call("GET", f.path("/workflows/"+wfid+"/runs")+"?limit=1", nil, "", 200)

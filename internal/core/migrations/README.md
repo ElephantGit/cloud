@@ -1,189 +1,81 @@
-# 数据库迁移模块
+# 数据库迁移目录
 
 [中文](README.md) | [English](README.en.md)
 
-本模块包含 Ora Cloud 线性、仅向前的 PostgreSQL Schema 迁移目录。迁移通过 `embed.FS` 直接嵌入 Go 应用程序二进制，并由 `cloudctl migrate` 以确定的方式应用。
+SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在事务级咨询锁内按完整文件名的字典序执行未应用文件；`schema_migrations` 保存完整文件名、SHA-256 和应用时间。数字前缀不是唯一身份：两个 `0027` 和两个 `0033` 均独立应用。
 
-## 迁移目录
+## 文件索引
 
-迁移脚本严格按照数字序号递增顺序执行。序列是 **append-only**：`0001–0007` 是 upstream 基线（与 `upstream/main` 逐字节一致、不可修改），`0008–0012` 是本地 Issue 迁移，`0013` 起为后续兼容迁移。
+当前共 53 个 SQL 文件。
 
-- **`0001_core.sql`**（upstream）：基础领域 Schema：
-  - 身份与访问管理：`users`、`user_identities`、`tenants`、`tenant_memberships`、`credential_refs`。
-  - 项目与工作区：`projects`、`project_storage`、`workspaces`、`workspace_worktrees`、`tasks`。
-  - 执行运行时：`sandbox_instances`、`workspace_nodes`、`sessions`。
-  - 控制平面：`effects`、`operations`、`tickets`、`controller_leases`、`idempotency_keys`。
-  - 不变量：部分唯一索引 `one_main` 保证每个项目最多只有一个活动的 `main` 工作区。外键在所有层级中严格强制租户和所有者的包含关系。
-- **`0002_aggregate_guards.sql`**（upstream）：并发与互斥守卫：
-  - 防止在同一个项目聚合根上发生并发的生命周期变更。
-  - 确保祖先实体软删除后，其子实体无法进行活动状态转换。
-- **`0003_resource_versions.sql`**（upstream）：乐观并发版本控制：
-  - 在可变实体（`projects`、`workspaces`、`tasks`、`nodes`、`operations`）上强制执行 `version` 递增规则。
-  - 杜绝并发 API 操作中的更新丢失（lost updates）问题。
-- **`0004_effect_intent_and_ticket_scope.sql`**（upstream）：执行意图与 Ticket 作用域约束：
-  - 严格将执行 Ticket 限制到活动的 Workspace Node 和有效的准入 epoch。
-  - 将持久化的 Effect 声明绑定至特定的操作阶段。
-- **`0005_gateway_auth.sql`**（upstream）：Gateway 认证表（由 `cmd/gateway` 独占运行时访问）：
-  - `gateway_login_attempts`：一次性登录尝试；只保存 attempt secret 与 `state` 的 SHA-256 digest，`return_to` 在数据库层拒绝绝对、`//`、`/\` 形式，有效期不超过 1 小时，`consumed_at` 保证最多创建一个 session。
-  - `gateway_sessions`：浏览器会话；只保存 token digest，`expires_at` 非空且不超过创建后 90 天，吊销时间与有限的 `revoked_reason` 同时存在，并为 identity 吊销与有界清理建立索引。
-- **`0006_collab_spaces.sql`**（upstream，与 `upstream/main` 逐字节一致）：协作空间（Collaboration Space，简称 Space）Schema：
-  - `collab_workspaces`：租户内的协作与可见性边界（名称、不可变 slug、归档时间、乐观版本）。归档是软删除，slug 不随之释放：`UNIQUE(tenant_id, slug)` 覆盖活动与已归档行。
-  - `collab_workspace_members`：成员与角色（owner/admin/member）、状态（active/disabled）、乐观版本。
-  - 与运行时 `workspaces` 表（Runtime Workspace，执行环境）严格分离。
-- **`0007_project_space_scope.sql`**（upstream，与 `upstream/main` 逐字节一致）：Project 的 Space 关联（**upstream 原语义：强制**）：
-  - 为每个既有租户（含仍有 Project 的已删除租户）创建默认 Space（slug=`default`）。
-  - 既有 active tenant members 加入默认 Space（admin→owner，member→member）。
-  - 新增 `projects.space_id uuid NOT NULL`，并把每个既有 Project 绑定到其租户的默认 Space。
-  - 复合外键 `(space_id, tenant_id) REFERENCES collab_workspaces(id, tenant_id)` 在 SQL 级杜绝跨租户归属；`project_space_list(space_id, id)` 索引支持按 Space 列举 Project。
-- **`0008_issues.sql`**：Issues 看板基线表 `issues`（原 `0006_issues.sql`；迁移对账时前移重编号，令 upstream `0001–0007` 保持逐字节一致）。
-- **`0009_issue_extensions.sql`**：`issue_statuses`、`issue_comments`、`labels`、`issue_labels`、`issue_subscribers`、`issue_views` + `issues` ALTER（`number`、`properties`、状态格式检查）。（原 `0007_issue_extensions.sql`）
-- **`0010_issue_collaboration.sql`**：`issues` ALTER（`assignee_type`/`assignee_id`/`project_ref` + 回填）、`issue_comments` ALTER（`parent_id`/`author_type`/`author_id`/`seq` + 回填 + `UNIQUE(issue_id,seq)`）、新表 `issue_runs`、`issue_activities`、`issue_context_refs`。（原 `0008_issue_collaboration.sql`）
-- **`0011_issue_interactions.sql`**：新表 `issue_interactions`（`@` 交互脊）——每个选中的协作目标一行：`id, tenant_id, issue_id, comment_id, target_type, target_id, mode, task, run_id, created_at`。（原 `0009_issue_interactions.sql`）
-- **`0012_issue_interaction_input.sql`**：一个通用增量列：`ALTER TABLE issue_interactions ADD COLUMN input jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(input)='object')` —— 已确认的表单值。刻意排除 `version`、`status` 枚举、`confirmed_at` 与独立 inputs 表；`0011` 不被修改。（原 `0010_issue_interaction_input.sql`）
-- **`0013_project_space_optional.sql`**（append-only 兼容迁移）：`projects.space_id` 恢复为**可空**——upstream `0007` 施加了 `NOT NULL` 并对既有项目做了全量绑定；当时的产品设计要求 Space 保持**可选**分组。`0013` 仅放开约束；刻意**不解绑** `0007` 已分配给默认 Space 的项目（无数据改动、无作用域收缩）。该设计已被 `0017` 取代：项目重新必须归属空间。
-- **`0014_clone_coordination.sql`**（append-only，排在 upstream `0008–0013` 之后）：经内部控制契约的 clone 协调（与 Effect 级 `operations` 模型独立）：
-  - `clone_requests`：Cloud 在业务事务中接受的工作项，`(tenant, user, request_id)` 幂等，状态 `queued→dispatched→succeeded/failed`。
-  - `clone_executions`：Controller 派发前登记的执行（每个请求恰一个执行，身份为 Controller 选择的 opaque 字符串）、输入与终态结果、登记时的租约 epoch。
-  - `clone_event_receipts`：Node 原事件的精确收据 `(execution, sequence, event)`，是确认 Node 的唯一依据。
-  - `control_submissions`：每个状态变更提交的身份、请求摘要与记录的响应；同身份同内容回放响应，不重新应用。
-- **`0015_plugins.sql`**：插件市场三张表与枚举放宽：
-  - `plugin_sources`（部署全局源，默认 `official` 命名空间）、`plugin_catalog_entries`（目录快照，读取永远不出网）、`space_plugins`（工作区选择状态权威，`UNIQUE(space_id, source_namespace, identifier)`）、`workspace_plugin_instances`（fan-out 执行事实，复合外键继承 tenant/owner/project/workspace）。
-  - 放宽 `operations.kind`（+install_plugin/remove_plugin）、`operations.step`（+plugin）、`external_effects.kind`（+plugin_ensure/plugin_delete）；原 CHECK 在 0001 定义，PG 命名为 `表_列_check`，0015 DROP 后以扩展集合重建。
-- **`0016_workspace_runtime_follows_node.sql`**：停用旧存储卷与工作树创建流程，采用独立 Workspace 数据、Node 和仓库克隆初始化，保留历史记录供读取。
-- **`0017_tenant_membership_and_join.sql`**：收敛为一租户一空间，租户成员身份成为唯一权限来源；恢复项目必须归属空间的约束，空间 slug 在全平台唯一且归档后不复用；为 IDaaS 关联身份、邀请和加入申请增加持久化表。历史多空间、无空间项目、重复 slug 或租户与空间名称不一致的测试数据必须重建；迁移不会静默拆分或改名。
-- **`0027_workflows.sql`**（append-only，工作流编辑器移植）：工作流图文档 `workflows`——租户拥有的整份图（`graph jsonb`：nodes / edges / viewport / annotations / global variables），刻意只有一张表和一个图列：图是文档而不是关系聚合，没有逐节点/逐边表，也没有 draft/published 拆分。
-- **`0028_workflow_snapshots.sql`**：不可变的版本化快照 `workflow_snapshots`。发布把实时图冻结成一行并递增每个工作流的版本号，恢复把选中的快照写回实时图；快照 append-only，一次编辑不会重写任何历史版本。
-- **`0029_workflow_runs.sql`**：一次执行对应一个冻结快照的 `workflow_runs`。运行视图只需要快照图（画布）与逐节点状态（着色），图本身经 `snapshot_id` 从 `workflow_snapshots.graph` 读取而不复制。Cloud 没有工作流引擎：新建的运行停在 `pending`，只有经 `Store.WorkflowRunSimulator` 显式接入的开发夹具才会推进状态——与 `issue_runs` 一样，绝不谎称真实执行发生过。
+| SQL 文件 | schema 变化 |
+|---|---|
+| [0001_core.sql](0001_core.sql) | 基础领域表 |
+| [0002_aggregate_guards.sql](0002_aggregate_guards.sql) | 聚合归属约束 |
+| [0003_resource_versions.sql](0003_resource_versions.sql) | 资源版本 |
+| [0004_effect_intent_and_ticket_scope.sql](0004_effect_intent_and_ticket_scope.sql) | Effect 意图和 Ticket 作用域 |
+| [0005_gateway_auth.sql](0005_gateway_auth.sql) | Gateway 登录与会话 |
+| [0006_collab_spaces.sql](0006_collab_spaces.sql) | 协作空间与成员 |
+| [0007_project_space_scope.sql](0007_project_space_scope.sql) | 默认空间与 Project 归属 |
+| [0008_issues.sql](0008_issues.sql) | Issue 基线 |
+| [0009_issue_extensions.sql](0009_issue_extensions.sql) | Issue 状态、评论、标签与视图 |
+| [0010_issue_collaboration.sql](0010_issue_collaboration.sql) | 协作目标、运行、活动与引用 |
+| [0011_issue_interactions.sql](0011_issue_interactions.sql) | 协作交互 |
+| [0012_issue_interaction_input.sql](0012_issue_interaction_input.sql) | 确认的交互输入 |
+| [0013_project_space_optional.sql](0013_project_space_optional.sql) | 可空空间关联（0017 取代） |
+| [0014_clone_coordination.sql](0014_clone_coordination.sql) | clone 请求、执行和收据 |
+| [0015_plugins.sql](0015_plugins.sql) | 插件目录、选择与实例 |
+| [0016_workspace_runtime_follows_node.sql](0016_workspace_runtime_follows_node.sql) | Workspace 独立数据与 Node clone |
+| [0017_tenant_membership_and_join.sql](0017_tenant_membership_and_join.sql) | 一租户一空间与加入流程 |
+| [0018_runtime_creators.sql](0018_runtime_creators.sql) | 运行时创建者 |
+| [0019_runtime_control.sql](0019_runtime_control.sql) | 控制会话与代次 |
+| [0020_force_stop_and_restart.sql](0020_force_stop_and_restart.sql) | 强停与重启 |
+| [0021_node_execution_identity.sql](0021_node_execution_identity.sql) | Node 执行身份 |
+| [0022_plugin_maintenance_pending.sql](0022_plugin_maintenance_pending.sql) | 插件维护 pending 意图 |
+| [0023_repository_credential_continuity.sql](0023_repository_credential_continuity.sql) | 仓库凭据连续性 |
+| [0024_agent_run_control_plane.sql](0024_agent_run_control_plane.sql) | Agent 控制面 |
+| [0025_agent_control_integrity.sql](0025_agent_control_integrity.sql) | 命令序号与会话约束 |
+| [0026_run_runtime_control.sql](0026_run_runtime_control.sql) | 独立运行 maintenance binding |
+| [0027_verified_revisions.sql](0027_verified_revisions.sql) | Revision 登记与核验 |
+| [0027_workflows.sql](0027_workflows.sql) | 工作流图 |
+| [0028_workflow_snapshots.sql](0028_workflow_snapshots.sql) | 发布快照 |
+| [0029_workflow_runs.sql](0029_workflow_runs.sql) | 工作流运行记录 |
+| [0030_agent_run_business_lifecycle.sql](0030_agent_run_business_lifecycle.sql) | Agent 业务生命周期 |
+| [0031_agent_run_thread_entries.sql](0031_agent_run_thread_entries.sql) | Thread 条目 |
+| [0032_user_git_identities.sql](0032_user_git_identities.sql) | 用户 Git 身份 |
+| [0033_personal_model_connections.sql](0033_personal_model_connections.sql) | 个人模型连接与绑定 |
+| [0033_revision_resume.sql](0033_revision_resume.sql) | Revision 续接 |
+| [0034_agent_startup_windows.sql](0034_agent_startup_windows.sql) | 启动窗口与残留 |
+| [0035_model_attempt_statistics.sql](0035_model_attempt_statistics.sql) | 模型请求观察 |
+| [0036_workflow_asset_imports.sql](0036_workflow_asset_imports.sql) | 工作流资产导入 |
+| [0037_repository_bindings_and_operations.sql](0037_repository_bindings_and_operations.sql) | 仓库 Binding、Operation 和快照 |
+| [0038_agent_workspace_blocked_deadline.sql](0038_agent_workspace_blocked_deadline.sql) | Workspace blocked 截止 |
+| [0039_workflow_run_identity.sql](0039_workflow_run_identity.sql) | WorkflowRun 身份 |
+| [0040_executor_slot_bindings.sql](0040_executor_slot_bindings.sql) | 执行器槽位与绑定 |
+| [0041_workflow_execution_node.sql](0041_workflow_execution_node.sql) | 执行的工作流节点归属 |
+| [0042_workflow_run_plugin_version.sql](0042_workflow_run_plugin_version.sql) | 冻结运行插件版本 |
+| [0043_external_git_line.sql](0043_external_git_line.sql) | 独立凭据与外部 Git 线 |
+| [0044_model_attempt_workflow_run.sql](0044_model_attempt_workflow_run.sql) | WorkflowRun 模型请求登记 |
+| [0045_agent_configuration_catalog.sql](0045_agent_configuration_catalog.sql) | 插件目录中的 Agent 声明关联、静态副本与校验问题 |
+| [0046_task_agent_conversations.sql](0046_task_agent_conversations.sql) | 任务级 Agent 对话、消息队列与 Thread 可见正文 |
+| [0047_thread_preview_positions.sql](0047_thread_preview_positions.sql) | 定型 Thread 条目的 Node 历史位置 |
+| [0048_task_conversation_manual_pause.sql](0048_task_conversation_manual_pause.sql) | 任务对话的手动暂停 |
+| [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun 的会话命令归属与节点范围 |
+| [0050_retire_tenant_level_clones.sql](0050_retire_tenant_level_clones.sql) | 退役租户级 clone |
+| [0051_git_delivery_refs.sql](0051_git_delivery_refs.sql) | 经 Git 交付的 Revision |
 
-> 编号说明：这三个迁移原为 `0014–0016`，与 upstream 的同号迁移（`0014_clone_coordination` / `0015_plugins` / `0016_workspace_runtime_follows_node`）撞号，合入 `upstream/main` 时按 append-only 规则顺延到 `0024–0026`；随后 upstream 又追加了自己的 `0024_agent_run_control_plane` / `0025_agent_control_integrity` / `0026_run_runtime_control`，于是再顺延到 `0027–0029`，排在 `0026` 之后。`schema_migrations.version` 是**完整文件名**，所以每次重命名都会改变迁移身份：已经跑过旧名字的数据库必须重建或手工改 `schema_migrations`，否则 `CheckSchema` 会以「内嵌迁移缺失」拒绝启动。
+## 不可变性与升级
 
-## 校验和完整性与不可变性
+- 已应用 SQL 不改内容、不改文件名；更正用新的前向迁移。重复应用跳过 checksum 相同的已应用文件。
+- `CheckSchema` 只读检查缺失迁移、checksum 不符和未知数据库版本，发现不一致拒绝启动。生产服务不执行 DDL，运维用 [cloudctl](../../../cmd/cloudctl/README.md) 应用迁移。
+- 文件描述各自应用时的变化，不能单独当成最终 schema。例如 0013 的可空空间归属被 0017 取代；0016 保留旧存储/工作树记录但停用旧步骤。
+- 0017 不静默拆分多空间或改写重复 slug，不满足一租户一空间约束的数据须先处理。
+- 0042 不为历史运行猜测插件版本，无冻结版本的执行由代码拒绝。0043 撤销旧凭据引用并保留审计，不把旧 secret 引用当成可兑换凭据。
+- 0045 增加 `agent_configuration`（关联与逐字节静态副本）和 `agent_configuration_issue`（有界原因），不回填既有行；只保存校验通过的可消费声明，区分未声明与声明无效，后者不阻止包安装。语义见 [插件市场](../../../docs/plugins/marketplace.md)，空库、升级与重复应用覆盖见 `TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades`。
+- 0046–0048 不回填旧消息、旧 Thread、历史位置或暂停状态；`visible_text` 与原始 `record` 分开保存，旧任务不自动暂停。空库、升级与重复应用覆盖见 `TestMigration0046TaskConversationFreshAndUpgrade` 及 integration 的迁移测试。
+- 0049 让 `thread_commands` 接受 WorkflowRun 归属，并要求工作流命令带图节点；每个节点至多一条 `end_session`，调度器可安全重放。旧行全部带 `run_id`，不回填。语义见 [工作流](../../../docs/workflows/workflows.md)，覆盖见 `TestWorkflowSessionEndsAfterSuccessfulTurn` 等 DB 测试。
+- 0050 是 Workspace 改为从 Git Server 快照 clone 的切换，不迁移数据：删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留，可重复执行。语义见 [Workspace](../../../docs/runtime/workspaces.md)，仍有租户级 clone 的库的升级覆盖见 `TestMigration0050RetiresTenantLevelClonesKeepingWorkspaceClones`。
+- 0051 是 Revision 改为经 Git 交付的切换，不迁移数据：`revisions` 增加 `delivery_ref`，`revisions_bundle_shape` 换成 `revisions_shape`（`delivery_ref` 为 NULL 时仍是原有的 bundle 形状，非 NULL 时必须是格式正确的 `refs/ora/deliveries/<UUID>` 且不带任何 bundle 列），部分唯一索引 `revisions_delivery_ref` 让一个交付 ref 只属于一个 Revision；既有 bundle 行不改写，可重复执行。语义见 [Revision](../../../docs/agent-runs/revisions.md)，约束覆盖见 `TestRevisionShapeKeepsGitAndBundleRowsApart`。
+- 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
-- **`schema_migrations` 表**：记录已应用的迁移版本号、SHA256 校验和以及执行时间戳（`version`、`checksum`、`applied_at`）。**`version` 是完整文件名**（如 `0010_issue_collaboration.sql`），因此重命名已应用的迁移会改变其身份并破坏既有数据库——迁移一经应用不可修改，只能追加新文件。
-- **服务端启动自检**：启动时，`cmd/server` 执行 `store.CheckSchema`，严格校验：
-  1. 所有内嵌的 `.sql` 迁移脚本均已存在于 `schema_migrations` 表中。
-  2. 每个内嵌文件的 SHA256 校验和与数据库中记录的校验和完全吻合。
-  3. 数据库中不存在任何未知或多余的迁移版本。
-  如果发现任何校验和不匹配或未应用的迁移，服务器会立即终止。
-- **不使用 AutoMigrate**：生产服务器守护进程启动时**从不**执行 DDL 或修改表结构。迁移必须使用专用数据库管理员凭据通过 `cloudctl migrate` 应用。
-
-参见 [core 总览](../README.md)、[cloudctl CLI 工具](../../../cmd/cloudctl/README.md) 与 [权威持久化与事务模型](../../../docs/core/persistence.md)。
-
-## 多人运行时控制的追加迁移
-
-0025 为 Thread 命令添加单调接受序号（同事务时间戳相同也不乱序），保留旧 created_at/id 排序，并约束每个运行一生只有一个会话。0026 为运行 Workspace 保留独立 IssueRun maintenance binding；初始化交接后会话和交付可以取得围栏许可，不占 Project operation。用户会话与运行占用互斥。真实 0024 升级和重复迁移证据见 `integration/agent_control_upgrade_test.go`。
-
-0018–0024 在已发布 0017 后追加，不改写旧迁移：0018 单独保存经可靠记录证明的创建者，未知保持 NULL；0019 保存 PostgreSQL 操作会话、控制代次与审计；0020 保存独立强停意图、目标及重启阶段；0021 区分 Node operation ID 和 Cloud operation ID，保留重试历史；0022 保存插件请求者、固定版本与持久 pending（待执行）；0023 保存凭据引用归属依据、可用性、范围、能力和版本；0024 增加运行 Workspace 关联、插件/会话/交付执行登记、Thread 命令和 Space Agent 行，并停止新建插件 effect。旧 owner 外键、凭据关联与操作记录继续保留。历史个人/未知引用在关联成员已停用时冻结；不猜测团队身份或有效绑定。
-
-真实 PostgreSQL 新库与 0017 升级证据见 integration/runtime_upgrade_test.go、runtime_control_test.go、repository_credentials_test.go 和 plugin_pending_test.go。业务事务只有数据库操作，不跨执行程序、网络或文件调用持锁。Node 的本地恢复日志不替代此业务权威。
-
-0027 仅前向新增 Revision、验证结论与未配置存储跳过记录，保留原 Node 证据。复合外键约束租户/run/Workspace/project 范围；changed 与 unchanged 元数据互斥。revision_upgrade_test.go 验证真实 0026 升级与重复迁移；agent_plugin_upgrade_test.go 验证 0023 在途旧插件 effect 保留及新步骤重启。
-
-与当前上游合并时保留 `0027_verified_revisions.sql`、`0027_workflows.sql` 及 `0028–0029` 的完整文件名和原始 SQL；前缀相同不等于迁移身份相同，执行器按完整文件名和校验和追踪已应用迁移。`TestRevisionUpgradePreservesPublishedWorkflowSchema` 直接验证已经应用上游工作流迁移的数据库可追加 Revision 表，重复迁移后原工作流、快照、运行和迁移账本均保持完整。
-
-0030–0031 在已发布 0029 之后追加，是把 B 侧业务生命周期移植到上游控制面时**唯一**新增的 schema，functionB 原有但上游已具备的部分（0024–0029 的执行侧）一律不再新建：0030 只给 `issue_runs` 增加业务列（`phase`、`workspace_id`、`cancel_requested_at`、`thread_state`、`idle_since`）、agent 专用列约束、`workspace_id` 唯一绑定和 idle 线程的部分索引；0031 新建 `thread_entries`（`(run_id,seq)` 主键、Node 来源按 `(node_execution_id,node_sequence)` 幂等、user 来源必带 turn 生命周期、`record` 限 256 KiB JSON 对象）。两者纯前向、可重复执行，不回填也不改写任何既有行（0030 的列由它自己创建，旧行不可能带有需要迁移的值；非 agent 运行的整行保持原样），并且不覆盖上游 `0018–0029` 的同号文件。真实新库、升级与重复迁移证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0030AgentRunBusinessLifecycleAppliesFreshAndUpgrades` 与 `TestMigration0031AgentRunThreadEntriesAppliesFreshAndUpgrades`。
-
-0032 在 0031 之后新增 `user_git_identities`（identity-access git 身份 D1）：每个用户至多一行，主键并外键引用 `users(id)`，`name` 为 1–200 个字符且不含换行与尖括号，`email` 不超过 254 字节、形如 `local@domain` 且不含空白与尖括号，`version` 为该行自己的乐观并发计数。身份单独成表而不是给 `users` 加列，因为 `/me` 与所有用户读取都返回整行 `users`，git 邮箱放在那里会随之流向每个读者；没有行即使用默认身份。纯前向、可重复执行，不改动任何既有表。新库、升级与重复迁移证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0032UserGitIdentitiesAppliesFreshAndUpgrades`。
-
-## 0033：个人模型连接
-
-0033 追加用户私有模型连接、默认模型、不可变密文凭据、用户作用域幂等记录、运行快照和
-临时授权摘要表。历史运行不会新增绑定；跨表复合外键保存用户归属。原始密钥从不进入迁移或
-Cloud 领域方法。冻结与撤销规则见 [个人模型连接](../../../docs/models/model-access.md)。
-## 0033：Revision 续接
-
-0033 在 0032 之后支持新运行续接同一 Issue 的最近一次 Revision（issue-run 续接决策）：`revisions` 增加 `prior_revision_id`（续接自哪个 Revision）、`bundle_revision_id`（续接后没有新提交时不存 bundle，指向实际持有 bundle 的那一行，永远一跳）、`resume_refused_at` 与 `resume_refused_reason`（恢复时发现基础提交已从远端消失，只允许 `prior_revision_base_unavailable`）；`issue_runs` 增加 `resume_revision_id`（会话启动时固定的前序 Revision）。原匿名约束 `revisions_check` 换成具名的 `revisions_bundle_shape`：既有行仍满足原来的两种形状，新增的第三种形状只允许“沿用 bundle 且有前序”。纯前向、可重复执行，既有行的新列均为 NULL。新库、升级与重复迁移证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0033RevisionResumeAppliesFreshAndUpgrades`，约束对真实行的拒绝见 `integration/agent_run_resume_test.go`。
-
-两个 `0033` 文件保留各自完整文件名与原始 SQL；迁移身份由完整文件名和校验和确定，数字前缀不是唯一键。新库执行两项追加迁移，已应用个人模型迁移的验收库只追加尚未应用的 Revision 迁移，不改写旧账本或模型绑定。
-
-## 0034：Agent 启动窗口与残留责任
-
-新增 startup_ready_at、startup_deadline_at、startup_resume、startup_ending_deadline_at 及 agent_run_residuals。迁移不改历史结果；活动存量由串行策略扫描一次固定窗口。残留账本与 failed/done 同事务提交，迟到真实终态仅补证据，不代替清理授权。新库/升级/重复执行见 TestMigration0034StartupWindowsPreserveExistingRunOnUpgrade。
-
-`0035_model_attempt_statistics.sql` 增加无正文的模型 HTTP 请求台账及按租户/Run/时间排序索引。
-复合外键绑定 Run→租户、binding→Run、grant→binding/execution；CHECK 约束限制状态、可空计数、时间及
-完成形状。只新增，不回填旧日志；`cloudctl migrate` 应用，服务启动仍只验证 schema。
-`TestMigration0035ModelAttemptsFreshAndUpgradeWithoutBackfill` 验证空库、从 0034 升级及重复迁移。
-
-## 0036：工作流插件资产导入
-
-`0036_workflow_asset_imports.sql` 记录 `kind='workflow'` 插件的资产导入：`workflow_asset_imports` 每个（空间，插件）一行，保存管理员每次安装/重装递增的 `requested_revision`、导入进度与租约；`workflow_asset_documents` 每个文档路径一行，只有 `outcome='imported'` 的行永久占用（空间，命名空间，标识，文档路径），失败的文档下次触发重试。导入出的工作流和已发布快照是普通用户数据，这两张表只记录来源、幂等和逐文档结果。纯前向新增，不改动既有表。
-
-## 0037：仓库 Binding 与 Operation
-
-把 Project 的外部仓库从 Project 列搬进它自己的 Binding：`repository_bindings`（每 Project 恰一行，`repository_url`/`branch`/凭据引用、`resync_requested`）、`repository_operations`（同步与发布的完整状态机，状态取值就是契约的 D5 item 3，后续线路只加列、不加状态）与 `repository_snapshots`（Binding 当前快照，允许落后于跟踪 ref、绝不领先）。既有 Project 的仓库在这一步原样迁成它的 Binding，然后才删掉 `projects` 上的四个仓库列。不变量：同一 Binding 至多一个未完成同步（部分唯一索引）、快照 ref 必须由 Binding 与提交拼出。 约束对真实行的拒绝见 `integration/repository_binding_test.go` 的 `TestRepositoryOperationStorageConstraints`。
-
-## 0038：运行 Workspace 创建 blocked 的有界放弃
-
-新增 issue_runs.workspace_blocked_at、workspace_deadline_at、workspace_blocked_source（blocked_write / first_observed）与 provisioning 期部分索引，并把 agent_run_residuals 的 reason 约束扩为 agent_start_failed / workspace_unavailable。首次持久写入 blocked 的同事务锚定绝对截止；存量 blocked 无不可变首次证据，不回填，由首次策略扫描以 first_observed 给一次默认窗口。defer、人工 retry、重新领取、重启与配置调整不续期；只有原创建真实终态结束窗口。纯前向、可重复执行，不改历史执行结果。新库/升级/重复执行见 TestMigration0038WorkspaceBlockedDeadlineAppliesFreshAndUpgrades。
-
-## 0039：WorkflowRun 运行身份
-
-`0039_workflow_run_identity.sql` 把运行身份与工作项所有权交给控制面。`workflow_runs` 新增
-`created_by` 与 `project_id` 两列（均可空：本迁移之前的行没有可恢复的发起人，而 `project_id` 由知道
-Project 的调用路径写入），新运行在创建时冻结二者；`workspaces` 新增互斥的 `workflow_run_id`，使运行
-Workspace 可以属于 WorkflowRun；`execution_work` 同样变为「恰有一个所有者」的判别形状，原单列唯一索引
-拆为每种所有者各一条部分索引，因此两类所有者各自最多保留一个未注册工作项且互不冲突；
-`runtime_controls` 的预留改为多态运行引用，`maintenance_run_id` 的外键被删除而非改写——多态引用无法做
-外键，存活校验移到授予它的代码里。只新增列、约束与索引，不回填。
-
-`TestMigration0039WorkflowRunIdentityAppliesFreshAndUpgrades` 验证空库、从 0038 升级及重复迁移。
-
-## 0040：执行器槽位绑定
-
-`0040_executor_slot_bindings.sql` 让执行器槽位抵达运行时。`run_model_bindings` 的所有者变为判别对
-（`run_id` 与 `workflow_run_id` 恰有其一），原先整表的 UNIQUE(run_id) 拆分为每种所有者各一条
-(run, slot) 唯一索引，于是一次运行可同时持有多条绑定；WorkflowRun 为图上引用的每个槽位冻结一行，
-IssueRun 继续在保留槽位 `default` 下持有其唯一绑定。新增 `executor_slot_mappings`（槽位名 → 执行器）
-作为调用者私有的解析表，`default` 被显式排除——它就是个人默认模型本身，不是一条可存储的映射。
-只新增列、约束与表，不改写既有绑定行。
-
-## 0041：工作流执行节点
-
-`0041_workflow_execution_node.sql` 给 `execution_work` 与 `node_executions` 各加一列
-`workflow_node_id`，并加约束保证工作项所属节点确实属于该工作项所在的运行图。它是 Cloud 内部的路由
-字段：`node_executions` 面向 Controller 的投影（nodeExecutionColumns）刻意不含该列，因为它不是任何
-Controller 契约的字段。只新增，不回填。
-
-## 0042：运行级插件版本
-
-`0042_workflow_run_plugin_version.sql` 给 `workflow_runs` 加可空列 `plugin_version`，把插件版本并入
-创建事务冻结的运行身份（快照、输入、发起人、Project、运行 Workspace 绑定、逐槽位模型绑定、插件版本）。
-会话启动读冻结值，升级不再改变已创建运行的执行内容。可空且刻意不回填：本迁移之前的行从未冻结过，
-把空间当前版本写进去会记录一个从未成立的事实；这类运行在首个 agent 节点以 `agent_plugin_version_unfrozen`
-失败而不是猜测。这些行应回填、拒绝还是按其他规则执行，仍是 owner 待决事项，本迁移不记录答案。
-
-## 0043：外部 Git 线
-
-外部 Git 线（执行器根 ADR、identity-access Credential Store、同步与发布 ADR）落地的迁移，也是契约允许的那一次**破坏性切换**：没有过渡开关、没有数据迁移。
-
-- 凭据引用改为指向独立 Credential Store：`secret_ref` 允许为空，新增 `name`、`secret_state`、`store_version`、`requested_capabilities`、`capability_evidence`、待确认提交（`pending_submission_id`/`pending_store_version`/`pending_submission_expires_at`）、`store_revocation_pending` 与 `revoked_at`。切换前的行永远无法再兑换，因此**撤销**而不是删除：保留审计轨迹，`capabilities` 清空。撤销分两步（先 Cloud 后 Store），能力词表限定为 `read`/`publish`，已存凭据必有 `store_version`，待确认提交永远是下一个版本，未撤销的引用必须有仓库范围。
-- 新增 `credential_verifications`（推送能力核验，与 Operation 一样一次执行，携带的探测授权至多用一次）与 `repository_operation_events`（发布与同步结算的 append-only 审计，触发器拒绝 UPDATE/DELETE）。
-- Binding 的连续性列 `repository_credential_ref_id` 折叠进唯一保留的 `credential_ref_id`（取连续性列优先），并新增 `version` 围栏候选凭据切换。
-- 同步与发布的 Operation 补齐租约、凭据、结果与发布列（含 `lease_generation`/`lease_owner`/`authorization_id`、`expected_tracking_oid`、发布审批三元组、`check_attempts`/`next_check_at`），并约束「进入 running 即有一次授权」「发布形状完整或完全为空」「同一分支至多一个在途发布」。
-
-新库与合并时基线（含 0042）升级（带真实 Project、凭据引用与连续性列的库）证据见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0043ExternalGitLineAppliesFreshAndUpgrades`，其中也对真实行验证了上述约束与 append-only 触发器。
-
-## 0044：模型尝试登记 WorkflowRun 绑定
-
-`0044_model_attempt_workflow_run.sql` 让 `model_request_attempts` 记录 WorkflowRun 的绑定，采用与
-0040 相同的判别形状：`run_id` 改为可空，新增 `workflow_run_id`，两者恰有其一。运行与绑定各按所有者
-一对：分别引用 `issue_runs`/`workflow_runs` 的 `(id, tenant_id)`，以及 `run_model_bindings` 的
-`(id, run_id)`/`(id, workflow_run_id)`，并补上后者所需的两个唯一约束。首期只登记，不开放 WorkflowRun
-的统计读取；IssueRun 的读取继续按 `run_id` 过滤，WorkflowRun 行的 `run_id` 为空，不会进入既有读取。
-既有行都带 `run_id`（0035 要求非空，且任何 WorkflowRun 登记都无法写入），无需回填。新库与 0043 升级证据见
-`TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades`，真实 WorkflowRun 绑定登记见
-`internal/core/model_attempt_workflow_db_test.go`。
-
-
-## 0045：Agent 声明的目录快照列
-
-给 `plugin_catalog_entries` 追加 `agent_configuration`（jsonb，声明关联加逐字节静态副本）与 `agent_configuration_issue`（text，有界原因）。`agent_configuration` 只在条目声明了 `[agent_configuration]` 且静态副本校验通过时写入，目录快照因此自包含，读取声明不需要市场 checkout 或发行包；声明无效只记有界原因，不产生可消费声明。“未声明”与“声明无效”是两个事实，后者不影响包本身可安装。纯前向、可重复执行，不改写既有行。新库/升级/重复执行见 TestMigration0045AgentConfigurationCatalogAppliesFreshAndUpgrades。语义见 [插件市场的 Agent 声明](../../../docs/plugins/marketplace.md#agent-声明的快照与冻结)。
-
-## 0046：退役租户级 clone
-
-Workspace 改为从 Git Server 快照 clone 后的切换，不迁移数据。删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留。可重复执行。仍有租户级 clone 的数据库升级见 `integration/migration_upgrade_path_test.go` 的 `TestMigration0046RetiresTenantLevelClonesKeepingWorkspaceClones`。
-
-## 0047：经 Git 交付的 Revision
-
-Revision 改为经 Git 交付后的切换，不迁移数据。`revisions` 增加 `delivery_ref`，`revisions_bundle_shape` 换成 `revisions_shape`：`delivery_ref` 为 NULL 时仍是原有的 bundle 形状，非 NULL 时必须是格式正确的 `refs/ora/deliveries/<UUID>` 且不带任何 bundle 列；部分唯一索引 `revisions_delivery_ref` 保证一个交付 ref 只属于一个 Revision。既有 bundle 行不改写，可重复执行。约束对真实行的拒绝见 `integration/agent_run_resume_test.go` 的 `TestRevisionShapeKeepsGitAndBundleRowsApart`。
+数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

@@ -2056,6 +2056,7 @@ export const SpaceEventType = {
   issue_runthread_appended: 'issue_run.thread_appended',
   issue_runthread_changed: 'issue_run.thread_changed',
   projectrepository_updated: 'project.repository_updated',
+  issueconversation_changed: 'issue.conversation_changed',
 } as const;
 
 export interface SpaceEvent {
@@ -2135,6 +2136,57 @@ export interface SpacePluginList {
   items: SpacePlugin[];
 }
 
+export interface TaskAgentReadiness {
+  agentId: string;
+  /** @nullable */
+  errorCode: string | null;
+  requiresPersonalModel: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type TaskConversationMessageDelivery = typeof TaskConversationMessageDelivery[keyof typeof TaskConversationMessageDelivery] | null;
+
+
+export const TaskConversationMessageDelivery = {
+  pending: 'pending',
+  queued: 'queued',
+  delivered: 'delivered',
+  discarded: 'discarded',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export type TaskConversationMessageState = typeof TaskConversationMessageState[keyof typeof TaskConversationMessageState];
+
+
+export const TaskConversationMessageState = {
+  waiting: 'waiting',
+  submitted: 'submitted',
+  cancelled: 'cancelled',
+  failed: 'failed',
+} as const;
+
+export interface TaskConversationMessage {
+  agentId: string;
+  body: string;
+  createdAt: string;
+  /** @nullable */
+  delivery?: TaskConversationMessageDelivery;
+  /** @nullable */
+  errorCode: string | null;
+  id: string;
+  /** @nullable */
+  runId: string | null;
+  /** @minimum 1 */
+  seq: number;
+  state: TaskConversationMessageState;
+  /** @nullable */
+  threadSeq: number | null;
+  userId: string;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -2173,6 +2225,11 @@ export const ThreadEntryStatus = {
 
 export interface ThreadEntry {
   createdAt: string;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  historySequence?: number | null;
   kind: string;
   record: ThreadEntryRecord;
   /** @minimum 1 */
@@ -2191,6 +2248,22 @@ export interface ThreadModel {
   connectionName: string;
   modelId: string;
   modelName: string;
+}
+
+export type ThreadPreviewSnapshotBlocksItemRecord = { [key: string]: unknown };
+
+export type ThreadPreviewSnapshotBlocksItem = {
+  historySequence: number;
+  record: ThreadPreviewSnapshotBlocksItemRecord;
+  turnId: string;
+};
+
+export interface ThreadPreviewSnapshot {
+  available: boolean;
+  blocks: ThreadPreviewSnapshotBlocksItem[];
+  executionId: string;
+  incomplete: boolean;
+  version: number;
 }
 
 export interface Ticket {
@@ -2353,7 +2426,7 @@ export interface WorkflowAssetImportList {
 export type WorkflowRunDefinitionSnapshot = { [key: string]: unknown } | null;
 
 /**
- * The kickoff input passed to the run's start node.
+ * The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead.
  */
 export type WorkflowRunInput = { [key: string]: unknown };
 
@@ -2395,7 +2468,7 @@ export interface WorkflowRun {
   /** @nullable */
   finishedAt: string | null;
   id: string;
-  /** The kickoff input passed to the run's start node. */
+  /** The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead. */
   input: WorkflowRunInput;
   /**
      * The frozen per-slot model bindings this run executes against, ordered by slot name. Present on a detail read. Each binding is frozen at run creation and used for the run's whole lifetime; only `revoked` can turn true (the owning connection's grant was revoked).
@@ -3225,6 +3298,94 @@ export type PostApiV1TenantsTidIssuesIidContextRefs200 = {
 
 export type DeleteApiV1TenantsTidIssuesIidContextRefsCridBody = { [key: string]: unknown };
 
+export type GetApiV1TenantsTidIssuesIidConversationParams = {
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+/**
+ * Forward Thread seq cursor: the window starts after this seq. Mutually exclusive with before; neither cursor reads the tail.
+ * @minimum 0
+ */
+after?: number;
+/**
+ * Backward Thread seq cursor: the window ends just before this seq, taking the entries closest to it from below. Mutually exclusive with after.
+ * @minimum 0
+ */
+before?: number;
+};
+
+export type GetApiV1TenantsTidIssuesIidConversation200 = {
+  /** @nullable */
+  activeRunId?: string | null;
+  agentReadiness?: TaskAgentReadiness[];
+  /** @nullable */
+  blockedRunId?: string | null;
+  canStop?: boolean;
+  items: TaskConversationMessage[];
+  /** @nullable */
+  nextCursor: number | null;
+  /** @nullable */
+  pausedRunId?: string | null;
+  /** @nullable */
+  prevCursor: number | null;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationDiscardBody = {
+  acknowledgeLostWork: boolean;
+  runId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationDiscard200 = {
+  acknowledgedRunId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationMessagesBody = {
+  agentId: string;
+  body: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationMessages201 = {
+  resource: TaskConversationMessage;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancelBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidIssuesIidConversationMessagesMidCancel200 = {
+  resource: TaskConversationMessage;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetryBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidIssuesIidConversationMessagesMidRetry200 = {
+  resource: TaskConversationMessage;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationResumeBody = {
+  runId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationResume200 = {
+  acknowledgedRunId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationStopBody = {
+  runId: string;
+};
+
+export type PostApiV1TenantsTidIssuesIidConversationStop202State = typeof PostApiV1TenantsTidIssuesIidConversationStop202State[keyof typeof PostApiV1TenantsTidIssuesIidConversationStop202State];
+
+
+export const PostApiV1TenantsTidIssuesIidConversationStop202State = {
+  stopping: 'stopping',
+} as const;
+
+export type PostApiV1TenantsTidIssuesIidConversationStop202 = {
+  runId: string;
+  state: PostApiV1TenantsTidIssuesIidConversationStop202State;
+};
+
 export type GetApiV1TenantsTidIssuesIidInteractions200 = {
   items: IssueInteraction[];
   nextCursor: string;
@@ -3966,6 +4127,23 @@ export type PostApiV1TenantsTidWorkflowsWfidRunsBody = {
 
 export type PostApiV1TenantsTidWorkflowsWfidRuns200 = {
   resource: WorkflowRun;
+};
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
+ */
+after?: string;
+};
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200 = {
+  items: SessionModelAttempt[];
+  nextCursor: string;
 };
 
 export type GetApiV1TenantsTidWorkflowsWfidSnapshotsParams = {

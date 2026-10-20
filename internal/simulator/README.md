@@ -17,7 +17,7 @@
 
 #### HTTP 接口
 
-Substrate 替身只监听 loopback，供模拟器和测试使用，不是生产 Substrate 的接口定义：
+模拟器把 Substrate 替身挂在 loopback HTTP 服务，供开发和测试使用，不是生产 Substrate 的接口定义：
 
 | 方法与路径 | 请求 | 返回与不变量 |
 |---|---|---|
@@ -43,7 +43,7 @@ Cloud 拒绝计划插件 effect，替身里残留的 `plugin_ensure` 分支不�
 ### Controller 执行替身 (`controller.go`)
 - 模拟外部控制平面工作进程。租约、操作与 Node 注册走已退役的 `/internal/v1/...` JSON 接口，只有 `router.NewDevelopment` 打开它们，生产 server 一律返回
   `410`；execution 与 Agent 运行走 gRPC：
-  - 定期通过 `/internal/v1/controller-lease/acquire` 获取并续约 Controller 独占租约。
+  - 通过 `/internal/v1/controller-lease/acquire` 获取租约，经 `/internal/v1/controller-lease/renew` 续约。
   - 通过 `/internal/v1/operations/claim` 认领待处理的操作任务。
   - 针对 Substrate 规划并执行所需的 Effect。
   - 通过 `/internal/v1/operations/{oid}/effects/{eid}/result` 上报 Effect 执行结果。
@@ -64,7 +64,7 @@ Controller 每次有界 Step 都领取运行工作、投递 Thread 命令并接�
 
 ## 边界与不变量
 
-- **仅限开发与测试**：本包属于工程执行替身。绝对禁止部署到生产环境，生产环境守护进程二进制也绝不导入此包。
-- **契约保真度**：模拟器严格通过标准 HTTP API 与 Cloud 核心服务器交互，并遵守所有租约、栅栏和幂等契约。
+- **仅限开发与测试**：本包提供执行替身，生产配置不得启用。
+- **契约保真度**：模拟器通过开发 HTTP 与 gRPC 适配层与 Cloud 核心服务器交互，并遵守所有租约、栅栏和幂等契约。
 
 参见 [cmd/simulator 工具](../../cmd/simulator/README.md)、[Workspace 生命周期](../../docs/runtime/workspaces.md) 与 [集成测试套件](../../integration/README.md)。

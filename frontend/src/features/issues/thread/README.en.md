@@ -4,9 +4,11 @@
 
 ## Responsibility
 
-The "Agent 会话" column on the issue detail page: it picks the issue's most recent agent run, reads that run's Thread (`/runs/:rid/thread`), pages it in both directions, refreshes it from space events, and offers sending a message and ending the session.
+Live Threads also consume optional snapshots from `features/thread-preview`. History positions identify replacements and settled records always win. Live thoughts open and fold when settled. Connection/missing-content states are visible and updates preserve historical reading position.
 
-Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the SSE connection itself (`features/spaces/use-space-events`), the issue's other columns.
+The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. The task composition shows each Run read-only and sends from the task-level composer; the standalone Thread component retains its original authorized send/end controls for upgrades from an older server.
+
+Not owned: creating and listing runs (`useRuns` in `features/issues/api`), SSE connections (`features/spaces/use-space-events` for invalidation and `features/thread-preview` for optional content), the issue's other columns.
 
 ## Files
 
@@ -15,6 +17,7 @@ Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the S
 | `thread-entries.ts` | Pure functions: pick the newest agent run, merge windows by seq, map ThreadEntry to display rows (consecutive agent chunks of one turn merge), Chinese state labels |
 | `thread-api.ts` | TanStack Query layer: `threadQueryKey`, `useThread` (tail first read + incremental reads + 404 waiting + fallback poll), `useLoadOlderThread`, `useSendThreadMessage`, `useEndThread`, fault messages |
 | `thread-messages.tsx` | Presentational: the message list (`role=list`, named "会话消息") and the "加载更早" button |
+| `thread-row.tsx` | Safe Markdown, collapsed execution context, thoughts and expandable tool input/output |
 | `thread-composer.tsx` | The "给 Agent 发送消息" textarea, "发送", and "结束会话" with a confirm step |
 | `run-delivery.tsx` | The Revision delivery line under the Thread (`role=status`, named "Revision 交付"): a registered Revision shows its short commit and whether the run delivered new commits (or, for a resumed run with no new commits, that it reused the resumed work); otherwise `result.deliveryState` explains a skip or failure, and an ended session whose run has not settled shows saving; Revisions are delivered over Git, so no bundle size is shown |
 | `run-resume.tsx` | The resume line above the Thread (`role=note`, named "续接"): when the run resumed an earlier Revision of the same Issue, it finds that Revision among the Issue's runs and shows its short commit; a fresh run renders nothing |
@@ -25,9 +28,13 @@ Not owned: creating and listing runs (`useRuns` in `features/issues/api`), the S
 
 ## Dependencies
 
+Presentation also uses the public `features/session-data` adapters and `features/conversation-content` Markdown renderer. Tool updates merge by turn/call identity; unidentified calls remain separate and unknown timing is not guessed. A missing explicitly selected Run never falls back to the latest Run. Settled Runs with no Thread stop declaration polling. Reading history disables automatic following; prepending pages preserves the scroll-height anchor.
+
 Depends on `src/api` (generated Thread client and types), `features/issues/api` (`useRuns`), `features/issues/types`, `features/spaces/api` (`mutationHeaders`, `useIdempotencyKeys`), `lib/api-client` (`faultCode`), `components/ui`. Used by `features/issues/issue-detail-page.tsx`. `features/spaces/use-space-events.ts` invalidates this module's query through the same generated-client query key without importing this module.
 
 ## Invariants
+
+Node entries expose their actual `turnId`; tool calls and updates use that identity even when a future user input is already queued. Older responses without Node turn IDs use the user-boundary markers owned by `session-data`. Calls with no turn evidence remain separate rather than merging across the Thread.
 
 - Cached entries are always one contiguous, seq-ascending window: the first read takes the tail, "加载更早" prepends with `before=<oldest seq>`, incremental reads use `after=<highest seen seq>` (pulled back to just before the oldest queued user turn, so queued→delivered refreshes). Entries are deduplicated by seq and never repeat.
 - A sent message's returned entry is **not** merged into the cache: its seq may be ahead of entries not read yet, and advancing the window past them would skip them forever. Only a re-read picks it up, in order.
@@ -37,6 +44,8 @@ Depends on `src/api` (generated Thread client and types), `features/issues/api` 
 - Sending and ending are disabled in `ending` / `ended` (the server's 409 `thread_closed` rule); each submission's idempotency key stays stable across its retries. Server-provided `canAppend` / `canEnd` control actions: only the initiator may append model requests, administrators may end, and other members remain read-only. The panel shows frozen connection/model metadata and member display names, never credentials.
 
 A revoked model authorization leaves the old run read-only. Reconfiguring the connection does not reopen that Thread; the send fault asks the user to end it and launch a new task.
+
+Task handoff barriers and pauses also disable appending to an old Thread. Direct sends from older clients receive `409 task_handoff_pending` or `409 task_paused`; subsequent input uses the task conversation queue without overtaking a waiting handoff.
 
 ## Testing
 

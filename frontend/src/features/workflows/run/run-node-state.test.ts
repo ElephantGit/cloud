@@ -46,4 +46,16 @@ describe('parseRunNodeStates', () => {
     const states = parseRunNodeStates({ 'a-1': { status: 'idle' } })
     expect(states['a-1']).toEqual({ status: 'idle' } satisfies RunNodeEntry)
   })
+
+  it('treats a blank timestamp as absent', () => {
+    const states = parseRunNodeStates({
+      'a-1': { status: 'inactive', startedAt: '', finishedAt: '' },
+      'a-2': { status: 'running', startedAt: '2026-09-20T10:00:00+08:00', finishedAt: '' },
+    })
+    expect(states['a-1']).toEqual({ status: 'inactive' } satisfies RunNodeEntry)
+    expect(states['a-2']).toEqual({
+      status: 'running',
+      startedAt: '2026-09-20T10:00:00+08:00',
+    } satisfies RunNodeEntry)
+  })
 })

@@ -134,6 +134,62 @@ func workflowGlobalVariables(graph Object) []Object {
 	return out
 }
 
+// normalizeWorkflowGlobals returns the graph with file and array[file] global values canonicalized the
+// way desktop's into_global_variables does before freezing: a legacy path string becomes its
+// {kind: "workspace_file", path} reference. Every other declaration is left as the author wrote it,
+// and a file value that is already a canonical reference normalizes to itself. Publishing calls this
+// after validation and before freezing, so the snapshot — and every consumer of it, a condition's
+// variable pool included — sees the same shape desktop's pool produces. The graph must already pass
+// validateWorkflowGraph: a value that reaches here was accepted there, so it is known to normalize.
+func normalizeWorkflowGlobals(graph Object) Object {
+	declared, ok := graph["globalVariables"].([]any)
+	if !ok {
+		return graph
+	}
+	globals := make([]any, len(declared))
+	for i, item := range declared {
+		globals[i] = item
+		variable, ok := asWorkflowObject(item)
+		if !ok {
+			continue
+		}
+		valueType := variable.S("valueType")
+		if valueType != "file" && valueType != "array[file]" {
+			continue
+		}
+		value, hasValue := variable["value"]
+		if !hasValue || value == nil {
+			continue
+		}
+		normalized, ok := normalizeWorkflowValue(value, valueType)
+		if !ok {
+			continue
+		}
+		copied := Object{}
+		for k, v := range variable {
+			copied[k] = v
+		}
+		copied["value"] = normalized
+		globals[i] = copied
+	}
+	graph["globalVariables"] = globals
+	return graph
+}
+
+// normalizedSnapshotGraphText returns the text to freeze into a snapshot: the caller's verbatim
+// document, unless normalizeWorkflowGlobals actually rewrote a legacy file or array[file] value, in
+// which case the normalized graph is re-encoded. Keeping the raw text when nothing changed preserves
+// the importer's byte-for-byte document storage: re-encoding a document whose numbers round-trip only
+// through float64 could corrupt literals jsonb can still store, so the raw bytes are kept unless the
+// snapshot must carry canonical file references. The graph must already pass validateWorkflowGraph.
+func normalizedSnapshotGraphText(graph Object, raw string) string {
+	before := jsonText(graph)
+	if after := jsonText(normalizeWorkflowGlobals(graph)); after != before {
+		return after
+	}
+	return raw
+}
+
 // validateWorkflowGlobals refuses global declarations the run could not honor, mirroring desktop's
 // into_global_variables so a graph Cloud publishes is a graph desktop accepts. Each problem names the
 // global it concerns. The rules, in order: the list itself must be a list, every entry an object, the

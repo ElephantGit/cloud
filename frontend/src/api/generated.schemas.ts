@@ -802,6 +802,12 @@ export interface IssueInteraction {
   tenantId: string;
 }
 
+export type IssueRunAgentConfiguration = {
+  configurationRevision: number;
+  pluginId: string;
+  pluginVersion: string;
+};
+
 export type IssueRunExecutorType = typeof IssueRunExecutorType[keyof typeof IssueRunExecutorType];
 
 
@@ -876,6 +882,7 @@ export const IssueRunStatus = {
 } as const;
 
 export interface IssueRun {
+  agentConfiguration?: IssueRunAgentConfiguration;
   attempt: number;
   /** @nullable */
   completedAt: string | null;
@@ -1443,6 +1450,82 @@ export interface Operation {
   version: number;
   /** @nullable */
   workspaceId: string | null;
+}
+
+export type PersonalAgentConfigurationSettings = {[key: string]: string | number | boolean};
+
+export interface PersonalAgentConfiguration {
+  cleared: boolean;
+  /** @nullable */
+  connectionId?: string | null;
+  declarationFingerprint?: string;
+  /** @nullable */
+  modelId?: string | null;
+  revision: number;
+  settings: PersonalAgentConfigurationSettings;
+  updatedAt?: string;
+}
+
+export type PersonalAgentConfigurationContextDeclarationModelAccessModelCardinality = typeof PersonalAgentConfigurationContextDeclarationModelAccessModelCardinality[keyof typeof PersonalAgentConfigurationContextDeclarationModelAccessModelCardinality];
+
+
+export const PersonalAgentConfigurationContextDeclarationModelAccessModelCardinality = {
+  single: 'single',
+} as const;
+
+export type PersonalAgentConfigurationContextDeclarationModelAccess = {
+  contractVersion: number;
+  modelCardinality: PersonalAgentConfigurationContextDeclarationModelAccessModelCardinality;
+  protocols: string[];
+};
+
+export type PersonalAgentConfigurationContextDeclarationSettingsItemSettingType = typeof PersonalAgentConfigurationContextDeclarationSettingsItemSettingType[keyof typeof PersonalAgentConfigurationContextDeclarationSettingsItemSettingType];
+
+
+export const PersonalAgentConfigurationContextDeclarationSettingsItemSettingType = {
+  string: 'string',
+  number: 'number',
+  boolean: 'boolean',
+} as const;
+
+export type PersonalAgentConfigurationContextDeclarationSettingsItem = {
+  /** A scalar of the declared type, or null when no default exists. */
+  default: unknown | null;
+  description: string;
+  id: string;
+  /** @nullable */
+  order: number | null;
+  required: boolean;
+  settingType: PersonalAgentConfigurationContextDeclarationSettingsItemSettingType;
+  title: string;
+};
+
+export type PersonalAgentConfigurationContextDeclaration = {
+  fingerprint: string;
+  modelAccess: PersonalAgentConfigurationContextDeclarationModelAccess;
+  schemaVersion: number;
+  settings: PersonalAgentConfigurationContextDeclarationSettingsItem[];
+};
+
+export type PersonalAgentConfigurationContextSettings = {[key: string]: string | number | boolean};
+
+export interface PersonalAgentConfigurationContext {
+  cleared: boolean;
+  /** @nullable */
+  connectionId?: string | null;
+  declaration: PersonalAgentConfigurationContextDeclaration;
+  declarationFingerprint?: string;
+  modelDefault?: ModelDefault;
+  /** @nullable */
+  modelId?: string | null;
+  pluginId: string;
+  pluginVersion: string;
+  requiresRepair: boolean;
+  revision: number;
+  selectionVersion: number;
+  settings: PersonalAgentConfigurationContextSettings;
+  spaceId: string;
+  updatedAt?: string;
 }
 
 export interface PluginCatalog {
@@ -2626,6 +2709,59 @@ export type PostApiV1JoinInvitationsRedeemBody = {
 
 export type PostApiV1JoinRequestsBody = {
   token: string;
+};
+
+export type DeleteApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierBody = {
+  /** @minimum 0 */
+  revision: number;
+};
+
+export type DeleteApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifier200 = {
+  resource: PersonalAgentConfiguration;
+};
+
+export type PutApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierBodySettings = {[key: string]: string | number | boolean};
+
+export type PutApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierBody = {
+  connectionId?: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  declarationFingerprint: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  modelId?: string;
+  /** @minimum 0 */
+  revision: number;
+  /** @minimum 0 */
+  selectionVersion: number;
+  settings: PutApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierBodySettings;
+};
+
+export type PutApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifier200 = {
+  resource: PersonalAgentConfiguration;
+};
+
+export type PostApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierRepairBodySettings = {[key: string]: string | number | boolean};
+
+export type PostApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierRepairBody = {
+  connectionId?: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  declarationFingerprint: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  modelId?: string;
+  /** @minimum 0 */
+  revision: number;
+  /** @minimum 0 */
+  selectionVersion: number;
+  settings: PostApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierRepairBodySettings;
+};
+
+export type PostApiV1MeAgentConfigurationsSpaceIdPluginNamespacePluginIdentifierRepair200 = {
+  resource: PersonalAgentConfiguration;
 };
 
 export type GetApiV1MeExecutorSlotMappingsParams = {

@@ -97,6 +97,8 @@ type Store struct {
 	WorkflowAssets WorkflowAssetSource
 	// ModelEgress is the immutable deployment admission policy for personal connection writes.
 	ModelEgress ModelEgress
+	// PersonalAgentRuntime is nil until a deployment supports the versioned adapter path.
+	PersonalAgentRuntime *PersonalAgentRuntime
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error

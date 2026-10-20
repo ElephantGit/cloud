@@ -100,6 +100,7 @@ func Document() map[string]any {
 	s["ModelDefinition"] = object(obj{"id": str(), "name": str(), "contextWindow": number(), "maxTokens": number()}, "id", "name", "contextWindow", "maxTokens")
 	s["ModelConnection"] = object(obj{"id": uuid(), "name": str(), "protocol": enumeration("openai-completions", "anthropic-messages"), "baseUrl": str(), "authMode": enumeration("bearer", "x-api-key"), "models": array(ref("ModelDefinition")), "enabled": boolean(), "credentialConfigured": boolean(), "version": number(), "createdAt": timestamp(), "updatedAt": timestamp()}, "id", "name", "protocol", "baseUrl", "authMode", "models", "enabled", "credentialConfigured", "version", "createdAt", "updatedAt")
 	s["ModelDefault"] = object(obj{"connectionId": str(), "modelId": str(), "version": number()}, "connectionId", "modelId", "version")
+	personalAgentSchemas(s)
 	s["AgentSessionSummary"] = object(obj{
 		"id": uuid(), "issueId": uuid(), "issueNumber": number(), "issueTitle": str(),
 		"projectId": optional(uuid()), "projectName": optional(str()), "agentPluginId": optional(str()),
@@ -166,6 +167,7 @@ func Document() map[string]any {
 	issueProps["assigneeType"] = enumeration("user", "agent", "team")
 	s["IssueRun"] = resource("id tenantId issueId version executorType executorId externalExecutionId executionContextRef workflowInvocationRef triggerEvidenceKind triggerEvidenceRefId status parentRunId retryOfRunId rerunOfRunId delegatedFromRunId attempt maxAttempts input result error failureReason triggerSummary queuedAt dispatchedAt startedAt completedAt fireAt leaseExpiresAt createdAt updatedAt deletedAt resumeRevisionId", "executionContextRef workflowInvocationRef triggerEvidenceRefId parentRunId retryOfRunId rerunOfRunId delegatedFromRunId result dispatchedAt startedAt completedAt fireAt leaseExpiresAt deletedAt resumeRevisionId")
 	runProps := properties(s, "IssueRun")
+	runProps["agentConfiguration"] = object(obj{"pluginId": str(), "pluginVersion": str(), "configurationRevision": number()}, "pluginId", "pluginVersion", "configurationRevision")
 	runProps["executorType"] = enumeration("agent", "team", "workflow")
 	runProps["status"] = enumeration("queued", "dispatched", "running", "completed", "failed", "cancelled", "deferred")
 	runProps["attempt"] = number()
@@ -431,12 +433,12 @@ func Document() map[string]any {
 		// Restoring the default git identity needs no idempotency record (there is no tenant to scope
 		// one to): an identity that is already the default restores as a no-op, so a retry is safe.
 		credentialWrite := r.Method == "PUT" && strings.HasPrefix(r.Path, "/api/v1/me/model-connections/") && strings.HasSuffix(r.Path, "/credential")
-		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite) && r.Path != "/api/v1/me/git-identity" {
+		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite || personalAgentPath(r.Path) && r.Method == "PUT") && r.Path != "/api/v1/me/git-identity" {
 			keyScope := "Scoped to tenant and user."
 			// The personal routes are keyed on the verified user alone: a slot mapping is a
 			// (user_id, slot_name) row and a personal connection is the user's, so neither is scoped
 			// to a tenant and saying it is would describe a boundary the handler never checks.
-			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") || strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") {
+			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") || strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") || personalAgentPath(r.Path) {
 				keyScope = "Scoped to the verified user before tenant membership exists."
 			}
 			parameters = append(parameters, obj{"name": "Idempotency-Key", "in": "header", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": 200}, "description": keyScope + " Same key and canonical method/path/body returns the original response before version validation; changed request is 409."})
@@ -538,6 +540,9 @@ func Document() map[string]any {
 // provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
+	if name == "pluginNamespace" || name == "pluginIdentifier" {
+		return obj{"type": "string", "minLength": 1, "maxLength": 150}
+	}
 	if name == "formRef" {
 		return obj{"type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:@-]+$"}
 	}
@@ -592,6 +597,12 @@ func isList(r router.Route) bool {
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
+	if personalAgentPath(r.Path) {
+		if r.Method == "GET" {
+			return ref("PersonalAgentConfigurationContext"), "200"
+		}
+		return object(obj{"resource": ref("PersonalAgentConfiguration")}, "resource"), "200"
+	}
 	if isRepositoryRoute(r) {
 		return repositoryResponse(r)
 	}
@@ -946,6 +957,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 }
 
 func optionalField(name string, r router.Route) bool {
+	if personalAgentPath(r.Path) {
+		return name == "connectionId" || name == "modelId"
+	}
 	if isRepositoryRoute(r) {
 		return repositoryOptional(name, r)
 	}
@@ -999,8 +1013,12 @@ func inputSchema(name string, r router.Route) obj {
 		return obj{"type": "string", "minLength": 1, "maxLength": 8192, "writeOnly": true, "description": "Handled exclusively by model-gateway; never returned or sent to Cloud HTTP."}
 	case "modelId":
 		return obj{"type": "string", "minLength": 1, "maxLength": 500}
-	case "version", "epoch", "admissionEpoch":
+	case "version", "revision", "selectionVersion", "epoch", "admissionEpoch":
 		return obj{"type": "integer", "format": "int64", "minimum": 0}
+	case "declarationFingerprint":
+		return obj{"type": "string", "pattern": "^[a-f0-9]{64}$"}
+	case "settings":
+		return obj{"type": "object", "additionalProperties": obj{"oneOf": []any{str(), obj{"type": "number"}, boolean()}}}
 	case "retrySeconds":
 		return obj{"type": "integer", "minimum": 1, "maximum": 3600}
 	case "protocolVersion":

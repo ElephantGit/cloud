@@ -21,6 +21,8 @@ type PublicRequest struct {
 	FormIssueID string
 	// ModelConnectionID addresses an owner-scoped personal connection outside tenant routing.
 	ModelConnectionID string
+	// AgentPluginID is the canonical plugin in the caller's personal configuration.
+	AgentPluginID string
 	// Session filters are independent of resource IDs used by public route dispatch.
 	SessionProjectID, SessionStatus, SessionAgent, SessionFrom, SessionTo string
 	// GitCredentialID addresses a tenant's Git credential reference.
@@ -66,6 +68,11 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		uid := u.S("id")
 		if r.Path == "/api/v1/me" {
 			return u
+		}
+		if strings.HasPrefix(r.Path, "/api/v1/me/agent-configurations/") {
+			var out Object
+			out, status = personalAgentConfigurationsPublic(t, r, uid)
+			return out
 		}
 		if strings.HasPrefix(r.Path, "/api/v1/me/model-connections") || r.Path == "/api/v1/me/model-default" {
 			var out Object

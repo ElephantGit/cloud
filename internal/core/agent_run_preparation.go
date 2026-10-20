@@ -5,6 +5,10 @@ package core
 func withAgentRunDetails(t *transaction, run Object) Object {
 	run["preparation"] = nil
 	if run.S("executorType") == "agent" {
+		// Private options and release locators never enter the shared run document.
+		if configuration := t.one(`SELECT plugin_id,plugin_version,configuration_revision FROM run_agent_configurations WHERE run_id=$1`, run.S("id")); configuration != nil {
+			run["agentConfiguration"] = configuration
+		}
 		if p := agentRunPreparation(t, run); p != nil {
 			p["syncErrorCode"] = preparationSyncErrorCode(t, run, p)
 			run["preparation"] = p

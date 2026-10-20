@@ -4025,6 +4025,23 @@ export type PostApiV1TenantsTidWorkflowsWfidRuns200 = {
   resource: WorkflowRun;
 };
 
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
+ */
+after?: string;
+};
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200 = {
+  items: SessionModelAttempt[];
+  nextCursor: string;
+};
+
 export type GetApiV1TenantsTidWorkflowsWfidSnapshotsParams = {
 /**
  * @minimum 1

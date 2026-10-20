@@ -10,8 +10,9 @@ import (
 
 const anthropicVersion = "2023-06-01"
 
-// These protocol capabilities were observed with the pinned Claude 2.1.303 CLI.
-// A CLI upgrade must exercise its requests before extending this set.
+// These protocol capabilities were observed with the pinned Claude 2.1.303 CLI and, for
+// Claude models over Anthropic Messages, the pinned OpenCode 1.19.3 CLI. A CLI upgrade must
+// exercise its requests before extending this set.
 var claudeBetaHeaders = map[string]bool{
 	"claude-code-20250219":                     true,
 	"interleaved-thinking-2025-05-14":          true,
@@ -23,6 +24,8 @@ var claudeBetaHeaders = map[string]bool{
 	"structured-outputs-2025-12-15":            true,
 	"thinking-display-updates-2026-08-18":      true,
 	"per-turn-control-2026-07-01":              true,
+	"thinking-binding-controls-2026-08-01":     true,
+	"structured-outputs-2025-11-13":            true,
 }
 
 // runtimeModelRoute accepts only inference and the frozen binding's local model listing.

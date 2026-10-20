@@ -54,7 +54,8 @@ Claude Code 2.1.303 的 Messages 兼容面如下；允许的 beta 标记由
 
 同一固定 CLI 通过 Agent SDK 0.3.303 / ACP adapter 0.94.0 创建查询时还会声明
 `structured-outputs-2025-12-15` 与 `thinking-display-updates-2026-08-18`，对 `claude-haiku-5-5` 的首个请求还会带
-`per-turn-control-2026-07-01`；它们同样在受限白名单中。
+`per-turn-control-2026-07-01`。固定的 OpenCode 1.19.3 经 `@ai-sdk/anthropic` 请求 Claude 模型时声明
+`thinking-binding-controls-2026-08-01` 与 `structured-outputs-2025-11-13`。它们同样在受限白名单中。
 升级版本仍须先验证实际协议面，不能按客户端传入内容自动放开。
 
 | 方法与路径 | 查询 | 行为 |

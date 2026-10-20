@@ -105,6 +105,21 @@ func seedResidualAction(t *testing.T, scene residualReclaimScene, op Object, act
 // Drive the shipped quiesce -> terminate -> cleanup topology, leaving cleanup -> done to callers.
 func seedResidualCleanup(t *testing.T, scene residualReclaimScene) Object {
 	t.Helper()
+	op, effect := seedResidualCleanupPlan(t, scene)
+	return seedResidualAction(t, scene, op, "effect_result", Object{"state": "succeeded", "externalId": "residual-cleanup", "result": Object{"removed": true}}, effect.S("id")).O("operation")
+}
+
+func seedResidualCleanupPlan(t *testing.T, scene residualReclaimScene) (Object, Object) {
+	t.Helper()
+	op, termination := seedResidualTerminationPlan(t, scene)
+	op = seedResidualAction(t, scene, op, "effect_result", Object{"state": "succeeded", "externalId": "residual-termination", "result": Object{"terminated": true, "lateEnsureFenced": true}}, termination.S("id")).O("operation")
+	op = seedResidualAction(t, scene, op, "advance", nil, "").O("operation")
+	planned := seedResidualAction(t, scene, op, "plan", Object{"kind": "workspace_data_delete", "workspaceId": scene.workspace}, "")
+	return planned.O("operation"), planned.O("effect")
+}
+
+func seedResidualTerminationPlan(t *testing.T, scene residualReclaimScene) (Object, Object) {
+	t.Helper()
 	op := seedResidualClaim(t, scene)
 	seedResidualRuntimeAck(t, scene, false)
 	_, err := scene.store.transact(t.Context(), func(tx *transaction) Object {
@@ -117,13 +132,157 @@ func seedResidualCleanup(t *testing.T, scene residualReclaimScene) Object {
 	}
 	op = seedResidualAction(t, scene, op, "advance", nil, "").O("operation")
 	planned := seedResidualAction(t, scene, op, "plan", Object{"kind": "sandbox_terminate", "workspaceId": scene.workspace}, "")
-	op = planned.O("operation")
-	out := seedResidualAction(t, scene, op, "effect_result", Object{"state": "succeeded", "externalId": "residual-termination", "result": Object{"terminated": true, "lateEnsureFenced": true}}, planned.O("effect").S("id"))
-	op = out.O("operation")
-	op = seedResidualAction(t, scene, op, "advance", nil, "").O("operation")
-	planned = seedResidualAction(t, scene, op, "plan", Object{"kind": "workspace_data_delete", "workspaceId": scene.workspace}, "")
-	op = planned.O("operation")
-	return seedResidualAction(t, scene, op, "effect_result", Object{"state": "succeeded", "externalId": "residual-cleanup", "result": Object{"removed": true}}, planned.O("effect").S("id")).O("operation")
+	return planned.O("operation"), planned.O("effect")
+}
+
+func TestResidualOwnedCleanupRetriesSameFailedEffectAcrossControllerEpoch(t *testing.T) {
+	for _, kind := range []string{"sandbox_terminate", "workspace_data_delete"} {
+		t.Run(kind, func(t *testing.T) { seedResidualRetryCleanupEffect(t, kind) })
+	}
+}
+
+func seedResidualRetryCleanupEffect(t *testing.T, kind string) {
+	t.Helper()
+	scene := seedResidualScene(t, true)
+	var op, cleanup Object
+	success := Object{"removed": true}
+	if kind == "sandbox_terminate" {
+		op, cleanup = seedResidualTerminationPlan(t, scene)
+		success = Object{"terminated": true, "lateEnsureFenced": true}
+	} else {
+		op, cleanup = seedResidualCleanupPlan(t, scene)
+	}
+	cleanupID := cleanup.S("id")
+	var reclaimID, terminationID string
+	if err := scene.store.Pool.QueryRow(`SELECT r.reclaim_id::text,e.id::text FROM agent_run_residuals r JOIN external_effects e ON e.operation_id=r.reclaim_operation_id AND e.kind='sandbox_terminate' WHERE r.run_id=$1`, scene.run).Scan(&reclaimID, &terminationID); err != nil {
+		t.Fatal(err)
+	}
+	failed := Object{"state": "failed", "externalId": "residual-cleanup-retry", "result": Object{"error": "temporary_storage_unavailable"}}
+	op = seedResidualAction(t, scene, op, "effect_result", failed, cleanupID).O("operation")
+	op = seedResidualAction(t, scene, op, "defer", Object{"state": "retry_wait", "errorCode": "node_unavailable", "retrySeconds": 1}, "").O("operation")
+	seedResidualExec(t, scene.store, `UPDATE operations SET retry_at=clock_timestamp()-interval '1 second' WHERE id=$1`, op.S("id"))
+	_, err := scene.store.Control(t.Context(), &ControlRequest{Action: "lease_release", Body: Object{"epoch": 1}, Service: scene.claims})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := seedResidualRebuildStore(scene.store)
+	lease, err := restarted.Control(t.Context(), &ControlRequest{Action: "lease_acquire", Body: Object{}, Service: scene.claims})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := lease.N("epoch")
+	if epoch != 2 {
+		t.Fatalf("replacement Controller epoch=%d, want 2", epoch)
+	}
+	if err := restarted.ReconcileAgentRunResidualsOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := restarted.Control(t.Context(), &ControlRequest{Action: "claim", Body: Object{"epoch": epoch}, Service: scene.claims})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current := claimed.O("operation"); current.S("id") != op.S("id") || current.N("controllerEpoch") != epoch {
+		t.Fatalf("retry replaced its owned operation: %v", claimed)
+	} else {
+		op = current
+	}
+	control := func(action, effect string, body Object) (Object, error) {
+		body["epoch"], body["version"] = epoch, op.N("version")
+		out, err := restarted.Control(t.Context(), &ControlRequest{Action: action, OperationID: op.S("id"), EffectID: effect, Body: body, Service: scene.claims})
+		if err == nil {
+			if current := out.O("operation"); len(current) > 0 {
+				op = current
+			} else if out.S("id") != "" {
+				op = out
+			}
+		}
+		return out, err
+	}
+	// Reconcile each original effect under the replacement epoch before reusing its plan. These
+	// are fresh accepted observations, not mutation of the old effect or invention of a new one.
+	if kind == "workspace_data_delete" {
+		if _, err := control("effect_result", terminationID, Object{"state": "succeeded", "externalId": "residual-termination", "result": Object{"terminated": true, "lateEnsureFenced": true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := control("effect_result", cleanupID, Object{"state": "failed", "externalId": "residual-cleanup-retry", "result": Object{"error": "temporary_storage_unavailable"}}); err != nil {
+		t.Fatal(err)
+	}
+	planned, err := control("plan", "", Object{"kind": kind, "workspaceId": scene.workspace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.O("effect").S("id") != cleanupID {
+		t.Fatalf("retry substituted a new cleanup effect: %v", planned)
+	}
+	if _, err := control("effect_result", cleanupID, Object{"state": "succeeded", "externalId": "residual-cleanup-retry", "result": success}); err != nil {
+		t.Fatalf("same-effect failed-to-success retry was rejected: %v", err)
+	}
+	if kind == "sandbox_terminate" {
+		if _, err := control("advance", "", Object{}); err != nil {
+			t.Fatal(err)
+		}
+		dataPlan, err := control("plan", "", Object{"kind": "workspace_data_delete", "workspaceId": scene.workspace})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := control("effect_result", dataPlan.O("effect").S("id"), Object{"state": "succeeded", "externalId": "post-termination-cleanup", "result": Object{"removed": true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finished, err := control("advance", "", Object{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.S("state") != "succeeded" {
+		t.Fatalf("retry did not finish cleanup: %v", finished)
+	}
+	completedVersion := finished.N("version")
+	if completedVersion <= 1 {
+		t.Fatalf("cleanup did not advance its operation version: %v", finished)
+	}
+	lateResult := func(submission, message string) (Object, error) {
+		// The succeeded operation is no longer executable. Its original binding still accepts
+		// facts through Control with the current lease and a deliberately stale operation version.
+		return restarted.Control(t.Context(), &ControlRequest{
+			Action: "effect_result", OperationID: op.S("id"), EffectID: cleanupID, SubmissionID: submission,
+			Body: Object{"epoch": epoch, "version": 1, "state": "failed", "externalId": "residual-cleanup-retry", "result": Object{"error": message}}, Service: scene.claims,
+		})
+	}
+	// A previously accepted failed observation can replay after success, even after clearing. It
+	// must neither downgrade the effect nor manufacture a conflict or another evidence entry.
+	for attempt := 0; attempt < 2; attempt++ {
+		replayed, err := lateResult("cleared-prior-failure-"+kind, "temporary_storage_unavailable")
+		if err != nil {
+			t.Fatalf("consistent historical failed observation did not replay through Control: %v", err)
+		}
+		if replayed.O("operation").N("version") != completedVersion || replayed.O("effect").S("state") != "succeeded" {
+			t.Fatalf("cleared fact replay changed canonical state/version: %v", replayed)
+		}
+	}
+	seedResidualAssert(t, scene, `SELECT r.reclaim_id=$2::uuid AND r.reclaim_operation_id=$3::uuid AND r.reclaim_state='cleared'
+ AND r.disposition='released' AND r.reclaim_conflicted_at IS NULL AND r.responsibility=$5::jsonb
+ AND e.state='succeeded' AND e.reconciled_epoch=$6 AND e.result=$7::jsonb
+ AND (SELECT version=$8 AND state='succeeded' FROM operations WHERE id=r.reclaim_operation_id)
+ AND (SELECT count(*) FROM external_effects WHERE operation_id=r.reclaim_operation_id)=2
+ AND (SELECT count(*) FROM operations WHERE workspace_id=r.workspace_id AND kind='delete_workspace')=1
+ AND (SELECT string_agg(entry->'fact'->>'state',',' ORDER BY ordinal) FROM jsonb_array_elements(r.reclaim_evidence) WITH ORDINALITY facts(entry,ordinal)
+      WHERE entry->>'key'='effect:'||$4::text)='failed,succeeded'
+ FROM agent_run_residuals r JOIN external_effects e ON e.id=$4::uuid WHERE r.run_id=$1`, scene.run, reclaimID, op.S("id"), cleanupID, scene.responsibility, epoch, jsonText(success), completedVersion)
+	// A changed post-success conclusion remains an A4 contradiction, durably audited even after
+	// the business/physical cleanup completed. It cannot rewrite the accepted success.
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = lateResult("cleared-conflicting-failure-"+kind, "different_post_success_failure")
+		assertResidualFactConflict(t, err)
+	}
+	seedResidualAssert(t, scene, `SELECT r.reclaim_state='cleared' AND r.reclaim_conflicted_at IS NOT NULL
+ AND r.disposition='released' AND r.cleared_at IS NOT NULL
+ AND (SELECT version=$4 AND state='succeeded' FROM operations WHERE id=r.reclaim_operation_id)
+ AND e.state='succeeded' AND e.result=$3::jsonb
+ AND (SELECT count(*) FROM jsonb_array_elements(r.reclaim_evidence) entry WHERE entry->>'key'='effect:'||$2::text
+   AND entry->'fact'->>'kind'='conflict' AND entry->'fact'->'original'->>'state'='succeeded'
+   AND entry->'fact'->'incoming'->'result'->>'error'='different_post_success_failure')=1
+ FROM agent_run_residuals r JOIN external_effects e ON e.id=$2::uuid WHERE r.run_id=$1`, scene.run, cleanupID, jsonText(success), completedVersion)
 }
 
 func seedResidualAssert(t *testing.T, scene residualReclaimScene, query string, args ...any) {

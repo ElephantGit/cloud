@@ -1,10 +1,16 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // residualForWorkspace also finds cleared responsibilities: cleanup never closes the original
 // identity's evidence intake. Soft-deleted Workspace rows remain the identity authority.
 func residualForWorkspace(t *transaction, workspaceID string) Object {
+	if workspaceID == "" {
+		return nil
+	}
 	return t.one("SELECT * FROM agent_run_residuals WHERE workspace_id=$1", workspaceID)
 }
 
@@ -56,11 +62,25 @@ func appendResidualFact(t *transaction, run, key string, fact Object) bool {
 	if previous == nil {
 		previous = row.O("responsibility").O("lateFacts").O(key)
 	}
-	if len(previous) > 0 && residualFactTerminal(previous) && !sameResidualFact(previous, fact) {
+	if len(previous) > 0 && residualFactTerminal(previous) && !residualCleanupFailureRetryable(t, row, key, previous) && !sameResidualFact(previous, fact) {
 		return appendResidualConflict(t, row, key, previous, fact)
 	}
 	appendResidualEntry(t, row, key, fact, false)
 	return true
+}
+
+// A3 retries the same bound cleanup operation and effect. Its failed observation does not prove
+// disposal and can advance after fresh evidence; keep that observation instead of treating the
+// later success as an A4 contradiction. Historical provisioning failures and every successful
+// conclusion remain immutable, and external binding conflicts are checked before this path.
+func residualCleanupFailureRetryable(t *transaction, row Object, key string, fact Object) bool {
+	if fact.S("state") != "failed" || fact.S("kind") != "effect" || row.S("reclaimMode") != "owned_delete" ||
+		row.S("reclaimOperationId") == "" || !strings.HasPrefix(key, "effect:") {
+		return false
+	}
+	id := strings.TrimPrefix(key, "effect:")
+	return validID(id) && t.one(`SELECT id FROM external_effects WHERE id=$1 AND operation_id=$2
+ AND kind IN ('sandbox_terminate','workspace_data_delete')`, id, row.S("reclaimOperationId")) != nil
 }
 
 func appendResidualConflict(t *transaction, row Object, key string, previous, incoming Object) bool {

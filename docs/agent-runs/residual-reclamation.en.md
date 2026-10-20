@@ -58,6 +58,12 @@ Authorized cleanup follows existing quiesce → terminate → cleanup. A quiesce
 the original authority and guards for evidence collection and retry (A3). It neither restores new execution eligibility, escalates to force-stop,
 nor creates another operation.
 
+A failed `sandbox_terminate` / `workspace_data_delete` effect bound to this responsibility is a retryable observation, not a disposal conclusion.
+After fresh evidence, the same effect may advance to success while retaining both observations. Historical provisioning/execution failures,
+external identity bindings and successful conclusions remain protected against contradictions.
+After completion, the existing effect-result intake only preserves original bound facts or audits conflicts; it cannot advance the operation,
+change its version or grant execution authority again.
+
 Every original sandbox/ensure ID requires a corresponding successful termination result containing both `terminated` and `lateEnsureFenced`.
 `terminated_at`, a failed ensure, a 404 or elapsed time alone is insufficient. The current safe target can reuse owned delete; an additional
 historical ID without both confirmations remains open, without replacing its identity or dispatching another termination effect (A5).

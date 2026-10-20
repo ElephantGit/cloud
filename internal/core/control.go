@@ -104,6 +104,17 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 
 // operationCommand runs one Effect-level action on the operation the caller claimed.
 func operationCommand(t *transaction, r *ControlRequest) Object {
+	if r.Action == "effect_result" && validID(r.OperationID) {
+		// A completed residual operation has no execution authority left, but its original
+		// effect receipts still arrive through this existing intake. Do not require a running
+		// operation or its old version merely to preserve an identical fact or audit a conflict.
+		completed := t.one(`SELECT o.* FROM operations o JOIN agent_run_residuals ar ON ar.reclaim_operation_id=o.id
+ WHERE o.id=$1 AND o.kind='delete_workspace' AND o.state='succeeded'
+ AND ar.reclaim_state='cleared' AND ar.reclaim_mode='owned_delete'`, r.OperationID)
+		if completed != nil {
+			return effectResult(t, r, completed)
+		}
+	}
 	o := operation(t, r)
 	switch r.Action {
 	case "snapshot":
@@ -337,6 +348,11 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 		}
 		if !acceptResidualEffectFact(t, residual, e, fact) {
 			return Object{"effect": e, "operation": t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))}
+		}
+		if residual.S("reclaimState") == "cleared" && residual.S("reclaimOperationId") == o.S("id") {
+			// Receipt only: neither canonical effects, operation versions nor resource rows may
+			// advance again after atomic completion. Contradictions already committed their block.
+			return Object{"effect": e, "operation": o}
 		}
 	}
 	if r.Body.S("state") == "absent" {

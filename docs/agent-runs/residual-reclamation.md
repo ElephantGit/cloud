@@ -48,6 +48,10 @@ execution、clone、work 和数据目标。迟到事实可以补充原目标，�
 获授权后沿已有 quiesce → terminate → cleanup 推进。quiesce 拒绝使原 operation 留在 `retry_wait`，保留原责任及保护，稍后重新取证再试（A3）。
 它不恢复新执行资格，不升级为强停，也不重新创建 operation。
 
+该责任绑定的 `sandbox_terminate` / `workspace_data_delete` effect 失败是可重试观察，不是已处置结论。
+重新取证后同一 effect 可推进到成功，失败与成功证据均保留；历史创建/执行失败、外部身份和已成功结论仍受冲突保护。
+责任完成后，既有 effect 结果入口只接管原绑定事实或提交冲突审计，不推进 operation、改变其版本或重新授予执行资格。
+
 每个原计划 sandbox/ensure ID 都需要对应成功终止结果同时包含 `terminated` 和 `lateEnsureFenced`。
 仅有 `terminated_at`、ensure 失败、404 或经过一段时间都不够。当前安全目标可以复用已有 owned delete；额外历史 ID 缺少双确认时保持未完成，
 不为它改写目标或另发终止 effect（A5）。数据删除 effect 的计划、许可和完成再次检查目标覆盖；同一事务确认数据删除成功、operation 成功、

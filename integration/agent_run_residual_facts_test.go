@@ -34,6 +34,10 @@ func TestResidualProvisioningFactsAcrossReclaimStatesOverGRPC(t *testing.T) {
 			planned, err := c.operations.PlanEffect(c.ctx, &controlpb.PlanEffectRequest{SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, Version: snapshot.GetOperation().GetVersion(), Kind: controlpb.EffectKind_EFFECT_KIND_SANDBOX_ENSURE, WorkspaceId: workspace})
 			must(t, err)
 			effect := planned.GetEffect().GetId()
+			// Older ensure plans may carry no Workspace on the effect itself. Its original
+			// operation still binds the run Workspace, so intake must use that durable identity.
+			_, err = f.store.Pool.Exec(`UPDATE external_effects SET workspace_id=NULL WHERE id=$1 AND operation_id=$2`, effect, operation)
+			must(t, err)
 			clone, plugin := "late-clone-"+state, "late-plugin-"+state
 			_, err = f.store.Pool.Exec(`INSERT INTO clone_executions(execution_id,operation_id,workspace_id,node_id,input,dispatched_epoch,node_operation_id)
 			 VALUES($1,$2,$3,'node-late','{"kind":"clone"}',1,$1::text)`, clone, operation, workspace)
@@ -115,7 +119,7 @@ func TestResidualProvisioningFactsAcrossReclaimStatesOverGRPC(t *testing.T) {
 			 AND (SELECT count(DISTINCT e->>'key') FROM jsonb_array_elements(r.reclaim_evidence) e WHERE e->>'key'=ANY($7::text[]))=4
 			 AND (SELECT result=$5::jsonb FROM clone_executions WHERE execution_id=$4)
 			 AND (SELECT result=$6::jsonb FROM node_executions WHERE execution_id=$8)
-			 AND (SELECT state='succeeded' AND external_id='substrate-late'
+			 AND (SELECT workspace_id IS NULL AND state='succeeded' AND external_id='substrate-late'
 			   AND result=jsonb_build_object('sandboxInstanceId',$9::text,'nodeId','node-late') FROM external_effects WHERE id=$9::uuid)
 			 AND (SELECT phase='done' AND status='failed' FROM issue_runs WHERE id=$1)
 			 AND (SELECT NOT admission_open FROM workspaces WHERE id=$10)

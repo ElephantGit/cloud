@@ -151,14 +151,20 @@ func (s *Store) deliveryGivenUp(t *transaction, o Object) bool {
 		LIMIT 1`, runID, s.DeliveryGiveUpAfter.Seconds()) != nil {
 		return true
 	}
-	return s.runWorkspaceNodeUnknown(t, runID, wid, s.DeliveryUnreachableAfter)
+	return runWorkspaceNodeUnknown(t, runID, wid, s.DeliveryUnreachableAfter)
 }
 
-// runWorkspaceNodeUnknown is the release half's one authoritative judgement that a run Workspace's
-// Node state is unknown, and the only place the heartbeat evidence behind it is read: the run is
-// bound to this Workspace and no live sandbox of it carries a Node that is connected and was last
-// seen inside window. Both D5's delivery give-up and D8's delete give-up ask this one function, so the
-// two sides cannot drift into two definitions of "the Node is unreachable".
+// runWorkspaceNodeUnknown is the one authoritative judgement that a run Workspace's Node state is
+// unknown, and the only place the heartbeat evidence behind it is read: the Workspace is bound to this
+// run and no live sandbox of it carries a Node that is connected and was last seen inside window.
+// IssueRun D5's delivery give-up, IssueRun D8's delete give-up and the workflow scheduler's in-flight
+// session settlement (workflowAgentSessionOutcome) all ask this one function, so none of them can
+// drift into a second definition of "the Node is unreachable".
+//
+// The binding is whichever column ties the Workspace to its run — `issue_run_id` for an IssueRun,
+// `workflow_run_id` for a WorkflowRun. The two are mutually exclusive (0039's XOR), so one comparison
+// covers both kinds without the caller having to say which it holds, and a Workspace bound to a
+// different run of either kind is still refused.
 //
 // The polarity is deliberately "unknown" rather than "reachable": a Workspace whose row is missing, is
 // not bound to this run, or whose id is unusable is *not* unknown. Failing the other way round would
@@ -167,13 +173,17 @@ func (s *Store) deliveryGivenUp(t *transaction, o Object) bool {
 // window is the caller's configured limit and is judged on the database clock, so a Cloud process with
 // a skewed clock cannot abandon a Workspace another replica would still be waiting for. A window that
 // was never configured (zero or negative) fails closed as "not unknown".
-func (s *Store) runWorkspaceNodeUnknown(t *transaction, runID, wid string, window time.Duration) bool {
+//
+// A Workspace with no live sandbox at all is unknown immediately, window or not: there is no Node left
+// to report anything, which is the case force stop leaves behind when it terminates the sandbox and
+// the executions it was hosting in one transaction.
+func runWorkspaceNodeUnknown(t *transaction, runID, wid string, window time.Duration) bool {
 	if window <= 0 || !validID(wid) {
 		return false
 	}
 	return t.one(`
 		SELECT w.id FROM workspaces w
-		WHERE w.id=$1 AND w.issue_run_id=$2
+		WHERE w.id=$1 AND (w.issue_run_id=$2 OR w.workflow_run_id=$2)
 		  AND NOT EXISTS (
 		    SELECT 1 FROM sandbox_instances sb
 		    JOIN node_instances n ON n.sandbox_instance_id = sb.id
@@ -208,7 +218,7 @@ func (s *Store) releaseGivenUp(t *transaction, o Object) bool {
 	if t.one(`SELECT 1 FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL`, wid) == nil {
 		return false
 	}
-	return s.runWorkspaceNodeUnknown(t, o.S("id"), wid, s.DeliveryUnreachableAfter)
+	return runWorkspaceNodeUnknown(t, o.S("id"), wid, s.DeliveryUnreachableAfter)
 }
 
 // giveUpRunWorkspaceRelease is D8's terminal transition, run on the caller-owned *transaction: an

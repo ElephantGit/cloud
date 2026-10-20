@@ -13,6 +13,14 @@ import (
 // dispatches within the deadline fails its node instead of hanging the run in `running`.
 const workflowSessionStartDeadline = 15 * time.Minute
 
+// workflowSessionNodeUnavailable is the reason an in-flight session settles with when the Node that
+// owns it is gone. It is Cloud's own code for the diagnosis Cloud made, and deliberately not one of the
+// Node-reported session end reasons (`interrupted`, `agent_failed`): nothing reported anything here,
+// and borrowing the Node's vocabulary would make Cloud's judgement indistinguishable from a Node's
+// report. It is also the published operation failure code for an unreachable Node — the same fact, so
+// the same name.
+const workflowSessionNodeUnavailable = "node_unavailable"
+
 // settleWorkflowSessionEnded accepts a WorkflowRun's session terminal event. A WorkflowRun has no
 // Thread, no `phase` and no Revision delivery: its scheduler's next pass reads this very execution's
 // result as the node's terminal evidence (workflowAgentSessionOutcome), which is why this
@@ -52,7 +60,8 @@ func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool
 
 // workflowAgentSessionOutcome settles a committed running agent node. Terminal evidence (this
 // node's own session execution's result) commits the node's terminal state; a
-// dispatched-but-unreported session is held (the Node owns it); a session that never dispatched
+// dispatched-but-unreported session is held (the Node owns it) for as long as the Node can still
+// report it; a session whose Node is gone settles failed, and a session that never dispatched
 // fails the node once the startup deadline passes. The run advances on the next tick after any
 // commit.
 //
@@ -60,17 +69,43 @@ func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool
 // (D4 executes its agent nodes serially through one Workspace), so evidence read at run scope —
 // "the newest agent_session result for this run" — would let the second node inherit the first
 // node's result and be recorded succeeded without ever executing (invariant 5).
-func workflowAgentSessionOutcome(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+func workflowAgentSessionOutcome(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, unreachableAfter time.Duration) (map[string]workflowNodeState, bool) {
 	e := t.one(`SELECT result FROM node_executions
 		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID)
 	if e != nil {
 		return commitWorkflowAgentTerminal(t, runID, version, nodeID, states, e.O("result"))
 	}
-	// Dispatched but not yet terminal: the Node owns the session until it reports. A successful
-	// initial turn ends the session — Cloud releases one EndSession command and waits for the
-	// terminal result, which stays the node's only evidence (D4).
+	// Dispatched but not yet terminal: the Node owns the session until it reports — and a session may
+	// legitimately run for hours, so elapsed time is not evidence of anything. The Node is. When the
+	// session's Node can no longer report, holding the run `running` waits forever for evidence that
+	// cannot arrive, so the node settles failed with Cloud's own reason (invariant 5's converse: no
+	// committed result, so never succeeded). The judgement and the window are the ones the IssueRun
+	// release paths already make (runWorkspaceNodeUnknown), so "the Node is unreachable" has one
+	// definition across run kinds, and the state a force stop leaves behind — sandbox terminated, the
+	// executions it hosted marked — settles here instead of hanging.
+	//
+	// The polarity stays the shared judgement's: a run with no Workspace bound to it is not "unknown"
+	// and the session is held, exactly as D5 and D8 refuse to read a lookup problem as an abandoned
+	// run. The session path cannot reach that state anyway — startWorkflowAgentSession creates the
+	// Workspace before it commits the node `running` — and the binding is never cleared, only
+	// soft-deleted, which the live-sandbox half of the judgement already covers.
 	if e := t.one(`SELECT execution_id FROM node_executions
 		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session'`, runID, nodeID); e != nil {
+		if w := t.one("SELECT id FROM workspaces WHERE workflow_run_id=$1", runID); w != nil &&
+			runWorkspaceNodeUnknown(t, runID, w.S("id"), unreachableAfter) {
+			state := states[nodeID]
+			state.Status = "failed"
+			state.FinishedAt = nowRFC3339()
+			state.Error = workflowSessionNodeUnavailable
+			state.Output = Object{"reason": workflowSessionNodeUnavailable}
+			states[nodeID] = state
+			finishWorkflowRun(t, runID, version, "failed", workflowSessionNodeUnavailable, states)
+			return states, false
+		}
+		// The Node is still there. A successful initial turn ends the session — Cloud releases one
+		// EndSession command and waits for the terminal result, which stays the node's only evidence
+		// (D4); the confirmation window bounds that wait (D7). A session with no successful turn is
+		// held.
 		return workflowSessionEndRequest(t, runID, version, nodeID, e.S("executionId"), states)
 	}
 	// Never dispatched: the startup deadline applies. A node committed running with no registered

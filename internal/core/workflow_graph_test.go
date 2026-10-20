@@ -759,6 +759,127 @@ func TestWorkflowPublishRefusesInvalidGlobals(t *testing.T) {
 	}
 }
 
+// TestNormalizeWorkflowGlobals pins the one rewrite the publish gate performs before freezing: a file
+// or array[file] global whose value is a legacy path string is replaced in place by its canonical
+// {kind: "workspace_file", path} reference, so a condition reading the frozen snapshot sees the same
+// shape desktop's into_global_variables produces. Every other declaration is left as the author wrote
+// it, and a value that is already canonical normalizes to itself.
+func TestNormalizeWorkflowGlobals(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Object
+		want Object
+	}{
+		{
+			name: "a file global whose value is a legacy path string",
+			in:   Object{"globalVariables": []any{Object{"name": "f.report", "valueType": "file", "value": "docs/report.md"}}},
+			want: Object{"globalVariables": []any{Object{"name": "f.report", "valueType": "file", "value": Object{"kind": "workspace_file", "path": "docs/report.md"}}}},
+		},
+		{
+			name: "an array[file] global whose values are legacy path strings",
+			in:   Object{"globalVariables": []any{Object{"name": "f.reports", "valueType": "array[file]", "value": []any{"docs/a.md", "docs/b.md"}}}},
+			want: Object{"globalVariables": []any{Object{"name": "f.reports", "valueType": "array[file]", "value": []any{
+				Object{"kind": "workspace_file", "path": "docs/a.md"},
+				Object{"kind": "workspace_file", "path": "docs/b.md"},
+			}}}},
+		},
+		{
+			name: "a file global whose value is already a canonical reference",
+			in:   Object{"globalVariables": []any{Object{"name": "f.report", "valueType": "file", "value": Object{"kind": "workspace_file", "path": "docs/report.md"}}}},
+			want: Object{"globalVariables": []any{Object{"name": "f.report", "valueType": "file", "value": Object{"kind": "workspace_file", "path": "docs/report.md"}}}},
+		},
+		{
+			name: "a non-file global is left as authored",
+			in:   Object{"globalVariables": []any{Object{"name": "g.region", "valueType": "string", "value": "eu"}}},
+			want: Object{"globalVariables": []any{Object{"name": "g.region", "valueType": "string", "value": "eu"}}},
+		},
+		{
+			name: "a graph without globalVariables",
+			in:   Object{"nodes": []any{}},
+			want: Object{"nodes": []any{}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeWorkflowGlobals(decodeGraph(t, tc.in))
+			// Compare the canonical JSON: normalizeWorkflowGlobals builds the rewritten values as typed
+			// Object maps while the round-trip decoder produces plain maps, so the two spellings of the
+			// same document are equal as JSON but not under reflect.DeepEqual.
+			if gotJSON, wantJSON := string(encodeGraph(t, got)), string(encodeGraph(t, tc.want)); gotJSON != wantJSON {
+				t.Fatalf("normalizeWorkflowGlobals = %s, want %s", gotJSON, wantJSON)
+			}
+		})
+	}
+}
+
+// TestNormalizedSnapshotGraphText pins the importer's byte-for-byte contract: the snapshot text is
+// the caller's raw document unless normalizeWorkflowGlobals rewrote a legacy file or array[file]
+// value, and only that rewrite is re-encoded.
+func TestNormalizedSnapshotGraphText(t *testing.T) {
+	cases := []struct {
+		name    string
+		graph   Object
+		raw     string
+		rewrite bool
+	}{
+		{
+			name: "a legacy file value is re-encoded",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.report", "valueType": "file", "value": "docs/report.md"},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.report","valueType":"file","value":"docs/report.md"}]}`,
+			rewrite: true,
+		},
+		{
+			name: "a legacy array[file] value is re-encoded",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.reports", "valueType": "array[file]", "value": []any{"docs/a.md", "docs/b.md"}},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.reports","valueType":"array[file]","value":["docs/a.md","docs/b.md"]}]}`,
+			rewrite: true,
+		},
+		{
+			name: "an already-canonical file value keeps the raw text",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "f.report", "valueType": "file", "value": Object{"kind": "workspace_file", "path": "docs/report.md"}},
+			}},
+			raw:     `{"globalVariables":[{"name":"f.report","valueType":"file","value":{"kind":"workspace_file","path":"docs/report.md"}}]}`,
+			rewrite: false,
+		},
+		{
+			name: "a non-file global keeps the raw text",
+			graph: Object{"globalVariables": []any{
+				Object{"name": "g.region", "valueType": "string", "value": "eu"},
+			}},
+			raw:     `{"globalVariables":[{"name":"g.region","valueType":"string","value":"eu"}]}`,
+			rewrite: false,
+		},
+		{
+			name:    "a graph without globals keeps the raw text",
+			graph:   Object{"nodes": []any{}},
+			raw:     `{"nodes":[]}`,
+			rewrite: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizedSnapshotGraphText(decodeGraph(t, tc.graph), tc.raw)
+			if !tc.rewrite {
+				if got != tc.raw {
+					t.Fatalf("normalizedSnapshotGraphText = %s, want the raw text unchanged", got)
+				}
+				return
+			}
+			if got == tc.raw {
+				t.Fatal("a legacy file value was not rewritten")
+			}
+			if !strings.Contains(got, `"kind":"workspace_file"`) {
+				t.Fatalf("normalizedSnapshotGraphText = %s, want a workspace_file reference", got)
+			}
+		})
+	}
+}
+
 // TestWorkflowPublishAcceptsOnlyDesktopsOperatorSet pins the accepted set to desktop's
 // `ComparisonOperator::parse` from both sides. A spelling only one side knows is the divergence the
 // publish gate exists to prevent: Cloud would admit a document desktop then reads as an operator it

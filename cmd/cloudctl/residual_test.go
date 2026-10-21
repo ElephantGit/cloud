@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -141,6 +142,46 @@ func TestCloudctlResidualErrorsNeverOutputInfrastructureDetails(t *testing.T) {
 		})
 		if err == nil || err.Error() != tc.code || output.Len() != 0 {
 			t.Fatalf("error = %v, stdout = %q; want %s and empty stdout", err, output.String(), tc.code)
+		}
+	}
+}
+
+func TestCloudctlResidualStopEvidenceOutput(t *testing.T) {
+	for _, action := range []string{"list", "get"} {
+		for _, name := range []string{"stop unconfirmed", "without evidence"} {
+			t.Run(action+"/"+name, func(t *testing.T) {
+				evidence := core.Object{}
+				if name == "stop unconfirmed" {
+					evidence["stop_unconfirmed"] = core.Object{"kind": "stop_unconfirmed", "source": "cloud", "observedAt": "2026-10-21T08:00:00Z", "executionId": "original-execution"}
+				}
+				resource := core.Object{"runId": "run", "stopEvidence": evidence}
+				want := core.Object{"resource": resource, "residual": resource}
+				if action == "list" {
+					want = core.Object{"items": []core.Object{resource}, "nextCursor": ""}
+				}
+				args := []string{action, "--tenant-id", "tenant"}
+				if action == "get" {
+					args = append(args, "--run-id", "run")
+				}
+				request, err := parseResidual(args)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var output bytes.Buffer
+				err = dispatchResidual(t.Context(), &request, &output, func(context.Context, *core.ResidualManagementRequest) (core.Object, error) {
+					return want, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded, err := json.Marshal(want)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if output.String() != string(encoded)+"\n" {
+					t.Fatalf("output = %q; want %s followed by newline", output.String(), encoded)
+				}
+			})
 		}
 	}
 }

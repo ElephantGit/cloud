@@ -262,11 +262,11 @@ func workflowInputFields(graph Object) []FormField {
 // object is separate from the request's version selection, so the two meanings never meet there.
 func withoutPlatformOwnedDeclarations(fields []FormField) []FormField {
 	kept := make([]FormField, 0, len(fields))
-	for _, field := range fields {
-		if field.Key == fieldKeySnapshotID {
+	for i := range fields {
+		if fields[i].Key == fieldKeySnapshotID {
 			continue
 		}
-		kept = append(kept, field)
+		kept = append(kept, fields[i])
 	}
 	return kept
 }
@@ -441,7 +441,7 @@ func launchFieldRequired(declaration map[string]launchFieldOverride, key string,
 // This is the catalog rather than the form. A workflow's declaration narrows it in
 // injectPlatformFields, and only there, because a key the author declared in their own Start node is
 // not the platform's to withdraw (Issue collaboration D8). The reserved `snapshotId` never reaches
-// here as an author key: the issue form drops that declaration first, so the catalogue's entry is
+// here as an author key: the issue form drops that declaration first, so the catalog's entry is
 // always the one projected (see withoutPlatformOwnedDeclarations).
 func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots []Object, withheld bool) []FormField {
 	version, hasVersion := versionField(snapshots, withheld)
@@ -591,7 +591,7 @@ func platformDefault(value string) any {
 // before the platform field existed — and so is an *illegal* default: the same URL is not a legal
 // value for a `repository` the author declared as a select that does not offer it.
 //
-// The snapshot selector has no author counterpart by the time the catalogue is merged: a declaration
+// The snapshot selector has no author counterpart by the time the catalog is merged: a declaration
 // under that key is dropped before this runs (see withoutPlatformOwnedDeclarations), because its value
 // is the cursor `confirmInteraction` resolves the run's snapshot from rather than a value the workflow
 // receives. The platform's field is therefore always the one projected, and the cursor stays the

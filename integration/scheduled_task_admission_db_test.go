@@ -110,7 +110,7 @@ func TestScheduledTaskMissedRecoverySingleOccurrence(t *testing.T) {
 // healthy task in the same pass.
 func TestScheduledTaskSingleFailureDoesNotBlock(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	badAgentID := seedScheduledTaskAgent(t, store.Pool, s)
+	badAgentID := seedScheduledTaskAgentWithPlugin(t, store.Pool, s, "official/ora-space.opencode-retired")
 	_, err := store.Pool.Exec(`UPDATE space_agents SET status='retired' WHERE id=$1`, badAgentID)
 	must(t, err)
 	badTask := seedEnabledScheduledTask(t, store, s, badAgentID, "Retired agent", 65)
@@ -156,7 +156,7 @@ func TestScheduledTaskUpdateAppliesPatch(t *testing.T) {
 		Path:            "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks/" + taskID,
 		TenantID:        s.tenantID,
 		ScheduledTaskID: taskID,
-		Body:            core.Object{"name": "Renamed"},
+		Body:            core.Object{"name": "Renamed", "version": int64(1)},
 		Identity:        caller,
 	})
 	must(t, err)

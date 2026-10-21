@@ -116,7 +116,13 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 
 	// D2：直接落到 `now` 之前的最新到期点。停机期间更早的到期点一律不写——一次停机至多一条
 	// missed，窗口内的最新点照常接纳。幂等由 occurrence 的 (task_id, scheduled_at) 主键保证。
-	anchor, _ := task["enabledAt"].(time.Time)
+	// transaction.list reads rows through row_to_json, so timestamptz values arrive as
+	// RFC3339 strings rather than time.Time. Treating that string as a time.Time silently
+	// produced a zero anchor and made every enabled definition look not-yet-due.
+	anchor, err := time.Parse(time.RFC3339Nano, task.S("enabledAt"))
+	if err != nil {
+		panic(databaseFailure{fmt.Errorf("scheduled task %s has an invalid enabled_at: %w", taskID, err)})
+	}
 	due := schedule.latestDue(anchor, now, loc)
 	if due.IsZero() {
 		return
@@ -199,7 +205,10 @@ func failScheduledOccurrence(t *transaction, taskID string, due time.Time, reaso
 // database's, never a Go process clock (Thread D4 invariant 5 的同源要求).
 func dbNow(t *transaction) time.Time {
 	row := t.one("SELECT now() AS now")
-	at, _ := row["now"].(time.Time)
+	at, err := time.Parse(time.RFC3339Nano, row.S("now"))
+	if err != nil {
+		panic(databaseFailure{fmt.Errorf("read database clock: %w", err)})
+	}
 	return at
 }
 

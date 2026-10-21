@@ -351,10 +351,11 @@ func TestThreadMessagePostRejectsScheduledRun(t *testing.T) {
 	f.bindBusinessHooks()
 	scene := seedThreadScene(t, f)
 	taskID := newTestID()
+	agentID := seedScheduledTaskAgent(t, f.store.Pool, scene.seed)
 	_, e := f.store.Pool.Exec(`
 		INSERT INTO scheduled_tasks(id,tenant_id,issue_id,creator_user_id,agent_id,name,prompt,schedule,timezone,revision,version,enabled)
 		VALUES($1,$2,$3,$4,$5,'headless','Sync','{"kind":"daily","hour":0,"minute":0}'::jsonb,'UTC',1,1,false)`,
-		taskID, scene.tenantID, scene.issueID, scene.seed.userID, scene.seed.agentID)
+		taskID, scene.tenantID, scene.issueID, scene.seed.userID, agentID)
 	must(t, e)
 	_, e = f.store.Pool.Exec(`
 		INSERT INTO scheduled_task_occurrences(tenant_id,task_id,scheduled_at,outcome,task_revision,observed_at,run_id)

@@ -90,8 +90,8 @@ func (s *Store) endIdleAgentThread(ctx context.Context, runID string) error {
 			  AND cancel_requested_at IS NULL
 			  AND (
 				EXISTS(SELECT 1 FROM scheduled_task_occurrences o WHERE o.run_id=issue_runs.id)
-				OR idle_since < now() - make_interval(secs => $2)
-			  )`, runID, s.ThreadIdleTimeout.Seconds())
+				OR ($3 AND idle_since < now() - make_interval(secs => $2))
+			  )`, runID, s.ThreadIdleTimeout.Seconds(), s.ThreadIdleTimeout > 0)
 		if o == nil {
 			return Object{}
 		}
@@ -118,10 +118,10 @@ func (s *Store) scanEndableIdleThreads(ctx context.Context, limit int) ([]string
 		  AND cancel_requested_at IS NULL
 		  AND (
 			EXISTS(SELECT 1 FROM scheduled_task_occurrences o WHERE o.run_id=issue_runs.id)
-			OR idle_since < now() - make_interval(secs => $2)
+			OR ($3 AND idle_since < now() - make_interval(secs => $2))
 		  )
 		ORDER BY idle_since, id
-		LIMIT $1`, limit, s.ThreadIdleTimeout.Seconds())
+		LIMIT $1`, limit, s.ThreadIdleTimeout.Seconds(), s.ThreadIdleTimeout > 0)
 	if err != nil {
 		return nil, err
 	}

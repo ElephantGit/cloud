@@ -13,9 +13,14 @@ const scheduledTaskMigration = "0060_scheduled_tasks.sql"
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
 func seedScheduledTaskAgent(t *testing.T, pool *sql.DB, s skeletonSeed) string {
 	t.Helper()
+	return seedScheduledTaskAgentWithPlugin(t, pool, s, "official/ora-space.opencode")
+}
+
+func seedScheduledTaskAgentWithPlugin(t *testing.T, pool *sql.DB, s skeletonSeed, pluginID string) string {
+	t.Helper()
 	agentID := uuid.NewString()
 	_, err := pool.Exec(`INSERT INTO space_agents(id, space_id, tenant_id, plugin_id, display_name, status)
-		VALUES($1, $2, $3, 'official/ora-space.opencode', 'Codex', 'active')`, agentID, s.spaceID, s.tenantID)
+		VALUES($1, $2, $3, $4, 'Codex', 'active')`, agentID, s.spaceID, s.tenantID, pluginID)
 	must(t, err)
 	return agentID
 }

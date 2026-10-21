@@ -258,9 +258,153 @@ func TestManualWorkflowInvocationCreatesLinkedRun(t *testing.T) {
 	}
 }
 
+// TestManualWorkflowInvocationCarriesTheKickoff pins that the manual entry treats the submitted
+// reserved `input` key as the run's kickoff. The manual entry has no form: its input object *is* the
+// execution input, so a kickoff it names has to survive the form-to-execution projection instead of
+// being dropped as an undeclared variable — the Start variable pool resolves [start, input] from it,
+// and dropping it would silently evaluate the run against the authored instruction.
+func TestManualWorkflowInvocationCarriesTheKickoff(t *testing.T) {
+	f := setup(t)
+	graph := startPromptGraph(nil, "authored prompt")
+	graph["nodes"] = append(graph["nodes"].([]any), core.Object{
+		"id": "output-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+		"data": core.Object{"kind": "output", "title": "Done"},
+	})
+	graph["edges"] = []any{core.Object{"id": "output-edge", "source": "start-1", "target": "output-1"}}
+	wid := f.call("POST", f.path("/workflows"), core.Object{"name": "Manual kickoff", "graph": graph}, "inv-manual-kickoff-wf", 200).O("resource").S("id")
+	snapshot := publishWorkflow(t, f, wid, "inv-manual-kickoff-pub")
+	iid := launchIssue(t, f, runProject(t, f, "inv-manual-kickoff-project"), "Manual kickoff", "inv-manual-kickoff-issue").S("id")
+
+	status, body := manualWorkflowRun(t, f, iid, wid, "inv-manual-kickoff-start", core.Object{"input": "review the diff"})
+	if status != 200 {
+		t.Fatalf("manual start status = %d: %v", status, body)
+	}
+	runID := body.O("resource").S("workflowInvocationRef")
+	linked := f.call("GET", f.path("/workflows/"+wid+"/runs/"+runID), nil, "", 200)
+	if linked.S("snapshotId") != snapshot.S("id") || linked.O("input").S("input") != "review the diff" {
+		t.Fatalf("manual invocation lost its kickoff: %v", linked.O("input"))
+	}
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	linked = f.call("GET", f.path("/workflows/"+wid+"/runs/"+runID), nil, "", 200)
+	if linked.S("status") != "succeeded" {
+		t.Fatalf("manual invocation did not complete: %v", linked)
+	}
+	if got := linked.O("nodeStates").O("start-1").O("output").S("input"); got != "review the diff" {
+		t.Fatalf("start output input = %q; want the submitted kickoff", got)
+	}
+
+	// The reserved selector is string-only on every entry: a manual run may not hand the pool a type
+	// the direct-run entry would refuse, or [start, input] would mean different things per entry.
+	refusalStatus, refusal := manualWorkflowRun(t, f, iid, wid, "inv-manual-kickoff-bad", core.Object{"input": 7})
+	if refusalStatus != 400 || refusal.S("code") != "invalid_field_value" || refusal.O("params").S("field") != "input" {
+		t.Fatalf("non-string manual kickoff refusal = %d %v; want 400 invalid_field_value", refusalStatus, refusal)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_runs WHERE workflow_id=$1", wid); n != 1 {
+		t.Fatalf("refused manual start left %d WorkflowRuns, want the one admitted run", n)
+	}
+}
+
+// TestWorkflowConfirmReadsThePromptAsTheStartKickoff covers the third entry. The @ form's prompt
+// field is prefilled with the Start node's authored instruction and is what the user edits to
+// override it, so the value they confirm has to reach the Start variable pool. Otherwise a condition
+// on [start, input] would decide the branch from the authored text while the text the user wrote sits
+// unused in the interaction.
+func TestWorkflowConfirmReadsThePromptAsTheStartKickoff(t *testing.T) {
+	f := setup(t)
+	graph := startPromptGraph([]any{invocationVariable("topic")}, "authored prompt")
+	graph["nodes"] = append(graph["nodes"].([]any),
+		core.Object{
+			"id": "condition-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+			"data": core.Object{"kind": "condition", "title": "Kickoff branch", "cases": []any{core.Object{
+				"id": "literal", "logic": "and", "conditions": []any{core.Object{
+					"variableSelector": []any{"start-1", "input"}, "operator": "equals", "value": "review the diff",
+				}},
+			}}},
+		},
+		core.Object{
+			"id": "taken", "type": "workflow", "position": core.Object{"x": 600, "y": 0},
+			"data": core.Object{"kind": "output", "title": "Taken"},
+		},
+		core.Object{
+			"id": "fallback", "type": "workflow", "position": core.Object{"x": 600, "y": 200},
+			"data": core.Object{"kind": "output", "title": "Fallback"},
+		},
+	)
+	graph["edges"] = []any{
+		core.Object{"id": "start-condition", "source": "start-1", "target": "condition-1"},
+		core.Object{"id": "taken-edge", "source": "condition-1", "target": "taken", "sourceHandle": "literal"},
+		core.Object{"id": "fallback-edge", "source": "condition-1", "target": "fallback"},
+	}
+	wid, _, confirmed := confirmInvocationSceneWith(t, f, graph, core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "topic": "auth", "prompt": "review the diff",
+	}, "inv-kickoff-confirm")
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	workflow := f.call("GET", f.path("/workflows/"+wid+"/runs/"+confirmed.S("workflowInvocationRef")), nil, "", 200)
+	if workflow.S("status") != "succeeded" {
+		t.Fatalf("confirmed run did not complete: %v", workflow)
+	}
+	// The kickoff is frozen onto the run row at confirm time, not re-read from the interaction later.
+	if workflow.O("input").S("input") != "review the diff" {
+		t.Fatalf("WorkflowRun input lost the confirmed prompt: %v", workflow.O("input"))
+	}
+	if got := workflow.O("nodeStates").O("start-1").O("output").S("input"); got != "review the diff" {
+		t.Fatalf("start output input = %q; want the confirmed prompt", got)
+	}
+	if branch := workflow.O("nodeStates").O("condition-1").O("output").S("selectedBranch"); branch != "literal" {
+		t.Fatalf("condition selected %q; want literal — [start, input] did not read the confirmed prompt", branch)
+	}
+}
+
+// TestWorkflowConfirmDeclaredPromptStaysAVariable keeps the boundary the platform-field rule draws:
+// a workflow declaring its own `prompt` variable owns the key, the platform injects no prompt field,
+// and the value the user gives is that variable's rather than the kickoff. The run must then fall back
+// to the authored instruction, which is what a form that named no kickoff means.
+func TestWorkflowConfirmDeclaredPromptStaysAVariable(t *testing.T) {
+	f := setup(t)
+	graph := startPromptGraph([]any{invocationVariable("prompt")}, "authored prompt")
+	graph["nodes"] = append(graph["nodes"].([]any), core.Object{
+		"id": "output-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+		"data": core.Object{"kind": "output", "title": "Done"},
+	})
+	graph["edges"] = []any{core.Object{"id": "output-edge", "source": "start-1", "target": "output-1"}}
+	wid, _, confirmed := confirmInvocationSceneWith(t, f, graph, core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "prompt": "the author's own parameter",
+	}, "inv-declared-prompt")
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	workflow := f.call("GET", f.path("/workflows/"+wid+"/runs/"+confirmed.S("workflowInvocationRef")), nil, "", 200)
+	if workflow.S("status") != "succeeded" {
+		t.Fatalf("confirmed run did not complete: %v", workflow)
+	}
+	if _, ok := workflow.O("input")["input"]; ok {
+		t.Fatalf("declared prompt became the kickoff: %v", workflow.O("input"))
+	}
+	output := workflow.O("nodeStates").O("start-1").O("output")
+	if output.S("prompt") != "the author's own parameter" {
+		t.Fatalf("declared prompt variable lost its value: %v", output)
+	}
+	if output.S("input") != "authored prompt" {
+		t.Fatalf("start output input = %q; want the authored instruction", output.S("input"))
+	}
+}
+
 // confirmInvocationScene crosses the public comment/form boundary. Unlike the fixture's direct
 // workflow-run POST, Confirm leaves execution pending for the real scheduler used by these tests.
 func confirmInvocationScene(t *testing.T, f *fixture, graph core.Object, key string) (wid, iid string, confirmed core.Object) {
+	t.Helper()
+	return confirmInvocationSceneWith(t, f, graph, core.Object{
+		"repository": "ora-space/cloud", "branch": "main",
+	}, key)
+}
+
+// confirmInvocationSceneWith is confirmInvocationScene with the submitted form values spelled out,
+// for the cases whose subject is what the user answered rather than the document alone.
+func confirmInvocationSceneWith(t *testing.T, f *fixture, graph, values core.Object, key string) (wid, iid string, confirmed core.Object) {
 	t.Helper()
 	wid = f.call("POST", f.path("/workflows"), core.Object{
 		"name": "Scheduled invocation", "graph": graph,
@@ -268,9 +412,7 @@ func confirmInvocationScene(t *testing.T, f *fixture, graph core.Object, key str
 	publishWorkflow(t, f, wid, key+"-publish")
 	iid = launchIssue(t, f, runProject(t, f, key+"-project"), "Scheduled invocation", key+"-issue").S("id")
 	interaction := workflowComment(t, f, wid, iid, key+"-comment", "run this workflow")
-	confirmed = f.call("POST", confirmPath(f, iid, interaction.S("id")), core.Object{"values": core.Object{
-		"repository": "ora-space/cloud", "branch": "main",
-	}}, key+"-confirm", 200).O("resource")
+	confirmed = f.call("POST", confirmPath(f, iid, interaction.S("id")), core.Object{"values": values}, key+"-confirm", 200).O("resource")
 	if confirmed.S("status") != "queued" || confirmed.S("workflowInvocationRef") == "" {
 		t.Fatalf("Confirm must enqueue a linked invocation before scheduling: %v", confirmed)
 	}

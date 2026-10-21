@@ -664,6 +664,27 @@ func declaresWorkflowInputField(graph Object, key string) bool {
 	return false
 }
 
+// formKickoff reads the kickoff text a confirmed `@` form submitted, or nil when the form named none.
+//
+// The platform's prompt field is prefilled with the Start node's authored instruction and is what the
+// user edits to override it, so its submitted value is the run's kickoff — desktop's kickoff_input,
+// which the variable pool lets overwrite the authored text (see WorkflowStartKickoff). It is the
+// platform's only while the author's own Start node does not declare a variable under that name: a
+// workflow owning `prompt` keeps the key for its variable, the platform injects no prompt field, and
+// that value is the workflow's parameter rather than a kickoff (see injectPlatformFields). A form
+// whose launch-field declaration withdrew the field submits no key at all, which is the same
+// absence: the run falls back to the authored instruction.
+//
+// An empty answer is a value rather than an absence: the user cleared the prefilled prompt and meant
+// to run with nothing, which is what desktop's Some("") does. Type is judged later, by the one
+// admission gate every entry shares, so this reader does not repeat the rule.
+func formKickoff(graph, values Object) any {
+	if declaresWorkflowInputField(graph, fieldKeyPrompt) {
+		return nil
+	}
+	return values[fieldKeyPrompt]
+}
+
 // foldLegacyVersionAnswer takes the pre-rename `version` key back out of a submission, rewriting it
 // under `snapshotId` where that key is free.
 //

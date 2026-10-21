@@ -171,6 +171,21 @@ func acceptResidualReceipt(t *transaction, e Object, sequence int64, event strin
 	return true
 }
 
+// Clone receipts use a separate registry. Audit a conflicting event before cloneResult can
+// reject it with a rollback, retaining the original receipt and blocking further disposal.
+func acceptResidualCloneReceipt(t *transaction, e Object, sequence int64, event string) bool {
+	row := residualForWorkspace(t, e.S("workspaceId"))
+	if row == nil {
+		return true
+	}
+	old := t.one("SELECT event FROM clone_event_receipts WHERE execution_id=$1 AND sequence=$2", e.S("executionId"), sequence)
+	if old != nil && old.S("event") != event {
+		key := "receipt:" + e.S("executionId") + ":" + fmt.Sprint(sequence)
+		return appendResidualConflict(t, row, key, Object{"kind": "receipt", "event": old.S("event")}, Object{"kind": "receipt", "event": event})
+	}
+	return true
+}
+
 func sameResidualFact(a, b Object) bool {
 	// Legacy facts also contain receipt timestamps and provisional history. Neither changes the
 	// terminal's semantic identity when importing an existing receipt into the append-only column.

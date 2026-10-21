@@ -393,6 +393,41 @@ func TestWorkflowConfirmDeclaredPromptStaysAVariable(t *testing.T) {
 	}
 }
 
+// TestWorkflowConfirmDisabledPromptFallsBackToTheAuthoredInstruction pins the second authored
+// fallback the platform-field rule names: when the author's `launchFields` turn the prompt field
+// off, the form never asks for it, no submission can carry its key, and the run must use the
+// authored instruction rather than an empty kickoff. Projection, validation and kickoff ownership
+// have to read the same declaration: a run that took `prompt` anyway would turn a field the author
+// withdrew into the kickoff.
+func TestWorkflowConfirmDisabledPromptFallsBackToTheAuthoredInstruction(t *testing.T) {
+	f := setup(t)
+	graph := startPromptGraph([]any{invocationVariable("topic")}, "authored prompt")
+	graph["launchFields"] = []any{core.Object{"key": "prompt", "enabled": false}}
+	wid, iid, confirmed := confirmInvocationSceneWith(t, f, graph, core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "topic": "auth",
+	}, "inv-disabled-prompt")
+
+	// The descriptor the user answered is the proof the field was withdrawn; the run assertions below
+	// only mean the fallback if the withdrawn field was also the only place a kickoff could come from.
+	if _, ok := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iid), nil, "", 200))["prompt"]; ok {
+		t.Fatalf("a withdrawn prompt field was still projected")
+	}
+
+	for range 2 {
+		must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+	}
+	run := f.call("GET", f.path("/workflows/"+wid+"/runs/"+confirmed.S("workflowInvocationRef")), nil, "", 200)
+	if run.S("status") != "succeeded" {
+		t.Fatalf("confirmed run did not complete: %v", run)
+	}
+	if _, ok := run.O("input")["input"]; ok {
+		t.Fatalf("a withdrawn prompt became the kickoff: %v", run.O("input"))
+	}
+	if got := run.O("nodeStates").O("start-1").O("output").S("input"); got != "authored prompt" {
+		t.Fatalf("start output input = %q; want the authored instruction", got)
+	}
+}
+
 // TestWorkflowConfirmReadsTheKickoffFromTheChosenVersion pins which document decides whether the
 // submitted prompt is the kickoff: the version the run executes, not the live draft. A confirm
 // renders the form, validates the submission and projects the execution input against the selected

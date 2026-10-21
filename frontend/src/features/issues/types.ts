@@ -88,6 +88,8 @@ export interface IssueRun {
   issueId: string
   executorType: 'agent' | 'team' | 'workflow'
   executorId: string
+  /** Workflow runs: the linked WorkflowRun id, whose status is authoritative for execution. */
+  workflowInvocationRef?: string | null
   /** Comment identity behind an Agent Task Mode run; absent for direct/manual runs. */
   triggerEvidenceRefId?: string | null
   input: Record<string, unknown>

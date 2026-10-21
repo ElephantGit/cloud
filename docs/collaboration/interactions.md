@@ -54,22 +54,33 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 工作流的执行边界只有一个：显式的**确认**。
 
 ```text
-选中工作流 ──▶ 读取表单描述 ──▶ 填写（可选 AI 辅助）──▶ 确认 ──▶ IssueRun
+选中工作流 ──▶ 读取表单描述 ──▶ 填写（可选 AI 辅助）──▶ 确认 ──▶ WorkflowRun + IssueRun
    不执行        不执行             不执行、不建运行        唯一的执行边界
 ```
 
 - **表单描述**（`GET /tenants/:tid/collaboration/forms/:formRef?issueId=…`）是面向 Issue 的渲染描述：`formRef`、标题、说明和
   字段列表。它不是工作流的 schema，也不绑定任何 schema 技术。字段分三段：平台字段、工作流 Start 节点声明的变量、图的全局变量。
+  前端先读取当前文档，只为定位平台版本选择器及其默认版本；确定默认版本（最新已发布版本）后，初次打开就按该版本通过
+  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…` 读取表单，切换版本时按新版本重新读取。
+  因此显示的表单与 Confirm 校验的版本始终相同，活稿里未发布的字段不出现在默认视图。
+  这条同源承诺的前提是平台能指定版本，而选择器由活稿决定。活稿自己声明了保留键 `snapshotId`（或用启动字段移除它）时没有
+  可选的版本：`@` 表单按活稿渲染，Confirm 仍按活稿的版本规则执行最新已发布版本，显示的字段可能与执行的版本不同。
+  选择器存在、但用户切到的那个版本自己的图声明了 `snapshotId`（或它的 select 选项不全是已发布 id）时，该版本的快照表单里
+  没有平台字段，Confirm 仍按活稿判定这个键归平台，提交里的作者值会被当成版本游标：空值落到最新已发布版本，非 id 值被拒。
+  两种情况都是作者占用保留键时的边界，不是可依赖的配置：作者不应把 `snapshotId` 用作自己的变量名。是否在切换时禁止或提示
+  这类版本，由后续决策另行确定（circus#405）。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
   的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准。
 - **AI 辅助**（`POST .../issues/:iid/collaboration/assist`）只返回字段级的建议补丁和建议的上下文引用：从不创建运行，也不写入
-  持久的上下文引用。应用建议是用户的动作。生产环境没有接入辅助提供方，返回 `503 assist_unavailable`。
+  持久的上下文引用。应用建议是用户的动作。它按与 Confirm 相同的版本描述判断提交值的形状，所以有已发布版本时只接受该版本声明的字段。
+  生产环境没有接入辅助提供方，返回 `503 assist_unavailable`。
 - **确认**（`POST .../issues/:iid/interactions/:ixid/confirm`）是唯一把工作流交互变成执行意图的转换：
   - 前端校验只是体验，Cloud 在确认时**重新**解析目标，并按**被确认的那个已发布版本**的表单校验提交的值；没有任何已发布版本的
     工作流不能确认，因为不能执行未发布的草稿。
-  - 用户看到的表单来自当前文档；如果它与被确认版本的字段已经不一致，确认被拒绝并列出变化的字段
-    （`409 workflow_version_fields_changed`），而不是用用户没见过的 schema 校验他填的值。
+  - Cloud 只按所选发布版本自身的字段校验，不再与当前活稿比较。选择旧版本就是按那份快照执行：即使它的字段与活稿不同，
+    提交符合该版本表单即可通过；缺少该版本必填字段或提交它未声明的字段时，按该版本的 schema 拒绝。
   - 提交的值作为交互的输入保存，被执行的版本冻结进运行输入；运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
+  - 同一事务里创建一个 WorkflowRun 和一个 IssueRun，IssueRun 的 `workflowInvocationRef` 指向该 WorkflowRun（与租户一起的复合外键，且唯一）；直接运行、manual 工作流 IssueRun 与确认共用同一个创建函数。已关联的 IssueRun 不交给 `ExecutionDispatcher`。
   - 用 `run_id IS NULL` 的比较并交换认领交互，重复确认返回 `409 interaction_already_confirmed`；对非表单交互确认返回
     `409 interaction_not_confirmable`。
 
@@ -83,10 +94,14 @@ Issue 协作通过一组端口向外部能力请求"做一件事"，而不定义
 | `FormDescriptorProvider` | 按 `formRef` 给出表单描述 | 工作流文档投影成的表单 |
 | `InputAssistProvider` | 表单的 AI 辅助 | 未接入（503） |
 | `ContextBuilder` | 组装运行的上下文快照 | 未接入，退回到"任务、表单值、目标、原始上下文引用"的确定性快照 |
-| `ExecutionDispatcher`、`ExecutionObserver` | 把排队的运行交给外部执行者，并观察其进度 | 未接入：团队运行和从 Issue 确认的工作流运行在生产中保持 `queued` |
+| `ExecutionDispatcher`、`ExecutionObserver` | 把排队的运行交给外部执行者，并观察其进度 | 未接入：团队运行在生产中保持 `queued`；工作流 IssueRun 不经过这里，由关联的 WorkflowRun 执行 |
 
 Agent 运行不走 `ExecutionDispatcher`，由 Cloud 自己的调度推进（见 [Agent IssueRun](../agent-runs/issue-runs.md)）。直接从工作流
 发起的运行是另一个聚合 WorkflowRun，见 [工作流](../workflows/workflows.md)。
+
+关联工作流的 IssueRun 由 WorkflowRun 的实际状态更新在同一事务内推进：未更新到行时不投影，`awaiting_input` 不改变 IssueRun，
+契约冲突使事务回滚。输出摘要写成 `system` 的 `run.message` 活动，最多 20000 字节且保持合法 UTF-8，不创建工作流作者评论。
+没有关联 IssueRun 的直接工作流运行不产生这些协作记录。
 
 **开发夹具。** `collaboration.development_fixtures: true`（环境变量 `CLOUD_COLLABORATION_DEVELOPMENT_FIXTURES`）在 Store 上装入
 `internal/collab` 的进程内替身：固定 ID 的 Agent 和团队目标、确定性的上下文构建器（最近至多 10 条评论，不用 AI）、给出固定输出的

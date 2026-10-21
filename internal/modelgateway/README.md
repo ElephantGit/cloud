@@ -23,7 +23,7 @@
 每个授权观察任务归属于一个请求，取消后必须等待它退出。
 
 Anthropic 兼容面固定到 Claude Code 2.1.303：推理只接受 POST messages 的空 query 或
-精确 beta=true；协议版本固定 2023-06-01，beta token 仅允许 anthropic.go 列出的九项，
+精确 beta=true；协议版本固定 2023-06-01，beta token 仅允许 anthropic.go 中 claudeBetaHeaders 列出的值，
 重复或未知值拒绝。其他客户端头不转发；CLI 的 browser-access 标记只验证并丢弃。
 GET models（空 query 或 limit=1000）在重新核验当前授权后返回绑定的唯一模型，不请求上游、
 不解密 Key、不登记推理 attempt。count_tokens 等可选接口保持未实现并明确拒绝。

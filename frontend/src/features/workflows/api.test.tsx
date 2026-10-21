@@ -40,6 +40,7 @@ function runFixture(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
     startedAt: '2026-09-20T02:00:00.000Z',
     finishedAt: null,
     cancelRequestedAt: null,
+    pluginVersion: '1.0.0',
     createdAt: '2026-09-20T02:00:00.000Z',
     updatedAt: '2026-09-20T02:00:05.000Z',
     ...overrides,

@@ -690,22 +690,25 @@ func TestGlobalsComeAfterTheAuthorsOwnFields(t *testing.T) {
 	}
 }
 
-// TestLaunchKeysCollideLikeTheOlderOnes covers the collision rule for the three new reserved keys: an
+// TestLaunchKeysCollideLikeTheOlderOnes covers the collision rule for the three new launch keys: an
 // author who declares one keeps their own control, label and requiredness, and the platform only fills
-// a default their control can actually hold. The version field is the exception that proves the rule —
-// its default is a cursor rather than a value, so no control can hold it.
+// a default their control can actually hold. The reserved `snapshotId` is the exception: Issue
+// collaboration D8 rule 1 does not apply to it, so the author's declaration is dropped and the
+// platform's selector is always the field under that key
+// (20261021-snapshot-id-is-a-reserved-field.md).
 func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	declared := []any{
 		Object{"name": fieldKeyBranch, "displayName": "Target branch", "valueType": "string"},
-		Object{"name": fieldKeySnapshotID, "displayName": "Release", "valueType": "string"},
+		Object{"name": fieldKeySnapshotID, "displayName": "Release", "valueType": "string", "required": true},
 		Object{"name": fieldKeyContextRefs, "displayName": "Refs", "valueType": "string"},
 	}
 	d := projectGraph(t, startGraph(declared, ""), snapshotRows(2, 1), issueContext())
 	validateFormDescriptor(d)
 
 	// Nothing is prepended for a key the author declared, but the platform still injects the ones they
-	// did not: the two leading fields are the platform's, the three trailing ones the author's.
-	want := []string{fieldKeyRepository, fieldKeyPrompt, fieldKeyBranch, fieldKeySnapshotID, fieldKeyContextRefs}
+	// did not: the leading fields are the platform's, the trailing ones the author's. The version
+	// selector is among the former even though the author declared the name.
+	want := []string{fieldKeyRepository, fieldKeySnapshotID, fieldKeyPrompt, fieldKeyBranch, fieldKeyContextRefs}
 	if len(d.Fields) != len(want) {
 		t.Fatalf("field count = %d, want %d: %+v", len(d.Fields), len(want), d.Fields)
 	}
@@ -721,15 +724,14 @@ func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	if branch.DefaultValue != issueContext().DefaultBranch {
 		t.Fatalf("branch default = %v, want the project's branch", branch.DefaultValue)
 	}
-	// The version field is the one the platform contributes nothing to: its value is the cursor confirm
-	// resolves the run's snapshot from, not a value the author's variable could hold, so a text control
-	// must not be prefilled with a snapshot id — the run would receive that id as its own `version`.
+	// The author's `snapshotId` declaration is not projected: the key is the version cursor, so the
+	// platform's select is its only control and the author's label and requiredness are gone with it.
 	version := fieldOf(t, d, fieldKeySnapshotID)
-	if version.Type != fieldText || version.Label != "Release" {
-		t.Fatalf("the author's version control was overwritten: %+v", version)
+	if version.Type != fieldSelect || version.Label != "运行版本" || version.Required {
+		t.Fatalf("the author's version declaration was projected instead of the platform's cursor: %+v", version)
 	}
-	if version.DefaultValue != nil {
-		t.Fatalf("version default = %v, want none: the cursor is not a value the variable can hold", version.DefaultValue)
+	if version.DefaultValue != snapshotRows(2, 1)[0].S("id") {
+		t.Fatalf("version default = %v, want the newest snapshot", version.DefaultValue)
 	}
 	// The platform offers no default for the context refs at all — an empty selection is the only
 	// honest starting point — so the author's declaration is left exactly as it was written.
@@ -739,16 +741,18 @@ func TestLaunchKeysCollideLikeTheOlderOnes(t *testing.T) {
 	}
 }
 
-// TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt covers the key a form value and a
-// platform cursor can both be called. A graph whose own Start node declares `snapshotId` is asking for
-// its own variable of that name, so the value under that key must not also select the snapshot: read as
-// a cursor it would 404 on any value that is not a snapshot id, and on one that is, it would run the
-// version the user picked while handing the workflow that same id as its parameter.
+// TestWorkflowVersionCursorIsThePlatformsForTheReservedKey covers the key a form value and a platform
+// cursor used to be able to share. `snapshotId` is the platform's in every `@` form: a graph that
+// declares a Start variable of that name is not projected into the form (see
+// withoutPlatformOwnedDeclarations) and cannot be published (D1), so the submitted value under the key
+// is always the version selection — never an author's variable.
 //
 // The second half covers the pre-rename key (Issue collaboration D8). It is still read as a cursor, because a form
 // rendered before the rename is confirmed after it and the selection it carries is the user's; the new
-// key is read first so a submission carrying both is answered by the one this build wrote.
-func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) {
+// key is read first so a submission carrying both is answered by the one this build wrote. Unlike
+// `snapshotId`, `version` is not reserved: a Start variable declared under it keeps the value, and the
+// key is not read as a cursor.
+func TestWorkflowVersionCursorIsThePlatformsForTheReservedKey(t *testing.T) {
 	newest := snapshotRows(2, 1)[0].S("id")
 	older := snapshotRows(2, 1)[1].S("id")
 	declared := startGraph([]any{Object{"name": fieldKeySnapshotID, "valueType": "string"}}, "")
@@ -773,16 +777,16 @@ func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) 
 			want:   "",
 		},
 		{
-			name:   "an author's version is a value, not a version selection",
+			name:   "a graph's author declaration does not take the key back",
 			graph:  declared,
 			values: Object{fieldKeySnapshotID: "1.2.3"},
-			want:   "",
+			want:   "1.2.3",
 		},
 		{
-			name:   "an author's version holding a snapshot id still selects nothing",
+			name:   "a declared key holding a snapshot id selects that version",
 			graph:  declared,
 			values: Object{fieldKeySnapshotID: newest},
-			want:   "",
+			want:   newest,
 		},
 		{
 			name:   "a form rendered before the rename still selects its version",
@@ -797,13 +801,13 @@ func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) 
 			want:   newest,
 		},
 		{
-			name:  "the old key still selects when the author took the new one for a variable",
+			name:  "the new key answers even where the graph declares it",
 			graph: declared,
 			values: Object{
 				fieldKeySnapshotID:    "1.2.3",
 				legacyFieldKeyVersion: older,
 			},
-			want: older,
+			want: "1.2.3",
 		},
 		{
 			name:   "an author's old key is a value, not a version selection",
@@ -823,7 +827,8 @@ func TestWorkflowVersionCursorBelongsToTheAuthorWhenTheyDeclareIt(t *testing.T) 
 // read it. The values it stores and validates are the answer to the descriptor, and the `@` form is the
 // one surface where the set of keys *is* the contract, so a key the descriptor does not declare has to
 // be gone — but not before the cursor has seen it, and never by overwriting a variable the author
-// declared under the name the platform took over.
+// declared under the old name, which is not reserved. `snapshotId` has no such exemption: it is the
+// platform's key, so the answer lands there even when the graph declares the name.
 func TestFoldLegacyVersionAnswer(t *testing.T) {
 	newest := snapshotRows(2, 1)[0].S("id")
 	older := snapshotRows(2, 1)[1].S("id")
@@ -855,13 +860,19 @@ func TestFoldLegacyVersionAnswer(t *testing.T) {
 			want:   Object{legacyFieldKeyVersion: "1.2.3"},
 		},
 		{
-			name:  "the old key goes, and the author's new one is untouched",
+			name:  "the old key goes, and an answer under the new one wins",
 			graph: declaredNew,
 			values: Object{
-				fieldKeySnapshotID:    "1.2.3",
+				fieldKeySnapshotID:    newest,
 				legacyFieldKeyVersion: older,
 			},
-			want: Object{fieldKeySnapshotID: "1.2.3"},
+			want: Object{fieldKeySnapshotID: newest},
+		},
+		{
+			name:   "a declared reserved key still receives the old answer",
+			graph:  declaredNew,
+			values: Object{legacyFieldKeyVersion: older},
+			want:   Object{fieldKeySnapshotID: older},
 		},
 		{
 			name:   "a submission with no old key is left alone",

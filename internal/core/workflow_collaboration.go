@@ -215,6 +215,7 @@ type workflowFormSource struct {
 func formDescriptorFromGraph(source *workflowFormSource, issue *IssueFormContext) FormDescriptor {
 	fields := workflowInputFields(source.Graph)
 	if issue.IssueID != "" {
+		fields = withoutPlatformOwnedDeclarations(fields)
 		fields = injectPlatformFields(fields, issue, workflowStartPrompt(source.Graph), source.Snapshots, source.Withheld, launchFieldsFromGraph(source.Graph))
 	}
 	return FormDescriptor{
@@ -244,6 +245,30 @@ func workflowInputFields(graph Object) []FormField {
 		}
 	}
 	return appendGlobalVariableFields(fields, graph)
+}
+
+// withoutPlatformOwnedDeclarations drops the author's own fields under the keys the platform owns in
+// an issue-scoped form. `snapshotId` is such a key: its value is the version cursor a confirm resolves
+// the run's snapshot from, not a value the workflow receives. Issue collaboration D8 rule 1 — a key the
+// author declared in their Start node keeps the author's control, label and requiredness — does not
+// apply to it (20261021-snapshot-id-is-a-reserved-field.md): the form always projects the platform's
+// selector under that key, so an author declaration is neither rendered nor validated. The declaration
+// itself is refused the next time the graph is frozen (D1); dropping it here keeps the key's meaning
+// single in the meantime, rather than letting a form silently execute a version the author's variable
+// was meant to govern.
+//
+// The drop happens here rather than in workflowInputFields because that projection is also the schema
+// a direct run's input is checked against, and a direct run keeps the author's variable: its input
+// object is separate from the request's version selection, so the two meanings never meet there.
+func withoutPlatformOwnedDeclarations(fields []FormField) []FormField {
+	kept := make([]FormField, 0, len(fields))
+	for _, field := range fields {
+		if field.Key == fieldKeySnapshotID {
+			continue
+		}
+		kept = append(kept, field)
+	}
+	return kept
 }
 
 // workflowSnapshotOptions lists a workflow's selectable published versions newest first, in the shape
@@ -415,7 +440,9 @@ func launchFieldRequired(declaration map[string]launchFieldOverride, key string,
 //
 // This is the catalog rather than the form. A workflow's declaration narrows it in
 // injectPlatformFields, and only there, because a key the author declared in their own Start node is
-// not the platform's to withdraw (Issue collaboration D8).
+// not the platform's to withdraw (Issue collaboration D8). The reserved `snapshotId` never reaches
+// here as an author key: the issue form drops that declaration first, so the catalogue's entry is
+// always the one projected (see withoutPlatformOwnedDeclarations).
 func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots []Object, withheld bool) []FormField {
 	version, hasVersion := versionField(snapshots, withheld)
 	refs, hasRefs := contextRefsField(issue)
@@ -564,11 +591,11 @@ func platformDefault(value string) any {
 // before the platform field existed — and so is an *illegal* default: the same URL is not a legal
 // value for a `repository` the author declared as a select that does not offer it.
 //
-// The snapshot selector is the one key the platform contributes nothing to. Its value is not a value
-// the workflow receives but the cursor `confirmInteraction` resolves the run's snapshot from, so it is
-// never a default the author's own variable of that name could mean: filling it would hand the run a
-// snapshot id as the variable's value. The author's field is left exactly as they declared it, and the
-// cursor stays the platform's — see workflowVersionCursor.
+// The snapshot selector has no author counterpart by the time the catalogue is merged: a declaration
+// under that key is dropped before this runs (see withoutPlatformOwnedDeclarations), because its value
+// is the cursor `confirmInteraction` resolves the run's snapshot from rather than a value the workflow
+// receives. The platform's field is therefore always the one projected, and the cursor stays the
+// platform's — see workflowVersionCursor.
 //
 // The workflow's declaration (Issue collaboration D8) is applied here, and only to the fields the platform is
 // *adding*. A field the author asked for in their own Start node is asked for because they asked for
@@ -584,9 +611,7 @@ func injectPlatformFields(fields []FormField, issue *IssueFormContext, startProm
 	for i := range offered {
 		field := &offered[i]
 		if i, ok := declared[field.Key]; ok {
-			if field.Key != fieldKeySnapshotID {
-				fillDefault(&fields[i], field)
-			}
+			fillDefault(&fields[i], field)
 			continue
 		}
 		if !launchFieldEnabled(declaration, field.Key) {
@@ -684,11 +709,13 @@ func fillDefault(field, platform *FormField) {
 // key can be — the platform's cursor or an author's variable — is a decision that must be made the same
 // way wherever it is read.
 //
-// A key is the platform's own only when the graph's own input fields do not declare it (Issue collaboration D8): an
-// author who declares a variable under that name keeps it, no version selector is injected into their
-// form, and the value the user typed is theirs to give the workflow. Reading it as a snapshot id would
-// either 404 on a value that is not an id or, when the value is one, run the version the user asked for
-// while feeding the workflow that same id as its parameter.
+// `snapshotId` is always the platform's cursor, whether or not the live document declares a variable
+// under that name. Issue collaboration D8 rule 1, which keeps an author-declared key for the author,
+// does not apply to this key: the `@` form never renders such a declaration (see
+// withoutPlatformOwnedDeclarations), and the declaration is refused by the publish gate the next time
+// the graph is frozen (20261021-snapshot-id-is-a-reserved-field.md D1). Reading the key as anything
+// else would give one submission two meanings — the version being executed and a value the workflow
+// receives — which is exactly the ambiguity that decision removes.
 //
 // There are two keys to try because the field was renamed (Issue collaboration D8) and a rename cannot reach a form
 // that was rendered before it: `snapshotId` is the name this build's form asks under, and `version` is
@@ -698,14 +725,12 @@ func fillDefault(field, platform *FormField) {
 // the version the user picked is dropped without a word.
 //
 // The graph is the *live* document rather than the version being resolved — the one the form was
-// rendered from — because that is what fixes the meaning of the value in hand, and it is decidable
-// before the snapshot is resolved. Reading it from the resolved version instead would make the meaning
-// of a submitted value depend on which version the same submission selected.
+// rendered from — because that is what fixes whether the old key is still an author's variable, and it
+// is decidable before the snapshot is resolved. Reading it from the resolved version instead would
+// make the meaning of a submitted value depend on which version the same submission selected.
 func workflowVersionCursor(graph, values Object) string {
-	if !declaresWorkflowInputField(graph, fieldKeySnapshotID) {
-		if id := values.S(fieldKeySnapshotID); id != "" {
-			return id
-		}
+	if id := values.S(fieldKeySnapshotID); id != "" {
+		return id
 	}
 	if !declaresWorkflowInputField(graph, legacyFieldKeyVersion) {
 		return values.S(legacyFieldKeyVersion)
@@ -728,25 +753,22 @@ func declaresWorkflowInputField(graph Object, key string) bool {
 // under `snapshotId` where that key is free.
 //
 // It runs immediately after workflowVersionCursor, and the order is the point: the old key has to
-// survive until the cursor has read it — in a graph whose author declared `snapshotId` for a variable
-// of their own, the old key is the *only* place the selection can be read from — and it has to be gone
-// afterwards, because the `@` form is the one surface where the set of keys *is* the contract and a key
-// the descriptor does not declare fails the confirm outright (see validateFormValues).
+// survive until the cursor has read it, and it has to be gone afterwards, because the `@` form is the
+// one surface where the set of keys *is* the contract and a key the descriptor does not declare fails
+// the confirm outright (see validateFormValues).
 //
 // The rewrite is what keeps the interaction stored under the name this build uses, as every new one is.
-// It is skipped where the author has claimed `snapshotId` for their own variable: there is nowhere to
-// write the answer, and writing it anyway would hand the workflow a snapshot id as that variable's
-// value. The answer is dropped there, which costs nothing that is not recorded elsewhere — the version
-// the run executed is frozen onto the run's own input by the gate that resolved it.
+// It is skipped where the author has claimed `version` — the old key is also not a reserved field, so a
+// Start variable of that name is still theirs (20261021-snapshot-id-is-a-reserved-field.md D1). There
+// is no such exemption for `snapshotId`: that key is always the platform's, so the answer is written
+// under it even when the live document declares a variable of the same name — a declaration the issue
+// form does not render and the publish gate refuses.
 func foldLegacyVersionAnswer(graph, values Object) {
 	answer, ok := values[legacyFieldKeyVersion]
 	if !ok || declaresWorkflowInputField(graph, legacyFieldKeyVersion) {
 		return
 	}
 	delete(values, legacyFieldKeyVersion)
-	if declaresWorkflowInputField(graph, fieldKeySnapshotID) {
-		return
-	}
 	// The same rule the cursor reads by: an answer the client already gave under the new key is the one
 	// this build's form wrote, and the old key does not displace it.
 	if values.S(fieldKeySnapshotID) == "" {

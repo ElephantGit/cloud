@@ -140,11 +140,17 @@ func TestWorkflowReservedFieldWithholdsStockVersionsAndRefusesThem(t *testing.T)
 		t.Fatalf("the selector did not explain the withheld version: %v", version)
 	}
 
-	// The snapshot's own form is not the selector's: it projects the author's declaration, as it did
-	// before the gate. The selector above is the platform's offer, and it no longer includes it.
-	own := formFields(t, f.call("GET", f.path("/workflows/"+wid+"/snapshots/"+stock.S("id")+"/form"), nil, "", 200))
-	if got := own["snapshotId"]; got.S("type") != "text" || got.S("label") != "Release version" {
-		t.Fatalf("the stock version's author declaration was not projected: %v", got)
+	// Without an issue the snapshot form is the workflow's own schema, so it still projects the author's
+	// declaration. Scoped to an issue it is the `@` form, where the key is always the platform's: the
+	// declaration is not rendered and the selector is, even though the version being described is the
+	// withheld one.
+	bare := formFields(t, f.call("GET", f.path("/workflows/"+wid+"/snapshots/"+stock.S("id")+"/form"), nil, "", 200))
+	if got := bare["snapshotId"]; got.S("type") != "text" || got.S("label") != "Release version" {
+		t.Fatalf("the version's own schema lost the author's declaration: %v", got)
+	}
+	own := formFields(t, f.call("GET", f.path("/workflows/"+wid+"/snapshots/"+stock.S("id")+"/form?issueId="+iss.S("id")), nil, "", 200))
+	if got := own["snapshotId"]; got.S("type") != "select" {
+		t.Fatalf("the issue-scoped version form projected the author's declaration: %v", got)
 	}
 
 	it := workflowComment(t, f, wid, iss.S("id"), "reserved-stock-1", "run it")
@@ -178,32 +184,61 @@ func TestWorkflowReservedFieldWithholdsStockVersionsAndRefusesThem(t *testing.T)
 	}
 }
 
-// TestWorkflowReservedFieldBelongsToTheAuthorWhenTheDraftDeclaresIt pins the other half of D3: the
-// Confirm refusal protects a key the *platform* owns, which is why it applies only while the live draft
-// leaves `snapshotId` alone. A draft that declares the name itself owns it; a submitted value under it
-// is the author's variable, not a version cursor, so a frozen version that also declares it is
-// executed as chosen rather than refused.
-func TestWorkflowReservedFieldBelongsToTheAuthorWhenTheDraftDeclaresIt(t *testing.T) {
+// TestWorkflowReservedFieldStaysThePlatformsWhenTheDraftDeclaresIt pins the A′ half of D3: the `@`
+// form and the confirm never hand the key back to a live draft that still declares it. The declaration
+// is not rendered, a submitted value under the key is the version cursor, and a resolved version whose
+// own graph declares the key is refused — whether the submission named it or fell back to the newest
+// version — so the version the user sees selected is always the version that would run.
+func TestWorkflowReservedFieldStaysThePlatformsWhenTheDraftDeclaresIt(t *testing.T) {
 	f := setup(t)
-	// The live draft is the legacy shape the publish gate no longer creates, saved directly.
-	wid := createWorkflow(t, f, "Author Owns It", "reserved-owned", reservedVariables())
-	stock := seedLegacySnapshot(t, f, wid, 1, startInputGraph(reservedVariables()))
+	// The live draft is the legacy shape the publish gate no longer creates, saved directly. Both
+	// versions are seeded for the same reason: one leaves the key alone and stays selectable, the newer
+	// one claims it and is withheld.
+	wid := createWorkflow(t, f, "Draft Declares It", "reserved-owned", append(reservedVariables(), notesVariables()...))
+	selectable := seedLegacySnapshot(t, f, wid, 1, startInputGraph(notesVariables()))
+	stock := seedLegacySnapshot(t, f, wid, 2, startInputGraph(append(reservedVariables(), notesVariables()...)))
 
 	project := f.create("reserved-owned-project").O("resource")
 	iss := f.call("POST", f.path("/issues"), core.Object{
 		"title": "Own the key", "projectRef": project.S("id"),
 	}, "reserved-owned-issue", 200).O("resource")
-	it := workflowComment(t, f, wid, iss.S("id"), "reserved-owned-1", "run it")
-	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
-		"repository": project.S("repositoryUrl"), "branch": "main", "snapshotId": "release-7",
-	}}, "reserved-owned-c1", 200).O("resource")
 
-	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
-	input := run.O("input")
-	if got := input.S("workflowSnapshotId"); got != stock.S("id") {
-		t.Fatalf("run snapshot = %q, want the newest published version %q", got, stock.S("id"))
+	// The form does not show the author's control: the key is a select over the selectable versions,
+	// and it opens on the newest one — not on the stock version that would be refused.
+	fields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))
+	version := fields["snapshotId"]
+	if version.S("type") != "select" || version.S("label") != "运行版本" {
+		t.Fatalf("the live draft's declaration was projected instead of the platform's cursor: %v", version)
 	}
-	if got := input.O("interactionValues").S("snapshotId"); got != "release-7" {
-		t.Fatalf("the author's value did not reach the workflow: %v", input.O("interactionValues"))
+	options, _ := version["options"].([]any)
+	if len(options) != 1 || core.Object(options[0].(map[string]any)).S("value") != selectable.S("id") {
+		t.Fatalf("the form offered the withheld version or lost the selectable one: %v", options)
+	}
+	if version["defaultValue"] != selectable.S("id") {
+		t.Fatalf("the form opened on %v, want the newest selectable version %s", version["defaultValue"], selectable.S("id"))
+	}
+
+	it := workflowComment(t, f, wid, iss.S("id"), "reserved-owned-1", "run it")
+	base := core.Object{"repository": project.S("repositoryUrl"), "branch": "main"}
+	refusal := func(key string, values core.Object) {
+		t.Helper()
+		refused := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": values}, key, 409)
+		if refused.S("code") != "workflow_version_reserved_field" || refused.O("params").S("snapshotId") != stock.S("id") {
+			t.Fatalf("refusal = %v, want workflow_version_reserved_field for %s", refused, stock.S("id"))
+		}
+	}
+	// No cursor: the newest version is the stock one, and the live draft's declaration does not change
+	// that the key belongs to the platform.
+	refusal("reserved-owned-c1", base)
+	// A cursor to the stock version is the same refusal, not a value the workflow receives instead.
+	refusal("reserved-owned-c2", core.Object{"repository": base.S("repository"), "branch": "main", "snapshotId": stock.S("id")})
+
+	// The selectable version is the one the form offered, and choosing it runs exactly it.
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": base.S("repository"), "branch": "main", "snapshotId": selectable.S("id"),
+	}}, "reserved-owned-c3", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != selectable.S("id") {
+		t.Fatalf("run snapshot = %q, want the chosen selectable version %q", got, selectable.S("id"))
 	}
 }

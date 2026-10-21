@@ -704,19 +704,18 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 	}
 }
 
-// TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor covers the one key a form value and a platform
-// cursor can both be called. Issue collaboration D8 keeps a key the author declared in their own Start node, so a
-// draft that declares `snapshotId` gets no version selector and the value under that key is the
-// author's variable. Read as a cursor it would make such a form unconfirmable both ways round: a value
-// that is not a snapshot id is a 404, and the platform's prefill would have put a snapshot id in the
-// author's field, so a user who left it alone would run the newest version while handing their workflow
-// that id as its variable.
+// TestAuthorDeclaredSnapshotIDDoesNotTakeTheKeyBack covers the key a form value and a platform cursor
+// used to be able to share. Issue collaboration D8 rule 1 — an author-declared key keeps the author's
+// control — does not apply to the reserved `snapshotId` (20261021-snapshot-id-is-a-reserved-field.md):
+// a draft that still declares it is refused by the publish gate, and until it is republished the `@`
+// form neither renders the declaration nor treats a submitted value under the key as the variable's.
+// The value is the version cursor, so a submission from a form rendered before this rule is refused by
+// the version's schema rather than run with the wrong meaning.
 //
-// No new draft can be published this way any more (20261021-snapshot-id-is-a-reserved-field.md D1), so
-// the test refuses that publish first and then seeds the frozen version directly: the compatibility
-// behavior it pins applies to versions published before the gate and to the drafts that still declare
-// the key, not to anything the current publish route can create.
-func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
+// No new draft can be published this way any more (D1), so the test refuses that publish first and then
+// seeds the frozen versions directly: one that leaves the key alone and stays selectable, and a newer
+// one that claims it and is withheld.
+func TestAuthorDeclaredSnapshotIDDoesNotTakeTheKeyBack(t *testing.T) {
 	f := setup(t)
 	variables := []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
@@ -728,39 +727,43 @@ func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
 	if got := problems(t, refused); len(got) != 1 || got[0].S("code") != "reserved_field_name" || got[0].S("nodeId") != "start-1" || got[0].S("field") != "snapshotId" {
 		t.Fatalf("the publish gate did not name the reserved declaration: %v", got)
 	}
-	published := seedLegacySnapshot(t, f, wid, 1, startInputGraph(variables))
+	selectable := seedLegacySnapshot(t, f, wid, 1, startInputGraph([]any{
+		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
+	}))
+	seedLegacySnapshot(t, f, wid, 2, startInputGraph(variables))
 	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
 
-	// The form the author's declaration produces: their own control under that key, holding nothing —
-	// and no version selector, which is what makes the key theirs to begin with.
+	// The form is the platform's: a version selector, not the author's text control, opening on the
+	// newest selectable version rather than on the stock one the confirm would refuse.
 	fields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))
-	if v := fields["snapshotId"]; v.S("type") != "text" || v.S("label") != "Release version" {
-		t.Fatalf("the author's version control was replaced by the platform's: %v", v)
+	version := fields["snapshotId"]
+	if version.S("type") != "select" || version.S("label") != "运行版本" {
+		t.Fatalf("the author's declaration was projected instead of the platform's cursor: %v", version)
 	}
-	if _, prefilled := fields["snapshotId"]["defaultValue"]; prefilled {
-		t.Fatalf("the author's version was prefilled with a snapshot id: %v", fields["snapshotId"])
-	}
-	// The control for that missing selector: the key is the platform's in a graph that leaves it alone,
-	// so the form above differs because of the declaration rather than because the field is gone.
-	plain := reviewWorkflow(t, f)
-	publishWorkflow(t, f, plain, "wf-version-plain-pub")
-	plainFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+plain+"?issueId="+iss.S("id")), nil, "", 200))
-	if v := plainFields["snapshotId"]; v.S("type") != "select" {
-		t.Fatalf("a workflow that declares no version lost the platform's selector: %v", v)
+	if version["defaultValue"] != selectable.S("id") {
+		t.Fatalf("the form opened on %v, want the newest selectable version %s", version["defaultValue"], selectable.S("id"))
 	}
 
-	// A user who types their own value: the run still executes the newest published version — nothing
-	// selected it — and the workflow receives what they typed rather than that version's id.
+	// A submission from a form rendered before this rule carries the author's value under the key. It is
+	// no longer an author variable: the value is read as the version cursor, so it has to name one of
+	// this workflow's versions. A value that names none is the same 404 the direct-run entry gives for an
+	// unknown snapshot — it is never run as the workflow's parameter behind the user's back.
 	it := workflowComment(t, f, wid, iss.S("id"), "wf-version-owned-1", "release")
-	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+	rejected := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
 		"repository": "ora-space/cloud", "branch": "main", "snapshotId": "1.2.3", "scope": "full-repo",
-	}}, "wf-version-owned-c1", 200).O("resource")
-	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
-	if got := run.O("input").O("interactionValues").S("snapshotId"); got != "1.2.3" {
-		t.Fatalf("the workflow did not receive the author's version: %v", run.O("input").O("interactionValues"))
+	}}, "wf-version-owned-c1", 404)
+	if rejected.S("code") != "not_found" {
+		t.Fatalf("the old author value was not refused as an unknown version: %v", rejected)
 	}
-	if got := run.O("input").S("workflowSnapshotId"); got != published.S("id") {
-		t.Fatalf("run snapshot = %q, want the newest published version %q", got, published.S("id"))
+
+	// Choosing the selectable version runs exactly it; the author's variable cannot be filled in through
+	// this key any more, which is the point of the rule.
+	created := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "snapshotId": selectable.S("id"), "scope": "full-repo",
+	}}, "wf-version-owned-c2", 200).O("resource")
+	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
+	if got := run.O("input").S("workflowSnapshotId"); got != selectable.S("id") {
+		t.Fatalf("run snapshot = %q, want the chosen version %q", got, selectable.S("id"))
 	}
 }
 
@@ -821,17 +824,17 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 		t.Fatalf("the interaction stored the pre-rename key: %v", row.O("input"))
 	}
 
-	// The same submission against a graph whose author declared `snapshotId` for a variable of their
-	// own. There the new key is theirs, so the selection cannot be written under it — but the version
-	// the user picked is still the one that runs, and the variable keeps the value they gave it. The
-	// versions are seeded: the gate refuses to publish such a graph now, and this is the stock state
-	// the compatibility rule exists for.
+	// The same submission against a live draft that still declares `snapshotId` for a variable of its
+	// own. Since A′ that declaration does not take the key back: the old key is folded under the new
+	// name, the version it named is the one that runs, and the value is not handed to the workflow as a
+	// parameter behind the user's back. The versions are seeded without the declaration, because the
+	// gate refuses to publish such a graph now.
 	ownedVariables := []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
 	}
 	owned := createWorkflow(t, f, "Owned Workflow", "wf-rename-owned", ownedVariables)
-	ownedOlder := seedLegacySnapshot(t, f, owned, 1, startInputGraph(ownedVariables))
-	ownedNewest := seedLegacySnapshot(t, f, owned, 2, startInputGraph(ownedVariables))
+	ownedOlder := seedLegacySnapshot(t, f, owned, 1, startInputGraph(nil))
+	ownedNewest := seedLegacySnapshot(t, f, owned, 2, startInputGraph(nil))
 	if ownedNewest.S("id") == ownedOlder.S("id") {
 		t.Fatal("the two versions are the same snapshot, so a wrong version could pass as the right one")
 	}
@@ -840,15 +843,15 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Run the old form again", "projectRef": pid}, "wf-rename-issue-2", 200).O("resource")
 	it = workflowComment(t, f, owned, ownedIss.S("id"), "wf-rename-owned-1", "run it")
 	created = f.call("POST", confirmPath(f, ownedIss.S("id"), it.S("id")), core.Object{"values": core.Object{
-		"repository": "ora-space/cloud", "branch": "main", "version": ownedOlder.S("id"), "snapshotId": "1.2.3",
+		"repository": "ora-space/cloud", "branch": "main", "version": ownedOlder.S("id"),
 	}}, "wf-rename-owned-c1", 200).O("resource")
 	run = f.call("GET", f.path("/issues/"+ownedIss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
 	if got := run.O("input").S("workflowSnapshotId"); got != ownedOlder.S("id") {
 		t.Fatalf("run snapshot = %q, want the version the old form selected %q", got, ownedOlder.S("id"))
 	}
 	stored = run.O("input").O("interactionValues")
-	if stored.S("snapshotId") != "1.2.3" {
-		t.Fatalf("the author's variable was overwritten by the version selection: %v", stored)
+	if stored.S("snapshotId") != ownedOlder.S("id") {
+		t.Fatalf("the selection was not stored under the platform's key: %v", stored)
 	}
 	linked := f.call("GET", f.path("/workflows/"+owned+"/runs/"+run.S("workflowInvocationRef")), nil, "", 200)
 	if linked.O("input").S("snapshotId") != "1.2.3" || linked.S("snapshotId") != ownedOlder.S("id") {
@@ -910,19 +913,20 @@ func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
 		"repository": "ora-space/cloud", "version": older.S("id"), "snapshotId": newest.S("id"),
 	}), "wf-assist-rename-a3", 200)
 
-	// A graph whose author declared `snapshotId` for a variable of their own. There the new key is
-	// theirs, so the fold drops the old one rather than writing a snapshot id into their variable —
-	// and the submission is accepted all the same, which is the rule the confirm applies to this graph.
-	// No version is needed: assist is stateless and resolves only the live document. It stays a draft
-	// because publishing this graph is exactly what the reserved-field gate now refuses.
+	// A graph whose author declared `snapshotId` for a variable of their own. Since A′ that declaration
+	// does not take the key back: the old key is folded under the platform's key as the version
+	// selection, and the submission is accepted all the same — the rule the confirm applies to this
+	// graph. The version is seeded because the live draft can no longer be published, and the selector
+	// needs one to exist.
 	owned := createWorkflow(t, f, "Owned Workflow", "wf-assist-rename-owned", []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
 	})
+	ownedVersion := seedLegacySnapshot(t, f, owned, 1, startInputGraph(nil))
 	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form again"}, "wf-assist-rename-issue-2", 200).O("resource")
 	// The old key still carries the version selection here, so it has to name a real published version:
 	// assist resolves the version it answers for, exactly as the confirm does.
 	f.call("POST", assistPath(f, ownedIss.S("id")), workflowAssistBody(owned, core.Object{
-		"repository": "ora-space/cloud", "version": ownedSnap.S("id"),
+		"repository": "ora-space/cloud", "version": ownedVersion.S("id"),
 	}), "wf-assist-rename-owned-a1", 200)
 
 	// A graph whose author declared `version` for a variable of their own. That key is the author's, so

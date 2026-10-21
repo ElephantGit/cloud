@@ -96,7 +96,9 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
-  workflow declares a variable of the same name, the workflow's declaration wins.
+  workflow declares a variable of the same name, the workflow's declaration wins — except for the
+  reserved field `snapshotId`, which always belongs to the platform and is never projected from the
+  author's declaration (see [Workflows](../workflows/workflows.en.md)).
 - **The version selector lists only selectable versions.** The platform-owned `snapshotId` field offers
   only published versions whose graph no longer declares the reserved field `snapshotId`; the option cap
   counts only those, and the default is the newest one. When nothing is selectable the form carries no
@@ -117,10 +119,11 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
     version's, the confirm is refused with the changed fields listed
     (`409 workflow_version_fields_changed`), rather than validating the user's values against a schema
     they never saw.
-  - When the live draft does not declare `snapshotId` — the platform owns the key — and the resolved
-    published version's graph does, the confirm returns `409 workflow_version_reserved_field` with the
-    version and the field in its params. This holds with or without a version cursor: Cloud neither
-    substitutes another version nor leaves a run or a claimed interaction behind.
+  - `snapshotId` always belongs to the platform: the submitted value under it is always the version
+    cursor, whether or not the live draft still declares a variable of that name. When the resolved
+    published version's graph declares the key, the confirm returns `409 workflow_version_reserved_field`
+    with the version and the field in its params. This holds with or without a version cursor: Cloud
+    neither substitutes another version nor leaves a run or a claimed interaction behind.
   - The submitted values are kept as the interaction's input and the executed version is frozen into the
     run input, so the run still knows which version it executed after the workflow is edited or
     published again.

@@ -70,7 +70,8 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
   两种情况都是作者占用保留键时的边界，不是可依赖的配置：作者不应把 `snapshotId` 用作自己的变量名。是否在切换时禁止或提示
   这类版本，由后续决策另行确定（circus#405）。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
-  的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准。
+  的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准；保留字段
+  `snapshotId` 例外，这个键始终属于平台，作者的声明不进入表单（见 [工作流](../workflows/workflows.md)）。
 - **版本选择器只列出可选的版本。** `snapshotId` 这个平台字段只提供图里不再声明保留字段 `snapshotId` 的已发布版本，选项上限也只
   计这些版本，默认值是最新的一个；一个可选项都没有时表单不带选择器。有版本因此被排除时，选择器的说明会写明原因并请作者从
   不再声明该字段的活稿重新发布（见 [工作流](../workflows/workflows.md)）。
@@ -82,8 +83,9 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
     工作流不能确认，因为不能执行未发布的草稿。
   - 用户看到的表单来自当前文档；如果它与被确认版本的字段已经不一致，确认被拒绝并列出变化的字段
     （`409 workflow_version_fields_changed`），而不是用用户没见过的 schema 校验他填的值。
-  - 活稿没有声明 `snapshotId`（也就是由平台拥有这个键）时，解析到的已发布版本如果在图里声明了它，确认返回
-    `409 workflow_version_reserved_field`，参数带上版本和字段；带不带版本游标都一样，既不会静默换成别的版本，也不会留下运行或已认领的交互。
+  - `snapshotId` 始终由平台拥有，提交里的这个键始终是版本游标，不看活稿是否还声明着同名变量。解析到的已发布版本如果在自己的图里声明了
+    它，确认返回 `409 workflow_version_reserved_field`，参数带上版本和字段；带不带版本游标都一样，既不会静默换成别的版本，也不会留下
+    运行或已认领的交互。
   - 提交的值作为交互的输入保存，被执行的版本冻结进运行输入；运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
   - 同一事务里创建一个 WorkflowRun 和一个 IssueRun，IssueRun 的 `workflowInvocationRef` 指向该 WorkflowRun（与租户一起的复合外键，且唯一）；直接运行、manual 工作流 IssueRun 与确认共用同一个创建函数。已关联的 IssueRun 不交给 `ExecutionDispatcher`。
   - 用 `run_id IS NULL` 的比较并交换认领交互，重复确认返回 `409 interaction_already_confirmed`；对非表单交互确认返回

@@ -237,7 +237,7 @@ It is recorded on the Binding for the Repo Executor that syncs the external repo
 credentials gate no Node work: clone, Agent sessions and delivery talk only to the Git Server, Nodes
 never reach the external repository, and the snapshot a Controller claims carries no credential reference.
 
-The tenant-level standalone clone request API (`/tenants/:tid/clones`) is gone; migration `0052` dropped
+The tenant-level standalone clone request API (`/tenants/:tid/clones`) is gone; migration `0053` dropped
 its request table and the clone executions that belonged to no Workspace. Every clone is the `clone` step
 of a Workspace operation.
 

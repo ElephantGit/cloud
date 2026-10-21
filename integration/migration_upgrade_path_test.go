@@ -1043,7 +1043,7 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 		t.Fatalf("before 0033: columns %d constraints %q", got, names)
 	}
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	// 0053 later replaces the bundle shape 0033 introduced with revisions_shape.
+	// 0054 later replaces the bundle shape 0033 introduced with revisions_shape.
 	if got, names := columns(pool), constraints(pool); got != 5 || names != "revisions_resume_refused,revisions_shape" {
 		t.Fatalf("after 0033: columns %d constraints %q", got, names)
 	}
@@ -1310,12 +1310,12 @@ func TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades(t *testing.
 	assertShape(t, pool, "upgrade")
 }
 
-// Migration 0052 upgrades a database that still holds tenant-level clones: their requests,
+// Migration 0053 upgrades a database that still holds tenant-level clones: their requests,
 // executions and receipts are removed, while a Workspace operation's clone execution and its receipt
 // stay, and every remaining clone execution must name its Workspace.
-func TestMigration0052RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
-	pool, _ := testSchema(t, "test_gn52_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0052_retire_tenant_level_clones.sql"))
+func TestMigration0053RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
+	pool, _ := testSchema(t, "test_gn53_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0053_retire_tenant_level_clones.sql"))
 	s := seedOwnershipChain(t, pool)
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -1332,7 +1332,7 @@ func TestMigration0052RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 
 	migratedTwice(t, newStoreOnSchema(t, pool))
 	if tableExists(t, pool, "clone_requests") {
-		t.Fatal("0052 must drop clone_requests")
+		t.Fatal("0053 must drop clone_requests")
 	}
 	var executions, receipts string
 	must(t, pool.QueryRow(`SELECT string_agg(execution_id, ',' ORDER BY execution_id) FROM clone_executions`).Scan(&executions))
@@ -1341,12 +1341,12 @@ func TestMigration0052RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 		t.Fatalf("only the Workspace clone and its receipt may remain, got executions %q receipts %q", executions, receipts)
 	}
 	if columnNullable(t, pool, "clone_executions", "workspace_id") {
-		t.Fatal("every clone execution must name its Workspace after 0052")
+		t.Fatal("every clone execution must name its Workspace after 0053")
 	}
 	var requestColumns int
 	must(t, pool.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='clone_executions' AND column_name='clone_request_id'`).Scan(&requestColumns))
 	if requestColumns != 0 {
-		t.Fatal("0052 must drop clone_executions.clone_request_id")
+		t.Fatal("0053 must drop clone_executions.clone_request_id")
 	}
 }
 
@@ -1387,4 +1387,108 @@ func TestMigration0051WorkflowRunCancelAppliesFreshAndUpgrades(t *testing.T) {
 	}
 	migratedTwice(t, newStoreOnSchema(t, pool))
 	assertShape(t, pool, "upgrade")
+}
+
+// 0052 settles the legacy manual workflow IssueRuns that were persisted `queued`/`dispatched` but
+// had no executor and no frozen workflow identity (specs ADR
+// 0-cloud-side-scheduler-owns-workflow-execution D3). The upgrade path is the one that matters: a
+// deployment that stopped at 0051 can hold such rows. They become failed with the named reason and
+// a completion instant; every other run — workflow runs in another status, a soft-deleted queued
+// one, and a queued agent run — keeps its stored state. A fresh database has no such row, applies
+// the file cleanly and a second Migrate changes nothing.
+func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t *testing.T) {
+	type runShape struct {
+		status, reason string
+		completedAt    sql.NullTime
+		deletedAt      sql.NullTime
+		version        int64
+	}
+	read := func(t *testing.T, pool *sql.DB, id string) runShape {
+		t.Helper()
+		var s runShape
+		must(t, pool.QueryRow(`SELECT status, failure_reason, completed_at, deleted_at, version
+			FROM issue_runs WHERE id=$1`, id).Scan(&s.status, &s.reason, &s.completedAt, &s.deletedAt, &s.version))
+		return s
+	}
+	seedRuns := func(t *testing.T, pool *sql.DB) map[string]string {
+		t.Helper()
+		uid, tid, iid := uuid.NewString(), uuid.NewString(), uuid.NewString()
+		ids := map[string]string{
+			"queued": uuid.NewString(), "dispatched": uuid.NewString(), "running": uuid.NewString(),
+			"completed": uuid.NewString(), "deleted": uuid.NewString(), "agent": uuid.NewString(),
+		}
+		tx, e := pool.Begin()
+		must(t, e)
+		defer func() { _ = tx.Rollback() }()
+		for _, s := range []struct {
+			query string
+			args  []any
+		}{
+			{`INSERT INTO users(id,display_name,status) VALUES($1,'Legacy workflow user','active')`, []any{uid}},
+			{`INSERT INTO tenants(id,name,status) VALUES($1,'Legacy workflow tenant','active')`, []any{tid}},
+			{`INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')`, []any{tid, uid}},
+			{`INSERT INTO issues(id,tenant_id,creator_user_id,title,number) VALUES($1,$2,$3,'Legacy workflow runs',1)`, []any{iid, tid, uid}},
+		} {
+			_, e = tx.Exec(s.query, s.args...)
+			must(t, e)
+		}
+		insert := func(id, executorType, status string, deleted bool) {
+			_, e := tx.Exec(`INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,deleted_at)
+				VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $7 THEN now() ELSE NULL END)`,
+				id, tid, iid, executorType, uuid.NewString(), status, deleted)
+			must(t, e)
+		}
+		insert(ids["queued"], "workflow", "queued", false)
+		insert(ids["dispatched"], "workflow", "dispatched", false)
+		insert(ids["running"], "workflow", "running", false)
+		insert(ids["completed"], "workflow", "completed", false)
+		insert(ids["deleted"], "workflow", "queued", true)
+		insert(ids["agent"], "agent", "queued", false)
+		must(t, tx.Commit())
+		return ids
+	}
+	assertUpgraded := func(t *testing.T, pool *sql.DB, ids map[string]string, stage string) {
+		t.Helper()
+		for _, id := range []string{ids["queued"], ids["dispatched"]} {
+			got := read(t, pool, id)
+			if got.status != "failed" || got.reason != "workflow_execution_unavailable" || !got.completedAt.Valid {
+				t.Fatalf("%s: settled run %s = %+v; want failed/workflow_execution_unavailable with completed_at", stage, id, got)
+			}
+			if got.version != 2 {
+				t.Fatalf("%s: settled run %s version = %d; want the correction's bump to 2", stage, id, got.version)
+			}
+		}
+		for id, want := range map[string]runShape{
+			ids["running"]:   {status: "running", version: 1},
+			ids["completed"]: {status: "completed", version: 1},
+			ids["agent"]:     {status: "queued", version: 1},
+		} {
+			got := read(t, pool, id)
+			if got.status != want.status || got.version != want.version || got.reason != "" || got.completedAt.Valid {
+				t.Fatalf("%s: untouched run %s = %+v; want %s with no correction", stage, id, got, want.status)
+			}
+		}
+		deleted := read(t, pool, ids["deleted"])
+		if deleted.status != "queued" || deleted.version != 1 || !deleted.deletedAt.Valid {
+			t.Fatalf("%s: soft-deleted run = %+v; want its stored state untouched", stage, deleted)
+		}
+	}
+
+	freshPool, _ := testSchema(t, "test_wf52f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	var corrected int
+	must(t, freshPool.QueryRow(`SELECT count(*) FROM issue_runs WHERE failure_reason='workflow_execution_unavailable'`).Scan(&corrected))
+	if corrected != 0 {
+		t.Fatalf("fresh database corrected %d rows; want 0 — there is nothing to settle", corrected)
+	}
+
+	pool, _ := testSchema(t, "test_wf52_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0052_legacy_workflow_issue_run_settlement.sql"))
+	ids := seedRuns(t, pool)
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertUpgraded(t, pool, ids, "upgrade")
+	// Repeated application is a no-op: the correction already committed, and Migrate skipped the
+	// applied file by its checksum, so nothing can bump a version a second time.
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertUpgraded(t, pool, ids, "replay")
 }

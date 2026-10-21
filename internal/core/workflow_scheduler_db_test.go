@@ -170,6 +170,44 @@ func TestWorkflowAdvanceStartInputUsesTheStoredKickoff(t *testing.T) {
 	}
 }
 
+// A run row that already carries an `input` key predates the kickoff convention: before it, the key
+// was just another variable value in the submitted form. Reading a string key as this run's kickoff
+// is a deliberate reinterpretation of durable state, so both directions are pinned here — a string
+// key is the kickoff, and a key of any other type falls back to the authored instruction instead of
+// reaching the pool. The row is seeded directly because a pre-existing row is exactly what the
+// creation gate never saw; the advance pass must still read it deterministically.
+func TestWorkflowAdvanceReinterpretsTheHistoricalStringInputKey(t *testing.T) {
+	store := dispatcherDB(t)
+	for _, tc := range []struct {
+		name  string
+		input any
+		want  string
+	}{
+		{name: "string key is the kickoff", input: "historical kickoff", want: "historical kickoff"},
+		{name: "non-string key falls back to the authored prompt", input: 7, want: "authored prompt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start := wfNode("s", "start", "")
+			start["data"].(Object)["input"] = "authored prompt"
+			runID := seedWorkflowRunSceneWithInput(t, store, wfGraph(
+				[]Object{start, wfNode("o", "output", "done")},
+				[][3]string{{"s", "o", ""}},
+			), Object{"input": tc.input})
+
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance: %v", err)
+			}
+			status, runErr, states, _ := readWorkflowRun(t, store, runID)
+			if status != "succeeded" || runErr != "" {
+				t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
+			}
+			if got := states["s"].(map[string]any)["output"].(map[string]any)["input"]; got != tc.want {
+				t.Fatalf("start node output input = %v; want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // With neither a stored kickoff nor an authored instruction {start}.input is unset, as it is in
 // desktop's pool: `not_exists` matches and `exists` would not. It is not a present empty string,
 // which would answer both existence operators the other way.

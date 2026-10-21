@@ -138,9 +138,10 @@ func assertControlledRejected(t *testing.T, err error) {
 }
 
 func TestControlledResidualCommands(t *testing.T) {
+	// Every invalid command rolls back; the assertions below keep this same pristine scene.
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	for _, invalid := range []string{"impact", "reason", "tenant", "workspace", "key"} {
 		t.Run(invalid, func(t *testing.T) {
-			scene := seedResidualScene(t, false)
 			r := seedControlledRequest(scene, "invalid-command")
 			switch invalid {
 			case "impact":
@@ -162,7 +163,6 @@ func TestControlledResidualCommands(t *testing.T) {
  FROM agent_run_residuals WHERE run_id=$1`, scene.run, scene.workspace)
 		})
 	}
-	scene := seedResidualScene(t, false)
 	r := seedControlledRequest(scene, "one-command")
 	first := seedControlledManage(t, scene.store, r).O("intent")
 	replay := seedControlledManage(t, seedResidualRebuildStore(scene.store), r).O("intent")
@@ -185,7 +185,7 @@ func TestControlledResidualCommands(t *testing.T) {
 }
 
 func TestControlledResidualEveryPlannedSandbox(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	// A historical ensure can have no sandbox row. Its stable original identity is still a
 	// termination target; the NULL workspace scope is resolved via its original operation.
 	neverEnsured := newID()
@@ -226,7 +226,7 @@ func TestControlledResidualEveryPlannedSandbox(t *testing.T) {
 }
 
 func TestControlledResidualRetainedThenReleased(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	root := seedControlledRetained(t, scene)
 	var clearedAt string
 	if err := scene.store.Pool.QueryRow(`SELECT cleared_at::text FROM agent_run_residuals WHERE run_id=$1`, scene.run).Scan(&clearedAt); err != nil {
@@ -258,14 +258,14 @@ func TestControlledResidualRetainedThenReleased(t *testing.T) {
 }
 
 func TestControlledResidualExternalRequiresUnfinishedIntent(t *testing.T) {
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
+	initialRoot := seedControlledRoot(t, scene)
 	for _, invalid := range []string{"no_intent", "reason", "note", "transfer", "missing_sandbox", "missing_data", "succeeded"} {
 		t.Run(invalid, func(t *testing.T) {
-			scene := seedResidualScene(t, false)
-			var root Object
+			// Rejections leave the unfinished intent intact; the final case completes it first.
+			root := initialRoot
 			if invalid == "succeeded" {
 				root = seedControlledRetained(t, scene)
-			} else {
-				root = seedControlledRoot(t, scene)
 			}
 			r := seedControlledExternalRequest(scene, root, "external-invalid")
 			switch invalid {
@@ -292,7 +292,7 @@ func TestControlledResidualExternalRequiresUnfinishedIntent(t *testing.T) {
 }
 
 func TestControlledResidualExternalDisposition(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	root := seedControlledRoot(t, scene)
 	r := seedControlledExternalRequest(scene, root, "external-close")
 	out := seedControlledManage(t, scene.store, r)
@@ -315,7 +315,7 @@ func TestControlledResidualExternalDisposition(t *testing.T) {
 }
 
 func TestControlledResidualGuardsAndRollback(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	r := seedControlledRequest(scene, "rolled-back-command")
 	_, err := scene.store.transact(t.Context(), func(tx *transaction) Object {
 		manageResidualCommand(tx, &r)
@@ -354,7 +354,7 @@ func TestControlledResidualGuardsAndRollback(t *testing.T) {
 }
 
 func TestControlledResidualQueryAndResume(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	root := seedControlledRoot(t, scene)
 	restarted := seedResidualRebuildStore(scene.store)
 	if err := restarted.ReconcileAgentRunResidualsOnce(t.Context()); err != nil {
@@ -379,9 +379,14 @@ func TestControlledResidualQueryAndResume(t *testing.T) {
 
 // This is a genuine D8 terminal: production declares the original delete and the give-up pass
 // fails it. Only the predecessor scene (a releasing run with an unreachable sandbox) is staged.
-func seedControlledLegacyD8(t *testing.T) residualReclaimScene {
+func seedControlledLegacyD8(t *testing.T, prepared ...*Store) residualReclaimScene {
 	t.Helper()
-	s := commandStore(t)
+	var s *Store
+	if len(prepared) == 0 {
+		s = controlledStores(t)(t)
+	} else {
+		s = prepared[0]
+	}
 	legacy := seedReleaseScene(t, s, "releasing", "failed")
 	sandbox := newID()
 	seedResidualExec(t, s, `INSERT INTO sandbox_instances(id,workspace_id,generation,observed_state) VALUES($1,$2,1,'running')`, sandbox, legacy.runws)
@@ -469,7 +474,7 @@ func TestControlledResidualLegacyD8RetainedThenReleased(t *testing.T) {
 }
 
 func TestControlledResidualDoesNotAuthorizeAutomaticEscalation(t *testing.T) {
-	scene := seedResidualScene(t, false)
+	scene := seedControlledScene(t, controlledStores(t)(t), false)
 	root := seedControlledRoot(t, scene)
 	if err := scene.store.ReconcileAgentRunResidualsOnce(t.Context()); err != nil {
 		t.Fatal(err)

@@ -7,7 +7,7 @@ import (
 
 // A durable delivery skip must remain idempotent even when a retry carries a legacy non-UUID target.
 func TestControlledResidualSkippedDeliveryWithInvalidWorkspaceID(t *testing.T) {
-	store := commandStore(t)
+	store := controlledStores(t)(t)
 	seed := seedDispatchScene(t, store.Pool, false)
 	createdAt := time.Date(2026, time.October, 20, 12, 0, 0, 0, time.UTC)
 	if _, err := store.Pool.Exec(`INSERT INTO revision_delivery_skips(run_id,created_at) VALUES($1,$2)`, seed.run, createdAt); err != nil {

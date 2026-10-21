@@ -107,7 +107,7 @@ func controlledDeleteInjected(t *testing.T, f *fixture, c *grpcController, tenan
 }
 
 func TestControlledResidualRetainedThenReleasedOverGRPC(t *testing.T) {
-	f := setup(t)
+	f := controlledFixtureFactory(t)(t)
 	f.bindBusinessHooks()
 	created := f.create("controlled-provisioning")
 	f.drain()
@@ -177,7 +177,7 @@ func TestControlledResidualRetainedThenReleasedOverGRPC(t *testing.T) {
 }
 
 func TestControlledResidualHiddenWorkspaceRemains404ForAdminAndMember(t *testing.T) {
-	f := setup(t)
+	f := controlledFixtureFactory(t)(t)
 	scene := seedLiveThreadScene(t, f)
 	seedControlledTerminalIntake(t, f, scene)
 	workspace := f.runWorkspaceID(scene.runID)
@@ -211,6 +211,7 @@ func seedControlledTerminalIntake(t *testing.T, f *fixture, scene liveThreadScen
 }
 
 func TestControlledResidualTerminalFactsAcrossRealStatesOverGRPC(t *testing.T) {
+	newFixture := controlledFixtureFactory(t)
 	for _, delivery := range []bool{false, true} {
 		for _, state := range []string{"terminating", "retained", "released"} {
 			name := "session/" + state
@@ -218,7 +219,7 @@ func TestControlledResidualTerminalFactsAcrossRealStatesOverGRPC(t *testing.T) {
 				name = "delivery/" + state
 			}
 			t.Run(name, func(t *testing.T) {
-				f := setup(t)
+				f := newFixture(t)
 				var scene liveThreadScene
 				var execution string
 				sequence := uint64(2)
@@ -371,7 +372,7 @@ func controlledTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScen
 }
 
 func TestControlledResidualProvisioningFactConflictCommitsBeforeGRPCResponse(t *testing.T) {
-	f := setup(t)
+	f := controlledFixtureFactory(t)(t)
 	f.bindBusinessHooks()
 	created := f.create("controlled-late-create")
 	f.drain()

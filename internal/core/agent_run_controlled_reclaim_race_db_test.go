@@ -7,9 +7,10 @@ import (
 )
 
 func TestControlledResidualRaceAutomaticClaimBothCommitOrders(t *testing.T) {
+	stores := controlledStores(t)
 	for _, controlledFirst := range []bool{false, true} {
 		t.Run(controlledRaceName(controlledFirst), func(t *testing.T) {
-			scene := seedResidualScene(t, true)
+			scene := seedControlledScene(t, stores(t), true)
 			r := seedControlledRequest(scene, "race-controlled")
 			automatic := func(tx *transaction) Object { return authorizeResidualOwnedDelete(tx, scene.run) }
 			controlled := func(tx *transaction) Object { return manageResidualCommand(tx, &r) }
@@ -42,11 +43,12 @@ func TestControlledResidualRaceAutomaticClaimBothCommitOrders(t *testing.T) {
 }
 
 func TestControlledResidualRaceIdempotencyBothCommitOrders(t *testing.T) {
+	stores := controlledStores(t)
 	for _, action := range []ResidualManagementAction{ResidualTerminate, ResidualDeleteData, ResidualConfirmExternal} {
 		for _, conflict := range []bool{false, true} {
 			for _, reverse := range []bool{false, true} {
 				t.Run(fmt.Sprint(action, "/conflict=", conflict, "/reverse=", reverse), func(t *testing.T) {
-					scene := seedResidualScene(t, false)
+					scene := seedControlledScene(t, stores(t), false)
 					r := seedControlledRequest(scene, "racing-command")
 					switch action {
 					case ResidualDeleteData:
@@ -88,9 +90,10 @@ func TestControlledResidualRaceIdempotencyBothCommitOrders(t *testing.T) {
 }
 
 func TestControlledResidualRaceDifferentKeysKeepOneRoot(t *testing.T) {
+	stores := controlledStores(t)
 	for _, reverse := range []bool{false, true} {
 		t.Run(fmt.Sprint("reverse=", reverse), func(t *testing.T) {
-			scene := seedResidualScene(t, false)
+			scene := seedControlledScene(t, stores(t), false)
 			r, other := seedControlledRequest(scene, "first-key"), seedControlledRequest(scene, "second-key")
 			if reverse {
 				r, other = other, r
@@ -106,9 +109,9 @@ func TestControlledResidualRaceDifferentKeysKeepOneRoot(t *testing.T) {
 	}
 }
 
-func seedControlledCompletionRace(t *testing.T, released bool) (residualReclaimScene, Object, func(*transaction) Object) {
+func seedControlledCompletionRace(t *testing.T, store *Store, released bool) (residualReclaimScene, Object, func(*transaction) Object) {
 	t.Helper()
-	scene := seedResidualScene(t, true)
+	scene := seedControlledScene(t, store, true)
 	if released {
 		root := seedControlledRetained(t, scene)
 		_, op, effect := seedControlledDeletePlan(t, scene, root)
@@ -130,11 +133,12 @@ func seedControlledCompletionRace(t *testing.T, released bool) (residualReclaimS
 }
 
 func TestControlledResidualRaceCompletionAndLateFactsBothCommitOrders(t *testing.T) {
+	stores := controlledStores(t)
 	for _, released := range []bool{false, true} {
 		for _, kind := range []string{"creation", "effect", "delivery", "session"} {
 			for _, factFirst := range []bool{false, true} {
 				t.Run(fmt.Sprint("released=", released, "/", kind, "/fact_first=", factFirst), func(t *testing.T) {
-					scene, root, complete := seedControlledCompletionRace(t, released)
+					scene, root, complete := seedControlledCompletionRace(t, stores(t), released)
 					fact := func(tx *transaction) Object {
 						switch kind {
 						case "creation":
@@ -181,10 +185,11 @@ func TestControlledResidualRaceCompletionAndLateFactsBothCommitOrders(t *testing
 }
 
 func TestControlledResidualRaceExternalAndPhysicalCompletionBothCommitOrders(t *testing.T) {
+	stores := controlledStores(t)
 	for _, released := range []bool{false, true} {
 		for _, externalFirst := range []bool{false, true} {
 			t.Run(fmt.Sprint("released=", released, "/external_first=", externalFirst), func(t *testing.T) {
-				scene, root, complete := seedControlledCompletionRace(t, released)
+				scene, root, complete := seedControlledCompletionRace(t, stores(t), released)
 				intent := root
 				if released {
 					var id string
@@ -223,9 +228,10 @@ func TestControlledResidualRaceExternalAndPhysicalCompletionBothCommitOrders(t *
 }
 
 func TestControlledResidualRaceNoTargetProofAndDispatchBothCommitOrders(t *testing.T) {
+	stores := controlledStores(t)
 	for _, proofFirst := range []bool{false, true} {
 		t.Run(fmt.Sprint("proof_first=", proofFirst), func(t *testing.T) {
-			s := commandStore(t)
+			s := stores(t)
 			abandoned := seedAbandonedCreation(t, s, false)
 			scene := residualReclaimScene{store: s, abandonedCreation: abandoned}
 			root := seedControlledRoot(t, scene)
@@ -264,7 +270,7 @@ func TestControlledResidualRaceNoTargetProofAndDispatchBothCommitOrders(t *testi
 	}
 	for _, controlledFirst := range []bool{false, true} {
 		t.Run("legacy_producer/"+controlledRaceName(controlledFirst), func(t *testing.T) {
-			scene := seedControlledLegacyD8(t)
+			scene := seedControlledLegacyD8(t, stores(t))
 			r := seedControlledRequest(scene, "legacy-dispatch-race")
 			controlled := func(tx *transaction) Object { return manageResidualCommand(tx, &r) }
 			producer := func(tx *transaction) Object {

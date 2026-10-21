@@ -19,9 +19,10 @@ import (
 // Only the preexisting business failure is staged. Both sources acquire controlled
 // authority through ManageResidual, and both clone events use the real takeover RPC.
 func TestControlledResidualCloneReceiptConflictThroughRegisteredIntentsOverGRPC(t *testing.T) {
+	newFixture := controlledFixtureFactory(t)
 	for _, source := range []string{"legacy_d8", "residual_ledger"} {
 		t.Run(source, func(t *testing.T) {
-			f, c, run, workspace, operation, original := cloneReceiptScene(t)
+			f, c, run, workspace, operation, original := controlledCloneReceiptScene(t, newFixture(t))
 			ctx := context.Background()
 			legacyOperation := ""
 			if source == "residual_ledger" {
@@ -135,4 +136,93 @@ func TestControlledResidualCloneReceiptConflictThroughRegisteredIntentsOverGRPC(
 			}
 		})
 	}
+}
+
+// controlledCloneReceiptScene preserves the original clone receipt setup and assertions while
+// accepting this matrix's fresh fixture. The residual test helper remains independently owned.
+func controlledCloneReceiptScene(t *testing.T, f *fixture) (*fixture, *grpcController, string, string, *controlpb.Operation, *controlpb.TakeOverNodeEventRequest) {
+	t.Helper()
+	f.bindBusinessHooks()
+	project := seedControlledCloneProject(t, f)
+	run := f.insertAgentRun(t, project)
+	provisioned, err := f.store.CreateRunWorkspace(context.Background(), run)
+	must(t, err)
+	workspace, operation := provisioned.O("workspace").S("id"), provisioned.O("operation").S("id")
+	_, err = f.store.Pool.Exec(`UPDATE issue_runs SET phase='provisioning',status='dispatched',workspace_id=$2,version=version+1 WHERE id=$1`, run, workspace)
+	must(t, err)
+	c := newGRPCController(t, f)
+	snapshot := c.claim()
+	if snapshot.GetOperation().GetId() != operation {
+		t.Fatalf("claim picked %s, want %s", snapshot.GetOperation().GetId(), operation)
+	}
+	op, ensured := c.effect(snapshot.GetOperation(), controlpb.EffectKind_EFFECT_KIND_SANDBOX_ENSURE, workspace)
+	op, err = c.advance(op)
+	must(t, err)
+	nodeID := ensured.GetEvidence().GetSandboxEnsured().GetNodeId()
+	node, err := c.register(ensured.GetId(), 1, nodeID, "inc-late")
+	must(t, err)
+	_, err = c.status(node, controlpb.NodeConnection_NODE_CONNECTION_CONNECTED)
+	must(t, err)
+	_, err = c.advance(op)
+	must(t, err)
+	snapshot = c.claim()
+	op = snapshot.GetOperation()
+	if op.GetStep() != controlpb.OperationStep_OPERATION_STEP_CLONE || snapshot.GetCloneInput() == nil {
+		t.Fatalf("receipt fixture must dispatch the Workspace's frozen clone step: %v", snapshot)
+	}
+	execution := "clone-receipt-execution"
+	_, err = f.executions.RecordDispatch(c.ctx, &controlpb.RecordDispatchRequest{
+		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, ExecutionId: execution, NodeId: nodeID,
+		Input: &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: snapshot.GetCloneInput()}},
+	})
+	must(t, err)
+	original := &controlpb.TakeOverNodeEventRequest{
+		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, ExecutionId: execution, Sequence: 1,
+		Result: &controlpb.ExecutionResult{
+			Node:    &controlpb.NodeIdentity{NodeId: nodeID, NodeIncarnationId: "inc-late"},
+			Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_SNAPSHOT_UNAVAILABLE}},
+		},
+		Event: []byte("clone event A"),
+	}
+	taken, err := f.executions.TakeOverNodeEvent(c.ctx, original)
+	must(t, err)
+	if taken.GetRecord().GetExecutionId() != execution || !proto.Equal(taken.GetRecord().GetResult(), original.GetResult()) {
+		t.Fatalf("initial clone takeover did not preserve its original result: %v", taken)
+	}
+	return f, c, run, workspace, op, original
+}
+
+// seedControlledCloneProject stages only the already available Project and repository snapshot.
+// Project/main-Workspace provisioning is outside the receipt-conflict scenario; the run Workspace,
+// its sandbox plan, Node registration, frozen clone input, dispatch and receipts remain real below.
+func seedControlledCloneProject(t *testing.T, f *fixture) string {
+	t.Helper()
+	project, binding, workspace, sync := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	var space string
+	must(t, f.store.Pool.QueryRow("SELECT id::text FROM collab_workspaces WHERE tenant_id=$1", f.tid).Scan(&space))
+	tx, err := f.store.Pool.Begin()
+	must(t, err)
+	defer func() { _ = tx.Rollback() }()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		_, err := tx.Exec(query, args...)
+		must(t, err)
+	}
+	exec(`INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,lifecycle)
+ VALUES($1,$2,$3,$4,'Controlled clone','active')`, project, f.tid, f.uid, space)
+	exec(`INSERT INTO repository_bindings(id,tenant_id,project_id,repository_url,branch)
+ VALUES($1,$2,$3,'https://example.invalid/repo.git','main')`, binding, f.tid, project)
+	// The Project and its required main Workspace commit together under the deferred constraint.
+	exec(`INSERT INTO workspaces(id,tenant_id,owner_user_id,creator_user_id,creator_evidence,
+ project_id,kind,desired_state,observed_state,admission_open,runtime_generation,requested_ref)
+ VALUES($1,$2,$3,$3,'verified_request',$4,'main','running','ready',true,1,'main')`, workspace, f.tid, f.uid, project)
+	exec(`INSERT INTO repository_operations(id,type,tenant_id,project_id,binding_id,state,trigger,finished_at)
+ VALUES($1,'repository_sync',$2,$3,$4,'succeeded','fixture',clock_timestamp())`, sync, f.tid, project, binding)
+	snapshot := core.GitSnapshotRef(binding, f.commit)
+	exec(`INSERT INTO repository_snapshots(binding_id,tenant_id,project_id,commit_oid,snapshot_ref,sync_operation_id)
+ VALUES($1,$2,$3,$4,$5,$6)`, binding, f.tid, project, f.commit, snapshot, sync)
+	must(t, tx.Commit())
+	// This is the existing ref-query fixture for a prepared snapshot, not a physical clone result.
+	f.refs.pin(f.tid, project, snapshot, f.commit)
+	return project
 }

@@ -5937,7 +5937,6 @@
             "enum": [
               "pending",
               "running",
-              "awaiting_input",
               "succeeded",
               "failed",
               "cancelled"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -127,5 +128,19 @@ func TestWorkflowRunRouteRequiresProject(t *testing.T) {
 	required := body["required"].([]string)
 	if len(required) != 1 || required[0] != "projectId" {
 		t.Fatalf("POST workflow runs required fields = %v; want [projectId]", required)
+	}
+}
+
+// TestWorkflowRunStatusKeepsReservedStateOutOfTheContract pins the public run status set. The
+// storage CHECK retains awaiting_input for forward compatibility, but no writer produces it and
+// the approved phase-one scope defers HITL; a public enum that listed it would present an
+// unreachable state as selectable.
+func TestWorkflowRunStatusKeepsReservedStateOutOfTheContract(t *testing.T) {
+	schemas := Document()["components"].(map[string]any)["schemas"].(map[string]any)
+	status := schemas["WorkflowRun"].(map[string]any)["properties"].(map[string]any)["status"].(map[string]any)
+	enum := status["enum"].([]string)
+	want := []string{"pending", "running", "succeeded", "failed", "cancelled"}
+	if !slices.Equal(enum, want) {
+		t.Fatalf("WorkflowRun.status enum = %v; want %v", enum, want)
 	}
 }

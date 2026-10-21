@@ -125,6 +125,8 @@ import type {
   PostApiV1TenantsTidIssuesIidMoveBody,
   PostApiV1TenantsTidIssuesIidRuns200,
   PostApiV1TenantsTidIssuesIidRunsBody,
+  PostApiV1TenantsTidIssuesIidRunsRidCancel202,
+  PostApiV1TenantsTidIssuesIidRunsRidCancelBody,
   PostApiV1TenantsTidIssuesIidRunsRidThreadEnd202,
   PostApiV1TenantsTidIssuesIidRunsRidThreadEndBody,
   PostApiV1TenantsTidIssuesIidRunsRidThreadMessages201,
@@ -4037,6 +4039,77 @@ export function useGetApiV1TenantsTidIssuesIidRunsRid<TData = Awaited<ReturnType
 
 
 /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Records the user's cancellation request on a live agent run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never moves the run's phase, status, Thread or Workspace, never settles a Revision and never deletes anything — the run's session shuts down on its own evidence, its Thread reaches ending on the next reconciliation, and delivery and release proceed as they otherwise would. Accepted for a run that is queued, or in provisioning, starting or running; a run that has already left those phases answers 409 run_not_cancellable, because its session is over and what remains is delivery and release rather than a live conversation. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since moved on, so the recorded instant is never replaced. Authorized like ending the Thread, except that on a run carrying a model Binding only that Binding's initiator and the tenant's administrators may cancel: an active tenant member who is neither answers 403 model_run_cancel_forbidden. A missing or mismatched tenant, Issue or run, a soft-deleted run, and a run that is not an agent run are all 404 not_found. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/runs/:rid/cancel
+ */
+export const postApiV1TenantsTidIssuesIidRunsRidCancel = (
+    tid: string,
+    iid: string,
+    rid: string,
+    postApiV1TenantsTidIssuesIidRunsRidCancelBody: PostApiV1TenantsTidIssuesIidRunsRidCancelBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidIssuesIidRunsRidCancel202>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/cancel`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidIssuesIidRunsRidCancelBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidIssuesIidRunsRidCancelMutationKey = () => ['postApiV1TenantsTidIssuesIidRunsRidCancel'] as const;
+
+export const getPostApiV1TenantsTidIssuesIidRunsRidCancelMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>, TError,PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>, TError,PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidIssuesIidRunsRidCancelMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>, PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables> = (props) => {
+          const {tid,iid,rid,data} = props ?? {};
+
+          return  postApiV1TenantsTidIssuesIidRunsRidCancel(tid,iid,rid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidIssuesIidRunsRidCancelMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>>
+    export type PostApiV1TenantsTidIssuesIidRunsRidCancelMutationBody = PostApiV1TenantsTidIssuesIidRunsRidCancelBody
+    export type PostApiV1TenantsTidIssuesIidRunsRidCancelMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables = {tid: string;iid: string;rid: string;data: PostApiV1TenantsTidIssuesIidRunsRidCancelBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/issues/:iid/runs/:rid/cancel
+ */
+export const usePostApiV1TenantsTidIssuesIidRunsRidCancel = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>, TError,PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidIssuesIidRunsRidCancel>>,
+        TError,
+        PostApiV1TenantsTidIssuesIidRunsRidCancelMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidIssuesIidRunsRidCancelMutationOptions(options), queryClient);
+    }
+    /**
  * Read-only active-member access to a run's registered Revision history. Tenant, issue and run are checked before and after private storage I/O. Verifies exact byte size and SHA-256, parses JSONL objects retaining order and duplicate sequence updates. Maximum 32 MiB and 100000 records; no URLs or paths accepted. 404 history_unavailable for absent/expired registration, 413 history_too_large, 502 history_invalid or history_unavailable. Never scans user filesystems.
  * @summary GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/history
  */

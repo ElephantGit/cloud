@@ -3,12 +3,16 @@ import { fireEvent, renderHook, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
+import { CurrentSpaceProvider } from '@/features/spaces/current-space'
 import { useCreateWorkflowRun } from '@/features/workflows/api'
 import { WorkflowRunTools } from '@/features/workflows/editor/workflow-run-tools'
 import { routes } from '@/routes'
 import {
+  TEST_PROJECT_ID,
   TEST_TENANT_ID,
+  chooseProject,
   installCloudSpaceHandlers,
+  installSpaceProjectHandlers,
   installWorkflowHandlers,
   workflowFixture,
 } from '@/test/cloud-handlers'
@@ -17,8 +21,6 @@ import { renderRoutes } from '@/test/render'
 import { stubViewportGeometry } from '@/test/viewport'
 
 const WORKFLOW_ID = '44444444-4444-4444-4444-444444444444'
-/** The Project a run freezes; the editor has none to state yet, so only the hook tests name one. */
-const PROJECT_ID = '55555555-5555-5555-5555-555555555555'
 /**
  * The readable workspace slug the browser route carries. It is deliberately not
  * `TEST_TENANT_ID`: the tenant UUID scopes API calls, and using it as the slug is
@@ -56,6 +58,7 @@ function runFixture(id: string, name: string): WorkflowRun {
     rounds: [],
     error: '',
     definitionSnapshot: null,
+    cancelRequestedAt: null,
     startedAt: '2026-09-20T02:00:00.000Z',
     finishedAt: '2026-09-20T02:00:10.000Z',
     createdAt: '2026-09-20T10:00:00+08:00',
@@ -100,15 +103,25 @@ function installRunHandlers({
   )
 }
 
-/** Mounts the tools alone at the real editor route, with the run route as their destination. */
+/**
+ * Mounts the tools alone at the real editor route, with the run route as their destination.
+ *
+ * The start dialog reads the space's Projects, so the bare mount stands in for the layout that
+ * normally provides the current space: without it the dialog has no space to list Projects of.
+ */
 function renderRunTools(options: RunToolsOptions = {}) {
   installCloudSpaceHandlers('admin')
+  installSpaceProjectHandlers()
   installRunHandlers(options)
   const { router } = renderRoutes(
     [
       {
         path: EDITOR_ROUTE,
-        element: <WorkflowRunTools tenantId={TEST_TENANT_ID} workflowId={WORKFLOW_ID} />,
+        element: (
+          <CurrentSpaceProvider slug={WORKSPACE_SLUG}>
+            <WorkflowRunTools tenantId={TEST_TENANT_ID} workflowId={WORKFLOW_ID} />
+          </CurrentSpaceProvider>
+        ),
       },
       { path: `${EDITOR_ROUTE}/runs/:runId`, element: <p>运行详情</p> },
     ],
@@ -130,10 +143,9 @@ function wrapper() {
 }
 
 /**
- * The create mutation's own gate, pinned at the hook because the editor cannot reach it: a run must
- * name the Project its Workspace provisions in, and the editor has none to state until the run form
- * that picks one lands. A caller that states a Project still gets a run, and the Project it stated
- * is what the request carries.
+ * The create mutation's own gate, pinned at the hook rather than through the dialog: a run must name
+ * the Project its Workspace provisions in, so a caller that states an empty one is refused before
+ * anything is sent, and a caller that states a Project gets it carried on the request.
  */
 describe('useCreateWorkflowRun', () => {
   it('refuses a run that names no Project without sending it', async () => {
@@ -143,7 +155,7 @@ describe('useCreateWorkflowRun', () => {
       wrapper: wrapper(),
     })
 
-    result.current.mutate({ workflowId: WORKFLOW_ID })
+    result.current.mutate({ workflowId: WORKFLOW_ID, projectId: '' })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.error?.message).toBe('workflow_run_project_required')
@@ -157,10 +169,10 @@ describe('useCreateWorkflowRun', () => {
       wrapper: wrapper(),
     })
 
-    result.current.mutate({ workflowId: WORKFLOW_ID, projectId: PROJECT_ID })
+    result.current.mutate({ workflowId: WORKFLOW_ID, projectId: TEST_PROJECT_ID })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(bodies).toEqual([{ projectId: PROJECT_ID }])
+    expect(bodies).toEqual([{ projectId: TEST_PROJECT_ID }])
   })
 })
 
@@ -175,20 +187,21 @@ describe('WorkflowRunTools', () => {
     expect(runButton).toHaveAttribute('title', '请先发布一个版本，才能运行这个工作流')
   })
 
-  it('arms the run button once a snapshot exists, but starts no run it cannot state a Project for', async () => {
+  it('starts the chosen version in the chosen Project, then opens the run', async () => {
     const bodies: unknown[] = []
     const router = renderRunTools({ runs: [], onCreate: (body) => bodies.push(body) })
     const runButton = await screen.findByRole('button', { name: '运行' })
     await waitFor(() => expect(runButton).toBeEnabled())
 
     fireEvent.click(runButton)
+    await chooseProject()
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
-    // A run must name the Project its Workspace provisions in, and the editor has none to state
-    // yet: the refusal happens before the request, so nothing is created and nothing navigates.
-    // The button goes pending and comes back armed, which is where the refusal settles.
-    await waitFor(() => expect(runButton).toBeEnabled())
-    expect(bodies).toEqual([])
-    expect(router.state.location.pathname).toBe(EDITOR_PATH)
+    // The browser path carries the workspace slug, never the tenant UUID.
+    await waitFor(() => expect(router.state.location.pathname).toBe(`${EDITOR_PATH}/runs/run-new`))
+    // The run names the version it executes and the Project its Workspace provisions in, so the
+    // server can freeze both onto it.
+    expect(bodies).toEqual([{ projectId: TEST_PROJECT_ID, snapshotId: 'snap-1', input: {} }])
   })
 
   it('lists run history and opens a run from a row', async () => {
@@ -221,6 +234,7 @@ describe('workflow run navigation through the app routes', () => {
   /** Mounts the app's real routes inside the workspace and installs what the editor reads. */
   function renderAppAt(path: string, runs: WorkflowRun[] = []) {
     installCloudSpaceHandlers('admin')
+    installSpaceProjectHandlers()
     installWorkflowHandlers([workflowFixture({ id: WORKFLOW_ID })])
     const bodies: unknown[] = []
     installRunHandlers({
@@ -232,19 +246,20 @@ describe('workflow run navigation through the app routes', () => {
     return { ...view, bodies }
   }
 
-  it('starts no run, and stays on the same workspace route instead of the UUID one', async () => {
+  it('opens the started run on the same workspace route instead of the UUID one', async () => {
     const { router, bodies } = renderAppAt(EDITOR_PATH)
     const runButton = await screen.findByRole('button', { name: '运行' })
     await waitFor(() => expect(runButton).toBeEnabled())
 
     fireEvent.click(runButton)
+    await chooseProject()
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
     // A UUID workspace path would have been redirected to Issues by the Layout before
-    // this page ever mounted, so the route is what proves the click stayed put.
-    await waitFor(() => expect(runButton).toBeEnabled())
-    expect(bodies).toHaveLength(0)
-    expect(router.state.location.pathname).toBe(EDITOR_PATH)
-    expect(screen.queryByRole('heading', { name: '运行详情' })).not.toBeInTheDocument()
+    // this page ever mounted, so the route is what proves the click stayed on the slug.
+    expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe(`${EDITOR_PATH}/runs/run-new`)
+    expect(bodies).toHaveLength(1)
   })
 
   it('opens an existing run from the history with the same slug and creates nothing', async () => {

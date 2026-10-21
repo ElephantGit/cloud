@@ -1,14 +1,16 @@
 package core
 
-// agentRunSkeletonFields are the B-skeleton-only columns added to issue_runs and
-// workspaces by migration 0018. The schema and the D6 business hooks land ahead of
-// the feature that owns them (dispatcher, OpenAPI contract, Thread API); until then
-// they are deliberately not part of the public resource shape, so they are removed
-// before an issue_runs or workspaces resource reaches the API. The AgentRunDispatcher
-// that reads and writes them is a later change and reads through the same transaction
-// helpers, not through these shaping functions.
+// agentRunSkeletonFields are the agent-lifecycle columns of issue_runs and workspaces
+// that stay out of the public resource shape, so they are removed before an issue_runs
+// resource reaches the API. They are the
+// internal control identities and deadlines — the Workspace's own id, the Thread state
+// (published by the Thread resource itself, Thread D5), the startup and Workspace
+// deadline windows — which the loops read and write through the transaction helpers
+// rather than through these shaping functions. `cancelRequestedAt` is deliberately not
+// among them: it is the user's own D6 request, made through `POST .../runs/{rid}/cancel`,
+// and the run page has to be able to show that a cancellation is pending.
 var agentRunSkeletonFields = []string{
-	"phase", "workspaceId", "cancelRequestedAt", "threadState", "idleSince", "issueRunId",
+	"phase", "workspaceId", "threadState", "idleSince", "issueRunId",
 	"startupReadyAt", "startupDeadlineAt", "startupResume", "startupEndingDeadlineAt",
 	"workspaceBlockedAt", "workspaceDeadlineAt", "workspaceBlockedSource",
 }

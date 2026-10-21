@@ -57,14 +57,14 @@ func TestWorkflowProjectionLinearGraph(t *testing.T) {
 	if !ok || node.ID != "s" {
 		t.Fatalf("first ready node = %q, %v; want start s", node.ID, ok)
 	}
-	states["s"] = executeWorkflowNode(node, Object{"flag": true}, states)
+	states["s"] = executeWorkflowNode(node, Object{"flag": true}, states, nil)
 
 	p = projectWorkflowNodes(graph, states)
 	node, ok = p.readyNode()
 	if !ok || node.ID != "o" {
 		t.Fatalf("second ready node = %q, %v; want output o", node.ID, ok)
 	}
-	states["o"] = executeWorkflowNode(node, nil, states)
+	states["o"] = executeWorkflowNode(node, nil, states, nil)
 
 	p = projectWorkflowNodes(graph, states)
 	if _, ok := p.readyNode(); ok {
@@ -93,7 +93,7 @@ func TestWorkflowProjectionBranchSelection(t *testing.T) {
 		[][3]string{{"s", "c", ""}, {"c", "y", "yes"}, {"c", "e", "else"}},
 	))
 	states := map[string]workflowNodeState{}
-	states["s"] = executeWorkflowNode(graph.ByNode["s"], Object{"flag": true}, states)
+	states["s"] = executeWorkflowNode(graph.ByNode["s"], Object{"flag": true}, states, nil)
 
 	branch, err := evaluateWorkflowCondition(graph.ByNode["c"], states)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestWorkflowProjectionUnlabeledEdgeIsElse(t *testing.T) {
 		[][3]string{{"s", "c", ""}, {"c", "y", "yes"}, {"c", "e", ""}},
 	))
 	states := map[string]workflowNodeState{}
-	states["s"] = executeWorkflowNode(graph.ByNode["s"], Object{"flag": true}, states)
+	states["s"] = executeWorkflowNode(graph.ByNode["s"], Object{"flag": true}, states, nil)
 
 	if branch, err := evaluateWorkflowCondition(graph.ByNode["c"], states); err != nil || branch != workflowBranchElse {
 		t.Fatalf("all-miss condition = %q, %v; want else", branch, err)
@@ -490,5 +490,49 @@ func TestWorkflowStartOutputMatchesDesktopVariableRoots(t *testing.T) {
 				t.Fatalf("start output = %s; want %s", canonicalJSON(output), canonicalJSON(tc.want))
 			}
 		})
+	}
+}
+
+// TestWorkflowConditionReadsRuntimeGlobals runs a condition against a desktop-exported graph that
+// carries globalVariables: the runtime-owned sys.* pair and a frozen user global must resolve the
+// selectors (no more condition_selector_undeclared), and none of the ambient pseudo-nodes may leak
+// into node_states.
+func TestWorkflowConditionReadsRuntimeGlobals(t *testing.T) {
+	run := Object{"workflowId": "wf-1", "createdAtMs": int64(1700000000000)}
+	yes := Object{"id": "yes", "logic": "and", "conditions": []any{
+		Object{"variableSelector": []any{"sys", "workflow_id"}, "operator": "equals", "value": "wf-1"},
+		Object{"variableSelector": []any{"sys", "timestamp"}, "operator": "equals", "value": float64(1700000000000)},
+		Object{"variableSelector": []any{"g", "region"}, "operator": "equals", "value": "eu"},
+	}}
+	graphDoc := wfGraph(
+		[]Object{wfNode("s", "start", ""), wfConditionNode("c", []any{yes}), wfNode("o", "output", "")},
+		[][3]string{{"s", "c", ""}, {"c", "o", "yes"}},
+	)
+	// Desktop exports globals beside nodes/edges: the name, its declared type and the value frozen
+	// with the snapshot.
+	graphDoc["globalVariables"] = []any{
+		Object{"name": "g.region", "valueType": "string", "value": "eu"},
+	}
+	graph := readWorkflowGraph(graphDoc)
+
+	ambient := workflowAmbientStates(run, graphDoc)
+	if got := canonicalJSON(ambient["sys"].Output); got != canonicalJSON(Object{"workflow_id": "wf-1", "timestamp": float64(1700000000000)}) {
+		t.Fatalf("sys ambient = %s", got)
+	}
+	if got := canonicalJSON(ambient["g"].Output); got != canonicalJSON(Object{"region": "eu"}) {
+		t.Fatalf("user global ambient = %s", got)
+	}
+
+	states := map[string]workflowNodeState{}
+	states["s"] = executeWorkflowNode(graph.ByNode["s"], nil, states, ambient)
+	state := executeWorkflowNode(graph.ByNode["c"], nil, states, ambient)
+	if state.Status != "succeeded" || state.Output.S("selectedBranch") != "yes" {
+		t.Fatalf("condition state = %v; want selectedBranch yes", state.object())
+	}
+	states["c"] = state
+	for id := range states {
+		if id == "sys" || id == "g" {
+			t.Fatalf("ambient root %q leaked into node_states", id)
+		}
 	}
 }

@@ -93,6 +93,13 @@ func TestWorkflowRunLifecycle(t *testing.T) {
 	if run.S("snapshotId") != snapID {
 		t.Fatalf("run pinned wrong snapshot: %v", run)
 	}
+	// The run freezes the Project the request named, so its Workspace provisions there. The run
+	// summary does not project project_id, so the read-back acceptance reads the stored row.
+	var storedProject string
+	must(t, f.store.Pool.QueryRow("SELECT project_id::text FROM workflow_runs WHERE id=$1", run.S("id")).Scan(&storedProject))
+	if storedProject != pid {
+		t.Fatalf("run froze project %q; want %q", storedProject, pid)
+	}
 	states := run.O("nodeStates")
 	if states.O("start").S("status") != "succeeded" || states.O("agent-1").S("status") != "succeeded" {
 		t.Fatalf("run node_states missing nodes: %v", states)

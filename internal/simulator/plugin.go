@@ -95,7 +95,7 @@ func pluginSpec(kind string, plugins []core.Object) (*controlpb.ExecutionInput, 
 		for _, target := range targets {
 			item.Targets = append(item.Targets, &controlpb.PluginTargetDownload{Target: target.S("target"), Download: &controlpb.PluginDownload{Url: target.S("url"), Sha256: target.S("sha256")}})
 		}
-		if agent := plugin.O("agentConfiguration"); agent != nil {
+		if agent, declared := core.PluginAgentConfiguration(plugin); declared {
 			version := agent.N("schemaVersion")
 			if version < 0 || version > math.MaxUint32 {
 				version = 0

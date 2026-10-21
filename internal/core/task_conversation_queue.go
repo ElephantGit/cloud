@@ -111,11 +111,9 @@ func (s *Store) dispatchTaskMessage(ctx context.Context, messageID string) (stri
 			taskMessageFail(t, message, "project_unavailable")
 			return Object{}
 		}
-		if agent.S("pluginId") == "official/ora-space.opencode" {
-			if code := taskPersonalModelGap(t, message.S("userId")); code != "" {
-				taskMessageFail(t, message, code)
-				return Object{}
-			}
+		if _, code := taskAgentModelGap(t, message.S("userId"), agent); code != "" {
+			taskMessageFail(t, message, code)
+			return Object{}
 		}
 		input := snapshotAgentRunInput(buildRunContext(t, i, message.S("body"), "agent", message.S("agentId"), Object{}, nil), agent)
 		run := enqueueAdmittedRun(t, message.S("tenantId"), message.S("issueId"), "agent", message.S("agentId"), input, "", nil, "user", message.S("userId"))

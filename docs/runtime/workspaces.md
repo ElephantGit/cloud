@@ -192,7 +192,7 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 密钥值），它记在 Binding 上，供同步外部仓库的 Repo Executor 使用。仓库凭据不控制任何 Node 工作：clone、Agent 会话与交付
 只与 Git Server 通信，Node 不接触外部仓库，Controller 拿到的快照也不带凭据引用。
 
-租户级的独立 clone 请求接口（`/tenants/:tid/clones`）已删除，迁移 `0050` 删除了它的请求表和不属于任何 Workspace 的 clone
+租户级的独立 clone 请求接口（`/tenants/:tid/clones`）已删除，迁移 `0052` 删除了它的请求表和不属于任何 Workspace 的 clone
 执行；每个 clone 都是 Workspace 操作的 `clone` 步骤。
 
 ## 相关决策

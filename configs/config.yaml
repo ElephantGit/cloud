@@ -81,6 +81,16 @@ issue_runs:
   delivery_give_up_after: 2h
   delivery_unreachable_after: 30m
 
+workflow:
+  # The initial turn's window for a workflow agent session (circus#299). A dispatched session that
+  # produces neither a committed result nor a successful `turnEnded` receipt while its execution's
+  # `created_at` is older than this settles failed as `session_turn_deadline_exceeded`. A deployment
+  # duration judged on database time and timed per execution row, so a retry's new execution row
+  # re-times while replay, restart and replica passes never reset it. The approved default is 2h;
+  # omitting the key (or setting it non-positive) selects that default. Override:
+  # CLOUD_WORKFLOW_SESSION_TURN_TIMEOUT.
+  session_turn_timeout: 2h
+
 plugins:
   # Plugin marketplace the cloud server syncs into its own catalog snapshot (git fetch + scan of
   # registry/**/orax.toml). The catalog API always reads the PostgreSQL snapshot and never the

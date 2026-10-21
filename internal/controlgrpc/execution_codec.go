@@ -107,7 +107,7 @@ func installMessages(plugins []core.Object) []*controlpb.PluginInstall {
 		for _, target := range rows(plugin["targets"]) {
 			item.Targets = append(item.Targets, &controlpb.PluginTargetDownload{Target: target.S("target"), Download: &controlpb.PluginDownload{Url: target.S("url"), Sha256: target.S("sha256")}})
 		}
-		if agent := plugin.O("agentConfiguration"); agent != nil {
+		if agent, declared := core.PluginAgentConfiguration(plugin); declared {
 			item.AgentConfiguration = &controlpb.PluginAgentConfiguration{SchemaVersion: boundedSchemaVersion(agent.N("schemaVersion")), DeclarationSha256: agent.S("declarationSha256")}
 		}
 		out = append(out, item)

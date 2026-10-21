@@ -105,7 +105,7 @@ Cloud：事务外经 ref 查询核验交付 ref、HEAD 核验 JSONL ──▶ �
 [Agent IssueRun](issue-runs.md#上限)。
 
 每个交付 ref 至多属于一个 Revision（部分唯一索引 `revisions_delivery_ref`）。改走 Git 之前登记的 bundle 形状的 Revision 原样保留，
-数据库约束让两种形状互斥（迁移 `0051`）。
+数据库约束让两种形状互斥（迁移 `0053`）。
 
 ## 续接前序 Revision
 

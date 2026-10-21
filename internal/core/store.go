@@ -99,6 +99,8 @@ type Store struct {
 	GitServer *GitServer
 	// ModelEgress is the immutable deployment admission policy for personal connection writes.
 	ModelEgress ModelEgress
+	// PersonalAgentRuntime is nil until a deployment supports the versioned adapter path.
+	PersonalAgentRuntime *PersonalAgentRuntime
 	// OnThreadEvents receives only first-taken-over events and the caller's SQL transaction.
 	// Hooks must use that transaction; starting another Store transaction would deadlock.
 	OnThreadEvents func(context.Context, *sql.Tx, string, string, []Object) error
@@ -159,8 +161,23 @@ type Store struct {
 	// are deployment configuration values, not columns, and both are judged entirely on the database
 	// clock. Zero (the zero-value Store) means that condition never gives up, so the scan is a no-op
 	// rather than a zero-length window that would abandon every delivery the moment it was declared.
+	//
+	// DeliveryUnreachableAfter is the deployment's one tolerance for a silent Node, not a
+	// delivery-only limit: D8's delete give-up reuses it, and so does the workflow scheduler, which
+	// settles an in-flight session whose Node is gone with it. A second limit would let two passes
+	// disagree about whether the same Node is still there.
 	DeliveryGiveUpAfter      time.Duration
 	DeliveryUnreachableAfter time.Duration
+
+	// WorkflowSessionTurnTimeout bounds a dispatched workflow agent session that has committed no
+	// result and produced no successful `turnEnded` (circus#299 option A): past this window the node
+	// settles failed with `session_turn_deadline_exceeded` and the run finishes, declaring the
+	// Workspace delete. The comparison is on the database clock against
+	// node_executions.created_at, so a scheduler replay, replica change or Controller restart never
+	// resets it, while a retry's new execution row legitimately starts a fresh window. Zero (the
+	// zero-value Store) selects the approved default rather than a zero-length window that would
+	// fail every session the moment it dispatched.
+	WorkflowSessionTurnTimeout time.Duration
 
 	// Events broadcasts committed collaboration-space invalidation notices to live
 	// SSE subscribers. Every project belongs to its tenant's sole collaboration

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -560,5 +561,82 @@ func TestWorkflowAdvanceConditionNotContainsOnAbsentVariable(t *testing.T) {
 	}
 	if got := wfNodeStatus(t, states, "c"); got != "failed" {
 		t.Fatalf("condition status = %q; want failed", got)
+	}
+}
+
+// TestWorkflowAdvanceReadsDesktopGlobals drives a condition against a desktop-exported graph that
+// declares globals, through the same advance pass a real run takes. The graph is the envelope
+// desktop's serializeWorkflowGraph emits — nodes carry `type: "workflow"`, edges carry `kind: "data"`,
+// and each global is `{name, valueType, value}`. The three selectors the run's condition references —
+// the runtime-owned `sys.workflow_id` / `sys.timestamp` and a frozen user global — must resolve to
+// the values the run was created with, and the ambient pseudo-nodes must not leak into node_states.
+func TestWorkflowAdvanceReadsDesktopGlobals(t *testing.T) {
+	store := dispatcherDB(t)
+	wid, sid, runID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	tid, uid := uuid.NewString(), uuid.NewString()
+	created := time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC)
+	createdMs := created.UnixMilli()
+
+	graph := Object{
+		"nodes": []any{
+			Object{"id": "start-1", "type": "workflow", "data": Object{"kind": "start", "title": "开始", "description": ""}},
+			Object{"id": "cond-1", "type": "workflow", "data": Object{"kind": "condition", "title": "分支", "description": "", "cases": []any{
+				Object{"id": "matched", "logic": "and", "conditions": []any{
+					Object{"variableSelector": []any{"sys", "workflow_id"}, "operator": "equals", "value": wid},
+					Object{"variableSelector": []any{"sys", "timestamp"}, "operator": "equals", "value": float64(createdMs)},
+					Object{"variableSelector": []any{"g", "region"}, "operator": "equals", "value": "eu"},
+				}},
+			}}},
+			Object{"id": "out-1", "type": "workflow", "data": Object{"kind": "output", "title": "出口", "description": ""}},
+			Object{"id": "out-2", "type": "workflow", "data": Object{"kind": "output", "title": "旁路", "description": ""}},
+		},
+		"edges": []any{
+			Object{"id": "e1", "kind": "data", "source": "start-1", "target": "cond-1"},
+			Object{"id": "e2", "kind": "data", "source": "cond-1", "target": "out-1", "sourceHandle": "matched"},
+			Object{"id": "e3", "kind": "data", "source": "cond-1", "target": "out-2"},
+		},
+		"viewport":        Object{"x": 0, "y": 0, "zoom": 1},
+		"annotations":     []any{},
+		"globalVariables": []any{Object{"name": "g.region", "valueType": "string", "value": "eu"}},
+	}
+
+	g, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatalf("marshal graph: %v", err)
+	}
+	tx, err := store.Pool.Begin()
+	if err != nil {
+		t.Fatalf("seed begin: %v", err)
+	}
+	exec := func(name, q string, args ...any) {
+		if _, err := tx.Exec(q, args...); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	exec("user", `INSERT INTO users(id,display_name,status) VALUES($1,'wf','active')`, uid)
+	exec("tenant", `INSERT INTO tenants(id,name,status) VALUES($1,'wf','active')`, tid)
+	exec("membership", `INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')`, tid, uid)
+	exec("workflow", `INSERT INTO workflows(id,tenant_id,name,graph) VALUES($1,$2,'wf',$3::jsonb)`, wid, tid, g)
+	exec("snapshot", `INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph) VALUES($1,$2,$3,1,'v1',$4::jsonb)`, sid, tid, wid, g)
+	exec("run", `INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_at) VALUES($1,$2,$3,$4,'disp','pending','{}'::jsonb,$5)`, runID, tid, wid, sid, created)
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("seed commit: %v", err)
+	}
+
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	if status != "succeeded" || runErr != "" {
+		t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
+	}
+	cond, ok := asWorkflowObject(states["cond-1"])
+	if !ok || cond.O("output").S("selectedBranch") != "matched" {
+		t.Fatalf("condition state = %v; want selectedBranch matched", states["cond-1"])
+	}
+	for _, ambient := range []string{"sys", "g"} {
+		if _, leaked := states[ambient]; leaked {
+			t.Fatalf("ambient root %q leaked into node_states", ambient)
+		}
 	}
 }

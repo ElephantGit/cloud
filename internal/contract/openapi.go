@@ -100,6 +100,7 @@ func Document() map[string]any {
 	s["ModelDefinition"] = object(obj{"id": str(), "name": str(), "contextWindow": number(), "maxTokens": number()}, "id", "name", "contextWindow", "maxTokens")
 	s["ModelConnection"] = object(obj{"id": uuid(), "name": str(), "protocol": enumeration("openai-completions", "anthropic-messages"), "baseUrl": str(), "authMode": enumeration("bearer", "x-api-key"), "models": array(ref("ModelDefinition")), "enabled": boolean(), "credentialConfigured": boolean(), "version": number(), "createdAt": timestamp(), "updatedAt": timestamp()}, "id", "name", "protocol", "baseUrl", "authMode", "models", "enabled", "credentialConfigured", "version", "createdAt", "updatedAt")
 	s["ModelDefault"] = object(obj{"connectionId": str(), "modelId": str(), "version": number()}, "connectionId", "modelId", "version")
+	personalAgentSchemas(s)
 	s["AgentSessionSummary"] = object(obj{
 		"id": uuid(), "issueId": uuid(), "issueNumber": number(), "issueTitle": str(),
 		"projectId": optional(uuid()), "projectName": optional(str()), "agentPluginId": optional(str()),
@@ -128,7 +129,7 @@ func Document() map[string]any {
 	properties(s, "Workflow")["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The authored graph document: nodes, edges, viewport, editor annotations and global variables. Stored and returned whole; the editor is its only reader."}
 	s["WorkflowSnapshot"] = resource("id tenantId workflowId version name graph createdAt", "")
 	properties(s, "WorkflowSnapshot")["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The graph document frozen at publish time; restoring this snapshot writes it back to the workflow's live graph."}
-	s["WorkflowRun"] = resource("id tenantId workflowId snapshotId name status input nodeStates rounds error startedAt finishedAt createdAt updatedAt workflowName", "startedAt finishedAt")
+	s["WorkflowRun"] = resource("id tenantId workflowId snapshotId name status input nodeStates rounds error startedAt finishedAt createdAt updatedAt workflowName cancelRequestedAt", "startedAt finishedAt cancelRequestedAt")
 	workflowRunProps := properties(s, "WorkflowRun")
 	workflowRunProps["status"] = enumeration("pending", "running", "awaiting_input", "succeeded", "failed", "cancelled")
 	workflowRunProps["input"] = obj{"type": "object", "additionalProperties": true, "description": "The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead."}
@@ -164,8 +165,9 @@ func Document() map[string]any {
 	issueProps["properties"] = obj{"type": "object", "additionalProperties": true}
 	issueProps["labels"] = array(ref("Label"))
 	issueProps["assigneeType"] = enumeration("user", "agent", "team")
-	s["IssueRun"] = resource("id tenantId issueId version executorType executorId externalExecutionId executionContextRef workflowInvocationRef triggerEvidenceKind triggerEvidenceRefId status parentRunId retryOfRunId rerunOfRunId delegatedFromRunId attempt maxAttempts input result error failureReason triggerSummary queuedAt dispatchedAt startedAt completedAt fireAt leaseExpiresAt createdAt updatedAt deletedAt resumeRevisionId", "executionContextRef workflowInvocationRef triggerEvidenceRefId parentRunId retryOfRunId rerunOfRunId delegatedFromRunId result dispatchedAt startedAt completedAt fireAt leaseExpiresAt deletedAt resumeRevisionId")
+	s["IssueRun"] = resource("id tenantId issueId version executorType executorId externalExecutionId executionContextRef workflowInvocationRef triggerEvidenceKind triggerEvidenceRefId status parentRunId retryOfRunId rerunOfRunId delegatedFromRunId attempt maxAttempts input result error failureReason triggerSummary queuedAt dispatchedAt startedAt completedAt fireAt leaseExpiresAt createdAt updatedAt deletedAt resumeRevisionId cancelRequestedAt", "executionContextRef workflowInvocationRef triggerEvidenceRefId parentRunId retryOfRunId rerunOfRunId delegatedFromRunId result dispatchedAt startedAt completedAt fireAt leaseExpiresAt deletedAt resumeRevisionId cancelRequestedAt")
 	runProps := properties(s, "IssueRun")
+	runProps["agentConfiguration"] = object(obj{"pluginId": str(), "pluginVersion": str(), "configurationRevision": number()}, "pluginId", "pluginVersion", "configurationRevision")
 	runProps["executorType"] = enumeration("agent", "team", "workflow")
 	runProps["status"] = enumeration("queued", "dispatched", "running", "completed", "failed", "cancelled", "deferred")
 	runProps["attempt"] = number()
@@ -429,12 +431,12 @@ func Document() map[string]any {
 		// Restoring the default git identity needs no idempotency record (there is no tenant to scope
 		// one to): an identity that is already the default restores as a no-op, so a retry is safe.
 		credentialWrite := r.Method == "PUT" && strings.HasPrefix(r.Path, "/api/v1/me/model-connections/") && strings.HasSuffix(r.Path, "/credential")
-		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite) && r.Path != "/api/v1/me/git-identity" {
+		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite || personalAgentPath(r.Path) && r.Method == "PUT") && r.Path != "/api/v1/me/git-identity" {
 			keyScope := "Scoped to tenant and user."
 			// The personal routes are keyed on the verified user alone: a slot mapping is a
 			// (user_id, slot_name) row and a personal connection is the user's, so neither is scoped
 			// to a tenant and saying it is would describe a boundary the handler never checks.
-			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") || strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") {
+			if strings.HasPrefix(r.Path, "/api/v1/join/") || strings.HasPrefix(r.Path, "/api/v1/me/model-") || strings.HasPrefix(r.Path, "/api/v1/me/executor-slot-mappings") || personalAgentPath(r.Path) {
 				keyScope = "Scoped to the verified user before tenant membership exists."
 			}
 			parameters = append(parameters, obj{"name": "Idempotency-Key", "in": "header", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": 200}, "description": keyScope + " Same key and canonical method/path/body returns the original response before version validation; changed request is 409."})
@@ -536,6 +538,9 @@ func Document() map[string]any {
 // provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
+	if name == "pluginNamespace" || name == "pluginIdentifier" {
+		return obj{"type": "string", "minLength": 1, "maxLength": 150}
+	}
 	if name == "formRef" {
 		return obj{"type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:@-]+$"}
 	}
@@ -588,6 +593,12 @@ func isList(r router.Route) bool {
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
+	if personalAgentPath(r.Path) {
+		if r.Method == "GET" {
+			return ref("PersonalAgentConfigurationContext"), "200"
+		}
+		return object(obj{"resource": ref("PersonalAgentConfiguration")}, "resource"), "200"
+	}
 	if isRepositoryRoute(r) {
 		return repositoryResponse(r)
 	}
@@ -775,6 +786,12 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		if strings.HasSuffix(r.Path, "/restore") {
 			return ref("Workflow"), "200"
 		}
+		if strings.HasSuffix(r.Path, "/cancel") {
+			// The workflow-run cancellation request answers the recorded instant, exactly like the
+			// IssueRun request; the branch must come before the /runs arm for the same reason the
+			// core dispatcher matches it first.
+			return object(obj{"cancelRequestedAt": timestamp()}, "cancelRequestedAt"), "202"
+		}
 		if strings.Contains(r.Path, "/runs") {
 			// Workflow runs branch before snapshots/detail: the run paths carry no `:snapshotId`
 			// and must not be read as Workflow resources.
@@ -849,6 +866,8 @@ func responseSchema(r router.Route) (schema obj, status string) {
 			"nextCursor":      obj{"type": "integer", "format": "int64", "nullable": true, "description": "The window's last seq, to be sent back as `after`. Null for an empty window."},
 			"prevCursor":      obj{"type": "integer", "format": "int64", "nullable": true, "description": "The window's first seq, to be sent back as `before`. Null for an empty window."},
 		}, "items", "threadState", "idleSince", "nextCursor", "prevCursor", "initiatorUserId", "model", "canAppend", "canEnd"), "200"
+	case strings.HasSuffix(r.Path, "/runs/:rid/cancel"):
+		return object(obj{"cancelRequestedAt": timestamp()}, "cancelRequestedAt"), "202"
 	case strings.Contains(r.Path, "/runs"):
 		if r.Method == "GET" && strings.HasSuffix(r.Path, "/runs") {
 			return object(obj{"items": array(ref("IssueRun")), "nextCursor": str()}, "items", "nextCursor"), "200"
@@ -933,6 +952,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 }
 
 func optionalField(name string, r router.Route) bool {
+	if personalAgentPath(r.Path) {
+		return name == "connectionId" || name == "modelId"
+	}
 	if isRepositoryRoute(r) {
 		return repositoryOptional(name, r)
 	}
@@ -986,8 +1008,12 @@ func inputSchema(name string, r router.Route) obj {
 		return obj{"type": "string", "minLength": 1, "maxLength": 8192, "writeOnly": true, "description": "Handled exclusively by model-gateway; never returned or sent to Cloud HTTP."}
 	case "modelId":
 		return obj{"type": "string", "minLength": 1, "maxLength": 500}
-	case "version", "epoch", "admissionEpoch":
+	case "version", "revision", "selectionVersion", "epoch", "admissionEpoch":
 		return obj{"type": "integer", "format": "int64", "minimum": 0}
+	case "declarationFingerprint":
+		return obj{"type": "string", "pattern": "^[a-f0-9]{64}$"}
+	case "settings":
+		return obj{"type": "object", "additionalProperties": obj{"oneOf": []any{str(), obj{"type": "number"}, boolean()}}}
 	case "retrySeconds":
 		return obj{"type": "integer", "minimum": 1, "maximum": 3600}
 	case "protocolVersion":
@@ -1181,6 +1207,17 @@ func description(r router.Route) string {
 		// The user-initiated end's own fault vocabulary, stated here rather than in the shared
 		// per-status descriptions that unrelated routes also carry.
 		base += "Ends an agent run's Thread at the user's request, which is what makes the Thread's upper lifecycle reachable from the UI rather than only from an expired idle window or a cancellation. The body is an empty JSON object and any field is 400 unknown_field. Accepted while the Thread is pending, active or idle, answering 202 with the Thread's new state ending; a Thread already ending or ended answers 409 thread_closed. The transition and the EndSession command it releases commit together with the idempotency record, so a failure anywhere in that transaction leaves nothing behind and the same key may be retried as a first request. This endpoint never advances the Thread to ended, never marks a queued turn discarded and never touches the run's phase, status, result or Workspace: ending a Thread asks the session to stop and the session's own terminal state decides what follows. Authorized like a comment: any active tenant member who can read the Issue; a missing or mismatched tenant, Issue or run, a soft-deleted run, a run that is not an agent run, and a run whose session has not been declared yet are all 404 not_found. "
+	}
+	if strings.HasSuffix(r.Path, "/runs/:rid/cancel") && !strings.Contains(r.Path, "/workflows") {
+		// The cancellation request's own fault vocabulary, stated here rather than in the shared
+		// per-status descriptions that unrelated routes also carry. The path is spelled out because
+		// the task-conversation message cancel also ends in `/cancel` and has its own contract.
+		base += "Records the user's cancellation request on a live agent run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never moves the run's phase, status, Thread or Workspace, never settles a Revision and never deletes anything — the run's session shuts down on its own evidence, its Thread reaches ending on the next reconciliation, and delivery and release proceed as they otherwise would. Accepted for a run that is queued, or in provisioning, starting or running; a run that has already left those phases answers 409 run_not_cancellable, because its session is over and what remains is delivery and release rather than a live conversation. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since moved on, so the recorded instant is never replaced. Authorized like ending the Thread, except that on a run carrying a model Binding only that Binding's initiator and the tenant's administrators may cancel: an active tenant member who is neither answers 403 model_run_cancel_forbidden. A missing or mismatched tenant, Issue or run, a soft-deleted run, and a run that is not an agent run are all 404 not_found. "
+	}
+	if strings.HasSuffix(r.Path, "/runs/:rid/cancel") && strings.Contains(r.Path, "/workflows") {
+		// The WorkflowRun cancellation request's own contract. It is separate from the IssueRun
+		// request above because the run kinds differ in what a request means and who may make one.
+		base += "Records the user's cancellation request on a live workflow run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never changes the run's status or node states and never touches its session or Workspace — the Cloud-side scheduler reacts on its next pass, settling the run cancelled without dispatching another node, stopping an in-flight session through the existing EndSession relay within the same bounded confirmation window an idle session gets, and declaring the Workspace deletion (see the workflow scheduling documentation). Accepted for a run that is pending or running; a terminal run, and the never-written awaiting_input state, answer 409 run_not_cancellable. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since settled, so the recorded instant is never replaced. Authorized for the run's initiator and the tenant's administrators on a run carrying frozen executor bindings; an active tenant member who is neither answers 403 workflow_run_cancel_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. "
 	}
 	if strings.HasSuffix(r.Path, "/thread") {
 		// The Thread GET's own fault vocabulary and cursor semantics, stated here rather than in the

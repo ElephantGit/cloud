@@ -349,7 +349,10 @@ func pluginInputProto(op core.Object) *controlpb.ExecutionInput {
 		for _, target := range objectList(plugin["targets"]) {
 			item.Targets = append(item.Targets, &controlpb.PluginTargetDownload{Target: target.S("target"), Download: &controlpb.PluginDownload{Url: target.S("url"), Sha256: target.S("sha256")}})
 		}
-		if agent := plugin.O("agentConfiguration"); agent != nil {
+		// Mirror the Controller: a present association is forwarded as received, an absent one
+		// produces no message. Object.O would invent an empty association for every plugin.
+		if raw, declared := plugin["agentConfiguration"].(map[string]any); declared {
+			agent := core.Object(raw)
 			item.AgentConfiguration = &controlpb.PluginAgentConfiguration{SchemaVersion: uint32(agent.N("schemaVersion")), DeclarationSha256: agent.S("declarationSha256")}
 		}
 		items = append(items, item)

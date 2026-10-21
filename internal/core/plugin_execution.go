@@ -56,7 +56,7 @@ func pluginSnapshot(t *transaction, o Object) (plugins, meta []Object) {
 			plugins = append(plugins, item)
 			meta = append(meta, Object{"pluginId": item.S("pluginId"), "desiredRevision": row.N("desiredRevision")})
 		}
-		return plugins, meta
+		return frozenAgentPluginSnapshot(t, o, plugins, meta)
 	}
 }
 
@@ -71,13 +71,30 @@ func pluginPayload(release Object) Object {
 	// The frozen declaration association travels with the plan so the Node can prove the package's
 	// in-archive declaration bytes against it. Only the identity fields travel: the static copy
 	// and its path are Cloud-side evidence the Node re-derives from the actual package.
-	if association := release.O("agentConfiguration"); association != nil {
+	// An undeclared release carries no key at all: the Node reads a present association as a
+	// declaration to prove, so an empty one would fail every undeclared install.
+	if association, declared := PluginAgentConfiguration(release); declared {
 		item["agentConfiguration"] = Object{
 			"schemaVersion":     association.N("schemaVersion"),
 			"declarationSha256": association.S("declarationSha256"),
 		}
 	}
 	return item
+}
+
+// PluginAgentConfiguration returns the Agent declaration association a frozen release or plugin
+// plan item carries, and whether it carries one at all. Only an object value counts: the catalog
+// stores an undeclared listing's association as SQL NULL, which a frozen selection keeps as a JSON
+// null, and older selections lack the key. Object.O cannot make this distinction because it
+// returns an empty object for an absent field.
+func PluginAgentConfiguration(item Object) (Object, bool) {
+	switch v := item["agentConfiguration"].(type) {
+	case map[string]any:
+		return Object(v), true
+	case Object:
+		return v, true
+	}
+	return nil, false
 }
 
 func pluginRevision(meta []Object, pluginID string) int64 {

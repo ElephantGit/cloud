@@ -1043,7 +1043,7 @@ func TestMigration0033RevisionResumeAppliesFreshAndUpgrades(t *testing.T) {
 		t.Fatalf("before 0033: columns %d constraints %q", got, names)
 	}
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	// 0051 later replaces the bundle shape 0033 introduced with revisions_shape.
+	// 0053 later replaces the bundle shape 0033 introduced with revisions_shape.
 	if got, names := columns(pool), constraints(pool); got != 5 || names != "revisions_resume_refused,revisions_shape" {
 		t.Fatalf("after 0033: columns %d constraints %q", got, names)
 	}
@@ -1310,12 +1310,12 @@ func TestMigration0044ModelAttemptWorkflowRunAppliesFreshAndUpgrades(t *testing.
 	assertShape(t, pool, "upgrade")
 }
 
-// Migration 0050 upgrades a database that still holds tenant-level clones: their requests,
+// Migration 0052 upgrades a database that still holds tenant-level clones: their requests,
 // executions and receipts are removed, while a Workspace operation's clone execution and its receipt
 // stay, and every remaining clone execution must name its Workspace.
-func TestMigration0050RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
-	pool, _ := testSchema(t, "test_gn50_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0050_retire_tenant_level_clones.sql"))
+func TestMigration0052RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.T) {
+	pool, _ := testSchema(t, "test_gn52_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0052_retire_tenant_level_clones.sql"))
 	s := seedOwnershipChain(t, pool)
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -1332,7 +1332,7 @@ func TestMigration0050RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 
 	migratedTwice(t, newStoreOnSchema(t, pool))
 	if tableExists(t, pool, "clone_requests") {
-		t.Fatal("0050 must drop clone_requests")
+		t.Fatal("0052 must drop clone_requests")
 	}
 	var executions, receipts string
 	must(t, pool.QueryRow(`SELECT string_agg(execution_id, ',' ORDER BY execution_id) FROM clone_executions`).Scan(&executions))
@@ -1341,11 +1341,50 @@ func TestMigration0050RetiresTenantLevelClonesKeepingWorkspaceClones(t *testing.
 		t.Fatalf("only the Workspace clone and its receipt may remain, got executions %q receipts %q", executions, receipts)
 	}
 	if columnNullable(t, pool, "clone_executions", "workspace_id") {
-		t.Fatal("every clone execution must name its Workspace after 0050")
+		t.Fatal("every clone execution must name its Workspace after 0052")
 	}
 	var requestColumns int
 	must(t, pool.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='clone_executions' AND column_name='clone_request_id'`).Scan(&requestColumns))
 	if requestColumns != 0 {
-		t.Fatal("0050 must drop clone_executions.clone_request_id")
+		t.Fatal("0052 must drop clone_executions.clone_request_id")
 	}
+}
+
+// 0051 adds the cancellation-request instant to workflow_runs. The column is nullable and has no
+// default so a run that was never asked to stop stays distinguishable from one requested at any
+// instant; nothing is backfilled because the request is an intent recorded from now on. A fresh
+// database and a database that stopped at 0050 must reach the same shape, and rerunning the
+// migration must change nothing.
+func TestMigration0051WorkflowRunCancelAppliesFreshAndUpgrades(t *testing.T) {
+	column := func(pool *sql.DB) (int, string) {
+		t.Helper()
+		var n int
+		var nullable, dflt sql.NullString
+		must(t, pool.QueryRow(`SELECT count(*), max(is_nullable), max(column_default)
+			FROM information_schema.columns WHERE table_schema=current_schema()
+			  AND table_name='workflow_runs' AND column_name='cancel_requested_at'`).Scan(&n, &nullable, &dflt))
+		return n, nullable.String + "|" + dflt.String
+	}
+	assertShape := func(t *testing.T, pool *sql.DB, stage string) {
+		t.Helper()
+		n, shape := column(pool)
+		if n != 1 || shape != "YES|" {
+			t.Fatalf("%s: cancel_requested_at columns %d nullable/default %q", stage, n, shape)
+		}
+		if !columnNullable(t, pool, "workflow_runs", "cancel_requested_at") {
+			t.Fatalf("%s: cancel_requested_at must be nullable", stage)
+		}
+	}
+
+	freshPool, _ := testSchema(t, "test_wfc51f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	assertShape(t, freshPool, "fresh")
+
+	pool, _ := testSchema(t, "test_wfc51_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0051_workflow_run_cancel.sql"))
+	if n, shape := column(pool); n != 0 || shape != "|" {
+		t.Fatalf("before 0051: cancel_requested_at columns %d nullable/default %q", n, shape)
+	}
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertShape(t, pool, "upgrade")
 }

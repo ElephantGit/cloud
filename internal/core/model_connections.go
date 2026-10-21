@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"net"
 	"net/url"
 	"strings"
@@ -77,16 +78,35 @@ func validatePublicModelConnection(body Object) Object {
 	return data
 }
 
+// personalModelReplay returns the response recorded for a completed write, or nil for a new key.
+// The response is read back as JSON text and decoded with its number literals intact: the ledger
+// stores the exact values the first answer returned, so a retry must not round a numeric setting
+// that jsonb holds exactly. Decoding the row's jsonb into a generic Object would turn every number
+// into float64 and answer a repeated request with a different value.
 func personalModelReplay(t *transaction, uid, key, hash string) Object {
 	if key == "" {
 		return nil
 	}
 	require(len(key) <= 200, 400, "idempotency_key_required")
-	if old := t.one("SELECT * FROM personal_model_idempotency WHERE user_id=$1 AND key=$2", uid, key); old != nil {
-		require(old.S("requestHash") == hash, 409, "idempotency_conflict")
-		return old
+	old := t.one(`SELECT request_hash, status, response::text AS response_json
+		FROM personal_model_idempotency WHERE user_id=$1 AND key=$2`, uid, key)
+	if old == nil {
+		return nil
 	}
-	return nil
+	require(old.S("requestHash") == hash, 409, "idempotency_conflict")
+	decoded, err := decodeAgentJSONValue([]byte(old.S("responseJson")))
+	if err != nil {
+		panic(databaseFailure{err})
+	}
+	response, ok := decoded.(map[string]any)
+	if !ok {
+		// Every write records one JSON object; anything else means the ledger was corrupted, and
+		// returning an empty replay would silently answer a different request.
+		panic(databaseFailure{errors.New("recorded idempotent response is not a JSON object")})
+	}
+	old["response"] = Object(response)
+	delete(old, "responseJson")
+	return old
 }
 
 func recordPersonalModelWrite(t *transaction, uid, key, hash string, out Object, status int) {

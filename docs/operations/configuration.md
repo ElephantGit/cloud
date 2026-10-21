@@ -45,7 +45,8 @@
 | `issue_runs.thread_idle_timeout` | `15m` | Thread 空闲窗口；非正值取默认 |
 | `issue_runs.agent_start_timeout`、`agent_restore_timeout`、`agent_end_confirm_timeout` | `2m`、`6m`、`5m` | 启动窗口，显式配置非正值时拒绝启动，见 [有界启动](../agent-runs/startup-settlement.md) |
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | 运行 Workspace 创建停在 `blocked` 的放弃窗口，规则同上 |
-| `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；非正值取默认 |
+| `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；`delivery_unreachable_after` 同时是"Node 是否还在"的判定窗口，工作流运行里进行中的会话也按它结算；非正值取默认 |
+| `workflow.session_turn_timeout` | `2h` | 工作流会话初始回合的窗口：执行行 `created_at` 超过它、既没有提交结果也没有成功的 `turnEnded` 时，节点以 `session_turn_deadline_exceeded` 失败；按执行行计时，非正值取默认，见 [工作流](../workflows/workflows.md#调度) |
 | `object_store.*` | `enabled: false` | 见 [Revision](../agent-runs/revisions.md#对象存储)：`endpoint`、`public_endpoint`、`region`、`bucket`、`path_style`、`access_key_id_file`、`secret_access_key_file`、`upload_grant_ttl` |
 | `git_server.repository_base_url` | 空 | 沙盒访问的 Git Server 仓库 base URL（`https`，不带用户信息、查询、片段和末尾斜杠），写进 clone、会话和交付输入；为空即不使用 Git Server：clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算 |
 | `git_server.ref_query_url`、`ca_file`、`client_cert_file`、`client_key_file` | 空 | 设置了 `repository_base_url` 时必填：ref 查询监听的 `https://host[:port]`、校验它的 CA，以及 Cloud 的客户端证书和私钥文件。启动时只读入文件、不发网络请求；Git Server 不可达或证书不符只让核验暂不可用，不阻止启动。见 [Git Server](../repositories/git-server.md#ref-查询) |

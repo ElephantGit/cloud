@@ -24,6 +24,7 @@ type Config struct {
 	Control       ControlConfig       `mapstructure:"control"`
 	Plugins       PluginConfig        `mapstructure:"plugins"`
 	IssueRuns     IssueRunsConfig     `mapstructure:"issue_runs"`
+	Workflow      WorkflowConfig      `mapstructure:"workflow"`
 	ObjectStore   ObjectStoreConfig   `mapstructure:"object_store"`
 	GitServer     GitServerConfig     `mapstructure:"git_server"`
 	Repository    RepositoryConfig    `mapstructure:"repository"`
@@ -62,11 +63,27 @@ type IssueRunsConfig struct {
 	// succeed. Zero or negative selects the approved default (2 hours).
 	DeliveryGiveUpAfter time.Duration `mapstructure:"delivery_give_up_after"`
 
-	// DeliveryUnreachableAfter is IssueRun D5's unreachability window: how long the run Workspace's
-	// Node may be unreachable before Cloud treats it as gone and closes the run out in the IssueRun D8
-	// give-up path, without waiting out the full failure window. Zero or negative selects the
-	// approved default (30 minutes).
+	// DeliveryUnreachableAfter is the deployment's one unreachability window: how long a run
+	// Workspace's Node may be unreachable before Cloud treats it as gone. IssueRun D5 uses it to close
+	// a run out in the D8 give-up path without waiting out the full failure window, and the workflow
+	// scheduler uses the same window to settle an in-flight session whose Node is gone — one limit, so
+	// two passes cannot disagree about whether the same Node is still there. Zero or negative selects
+	// the approved default (30 minutes).
 	DeliveryUnreachableAfter time.Duration `mapstructure:"delivery_unreachable_after"`
+}
+
+// WorkflowConfig holds the Cloud-side workflow scheduler's deployment policy. Leaf keys are bound to
+// CLOUD_WORKFLOW_* environment overrides like every other section.
+type WorkflowConfig struct {
+	// SessionTurnTimeout bounds a dispatched agent session that has committed no result and produced
+	// no successful `turnEnded` (circus#299 option A): once the execution's own registered instant is
+	// older than this window, the scheduler fails the node with Cloud's own
+	// `session_turn_deadline_exceeded` instead of holding the run `running` forever. It is
+	// deliberately separate from issue_runs.agent_end_confirm_timeout, which measures the different
+	// wait that starts when Cloud releases EndSession; one key must not carry two meanings. Zero or
+	// negative selects the approved default (2 hours), so an omitted key never produces a
+	// zero-length window that would fail every session the moment it dispatched.
+	SessionTurnTimeout time.Duration `mapstructure:"session_turn_timeout"`
 }
 
 // PluginConfig is the cloud-side plugin marketplace configuration. Leaf keys
@@ -170,6 +187,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("issue_runs.agent_restore_timeout", DefaultAgentRestoreTimeout)
 	v.SetDefault("issue_runs.agent_end_confirm_timeout", DefaultAgentEndConfirmTimeout)
 	v.SetDefault("issue_runs.agent_workspace_blocked_timeout", DefaultAgentWorkspaceBlockedTimeout)
+	v.SetDefault("workflow.session_turn_timeout", DefaultWorkflowSessionTurnTimeout)
 	v.SetDefault("plugins.asset_import_interval", DefaultAssetImportInterval)
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
@@ -202,6 +220,12 @@ func Load(configPath string) (*Config, error) {
 	if cfg.IssueRuns.DeliveryUnreachableAfter <= 0 {
 		cfg.IssueRuns.DeliveryUnreachableAfter = DefaultDeliveryUnreachableAfter
 	}
+	// circus#299's approved default, applied for the same reason as the windows above: an operator
+	// who omits the key gets the window the owner fixed, not a zero-length one that would fail every
+	// dispatched session at its first pass.
+	if cfg.Workflow.SessionTurnTimeout <= 0 {
+		cfg.Workflow.SessionTurnTimeout = DefaultWorkflowSessionTurnTimeout
+	}
 
 	return &cfg, nil
 }
@@ -222,6 +246,12 @@ const DefaultAgentEndConfirmTimeout = 5 * time.Minute
 // DefaultAgentWorkspaceBlockedTimeout is D5's creation-abandonment window, applied when
 // issue_runs.agent_workspace_blocked_timeout is absent or not positive.
 const DefaultAgentWorkspaceBlockedTimeout = 30 * time.Minute
+
+// DefaultWorkflowSessionTurnTimeout is circus#299 option A's first-version window, applied when
+// workflow.session_turn_timeout is absent or not positive. It is the same order of magnitude as
+// IssueRun D5's delivery give-up limit: far longer than a normal single turn, short enough that a
+// stuck run does not hold its Workspace overnight.
+const DefaultWorkflowSessionTurnTimeout = 2 * time.Hour
 
 // DefaultDeliveryGiveUpAfter and DefaultDeliveryUnreachableAfter are IssueRun D5's first-version
 // give-up limits, applied when the corresponding key is absent or not positive.

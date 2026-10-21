@@ -82,7 +82,7 @@ D4/D5 业务收尾后的残留由独立账本对账继续处理，证据足够�
 | `agent_failed`（Agent 失败）、`interrupted`（Node 中断或结果未知） | `failed` |
 
 成果是否保存由 `result.deliveryState` 表达：`saved`（登记了有改动的 Revision）、`unchanged`（登记了没有改动的 Revision）、
-`failed`（交付被放弃）、`skipped`（部署没有对象存储，或会话开始前就被取消）。`failed` 和 `cancelled` 的运行同样会尽量保存成果，
+`failed`（交付被放弃）、`skipped`（部署没有对象存储或 Git Server，或会话开始前就被取消）。`failed` 和 `cancelled` 的运行同样会尽量保存成果，
 也可以有 Revision。
 
 时间线上，Agent 运行有一条 `run.enqueued` 活动，进入 `releasing` 时再追加 `run.completed`、`run.failed` 或 `run.cancelled`，

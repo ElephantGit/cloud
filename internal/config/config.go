@@ -26,6 +26,7 @@ type Config struct {
 	IssueRuns     IssueRunsConfig     `mapstructure:"issue_runs"`
 	Workflow      WorkflowConfig      `mapstructure:"workflow"`
 	ObjectStore   ObjectStoreConfig   `mapstructure:"object_store"`
+	GitServer     GitServerConfig     `mapstructure:"git_server"`
 	Repository    RepositoryConfig    `mapstructure:"repository"`
 }
 

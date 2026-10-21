@@ -274,6 +274,7 @@ func controlledTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScen
 		kind, outcome = "deliver_revision", "revision_delivered"
 		result = deliveredResult(scene, in, revisionFinalCommit)
 		conflict = deliveredResult(scene, in, strings.Repeat("2", 40))
+		f.push(in, revisionFinalCommit)
 	}
 	request := func(submission string, fact *controlpb.ExecutionResult) *controlpb.TakeOverNodeEventRequest {
 		return &controlpb.TakeOverNodeEventRequest{
@@ -314,15 +315,22 @@ func controlledTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScen
 	if delivery {
 		row := f.revisionRow(scene.runID)
 		project, repository := f.runPlacement(scene.runID)
-		if row == nil || row.RunID != scene.runID || row.TenantID != scene.tenantID || row.WorkspaceID != f.runWorkspaceID(scene.runID) || row.ProjectID != project || row.RepositoryURL != repository || row.FinalCommit != revisionFinalCommit || row.HistoryKey != in.S("historyKey") || row.BundleKey != in.S("bundleKey") {
+		if row == nil || row.RunID != scene.runID || row.TenantID != scene.tenantID || row.WorkspaceID != f.runWorkspaceID(scene.runID) || row.ProjectID != project || row.RepositoryURL != repository || row.FinalCommit != revisionFinalCommit || row.BaseCommit != in.S("baseCommit") || row.RevisionRef != in.S("revisionRef") || row.DeliveryRef != in.S("deliveryRef") || row.HistoryKey != in.S("historyKey") {
 			t.Fatalf("late verified delivery registered the wrong original Revision: %#v", row)
 		}
+		if row.BundleKey != "" || row.BundleSize != nil {
+			t.Fatalf("late Git delivery registered a retired bundle: %#v", row)
+		}
 		if verdict := f.revisionVerification(execution); verdict.S("outcome") != "delivered" {
-			t.Fatalf("actual object verification is missing: %v", verdict)
+			t.Fatalf("actual Git and history verification is missing: %v", verdict)
+		}
+		refs := f.refs.queried()
+		if len(refs) != 2 || refs[0] != in.S("deliveryRef") || refs[1] != in.S("deliveryRef") {
+			t.Fatalf("failed intake and successful retry did not verify the declared Git delivery ref: %v", refs)
 		}
 		probes := f.objects.probed()
-		if len(probes) != 4 || probes[0].S("key") != in.S("historyKey") || probes[1].S("key") != in.S("bundleKey") || probes[2].S("key") != in.S("historyKey") || probes[3].S("key") != in.S("bundleKey") {
-			t.Fatalf("failed intake and successful retry did not verify both declared objects: %v", probes)
+		if len(probes) != 2 || probes[0].S("key") != in.S("historyKey") || probes[1].S("key") != in.S("historyKey") {
+			t.Fatalf("failed intake and successful retry did not verify the declared history: %v", probes)
 		}
 	}
 	var canonical string
@@ -354,8 +362,8 @@ func controlledTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScen
 	if !audited {
 		t.Fatal("conflict response rolled back its audit or changed the canonical result/receipt")
 	}
-	if delivery && len(f.objects.probed()) != 4 {
-		t.Fatal("known replay or contradiction repeated object verification")
+	if delivery && (len(f.refs.queried()) != 2 || len(f.objects.probed()) != 2) {
+		t.Fatal("known replay or contradiction repeated Git or history verification")
 	}
 	if businessAfter := residualIntakeSnapshot(t, f, scene); businessAfter != businessBefore {
 		t.Fatalf("late controlled facts resurrected business state, admission or dispatch:\nbefore=%s\nafter=%s", businessBefore, businessAfter)

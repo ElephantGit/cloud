@@ -6,7 +6,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 55 个 SQL 文件。新增 [0053_agent_run_controlled_reclamation.sql](0053_agent_run_controlled_reclamation.sql)
+当前共 58 个 SQL 文件。新增 [0056_agent_run_controlled_reclamation.sql](0056_agent_run_controlled_reclamation.sql)
 保存独立的部署受控意图、从属删卷意图、逐目标终止 effect 和统一命令回执；原账本仍拥有 D4/D5 责任。
 
 | SQL 文件 | schema 变化 |
@@ -64,11 +64,13 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun 的会话命令归属与节点范围 |
 | [0050_personal_agent_configurations.sql](0050_personal_agent_configurations.sql) | 个人 Agent 配置的持续 revision 与私有运行快照 |
 | [0051_workflow_run_cancel.sql](0051_workflow_run_cancel.sql) | WorkflowRun 的取消请求 |
-| [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
+| [0052_legacy_workflow_issue_run_settlement.sql](0052_legacy_workflow_issue_run_settlement.sql) | 存量 queued 工作流 IssueRun 的一次性结算 |
+| [0053_retire_tenant_level_clones.sql](0053_retire_tenant_level_clones.sql) | 退役租户级 clone |
+| [0054_git_delivery_refs.sql](0054_git_delivery_refs.sql) | 经 Git 交付的 Revision |
+| [0055_agent_run_residual_reclamation.sql](0055_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
+| [0056_agent_run_controlled_reclamation.sql](0056_agent_run_controlled_reclamation.sql) | 部署受控回收意图、从属数据删除与逐目标终止 |
 
 ## 不可变性与升级
-
-- 0053 不改 0052 的历史列、责任、证据、处置或首次 `cleared_at`，也不回填 D8；无账本的 D8 只由显式根意图承载保护与证据。根终止与从属删卷各自三态；每资源一个根、最多一个从属删除意图及固定删除 operation，命令键在 tenant 范围统一唯一。目标的成功约束要求两个布尔确认均为 true，缺字段不能以 SQL NULL 通过。新库、0052 升级与约束覆盖见 [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go)。
 
 - 已应用 SQL 不改内容、不改文件名；更正用新的前向迁移。重复应用跳过 checksum 相同的已应用文件。
 - `CheckSchema` 只读检查缺失迁移、checksum 不符和未知数据库版本，发现不一致拒绝启动。生产服务不执行 DDL，运维用 [cloudctl](../../../cmd/cloudctl/README.md) 应用迁移。
@@ -80,7 +82,11 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0049 让 `thread_commands` 接受 WorkflowRun 归属，并要求工作流命令带图节点；每个节点至多一条 `end_session`，调度器可安全重放。旧行全部带 `run_id`，不回填。语义见 [工作流](../../../docs/workflows/workflows.md)，覆盖见 `TestWorkflowSessionEndsAfterSuccessfulTurn` 等 DB 测试。
 - 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 - 0051 给 `workflow_runs` 增加取消请求时刻，不回填旧行；请求只记录意图，由调度器在后续轮次结算。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `TestWorkflowRunCancelBeforeStartNeverStarts` 等 DB 测试。
-- 0052 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
+- 0052 结算升级时仍为 `queued`/`dispatched` 的、存活的 `executor_type='workflow'` IssueRun：它们没有执行器、也没有冻结的工作流身份，按 ADR D3 标记失败并写 `failure_reason='workflow_execution_unavailable'`，不做迁移；其他状态的行与软删除行保持原样。工作流启动门禁把 manual 运行绑定到真实 WorkflowRun 之后才会停止产生这种行；门禁（circus#71）落地前 `createRun` 仍会造出新行，而本迁移只在升级时执行一次，不会回头结算它们。覆盖见 `TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades`。
+- 0053 是 Workspace 改为从 Git Server 快照 clone 的切换，不迁移数据：删除不属于 Workspace 的 clone execution 及其收据，去掉 `clone_executions.clone_request_id` 与索引 `one_request_execution`，`clone_executions.workspace_id` 改为 NOT NULL，删除 `clone_requests`；Workspace 的 clone execution 与收据保留，可重复执行。语义见 [Workspace](../../../docs/runtime/workspaces.md)，仍有租户级 clone 的库的升级覆盖见 `TestMigration0053RetiresTenantLevelClonesKeepingWorkspaceClones`。
+- 0054 是 Revision 改为经 Git 交付的切换，不迁移数据：`revisions` 增加 `delivery_ref`，`revisions_bundle_shape` 换成 `revisions_shape`（`delivery_ref` 为 NULL 时仍是原有的 bundle 形状，非 NULL 时必须是格式正确的 `refs/ora/deliveries/<UUID>` 且不带任何 bundle 列），部分唯一索引 `revisions_delivery_ref` 让一个交付 ref 只属于一个 Revision；既有 bundle 行不改写，可重复执行。语义见 [Revision](../../../docs/agent-runs/revisions.md)，约束覆盖见 `TestRevisionShapeKeepsGitAndBundleRowsApart`。
+- 0055 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
+- 0056 不改 0055 的历史列、责任、证据、处置或首次 `cleared_at`，也不回填 D8；无账本的 D8 只由显式根意图承载保护与证据。根终止与从属删卷各自三态；每资源一个根、最多一个从属删除意图及固定删除 operation，命令键在 tenant 范围统一唯一。目标的成功约束要求两个布尔确认均为 true，缺字段不能以 SQL NULL 通过。新库、0055 升级与约束覆盖见 [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go)。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

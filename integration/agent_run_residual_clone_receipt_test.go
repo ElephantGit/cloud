@@ -214,20 +214,32 @@ func cloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string,
 	if snapshot.GetOperation().GetId() != operation {
 		t.Fatalf("claim picked %s, want %s", snapshot.GetOperation().GetId(), operation)
 	}
-	planned, err := c.operations.PlanEffect(c.ctx, &controlpb.PlanEffectRequest{
-		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, Version: snapshot.GetOperation().GetVersion(),
-		Kind: controlpb.EffectKind_EFFECT_KIND_SANDBOX_ENSURE, WorkspaceId: workspace,
-	})
+	op, ensured := c.effect(snapshot.GetOperation(), controlpb.EffectKind_EFFECT_KIND_SANDBOX_ENSURE, workspace)
+	op, err = c.advance(op)
 	must(t, err)
+	nodeID := ensured.GetEvidence().GetSandboxEnsured().GetNodeId()
+	node, err := c.register(ensured.GetId(), 1, nodeID, "inc-late")
+	must(t, err)
+	_, err = c.status(node, controlpb.NodeConnection_NODE_CONNECTION_CONNECTED)
+	must(t, err)
+	_, err = c.advance(op)
+	must(t, err)
+	snapshot = c.claim()
+	op = snapshot.GetOperation()
+	if op.GetStep() != controlpb.OperationStep_OPERATION_STEP_CLONE || snapshot.GetCloneInput() == nil {
+		t.Fatalf("receipt fixture must dispatch the Workspace's frozen clone step: %v", snapshot)
+	}
 	execution := "clone-receipt-execution"
-	_, err = f.store.Pool.Exec(`INSERT INTO clone_executions(execution_id,operation_id,workspace_id,node_id,input,dispatched_epoch,node_operation_id)
- VALUES($1,$2,$3,'node-late','{"kind":"clone"}',$4,$1::text)`, execution, operation, workspace, c.epoch)
+	_, err = f.executions.RecordDispatch(c.ctx, &controlpb.RecordDispatchRequest{
+		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, ExecutionId: execution, NodeId: nodeID,
+		Input: &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: snapshot.GetCloneInput()}},
+	})
 	must(t, err)
 	original := &controlpb.TakeOverNodeEventRequest{
 		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation, ExecutionId: execution, Sequence: 1,
 		Result: &controlpb.ExecutionResult{
-			Node:    &controlpb.NodeIdentity{NodeId: "node-late", NodeIncarnationId: "inc-late"},
-			Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_BRANCH_NOT_FOUND}},
+			Node:    &controlpb.NodeIdentity{NodeId: nodeID, NodeIncarnationId: "inc-late"},
+			Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_SNAPSHOT_UNAVAILABLE}},
 		},
 		Event: []byte("clone event A"),
 	}
@@ -236,7 +248,7 @@ func cloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string,
 	if taken.GetRecord().GetExecutionId() != execution || !proto.Equal(taken.GetRecord().GetResult(), original.GetResult()) {
 		t.Fatalf("initial clone takeover did not preserve its original result: %v", taken)
 	}
-	return f, c, run, workspace, planned.GetOperation(), original
+	return f, c, run, workspace, op, original
 }
 
 func cloneReceiptCanonicalSnapshot(t *testing.T, f *fixture, execution string) string {

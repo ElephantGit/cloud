@@ -21,8 +21,8 @@ func seedResidualExec(t *testing.T, s *Store, query string, args ...any) {
 	}
 }
 
-// The object-verification outcome is an explicit fixture. The actual delivery applier, receipt,
-// Revision insert and residual fact write run together below; this does not test object storage.
+// The ref/history-verification outcome is an explicit fixture. The actual delivery applier,
+// receipt, Revision insert and residual fact write run together below; this does not test Git or storage.
 func seedResidualScene(t *testing.T, ready bool) residualReclaimScene {
 	t.Helper()
 	s := commandStore(t)
@@ -40,7 +40,7 @@ func seedResidualScene(t *testing.T, ready bool) residualReclaimScene {
 			t.Fatal(err)
 		}
 	}
-	scene.deliveryInput = Object{"kind": "deliver_revision", "baseCommit": baseCommit, "revisionRef": "refs/ora/revisions/" + scene.run, "historyKey": "revisions/" + scene.run + "/history"}
+	scene.deliveryInput = Object{"kind": "deliver_revision", "baseCommit": baseCommit, "revisionRef": "refs/ora/revisions/" + scene.run, "deliveryRef": GitDeliveryRefPrefix + scene.work, "historyKey": "revisions/" + scene.run + "/history"}
 	scene.deliveryResult = Object{"outcome": "revision_unchanged", "node": Object{"nodeId": "residual-node", "nodeIncarnationId": "residual-incarnation"}, "baseCommit": baseCommit, "finalCommit": baseCommit, "revisionRef": scene.deliveryInput.S("revisionRef"), "history": Object{"key": scene.deliveryInput.S("historyKey"), "size": 0, "sha256": strings.Repeat("a", 64)}}
 	seedResidualExec(t, s, `INSERT INTO execution_work(id,run_id,kind,input,target,execution_id) VALUES($1,$2,'deliver_revision',$3,$4,$5)`, scene.work, scene.run, jsonText(scene.deliveryInput), jsonText(Object{"workspaceId": scene.workspace, "sandboxInstanceId": scene.effect, "runtimeGeneration": 1, "nodeId": "residual-node"}), scene.delivery)
 	seedResidualExec(t, s, `INSERT INTO node_executions(execution_id,kind,operation_id,work_id,workspace_id,node_id,node_operation_id,input,dispatched_epoch)

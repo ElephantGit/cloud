@@ -36,6 +36,8 @@ PostgreSQL                                       ▼       │
   drives the Sandbox Server to create and delete sandboxes and holds sessions with the Nodes inside them.
 - Sandboxes can reach only model-gateway, git-server's repository listener and the object storage public address; they
   cannot reach Cloud, the Gateway or the database directly.
+- The Cloud server reaches only git-server's ref query listener, with its own client certificate, to check a delivery
+  ref before registering a Revision (see [Git Server](repositories/git-server.en.md#ref-queries)).
 - External Git is reached only by the Repo Executor; a token submitted by the browser goes only to the Credential Store,
   and Cloud reads credential metadata and issues short-lived, single-use authorizations without ever seeing plaintext.
 
@@ -49,7 +51,7 @@ PostgreSQL                                       ▼       │
 | Credential Store (`cmd/credential-store`) | This repository | Independent custody of external Git tokens: browser submission, executor redemption, Cloud management and revocation; ciphertext only |
 | git-credential-ora (`cmd/git-credential-ora`) | This repository | The Repo Executor's fixed Git credential helper; delivers the credential only when the requested repository equals the staged scope |
 | PostgreSQL | — | The only authoritative business store |
-| Object storage | — | Revision bundles and session JSONL |
+| Object storage | — | Revision session JSONL (Revisions registered before the switch to Git also have bundles) |
 | Controller (`ora-controller`) | desktop | Dials out to Cloud only; claims work, performs Substrate effects, holds Node sessions and relays events and commands |
 | Sandbox Server | cluster | The Docker implementation of the Substrate: creates and terminates sandboxes per Workspace and deletes data |
 | Node (`ora-node`) | desktop | The executor inside the sandbox: clones, plugin installs, Agent sessions, Revision delivery |
@@ -99,7 +101,7 @@ operation in one transaction and answers `202`. Then:
 
 ```text
 Controller claims the operation ──▶ plans a sandbox_ensure effect ──▶ Sandbox Server creates the sandbox
-      ──▶ handshake with the Node, reported as registered ──▶ clone execution registered and dispatched ──▶ Node clones
+      ──▶ handshake with the Node, reported as registered ──▶ clone execution registered and dispatched ──▶ Node clones the Binding's snapshot from the Git Server
       ──▶ plugin execution registered and dispatched ──▶ Cloud opens admission, marks the Workspace ready and the operation succeeded in one transaction
 ```
 
@@ -117,8 +119,8 @@ comment transaction: create the IssueRun (pin the Agent plugin version, the pers
   ──▶ dispatch loop: create the run Workspace (a disposable isolated Workspace)
   ──▶ once ready: write the Thread's first prompt and release the session work item ──▶ the Node starts the Agent session
   ──▶ Thread: session records stream back to Cloud one by one, and the user can keep appending messages
-  ──▶ session ends: release the delivery work item ──▶ the Node uploads the bundle and session JSONL
-  ──▶ Cloud checks the objects outside a transaction and registers the Revision inside one ──▶ deletes the run Workspace
+  ──▶ session ends: release the delivery work item ──▶ the Node pushes the final commit to a delivery ref on the Git Server and uploads the session JSONL
+  ──▶ Cloud checks the delivery ref by ref query and the JSONL outside a transaction and registers the Revision inside one ──▶ deletes the run Workspace
 ```
 
 The execution result and the saved output are recorded separately; startup, delivery and deletion each have a waiting limit;

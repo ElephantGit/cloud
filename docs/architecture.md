@@ -31,6 +31,7 @@ PostgreSQL                                       ▼       │
 - 浏览器只和 Gateway 通信；Gateway 为每个请求现签两份内部 JWT，再转发给 Cloud server。
 - Controller 只主动拨出到 Cloud 的 gRPC 控制监听，Cloud 从不连接 Controller；Controller 驱动 Sandbox Server 建删沙盒，并与沙盒里的 Node 建立会话。
 - 沙盒只能到达 model-gateway、git-server 的仓库监听和对象存储的公开地址，不能直接访问 Cloud、Gateway 或数据库。
+- Cloud server 只用自己的客户端证书访问 git-server 的 ref 查询监听，在登记 Revision 之前核对交付 ref（见 [Git Server](repositories/git-server.md#ref-查询)）。
 - 外部 Git 只由 Repo Executor 访问；浏览器提交的 token 只进入 Credential Store，Cloud 只读凭据元数据并签发短期的一次性授权。
 
 | 参与方 | 仓库 | 职责 |
@@ -43,7 +44,7 @@ PostgreSQL                                       ▼       │
 | Credential Store（`cmd/credential-store`） | 本仓库 | 独立保管外部 Git token：浏览器提交、执行器兑换、Cloud 管理与撤销；只保存密文 |
 | git-credential-ora（`cmd/git-credential-ora`） | 本仓库 | Repo Executor 的固定 Git credential helper，只在请求的仓库等于暂存作用域时交付凭据 |
 | PostgreSQL | — | 唯一的业务权威存储 |
-| 对象存储 | — | Revision 的 bundle 与会话 JSONL |
+| 对象存储 | — | Revision 的会话 JSONL（改走 Git 之前登记的 Revision 另有 bundle） |
 | Controller（`ora-controller`） | desktop | 只拨出到 Cloud；领取工作，执行 Substrate effect，与 Node 建会话并转发事件与命令 |
 | Sandbox Server | cluster | Substrate 的 Docker 实现：按 Workspace 创建、终止沙盒，删除数据 |
 | Node（`ora-node`） | desktop | 沙盒里的执行端：clone、插件安装、Agent 会话、Revision 交付 |
@@ -79,7 +80,7 @@ PostgreSQL                                       ▼       │
 
 ```text
 Controller 领取操作 ──▶ 计划 sandbox_ensure effect ──▶ Sandbox Server 建沙盒
-      ──▶ 与 Node 握手并代报注册 ──▶ 登记并派发 clone 执行 ──▶ Node clone
+      ──▶ 与 Node 握手并代报注册 ──▶ 登记并派发 clone 执行 ──▶ Node 从 Git Server 上 Binding 的快照 clone
       ──▶ 登记并派发插件执行 ──▶ Cloud 在同一事务里打开准入、标记 Workspace 就绪、操作成功
 ```
 
@@ -95,8 +96,8 @@ Controller 领取操作 ──▶ 计划 sandbox_ensure effect ──▶ Sandbox
   ──▶ 派发循环：建运行 Workspace（一次性的 isolated Workspace）
   ──▶ 就绪后：写 Thread 首条提问，放出会话工作项 ──▶ Node 启动 Agent 会话
   ──▶ Thread：会话记录逐条流回 Cloud，用户可以继续追加消息
-  ──▶ 会话结束：放出交付工作项 ──▶ Node 上传 bundle 与会话 JSONL
-  ──▶ Cloud 在事务外核对对象，事务内登记 Revision ──▶ 删除运行 Workspace
+  ──▶ 会话结束：放出交付工作项 ──▶ Node 把最终提交推送到 Git Server 的交付 ref，上传会话 JSONL
+  ──▶ Cloud 在事务外经 ref 查询核对交付 ref、核对 JSONL，事务内登记 Revision ──▶ 删除运行 Workspace
 ```
 
 执行结果与成果保存分开记录，启动、交付、删除各有等待上限，未知结果只请求结束、保留残留责任（见 [Agent IssueRun](agent-runs/issue-runs.md)）。

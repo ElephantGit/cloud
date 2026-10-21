@@ -17,7 +17,7 @@ type residualRaceResult struct {
 // This deliberately mirrors Store.transact's hooks: the callbacks below call the same production
 // state functions while the advisory lock is held, never substitutes built only for the race.
 func seedResidualTransaction(ctx context.Context, s *Store, raw *sql.Tx) *transaction {
-	tx := &transaction{tx: raw, ctx: ctx, store: s, pluginExecution: s.PluginExecution, legacyCloneFixture: s.legacyCloneFixture, directory: s.Directory, contextBuilder: s.Context, forms: s.Forms, assist: s.Assist, simulator: s.Simulator, objectStore: s.ObjectStore, onThreadEvents: s.OnThreadEvents, onSessionEnded: s.OnSessionEnded, onRunWorkspaceSettled: s.OnRunWorkspaceSettled, onRunWorkspaceDeleted: s.OnRunWorkspaceDeleted, onDeliverySettled: s.OnDeliverySettled}
+	tx := &transaction{tx: raw, ctx: ctx, store: s, pluginExecution: s.PluginExecution, directory: s.Directory, contextBuilder: s.Context, forms: s.Forms, assist: s.Assist, simulator: s.Simulator, objectStore: s.ObjectStore, onThreadEvents: s.OnThreadEvents, onSessionEnded: s.OnSessionEnded, onRunWorkspaceSettled: s.OnRunWorkspaceSettled, onRunWorkspaceDeleted: s.OnRunWorkspaceDeleted, onDeliverySettled: s.OnDeliverySettled}
 	tx.ctx = context.WithValue(ctx, businessTransactionKey{}, tx)
 	return tx
 }

@@ -13,6 +13,7 @@ func TestParseScheduledTaskSchedule(t *testing.T) {
 		want scheduledTaskSchedule
 	}{
 		{name: "every_hours", raw: Object{"kind": "every_hours", "intervalHours": 6}, want: scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 6}},
+		{name: "every_hours_maximum_duration", raw: Object{"kind": "every_hours", "intervalHours": maxScheduledTaskIntervalHours}, want: scheduledTaskSchedule{Kind: "every_hours", IntervalHours: int(maxScheduledTaskIntervalHours)}},
 		{name: "daily", raw: Object{"kind": "daily", "hour": 9, "minute": 30}, want: scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 30}},
 		{name: "weekly", raw: Object{"kind": "weekly", "hour": 18, "minute": 0, "weekdays": []string{"monday", "friday"}}, want: scheduledTaskSchedule{Kind: "weekly", Hour: 18, Weekdays: []time.Weekday{time.Monday, time.Friday}}},
 	}
@@ -31,6 +32,8 @@ func TestParseScheduledTaskSchedule(t *testing.T) {
 	for _, raw := range []any{
 		Object{"kind": "cron", "expr": "* * * * *"},
 		Object{"kind": "every_hours", "intervalHours": 0},
+		Object{"kind": "every_hours", "intervalHours": maxScheduledTaskIntervalHours + 1},
+		Object{"kind": "every_hours", "intervalHours": 2251799813685248},
 		Object{"kind": "daily", "hour": 24, "minute": 0},
 		Object{"kind": "daily", "hour": 9, "minute": 60},
 		Object{"kind": "weekly", "hour": 9, "minute": 0, "weekdays": []string{}},
@@ -94,18 +97,19 @@ func TestNextDueWallClock(t *testing.T) {
 	}
 }
 
-func TestNextDueSpringForwardNeverRetries(t *testing.T) {
+func TestNextDueSkipsSpringForwardWallClock(t *testing.T) {
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2026-03-08 (spring forward): a daily 02:34 slot is normalized forward and never re-emitted,
-	// matching "DST 跳过不补跑".
+	// 2026-03-08 (spring forward): 02:34 never occurs. D2 skips it rather than normalizing it to
+	// 01:34 or 03:34, so the next daily point is the following calendar day.
 	daily := scheduledTaskSchedule{Kind: "daily", Hour: 2, Minute: 34}
 	after := time.Date(2026, 3, 8, 2, 0, 0, 0, loc)
 	got := daily.nextDue(after, loc)
-	if got.IsDST() || !got.After(after) {
-		t.Fatalf("spring-forward 02:34 must normalize to a later non-DST instant, got %v", got)
+	want := time.Date(2026, 3, 9, 2, 34, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("spring-forward 02:34 nextDue = %v, want %v", got, want)
 	}
 }
 
@@ -143,6 +147,11 @@ func TestLatestDueLandsOnTheNewestPoint(t *testing.T) {
 	if got := hourly.latestDue(anchor, day(2026, 1, 1, 0, 30), loc); !got.IsZero() {
 		t.Fatalf("every_hours latestDue before the first interval = %v, want zero", got)
 	}
+	// A corrupted legacy row must fail closed instead of allowing a zero duration to divide by zero.
+	overflowHours := int(maxScheduledTaskIntervalHours + 1)
+	if got := (scheduledTaskSchedule{Kind: "every_hours", IntervalHours: overflowHours}).latestDue(anchor, day(2026, 1, 2, 0, 0), loc); !got.IsZero() {
+		t.Fatalf("overflow every_hours latestDue = %v, want zero", got)
+	}
 
 	// daily skips straight to today's wall clock when it has already passed.
 	daily := scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 0}
@@ -162,4 +171,52 @@ func TestLatestDueLandsOnTheNewestPoint(t *testing.T) {
 	if got := weekly.latestDue(anchor, day(2026, 1, 5, 20, 0), loc); !got.Equal(day(2026, 1, 5, 18, 0)) {
 		t.Fatalf("weekly latestDue on Monday night = %v, want Monday 18:00", got)
 	}
+	// When this Monday's slot has not happened yet, the latest weekly point is exactly seven days
+	// back, not zero. That point becomes the single missed occurrence after an outage.
+	previousMonday := time.Date(2026, 1, 5, 9, 0, 0, 0, time.UTC)
+	mondayMorning := time.Date(2026, 1, 12, 8, 0, 0, 0, time.UTC)
+	weeklyMorning := scheduledTaskSchedule{Kind: "weekly", Hour: 9, Minute: 0, Weekdays: []time.Weekday{time.Monday}}
+	if got := weeklyMorning.latestDue(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), mondayMorning, time.UTC); !got.Equal(previousMonday) {
+		t.Fatalf("weekly latestDue before Monday slot = %v, want %v", got, previousMonday)
+	}
+}
+
+func TestLatestDueRespectsDSTWallClockPolicy(t *testing.T) {
+	t.Run("spring_forward_skips_nonexistent_time", func(t *testing.T) {
+		loc, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			t.Fatal(err)
+		}
+		daily := scheduledTaskSchedule{Kind: "daily", Hour: 2, Minute: 34}
+		anchor := time.Date(2026, 3, 7, 0, 0, 0, 0, loc)
+		now := time.Date(2026, 3, 8, 3, 35, 0, 0, loc)
+		want := time.Date(2026, 3, 7, 2, 34, 0, 0, loc)
+		if got := daily.latestDue(anchor, now, loc); !got.Equal(want) {
+			t.Fatalf("daily latestDue across spring forward = %v, want %v", got, want)
+		}
+		weekly := scheduledTaskSchedule{Kind: "weekly", Hour: 2, Minute: 34, Weekdays: []time.Weekday{time.Sunday}}
+		weeklyWant := time.Date(2026, 3, 1, 2, 34, 0, 0, loc)
+		if got := weekly.latestDue(anchor, now, loc); !got.Equal(weeklyWant) {
+			t.Fatalf("weekly latestDue across spring forward = %v, want %v", got, weeklyWant)
+		}
+	})
+
+	t.Run("fall_back_uses_first_utc_occurrence", func(t *testing.T) {
+		loc, err := time.LoadLocation("Europe/Berlin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		daily := scheduledTaskSchedule{Kind: "daily", Hour: 2, Minute: 30}
+		anchor := time.Date(2026, 10, 24, 0, 0, 0, 0, loc)
+		// 00:35 UTC is 02:35 CEST, i.e. after the first 02:30 but before the repeated CET hour.
+		now := time.Date(2026, 10, 25, 0, 35, 0, 0, time.UTC)
+		want := time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC)
+		if got := daily.latestDue(anchor, now, loc); !got.Equal(want) {
+			t.Fatalf("daily latestDue across fall back = %v, want first occurrence %v", got, want)
+		}
+		weekly := scheduledTaskSchedule{Kind: "weekly", Hour: 2, Minute: 30, Weekdays: []time.Weekday{time.Sunday}}
+		if got := weekly.latestDue(anchor, now, loc); !got.Equal(want) {
+			t.Fatalf("weekly latestDue across fall back = %v, want first occurrence %v", got, want)
+		}
+	})
 }

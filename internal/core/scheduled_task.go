@@ -18,6 +18,11 @@ import (
 // 记 missed，不执行也不补跑。固定值，不提供配置。
 const maxScheduledOccurrenceLateness = 10 * time.Minute
 
+// maxScheduledTaskIntervalHours keeps every_hours representable as a time.Duration. It is a
+// storage boundary as well as a worker safety boundary: a larger value would overflow when
+// converted to a duration and could turn the scheduler step into zero.
+const maxScheduledTaskIntervalHours = int64(1<<63-1) / int64(time.Hour)
+
 // scheduledTaskDeadline 是 ADR D4 冻结的运行截止：接纳时刻 + 60 分钟，不可配置。
 const scheduledTaskDeadline = 60 * time.Minute
 
@@ -60,8 +65,8 @@ func parseScheduledTaskSchedule(raw any) (scheduledTaskSchedule, error) {
 	}
 	switch shape.Kind {
 	case "every_hours":
-		if shape.IntervalHours < 1 {
-			return scheduledTaskSchedule{}, fmt.Errorf("every_hours interval must be at least 1 hour")
+		if shape.IntervalHours < 1 || int64(shape.IntervalHours) > maxScheduledTaskIntervalHours {
+			return scheduledTaskSchedule{}, fmt.Errorf("every_hours interval must be between 1 and %d hours", maxScheduledTaskIntervalHours)
 		}
 		return scheduledTaskSchedule{Kind: shape.Kind, IntervalHours: shape.IntervalHours}, nil
 	case "daily":
@@ -94,24 +99,27 @@ var scheduledWeekdayByName = map[string]time.Weekday{
 }
 
 // nextDue returns the next scheduled point strictly after `after`, evaluated in the task's own
-// timezone (ADR D2: DST 跳过的不补跑——time.Date 把不存在的本地时间规约到其后存在的时刻，天然满足；
-// 回拨的重复本地时间只接纳第一个对应的 UTC 点，因为本函数只产生严格递增的 UTC 序列)。
+// timezone. ADR D2 makes DST policy explicit: skipped local wall clocks are omitted, and an
+// ambiguous repeated wall clock resolves to its first UTC instant.
 func (s scheduledTaskSchedule) nextDue(after time.Time, loc *time.Location) time.Time {
 	local := after.In(loc)
 	switch s.Kind {
 	case "every_hours":
-		return local.Add(time.Duration(s.IntervalHours) * time.Hour)
+		step, ok := scheduledEveryHoursDuration(s.IntervalHours)
+		if !ok {
+			return time.Time{}
+		}
+		return local.Add(step)
 	case "daily":
 		return nextWallClock(local, loc, s.Hour, s.Minute, 1)
 	case "weekly":
-		// Try the next wall clock at H:M on each of the next 0..7 days, returning the first whose
-		// weekday is in the set. The anchor must step forward every day even when today's H:M is
-		// still ahead of `after`, otherwise the scan would pin to today and never reach a later
-		// matching weekday.
-		base := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc)
-		for step := 0; step <= 7; step++ {
-			candidate := base.AddDate(0, 0, step)
-			if !candidate.After(after) {
+		base := scheduledCalendarDate(local, loc)
+		// Fourteen days covers the next selected weekday even when that weekday's first occurrence
+		// is a spring-forward gap and must be skipped.
+		for step := 0; step <= 14; step++ {
+			date := base.AddDate(0, 0, step)
+			candidate, ok := scheduledWallClock(date.Year(), date.Month(), date.Day(), s.Hour, s.Minute, loc)
+			if !ok || !candidate.After(after) {
 				continue
 			}
 			for _, day := range s.Weekdays {
@@ -120,22 +128,67 @@ func (s scheduledTaskSchedule) nextDue(after time.Time, loc *time.Location) time
 				}
 			}
 		}
-		return local.Add(8 * 24 * time.Hour)
+		return time.Time{}
 	default:
-		return local.Add(24 * time.Hour)
+		return time.Time{}
 	}
 }
 
 // nextWallClock returns the next instant after `after` whose local wall clock reads H:M, stepping
-// `days` calendar days at a time. Constructing in the task's location is what gives the DST
-// semantics: a spring-forward skipped wall clock normalizes forward and is not retried that day.
+// `days` calendar days at a time. A nonexistent spring-forward wall clock is skipped rather than
+// normalized to a different time, and repeated clocks select the first UTC instant.
 func nextWallClock(after time.Time, loc *time.Location, hour, minute, days int) time.Time {
-	local := after.In(loc)
-	candidate := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
-	if !candidate.After(local) {
-		candidate = candidate.AddDate(0, 0, days)
+	base := scheduledCalendarDate(after.In(loc), loc)
+	for step := 0; step <= 2; step++ {
+		date := base.AddDate(0, 0, step*days)
+		candidate, ok := scheduledWallClock(date.Year(), date.Month(), date.Day(), hour, minute, loc)
+		if ok && candidate.After(after) {
+			return candidate
+		}
 	}
-	return candidate
+	return time.Time{}
+}
+
+// scheduledEveryHoursDuration is deliberately also used by the worker-side scheduling functions.
+// Parser validation protects new writes, while this guard makes an old or corrupted persisted row
+// unable to overflow into a zero duration and panic the scheduler.
+func scheduledEveryHoursDuration(hours int) (time.Duration, bool) {
+	if hours < 1 || int64(hours) > maxScheduledTaskIntervalHours {
+		return 0, false
+	}
+	return time.Duration(hours) * time.Hour, true
+}
+
+func scheduledCalendarDate(local time.Time, loc *time.Location) time.Time {
+	// Noon is deliberately used only as a stable carrier for the calendar date. The actual
+	// candidate is always constructed by scheduledWallClock below.
+	return time.Date(local.Year(), local.Month(), local.Day(), 12, 0, 0, 0, loc)
+}
+
+// scheduledWallClock constructs an ADR D2 wall-clock candidate. time.Date silently normalizes a
+// nonexistent local time, so round-tripping its calendar fields is required to skip DST gaps.
+// During a fall-back Go may select the second occurrence; comparing the pre-transition offset
+// lets us derive and prefer the first UTC instant without depending on that implementation detail.
+func scheduledWallClock(year int, month time.Month, day, hour, minute int, loc *time.Location) (time.Time, bool) {
+	candidate := time.Date(year, month, day, hour, minute, 0, 0, loc)
+	if !isScheduledWallClock(candidate, year, month, day, hour, minute, loc) {
+		return time.Time{}, false
+	}
+	_, currentOffset := candidate.Zone()
+	_, previousOffset := candidate.Add(-6 * time.Hour).Zone()
+	if previousOffset > currentOffset {
+		first := candidate.Add(-time.Duration(previousOffset-currentOffset) * time.Second)
+		if isScheduledWallClock(first, year, month, day, hour, minute, loc) {
+			candidate = first
+		}
+	}
+	return candidate, true
+}
+
+func isScheduledWallClock(candidate time.Time, year int, month time.Month, day, hour, minute int, loc *time.Location) bool {
+	local := candidate.In(loc)
+	return local.Year() == year && local.Month() == month && local.Day() == day &&
+		local.Hour() == hour && local.Minute() == minute && local.Second() == 0 && local.Nanosecond() == 0
 }
 
 // duePoint computes the latest due point for one task: the next scheduled instant strictly after
@@ -161,25 +214,38 @@ func (s scheduledTaskSchedule) latestDue(anchor, now time.Time, loc *time.Locati
 	local := now.In(loc)
 	switch s.Kind {
 	case "every_hours":
-		step := time.Duration(s.IntervalHours) * time.Hour
+		step, ok := scheduledEveryHoursDuration(s.IntervalHours)
+		if !ok {
+			return time.Time{}
+		}
 		steps := int64(now.Sub(anchor) / step)
 		if steps < 1 {
 			return time.Time{}
 		}
 		return anchor.Add(time.Duration(steps) * step)
 	case "daily":
-		candidate := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc)
-		if candidate.After(now) {
-			candidate = candidate.AddDate(0, 0, -1)
+		base := scheduledCalendarDate(local, loc)
+		for back := 0; back <= 1; back++ {
+			date := base.AddDate(0, 0, -back)
+			candidate, ok := scheduledWallClock(date.Year(), date.Month(), date.Day(), s.Hour, s.Minute, loc)
+			if !ok || candidate.After(now) {
+				continue
+			}
+			if !candidate.After(anchor) {
+				return time.Time{}
+			}
+			return candidate
 		}
-		if !candidate.After(anchor) {
-			return time.Time{}
-		}
-		return candidate
+		return time.Time{}
 	case "weekly":
-		for back := 0; back < 7; back++ {
-			candidate := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc).AddDate(0, 0, -back)
-			if candidate.After(now) {
+		base := scheduledCalendarDate(local, loc)
+		// Include seven days ago for the same-weekday-before-today case. A second week allows a
+		// selected weekday that was skipped by a spring-forward gap to fall back to its last valid
+		// occurrence.
+		for back := 0; back <= 14; back++ {
+			date := base.AddDate(0, 0, -back)
+			candidate, ok := scheduledWallClock(date.Year(), date.Month(), date.Day(), s.Hour, s.Minute, loc)
+			if !ok || candidate.After(now) {
 				continue
 			}
 			if !candidate.After(anchor) {

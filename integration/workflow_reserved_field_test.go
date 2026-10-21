@@ -103,8 +103,13 @@ func TestWorkflowReservedFieldIsRefusedOnPublishAndImport(t *testing.T) {
 	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id IN (SELECT id FROM workflows WHERE name IN ('Reserved Start Kit','Reserved Global Kit'))"); n != 0 {
 		t.Fatalf("refused imported documents left %d snapshots", n)
 	}
-	if n := f.scalar("SELECT count(*) FROM workflow_snapshots"); n != 2 {
-		t.Fatalf("snapshots = %d, want the withdrawn-selector version and the imported one", n)
+	// Count per workflow rather than across the schema: a later fixture in this schema must not make
+	// this assertion fail for a reason that has nothing to do with the gate.
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id=$1", withdrawn); n != 1 {
+		t.Fatalf("the withdrawn-selector workflow froze %d versions, want 1", n)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots ws JOIN workflows w ON w.id=ws.workflow_id WHERE w.name='Fine Kit'"); n != 1 {
+		t.Fatalf("the imported workflow froze %d versions, want 1", n)
 	}
 }
 
@@ -240,5 +245,97 @@ func TestWorkflowReservedFieldStaysThePlatformsWhenTheDraftDeclaresIt(t *testing
 	run := f.call("GET", f.path("/issues/"+iss.S("id")+"/runs/"+created.S("id")), nil, "", 200)
 	if got := run.O("input").S("workflowSnapshotId"); got != selectable.S("id") {
 		t.Fatalf("run snapshot = %q, want the chosen selectable version %q", got, selectable.S("id"))
+	}
+}
+
+// TestWorkflowReservedFieldSelectorCoversEveryDeclarationShape pins the SQL half of D2 against every
+// shape the Go predicate recognizes: a global declaration withholds a version like a Start input does,
+// a name that only looks like the key is an ordinary variable and stays selectable (both sides match
+// exactly), and when every version is withheld the form carries no selector at all — while a confirm
+// with no cursor still resolves to that version and is refused by the reserved-field rule.
+func TestWorkflowReservedFieldSelectorCoversEveryDeclarationShape(t *testing.T) {
+	f := setup(t)
+	wid := createWorkflow(t, f, "Selector Shapes", "reserved-shapes", notesVariables())
+	selectable := publishWorkflow(t, f, wid, "reserved-shapes-pub-1")
+	globalDeclared := startInputGraph(nil)
+	globalDeclared["globalVariables"] = []any{core.Object{"name": "snapshotId", "valueType": "string", "value": "v1"}}
+	seedLegacySnapshot(t, f, wid, 2, globalDeclared)
+	padded := seedLegacySnapshot(t, f, wid, 3, startInputGraph([]any{
+		core.Object{"name": " snapshotId ", "displayName": "Padded", "fieldType": "text-input", "valueType": "string"},
+	}))
+
+	project := f.create("reserved-shapes-project").O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Selector shapes", "projectRef": project.S("id"),
+	}, "reserved-shapes-issue", 200).O("resource")
+
+	version := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))["snapshotId"]
+	if version.S("type") != "select" || version["defaultValue"] != padded.S("id") {
+		t.Fatalf("the selector did not open on the newest selectable version: %v", version)
+	}
+	offered := map[string]bool{}
+	for _, raw := range version["options"].([]any) {
+		offered[core.Object(raw.(map[string]any)).S("value")] = true
+	}
+	if !offered[selectable.S("id")] || !offered[padded.S("id")] || len(offered) != 2 {
+		t.Fatalf("the selector offered %v, want the published version and the padded-name version", offered)
+	}
+	if version.S("description") == "" {
+		t.Fatalf("the selector did not explain the globally withheld version: %v", version)
+	}
+
+	// Every version withheld: the form has no selector, and a confirm without a cursor still resolves
+	// to the withheld version and is refused rather than executed or rerouted.
+	withheldID := createWorkflow(t, f, "Everything Withheld", "reserved-all-withheld", notesVariables())
+	only := seedLegacySnapshot(t, f, withheldID, 1, startInputGraph(append(reservedVariables(), notesVariables()...)))
+	withheldIssue := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Everything withheld", "projectRef": project.S("id"),
+	}, "reserved-all-withheld-issue", 200).O("resource")
+	withheldFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+withheldID+"?issueId="+withheldIssue.S("id")), nil, "", 200))
+	if selector, ok := withheldFields["snapshotId"]; ok {
+		t.Fatalf("a workflow with no selectable version still projected a selector: %v", selector)
+	}
+	withheldIt := workflowComment(t, f, withheldID, withheldIssue.S("id"), "reserved-all-withheld-1", "run it")
+	refused := f.call("POST", confirmPath(f, withheldIssue.S("id"), withheldIt.S("id")), core.Object{"values": core.Object{
+		"repository": project.S("repositoryUrl"), "branch": "main",
+	}}, "reserved-all-withheld-c1", 409)
+	if refused.S("code") != "workflow_version_reserved_field" || refused.O("params").S("snapshotId") != only.S("id") {
+		t.Fatalf("refusal = %v, want workflow_version_reserved_field for %s", refused, only.S("id"))
+	}
+}
+
+// TestWorkflowReservedFieldRefusalOutranksTheExecutorSlotGate covers D3's ordering. The stock version
+// here declares the key and references an executor slot the initiator has not configured; the answer
+// must still be the version refusal, because no slot mapping can make a version that may never run
+// run. A control workflow with the same graph minus the declaration proves the slot gate is really
+// unsatisfied in this environment, so the ordering — not a fixture where slots resolve — decided it.
+func TestWorkflowReservedFieldRefusalOutranksTheExecutorSlotGate(t *testing.T) {
+	f := setup(t)
+	wid := createWorkflow(t, f, "Reserved Before Slots", "reserved-before-slots", notesVariables())
+	graph := agentRunGraph("", false, nil)
+	start := graph["nodes"].([]any)[0].(core.Object)
+	start.O("data")["inputVariables"] = reservedVariables()
+	stock := seedLegacySnapshot(t, f, wid, 1, graph)
+
+	project := f.create("reserved-before-slots-project").O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Reserved beats slots", "projectRef": project.S("id"),
+	}, "reserved-before-slots-issue", 200).O("resource")
+	it := workflowComment(t, f, wid, iss.S("id"), "reserved-before-slots-1", "run it")
+	base := core.Object{"repository": project.S("repositoryUrl"), "branch": "main"}
+	refused := f.call("POST", confirmPath(f, iss.S("id"), it.S("id")), core.Object{"values": base}, "reserved-before-slots-c1", 409)
+	if refused.S("code") != "workflow_version_reserved_field" || refused.O("params").S("snapshotId") != stock.S("id") {
+		t.Fatalf("refusal = %v, want workflow_version_reserved_field for %s", refused, stock.S("id"))
+	}
+
+	control := createWorkflow(t, f, "Slots Only", "slots-only", notesVariables())
+	seedLegacySnapshot(t, f, control, 1, agentRunGraph("", false, nil))
+	controlIssue := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Slots only", "projectRef": project.S("id"),
+	}, "slots-only-issue", 200).O("resource")
+	controlIt := workflowComment(t, f, control, controlIssue.S("id"), "slots-only-1", "run it")
+	slots := f.call("POST", confirmPath(f, controlIssue.S("id"), controlIt.S("id")), core.Object{"values": base}, "slots-only-c1", 409)
+	if slots.S("code") != "workflow_executor_unconfigured" {
+		t.Fatalf("control refusal = %v, want workflow_executor_unconfigured", slots)
 	}
 }

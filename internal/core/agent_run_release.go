@@ -158,8 +158,9 @@ func (s *Store) deliveryGivenUp(t *transaction, o Object) bool {
 // unknown, and the only place the heartbeat evidence behind it is read: the Workspace is bound to this
 // run and no live sandbox of it carries a Node last confirmed reachable inside window.
 // IssueRun D5's delivery give-up, IssueRun D8's delete give-up and the workflow scheduler's in-flight
-// session settlement (workflowAgentSessionOutcome) all ask this one function, so none of them can
-// drift into a second definition of "the Node is unreachable".
+// session settlement (workflowAgentSessionOutcome) and cancellation (advanceCancelledWorkflowRun)
+// all ask this one function, so none of them can drift into a second definition of
+// "the Node is unreachable".
 //
 // The binding is whichever column ties the Workspace to its run — `issue_run_id` for an IssueRun,
 // `workflow_run_id` for a WorkflowRun. The two are mutually exclusive (0039's XOR), so one comparison

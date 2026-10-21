@@ -6,7 +6,7 @@
 `agent_run_residuals`。Cloud 的残留回收在原账本上继续取证，证据足够后才取得系统清理责任，沿已有
 owned delete 执行删除。它不重新结算 [IssueRun](issue-runs.md)，也不重新开放运行 Workspace。
 
-本文描述 Cloud 第 1 步的实现边界，不作为 Controller、Sandbox Server 的物理终止、部署或联合故障验收证据。
+本文描述 Cloud 自动回收和第 2 步受控回收的实现合同，不作为 Controller、Sandbox Server 的物理终止、部署或联合故障验收证据。
 [残留回收 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261018-residual-agent-run-reclamation.md)
 仍为 `approved`；本步不是整份 ADR 已实施完成的声明。
 
@@ -18,14 +18,15 @@ owned delete 执行删除。它不重新结算 [IssueRun](issue-runs.md)，也�
 | `reclaiming` | 已取得一份持久责任，继续推进或等待证据 | 固定 `reclaim_id`、mode 和非空 authorization；`owned_delete` 必须绑定唯一 operation |
 | `cleared` | 原责任下的处置已完成 | 保留原责任，同时有 `cleared_at` 和 disposition |
 
-第 1 步的生产授权只使用 `owned_delete`，完成处置只写 `released`。`controlled` 只预留共用内部仲裁位置，
-不构成受控管理端点或运维权限。数据库接受的 `terminated_data_retained`、`externally_confirmed` 留给后续受控路径。
+自动回收使用 `owned_delete`，完成处置写 `released`；显式运维命令使用 `controlled`，可先完成为
+`terminated_data_retained`，或对已有未完成意图登记 `externally_confirmed`。两种模式竞争同一责任，
+不能相互覆盖；自动层不会因为失败、超时或受控入口存在而自动升级授权。
 
 自动责任始终绑定同一个 `delete_workspace` operation。重启、换 lease、重试和 quiesce 拒绝不会产生第二个责任或 operation，
 也不会把失败的历史 operation 恢复为运行态。普通删除、派发和许可入口继续检查残留保护；内部系统责任不能被当成公开删除开关。
 账本、Run、Workspace、Project、operation 的租户、原绑定和 generation 在同一事务里重新比对；UUID 外键本身不证明这些范围一致。
 
-[迁移](../../internal/core/migrations/README.md)只增列。存量 D4/D5 行通过默认值进入 `reconciling`，不推断完成、不回填 D8，
+[迁移](../../internal/core/migrations/README.md)保留已有账本，并增加独立意图、命令回执及逐目标终止计划。存量 D4/D5 行通过默认值进入 `reconciling`，不推断完成、不回填 D8，
 不修改旧 `reason`、`responsibility` 或业务结算。旧行已有非空 `cleared_at` 时明确报错回滚，等待显式兼容处理（A2）。
 
 ## 原身份取证与删除资格
@@ -41,11 +42,11 @@ execution、clone、work 和数据目标。迟到事实可以补充原目标，�
 执行侧需要同一 runtime control 身份的关闭输入确认及明确的未完成执行列表，并检查原执行终态；逐目标的终止证据也可证明其
 物理执行已封闭。仅在原计划和执行关系确实不存在时才能采用无目标证明，缺行、NULL result 或等待时间均不构成这种证明。
 
-第 1 步只接受原 `deliver_revision` 执行真实登记、核验完成的 Revision 作为交付资格；其他实际交付执行也必须各自核验完成。
+自动层只接受原 `deliver_revision` 执行真实登记、核验完成的 Revision 作为交付资格；其他实际交付执行也必须各自核验完成。
 当前没有可统一引用的既有“明确放弃交付”记录来源。`failed`、`skipped`、业务超时、没有对象存储或无结果都不自动等于明确放弃（A1），
 证据不足的条目继续保持未完成。
 
-获授权后沿已有 quiesce → terminate → cleanup 推进。quiesce 拒绝使原 operation 留在 `retry_wait`，保留原责任及保护，稍后重新取证再试（A3）。
+自动回收获授权后沿已有 quiesce → terminate → cleanup 推进。quiesce 拒绝使原 operation 留在 `retry_wait`，保留原责任及保护，稍后重新取证再试（A3）。
 它不恢复新执行资格，不升级为强停，也不重新创建 operation。
 既有 Controller 因终止未确认而请求 `blocked` 时，此系统责任也保存为可领取的 `retry_wait`；实际计划和许可仍重新检查证据。
 
@@ -57,6 +58,45 @@ execution、clone、work 和数据目标。迟到事实可以补充原目标，�
 仅有 `terminated_at`、ensure 失败、404 或经过一段时间都不够。当前安全目标可以复用已有 owned delete；额外历史 ID 缺少双确认时保持未完成，
 不为它改写目标或另发终止 effect（A5）。数据删除 effect 的计划、许可和完成再次检查目标覆盖；同一事务确认数据删除成功、operation 成功、
 Workspace 软删除并写 `cleared/released`，不改 Run 的 phase/status/result 或重复追加业务结算活动。
+
+## 部署运维命令与两阶段处置
+
+`cloudctl residual` 是使用部署数据库凭据的本地运维入口；认证主体来自数据库连接的 `session_user`。
+可附加的 operator 标签仅为调用者自述，不能替代认证主体。凭据不进入输出或审计。
+没有新增 HTTP 路由、tenant admin 旁路、Gateway JWT 权限或监听端口；隐藏 Run Workspace 的公开操作继续返回 404。
+
+| 命令 | 范围与必要确认 |
+|---|---|
+| `list` / `get` | tenant 必填；查询可按 Project、Run、Workspace、operation 或 reclaim 相交过滤，详情只返回运维所需状态、目标、审计与证据 |
+| `terminate` | 一个精确 Run/Workspace，reason、幂等键和显式影响确认；D8 还需原 failed delete operation 身份；默认保留数据 |
+| `delete-data` | 一个已真实终止成功且 retained 的根意图，独立 reason、幂等键和数据删除确认；不能按裸 Workspace 发起 |
+| `confirm-external` | 一个已存在且未完成的根或从属意图，reason、幂等键、说明、每个未完成目标的外部事实引用及承担剩余责任的确认 |
+
+写命令不接受 tenant/Project 批量处置。所有命令键共用 tenant 内的回执空间；同键同规范输入返回原回执和当前进度，
+同键不同动作、资源、父意图、reason 或确认返回 `idempotency_conflict`。重放不创建新责任或重复外部取证。
+
+每个资源只有一个 `terminate` 根意图，最多一个依赖它的 `delete_data` 意图；两者各自按
+`registered → terminating → succeeded` 推进。根意图持有唯一回收责任，从属意图不重新仲裁。
+登记、原身份核对、关闭 admission/后续执行资格和计划写入在同一数据库事务提交；不在事务内调用 Controller。
+
+每个原 sandbox/ensure 目标保留固定 effect ID 和 request。Cloud 通过既有 `ListForceStops`、`ConfirmForceStop`、
+`GetEffectPermit` 字段投影这些受控计划，不新增 RPC/proto，也不往普通 force-stop 历史写伪记录。
+当前 Controller lease、原 sandbox/generation 和 control epoch 仍约束许可与确认；每个目标必须同时确认
+`terminated=true`、`lateEnsureFenced=true`，无目标时也须证明入口已关闭且没有计划或在途责任。
+普通强停批量结束 operation、改业务状态的收尾逻辑不适用于受控回收。
+
+终止完成后，根意图固定为 succeeded，账本（如有）写 `cleared/terminated_data_retained`，保留数据与 Workspace。
+之后的显式 delete-data 沿同一责任绑定唯一 `delete_workspace` operation，从 cleanup 推进已有 operation/effect/permit 路径。
+首次根完成记录、retained 历史和 `cleared_at` 不回退、不重置；只有真实 `removed=true` 齐全后，才完成从属意图、
+软删除 Workspace、追加 released 处置并更新当前 disposition。失败沿同一 operation/effect 恢复，不能复活历史 failed operation。
+
+外部确认必须覆盖每个未完成目标及其数据责任，引用可为工单或外部事实标识。它完成的是已有意图的责任转移，
+停止该责任的新许可，不伪造 `terminated`、`lateEnsureFenced` 或 `removed`，也不据此开放同卷复用或授权删卷。
+没有意图、意图已 succeeded、说明为空或漏目标均拒绝；迟到物理事实继续留存，不能静默把外部处置改成系统证明。
+
+D8 只按原 done Run、保留的 Workspace 绑定及 failed/node_unavailable delete operation 接管，不回填 D4/D5 账本。
+无账本时根意图持有目标、证据、冲突和删除 operation 绑定；原 failed operation、Run 终态与结算保持不变。
+普通扫描不会自动为 D8 创建受控责任；无账本或已 retained 也不能绕过 admission、Project 操作和数据复用保护。
 
 ## 既有事实入口与冲突
 
@@ -78,11 +118,11 @@ Cloud 使用现有 `runtime_ack`、创建事实、执行结果和 Revision intak
 failed create 的原 effects 如果没有现成可主动发现的路径，就继续等待可验证的原身份事实（A6）。Cloud 接收证据和调度责任不证明
 Controller 已新增发现能力，更不证明真实容器、迟到 ensure 围栏或物理数据删除已经通过生产验证。
 
-| 后续范围 | 本步边界 |
+| 范围 | Cloud 边界 |
 |---|---|
-| 第 2 步：受控运维入口、保留数据、外部确认 | 未实现；内部 `controlled` 仲裁预留不替代认证、意图或命令 |
+| 第 2 步：Cloud 部署 CLI、受控意图、保留数据、独立删除与外部确认 | 本文说明直接 Cloud 合同；测试及连续 Cloud 路径是否通过须看实际执行证据 |
 | 第 3 步：Controller / Sandbox Server 物理契约与逐目标证据 | 本文仅描述 Cloud 的证据要求，不声明物理验收完成 |
 | 第 4 步：跨仓联合故障与恢复验收 | 未完成，不以单仓实现或数据库测试代替 |
-| D8 历史删除放弃、无账本残留的接管 | 未实现；不补账、不自动重试、不改历史业务结果 |
+| D8 历史删除放弃、无账本残留的接管 | 仅显式运维接管；不补账、不自动重试、不改历史业务结果；真实部署恢复留第 4 步 |
 
 核心代码入口见 [core 代码地图](../../internal/core/README.md)。测试结果应以对应执行产物为准，本文不声明迁移、并发或端到端测试已经通过。

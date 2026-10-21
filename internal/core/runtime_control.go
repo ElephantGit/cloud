@@ -35,6 +35,7 @@ func reconcileRuntimeControls(t *transaction) {
  WHERE c.state IN ('draining','reconciling')
  AND NOT EXISTS(SELECT 1 FROM runtime_force_stops f WHERE f.workspace_id=w.id AND f.state<>'succeeded')
  AND NOT EXISTS(SELECT 1 FROM agent_run_residuals ar WHERE ar.workspace_id=w.id AND (ar.cleared_at IS NULL OR ar.reclaim_conflicted_at IS NOT NULL))
+ AND NOT EXISTS(SELECT 1 FROM agent_run_reclamation_intents ri WHERE ri.workspace_id=w.id AND ri.root_intent_id IS NULL)
  AND (c.input_closed OR (w.observed_state IN ('stopped','deleted')
  AND NOT EXISTS(SELECT 1 FROM sandbox_instances s WHERE s.workspace_id=w.id AND s.terminated_at IS NULL)))
  AND NOT EXISTS(SELECT 1 FROM execution_tickets a WHERE a.workspace_id=w.id AND a.state='active' AND a.terminated_by_force_stop_id IS NULL)

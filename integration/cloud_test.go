@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -73,6 +74,19 @@ type fixture struct {
 // The schema is dropped on cleanup; REQUIRE_POSTGRES=1 turns a missing database into a failure.
 func testSchema(t *testing.T, prefix string) (*sql.DB, *pgx.ConnConfig) {
 	t.Helper()
+	return testSchemaWithCleanup(t, prefix, func(cleanup func() error) {
+		t.Cleanup(func() {
+			if err := cleanup(); err != nil {
+				t.Error(err)
+			}
+		})
+	})
+}
+
+// testSchemaWithCleanup lets the controlled-only suite keep its schema until package shutdown.
+// Ordinary callers still register exactly the same resource lifetime through testSchema.
+func testSchemaWithCleanup(t *testing.T, prefix string, registerCleanup func(func() error)) (*sql.DB, *pgx.ConnConfig) {
+	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		if os.Getenv("REQUIRE_POSTGRES") == "1" {
@@ -89,17 +103,11 @@ func testSchema(t *testing.T, prefix string) (*sql.DB, *pgx.ConnConfig) {
 	must(t, e)
 	config.RuntimeParams["search_path"] = schema
 	pool := stdlib.OpenDB(*config)
-	t.Cleanup(func() {
-		if err := pool.Close(); err != nil {
-			t.Error(err)
-		}
-		_, err := admin.Exec("DROP SCHEMA " + schema + " CASCADE")
-		if err != nil {
-			t.Error(err)
-		}
-		if err = admin.Close(); err != nil {
-			t.Error(err)
-		}
+	registerCleanup(func() error {
+		poolErr := pool.Close()
+		_, dropErr := admin.Exec("DROP SCHEMA " + schema + " CASCADE")
+		adminErr := admin.Close()
+		return errors.Join(poolErr, dropErr, adminErr)
 	})
 	return pool, config
 }
@@ -111,7 +119,21 @@ var setGinTestModeOnce sync.Once
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
-	pool, config := testSchema(t, "test_")
+	return setupWithPreparedResources(t, nil)
+}
+
+// setupWithPreparedResources keeps each case's Store, servers and runtime state independent while
+// allowing serial controlled-reclamation cases to reuse their parent's migrated schema and source.
+// The parent owns the shared pool and immutable source directory; a child owns everything else.
+func setupWithPreparedResources(t *testing.T, prepared *fixture) *fixture {
+	t.Helper()
+	var pool *sql.DB
+	var config *pgx.ConnConfig
+	if prepared == nil {
+		pool, config = testSchema(t, "test_")
+	} else {
+		pool, config = prepared.store.Pool, prepared.pgConfig
+	}
 	db, e := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	must(t, e)
 	store, e := core.NewStore(db)
@@ -123,8 +145,10 @@ func setup(t *testing.T) *fixture {
 	// Plugin execution has no real executor yet; the simulation capability is what the fixtures above
 	// stand in for, and it must be opted into explicitly (see plugin_maintenance.go).
 	store.PluginExecution = core.PluginExecutionSimulation
-	must(t, store.Migrate(context.Background()))
-	must(t, store.Migrate(context.Background()))
+	if prepared == nil {
+		must(t, store.Migrate(context.Background()))
+		must(t, store.Migrate(context.Background()))
+	}
 	credentials, e := simulator.NewCredentials()
 	must(t, e)
 	auth, e := core.NewAuthenticator("ora-cloud", credentials.Trust)
@@ -141,15 +165,12 @@ func setup(t *testing.T) *fixture {
 			t.Error(err)
 		}
 	})
-	repo := filepath.Join(root, "source")
-	must(t, os.MkdirAll(repo, 0o700))
-	runGit(t, "init", "--initial-branch=main", repo)
-	runGit(t, "-C", repo, "config", "user.name", "Integration")
-	runGit(t, "-C", repo, "config", "user.email", "integration@example.invalid")
-	must(t, os.WriteFile(filepath.Join(repo, "README.md"), []byte("durable workspace data\n"), 0o600))
-	runGit(t, "-C", repo, "add", ".")
-	runGit(t, "-C", repo, "commit", "-m", "fixture")
-	commit := runGit(t, "-C", repo, "rev-parse", "HEAD")
+	var repo, commit string
+	if prepared == nil {
+		repo, commit = prepareFixtureSource(t, root)
+	} else {
+		repo, commit = prepared.source, prepared.commit
+	}
 	git, e := simulator.NewGitServer(filepath.Join(root, "git"))
 	must(t, e)
 	refs := &gitRefs{git: git, pinned: map[string]string{}}
@@ -173,6 +194,21 @@ func setup(t *testing.T) *fixture {
 	validateHTTP(t, f)
 	must(t, f.controller.Acquire(context.Background()))
 	return f
+}
+
+// prepareFixtureSource creates the immutable repository used as the external line's initial HEAD.
+// Runtime directories and mutable Git Server repositories remain owned by each individual fixture.
+func prepareFixtureSource(t *testing.T, root string) (string, string) {
+	t.Helper()
+	repo := filepath.Join(root, "source")
+	must(t, os.MkdirAll(repo, 0o700))
+	runGit(t, "init", "--initial-branch=main", repo)
+	runGit(t, "-C", repo, "config", "user.name", "Integration")
+	runGit(t, "-C", repo, "config", "user.email", "integration@example.invalid")
+	must(t, os.WriteFile(filepath.Join(repo, "README.md"), []byte("durable workspace data\n"), 0o600))
+	runGit(t, "-C", repo, "add", ".")
+	runGit(t, "-C", repo, "commit", "-m", "fixture")
+	return repo, runGit(t, "-C", repo, "rev-parse", "HEAD")
 }
 
 // controlConn serves the gRPC control surface for store over bufconn; the simulator Controller

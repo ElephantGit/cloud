@@ -79,6 +79,7 @@ function runFixture(): WorkflowRun {
     error: '',
     definitionSnapshot: null,
     cancelRequestedAt: null,
+    pluginVersion: '1.0.0',
     startedAt: null,
     finishedAt: null,
     createdAt: '2026-09-20T10:00:00+08:00',

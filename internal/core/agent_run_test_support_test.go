@@ -40,6 +40,11 @@ import (
 // far as the A/B seam is concerned; only the sleepers and background loops are the caller's business.
 func dispatcherDB(t *testing.T) *Store {
 	t.Helper()
+	return dispatcherDBWithCleanup(t, t.Cleanup)
+}
+
+func dispatcherDBWithCleanup(t *testing.T, cleanup func(func())) *Store {
+	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		if os.Getenv("REQUIRE_POSTGRES") == "1" {
@@ -61,7 +66,7 @@ func dispatcherDB(t *testing.T) *Store {
 	}
 	config.RuntimeParams["search_path"] = schema
 	pool := stdlib.OpenDB(*config)
-	t.Cleanup(func() {
+	cleanup(func() {
 		_ = pool.Close()
 		_, _ = admin.Exec("DROP SCHEMA " + schema + " CASCADE")
 		_ = admin.Close()

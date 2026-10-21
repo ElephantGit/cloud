@@ -105,6 +105,9 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 // operationCommand runs one Effect-level action on the operation the caller claimed.
 func operationCommand(t *transaction, r *ControlRequest) Object {
 	if r.Action == "effect_result" && validID(r.OperationID) {
+		if completed := t.one("SELECT * FROM operations WHERE id=$1 AND state IN ('succeeded','failed')", r.OperationID); completed != nil && controlledOperationRoot(t, completed) != nil {
+			return effectResult(t, r, completed)
+		}
 		// A completed residual operation has no execution authority left, but its original
 		// effect receipts still arrive through this existing intake. Do not require a running
 		// operation or its old version merely to preserve an identical fact or audit a conflict.
@@ -132,7 +135,7 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
 		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
-		if row := residualOperation(t, o); row != nil && row.S("reclaimMode") == "owned_delete" && row.S("reclaimState") == "reclaiming" && row["reclaimConflictedAt"] == nil {
+		if row := residualOperation(t, o); row != nil && (row.S("reclaimMode") == "owned_delete" || row.S("reclaimMode") == "controlled") && row["reclaimConflictedAt"] == nil {
 			// A3 has no public/operator retry path for this hidden Workspace. Preserve the
 			// same retryable operation even when the existing Controller requests blocked
 			// for an unconfirmed termination; plan/permit still require fresh real evidence.
@@ -296,6 +299,7 @@ func planEffect(t *transaction, r *ControlRequest, o Object) Object {
 	kind, wid := r.Body.S("kind"), r.Body.S("workspaceId")
 	require(validID(wid), 400, "invalid_effect_scope")
 	requireNoResidualConflict(t, wid)
+	requireNoControlledReclamation(t, wid, o.S("id"))
 	checkResidualEffect(t, o, kind, wid, nil)
 	found := false
 	for _, w := range operationWorkspaces(t, o) {
@@ -384,7 +388,7 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 		if !acceptResidualEffectFact(t, residual, e, fact) {
 			return Object{"effect": e, "operation": t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))}
 		}
-		if residual.S("reclaimState") == "cleared" && residual.S("reclaimOperationId") == o.S("id") {
+		if residual.S("reclaimState") == "cleared" && residual.S("reclaimOperationId") == o.S("id") && (o.S("state") == "succeeded" || o.S("state") == "failed") {
 			// Receipt only: neither canonical effects, operation versions nor resource rows may
 			// advance again after atomic completion. Contradictions already committed their block.
 			return Object{"effect": e, "operation": o}
@@ -539,7 +543,9 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 						runWorkspaceSettled(t, runID, "ready")
 					}
 				case "delete_workspace":
-					runWorkspaceDeleted(t, runID)
+					if controlledOperationRoot(t, o) == nil {
+						runWorkspaceDeleted(t, runID)
+					}
 				}
 			}
 		}

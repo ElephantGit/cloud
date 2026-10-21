@@ -117,7 +117,9 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 			out, status = createTenant(t, r, uid)
 			return out
 		}
-		isAdmin := r.SpaceID == "" && (strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/force-stop") || (r.UserID != "" && r.Method == "PUT") || strings.Contains(r.Path, "/invitations") || strings.Contains(r.Path, "/join-links") || strings.Contains(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/members/huawei"))
+		// Force-stop resolves the ordinary Workspace before checking administrator status. Hidden
+		// run Workspaces must remain 404 for every tenant role, including ordinary members.
+		isAdmin := r.SpaceID == "" && (strings.HasSuffix(r.Path, "/resource-status") || (r.UserID != "" && r.Method == "PUT") || strings.Contains(r.Path, "/invitations") || strings.Contains(r.Path, "/join-links") || strings.Contains(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/members/huawei"))
 		membership(t, r.TenantID, uid, isAdmin)
 		refreshRuntimeControls(t)
 		if r.Method == "GET" {
@@ -717,6 +719,7 @@ func newOperation(t *transaction, r *PublicRequest, uid, pid, wid, kind, step, h
 }
 
 func checkActivities(t *transaction, w Object) {
+	requireNoControlledReclamation(t, w.S("id"), "")
 	requireNoResidualConflict(t, w.S("id"))
 	require(t.one("SELECT run_id FROM agent_run_residuals WHERE workspace_id=$1 AND cleared_at IS NULL", w.S("id")) == nil, 409, "resource_in_use")
 	require(t.one("SELECT id FROM execution_tickets WHERE workspace_id=$1 AND state='active' AND terminated_by_force_stop_id IS NULL", w.S("id")) == nil, 409, "resource_in_use")

@@ -125,6 +125,12 @@ func collectResidualTargets(t *transaction, row Object) []Object {
 
 func refreshResidualTargets(t *transaction, row Object) Object {
 	targets := collectResidualTargets(t, row)
+	if row.S("legacyIntentId") != "" {
+		if jsonText(targets) != jsonText(row["reclaimTargets"]) {
+			t.exec("UPDATE agent_run_reclamation_intents SET targets=$2,version=version+1 WHERE id=$1", row.S("legacyIntentId"), jsonText(targets))
+		}
+		return residualForRun(t, row.S("runId"))
+	}
 	if jsonText(targets) != jsonText(row["reclaimTargets"]) {
 		t.exec("UPDATE agent_run_residuals SET reclaim_targets=$2,reclaim_version=reclaim_version+1 WHERE run_id=$1", row.S("runId"), jsonText(targets))
 	}
@@ -134,6 +140,11 @@ func refreshResidualTargets(t *transaction, row Object) Object {
 // residualSandboxTerminated requires the two distinct physical assertions for the exact stable
 // sandbox ID. terminated_at, failed ensures, elapsed time and a missing sandbox row prove neither.
 func residualSandboxTerminated(t *transaction, row Object, sid string) bool {
+	if target := t.one(`SELECT rt.id FROM agent_run_reclamation_targets rt JOIN agent_run_reclamation_intents i ON i.id=rt.root_intent_id
+ WHERE i.tenant_id=$1 AND i.workspace_id=$2 AND rt.sandbox_id=$3 AND rt.state='succeeded'
+ AND rt.result->>'terminated'='true' AND rt.result->>'lateEnsureFenced'='true'`, row.S("tenantId"), row.S("workspaceId"), sid); target != nil {
+		return true
+	}
 	for _, e := range t.list(`SELECT * FROM external_effects WHERE project_id=$1 AND workspace_id=$2
  AND kind='sandbox_terminate' AND request->>'sandboxInstanceId'=$3 AND state='succeeded'`, row.S("projectId"), row.S("workspaceId"), sid) {
 		if e.O("result").B("terminated") && e.O("result").B("lateEnsureFenced") {

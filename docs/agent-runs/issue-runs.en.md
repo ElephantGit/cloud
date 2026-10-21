@@ -69,10 +69,10 @@ and it accepts no other run or interactive session.
 ## Background loops
 
 After D4/D5 business settlement, independent ledger reconciliation continues and grants one durable system owned-delete responsibility only
-when evidence qualifies. Retries keep the same operation; cleanup does not settle the Run again. The current scope is
-[Cloud step 1 of residual reclamation](residual-reclamation.en.md). Controlled operator endpoints, retained-data/external dispositions,
-Controller/Sandbox Server physical acceptance, joint acceptance and D8 historical takeover remain incomplete. Neither `done` nor a completed
-reconciliation pass proves that resources were reclaimed.
+when evidence qualifies. Retries keep the same operation; cleanup does not settle the Run again. Deployment operators can register
+controlled reclamation explicitly with `cloudctl residual` (terminate and retain data, delete data separately, or confirm externally) and
+take over D8 historical residuals; see [residual reclamation](residual-reclamation.en.md). Neither `done` nor a completed reconciliation pass
+proves that resources were reclaimed.
 
 Besides the synchronous transitions taken while evidence is taken over, the Cloud server process runs a
 set of loops every 10 seconds for the progress and settlement that have no external event to follow:

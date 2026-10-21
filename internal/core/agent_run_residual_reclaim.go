@@ -11,6 +11,9 @@ func claimResidualReclamation(t *transaction, runID, mode string, authorization 
 	require(row["reclaimConflictedAt"] == nil, 409, "residual_fact_conflict")
 	if row.S("reclaimState") != "reconciling" {
 		require(row.S("reclaimMode") == mode, 409, "residual_mode_conflict")
+		if mode == "controlled" {
+			require(row.O("reclaimAuthorization").S("intentId") == authorization.S("intentId"), 409, "residual_mode_conflict")
+		}
 		return Object{"residual": row, "operation": residualBoundOperation(t, row), "claimed": false}
 	}
 	row = refreshResidualTargets(t, row)
@@ -69,16 +72,26 @@ func residualOperation(t *transaction, op Object) Object {
 	if op == nil {
 		return nil
 	}
-	return t.one("SELECT * FROM agent_run_residuals WHERE reclaim_operation_id=$1", op.S("id"))
+	if row := t.one("SELECT * FROM agent_run_residuals WHERE reclaim_operation_id=$1", op.S("id")); row != nil {
+		return row
+	}
+	if root := controlledOperationRoot(t, op); root != nil {
+		return controlledRootRow(t, root)
+	}
+	return nil
 }
 
 // checkResidualOperation is called before plan, permit and advance, even when returning an existing
 // effect. Ordinary operations return nil only when their Workspace has no residual responsibility.
 // A conflicting cleared record remains a durable block, rather than reopening ordinary cleanup.
 func checkResidualOperation(t *transaction, op Object) Object {
+	if root := controlledOperationRoot(t, op); root != nil {
+		return checkControlledOperation(t, op, root)
+	}
 	row := residualOperation(t, op)
 	if row == nil {
 		if op.S("workspaceId") != "" {
+			requireNoControlledReclamation(t, op.S("workspaceId"), "")
 			other := residualForWorkspace(t, op.S("workspaceId"))
 			require(other == nil || (other.S("reclaimState") == "cleared" && other["reclaimConflictedAt"] == nil), 409, "residual_operation_required")
 		}
@@ -100,6 +113,9 @@ func checkResidualOperation(t *transaction, op Object) Object {
 // sandbox/ensure identity is dual-confirmed, never by result=NULL or a ticket timeout.
 func checkResidualCleanupActivities(t *transaction, w, op Object) {
 	row := checkResidualOperation(t, op)
+	if row != nil && row.S("reclaimMode") == "controlled" {
+		return
+	}
 	if row == nil {
 		checkActivities(t, w)
 		return
@@ -136,6 +152,10 @@ func checkResidualEffect(t *transaction, op Object, kind, workspaceID string, ef
 		return
 	}
 	require(workspaceID == row.S("workspaceId"), 409, "residual_identity_conflict")
+	if row.S("reclaimMode") == "controlled" {
+		require(kind == "workspace_data_delete", 409, "residual_effect_forbidden")
+		return
+	}
 	w := t.one("SELECT * FROM workspaces WHERE id=$1", workspaceID)
 	checkResidualCleanupActivities(t, w, op)
 	require(kind == "sandbox_terminate" || kind == "workspace_data_delete", 409, "residual_effect_forbidden")
@@ -169,6 +189,9 @@ func checkResidualEffect(t *transaction, op Object, kind, workspaceID string, ef
 // completeResidualReclamation is called from cleanup->done in the SAME transaction that marks the
 // operation succeeded and soft-deletes the Workspace. Failure rolls those writes back together.
 func completeResidualReclamation(t *transaction, op Object) bool {
+	if root := controlledOperationRoot(t, op); root != nil {
+		return completeControlledDataDelete(t, op, root)
+	}
 	row := residualOperation(t, op)
 	if row == nil {
 		return true

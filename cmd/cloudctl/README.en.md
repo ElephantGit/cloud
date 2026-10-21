@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-`cloudctl` is the restricted operational management tool for Ora Cloud. It runs with database operator credentials outside the public API path to manage database migrations and bootstrap initial tenants and administrators.
+`cloudctl` is the restricted operational management tool for Ora Cloud. It runs with database operator credentials outside the public API path to manage database migrations, bootstrap initial tenants and administrators, and explicitly dispose of residual resources.
 
 ## Commands and responsibilities
 
@@ -26,9 +26,41 @@ cloudctl -config <path> -command bootstrap -name '<tenant-name>' -source '<idp-s
 - Returns a JSON payload containing `tenantId` and `userId`.
 
 See [External Git line](../../docs/repositories/external-git.en.md) for Git credential submission and reference management.
+
+### `residual`
+
+Place global `-config` before `residual` and action flags after the action. Every action requires `--tenant-id`. Queries and business commands do not need DDL privileges; access to the controlled host and database credentials governs access to this entry point. Core uses PostgreSQL `session_user` as the authenticated actor. Optional `--operator-label` is self-reported and cannot select or override that actor. The CLI accepts no database password flag and reuses existing configuration loading.
+
+```sh
+cloudctl -config <path> residual list --tenant-id <tenant> --project-id <project> --limit 100
+cloudctl -config <path> residual get --tenant-id <tenant> --workspace-id <workspace>
+cloudctl -config <path> residual get --tenant-id <tenant> --intent-id <intent>
+```
+
+- `list` intersects optional `--project-id`, `--run-id`, `--workspace-id`, `--operation-id`, and `--reclaim-id` filters, with `--limit` (default 100) and `--after`. It returns `items/nextCursor`; operation filtering can match either the original failed D8 delete or the currently bound deletion operation.
+- `get` accepts one root/child `--intent-id`, or an exact `--run-id`, `--workspace-id`, or `--reclaim-id`. Other resource IDs may narrow a resource selector; an intent selector cannot be mixed with resource selectors. Queries return audit history, target evidence, and `openTargets` for external confirmation.
+
+Termination and data deletion are separate commands, each requiring a reason, idempotency key, and affirmative confirmation. `terminate` requires at least a Run or Workspace; all additional IDs must identify the same original resource. D8 also requires the original failed delete `--operation-id`. Project/tenant selectors cannot authorize batch writes.
+
+```sh
+cloudctl -config <path> residual terminate --tenant-id <tenant> --run-id <run> --workspace-id <workspace> --reason 'operator abandoned execution' --key <terminate-key> --impact-confirmed
+cloudctl -config <path> residual delete-data --tenant-id <tenant> --intent-id <root-intent> --reason 'delete retained data' --key <new-delete-key> --data-delete-confirmed
+```
+
+`terminate` registers termination authorization and retains data by default; acceptance does not mean sandboxes have terminated. The root intent succeeds with `terminated_data_retained` only after every target has genuine termination and late-ensure fencing confirmation. A later `delete-data` accepts only that completed root intent and separately registers a child intent and one fixed deletion operation; `released` requires actual deletion confirmation. It rejects bare Workspace deletion and does not substitute external confirmation for real termination evidence.
+
+An unfinished intent whose disposal cannot be confirmed by the system may explicitly transfer its remaining responsibility. Read `openTargets` from `get` first and supply one `--external-fact` per unfinished target. Keys must be the exact `sandbox:<id>` or `data:<workspace-id>` values; values reference a ticket or another external disposal fact. Duplicate targets, empty references or explanations, and missing responsibility confirmation are rejected; core also checks for omitted targets.
+
+```sh
+cloudctl -config <path> residual confirm-external --tenant-id <tenant> --intent-id <unfinished-intent> --reason 'external disposal' --key <external-key> --evidence-note 'host decommissioned; data responsibility accepted' --external-fact 'sandbox:<id>=ticket-123' --external-fact 'data:<workspace-id>=ticket-456' --responsibility-transferred
+```
+
+External confirmation accepts only an existing unfinished intent and records a distinct `externally_confirmed` disposition. It manufactures no `terminated`, `lateEnsureFenced`, or `removed` physical evidence and does not authorize reuse of the same volume. Write keys are tenant-wide across actions: identical input returns current progress for the same responsibility; changing the action, target, reason, or confirmation under the same key returns `idempotency_conflict`.
+
 ## Boundaries and invariants
 
-- **Deployment boundary**: `cloudctl` is not exposed via HTTP and is not invoked by the server daemon. It requires direct network access to PostgreSQL with schema migration permissions.
+- **Deployment boundary**: `cloudctl` is not exposed via HTTP and is not invoked by the server daemon. It requires direct PostgreSQL access; only migration commands need schema migration privileges. Residual management adds no public tenant admin/member permissions, and public HTTP routes continue to reject hidden Run Workspaces.
 - **Structured output**: All command results are output as structured JSON to `stdout`, and errors to `stderr`, enabling integration with CI/CD deployment pipelines.
+- **Errors and credentials**: Residual commands preserve stable core Fault codes. Unknown infrastructure errors produce only `internal_error`; configuration or connection failures use safe generic codes without connection strings or passwords. Invalid arguments produce `invalid_cli_arguments`; `--impact-confirmed=false` does not confirm an action.
 
 See [cmd overview](../README.en.md), [Database migrations](../../internal/core/migrations/README.en.md), and [Internal credentials](../../docs/identity/authentication.en.md).

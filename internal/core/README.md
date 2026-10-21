@@ -16,6 +16,7 @@
 | `agent_run_*.go`、`execution*.go`、`thread*.go`、`business_hooks.go` | 运行生命周期、执行登记、Thread 与同事务结算钩子 | [IssueRun](../../docs/agent-runs/issue-runs.md)、[Controller](../../docs/runtime/controller-integration.md) |
 | `agent_run_residual.go`、`agent_run_residual_reclaim.go` | 原身份/目标覆盖与证据资格、单一回收责任和唯一 owned-delete operation、effect/许可及完成检查 | [残留回收](../../docs/agent-runs/residual-reclamation.md) |
 | `agent_run_residual_fact.go`、`agent_run_residual_loop.go` | 不改旧责任的追加事实、重放与持久冲突阻挡；独立于 Run phase 的账本扫描和原 operation 恢复 | [残留回收](../../docs/agent-runs/residual-reclamation.md) |
+| `agent_run_controlled_reclaim*.go` | 部署运维意图与命令回执、单一根责任和从属数据删除、逐目标终止与外部确认、无账本 D8 保护 | [残留回收](../../docs/agent-runs/residual-reclamation.md) |
 | `task_conversation_*.go`、`thread_preview.go` | 任务级有序消息、同任务 Agent 串行交接与暂停屏障、从 Node 可见正文冻结的后续提示、配置缺口提示和有界进程内实时预览；Agent 初始提示只读冻结的运行输入 | [Thread](../../docs/agent-runs/threads.md)、[IssueRun](../../docs/agent-runs/issue-runs.md) |
 | `revision*.go`、`session_*.go` | Revision 登记、归档读取、会话列表与统计 | [Revision](../../docs/agent-runs/revisions.md)、[会话读取](../../docs/agent-runs/session-reads.md) |
 | `model_*.go` | 个人配置、冻结绑定、授权摘要与请求观察；不解密 API Key | [模型访问](../../docs/models/model-access.md) |
@@ -35,4 +36,9 @@
 
 残留事实继续由原入口接管：`agent_run_provisioning_fact.go` 处理创建侧，`node_execution.go` 与 `revision.go` 处理原执行终态和交付，
 `runtime_control_delivery.go` 接收已有 `runtime_ack` 的完整运行时证据。`run_workspace.go`、`control.go` 及 effect/许可路径检查原责任绑定；
-不新增 RPC/proto 或公开的系统删除开关。当前仅为 Cloud 第 1 步实现，A1–A6 的保守资格和后续未实现范围见上述专页，不代表物理或联合验收完成。
+不新增 RPC/proto 或公开的系统删除开关。第 2 步受控入口为 `cloudctl residual`：以部署数据库凭据及 `session_user` 识别认证主体，
+人工 operator 标签仅为自述，不新增 HTTP 或租户权限。根 terminate 与最多一个从属 delete_data 各自三态推进；根完成不回退，
+删除只绑定一个 operation，保留首次 `cleared_at`。外部确认仅面向已有未完成意图，并要求逐目标事实引用，不替代物理成功证据。
+受控目标借既有 `ListForceStops` / `ConfirmForceStop` / `GetEffectPermit` 字段交付，普通 force-stop 历史与业务收尾保持独立。
+D8 按原身份显式接管，不回填账本。自动层 A1–A6、两阶段处置和恢复保护见上述专页；本文说明 Cloud 实现合同，
+不声明测试通过，Controller/Sandbox 物理证明及跨仓故障验收仍分别属于第 3/4 步。

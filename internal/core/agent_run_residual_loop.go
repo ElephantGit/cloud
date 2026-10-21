@@ -51,5 +51,5 @@ func (s *Store) ReconcileAgentRunResidualsOnce(ctx context.Context) error {
 			return resumeResidualReclamation(t, row)
 		})
 	}
-	return nil
+	return s.reconcileControlledResiduals(ctx)
 }

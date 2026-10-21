@@ -89,7 +89,7 @@ func (s *Store) settleSessionEnded(t *transaction, runID, executionID string, en
 	if !sessionEndReasons[ended.S("reason")] {
 		return fmt.Errorf("sessionEnded: run %s execution %s carries end reason %q, outside the closed set", runID, executionID, ended.S("reason"))
 	}
-	if o.S("phase") == "done" && t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", runID) != nil {
+	if o.S("phase") == "done" && residualForRun(t, runID) != nil {
 		t.exec("UPDATE agent_run_residuals SET session_ended_at=COALESCE(session_ended_at,clock_timestamp()) WHERE run_id=$1", runID)
 		return nil
 	}

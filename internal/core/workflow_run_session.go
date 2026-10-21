@@ -9,8 +9,10 @@ import (
 // 0-cloud-side-scheduler D1 条件②/④ and 20261015-executor-slot-mappings D2/D3). Sessions
 // serialize per run — dispatchRunExecution enforces one unregistered agent_session work item per
 // run — so a session starts only when no node is committed running, and the pass holds until its
-// terminal evidence commits. Startup is bounded by an honest deadline: a session that never
-// dispatches within the deadline fails its node instead of hanging the run in `running`.
+// terminal evidence commits. Two honest deadlines bound the run instead of leaving it `running`
+// forever: a session that never dispatches within the startup deadline fails its node, and a
+// dispatched session that produces neither a result nor a successful turn end within the configured
+// turn window fails with Cloud's own `session_turn_deadline_exceeded` (circus#299).
 const workflowSessionStartDeadline = 15 * time.Minute
 
 // workflowSessionNodeUnavailable is the reason an in-flight session settles with when the Node that
@@ -20,6 +22,13 @@ const workflowSessionStartDeadline = 15 * time.Minute
 // report. It is also the published operation failure code for an unreachable Node — the same fact, so
 // the same name.
 const workflowSessionNodeUnavailable = "node_unavailable"
+
+// workflowSessionTurnDeadlineExceeded is the reason a dispatched session settles with when it has
+// produced neither a result nor a successful `turnEnded` within the configured turn window
+// (circus#299 option A). Like node_unavailable it is Cloud's own diagnosis, not a Node-reported end
+// reason, so it is kept outside the Node's vocabulary. It is also the published operation failure
+// code for the same fact.
+const workflowSessionTurnDeadlineExceeded = "session_turn_deadline_exceeded"
 
 // settleWorkflowSessionEnded accepts a WorkflowRun's session terminal event. A WorkflowRun has no
 // Thread, no `phase` and no Revision delivery: its scheduler's next pass reads this very execution's
@@ -60,10 +69,10 @@ func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool
 
 // workflowAgentSessionOutcome settles a committed running agent node. Terminal evidence (this
 // node's own session execution's result) commits the node's terminal state; a
-// dispatched-but-unreported session is held (the Node owns it) for as long as the Node can still
-// report it; a session whose Node is gone settles failed, and a session that never dispatched
-// fails the node once the startup deadline passes. The run advances on the next tick after any
-// commit.
+// dispatched-but-unreported session is held while the Node can still report it, but only within the
+// configured turn window; a session whose Node is gone settles failed, and a session that never
+// dispatched fails the node once the startup deadline passes. The run advances on the next tick
+// after any commit.
 //
 // Every lookup is scoped to the node being settled. A run has several agent sessions over its life
 // (D4 executes its agent nodes serially through one Workspace), so evidence read at run scope —
@@ -105,8 +114,23 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 		// The Node is still there. A successful initial turn ends the session — Cloud releases one
 		// EndSession command and waits for the terminal result, which stays the node's only evidence
 		// (D4); the confirmation window bounds that wait (D7). A session with no successful turn is
-		// held.
-		return workflowSessionEndRequest(t, runID, version, nodeID, e.S("executionId"), states)
+		// held, but not forever: once it has been dispatched longer than the configured turn window
+		// without either a result or a successful turn end, Cloud's own deadline settles it
+		// (circus#299 option A). The turn-ended check comes first so a session that did finish its
+		// turn keeps the end-confirmation path and is never reported as over-window.
+		executionID := e.S("executionId")
+		turnEnded := workflowSessionTurnEnded(t, executionID)
+		if !turnEnded && workflowSessionTurnExpired(t, executionID, startupDuration(t.store.WorkflowSessionTurnTimeout, 2*time.Hour)) {
+			state := states[nodeID]
+			state.Status = "failed"
+			state.FinishedAt = nowRFC3339()
+			state.Error = workflowSessionTurnDeadlineExceeded
+			state.Output = Object{"reason": workflowSessionTurnDeadlineExceeded}
+			states[nodeID] = state
+			finishWorkflowRun(t, runID, version, "failed", workflowSessionTurnDeadlineExceeded, states)
+			return states, false
+		}
+		return workflowSessionEndRequest(t, runID, version, nodeID, executionID, turnEnded, states)
 	}
 	// Never dispatched: the startup deadline applies. A node committed running with no registered
 	// execution past the never dispatched fails honestly — never recorded as succeeded (invariant 5).
@@ -132,13 +156,15 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 //
 // The wait is bounded (D7). Once the command has been outstanding longer than the confirmation
 // window, the node fails with a named reason and the run is finished, which declares the Workspace
-// deletion. Without this a Node that never claims the command would leave the run `running` forever
-// — the same permanent stall this path exists to remove. The deadline is measured from the command's
-// own `created_at`, so retries and replicas all read the same window.
-func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID, executionID string, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+// deletion. turnEnded is the caller's read of the session's latest receipt; passing it in keeps one
+// pass from reading the same receipt twice and disagreeing with itself. Without this a Node that
+// never claims the command would leave the run `running` forever — the same permanent stall this
+// path exists to remove. The deadline is measured from the command's own `created_at`, so retries
+// and replicas all read the same window.
+func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
 	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND kind='end_session'", runID, nodeID)
 	if cmd == nil {
-		if !workflowSessionTurnEnded(t, executionID) {
+		if !turnEnded {
 			return states, false
 		}
 		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, "end_session", Object{"reason": "idle_timeout"})
@@ -181,6 +207,20 @@ func workflowSessionTurnEnded(t *transaction, executionID string) bool {
 	return record.S("type") == "turnEnded" && record.S("stop_reason") != "cancelled"
 }
 
+// workflowSessionTurnExpired reports whether a dispatched session execution has been registered
+// longer than the configured turn window without committing a result (circus#299 option A). The
+// instant is node_executions.created_at, judged on the database clock: the window belongs to the
+// execution row, so a retry's new row starts a fresh window, while a scheduler replay, a replica
+// change, a Controller restart and an operator retrying a pass all read the same immutable instant
+// and cannot reset or shorten it. The result predicate is repeated rather than inferred from the
+// caller's earlier read so the deadline can never settle an execution that has terminal evidence:
+// a committed result wins (invariant 5's converse).
+func workflowSessionTurnExpired(t *transaction, executionID string, window time.Duration) bool {
+	return t.one(`SELECT execution_id FROM node_executions
+		WHERE execution_id=$1 AND result IS NULL
+		  AND created_at<=clock_timestamp()-make_interval(secs=>$2)`, executionID, window.Seconds()) != nil
+}
+
 // workflowSessionEndReason maps a session execution's terminal reason onto the node/run
 // vocabulary. agent_failed and interrupted fail the node; cancelled cancels it (and the run);
 // idle_timeout and user_ended are natural session ends — the work completed its conversation —
@@ -201,16 +241,8 @@ func workflowSessionEndReason(reason string) string {
 // downstream casualties on the next pass); a succeeded node commits and reports that the run can
 // continue advancing in the same pass — the next wave executes downstream of it.
 func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
-	state := states[nodeID]
-	state.Status = workflowSessionEndReason(result.S("reason"))
-	state.FinishedAt = nowRFC3339()
-	state.Output = Object{"reason": result.S("reason")}
-	// Only a failed node carries an error: a cancelled node was cancelled, not broken.
-	if state.Status == "failed" {
-		state.Error = result.S("reason")
-	}
-	states[nodeID] = state
-	switch state.Status {
+	applyWorkflowAgentTerminal(states, nodeID, result)
+	switch states[nodeID].Status {
 	case "failed":
 		finishWorkflowRun(t, runID, version, "failed", result.S("reason"), states)
 		return states, false

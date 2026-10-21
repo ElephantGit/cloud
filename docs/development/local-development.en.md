@@ -71,8 +71,10 @@ To start parts separately: `task run` (Cloud), `task run:gateway` (Gateway), `ta
 ## Demos without a Controller
 
 - **The simulator**: `task simulate` (`go run ./cmd/simulator`) starts loopback doubles of Cloud and the Substrate in process,
-  creates a test tenant, a simulated sandbox and Node, really clones the repository into the main Workspace's own data
-  directory, and finally prints a ready Workspace. Disk data lives in `.local/demo/`, database records are kept, and every
+  creates a test tenant, a simulated sandbox and Node, prepares a snapshot in the Git Server double (on-disk repositories laid
+  out like the Git Server volume, recording the demo Project's snapshot in place of the external line), really clones that
+  snapshot into the main Workspace's own data directory, and finally prints a ready Workspace. The Node double fetches only
+  from the Git Server double and never reaches an external repository. Disk data lives in `.local/demo/`, database records are kept, and every
   run creates a new demo tenant. It uses temporary signing keys generated in process, holds no production credentials,
   starts no real Agent or plugin executor, and proves nothing about runtime exclusivity, management authentication or workload
   isolation.
@@ -80,8 +82,8 @@ To start parts separately: `task run` (Cloud), `task run:gateway` (Gateway), `ta
   server signs the JWTs, meant only for manually checking the Issue endpoints; `frontend/` is the real frontend. `cmd/ora-web`
   is an early development edge server for the frontend; day-to-day development uses the Gateway.
 
-These entry points are for development only; the development constructors they use, such as `router.NewDevelopment` and
-`core.NewDevelopmentStore`, must never appear in a production process.
+These entry points are for development only; the development constructors they use, such as `router.NewDevelopment`, must never appear in a
+production process.
 
 ## The frontend
 

@@ -42,6 +42,8 @@ import type {
   PostApiV1TenantsTidWorkflowsWfidPublishBody,
   PostApiV1TenantsTidWorkflowsWfidRuns200,
   PostApiV1TenantsTidWorkflowsWfidRunsBody,
+  PostApiV1TenantsTidWorkflowsWfidRunsRidCancel202,
+  PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody,
   PutApiV1TenantsTidWorkflowsWfidBody,
   PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody,
   SessionModelStatistics,
@@ -840,6 +842,77 @@ export function useGetApiV1TenantsTidWorkflowsWfidRunsRid<TData = Awaited<Return
 
 
 /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. Records the user's cancellation request on a live workflow run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never changes the run's status or node states and never touches its session or Workspace — the Cloud-side scheduler reacts on its next pass, settling the run cancelled without dispatching another node, stopping an in-flight session through the existing EndSession relay within the same bounded confirmation window an idle session gets, and declaring the Workspace deletion (see the workflow scheduling documentation). Accepted for a run that is pending or running; a terminal run, and the never-written awaiting_input state, answer 409 run_not_cancellable. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since settled, so the recorded instant is never replaced. Authorized for the run's initiator and the tenant's administrators on a run carrying frozen executor bindings; an active tenant member who is neither answers 403 workflow_run_cancel_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/cancel
+ */
+export const postApiV1TenantsTidWorkflowsWfidRunsRidCancel = (
+    tid: string,
+    wfid: string,
+    rid: string,
+    postApiV1TenantsTidWorkflowsWfidRunsRidCancelBody: PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PostApiV1TenantsTidWorkflowsWfidRunsRidCancel202>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/cancel`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidWorkflowsWfidRunsRidCancelBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationKey = () => ['postApiV1TenantsTidWorkflowsWfidRunsRidCancel'] as const;
+
+export const getPostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>, PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables> = (props) => {
+          const {tid,wfid,rid,data} = props ?? {};
+
+          return  postApiV1TenantsTidWorkflowsWfidRunsRidCancel(tid,wfid,rid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>>
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationBody = PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables = {tid: string;wfid: string;rid: string;data: PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/cancel
+ */
+export const usePostApiV1TenantsTidWorkflowsWfidRunsRidCancel = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidCancel>>,
+        TError,
+        PostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidWorkflowsWfidRunsRidCancelMutationOptions(options), queryClient);
+    }
+    /**
  * Read-only active-member content-free model HTTP attempts for a WorkflowRun, ascending (startedAt, id). after must identify an attempt owned by this run. Only singleton nonempty limit and after parameters accepted. Request/response bodies, credentials, headers, provider messages and storage paths are never returned. firstOutputMs measures the gateway-observed first effective output, not model TTFT. A started attempt may represent an ongoing request or missing final observation. private, no-store.
  * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls
  */

@@ -93,8 +93,11 @@ func TestRepositoryPublishPersonalApprovalMatrixAndIdempotency(t *testing.T) {
 
 func TestRepositoryPublishLeaseMutualExclusionAndRecovery(t *testing.T) {
 	f := setup(t)
+	// The fixture settles the Project's first sync; the sync the publish must reuse is a later,
+	// not-yet-running one.
 	pid := f.create("publish-recovery").O("resource").S("id")
 	f.drain()
+	pendingSync := f.manualSync(pid)
 	credential := f.publishCredential(f.uid, "team")
 	path := f.path("/projects/" + pid + "/repository/publishes")
 	first := f.gitCall("POST", path, f.publishBody(credential), "", 201).O("resource")
@@ -128,23 +131,25 @@ func TestRepositoryPublishLeaseMutualExclusionAndRecovery(t *testing.T) {
 	if state, _ := f.repositoryOperationState(task.OperationID); state != "succeeded" {
 		t.Fatalf("verified publish = %s", state)
 	}
-	if f.scalar("SELECT count(*) FROM repository_operations WHERE id=$1 AND state='leased'", f.initialSync(pid)) != 1 {
+	if f.scalar("SELECT count(*) FROM repository_operations WHERE id=$1 AND state='leased'", pendingSync) != 1 {
 		t.Fatal("publish did not reuse not-yet-running sync")
 	}
 }
 
-func (f *fixture) initialSync(pid string) string {
-	f.t.Helper()
-	var id string
-	must(f.t, f.store.Pool.QueryRow("SELECT id FROM repository_operations WHERE project_id=$1 AND type='repository_sync' ORDER BY created_at LIMIT 1", pid).Scan(&id))
-	return id
-}
-
 func TestRepositoryPublishSuccessSchedulesExactlyOneSyncAfterRunningSync(t *testing.T) {
 	f := setup(t)
-	pid, st := f.leasedSync()
+	// The fixture settles the Project's first sync, so the Project is active and the running sync
+	// is one a member asked for.
+	pid := f.create(uuid.NewString()).O("resource").S("id")
 	f.drain()
-	_, err := f.store.StartRepositoryOperation(context.Background(), st.OperationID, st.LeaseGeneration, strings.Repeat("0", 40), time.Minute, time.Minute)
+	sync := f.manualSync(pid)
+	tasks, err := f.store.LeaseRepositoryOperations(context.Background(), "test", 1, time.Minute)
+	must(t, err)
+	if len(tasks) != 1 || tasks[0].OperationID != sync {
+		t.Fatalf("leased = %v, want the manual sync %s", tasks, sync)
+	}
+	st := tasks[0]
+	_, err = f.store.StartRepositoryOperation(context.Background(), st.OperationID, st.LeaseGeneration, strings.Repeat("0", 40), time.Minute, time.Minute)
 	must(t, err)
 	credential := f.publishCredential(f.uid, "team")
 	path := f.path("/projects/" + pid + "/repository/publishes")

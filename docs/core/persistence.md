@@ -15,12 +15,10 @@ git-server 都不持有另一份业务状态。`internal/core` 是唯一直接�
 
 - `core.NewStore(db)` 只从注入的 GORM 句柄取出 `*sql.DB` 连接池，不建表、不迁移。GORM 只用于建立
   连接池（`internal/repository`），业务 SQL 全部是手写的参数化语句。
-- `Store` 上挂着运行期需要的协作者：对象存储配置 `ObjectStore`、工作流资产下载 `WorkflowAssets`、
+- `Store` 上挂着运行期需要的协作者：对象存储配置 `ObjectStore`、Git Server 的仓库地址与 ref 查询 `GitServer`、工作流资产下载 `WorkflowAssets`、
   协作端口（`Directory`、`Forms` 等，见 [Issue 协作](../collaboration/interactions.md)）、IssueRun 的
   业务钩子和时间窗口配置、SSE 事件 hub `Events` 与 Controller 信号 hub `Signals`。它们都由
   `cmd/*` 在启动时组装，core 不自行读取配置或环境变量。
-- `core.NewDevelopmentStore` 只给测试夹具和进程内模拟器使用，它额外打开一条已退役的无作用域
-  clone 契约；生产 server 不得使用它。
 
 ## 事务：`transact`
 
@@ -73,7 +71,7 @@ Commit
 | 收集项 | 提交后的动作 |
 |---|---|
 | 新排队或重试的 Workspace 操作 | `ControlHub` 发 `OperationAvailable` |
-| 新的 clone 请求、执行工作项 | `ControlHub` 发 `WorkAvailable` |
+| 新的执行工作项（Agent 会话、Revision 交付） | `ControlHub` 发 `WorkAvailable` |
 | 新的 Thread 命令 | `ControlHub` 发 `ThreadCommandAvailable` |
 | Space 内的业务变化 | `SpaceHub` 向该 Space 的 SSE 订阅者发失效事件 |
 

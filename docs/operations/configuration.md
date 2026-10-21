@@ -46,7 +46,11 @@
 | `issue_runs.agent_start_timeout`、`agent_restore_timeout`、`agent_end_confirm_timeout` | `2m`、`6m`、`5m` | 启动窗口，显式配置非正值时拒绝启动，见 [有界启动](../agent-runs/startup-settlement.md) |
 | `issue_runs.agent_workspace_blocked_timeout` | `30m` | 运行 Workspace 创建停在 `blocked` 的放弃窗口，规则同上 |
 | `issue_runs.delivery_give_up_after`、`delivery_unreachable_after` | `2h`、`30m` | 交付与删除的放弃上限；`delivery_unreachable_after` 同时是"Node 是否还在"的判定窗口，工作流运行里进行中的会话也按它结算；非正值取默认 |
+| `workflow.session_turn_timeout` | `2h` | 工作流会话初始回合的窗口：执行行 `created_at` 超过它、既没有提交结果也没有成功的 `turnEnded` 时，节点以 `session_turn_deadline_exceeded` 失败；按执行行计时，非正值取默认，见 [工作流](../workflows/workflows.md#调度) |
 | `object_store.*` | `enabled: false` | 见 [Revision](../agent-runs/revisions.md#对象存储)：`endpoint`、`public_endpoint`、`region`、`bucket`、`path_style`、`access_key_id_file`、`secret_access_key_file`、`upload_grant_ttl` |
+| `git_server.repository_base_url` | 空 | 沙盒访问的 Git Server 仓库 base URL（`https`，不带用户信息、查询、片段和末尾斜杠），写进 clone、会话和交付输入；为空即不使用 Git Server：clone 步骤停在 `blocked`（`git_server_unconfigured`），交付以 `skipped` 结算 |
+| `git_server.ref_query_url`、`ca_file`、`client_cert_file`、`client_key_file` | 空 | 设置了 `repository_base_url` 时必填：ref 查询监听的 `https://host[:port]`、校验它的 CA，以及 Cloud 的客户端证书和私钥文件。启动时只读入文件、不发网络请求；Git Server 不可达或证书不符只让核验暂不可用，不阻止启动。见 [Git Server](../repositories/git-server.md#ref-查询) |
+| `git_server.ref_query_timeout` | `10s` | 单次 ref 查询的超时；非正值取默认 |
 | `repository.enabled` | `false` | 打开外部 Git 线与凭据路由；关闭时 Project 仍可创建，但没有同步，凭据创建返回 `503`，见 [外部 Git 线](../repositories/external-git.md) |
 | `repository.executor_url`、`executor_ca_file`、`dispatcher_cert_file`、`dispatcher_key_file` | URL 默认 `https://repo-executor:8471`，文件必填 | Repo Executor 的任务监听，以及 Cloud 调度方的 mTLS 客户端身份 |
 | `repository.authorization_key_file` | 必填 | 签发执行授权的 Ed25519 私钥（PKCS#8），必须与 `submission_key_file` 不同 |
@@ -58,6 +62,8 @@
 
 启动时 `repository.enabled` 为真会校验两把私钥不同、Ingress URL 非空，并加载三组 mTLS 客户端材料（执行器、Credential
 Store、Git Server），不发起任何网络请求。
+
+两组配置都访问 Git Server 的同一个 ref 查询监听（`GET /internal/v1/refs`），各用自己的客户端：`git_server.*` 供 Workspace clone 输入与 Revision 交付核验使用，`repository.git_refs_*` 供仓库 worker、发布来源核对与 Workspace 分支列表使用。
 
 `cloudctl` 读取同一份配置，只用到数据库连接；它需要拥有建表权限的迁移账号。
 

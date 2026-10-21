@@ -23,7 +23,7 @@ This package owns business state, authorization, transactions and recovery decis
 
 ## Store and transaction boundaries
 
-- `NewStore` obtains `*sql.DB` from injected GORM and wires the real Workflow Directory/Forms; it neither connects nor migrates nor creates a global database. `NewDevelopmentStore` additionally permits the retired clone fixture.
+- `NewStore` obtains `*sql.DB` from injected GORM and wires the real Workflow Directory/Forms; it neither connects nor migrates nor creates a global database.
 - `transact` takes `pg_advisory_xact_lock(67420911)` inside PostgreSQL, handles domain Faults and post-commit notifications. Hooks must use the supplied transaction, never start a nested Store transaction.
 - Network, Git, filesystem and object-store calls happen outside transactions; callers recheck identity, version and authorization afterwards. Archive reads, publish-source checks and credential confirmation have dedicated entrypoints.
 - `Object` is the boundary JSON value. `Fault` and `ErrorCode` convert expected failures and database errors into safe public errors. Domain panics are converted only at the transaction control boundary; unexpected panics must not be swallowed.

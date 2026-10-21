@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -153,6 +154,19 @@ func reviewWorkflow(t *testing.T, f *fixture) string {
 func publishWorkflow(t *testing.T, f *fixture, wid, key string) core.Object {
 	t.Helper()
 	return f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{}, key, 200).O("resource")
+}
+
+// seedLegacySnapshot writes a published version directly, bypassing the publish gate. It reproduces
+// the stock state the reserved-field gate no longer creates: a frozen graph that declares
+// `snapshotId` as one of the author's own variables. The row is otherwise what publishing writes.
+func seedLegacySnapshot(t *testing.T, f *fixture, wid string, version int64, graph core.Object) core.Object {
+	t.Helper()
+	raw, err := json.Marshal(graph)
+	must(t, err)
+	sid := uuid.NewString()
+	_, err = f.store.Pool.Exec("INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph) VALUES($1,$2,$3,$4,'Legacy',$5::jsonb)", sid, f.tid, wid, version, string(raw))
+	must(t, err)
+	return core.Object{"id": sid, "version": version, "name": "Legacy"}
 }
 
 // workflowComment posts a comment addressed at `wid` and returns the form interaction it created.
@@ -692,19 +706,30 @@ func TestWorkflowConfirmCarriesPlatformFields(t *testing.T) {
 
 // TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor covers the one key a form value and a platform
 // cursor can both be called. Issue collaboration D8 keeps a key the author declared in their own Start node, so a
-// workflow that declares `snapshotId` gets no version selector and the value under that key is the
+// draft that declares `snapshotId` gets no version selector and the value under that key is the
 // author's variable. Read as a cursor it would make such a form unconfirmable both ways round: a value
 // that is not a snapshot id is a 404, and the platform's prefill would have put a snapshot id in the
 // author's field, so a user who left it alone would run the newest version while handing their workflow
 // that id as its variable.
+//
+// No new draft can be published this way any more (20261021-snapshot-id-is-a-reserved-field.md D1), so
+// the test refuses that publish first and then seeds the frozen version directly: the compatibility
+// behavior it pins applies to versions published before the gate and to the drafts that still declare
+// the key, not to anything the current publish route can create.
 func TestAuthorDeclaredSnapshotIDIsNotTheVersionCursor(t *testing.T) {
 	f := setup(t)
-	wid := createWorkflow(t, f, "Release Workflow", "wf-version-owned", []any{
+	variables := []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
 		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
-	})
-	published := publishWorkflow(t, f, wid, "wf-version-owned-pub")
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it", "projectRef": runProject(t, f, "wf-version-project")}, "wf-version-issue", 200).O("resource")
+	}
+	wid := createWorkflow(t, f, "Release Workflow", "wf-version-owned", variables)
+	// Saving the draft is fine; freezing it is what the gate refuses, naming the node and the field.
+	refused := f.call("POST", f.path("/workflows/"+wid+"/publish"), core.Object{}, "wf-version-owned-pub", 400)
+	if got := problems(t, refused); len(got) != 1 || got[0].S("code") != "reserved_field_name" || got[0].S("nodeId") != "start-1" || got[0].S("field") != "snapshotId" {
+		t.Fatalf("the publish gate did not name the reserved declaration: %v", got)
+	}
+	published := seedLegacySnapshot(t, f, wid, 1, startInputGraph(variables))
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
 
 	// The form the author's declaration produces: their own control under that key, holding nothing —
 	// and no version selector, which is what makes the key theirs to begin with.
@@ -798,14 +823,17 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 
 	// The same submission against a graph whose author declared `snapshotId` for a variable of their
 	// own. There the new key is theirs, so the selection cannot be written under it — but the version
-	// the user picked is still the one that runs, and the variable keeps the value they gave it.
-	owned := createWorkflow(t, f, "Owned Workflow", "wf-rename-owned", []any{
+	// the user picked is still the one that runs, and the variable keeps the value they gave it. The
+	// versions are seeded: the gate refuses to publish such a graph now, and this is the stock state
+	// the compatibility rule exists for.
+	ownedVariables := []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
-	})
-	ownedOlder := publishWorkflow(t, f, owned, "wf-rename-owned-pub-1")
-	ownedNewest := f.call("POST", f.path("/workflows/"+owned+"/publish"), core.Object{"name": "Second cut"}, "wf-rename-owned-pub-2", 200).O("resource")
+	}
+	owned := createWorkflow(t, f, "Owned Workflow", "wf-rename-owned", ownedVariables)
+	ownedOlder := seedLegacySnapshot(t, f, owned, 1, startInputGraph(ownedVariables))
+	ownedNewest := seedLegacySnapshot(t, f, owned, 2, startInputGraph(ownedVariables))
 	if ownedNewest.S("id") == ownedOlder.S("id") {
-		t.Fatal("the two publishes are the same snapshot, so a wrong version could pass as the right one")
+		t.Fatal("the two versions are the same snapshot, so a wrong version could pass as the right one")
 	}
 	// A second issue, because a confirmed interaction is spent: `workflowComment` reads back the issue's
 	// form interaction and would hand back the one just confirmed.
@@ -885,10 +913,11 @@ func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
 	// A graph whose author declared `snapshotId` for a variable of their own. There the new key is
 	// theirs, so the fold drops the old one rather than writing a snapshot id into their variable —
 	// and the submission is accepted all the same, which is the rule the confirm applies to this graph.
+	// No version is needed: assist is stateless and resolves only the live document. It stays a draft
+	// because publishing this graph is exactly what the reserved-field gate now refuses.
 	owned := createWorkflow(t, f, "Owned Workflow", "wf-assist-rename-owned", []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
 	})
-	ownedSnap := publishWorkflow(t, f, owned, "wf-assist-rename-owned-pub")
 	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form again"}, "wf-assist-rename-issue-2", 200).O("resource")
 	// The old key still carries the version selection here, so it has to name a real published version:
 	// assist resolves the version it answers for, exactly as the confirm does.

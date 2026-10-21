@@ -519,6 +519,40 @@ func TestVersionFieldIsAbsentWithoutASnapshot(t *testing.T) {
 	}
 }
 
+// TestVersionFieldExplainsWithheldVersions covers what the selector says when a published version
+// claims the reserved `snapshotId` and is therefore not offered
+// (20261021-snapshot-id-is-a-reserved-field.md D2). The descriptor has no disabled option, so the
+// field's description is the only place the omission can be explained, and it carries the remedy too.
+// When no version is selectable the selector is absent rather than empty — the same legal shape as a
+// workflow with nothing published, which fails descriptor validation closed otherwise.
+func TestVersionFieldExplainsWithheldVersions(t *testing.T) {
+	graph := decodeGraph(t, startGraph(nil, ""))
+	issue := issueContext()
+	descriptor := func(snapshots []Object, withheld bool) FormDescriptor {
+		return formDescriptorFromGraph(&workflowFormSource{Ref: reviewRef, Graph: graph, Snapshots: snapshots, Withheld: withheld}, &issue)
+	}
+
+	withheld := descriptor(snapshotRows(2, 1), true)
+	validateFormDescriptor(withheld)
+	version := fieldOf(t, withheld, fieldKeySnapshotID)
+	if version.Description == "" {
+		t.Fatalf("a withheld version left the selector unexplained: %+v", version)
+	}
+	if len(version.Options) != 2 {
+		t.Fatalf("the selectable versions were not all offered: %+v", version.Options)
+	}
+
+	if plain := fieldOf(t, descriptor(snapshotRows(2, 1), false), fieldKeySnapshotID); plain.Description != "" {
+		t.Fatalf("an ordinary selector carries a notice: %+v", plain)
+	}
+
+	empty := descriptor(nil, true)
+	validateFormDescriptor(empty)
+	if fieldIndex(empty, fieldKeySnapshotID) != -1 {
+		t.Fatalf("no selectable version still produced a selector: %+v", empty.Fields)
+	}
+}
+
 // TestContextRefsFieldIsAdditiveOnly covers the supplementary context-reference field: it offers the
 // two references an issue can name for itself, it opens on nothing selected, and it is dropped when the
 // issue can name neither. It is additive because the issue's own references are already on every run it

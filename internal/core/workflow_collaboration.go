@@ -116,7 +116,7 @@ func (p WorkflowFormDescriptors) ResolveFormDescriptor(ctx context.Context, tena
 	// Only an issue-scoped form carries the launch fields, so only it pays for the second query: a
 	// caller with no issue context gets the same single lookup it always did.
 	if issue.IssueID != "" {
-		source.Snapshots, err = p.snapshots(ctx, tenantID, formRef)
+		source.Snapshots, source.Withheld, err = p.snapshots(ctx, tenantID, formRef)
 		if err != nil {
 			return FormDescriptor{}, false, err
 		}
@@ -124,16 +124,48 @@ func (p WorkflowFormDescriptors) ResolveFormDescriptor(ctx context.Context, tena
 	return formDescriptorFromGraph(&source, &issue), true, nil
 }
 
-// snapshots lists the workflow's published versions, newest first, capped at the number of options a
-// descriptor may carry: a workflow published more than a hundred times would otherwise build a
-// descriptor that fails validation closed and takes every confirm down with it.
+// workflowSnapshotReservedFieldSQL mirrors workflowDeclaresReservedField over a stored graph, for the
+// version selector's queries. It has to be SQL rather than a filter over fetched rows: the option cap
+// counts only selectable versions, so the excluded rows must not consume the limit. The two
+// definitions are kept side by side in this file and exercised together by the selector's tests.
+//
+// `jsonb_typeof` guards the reads rather than trusting the row: publishing validates the document,
+// but the table's own constraint only says the graph is an object, and a malformed array element
+// makes jsonb_array_elements raise instead of contributing nothing.
+const workflowSnapshotReservedFieldSQL = `EXISTS (
+		SELECT 1 FROM jsonb_array_elements(
+			CASE WHEN jsonb_typeof(graph->'nodes') = 'array' THEN graph->'nodes' ELSE '[]'::jsonb END
+		) AS node
+		WHERE node->'data'->>'kind' = 'start'
+		  AND EXISTS (
+			SELECT 1 FROM jsonb_array_elements(
+				CASE WHEN jsonb_typeof(node->'data'->'inputVariables') = 'array' THEN node->'data'->'inputVariables' ELSE '[]'::jsonb END
+			) AS variable
+			WHERE variable->>'name' = 'snapshotId'
+		  )
+	) OR EXISTS (
+		SELECT 1 FROM jsonb_array_elements(
+			CASE WHEN jsonb_typeof(graph->'globalVariables') = 'array' THEN graph->'globalVariables' ELSE '[]'::jsonb END
+		) AS variable
+		WHERE variable->>'name' = 'snapshotId'
+	)`
+
+// snapshots lists the workflow's selectable published versions, newest first, capped at the number of
+// options a descriptor may carry: a workflow published more than a hundred times would otherwise build
+// a descriptor that fails validation closed and takes every confirm down with it.
+//
+// A version whose frozen graph declares the reserved `snapshotId` is not selectable
+// (20261021-snapshot-id-is-a-reserved-field.md D2). The exclusion is in SQL so the cap still fills
+// with selectable versions, and `withheld` reports whether any version was excluded at all — the
+// selector explains that in its description, because the descriptor contract has no disabled option
+// to mark an excluded one with.
 //
 // Snapshots are immutable and never deleted — the table has no `deleted_at` — so there is no
 // soft-delete filter, and the ordering is the one the existing list index already serves.
-func (p WorkflowFormDescriptors) snapshots(ctx context.Context, tenantID, workflowID string) ([]Object, error) {
-	rows, err := p.Pool.QueryContext(ctx, "SELECT id, version, name FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT $3", tenantID, workflowID, maxFormOptions)
+func (p WorkflowFormDescriptors) snapshots(ctx context.Context, tenantID, workflowID string) ([]Object, bool, error) {
+	rows, err := p.Pool.QueryContext(ctx, "SELECT id, version, name FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND NOT ("+workflowSnapshotReservedFieldSQL+") ORDER BY version DESC LIMIT $3", tenantID, workflowID, maxFormOptions)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = rows.Close() }()
 	out := []Object{}
@@ -141,13 +173,21 @@ func (p WorkflowFormDescriptors) snapshots(ctx context.Context, tenantID, workfl
 		var id, name string
 		var version int64
 		if err := rows.Scan(&id, &version, &name); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		// Scanned straight into int64 rather than read back as a decoded number: `version` is a
 		// bigint, and everything that comes through a JSON round-trip arrives as a float64.
 		out = append(out, Object{"id": id, "version": version, "name": name})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	var withheld bool
+	err = p.Pool.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND ("+workflowSnapshotReservedFieldSQL+"))", tenantID, workflowID).Scan(&withheld)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, withheld, nil
 }
 
 // workflowFormSource is everything one descriptor projection reads: the workflow's own identity and
@@ -159,6 +199,9 @@ type workflowFormSource struct {
 	Description string
 	Graph       Object
 	Snapshots   []Object
+	// Withheld says at least one published version was left out of Snapshots because its own graph
+	// claims the reserved `snapshotId`; the selector explains that in its description.
+	Withheld bool
 }
 
 // formDescriptorFromGraph projects a stored graph onto a form descriptor. Title and description are
@@ -172,7 +215,7 @@ type workflowFormSource struct {
 func formDescriptorFromGraph(source *workflowFormSource, issue *IssueFormContext) FormDescriptor {
 	fields := workflowInputFields(source.Graph)
 	if issue.IssueID != "" {
-		fields = injectPlatformFields(fields, issue, workflowStartPrompt(source.Graph), source.Snapshots, launchFieldsFromGraph(source.Graph))
+		fields = injectPlatformFields(fields, issue, workflowStartPrompt(source.Graph), source.Snapshots, source.Withheld, launchFieldsFromGraph(source.Graph))
 	}
 	return FormDescriptor{
 		FormRef:     source.Ref,
@@ -203,11 +246,15 @@ func workflowInputFields(graph Object) []FormField {
 	return appendGlobalVariableFields(fields, graph)
 }
 
-// workflowSnapshotOptions lists a workflow's published versions newest first, in the shape the launch
-// field offers them. It is the transaction-scoped twin of the descriptor provider's own query, for the
-// callers that already hold a transaction and must not open a second connection inside it.
-func workflowSnapshotOptions(t *transaction, tid, wid string) []Object {
-	return t.list("SELECT id, version, name FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT $3", tid, wid, maxFormOptions)
+// workflowSnapshotOptions lists a workflow's selectable published versions newest first, in the shape
+// the launch field offers them, together with whether any version was withheld for claiming the
+// reserved `snapshotId` (20261021-snapshot-id-is-a-reserved-field.md D2). It is the transaction-scoped
+// twin of the descriptor provider's own query, for the callers that already hold a transaction and
+// must not open a second connection inside it.
+func workflowSnapshotOptions(t *transaction, tid, wid string) ([]Object, bool) {
+	snapshots := t.list("SELECT id, version, name FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND NOT ("+workflowSnapshotReservedFieldSQL+") ORDER BY version DESC LIMIT $3", tid, wid, maxFormOptions)
+	withheld := t.one("SELECT EXISTS(SELECT 1 FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND ("+workflowSnapshotReservedFieldSQL+")) AS withheld", tid, wid)
+	return snapshots, withheld.B("withheld")
 }
 
 // workflowDescriptorSource is the projection input for one graph of a workflow: its live document, or
@@ -215,12 +262,14 @@ func workflowSnapshotOptions(t *transaction, tid, wid string) []Object {
 // version's form differ only in the graph — a source assembled any other way could make a version
 // differ for a reason that has nothing to do with what the user was shown.
 func workflowDescriptorSource(t *transaction, w, graph Object) *workflowFormSource {
+	snapshots, withheld := workflowSnapshotOptions(t, w.S("tenantId"), w.S("id"))
 	return &workflowFormSource{
 		Ref:         w.S("id"),
 		Title:       w.S("name"),
 		Description: w.S("description"),
 		Graph:       graph,
-		Snapshots:   workflowSnapshotOptions(t, w.S("tenantId"), w.S("id")),
+		Snapshots:   snapshots,
+		Withheld:    withheld,
 	}
 }
 
@@ -367,8 +416,8 @@ func launchFieldRequired(declaration map[string]launchFieldOverride, key string,
 // This is the catalog rather than the form. A workflow's declaration narrows it in
 // injectPlatformFields, and only there, because a key the author declared in their own Start node is
 // not the platform's to withdraw (Issue collaboration D8).
-func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots []Object) []FormField {
-	version, hasVersion := versionField(snapshots)
+func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots []Object, withheld bool) []FormField {
+	version, hasVersion := versionField(snapshots, withheld)
 	refs, hasRefs := contextRefsField(issue)
 	catalog := []struct {
 		field   FormField
@@ -425,7 +474,14 @@ func platformFormFields(issue *IssueFormContext, startPrompt string, snapshots [
 //
 // A workflow that has never been published has nothing to offer, and an option-less select would fail
 // descriptor validation, so the field is dropped rather than injected empty.
-func versionField(snapshots []Object) (FormField, bool) {
+//
+// A published version whose frozen graph declares the reserved `snapshotId` is not offered at all
+// (20261021-snapshot-id-is-a-reserved-field.md D2): the descriptor contract has no way to mark an
+// option disabled, so the only form that expresses "not selectable" is leaving it out. When that
+// happened, the field's description carries the explanation and the remedy — republish from a draft
+// that does not declare the name. It is the same field for every reader, including the frontend that
+// renders the description under the control.
+func versionField(snapshots []Object, withheld bool) (FormField, bool) {
 	options := []FormOption{}
 	for _, snapshot := range snapshots {
 		id := snapshot.S("id")
@@ -438,14 +494,18 @@ func versionField(snapshots []Object) (FormField, bool) {
 	if len(options) == 0 {
 		return FormField{}, false
 	}
-	return FormField{
+	field := FormField{
 		Key:          fieldKeySnapshotID,
 		Label:        "运行版本",
 		Type:         fieldSelect,
 		Required:     false,
 		DefaultValue: options[0].Value,
 		Options:      options,
-	}, true
+	}
+	if withheld {
+		field.Description = "有已发布版本把保留字段 snapshotId 声明成了自己的变量，已不可选；请从不再声明该字段的活稿重新发布后选择新版本。"
+	}
+	return field, true
 }
 
 // contextRefsField offers the references this run may carry *in addition to* the issue's own. It is
@@ -514,12 +574,12 @@ func platformDefault(value string) any {
 // *adding*. A field the author asked for in their own Start node is asked for because they asked for
 // it, so no declaration withdraws it: for that key the declaration is inert, control and requiredness
 // alike, and the platform contributes nothing but the default.
-func injectPlatformFields(fields []FormField, issue *IssueFormContext, startPrompt string, snapshots []Object, declaration map[string]launchFieldOverride) []FormField {
+func injectPlatformFields(fields []FormField, issue *IssueFormContext, startPrompt string, snapshots []Object, withheld bool, declaration map[string]launchFieldOverride) []FormField {
 	declared := map[string]int{}
 	for i := range fields {
 		declared[fields[i].Key] = i
 	}
-	offered := platformFormFields(issue, startPrompt, snapshots)
+	offered := platformFormFields(issue, startPrompt, snapshots, withheld)
 	platform := []FormField{}
 	for i := range offered {
 		field := &offered[i]

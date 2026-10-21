@@ -142,6 +142,16 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 	cursor := workflowVersionCursor(w.O("graph"), values)
 	foldLegacyVersionAnswer(w.O("graph"), values)
 	s := admitWorkflowRun(t, r.TenantID, targetID, cursor, uid)
+	// The live document leaves `snapshotId` to the platform, so the submitted value was read as a
+	// version cursor. A version whose own graph declares that key would give the one submission two
+	// meanings — the version the platform resolves and a value the workflow receives — which is the
+	// ambiguity 20261021-snapshot-id-is-a-reserved-field.md D3 refuses to execute. Such versions are
+	// stock: the publish gate no longer creates them (D1), and the selector no longer offers them
+	// (D2), so this is the backstop for a cursor that reaches one anyway. Substituting the newest
+	// version instead would execute something the user did not choose.
+	if !declaresWorkflowInputField(w.O("graph"), fieldKeySnapshotID) && workflowDeclaresReservedField(s.O("graph")) {
+		rejectWith(409, "workflow_version_reserved_field", Object{"snapshotId": s.S("id"), "field": fieldKeySnapshotID})
+	}
 	issueContext := formContextForIssue(t, r.TenantID, i)
 	// The chosen version's own schema decides what the submission may contain: the form offers the
 	// selected version's fields, so a live draft that has moved on neither adds nor removes a question.

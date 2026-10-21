@@ -125,9 +125,7 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
             到达计划时刻时在绑定 issue 上自动发起一次无人值守运行。
           </p>
         </div>
-        {scheduledTaskAcceptanceEnabled && (
-          <Button type="button">新建定时任务</Button>
-        )}
+        {scheduledTaskAcceptanceEnabled && <Button type="button">新建定时任务</Button>}
       </div>
 
       {tasks.isError && (

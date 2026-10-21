@@ -77,8 +77,8 @@ describe('ScheduledTasksPage', () => {
   it('hides creation until the end-to-end acceptance gate is opened', async () => {
     serve()
     renderPage()
-	await screen.findByText('还没有定时任务')
-	expect(screen.queryByRole('button', { name: '新建定时任务' })).not.toBeInTheDocument()
+    await screen.findByText('还没有定时任务')
+    expect(screen.queryByRole('button', { name: '新建定时任务' })).not.toBeInTheDocument()
   })
 
   it('deletes a task only after confirmation', async () => {

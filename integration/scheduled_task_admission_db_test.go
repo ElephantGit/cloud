@@ -180,11 +180,11 @@ func TestScheduledTaskWritesRequireAcceptance(t *testing.T) {
 	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
 
 	_, _, err := store.Public(context.Background(), &core.PublicRequest{
-		Method:    "POST",
-		Key:       "scheduled-gated-create",
-		Path:      path,
-		TenantID:  s.tenantID,
-		Identity:  caller,
+		Method:   "POST",
+		Key:      "scheduled-gated-create",
+		Path:     path,
+		TenantID: s.tenantID,
+		Identity: caller,
 		Body: core.Object{
 			"issueId":  s.issueID,
 			"agentId":  agentID,

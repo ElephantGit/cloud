@@ -9,6 +9,13 @@ const FAILURE_LABELS: Record<string, string> = {
   model_access_unavailable: '模型授权不可用',
   model_access_expired: '模型授权已过期',
   thread_unavailable: '会话记录不可用',
+  agent_adapter_unavailable: '执行节点不支持该 Agent 的模型配置',
+  agent_model_configuration_required: '该 Agent 缺少模型配置',
+  agent_model_configuration_invalid: 'Agent 模型配置与已安装的插件不一致',
+  agent_model_protocol_mismatch: 'Agent 插件不支持所选模型连接的协议',
+  model_grant_mismatch: '模型授权与运行配置不一致',
+  agent_model_adapter_failed: 'Agent 无法应用模型配置',
+  agent_model_adapter_not_applied: 'Agent 未确认已应用模型配置',
   clone_attempts_exhausted: '获取仓库失败，自动重试次数已用尽',
   repository_sync_failed: '项目仓库同步失败，无法获取仓库',
 }

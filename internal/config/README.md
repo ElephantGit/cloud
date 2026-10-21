@@ -4,6 +4,8 @@
 
 `Load` 用局部 Viper 实例加载服务配置，校验后返回 `Config`；没有全局可变配置。
 
+`plugins.personal_agent_target` 为空时不启用声明式个人 Agent 运行；可显式指定当前 Node 支持的 Linux target。Controller/Node 与插件 adapter 部署完成后再配置；运行仍校验当前 incarnation 的 target、版本和协议。
+
 | 文件 | 职责 |
 |---|---|
 | `config.go` | 主结构、默认值、显式环境变量绑定和通用校验 |

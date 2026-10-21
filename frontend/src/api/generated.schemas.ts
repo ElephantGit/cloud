@@ -2178,6 +2178,20 @@ export const SpacePluginDesiredState = {
   removed: 'removed',
 } as const;
 
+export type SpacePluginKind = typeof SpacePluginKind[keyof typeof SpacePluginKind];
+
+
+export const SpacePluginKind = {
+  workbench: 'workbench',
+  agent: 'agent',
+  webview: 'webview',
+  skill: 'skill',
+  mcp: 'mcp',
+  hook: 'hook',
+  pack: 'pack',
+  workflow: 'workflow',
+} as const;
+
 export type SpacePluginObservedState = typeof SpacePluginObservedState[keyof typeof SpacePluginObservedState];
 
 
@@ -2202,6 +2216,7 @@ export interface SpacePlugin {
   identifier: string;
   /** @nullable */
   installError: string | null;
+  kind?: SpacePluginKind;
   observedState: SpacePluginObservedState;
   /** @nullable */
   observedVersion: string | null;

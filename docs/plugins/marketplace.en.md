@@ -51,6 +51,8 @@ to start.
 
 ## Installing and removing
 
+The summary's optional `kind` comes from the selected release, never the latest catalog. The web screen uses it to offer My Configuration for selected Agents. Current members edit their own values; space installation/removal still requires administrator authority.
+
 | Endpoint | Description |
 |---|---|
 | `GET .../spaces/:spaceId/plugins` | The space's plugin selections and progress summaries; readable by any current member |

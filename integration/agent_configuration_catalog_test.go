@@ -143,7 +143,10 @@ func TestAgentConfigurationCatalogSyncFreezesAndDispatches(t *testing.T) {
 
 	// An administrator's selection freezes the association with the exact release chosen.
 	sid := f.defaultSpaceID()
-	f.call("POST", f.pluginSpacePath(sid)+"/plugins", core.Object{"identifier": "official/declared-agent"}, "select-declared", 200)
+	selection := f.call("POST", f.pluginSpacePath(sid)+"/plugins", core.Object{"identifier": "official/declared-agent"}, "select-declared", 200)
+	if selection.O("resource").S("kind") != "agent" {
+		t.Fatalf("selection must expose the frozen release kind: %+v", selection)
+	}
 	frozen := f.store.Pool.QueryRow(`SELECT selected_release::text FROM space_plugins WHERE source_namespace='official' AND identifier='declared-agent'`)
 	var frozenText string
 	must(t, frozen.Scan(&frozenText))

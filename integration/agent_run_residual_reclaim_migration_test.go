@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const residualReclaimMigration = "0055_agent_run_residual_reclamation.sql"
+const residualReclaimMigration = "0057_agent_run_residual_reclamation.sql"
 
 func seedResidualMigrationRow(t *testing.T, pool *sql.DB, seed skeletonSeed, reason string) {
 	t.Helper()
@@ -36,8 +36,8 @@ func residualMigrationHistory(t *testing.T, pool *sql.DB) string {
 	return snapshot
 }
 
-func TestMigration0055ResidualReclamationFreshAndConstraints(t *testing.T) {
-	pool, _ := testSchema(t, "test_residual55f_")
+func TestMigration0057ResidualReclamationFreshAndConstraints(t *testing.T) {
+	pool, _ := testSchema(t, "test_residual57f_")
 	must(t, newStoreOnSchema(t, pool).Migrate(context.Background()))
 	seed := seedAgentIssueRunSkeleton(t, pool)
 	seedResidualMigrationRow(t, pool, seed, "agent_start_failed")
@@ -134,8 +134,8 @@ func TestMigration0055ResidualReclamationFreshAndConstraints(t *testing.T) {
 	}
 }
 
-func TestMigration0055ResidualReclamationUpgradePreservesHistory(t *testing.T) {
-	pool, _ := testSchema(t, "test_residual55u_")
+func TestMigration0057ResidualReclamationUpgradePreservesHistory(t *testing.T) {
+	pool, _ := testSchema(t, "test_residual57u_")
 	// Start after the mainline 0054 schema, including the 0052 settlement and 0053 clone retirement.
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, residualReclaimMigration))
 	seed := seedAgentIssueRunSkeleton(t, pool)
@@ -158,8 +158,8 @@ func TestMigration0055ResidualReclamationUpgradePreservesHistory(t *testing.T) {
 	}
 }
 
-func TestMigration0055ResidualReclamationReplayPreservesProgress(t *testing.T) {
-	pool, _ := testSchema(t, "test_residual55r_")
+func TestMigration0057ResidualReclamationReplayPreservesProgress(t *testing.T) {
+	pool, _ := testSchema(t, "test_residual57r_")
 	store := newStoreOnSchema(t, pool)
 	must(t, store.Migrate(context.Background()))
 	base := seedAgentIssueRunSkeleton(t, pool)
@@ -197,8 +197,8 @@ func TestMigration0055ResidualReclamationReplayPreservesProgress(t *testing.T) {
 	}
 }
 
-func TestMigration0055ResidualReclamationRejectsLegacyClearedRows(t *testing.T) {
-	pool, _ := testSchema(t, "test_residual55a2_")
+func TestMigration0057ResidualReclamationRejectsLegacyClearedRows(t *testing.T) {
+	pool, _ := testSchema(t, "test_residual57a2_")
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, residualReclaimMigration))
 	seed := seedAgentIssueRunSkeleton(t, pool)
 	seedResidualMigrationRow(t, pool, seed, "agent_start_failed")

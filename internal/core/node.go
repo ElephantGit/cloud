@@ -98,15 +98,17 @@ func ensuredNode(t *transaction, sid, nodeID string) {
 	require(e != nil && e.O("result").S("nodeId") == nodeID, 409, "node_identity_mismatch")
 }
 
-// nodeStatus records one connection report and refreshes the heartbeat. A disconnect closes
-// admission on a ready Workspace; any report also drops earlier idle evidence, which must be
-// given again for the admission epoch it applies to.
+// nodeStatus records one connection report and refreshes the heartbeat only while connected.
+// A disconnect closes admission on a ready Workspace; any report also drops earlier idle evidence,
+// which must be given again for the admission epoch it applies to.
 func nodeStatus(t *transaction, r *ControlRequest, n, w Object) {
 	version(n, r.Body.N("version"))
 	state := r.Body.S("connectionState")
 	require(state == "connected" || state == "disconnected", 400, "invalid_node_state")
 	require(!n.B("initialized") || r.Body.B("initialized"), 409, "initialization_regression")
-	t.exec("UPDATE node_instances SET connection_state=$2,initialized=$3,last_seen_at=clock_timestamp(),idle_admission_epoch=NULL,version=version+1 WHERE id=$1", n.S("id"), state, r.Body.B("initialized"))
+	// Keep the last confirmed reachable instant: repeated disconnect reports must not restart
+	// D5/D8's unreachable window, while a connected report naturally starts a new window.
+	t.exec("UPDATE node_instances SET connection_state=$2,initialized=$3,last_seen_at=CASE WHEN $2='connected' THEN clock_timestamp() ELSE last_seen_at END,idle_admission_epoch=NULL,version=version+1 WHERE id=$1", n.S("id"), state, r.Body.B("initialized"))
 	if state == "disconnected" {
 		closeUnavailable(t, w)
 	} else if r.Body.B("initialized") && w.S("desiredState") == "running" && w.S("observedState") == "unavailable" && w.S("baseCommitId") != "" {

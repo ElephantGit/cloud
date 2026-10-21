@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const controlledReclaimMigration = "0056_agent_run_controlled_reclamation.sql"
+const controlledReclaimMigration = "0058_agent_run_controlled_reclamation.sql"
 
 func insertControlledMigrationRoot(t *testing.T, pool *sql.DB, seed skeletonSeed, id, reclaim string) {
 	t.Helper()
@@ -106,9 +106,9 @@ func TestControlledResidualMigrationFreshAndConstraints(t *testing.T) {
 	wantPGError(t, err, "23503")
 }
 
-func TestControlledResidualMigrationUpgradePreserves0055HistoryAndDoesNotInventD8Ledger(t *testing.T) {
+func TestControlledResidualMigrationUpgradePreserves0057HistoryAndDoesNotInventD8Ledger(t *testing.T) {
 	pool, _ := testSchema(t, "test_controlled_upgrade_")
-	// Include the complete mainline schema through 0054 and the 0055 residual ledger before upgrading.
+	// Include the complete mainline schema through 0055 and the 0057 residual ledger before upgrading.
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, controlledReclaimMigration))
 	base := seedAgentIssueRunSkeleton(t, pool)
 	for _, state := range []string{"reconciling", "reclaiming", "cleared"} {
@@ -148,7 +148,7 @@ func TestControlledResidualMigrationUpgradePreserves0055HistoryAndDoesNotInventD
 	must(t, store.Migrate(context.Background()))
 	must(t, pool.QueryRow(snapshot).Scan(&after))
 	if before != after {
-		t.Fatal("controlled migration changed 0055 responsibility/state/clear time or historical business rows")
+		t.Fatal("controlled migration changed 0057 responsibility/state/clear time or historical business rows")
 	}
 	var empty bool
 	must(t, pool.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM agent_run_reclamation_intents)

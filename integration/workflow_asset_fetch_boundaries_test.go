@@ -39,6 +39,10 @@ const (
 // involved, so the server can never finish writing it after the client stops reading.
 const boundaryOversizePlanned int64 = 128 << 20
 
+// Scale all deadline brackets together: the same real transport stages must still fire,
+// and the next stage remains outside each earlier stage's upper bracket.
+const boundaryTimeScale = 20
+
 // testUpstreamIdentity is the CA and leaf the boundary server presents. The fetcher's
 // transport is constructed with the CA in its root pool, so the boundary tests verify
 // upstream TLS identity exactly as production does, without touching platform roots.
@@ -134,7 +138,7 @@ func (s *boundaryServer) url() string             { return "https://" + s.ln.Add
 func (s *boundaryServer) switchTo(m boundaryMode) { s.mode.Store(m) }
 
 // handle routes one accepted connection. The hold-tls mode holds the raw connection
-// without any TLS bytes, so the transport's 10-second connection deadline must cancel the
+// without any TLS bytes, so the transport's injected connection deadline must cancel the
 // fetch; every other mode completes the TLS handshake and serves real HTTP over it.
 func (s *boundaryServer) handle(conn net.Conn, mux *http.ServeMux) {
 	if s.mode.Load() == boundaryHoldTLS {
@@ -179,13 +183,13 @@ func (s *boundaryServer) serve(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(2 * time.Minute):
 		}
 	case boundaryDribble:
-		// Headers arrive immediately; the body trickles far slower than the 60-second
+		// Headers arrive immediately; the body trickles far slower than the injected
 		// whole-package deadline can consume, and never finishes inside it.
 		w.WriteHeader(http.StatusOK)
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(500 * time.Millisecond / boundaryTimeScale)
 		defer ticker.Stop()
 		for {
 			select {
@@ -228,27 +232,32 @@ func (s *boundaryServer) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // realAssetFetcher wires the fetcher over the production upstream transport, not the test
-// server's own client: the 10-second connection deadline, the 30-second response-header
-// deadline and the checked dialer all come from modelgateway exactly as cmd/server wires
-// them. The fixture-host exemption admits only 127.0.0.1, the public deployment policy keeps
+// server's own client. Only the deadlines are shortened; the checked dialer comes from
+// modelgateway exactly as cmd/server wires it. The fixture-host exemption admits only
+// 127.0.0.1, the public deployment policy keeps
 // every production gate on, and the injected root pool keeps TLS verification real.
 func realAssetFetcher(t *testing.T, identity testUpstreamIdentity) *workflowasset.Fetcher {
 	t.Helper()
 	policy, err := egress.Parse([]byte(`{"schemaVersion":1,"mode":"public"}`))
 	must(t, err)
-	client, err := modelgateway.NewUpstreamClientWithRoots(modelgateway.UpstreamConfig{
+	client, err := modelgateway.NewUpstreamClientWithTimeouts(modelgateway.UpstreamConfig{
 		DevelopmentHosts: []string{"127.0.0.1"},
 		DNS:              egress.DefaultDNSConfig(),
 		Policy:           policy,
-	}, identity.pool)
+	}, identity.pool, modelgateway.UpstreamTimeouts{
+		Connect:        10 * time.Second / boundaryTimeScale,
+		ResponseHeader: 30 * time.Second / boundaryTimeScale,
+	})
 	must(t, err)
 	t.Cleanup(client.CloseIdleConnections)
-	return workflowasset.NewFetcher(nil, client.Transport)
+	fetcher := workflowasset.NewFetcher(nil, client.Transport)
+	fetcher.Timeout = workflowasset.FetchTimeout / boundaryTimeScale
+	return fetcher
 }
 
 // TestWorkflowAssetImportCancelsSlowOrOversizePackages covers the fetch-boundary row of
 // specs test-cases/cloud/plugin-marketplace/workflow-plugin-assets.md: slow or oversized
-// packages are cancelled by the real transport at the approved 10/30/60-second deadlines
+// packages are cancelled by the real transport at proportionally shortened deadlines
 // and the 16 MiB streaming bound, the failure is package-level (no document rows, no
 // workflows), and the next administrator trigger retries the same URL and succeeds once
 // the publisher's storage is repaired. Each case runs through the production transport
@@ -264,9 +273,9 @@ func TestWorkflowAssetImportCancelsSlowOrOversizePackages(t *testing.T) {
 		// distinguishes this deadline from the next-larger one.
 		min, max time.Duration
 	}{
-		{"connection never established within ten seconds", boundaryHoldTLS, workflowasset.FailureUnavailable, 10 * time.Second, 30 * time.Second},
-		{"response headers never arrive within thirty seconds", boundaryNoHeaders, workflowasset.FailureUnavailable, 30 * time.Second, 50 * time.Second},
-		{"whole package never completes within sixty seconds", boundaryDribble, workflowasset.FailureUnavailable, 60 * time.Second, 80 * time.Second},
+		{"connection never established before its deadline", boundaryHoldTLS, workflowasset.FailureUnavailable, 10 * time.Second / boundaryTimeScale, 30 * time.Second / boundaryTimeScale},
+		{"response headers never arrive before their deadline", boundaryNoHeaders, workflowasset.FailureUnavailable, 30 * time.Second / boundaryTimeScale, 50 * time.Second / boundaryTimeScale},
+		{"whole package never completes before its deadline", boundaryDribble, workflowasset.FailureUnavailable, 60 * time.Second / boundaryTimeScale, 80 * time.Second / boundaryTimeScale},
 		{"streamed package interrupted past the sixteen MiB bound", boundaryOversize, workflowasset.FailureTooLarge, 0, 0},
 	}
 	for _, c := range cases {
@@ -284,7 +293,12 @@ func TestWorkflowAssetImportCancelsSlowOrOversizePackages(t *testing.T) {
 			server := newBoundaryServer(t, identity, good, c.mode)
 			publishWorkflowRelease(t, repo, "slow-kit", "1.0.0", server.url(), good)
 			f.syncMarketplace(t, repo)
-			f.store.WorkflowAssets = realAssetFetcher(t, identity)
+			fetcher := realAssetFetcher(t, identity)
+			if c.mode == boundaryOversize {
+				// This case tests the byte bound, independently of machine throughput.
+				fetcher.Timeout = workflowasset.FetchTimeout
+			}
+			f.store.WorkflowAssets = fetcher
 
 			sid := f.defaultSpaceID()
 			f.installWorkflowPlugin(t, sid, "official/slow-kit", "")

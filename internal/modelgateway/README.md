@@ -73,6 +73,8 @@ Anthropic 合并 `message_start` 与累计 `message_delta`。
 fixture 主机使用系统 DNS，且不能与企业模式同时开启。`2001:2::/48` 和 `198.18.0.0/15` 均拒绝。详见
 [部署方共享出网配置](../../docs/operations/deployment-egress.md)。
 
+`NewUpstreamClientWithTimeouts` 接受 `UpstreamTimeouts`，可在构造时注入 `Connect` 与 `ResponseHeader` 时限；非正字段分别保留 TCP/TLS 各 10 秒、响应头 30 秒的生产默认值。原构造函数保持默认值；工作流资产边界测试只缩短等待，不替换安全 transport。
+
 原始 Key 仅在本服务内存中存在，密文写入前随机产生 nonce；Node 的临时令牌只保存摘要。
 备份必须同时包含数据库和加密主密钥卷。启动时不匹配已有密文就失败，不重置历史记录。
 

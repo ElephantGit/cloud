@@ -35,6 +35,21 @@ in [`integration/`](../../integration/README.en.md).
   fail outright when no database is configured. Running `go test ./...` directly without a database skips the tests that need
   one explicitly, and a pass in that mode does not count as full verification.
 
+### Cleaning up leftover test databases
+
+A killed test process may leave its template and copies behind. **Run this only when no tests are running**, against the local test PostgreSQL selected by `TEST_DATABASE_URL`: list leftovers first, then drop them. These commands match only the complete names used by `integration/fixture_template_test.go` and its callers: one of the listed prefixes followed by a 32-character lowercase hexadecimal UUID. Other names and legacy test schemas are excluded. Use the test role that created the databases (or an administrator with permission to drop them), connected to the base test database, not a copy being dropped. `WITH (FORCE)` disconnects sessions in matching databases.
+
+```sh
+psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
+SELECT datname FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname;
+SQL
+
+psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
+SELECT format('DROP DATABASE %I WITH (FORCE);', datname) FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname
+\gexec
+SQL
+```
+
 ## S3
 
 `task test:revision` sets `REQUIRE_S3=1` and requires a real S3-compatible store:

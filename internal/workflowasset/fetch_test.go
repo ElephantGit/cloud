@@ -5,14 +5,60 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/wanglongan587/cloud/internal/objectstore"
 )
+
+type deadlineTransport struct {
+	want time.Duration
+	ctx  context.Context
+	t    *testing.T
+}
+
+func (d *deadlineTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	d.ctx = r.Context()
+	deadline, ok := d.ctx.Deadline()
+	remaining := time.Until(deadline)
+	if !ok || remaining < d.want/2 || remaining > d.want {
+		d.t.Fatalf("download deadline = %s (present %v), want within %s", remaining, ok, d.want)
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("package bytes"))}, nil
+}
+
+func TestFetchDeadlineConfiguration(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		timeout, want time.Duration
+	}{
+		{"production default", FetchTimeout, 60 * time.Second},
+		{"zero retains bound", 0, 60 * time.Second},
+		{"negative retains bound", -time.Second, 60 * time.Second},
+		{"injected limit", time.Second, time.Second},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			transport := &deadlineTransport{want: c.want, t: t}
+			fetcher := NewFetcher(nil, transport)
+			if fetcher.Timeout != FetchTimeout {
+				t.Fatalf("constructor timeout = %s, want %s", fetcher.Timeout, FetchTimeout)
+			}
+			fetcher.Timeout = c.timeout
+			data, err := fetcher.Fetch(t.Context(), "https://example.invalid/p.orax", sha256Hex([]byte("package bytes")))
+			if err != nil || string(data) != "package bytes" {
+				t.Fatalf("fetch before deadline = %q, %v", data, err)
+			}
+			if !errors.Is(transport.ctx.Err(), context.Canceled) {
+				t.Fatal("successful fetch did not release its deadline context")
+			}
+		})
+	}
+}
 
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)

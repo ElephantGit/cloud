@@ -86,6 +86,8 @@ TLS verifies the original model hostname. Only exact deployment-owned developmen
 system DNS, and that exemption cannot be combined with enterprise mode. Both `2001:2::/48` and
 `198.18.0.0/15` are denied. See [Shared deployment egress](../../docs/operations/deployment-egress.en.md).
 
+`NewUpstreamClientWithTimeouts` accepts `UpstreamTimeouts` to inject construction-time `Connect` and `ResponseHeader` limits; nonpositive fields retain the production defaults of ten seconds each for TCP/TLS and thirty seconds for headers. The original constructors keep those defaults. Workflow asset boundary tests shorten waits without replacing the secure transport.
+
 Raw keys stay in this service's memory. Ciphertext uses fresh nonces; runtime tokens persist only as
 digests. Backups need the database and master-key volume. Startup refuses a key that cannot open
 existing records rather than resetting previous encryption identities.

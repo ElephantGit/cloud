@@ -393,6 +393,75 @@ func TestWorkflowConfirmDeclaredPromptStaysAVariable(t *testing.T) {
 	}
 }
 
+// TestWorkflowConfirmReadsTheKickoffFromTheChosenVersion pins which document decides whether the
+// submitted prompt is the kickoff: the version the run executes, not the live draft. A confirm
+// renders the form, validates the submission and projects the execution input against the selected
+// version, so the live draft — the ordinary "edited after the last publish, not yet published"
+// state — must not decide what the user's answer means. The two directions fail differently: a draft
+// that newly declares `prompt` would silently drop the kickoff the user wrote, and a version that owns
+// `prompt` while the draft has since dropped it would turn an author variable into a kickoff.
+func TestWorkflowConfirmReadsTheKickoffFromTheChosenVersion(t *testing.T) {
+	f := setup(t)
+	// graphWithOutput is startPromptGraph plus a draining output node: the run has to complete before
+	// the Start node's output, where the variable pool's kickoff resolution lands, can be read.
+	graphWithOutput := func(variables []any) core.Object {
+		graph := startPromptGraph(variables, "authored prompt")
+		graph["nodes"] = append(graph["nodes"].([]any), core.Object{
+			"id": "output-1", "type": "workflow", "position": core.Object{"x": 300, "y": 0},
+			"data": core.Object{"kind": "output", "title": "Done"},
+		})
+		graph["edges"] = []any{core.Object{"id": "output-edge", "source": "start-1", "target": "output-1"}}
+		return graph
+	}
+	// draftAndConfirm publishes `published`, overwrites the live document with `draft` without
+	// publishing it, then confirms the published version and returns its finished run.
+	draftAndConfirm := func(t *testing.T, published, draft, values core.Object, key string) core.Object {
+		t.Helper()
+		wid := f.call("POST", f.path("/workflows"), core.Object{"name": "Diverging kickoff " + key, "graph": published}, key+"-workflow", 200).O("resource").S("id")
+		version := publishWorkflow(t, f, wid, key+"-publish")
+		live := f.call("GET", f.path("/workflows/"+wid), nil, "", 200)
+		f.call("PUT", f.path("/workflows/"+wid), core.Object{"graph": draft, "version": live.N("version")}, "", 200)
+		iid := launchIssue(t, f, runProject(t, f, key+"-project"), "Diverging kickoff", key+"-issue").S("id")
+		interaction := workflowComment(t, f, wid, iid, key+"-comment", "run this workflow")
+		values["snapshotId"] = version.S("id")
+		confirmed := f.call("POST", confirmPath(f, iid, interaction.S("id")), core.Object{"values": values}, key+"-confirm", 200).O("resource")
+		for range 2 {
+			must(t, f.store.AdvanceWorkflowRunsOnce(t.Context()))
+		}
+		run := f.call("GET", f.path("/workflows/"+wid+"/runs/"+confirmed.S("workflowInvocationRef")), nil, "", 200)
+		if run.S("status") != "succeeded" {
+			t.Fatalf("%s: confirmed run did not complete: %v", key, run)
+		}
+		return run
+	}
+
+	// The draft gained `prompt` as an author variable after version 1 was published. Version 1 still
+	// shows the platform's prompt field, so the edit the user confirmed is version 1's kickoff.
+	run := draftAndConfirm(t, graphWithOutput(nil), graphWithOutput([]any{invocationVariable("prompt")}), core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "prompt": "review the diff",
+	}, "inv-version-kickoff")
+	if run.O("input").S("input") != "review the diff" {
+		t.Fatalf("the draft's own prompt declaration dropped version 1's kickoff: %v", run.O("input"))
+	}
+	if got := run.O("nodeStates").O("start-1").O("output").S("input"); got != "review the diff" {
+		t.Fatalf("start output input = %q; want the prompt the user confirmed against version 1", got)
+	}
+
+	// The mirror: version 1 owns `prompt` as its variable and the draft no longer declares it. The form
+	// the user answered asked for an author field, so the answer is that variable's — version 1 runs
+	// with the authored kickoff, not with the parameter.
+	run = draftAndConfirm(t, graphWithOutput([]any{invocationVariable("prompt")}), graphWithOutput(nil), core.Object{
+		"repository": "ora-space/cloud", "branch": "main", "prompt": "the author's own parameter",
+	}, "inv-version-declared")
+	if _, ok := run.O("input")["input"]; ok {
+		t.Fatalf("version 1's author variable became the kickoff: %v", run.O("input"))
+	}
+	output := run.O("nodeStates").O("start-1").O("output")
+	if output.S("prompt") != "the author's own parameter" || output.S("input") != "authored prompt" {
+		t.Fatalf("version 1's declared prompt did not stay a variable: %v", output)
+	}
+}
+
 // confirmInvocationScene crosses the public comment/form boundary. Unlike the fixture's direct
 // workflow-run POST, Confirm leaves execution pending for the real scheduler used by these tests.
 func confirmInvocationScene(t *testing.T, f *fixture, graph core.Object, key string) (wid, iid string, confirmed core.Object) {

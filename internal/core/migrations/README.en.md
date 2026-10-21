@@ -70,6 +70,8 @@ stores deployment-controlled intents, dependent data-deletion intents, per-targe
 | [0055_agent_run_residual_reclamation.sql](0055_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 | [0056_agent_run_controlled_reclamation.sql](0056_agent_run_controlled_reclamation.sql) | Deployment-controlled reclamation intents, dependent data deletion and per-target termination |
 
+0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
+
 ## Immutability and upgrades
 
 - Never edit or rename applied SQL; corrections use new forward migrations. Repeated application skips applied files with matching checksums.

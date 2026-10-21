@@ -26,7 +26,11 @@ function run(id: string, agent: string, status: string, at: string): IssueRun {
   }
 }
 
-function mockConversation(runs: IssueRun[], messages: TaskConversationMessage[]) {
+function mockConversation(
+  runs: IssueRun[],
+  messages: TaskConversationMessage[],
+  permissions: { canEnd?: boolean; initiatorUserId?: string } = {},
+) {
   server.use(
     http.get(RUNS, () => HttpResponse.json({ items: runs, nextCursor: '' })),
     http.get(CONVERSATION, () =>
@@ -34,6 +38,7 @@ function mockConversation(runs: IssueRun[], messages: TaskConversationMessage[])
         items: messages,
         nextCursor: messages.at(-1)?.seq ?? null,
         prevCursor: messages[0]?.seq ?? null,
+        activeRunId: runs.find((candidate) => candidate.status === 'running')?.id ?? null,
       }),
     ),
     http.get('/api/v1/tenants/t1/issues/i1/timeline', () =>
@@ -62,8 +67,8 @@ function mockConversation(runs: IssueRun[], messages: TaskConversationMessage[])
             : 'ended',
         idleSince: null,
         canAppend: true,
-        canEnd: true,
-        initiatorUserId: 'u1',
+        canEnd: permissions.canEnd ?? true,
+        initiatorUserId: permissions.initiatorUserId ?? 'u1',
         model: null,
         nextCursor: 1,
         prevCursor: 1,
@@ -72,7 +77,7 @@ function mockConversation(runs: IssueRun[], messages: TaskConversationMessage[])
   )
 }
 
-function renderConversation(runs: IssueRun[]) {
+function renderConversation(runs: IssueRun[], currentUserId = 'u1') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onLatest = vi.fn<() => void>()
   render(
@@ -83,7 +88,7 @@ function renderConversation(runs: IssueRun[]) {
         runs={runs}
         members={[]}
         targets={[makeAgentTarget('a1', 'OpenCode'), makeAgentTarget('a2', 'Claude')]}
-        currentUserId="u1"
+        currentUserId={currentUserId}
         onLatest={onLatest}
       />
     </QueryClientProvider>,
@@ -92,6 +97,65 @@ function renderConversation(runs: IssueRun[]) {
 }
 
 describe('TaskConversationPanel', () => {
+  it('ends the active Thread from the task page without stopping or pausing the queue', async () => {
+    const runs = [
+      run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z'),
+      run('r-next', 'a2', 'queued', '2026-10-18T02:00:00Z'),
+    ]
+    mockConversation(runs, [])
+    const ends: { key: string | null; body: unknown }[] = []
+    let stops = 0
+    server.use(
+      http.post(`${RUNS}/r-live/thread/end`, async ({ request }) => {
+        ends.push({ key: request.headers.get('Idempotency-Key'), body: await request.json() })
+        return HttpResponse.json({ threadState: 'ending' }, { status: 202 })
+      }),
+      http.post(`${CONVERSATION}/stop`, () => {
+        stops++
+        return HttpResponse.json({ runId: 'r-live', state: 'stopping' }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderConversation(runs)
+    await user.click(await screen.findByRole('button', { name: '结束会话' }))
+    expect(ends).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: '确认结束' }))
+    await waitFor(() => expect(ends).toHaveLength(1))
+    expect(ends[0]).toEqual({ key: expect.any(String), body: {} })
+    expect(stops).toBe(0)
+    expect(screen.queryByText(/后续消息已暂停/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('任务对话输入')).toBeInTheDocument()
+  })
+
+  it('keeps the active session end action visible beyond the five most recent queued runs', async () => {
+    const runs = [
+      run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z'),
+      ...Array.from({ length: 6 }, (_, index) =>
+        run(`r-queued-${index}`, 'a2', 'queued', `2026-10-18T02:0${index}:00Z`),
+      ),
+    ]
+    mockConversation(runs, [])
+    renderConversation(runs)
+    expect(await screen.findByText('Task r-live')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '结束会话' })).toBeInTheDocument()
+  })
+
+  it('hides task ending from anyone without the initiator and server permissions', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [], { canEnd: false })
+    renderConversation(runs)
+    await screen.findByText('Answer r-live')
+    expect(screen.queryByRole('button', { name: '结束会话' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer task ending to a non-initiator even if Thread admin permission allows it', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [], { canEnd: true })
+    renderConversation(runs, 'admin-other-than-initiator')
+    await screen.findByText('Answer r-live')
+    expect(screen.queryByRole('button', { name: '结束会话' })).not.toBeInTheDocument()
+  })
+
   it('shows personal-model gaps before sending while leaving plain comments available', async () => {
     const runs = [run('r-old', 'a1', 'completed', '2026-10-18T01:00:00Z')]
     mockConversation(runs, [])

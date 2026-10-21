@@ -88,7 +88,10 @@ func (s *Store) endIdleAgentThread(ctx context.Context, runID string) error {
 			  AND thread_state = 'idle'
 			  AND idle_since IS NOT NULL
 			  AND cancel_requested_at IS NULL
-			  AND idle_since < now() - make_interval(secs => $2)`, runID, s.ThreadIdleTimeout.Seconds())
+			  AND (
+				EXISTS(SELECT 1 FROM scheduled_task_occurrences o WHERE o.run_id=issue_runs.id)
+				OR idle_since < now() - make_interval(secs => $2)
+			  )`, runID, s.ThreadIdleTimeout.Seconds())
 		if o == nil {
 			return Object{}
 		}
@@ -113,7 +116,10 @@ func (s *Store) scanEndableIdleThreads(ctx context.Context, limit int) ([]string
 		  AND thread_state = 'idle'
 		  AND idle_since IS NOT NULL
 		  AND cancel_requested_at IS NULL
-		  AND idle_since < now() - make_interval(secs => $2)
+		  AND (
+			EXISTS(SELECT 1 FROM scheduled_task_occurrences o WHERE o.run_id=issue_runs.id)
+			OR idle_since < now() - make_interval(secs => $2)
+		  )
 		ORDER BY idle_since, id
 		LIMIT $1`, limit, s.ThreadIdleTimeout.Seconds())
 	if err != nil {
@@ -136,16 +142,12 @@ func (s *Store) scanEndableIdleThreads(ctx context.Context, limit int) ([]string
 // by the caller. Per-run failures are deliberately not surfaced — endIdleAgentThread already rolls
 // back and leaves the run idle for a later tick, and the loop must not flood logs because one run is
 // transiently stuck. Only a scan-level failure cancels the pass.
-//
-// A window that was never configured is a no-op, not a zero-length window: `idle_since < now()`
-// would declare every idle Thread expired the instant it went idle, shutting down live sessions.
-// Failing closed means ending nothing.
+// A window that was never configured still leaves ordinary Threads alone. Scheduled occurrences
+// are the sole approved exception: after their first successful turn they enter `idle` and must
+// release EndSession{idle_timeout} immediately, independent of the deployment idle window.
 func (s *Store) EndIdleAgentThreadsOnce(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
-	}
-	if s.ThreadIdleTimeout <= 0 {
-		return nil
 	}
 	ids, err := s.scanEndableIdleThreads(ctx, agentThreadEndBatchSize)
 	if err != nil {

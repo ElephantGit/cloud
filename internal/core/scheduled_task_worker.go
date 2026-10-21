@@ -17,6 +17,33 @@ const (
 	scheduledTaskEvalBatchSize = 100
 )
 
+type scheduledTaskPageEntry struct {
+	id        string
+	updatedAt time.Time
+}
+
+// scanEnabledScheduledTaskPage owns one short rows lifetime. Keeping Close in this helper makes
+// every error path close the cursor before the next page or transaction begins.
+func (s *Store) scanEnabledScheduledTaskPage(ctx context.Context, cursorAt *time.Time, cursorID *string) ([]scheduledTaskPageEntry, error) {
+	rows, err := s.Pool.QueryContext(ctx, `SELECT id, updated_at FROM scheduled_tasks
+		WHERE enabled AND deleted_at IS NULL
+		  AND ($1::timestamptz IS NULL OR (updated_at, id) > ($1, $2::uuid))
+		ORDER BY updated_at, id LIMIT $3`, cursorAt, cursorID, scheduledTaskEvalBatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var page []scheduledTaskPageEntry
+	for rows.Next() {
+		var entry scheduledTaskPageEntry
+		if err := rows.Scan(&entry.id, &entry.updatedAt); err != nil {
+			return nil, err
+		}
+		page = append(page, entry)
+	}
+	return page, rows.Err()
+}
+
 // EvaluateScheduledTasksOnce 是一个完整的到期评估 pass：自动停用失效任务、为每个到期任务求值
 // 最新到期点并幂等接纳。由 cmd/server 的 RunSyncLoop 驱动；返回的错误由 RunSyncLoop 记录，
 // 循环本身不停止。
@@ -24,34 +51,20 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// The accepted domain implementation stays dormant until its end-to-end acceptance is
+	// explicitly enabled by deployment configuration. This is the worker half of the same gate the
+	// public save/enable endpoints enforce; otherwise an old enabled row could still be admitted
+	// while the Web surface is intentionally unavailable.
+	if !s.ScheduledTaskAcceptanceEnabled {
+		return nil
+	}
 	var cursorAt *time.Time
 	var cursorID *string
 	for {
-		rows, err := s.Pool.QueryContext(ctx, `SELECT id, updated_at FROM scheduled_tasks
-			WHERE enabled AND deleted_at IS NULL
-			  AND ($1::timestamptz IS NULL OR (updated_at, id) > ($1, $2::uuid))
-			ORDER BY updated_at, id LIMIT $3`, cursorAt, cursorID, scheduledTaskEvalBatchSize)
+		page, err := s.scanEnabledScheduledTaskPage(ctx, cursorAt, cursorID)
 		if err != nil {
 			return err
 		}
-		type taskPageEntry struct {
-			id        string
-			updatedAt time.Time
-		}
-		var page []taskPageEntry
-		for rows.Next() {
-			var entry taskPageEntry
-			if err := rows.Scan(&entry.id, &entry.updatedAt); err != nil {
-				rows.Close()
-				return err
-			}
-			page = append(page, entry)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
 		if len(page) == 0 {
 			break
 		}

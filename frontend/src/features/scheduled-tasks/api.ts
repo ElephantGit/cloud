@@ -170,6 +170,7 @@ const FAULT_MESSAGES: Record<string, string> = {
   target_unavailable: '目标智能体或创建者资格当前不可用',
   model_unavailable: '请先为创建者配置可用的模型连接',
   approval_policy_invalid: '无人值守授权已失效，请重新确认',
+  scheduled_task_acceptance_pending: '定时任务正在进行端到端验收，暂不可保存或启用',
   version_conflict: '任务已在别处修改，请刷新后重试',
 }
 

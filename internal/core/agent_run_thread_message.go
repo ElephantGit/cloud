@@ -131,6 +131,12 @@ func appendThreadMessage(t *transaction, s *Store, r *PublicRequest, uid string,
 	// outside that scope must not be distinguishable from one that does not exist.
 	run := t.one(`SELECT * FROM issue_runs WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND deleted_at IS NULL`, r.RunID, r.TenantID, i.S("id"))
 	require(run != nil && run.S("executorType") == "agent", 404, "not_found")
+	// Scheduled occurrences are one-shot headless sessions. They can never take a user turn,
+	// including while their Thread still happens to be pending/active/idle, so the public result is
+	// the same closed-Thread response as an already-ending session.
+	if scheduledTaskRun(t, run.S("id")) {
+		reject(409, "thread_closed")
+	}
 	if binding := t.one("SELECT user_id,connection_id,revoked_at FROM run_model_bindings WHERE run_id=$1", run.S("id")); binding != nil {
 		require(binding.S("userId") == uid, 403, "model_run_initiator_required")
 		require(binding["revokedAt"] == nil, 409, "model_connection_unavailable")

@@ -12,8 +12,11 @@ import {
   useSetScheduledTaskEnabled,
   type ScheduledTask,
 } from './api'
-import { ScheduledTaskForm } from './scheduled-task-form'
 import { ScheduledTaskHistory } from './scheduled-task-history'
+
+// The backend is deliberately closed until the real end-to-end acceptance is complete. Keep the
+// Web surface closed as well so a user never sees an action that Cloud must reject.
+const scheduledTaskAcceptanceEnabled = false
 
 function ConfirmButton({
   label,
@@ -45,12 +48,10 @@ function ConfirmButton({
 function ScheduledTaskCard({
   tid,
   task,
-  onEdit,
   onHistory,
 }: {
   tid: string
   task: ScheduledTask
-  onEdit: () => void
   onHistory: () => void
 }) {
   const remove = useDeleteScheduledTask(tid)
@@ -76,14 +77,13 @@ function ScheduledTaskCard({
         <span className="text-muted-foreground">启用</span>
         <Switch
           checked={task.enabled}
-          disabled={toggle.isPending}
-          onCheckedChange={(next) => toggle.mutate(next)}
+          disabled={toggle.isPending || !task.enabled}
+          onCheckedChange={(next) => {
+            if (!next) toggle.mutate(false)
+          }}
         />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onEdit}>
-          编辑
-        </Button>
         <Button type="button" size="sm" variant="outline" onClick={onHistory}>
           历史
         </Button>
@@ -113,12 +113,7 @@ function ScheduledTaskCard({
 
 export function ScheduledTasksPage({ slug }: { slug: string }) {
   const tasks = useScheduledTasks(slug)
-  const [editor, setEditor] = useState<{ kind: 'new' } | { kind: 'existing'; id: string } | null>(
-    null,
-  )
   const [historyId, setHistoryId] = useState<string | null>(null)
-  const editing =
-    editor?.kind === 'existing' ? tasks.data?.tasks.find((t) => t.id === editor.id) : undefined
   const historyTask = historyId ? tasks.data?.tasks.find((t) => t.id === historyId) : undefined
 
   return (
@@ -130,9 +125,9 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
             到达计划时刻时在绑定 issue 上自动发起一次无人值守运行。
           </p>
         </div>
-        <Button type="button" onClick={() => setEditor({ kind: 'new' })}>
-          新建定时任务
-        </Button>
+        {scheduledTaskAcceptanceEnabled && (
+          <Button type="button">新建定时任务</Button>
+        )}
       </div>
 
       {tasks.isError && (
@@ -143,15 +138,6 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
       {tasks.isPending && <Skeleton className="h-24 w-full" />}
       {tasks.data && tasks.data.tasks.length === 0 && (
         <p className="text-sm text-muted-foreground">还没有定时任务</p>
-      )}
-
-      {editor !== null && (
-        <ScheduledTaskForm
-          key={editing ? `${editing.id}:${editing.version}` : 'new'}
-          tid={slug}
-          task={editing}
-          onClose={() => setEditor(null)}
-        />
       )}
 
       {historyTask && (
@@ -168,7 +154,6 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
           key={task.id}
           tid={slug}
           task={task}
-          onEdit={() => setEditor({ kind: 'existing', id: task.id })}
           onHistory={() => setHistoryId(task.id)}
         />
       ))}

@@ -25,6 +25,13 @@ const scheduledTaskDeadline = 60 * time.Minute
 // 调用。策略名与同意时间随任务持久化；撤销同意自动停用任务。
 const unattendedPolicyCloud = "full_auto_in_cloud_workspace"
 
+// scheduledTaskRun identifies a run created by the scheduled-task admission ledger. The ledger is
+// the authoritative origin fact: IssueRun input and activities are intentionally not repurposed as
+// lifecycle flags. A scheduled run is a one-shot headless session, so it never accepts a user turn.
+func scheduledTaskRun(t *transaction, runID string) bool {
+	return t.one("SELECT 1 FROM scheduled_task_occurrences WHERE run_id=$1", runID) != nil
+}
+
 // scheduledTaskSchedule 是三种受限周期之一的解析结果（ADR D1：不存储或解释 cron 字符串）。
 type scheduledTaskSchedule struct {
 	Kind          string

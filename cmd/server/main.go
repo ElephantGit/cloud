@@ -220,6 +220,7 @@ func run() (runErr error) {
 		const scheduledTaskLoopInterval = 10 * time.Second
 		const scheduledTaskDeadlineLoopInterval = time.Minute
 		store.ThreadIdleTimeout = cfg.IssueRuns.ThreadIdleTimeout
+		store.ScheduledTaskAcceptanceEnabled = cfg.IssueRuns.ScheduledTaskAcceptanceEnabled
 		syncGroup.Add(1)
 		go func() {
 			defer syncGroup.Done()

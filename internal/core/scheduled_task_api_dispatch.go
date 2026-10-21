@@ -8,12 +8,14 @@ import "strings"
 
 // scheduledTaskPublic dispatches one management write to its store method. The methods themselves
 // own the authorization (creator-only) and the eligibility table (D5).
-func scheduledTaskPublic(t *transaction, r *PublicRequest, uid string) Object {
+func scheduledTaskPublic(t *transaction, s *Store, r *PublicRequest, uid string) Object {
 	switch {
 	case strings.HasSuffix(r.Path, "/scheduled-tasks") && r.Method == "POST":
+		require(s.ScheduledTaskAcceptanceEnabled, 409, "scheduled_task_acceptance_pending")
 		return scheduledTaskCreate(t, r, uid)
 	case r.ScheduledTaskID != "" && strings.HasSuffix(r.Path, "/enable"):
 		require(r.Method == "POST", 404, "not_found")
+		require(s.ScheduledTaskAcceptanceEnabled, 409, "scheduled_task_acceptance_pending")
 		return scheduledTaskEnable(t, r, uid)
 	case r.ScheduledTaskID != "" && strings.HasSuffix(r.Path, "/disable"):
 		require(r.Method == "POST", 404, "not_found")
@@ -22,6 +24,7 @@ func scheduledTaskPublic(t *transaction, r *PublicRequest, uid string) Object {
 		require(r.Method == "POST", 404, "not_found")
 		return scheduledTaskRevokeConsent(t, r, uid)
 	case r.ScheduledTaskID != "" && r.Method == "PATCH":
+		require(s.ScheduledTaskAcceptanceEnabled, 409, "scheduled_task_acceptance_pending")
 		return scheduledTaskUpdate(t, r, uid)
 	case r.ScheduledTaskID != "" && r.Method == "DELETE":
 		return scheduledTaskDelete(t, r, uid)

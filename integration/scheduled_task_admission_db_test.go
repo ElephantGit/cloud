@@ -52,6 +52,7 @@ func scheduledTaskStore(t *testing.T) (*core.Store, skeletonSeed, string) {
 	t.Helper()
 	pool, _ := testSchema(t, "test_scheduled_")
 	store := newStoreOnSchema(t, pool)
+	store.ScheduledTaskAcceptanceEnabled = true
 	must(t, store.Migrate(context.Background()))
 	s := seedAgentIssueRunSkeleton(t, pool)
 	_, err := pool.Exec(`UPDATE issues SET project_ref=$1 WHERE id=$2`, s.projectID, s.issueID)
@@ -166,6 +167,51 @@ func TestScheduledTaskUpdateAppliesPatch(t *testing.T) {
 	must(t, store.Pool.QueryRow(`SELECT version FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&version))
 	if version != 2 {
 		t.Fatalf("rename must bump version, got %d", version)
+	}
+}
+
+// TestScheduledTaskWritesRequireAcceptance keeps the rollout gate at the actual public boundary:
+// before end-to-end acceptance, no caller can save a new definition or enable an existing one even
+// if it bypasses the Web route. The worker carries the matching gate separately.
+func TestScheduledTaskWritesRequireAcceptance(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	store.ScheduledTaskAcceptanceEnabled = false
+	caller := scheduledTaskCaller(t, store, s.tenantID)
+	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
+
+	_, _, err := store.Public(context.Background(), &core.PublicRequest{
+		Method:    "POST",
+		Key:       "scheduled-gated-create",
+		Path:      path,
+		TenantID:  s.tenantID,
+		Identity:  caller,
+		Body: core.Object{
+			"issueId":  s.issueID,
+			"agentId":  agentID,
+			"name":     "Gated create",
+			"prompt":   "Sync",
+			"schedule": core.Object{"kind": "daily", "hour": 9, "minute": 0},
+			"timezone": "UTC",
+			"approval": core.Object{"policy": "full_auto_in_cloud_workspace"},
+			"enabled":  false,
+		},
+	})
+	if fault := core.ErrorCode(err); fault.Code != "scheduled_task_acceptance_pending" || fault.Status != 409 {
+		t.Fatalf("create must be gated before acceptance, got %v", err)
+	}
+
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Gated enable", 65)
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
+		Method:          "POST",
+		Key:             "scheduled-gated-enable",
+		Path:            path + "/" + taskID + "/enable",
+		TenantID:        s.tenantID,
+		ScheduledTaskID: taskID,
+		Identity:        caller,
+		Body:            core.Object{},
+	})
+	if fault := core.ErrorCode(err); fault.Code != "scheduled_task_acceptance_pending" || fault.Status != 409 {
+		t.Fatalf("enable must be gated before acceptance, got %v", err)
 	}
 }
 

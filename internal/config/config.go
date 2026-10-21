@@ -60,6 +60,10 @@ type IssueRunsConfig struct {
 	// clock decides that a Thread is idle. Zero or negative selects the approved default (15 minutes)
 	// rather than a zero-length window that would end every Thread the moment it went idle.
 	ThreadIdleTimeout time.Duration `mapstructure:"thread_idle_timeout"`
+	// ScheduledTaskAcceptanceEnabled remains false until the scheduled-task end-to-end acceptance
+	// is complete. It is deliberately opt-in: setting the deployment flag is the release action
+	// that permits Cloud to save, enable and execute these unattended tasks.
+	ScheduledTaskAcceptanceEnabled bool `mapstructure:"scheduled_task_acceptance_enabled"`
 
 	// DeliveryGiveUpAfter is IssueRun D5's continuous-delivery-failure window: how long a Revision
 	// delivery may keep failing before Cloud abandons it and releases the run's Workspace. It is the

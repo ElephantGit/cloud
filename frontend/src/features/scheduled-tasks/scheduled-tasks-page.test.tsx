@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -74,35 +74,11 @@ describe('ScheduledTasksPage', () => {
     expect(second).toHaveTextContent('已启用')
   })
 
-  it('creates a task by posting the draft with the consent policy', async () => {
+  it('hides creation until the end-to-end acceptance gate is opened', async () => {
     serve()
-    let body: unknown
-    server.use(
-      http.post(LIST, async ({ request }) => {
-        body = await request.json()
-        return HttpResponse.json({ resource: task() })
-      }),
-    )
-    const user = userEvent.setup()
     renderPage()
-    await user.click(await screen.findByRole('button', { name: '新建定时任务' }))
-    await user.type(screen.getByLabelText('名称'), '每日同步')
-    await user.type(screen.getByLabelText('提示词'), '同步仓库')
-    await user.selectOptions(screen.getByLabelText('绑定 issue'), 'i1')
-    await user.selectOptions(screen.getByLabelText('执行智能体'), 'a1')
-    await user.click(screen.getByRole('button', { name: '创建' }))
-    await waitFor(() =>
-      expect(body).toMatchObject({
-        name: '每日同步',
-        prompt: '同步仓库',
-        issueId: 'i1',
-        agentId: 'a1',
-        schedule: { kind: 'daily', hour: 9, minute: 0 },
-        timezone: 'Asia/Shanghai',
-        approval: { policy: 'full_auto_in_cloud_workspace' },
-        enabled: false,
-      }),
-    )
+	await screen.findByText('还没有定时任务')
+	expect(screen.queryByRole('button', { name: '新建定时任务' })).not.toBeInTheDocument()
   })
 
   it('deletes a task only after confirmation', async () => {

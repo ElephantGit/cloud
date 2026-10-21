@@ -10,7 +10,8 @@ import zlib
 
 
 SHARDS = 4
-TEST_NAME = re.compile(r"(?:Test\w+|Example\w*|Fuzz\w+)\Z")
+# Go also accepts the bare identifiers Test, Example and Fuzz.
+TEST_NAME = re.compile(r"(?:Test|Example|Fuzz)\w*\Z")
 
 
 def require(condition, message):

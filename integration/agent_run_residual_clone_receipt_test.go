@@ -199,6 +199,18 @@ func cloneReceiptResidualScene(t *testing.T) (*fixture, *grpcController, string,
 
 func cloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string, *controlpb.Operation, *controlpb.TakeOverNodeEventRequest) {
 	t.Helper()
+	f, c, run, workspace, op, original := dispatchedCloneReceiptScene(t)
+	taken, err := f.executions.TakeOverNodeEvent(c.ctx, original)
+	must(t, err)
+	if taken.GetRecord().GetExecutionId() != original.GetExecutionId() || !proto.Equal(taken.GetRecord().GetResult(), original.GetResult()) {
+		t.Fatalf("initial clone takeover did not preserve its original result: %v", taken)
+	}
+	return f, c, run, workspace, op, original
+}
+
+// dispatchedCloneReceiptScene leaves the original dispatch pending so tests can order its result and defer independently.
+func dispatchedCloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string, *controlpb.Operation, *controlpb.TakeOverNodeEventRequest) {
+	t.Helper()
 	f := setup(t)
 	f.bindBusinessHooks()
 	created := f.create("clone-receipt-conflict")
@@ -242,11 +254,6 @@ func cloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string,
 			Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_SNAPSHOT_UNAVAILABLE}},
 		},
 		Event: []byte("clone event A"),
-	}
-	taken, err := f.executions.TakeOverNodeEvent(c.ctx, original)
-	must(t, err)
-	if taken.GetRecord().GetExecutionId() != execution || !proto.Equal(taken.GetRecord().GetResult(), original.GetResult()) {
-		t.Fatalf("initial clone takeover did not preserve its original result: %v", taken)
 	}
 	return f, c, run, workspace, op, original
 }

@@ -135,6 +135,11 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
 		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		// Result takeover may have committed just before this stale unknown observation. Continue
+		// from the original known result instead of parking a creation nobody can publicly retry.
+		if code == "clone_result_unknown" && resumeKnownWorkspaceClone(t, o) {
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
 		if row := residualOperation(t, o); row != nil && (row.S("reclaimMode") == "owned_delete" || row.S("reclaimMode") == "controlled") && row["reclaimConflictedAt"] == nil {
 			// A3 has no public/operator retry path for this hidden Workspace. Preserve the
 			// same retryable operation even when the existing Controller requests blocked

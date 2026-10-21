@@ -187,6 +187,7 @@ func TestWorkflowRunCancelAndTheSessionCallbackRace(t *testing.T) {
 			if status != "cancelled" {
 				t.Fatalf("attempt %d: the accepted request left the run %q; want cancelled", attempt, status)
 			}
+			t.Logf("attempt %d: the request committed first; the callback's result settled the node and the run is cancelled", attempt)
 		} else {
 			// Refused: the callback had already settled the run, and a refusal records nothing.
 			if code := ErrorCode(cancelErr).Code; code != "run_not_cancellable" {
@@ -198,6 +199,7 @@ func TestWorkflowRunCancelAndTheSessionCallbackRace(t *testing.T) {
 			if status != "succeeded" {
 				t.Fatalf("attempt %d: a refused request left the run %q; want succeeded", attempt, status)
 			}
+			t.Logf("attempt %d: the callback's pass settled the run first; the request was refused", attempt)
 		}
 		assertRunWorkspaceReleased(t, store, runID)
 		assertWorkflowRunReleaseDeclared(t, store, runID)
@@ -271,8 +273,10 @@ func TestWorkflowRunCancelWindowAndALateCallbackRace(t *testing.T) {
 		switch {
 		case agent.S("status") == "succeeded" && agent.O("output").S("reason") == "idle_timeout":
 			// The pass read the committed result: the node keeps what actually ran.
+			t.Logf("attempt %d: the pass read the committed result; node a kept idle_timeout", attempt)
 		case agent.S("status") == "cancelled" && agent.O("output").S("reason") == "cancelled" && agent.S("error") == "":
 			// The pass settled first: the callback's result belongs to the execution row only.
+			t.Logf("attempt %d: the pass settled first; the late result stayed on the execution row", attempt)
 		default:
 			t.Fatalf("attempt %d: final node a = %v; want either the idle_timeout result or cancelled", attempt, states["a"])
 		}

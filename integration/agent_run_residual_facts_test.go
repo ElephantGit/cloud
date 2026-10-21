@@ -39,6 +39,7 @@ func TestResidualProvisioningFactsAcrossReclaimStatesOverGRPC(t *testing.T) {
 			_, err = f.store.Pool.Exec(`UPDATE external_effects SET workspace_id=NULL WHERE id=$1 AND operation_id=$2`, effect, operation)
 			must(t, err)
 			clone, plugin := "late-clone-"+state, "late-plugin-"+state
+			// Only pre-seed the execution row; the entry under test is the real RPC.
 			_, err = f.store.Pool.Exec(`INSERT INTO clone_executions(execution_id,operation_id,workspace_id,node_id,input,dispatched_epoch,node_operation_id)
 			 VALUES($1,$2,$3,'node-late','{"kind":"clone"}',1,$1::text)`, clone, operation, workspace)
 			must(t, err)

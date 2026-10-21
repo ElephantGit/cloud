@@ -68,6 +68,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0054_git_delivery_refs.sql](0054_git_delivery_refs.sql) | 经 Git 交付的 Revision |
 | [0055_agent_run_residual_reclamation.sql](0055_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
 
+0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
+
 ## 不可变性与升级
 
 - 已应用 SQL 不改内容、不改文件名；更正用新的前向迁移。重复应用跳过 checksum 相同的已应用文件。

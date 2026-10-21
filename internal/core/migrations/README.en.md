@@ -68,6 +68,8 @@ There are currently 57 SQL files.
 | [0054_git_delivery_refs.sql](0054_git_delivery_refs.sql) | Revisions delivered over Git |
 | [0055_agent_run_residual_reclamation.sql](0055_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 
+0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
+
 ## Immutability and upgrades
 
 - Never edit or rename applied SQL; corrections use new forward migrations. Repeated application skips applied files with matching checksums.

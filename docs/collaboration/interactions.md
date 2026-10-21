@@ -66,7 +66,8 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
   这条同源承诺不依赖活稿：只要还有可选的已发布版本，表单就注入平台版本选择器并默认最新的可选版本，活稿里的同名声明既不渲染、
   也不参与版本游标解析。本次决策之前发布、自己声明了 `snapshotId` 的版本不进入选择器，Confirm 解析到它时返回
   `409 workflow_version_reserved_field`，不改选别的版本（见 [工作流](../workflows/workflows.md)）。用启动字段撤下选择器时界面
-  没有选择器，不提交该键时执行最新已发布版本，提交了仍按版本游标读取。
+  没有选择器：不提交该键时按最新已发布版本解析，提交了仍按版本游标读取；解析到的版本自己声明了保留键时同样返回
+  `409 workflow_version_reserved_field`，不会执行。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
   的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准；保留字段
   `snapshotId` 例外，这个键始终属于平台，作者的声明不进入表单（见 [工作流](../workflows/workflows.md)）。
@@ -118,3 +119,4 @@ Agent 运行不走 `ExecutionDispatcher`，由 Cloud 自己的调度推进（见
 - [Issue 协作：`@` 只选择类型化目标，执行只来自显式意图](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)
 - [Issue 上 @Agent 的 IssueRun 由 Cloud 编排](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/0-agent-run-in-disposable-isolated-workspace.md)
 - [工作流由 Cloud 侧调度器执行](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
+- [`snapshotId` 是保留字段：发布门禁拒绝作者声明，存量版本不可选](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md)（approved）

@@ -30,7 +30,8 @@
 **保留字段。** `snapshotId` 是 `@` 表单里平台拥有的运行版本键，作者不能把它声明成自己的变量。Start 节点的输入变量或全局变量声明这个名字
 时，发布和 workflow 资产导入都会拒绝，问题里点名节点或字段（`reserved_field_name`），不产生已发布版本；保存草稿不受影响。这个规则之前
 发布、自己声明了该键的版本不改写、不删除，但不再进入 `@` 表单的版本选择器。仍然声明着该键的活稿在重新发布之前，作者的这个变量也不进入
-`@` 表单：表单始终投影平台的版本选择器，确认里的 `snapshotId` 始终是版本游标。`launchFields` 撤下这个平台字段是另一回事，仍然有效
+`@` 表单：只要有一个可选的已发布版本，表单就投影平台的版本选择器；一个可选项都没有时（从未发布，或全部版本都被排除）表单不带选择器。
+确认里的 `snapshotId` 始终是版本游标。`launchFields` 撤下这个平台字段是另一回事，仍然有效
 （见 [Issue 协作](../collaboration/interactions.md)）。
 
 ## 执行器槽位
@@ -146,3 +147,4 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 - [插件资产导入产出已发布快照：资产生命周期不改写快照，运行只冻结 snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow 插件资产由 Cloud 自行取包、逐文档导入为可编辑副本](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）
+- [`snapshotId` 是保留字段：发布门禁拒绝作者声明，存量版本不可选](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md)（approved）

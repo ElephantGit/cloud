@@ -89,8 +89,9 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   published before this rule that declare `snapshotId` themselves are not offered by the selector, and
   Confirm refuses one it resolves to with `409 workflow_version_reserved_field` instead of choosing
   another version (see [Workflows](../workflows/workflows.en.md)). When a launch field withdraws the
-  selector the form has none: leaving the key out runs the newest published version, and submitting it
-  is still read as the version cursor.
+  selector the form has none: leaving the key out resolves the newest published version, and submitting
+  it is still read as the version cursor; a resolved version that declares the reserved key itself is
+  likewise refused with `409 workflow_version_reserved_field` instead of running.
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
@@ -169,3 +170,4 @@ failure never falls back to a fixture identity. The doubles create no simulated 
 - [Issue collaboration: `@` only selects typed targets; execution comes only from explicit intent](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)
 - [An @Agent IssueRun on an Issue is orchestrated by Cloud](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/0-agent-run-in-disposable-isolated-workspace.md)
 - [Workflows are executed by a Cloud-side scheduler](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
+- [`snapshotId` is a reserved field: the publish gate refuses author declarations and stock versions are not selectable](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md) (approved)

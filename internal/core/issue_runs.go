@@ -101,7 +101,9 @@ func createRun(t *transaction, r *PublicRequest, uid string) Object {
 	if executorType == "workflow" {
 		w := workflow(t, r.TenantID, executorID)
 		s := admitWorkflowRun(t, r.TenantID, w.S("id"), "", uid)
-		return enqueueWorkflowInvocation(t, r.TenantID, i.S("id"), w, s, input, input, "", nil, uid)
+		// The manual entry has no form: its input object is the execution input itself, so a
+		// submitted `input` key is the run's kickoff, exactly as it is on the direct-run entry.
+		return enqueueWorkflowInvocation(t, r.TenantID, i.S("id"), w, s, input, input, input["input"], "", nil, uid)
 	}
 	if executorType == "agent" {
 		// Authoritative Space Agent (IssueRun D1): reuses the same evidence resolver as the comment

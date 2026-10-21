@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   CircuitBoard,
+  Clock,
   Cog,
   Inbox,
   Layers,
@@ -53,6 +54,11 @@ import { workspacePaths } from '@/lib/paths'
 
 const workNav = [
   { to: (p: ReturnType<typeof workspacePaths>) => p.issues, label: '任务', icon: Layers },
+  {
+    to: (p: ReturnType<typeof workspacePaths>) => p.scheduledTasks,
+    label: '定时任务',
+    icon: Clock,
+  },
   { to: (p: ReturnType<typeof workspacePaths>) => p.projects, label: '项目', icon: CircuitBoard },
   { to: (p: ReturnType<typeof workspacePaths>) => p.workflows, label: '工作流', icon: Workflow },
   { to: (p: ReturnType<typeof workspacePaths>) => p.sessions, label: '会话分析', icon: Activity },

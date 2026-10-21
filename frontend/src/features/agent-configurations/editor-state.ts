@@ -43,6 +43,34 @@ function useCredentialTarget(draft: AgentConfigurationDraft) {
 }
 
 /**
+ * Whether a read after a write shows exactly the revision that write confirmed, in the
+ * release context the draft was edited against. Anything else is another editor's write or
+ * a changed selection the user has not compared their draft with.
+ */
+function confirmsWrite(
+  latest: AgentConfiguration,
+  revision: number,
+  draft: AgentConfigurationDraft,
+) {
+  return (
+    latest.revision === revision &&
+    latest.selectionVersion === draft.selectionVersion &&
+    latest.declaration.fingerprint === draft.fingerprint
+  )
+}
+
+function withSetting(
+  draft: AgentConfigurationDraft,
+  id: string,
+  value: AgentSettingValue | undefined,
+): AgentConfigurationDraft {
+  const values = { ...draft.values }
+  if (value === undefined) delete values[id]
+  else values[id] = value
+  return { ...draft, values }
+}
+
+/**
  * Input to an editing session. The dialog owns the read query, so both callbacks
  * resolve with the freshest authoritative context instead of triggering a remount.
  */
@@ -84,12 +112,7 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     clear.reset()
   }
   function changeSetting(id: string, value: AgentSettingValue | undefined) {
-    setDraft((current) => {
-      const values = { ...current.values }
-      if (value === undefined) delete values[id]
-      else values[id] = value
-      return { ...current, values }
-    })
+    setDraft((current) => withSetting(current, id, value))
   }
   function selectConnection(connectionId: string, modelId: string) {
     setDraft((current) => ({ ...current, connectionId, modelId }))
@@ -114,10 +137,7 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     setDraft((current) => ({ ...current, revision: written.revision, requiresRepair: false }))
     try {
       const latest = await onSaved()
-      const confirmed =
-        latest.revision === written.revision &&
-        latest.selectionVersion === draft.selectionVersion &&
-        latest.declaration.fingerprint === draft.fingerprint
+      const confirmed = confirmsWrite(latest, written.revision, draft)
       if (confirmed)
         setDraft((current) =>
           agentConfigurationDraft(latest, written.cleared ? undefined : current),

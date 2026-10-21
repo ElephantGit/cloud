@@ -18,20 +18,12 @@ import (
 func TestResidualCloneReceiptConflictAcrossReclaimStatesOverGRPC(t *testing.T) {
 	for _, state := range []string{"reconciling", "reclaiming", "cleared"} {
 		t.Run(state, func(t *testing.T) {
-			f, c, run, workspace, operation, original := cloneReceiptScene(t)
-			_, err := c.operations.DeferOperation(c.ctx, &controlpb.DeferOperationRequest{
-				SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation.GetId(), Version: operation.GetVersion(),
-				State: controlpb.DeferState_DEFER_STATE_BLOCKED, Reason: controlpb.DeferReason_DEFER_REASON_NODE_UNAVAILABLE, RetrySeconds: 60,
-			})
-			must(t, err)
-			_, err = f.store.Pool.Exec(`UPDATE issue_runs SET workspace_deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1`, run)
-			must(t, err)
-			must(t, f.store.GiveUpBlockedWorkspaceCreationsOnce(context.Background()))
+			f, c, run, workspace, original := cloneReceiptResidualScene(t)
 
 			// A running disposal operation gives PlanEffect a valid operation/version. Its
 			// rejection must come from the newly committed conflict, not stale-operation fencing.
 			disposal := uuid.NewString()
-			_, err = f.store.Pool.Exec(`INSERT INTO operations(id,tenant_id,actor_user_id,project_id,workspace_id,
+			_, err := f.store.Pool.Exec(`INSERT INTO operations(id,tenant_id,actor_user_id,project_id,workspace_id,
  kind,state,step,request,idempotency_key,request_hash,controller_epoch)
  SELECT $2::uuid,w.tenant_id,w.creator_user_id,w.project_id,w.id,'delete_workspace','running','terminate',
  '{}','clone-receipt-disposal','clone-receipt-fixture',$3 FROM workspaces w WHERE w.id=$1`, workspace, disposal, c.epoch)
@@ -64,7 +56,7 @@ func TestResidualCloneReceiptConflictAcrossReclaimStatesOverGRPC(t *testing.T) {
  AND x->>'receivedAt'<>'' AND x->'source'->>'submissionId'=$7)=1
  AND EXISTS(SELECT 1 FROM control_submissions WHERE submission_id=$7 AND response->>'residualFactConflict'='true')
  FROM agent_run_residuals r WHERE r.run_id=$1`, run, state, responsibility,
-				"receipt:"+original.GetExecutionId()+":1", base64.StdEncoding.EncodeToString(original.GetEvent()),
+				"clone_receipt:"+original.GetExecutionId()+":1", base64.StdEncoding.EncodeToString(original.GetEvent()),
 				base64.StdEncoding.EncodeToString(conflict.GetEvent()), conflict.GetSubmissionId()).Scan(&retained))
 			if !retained {
 				t.Fatal("conflict error rolled back receipt evidence, replay response, or original ledger state")
@@ -115,6 +107,54 @@ func TestResidualCloneReceiptConflictAcrossReclaimStatesOverGRPC(t *testing.T) {
 	}
 }
 
+func TestResidualCloneReceiptConflictDoesNotImportLegacyResultOverGRPC(t *testing.T) {
+	f, c, run, _, original := cloneReceiptResidualScene(t)
+	// Model a pre-migration terminal fact: its result exists only in lateFacts,
+	// with no accepted clone fact in the new evidence ledger.
+	_, err := f.store.Pool.Exec(`UPDATE agent_run_residuals r SET
+ responsibility=jsonb_set(r.responsibility,'{lateFacts}',jsonb_build_object(
+ 'clone:'||e.execution_id,jsonb_build_object('kind','clone','state','failed','result',e.result))),
+ reclaim_version=7 FROM clone_executions e WHERE r.run_id=$1 AND e.execution_id=$2`, run, original.GetExecutionId())
+	must(t, err)
+	var responsibility string
+	var version int64
+	var emptyEvidence bool
+	must(t, f.store.Pool.QueryRow(`SELECT responsibility::text,reclaim_version,
+ reclaim_evidence='[]'::jsonb FROM agent_run_residuals WHERE run_id=$1`, run).Scan(&responsibility, &version, &emptyEvidence))
+	if !emptyEvidence {
+		t.Fatal("legacy fixture already has evidence in the reclaim ledger")
+	}
+	before := cloneReceiptCanonicalSnapshot(t, f, original.GetExecutionId())
+	conflict := proto.Clone(original).(*controlpb.TakeOverNodeEventRequest)
+	conflict.SubmissionId, conflict.Event = c.sub(), []byte("clone event B")
+	response, err := f.executions.TakeOverNodeEvent(c.ctx, conflict)
+	expectStatus(t, err, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+	if response != nil || status.Convert(err).Message() != "residual_fact_conflict" {
+		t.Fatalf("legacy receipt conflict was not durably rejected: response=%v error=%v", response, err)
+	}
+
+	var retained bool
+	must(t, f.store.Pool.QueryRow(`SELECT r.responsibility=$2::jsonb
+ AND r.reclaim_version=$3+1 AND r.reclaim_conflicted_at IS NOT NULL
+ AND jsonb_array_length(r.reclaim_evidence)=1
+ AND r.reclaim_evidence->0->>'key'=$4
+ AND r.reclaim_evidence->0->'fact'=jsonb_build_object('kind','conflict','state','conflict',
+ 'original',jsonb_build_object('kind','receipt','event',$5::text),
+ 'incoming',jsonb_build_object('kind','receipt','event',$6::text))
+ AND r.reclaim_evidence->0->>'receivedAt'<>''
+ AND r.reclaim_evidence->0->'source'->>'submissionId'=$7
+ AND EXISTS(SELECT 1 FROM control_submissions WHERE submission_id=$7 AND response->>'residualFactConflict'='true')
+ FROM agent_run_residuals r WHERE r.run_id=$1`, run, responsibility, version,
+		"clone_receipt:"+original.GetExecutionId()+":1", base64.StdEncoding.EncodeToString(original.GetEvent()),
+		base64.StdEncoding.EncodeToString(conflict.GetEvent()), conflict.GetSubmissionId()).Scan(&retained))
+	if !retained {
+		t.Fatal("rejected receipt must append exactly one conflict and one version, preserving lateFacts without importing an ordinary clone fact")
+	}
+	if after := cloneReceiptCanonicalSnapshot(t, f, original.GetExecutionId()); after != before {
+		t.Fatalf("legacy receipt conflict changed original clone result or event receipt:\nbefore=%s\nafter=%s", before, after)
+	}
+}
+
 func TestCloneReceiptConflictWithoutResidualWritesNothingOverGRPC(t *testing.T) {
 	f, c, _, _, _, original := cloneReceiptScene(t)
 	before := cloneReceiptCanonicalSnapshot(t, f, original.GetExecutionId())
@@ -141,6 +181,20 @@ func TestCloneReceiptConflictWithoutResidualWritesNothingOverGRPC(t *testing.T) 
 	if bookkeepingAfter != bookkeepingBefore {
 		t.Fatalf("ordinary receipt conflict wrote residual evidence or a control submission:\nbefore=%s\nafter=%s", bookkeepingBefore, bookkeepingAfter)
 	}
+}
+
+func cloneReceiptResidualScene(t *testing.T) (*fixture, *grpcController, string, string, *controlpb.TakeOverNodeEventRequest) {
+	t.Helper()
+	f, c, run, workspace, operation, original := cloneReceiptScene(t)
+	_, err := c.operations.DeferOperation(c.ctx, &controlpb.DeferOperationRequest{
+		SubmissionId: c.sub(), Epoch: c.epoch, OperationId: operation.GetId(), Version: operation.GetVersion(),
+		State: controlpb.DeferState_DEFER_STATE_BLOCKED, Reason: controlpb.DeferReason_DEFER_REASON_NODE_UNAVAILABLE, RetrySeconds: 60,
+	})
+	must(t, err)
+	_, err = f.store.Pool.Exec(`UPDATE issue_runs SET workspace_deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1`, run)
+	must(t, err)
+	must(t, f.store.GiveUpBlockedWorkspaceCreationsOnce(context.Background()))
+	return f, c, run, workspace, original
 }
 
 func cloneReceiptScene(t *testing.T) (*fixture, *grpcController, string, string, *controlpb.Operation, *controlpb.TakeOverNodeEventRequest) {

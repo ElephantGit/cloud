@@ -268,6 +268,9 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 	require(e != nil, 404, "not_found")
 	outcome := result.S("outcome")
 	require((outcome == "clone_ready" || outcome == "clone_failed") && result.O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
+	if withReceipt && !acceptResidualReceipt(t, e, r.Body.N("sequence"), r.Body.S("event"), "clone_event_receipts") {
+		return e
+	}
 	if !acceptResidualExecutionFact(t, e, result) {
 		return e
 	}
@@ -284,9 +287,6 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 	if withReceipt {
 		sequence, event := r.Body.N("sequence"), r.Body.S("event")
 		require(sequence >= 0 && event != "", 400, "invalid_receipt")
-		if !acceptResidualCloneReceipt(t, e, sequence, event) {
-			return e
-		}
 		if old := t.one("SELECT * FROM clone_event_receipts WHERE execution_id=$1 AND sequence=$2", execution, sequence); old != nil {
 			require(old.S("event") == event, 409, "receipt_conflict")
 		} else {

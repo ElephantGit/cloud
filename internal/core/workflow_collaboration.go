@@ -211,8 +211,8 @@ func workflowSnapshotOptions(t *transaction, tid, wid string) []Object {
 }
 
 // workflowDescriptorSource is the projection input for one graph of a workflow: its live document, or
-// one of its frozen versions. Both descriptors a confirm compares are built from here, so the graph is
-// the only thing that can differ between them — a source assembled any other way could make them
+// one of its frozen versions. Both are built from here, so for the same graph the live form and a
+// version's form differ only in the graph — a source assembled any other way could make a version
 // differ for a reason that has nothing to do with what the user was shown.
 func workflowDescriptorSource(t *transaction, w, graph Object) *workflowFormSource {
 	return &workflowFormSource{

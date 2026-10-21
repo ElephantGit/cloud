@@ -1433,6 +1433,39 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 		}
 	}
 
+	// assertChained pins the state the whole sequence reaches. 0053 retires every remaining unlinked
+	// non-terminal workflow row — `running`, and the soft-deleted `queued` row — because a row with no
+	// WorkflowRun can never be finished by an executor, and its validated CHECK requires a reference on
+	// every non-terminal workflow row, soft-deleted ones included.
+	assertChained := func(t *testing.T, pool *sql.DB, ids map[string]string, stage string) {
+		t.Helper()
+		for _, id := range []string{ids["queued"], ids["dispatched"]} {
+			got := read(t, pool, id)
+			if got.status != "failed" || got.reason != "workflow_execution_unavailable" || !got.completedAt.Valid {
+				t.Fatalf("%s: run %s = %+v; want 0052's settlement to stand", stage, id, got)
+			}
+		}
+		for _, id := range []string{ids["running"], ids["deleted"]} {
+			got := read(t, pool, id)
+			if got.status != "failed" || got.reason != "workflow_execution_unavailable_before_invocation_linkage" ||
+				!got.completedAt.Valid || got.version != 2 {
+				t.Fatalf("%s: unlinked run %s = %+v; want 0053 to settle it with the invocation-linkage reason", stage, id, got)
+			}
+		}
+		for id, want := range map[string]runShape{
+			ids["completed"]: {status: "completed", version: 1},
+			ids["agent"]:     {status: "queued", version: 1},
+		} {
+			got := read(t, pool, id)
+			if got.status != want.status || got.version != want.version || got.reason != "" || got.completedAt.Valid {
+				t.Fatalf("%s: untouched run %s = %+v; want %s with no correction", stage, id, got, want.status)
+			}
+		}
+		if deleted := read(t, pool, ids["deleted"]); !deleted.deletedAt.Valid {
+			t.Fatalf("%s: settled soft-deleted run = %+v; want deleted_at retained", stage, deleted)
+		}
+	}
+
 	freshPool, _ := testSchema(t, "test_wf52f_")
 	migratedTwice(t, newStoreOnSchema(t, freshPool))
 	var corrected int
@@ -1444,10 +1477,14 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 	pool, _ := testSchema(t, "test_wf52_")
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0052_legacy_workflow_issue_run_settlement.sql"))
 	ids := seedRuns(t, pool)
+	// Apply 0052 alone so the assertions below show what this file itself changes; 0053 runs later and
+	// settles the rows 0052 deliberately left alone.
+	applyMigrationsUpTo(t, pool, []string{"0052_legacy_workflow_issue_run_settlement.sql"})
+	assertUpgraded(t, pool, ids, "0052")
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	assertUpgraded(t, pool, ids, "upgrade")
+	assertChained(t, pool, ids, "upgrade")
 	// Repeated application is a no-op: the correction already committed, and Migrate skipped the
 	// applied file by its checksum, so nothing can bump a version a second time.
 	migratedTwice(t, newStoreOnSchema(t, pool))
-	assertUpgraded(t, pool, ids, "replay")
+	assertChained(t, pool, ids, "replay")
 }

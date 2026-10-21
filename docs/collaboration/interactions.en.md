@@ -77,17 +77,21 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   Issue-facing rendering description: `formRef`, title, description and a list of fields. It is not the
   workflow's schema and binds to no schema technology. Fields come in three bands: platform fields, the
   variables declared by the workflow's Start node, and the graph's global variables.
-  Opening the form initially reads the current document. Selecting a published version in the platform
-  version selector reloads the chosen snapshot's form through
-  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…`.
+  The frontend first reads the current document only to locate the platform version selector and its
+  default version. Once the default (the newest published version) is known, the initial form is read
+  from that version through `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…`,
+  and switching the selector reloads the new version the same way. The form shown and the version Confirm
+  validates are therefore always the same, and fields the live draft has not published never appear in
+  the default view.
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
   workflow declares a variable of the same name, the workflow's declaration wins.
 - **AI assist** (`POST .../issues/:iid/collaboration/assist`) only returns a field-level suggestion patch
   and suggested context references: it never creates a run and never writes persistent context
-  references. Applying a suggestion is the user's action. Production has no assist provider wired in and
-  returns `503 assist_unavailable`.
+  references. Applying a suggestion is the user's action. It judges the shape of the submission against
+  the same version descriptor Confirm uses, so once anything is published it accepts only the fields
+  that version declares. Production has no assist provider wired in and returns `503 assist_unavailable`.
 - **Confirm** (`POST .../issues/:iid/interactions/:ixid/confirm`) is the only transition that turns a
   workflow interaction into execution intent:
   - Frontend validation is only for user experience. On confirm Cloud resolves the target **again** and

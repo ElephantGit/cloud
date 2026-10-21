@@ -183,6 +183,11 @@ function serveComposer(overrides: { descriptor?: unknown; suggestion?: AssistSug
     http.get('/api/v1/tenants/t1/workflows/wf1/snapshots', () =>
       HttpResponse.json({ items: [{ id: 'snap-3' }, { id: 'snap-2' }], nextCursor: '' }),
     ),
+    // The composer opens on the platform's default version, so a form that selects one is read from
+    // that version's snapshot rather than from the live descriptor.
+    http.get('/api/v1/tenants/t1/workflows/wf1/snapshots/snap-3/form', () =>
+      HttpResponse.json({ ...launchDescriptor, snapshotId: 'snap-3' }),
+    ),
     http.post('/api/v1/tenants/t1/issues/i1/collaboration/assist', async ({ request }) => {
       assist(await request.json())
       return HttpResponse.json(overrides.suggestion ?? suggestion)
@@ -401,6 +406,70 @@ describe('WorkflowInteractionComposer', () => {
       }),
     )
     await waitFor(() => expect(onConfirmed).toHaveBeenCalled())
+  })
+
+  it('opens on the default published version by reading that version, so rendering and validation match', async () => {
+    const { confirm } = serveComposer({ descriptor: launchDescriptor })
+    const read = vi.fn<(issueId: string | null) => void>()
+    server.use(
+      http.get('/api/v1/tenants/t1/workflows/wf1/snapshots/snap-3/form', ({ request }) => {
+        read(new URL(request.url).searchParams.get('issueId'))
+        return HttpResponse.json({
+          ...launchDescriptor,
+          snapshotId: 'snap-3',
+          fields: [
+            ...launchDescriptor.fields,
+            {
+              key: 'v3Only',
+              label: 'V3 only',
+              type: 'text',
+              required: true,
+              defaultValue: 'frozen v3',
+            },
+          ],
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    const { onConfirmed } = renderComposer()
+
+    // The live descriptor has no such field: seeing it proves the form is the snapshot's own, and the
+    // confirm submits exactly the fields this version asked for.
+    expect(await screen.findByLabelText(/V3 only/)).toHaveValue('frozen v3')
+    expect(selectTrigger('运行版本')).toHaveTextContent('v3 · 发布 3')
+    expect(read).toHaveBeenCalledWith('i1')
+
+    await reviewAndConfirm(user)
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith({
+        values: {
+          repository: 'https://github.com/ora/cloud',
+          branch: 'main',
+          snapshotId: 'snap-3',
+          prompt: 'Review the diff',
+          v3Only: 'frozen v3',
+        },
+      }),
+    )
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalled())
+  })
+
+  it('names the rejected field when a confirm fails validation', async () => {
+    serveComposer({ descriptor: launchDescriptor })
+    server.use(
+      http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
+        HttpResponse.json(
+          { code: 'invalid_field_value', params: { field: 'branch' } },
+          { status: 400 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderComposer()
+    await screen.findByLabelText(/分支/)
+    await reviewAndConfirm(user)
+
+    expect(await screen.findByText('字段「分支」的取值不合法，请修改后重试。')).toBeInTheDocument()
   })
 
   it('prefills the branch and the newest published version, and gates Review on the branch too', async () => {
@@ -670,7 +739,7 @@ describe('WorkflowInteractionComposer', () => {
     const { comment, confirm } = serveComposer({ descriptor: launchDescriptor })
     serveOldSnapshot()
     const { user, onConfirmed } = await confirmIntoRejection('required_field_missing', 400)
-    await screen.findByText('确认失败，请重试。')
+    await screen.findByText('请填写必填项：提示词')
     await user.click(screen.getByRole('button', { name: '返回修改' }))
     await user.click(selectTrigger('运行版本'))
     await user.click(await screen.findByRole('option', { name: 'v2 · 发布 2' }))

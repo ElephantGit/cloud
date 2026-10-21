@@ -164,18 +164,32 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 // accept the same keys: a form rendered before the rename answers under the old `version` key, and the
 // live descriptor no longer declares it. The fold is the confirm's own, taken from the one place the
 // rule is defined (see foldLegacyVersionAnswer), rather than a second compatibility rule that could
-// drift from it. Assist reads no version cursor: it resolves no version, and the graph is read only to
-// decide what the old key means for this workflow.
+// drift from it.
+//
+// The descriptor is the version's, not the live document's, whenever the submission names a published
+// version or the workflow has one: the client renders the selected version's form even on its default,
+// so assist has to answer for the fields that form shows. A workflow with nothing published has no
+// frozen descriptor, and the live one is both what the form shows and what a confirm would refuse to
+// run.
 func assistWorkflow(t *transaction, r *PublicRequest) Object {
 	i := issue(t, r.TenantID, r.IssueID)
 	targetID := r.Body.S("targetId")
 	require(validID(targetID), 400, "invalid_target")
 	issueContext := formContextForIssue(t, r.TenantID, i)
+	w := workflow(t, r.TenantID, targetID)
 	descriptor := workflowFormDescriptor(t, r.TenantID, "workflow", targetID, &issueContext)
 	// Assist is requested while the form is still being filled, so shape is validated but requiredness
 	// is not — an incomplete form is exactly when a suggestion is useful.
 	current := interactionValues(r.Body)
-	foldLegacyVersionAnswer(workflow(t, r.TenantID, targetID).O("graph"), current)
+	cursor := workflowVersionCursor(w.O("graph"), current)
+	foldLegacyVersionAnswer(w.O("graph"), current)
+	s := workflowLatestSnapshot(t, r.TenantID, targetID)
+	if cursor != "" {
+		s = workflowSnapshot(t, r.TenantID, targetID, cursor)
+	}
+	if s != nil {
+		descriptor = snapshotFormDescriptor(t, w, s, &issueContext)
+	}
 	validateFormValues(descriptor, current, false)
 
 	in := AssistInput{

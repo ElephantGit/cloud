@@ -371,11 +371,10 @@ func formDescriptorByRef(t *transaction, r *PublicRequest) Object {
 // than from the live document.
 //
 // It exists because a caller can choose the version *before* rendering — the workflow editor's manual
-// run entry does — and such a caller has to be shown the fields of the version it picked. The `@` form
-// reads the live descriptor until the user selects a published version and then reloads through this
-// route; a manual run has chosen one up front, so either way the chosen version's own fields are what
-// the submission is judged by. Confirm already projects this way when it validates a submission, so
-// both read the one projection: this route adds a caller, not a second rule.
+// run entry does, and so does the `@` form, which opens on the platform's default published version
+// and reloads through this route whenever the user picks another. Either way the chosen version's own
+// fields are what the submission is judged by, because confirm validates against the one projection
+// this route serves: it adds a caller, not a second rule.
 //
 // It is a projection and not an admission decision. Reading a descriptor says nothing about whether a
 // run may start — publish state, archiving, input dependencies and per-slot resolution stay the start

@@ -15,6 +15,7 @@ import {
 import { AssistSuggestions } from '@/features/issues/components/assist-suggestions'
 import { ConfirmReview } from '@/features/issues/components/confirm-review'
 import { DynamicFormRenderer } from '@/features/issues/components/dynamic-form-renderer'
+import { faultCode, faultParam } from '@/lib/api-client'
 import type {
   AssistSuggestion,
   CollaborationTargetSummary,
@@ -377,7 +378,112 @@ function useWorkflowSubmission({
   return {
     submit,
     isPending: submission.isPending || submission.isSuccess,
-    errorMessage: submission.isError ? '确认失败，请重试。' : undefined,
+    error: submission.error,
+  }
+}
+
+/**
+ * Turns a refused confirm into a hint the user can act on. A field rejection names the failing key, so
+ * it is shown with the descriptor's label; any other failure stays generic, because its code has no
+ * counterpart the form can point at and retrying is the only remedy the surface can offer.
+ */
+function confirmErrorMessage(error: unknown, descriptor: FormDescriptor): string {
+  const code = faultCode(error)
+  const key = faultParam(error, 'field')
+  if (!code || !key) return '确认失败，请重试。'
+  const label = descriptor.fields.find((field) => field.key === key)?.label ?? key
+  if (code === 'required_field_missing') return `请填写必填项：${label}`
+  if (code === 'invalid_field_value') return `字段「${label}」的取值不合法，请修改后重试。`
+  return '确认失败，请重试。'
+}
+
+/** The live field that may be the platform version selector: the platform's key and control type. */
+function isSnapshotIdSelect(field: FormField): boolean {
+  return field.key === 'snapshotId' && field.type === 'select'
+}
+
+/**
+ * The live descriptor's platform version field, confirmed against every published snapshot id, so an
+ * author's same-named control is never mistaken for the platform's.
+ */
+function platformVersionField(
+  descriptor: FormDescriptor | undefined,
+  publishedIds: string[] | undefined,
+): FormField | undefined {
+  if (!descriptor || !publishedIds) return undefined
+  return descriptor.fields.find((field) => isSnapshotSelector(field, publishedIds))
+}
+
+/** The version a platform selector opens on: the server fills it with the newest published snapshot. */
+function defaultSnapshotId(field: FormField | undefined): string | undefined {
+  const value = field?.defaultValue
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/** Why the form cannot be drawn yet: the reads are still in flight, or one of them failed. */
+type FormBlocker = { kind: 'loading' } | { kind: 'failed'; retry: () => void }
+
+/** What the composer renders: a blocker, or the form itself. */
+type ChosenVersionForm =
+  | FormBlocker
+  | {
+      kind: 'ready'
+      descriptor: FormDescriptor
+      versionField: FormField | undefined
+      snapshotId: string | undefined
+      loading: boolean
+      chooseVersion: (id: string) => void
+    }
+
+/** The slice of a query a form read needs to decide whether it can contribute a descriptor. */
+interface FormRead {
+  isPending: boolean
+  isError: boolean
+  refetch: () => void
+}
+
+/**
+ * Reports the first read that blocks the form: a failure outranks a pending read because retrying it is
+ * the only way forward, and a read that has not started cannot be failed.
+ */
+function formBlocker(reads: FormRead[]): FormBlocker | undefined {
+  const failed = reads.find((read) => read.isError)
+  if (failed) return { kind: 'failed', retry: () => failed.refetch() }
+  return reads.some((read) => read.isPending) ? { kind: 'loading' } : undefined
+}
+
+/**
+ * Resolves the form the composer shows. The live descriptor only locates the platform version field and
+ * the version it opens on; the rendered form itself comes from that version's snapshot, so the fields
+ * the user sees are exactly the ones a confirm validates (Issue collaboration D9). Choosing another
+ * version reloads the same way, which is why there is one code path for the default and a switch.
+ */
+function useChosenVersionForm(
+  slug: string,
+  workflowId: string,
+  issueId: string,
+  formRef: string | undefined,
+): ChosenVersionForm {
+  const live = useFormDescriptor(slug, formRef, issueId)
+  const candidate = live.data?.fields.find(isSnapshotIdSelect)
+  const published = useWorkflowPublishedSnapshotIds(slug, candidate ? workflowId : undefined)
+  const [chosenSnapshotId, setChosenSnapshotId] = useState<string>()
+  const selected =
+    chosenSnapshotId ?? defaultSnapshotId(platformVersionField(live.data, published.data))
+  const snapshot = useWorkflowSnapshotForm(slug, workflowId, selected, issueId)
+
+  const reads = [live, ...(candidate ? [published] : []), ...(selected ? [snapshot] : [])]
+  const blocked = formBlocker(reads)
+  if (blocked) return blocked
+  const descriptor = selected ? snapshot.data : live.data
+  if (!descriptor) return { kind: 'loading' }
+  return {
+    kind: 'ready',
+    descriptor,
+    versionField: platformVersionField(descriptor, published.data),
+    snapshotId: snapshot.data?.snapshotId,
+    loading: (selected ? snapshot : live).isFetching,
+    chooseVersion: setChosenSnapshotId,
   }
 }
 
@@ -399,32 +505,22 @@ export function WorkflowInteractionComposer({
   onConfirmed: () => void
   onRemove: () => void
 }) {
-  const formRef = target.interactionDescriptor.formRef ?? undefined
-  const [snapshotId, setSnapshotId] = useState<string>()
-  const live = useFormDescriptor(slug, formRef, issueId)
-  const snapshot = useWorkflowSnapshotForm(slug, target.id, snapshotId, issueId)
-  const descriptorQuery = snapshotId ? snapshot : live
-  const confirm = useWorkflowSubmission({ slug, issueId, target, onConfirmed })
-  const descriptor = descriptorQuery.data
-  const candidate = descriptor?.fields.find(
-    (field) => field.key === 'snapshotId' && field.type === 'select',
+  const form = useChosenVersionForm(
+    slug,
+    target.id,
+    issueId,
+    target.interactionDescriptor.formRef ?? undefined,
   )
-  const published = useWorkflowPublishedSnapshotIds(slug, candidate ? target.id : undefined)
+  const confirm = useWorkflowSubmission({ slug, issueId, target, onConfirmed })
 
-  if (descriptorQuery.isPending || (candidate && published.isPending)) {
-    return <Skeleton className="h-24 w-full" />
-  }
-  if (descriptorQuery.isError || !descriptor || (candidate && published.isError)) {
+  if (form.kind === 'loading') return <Skeleton className="h-24 w-full" />
+  if (form.kind === 'failed') {
     return (
       <div className="space-y-2">
         <p className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
           当前部署无法加载该 Workflow 的表单（form descriptor 不可用）。
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void (published.isError ? published.refetch() : descriptorQuery.refetch())}
-        >
+        <Button variant="outline" size="sm" onClick={form.retry}>
           重试加载表单
         </Button>
       </div>
@@ -433,18 +529,16 @@ export function WorkflowInteractionComposer({
 
   return (
     <WorkflowInteractionForm
-      key={snapshotId ?? 'live'}
+      key={form.snapshotId ?? 'live'}
       slug={slug}
       issueId={issueId}
       target={target}
-      descriptor={descriptor}
-      versionField={descriptor.fields.find((field) =>
-        isSnapshotSelector(field, published.data ?? []),
-      )}
-      snapshotId={snapshot.data?.snapshotId}
-      loading={descriptorQuery.isFetching}
+      descriptor={form.descriptor}
+      versionField={form.versionField}
+      snapshotId={form.snapshotId}
+      loading={form.loading}
       confirm={confirm}
-      onSnapshotChange={setSnapshotId}
+      onSnapshotChange={form.chooseVersion}
       onRemove={onRemove}
     />
   )
@@ -508,7 +602,7 @@ function WorkflowInteractionForm(props: {
           assistPending={assist.isPending}
           confirmPending={confirm.isPending}
           assistFailed={assist.isError}
-          confirmError={confirm.errorMessage}
+          confirmError={confirm.error ? confirmErrorMessage(confirm.error, descriptor) : undefined}
           onAssist={() =>
             assist.mutate(
               { targetId: target.id, values: form.values },

@@ -888,10 +888,12 @@ func TestWorkflowAssistReadsThePreRenameVersionKey(t *testing.T) {
 	owned := createWorkflow(t, f, "Owned Workflow", "wf-assist-rename-owned", []any{
 		core.Object{"name": "snapshotId", "displayName": "Release version", "fieldType": "text-input", "valueType": "string", "required": true},
 	})
-	publishWorkflow(t, f, owned, "wf-assist-rename-owned-pub")
+	ownedSnap := publishWorkflow(t, f, owned, "wf-assist-rename-owned-pub")
 	ownedIss := f.call("POST", f.path("/issues"), core.Object{"title": "Fill the old form again"}, "wf-assist-rename-issue-2", 200).O("resource")
+	// The old key still carries the version selection here, so it has to name a real published version:
+	// assist resolves the version it answers for, exactly as the confirm does.
 	f.call("POST", assistPath(f, ownedIss.S("id")), workflowAssistBody(owned, core.Object{
-		"repository": "ora-space/cloud", "version": "1.2.3",
+		"repository": "ora-space/cloud", "version": ownedSnap.S("id"),
 	}), "wf-assist-rename-owned-a1", 200)
 
 	// A graph whose author declared `version` for a variable of their own. That key is the author's, so
@@ -996,6 +998,15 @@ func TestWorkflowConfirmValidatesAgainstTheChosenVersion(t *testing.T) {
 	if got := f.call("GET", f.path("/issues/"+extraIssue+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v1.S("id") {
 		t.Fatalf("the run executed %q, want the selected version %q", got, v1.S("id"))
 	}
+
+	// Assist answers for that version too, because it validates the submission the confirm will judge.
+	// The live draft declares `scope`, so reading it would accept this submission; version 1 never did.
+	assistIssue := newIssue("wf-diverge-issue-4")
+	assistExtra := f.call("POST", assistPath(f, assistIssue), workflowAssistBody(wid, withVersion(wide, v1.S("id"))), "wf-diverge-a1", 400)
+	if code, field := assistExtra.S("code"), assistExtra.O("params").S("field"); code != "invalid_field_value" || field != "scope" {
+		t.Fatalf("assist accepted the draft's scope under version 1: %v", assistExtra)
+	}
+	f.call("POST", assistPath(f, assistIssue), workflowAssistBody(wid, withVersion(version1, v1.S("id"))), "wf-diverge-a2", 200)
 }
 
 // TestFormDescriptorUnavailableAndInvalid covers the provider failure modes (Issue collaboration D7) and where they

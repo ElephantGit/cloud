@@ -60,12 +60,14 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 
 - **表单描述**（`GET /tenants/:tid/collaboration/forms/:formRef?issueId=…`）是面向 Issue 的渲染描述：`formRef`、标题、说明和
   字段列表。它不是工作流的 schema，也不绑定任何 schema 技术。字段分三段：平台字段、工作流 Start 节点声明的变量、图的全局变量。
-  初次打开时读取当前文档；在平台版本选择器中选择已发布版本后，前端通过
-  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…` 重新读取所选快照的表单。
+  前端先读取当前文档，只为定位平台版本选择器及其默认版本；确定默认版本（最新已发布版本）后，初次打开就按该版本通过
+  `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…` 读取表单，切换版本时按新版本重新读取。
+  因此显示的表单与 Confirm 校验的版本始终相同，活稿里未发布的字段不出现在默认视图。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
   的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准。
 - **AI 辅助**（`POST .../issues/:iid/collaboration/assist`）只返回字段级的建议补丁和建议的上下文引用：从不创建运行，也不写入
-  持久的上下文引用。应用建议是用户的动作。生产环境没有接入辅助提供方，返回 `503 assist_unavailable`。
+  持久的上下文引用。应用建议是用户的动作。它按与 Confirm 相同的版本描述判断提交值的形状，所以有已发布版本时只接受该版本声明的字段。
+  生产环境没有接入辅助提供方，返回 `503 assist_unavailable`。
 - **确认**（`POST .../issues/:iid/interactions/:ixid/confirm`）是唯一把工作流交互变成执行意图的转换：
   - 前端校验只是体验，Cloud 在确认时**重新**解析目标，并按**被确认的那个已发布版本**的表单校验提交的值；没有任何已发布版本的
     工作流不能确认，因为不能执行未发布的草稿。

@@ -46,8 +46,8 @@ Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执�
 | 入口 | 产生 |
 |---|---|
 | `POST .../workflows/:wfid/runs` | 一个 WorkflowRun（`workflow_runs`） |
-| `POST .../issues/:iid/runs`，`executorType = workflow` | 一个工作流 IssueRun |
-| 在 Issue 上确认 @工作流 的表单 | 一个工作流 IssueRun（见 [Issue 协作](../collaboration/interactions.md#form-mode工作流)） |
+| `POST .../issues/:iid/runs`，`executorType = workflow` | 一个 WorkflowRun 和关联它的工作流 IssueRun |
+| 在 Issue 上确认 @工作流 的表单 | 一个 WorkflowRun 和关联它的工作流 IssueRun（见 [Issue 协作](../collaboration/interactions.md#form-mode工作流)） |
 
 **准入**在调用方的事务里一次判定：
 
@@ -58,7 +58,8 @@ Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执�
 
 任何一项不通过都不会留下运行、已认领的交互或活动。被执行的版本冻结在运行上，运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
 
-**运行的身份在创建时冻结。** 直接创建运行时 `projectId` 必填：缺失返回 `409 workflow_run_project_required`，不可用、已归档或属于其他空间的 Project
+**运行的身份在创建时冻结。** 三个入口共用创建函数：直接启动的 Project 来自请求体 `projectId`，Confirm/manual 来自 Issue 的 `project_ref`。
+Project 缺失时统一返回 `409 workflow_run_project_required`，不可用、已归档或属于其他空间的 Project
 按 `404` 拒绝，正在删除的返回 `409 resource_unavailable`。运行把发起人（`created_by`）和这个 Project（`project_id`）写进运行行，之后不再变化——工作流文档
 属于租户而不是某个 Project，没有可以默认的对象，而运行的 Workspace、它的 clone 和整份检出都落在被指定的 Project 里。运行 Workspace 归属于创建它的那次运行：
 `workspaces.workflow_run_id` 与 IssueRun 的 `issue_run_id` 互斥，运行时控制里为它预留的 `maintenance` 同样按运行身份记录（见
@@ -108,7 +109,10 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   观察到 Workspace 已被删除**；`abandoned` 永远不会被报告成释放成功，也不会被后续轮次重新声明或重试。重复的删除完成回执和重复的清扫都是无操作。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
-不装它。工作流 IssueRun 在生产中目前没有执行端，保持 `queued`（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。
+不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进。
+WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时间和错误投影回关联的 IssueRun；未更新到行时不投影，契约冲突使事务回滚。
+`awaiting_input` 不改变 IssueRun，未关联 IssueRun 的直接运行也不产生协作记录。输出摘要作为 `system` 的 `run.message` 活动写入，
+最多 20000 字节且保持合法 UTF-8，不创建工作流作者评论（见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约)）。
 
 ## 插件资产导入
 

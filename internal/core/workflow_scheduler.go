@@ -466,6 +466,7 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			WHERE id=$1 AND status='pending' AND deleted_at IS NULL`, runID) == 0 {
 			return
 		}
+		projectWorkflowRunToIssueRun(t, run.S("tenantId"), runID, "")
 		run = t.one(`
 			SELECT r.*, s.graph, (EXTRACT(EPOCH FROM r.created_at)*1000)::bigint AS created_at_ms
 			FROM workflow_runs r
@@ -590,25 +591,33 @@ func workflowInactiveStates(graph workflowGraphView, states map[string]workflowN
 // the first terminal write, so a later pass re-declaring a terminal status cannot move the moment
 // the run actually stopped. started_at is not this function's business: it is set once, where the
 // run first leaves `pending`.
-func settleWorkflowRunStates(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) {
+func settleWorkflowRunStates(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) bool {
 	// The statuses a run never leaves. `pending`, `running` and `awaiting_input` are the others the
 	// column admits, and all three are states a run is still in.
 	terminal := status == "succeeded" || status == "failed" || status == "cancelled"
+	var applied int64
+	encoded := Object{}
 	if states == nil {
-		t.exec(`UPDATE workflow_runs SET status=$2, error=$3,
+		applied = t.execRows(`UPDATE workflow_runs SET status=$2, error=$3,
 			finished_at=CASE WHEN $5 THEN COALESCE(finished_at,now()) ELSE finished_at END,
 			version=version+1, updated_at=now()
 			WHERE id=$1 AND version=$4 AND deleted_at IS NULL`, runID, status, runErr, version, terminal)
-		return
+	} else {
+		for id, state := range states {
+			encoded[id] = state.object()
+		}
+		applied = t.execRows(`UPDATE workflow_runs SET node_states=$2, status=$3, error=$4,
+			finished_at=CASE WHEN $6 THEN COALESCE(finished_at,now()) ELSE finished_at END,
+			version=version+1, updated_at=now()
+			WHERE id=$1 AND version=$5 AND deleted_at IS NULL`, runID, jsonText(encoded), status, runErr, version, terminal)
 	}
-	encoded := Object{}
-	for id, state := range states {
-		encoded[id] = state.object()
+	if applied == 0 {
+		return false
 	}
-	t.exec(`UPDATE workflow_runs SET node_states=$2, status=$3, error=$4,
-		finished_at=CASE WHEN $6 THEN COALESCE(finished_at,now()) ELSE finished_at END,
-		version=version+1, updated_at=now()
-		WHERE id=$1 AND version=$5 AND deleted_at IS NULL`, runID, jsonText(encoded), status, runErr, version, terminal)
+	run := t.one(`SELECT r.tenant_id,s.graph FROM workflow_runs r
+		JOIN workflow_snapshots s ON s.id=r.snapshot_id WHERE r.id=$1`, runID)
+	projectWorkflowRunToIssueRun(t, run.S("tenantId"), runID, workflowIssueOutputSummary(run.O("graph"), encoded, runErr))
+	return true
 }
 
 // workflowRunVersion re-reads the row's version after a mid-pass settle bumped it: one pass commits

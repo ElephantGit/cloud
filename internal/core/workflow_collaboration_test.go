@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -841,78 +840,6 @@ func TestFoldLegacyVersionAnswer(t *testing.T) {
 		foldLegacyVersionAnswer(tc.graph, tc.values)
 		if !reflect.DeepEqual(tc.values, tc.want) {
 			t.Fatalf("%s: values = %#v, want %#v", tc.name, tc.values, tc.want)
-		}
-	}
-}
-
-// TestWorkflowFieldDivergence covers what a confirm compares before it validates anything at all. The
-// form the client rendered comes from the workflow's live document and the version it is about to
-// execute comes from a snapshot, so the two have to agree about every field that decides whether a
-// submission is acceptable — otherwise the version's schema refuses a value the user was legitimately
-// shown, or insists on a field the form never showed them, and says either thing about the wrong
-// document. What they do *not* have to agree about is how a control is drawn: a label, a description, a
-// placeholder or a default changes no answer, and an edit that only renames a field must not strand a
-// form the user has already filled in.
-func TestWorkflowFieldDivergence(t *testing.T) {
-	text := func(name string) Object {
-		return Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string"}
-	}
-	required := func(name string) Object {
-		return Object{"name": name, "displayName": name, "fieldType": "text-input", "valueType": "string", "required": true}
-	}
-	optioned := func(name string, values ...any) Object {
-		return Object{"name": name, "displayName": name, "fieldType": "select", "valueType": "string", "options": values}
-	}
-	descriptor := func(graph Object) FormDescriptor {
-		return projectGraph(t, graph, snapshotRows(2, 1), issueContext())
-	}
-	// The documents a confirm holds: one Start-only graph per way an edit can move a field.
-	plain := startGraph(nil, "")
-	scoped := startGraph([]any{text("scope")}, "")
-	scopeRequired := startGraph([]any{required("scope")}, "")
-	scopeSelected := startGraph([]any{optioned("scope", "a", "b")}, "")
-	scopeWidened := startGraph([]any{optioned("scope", "a", "b", "c")}, "")
-	scopeReordered := startGraph([]any{optioned("scope", "b", "a")}, "")
-	scopeRenamed := startGraph([]any{Object{
-		"name": "scope", "displayName": "评审范围", "fieldType": "text-input", "valueType": "string",
-	}}, "")
-	scopeDefaulted := startGraph([]any{Object{
-		"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "value": "everything",
-	}}, "")
-	scopedPrompted := startGraph([]any{text("scope")}, "review the diff")
-	// A draft that withdrew a platform field, and one that handed a platform key to the author: the two
-	// ways an edit reaches a field the author did not write themselves in the Start node.
-	withdrawn := launchGraph([]any{Object{"key": fieldKeyRepository, "enabled": false}})
-	owned := startGraph([]any{Object{
-		"name": fieldKeyRepository, "displayName": "Repository", "fieldType": "text-input", "valueType": "string",
-	}}, "")
-	left, right := startGraph([]any{text("left")}, ""), startGraph([]any{text("right")}, "")
-
-	// The failure is a wire list, so the order it is reported in is part of the contract.
-	cases := []struct {
-		name              string
-		rendered, version Object
-		want              []string
-	}{
-		{"the same document on both sides", scoped, scoped, nil},
-		{"a field the version does not declare", scoped, plain, []string{"scope"}},
-		{"a field the version declares and the form does not", plain, scoped, []string{"scope"}},
-		{"a field the version requires and the form does not", scoped, scopeRequired, []string{"scope"}},
-		{"a field the form requires and the version does not", scopeRequired, scoped, []string{"scope"}},
-		{"the same key as another control", scopeSelected, scoped, []string{"scope"}},
-		{"the same control offering other values", scopeSelected, scopeWidened, []string{"scope"}},
-		{"a field only one side has, each way", left, right, []string{"left", "right"}},
-		{"a platform field the draft withdrew", withdrawn, plain, []string{fieldKeyRepository}},
-		{"a platform key the draft handed to the author", owned, plain, []string{fieldKeyRepository}},
-		// The same field, drawn differently.
-		{"the same options in another order", scopeSelected, scopeReordered, nil},
-		{"another label", scoped, scopeRenamed, nil},
-		{"another default", scoped, scopeDefaulted, nil},
-		{"another Start prompt", scopedPrompted, scoped, nil},
-	}
-	for _, tc := range cases {
-		if got := workflowFieldDivergence(descriptor(tc.rendered), descriptor(tc.version)); !slices.Equal(got, tc.want) {
-			t.Fatalf("%s: diverged = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

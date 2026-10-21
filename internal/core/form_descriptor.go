@@ -319,11 +319,10 @@ func appliedContextRefs(body Object) []Object {
 //
 // This resolves the workflow's *live* document, which is right for both of them — they render a form
 // the user is still filling in, and the version picker has not been used yet. A confirm does not come
-// through here: it executes the version that was chosen, so it projects that snapshot
-// (snapshotFormDescriptor) and an edit made since the last publish cannot change what an already-offered
-// version accepts. It projects the live document as well, but only to refuse a version that no longer
-// describes the form the user was handed (workflowFieldDivergence) — and it projects it itself rather
-// than through this provider, so that a descriptor outage cannot block a confirm.
+// through here: it executes the version that was chosen and validates against that snapshot alone
+// (snapshotFormDescriptor), so an edit made since the last publish cannot change what an already-offered
+// version accepts. It projects the version itself rather than through this provider, so that a
+// descriptor outage cannot block a confirm.
 func workflowFormDescriptor(t *transaction, tid, targetType, targetID string, issue *IssueFormContext) FormDescriptor {
 	require(targetType == "workflow", 409, "interaction_not_confirmable")
 	require(t.directory != nil, 503, "form_descriptor_unavailable")
@@ -372,12 +371,10 @@ func formDescriptorByRef(t *transaction, r *PublicRequest) Object {
 // than from the live document.
 //
 // It exists because a caller can choose the version *before* rendering — the workflow editor's manual
-// run entry does — and such a caller has to be shown the fields of the version it picked. The `@` form
-// is rendered from the live document and relies on the confirm's divergence refusal instead, which
-// works there because the user never chose a version; a manual run has chosen one, so projecting the
-// live document would show a form the chosen version does not accept and then refuse every answer.
-// Confirm already projects this way when it validates a submission, so both read the one projection:
-// this route adds a caller, not a second rule.
+// run entry does, and so does the `@` form, which opens on the platform's default published version
+// and reloads through this route whenever the user picks another. Either way the chosen version's own
+// fields are what the submission is judged by, because confirm validates against the one projection
+// this route serves: it adds a caller, not a second rule.
 //
 // It is a projection and not an admission decision. Reading a descriptor says nothing about whether a
 // run may start — publish state, archiving, input dependencies and per-slot resolution stay the start

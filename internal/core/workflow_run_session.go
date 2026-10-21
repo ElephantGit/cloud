@@ -251,8 +251,7 @@ func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, no
 		return states, false
 	default:
 		// The node succeeded; downstream waves continue in this same pass.
-		settleWorkflowRunStates(t, runID, version, "running", "", states)
-		return states, true
+		return states, settleWorkflowRunStates(t, runID, version, "running", "", states)
 	}
 }
 
@@ -262,8 +261,9 @@ func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, no
 // Declaring delete on a busy Project returns busy — a later pass re-declares, so a terminal run
 // is never left with a live Workspace forever.
 func finishWorkflowRun(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) {
-	settleWorkflowRunStates(t, runID, version, status, runErr, states)
-	finishWorkflowRunCleanup(t, runID)
+	if settleWorkflowRunStates(t, runID, version, status, runErr, states) {
+		finishWorkflowRunCleanup(t, runID)
+	}
 }
 
 // finishWorkflowRunCleanup deletes the run's unregistered execution work and records the run
@@ -391,7 +391,9 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 		return
 	}
 	states[node.ID] = workflowNodeState{Status: "running", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339()}
-	settleWorkflowRunStates(t, runID, version, "running", "", states)
+	if !settleWorkflowRunStates(t, runID, version, "running", "", states) {
+		return
+	}
 	enqueueExecutionWork(t, runID, "agent_session", spec, target, node.ID, time.Time{})
 }
 

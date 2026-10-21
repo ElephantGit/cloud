@@ -204,6 +204,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				require(r.Method == "DELETE", 405, "method_not_allowed")
 				requireSpaceRole(m, "admin")
 				version(p, r.Body.N("version"))
+				require(t.one("SELECT run_id FROM agent_run_residuals WHERE project_id=$1 AND reclaim_conflicted_at IS NOT NULL", p.S("id")) == nil, 409, "residual_fact_conflict")
 				idleProject(t, p.S("id"))
 				require(p.S("lifecycle") == "active", 409, "resource_unavailable")
 				ws := t.list("SELECT * FROM workspaces WHERE project_id=$1 AND deleted_at IS NULL ORDER BY id", p.S("id"))
@@ -716,6 +717,7 @@ func newOperation(t *transaction, r *PublicRequest, uid, pid, wid, kind, step, h
 }
 
 func checkActivities(t *transaction, w Object) {
+	requireNoResidualConflict(t, w.S("id"))
 	require(t.one("SELECT run_id FROM agent_run_residuals WHERE workspace_id=$1 AND cleared_at IS NULL", w.S("id")) == nil, 409, "resource_in_use")
 	require(t.one("SELECT id FROM execution_tickets WHERE workspace_id=$1 AND state='active' AND terminated_by_force_stop_id IS NULL", w.S("id")) == nil, 409, "resource_in_use")
 	require(t.one("SELECT execution_id FROM clone_executions WHERE workspace_id=$1 AND result IS NULL AND terminated_by_force_stop_id IS NULL", w.S("id")) == nil, 409, "resource_in_use")

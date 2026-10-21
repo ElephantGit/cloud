@@ -6,7 +6,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 58 个 SQL 文件。
+当前共 59 个 SQL 文件。
 
 | SQL 文件 | schema 变化 |
 |---|---|
@@ -68,6 +68,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0054_git_delivery_refs.sql](0054_git_delivery_refs.sql) | 经 Git 交付的 Revision |
 | [0055_workflow_run_workspace_release.sql](0055_workflow_run_workspace_release.sql) | WorkflowRun 的 Workspace 释放事实 |
 | [0056_workflow_invocation_reference.sql](0056_workflow_invocation_reference.sql) | workflow IssueRun 到 WorkflowRun 的调用引用 |
+| [0057_agent_run_residual_reclamation.sql](0057_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
@@ -87,6 +88,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0054 是 Revision 改为经 Git 交付的切换，不迁移数据：`revisions` 增加 `delivery_ref`，`revisions_bundle_shape` 换成 `revisions_shape`（`delivery_ref` 为 NULL 时仍是原有的 bundle 形状，非 NULL 时必须是格式正确的 `refs/ora/deliveries/<UUID>` 且不带任何 bundle 列），部分唯一索引 `revisions_delivery_ref` 让一个交付 ref 只属于一个 Revision；既有 bundle 行不改写，可重复执行。语义见 [Revision](../../../docs/agent-runs/revisions.md)，约束覆盖见 `TestRevisionShapeKeepsGitAndBundleRowsApart`。
 - 0055 给 `workflow_runs` 增加单向的 `workspace_release_state`（`pending`/`releasing`/`released`/`abandoned`/`not_required`）、`workspace_release_error` 和 `workspace_released_at`，并按升级时的状态回填：非终态行保持 `pending`；终态行没有 Workspace 的记 `not_required`，Workspace 已软删除的记 `released`（释放时刻取该行的 `deleted_at`），其余记 `releasing`。两条 CHECK 保证 `released` 必有释放时刻、`abandoned` 必有原因。只有 `released` 表示 Cloud 观察到 Workspace 已被删除；`abandoned` 保留 Workspace 行、不写释放时刻。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `TestMigration0055WorkflowRunWorkspaceReleaseAppliesFreshAndUpgrades` 与 `internal/core/workflow_run_release_db_test.go`。
 - 0056 先把没有引用的历史非终态 workflow IssueRun（含 running、deferred）结算为 failed（`workflow_execution_unavailable_before_invocation_linkage`），保留其输入和结果、不虚构执行；再加 `(workflow_invocation_ref, tenant_id)` → `workflow_runs(id, tenant_id)` 复合外键（引用 0044 已建的 `workflow_run_tenant_identity` 唯一约束，不重复建）、唯一引用，以及「非终态 workflow 行必须有引用、其他执行器不得有引用」的 CHECK，无条件 VALIDATE。历史终态 workflow 行可保留 NULL 引用。空库、带历史数据升级、重复应用与约束验证状态见 `integration/workflow_invocation_migration_test.go`。
+- 0057 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

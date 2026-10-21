@@ -15,6 +15,7 @@ Cloud 校验并登记之后删除运行 Workspace，释放沙盒和数据。
 | 怎么创建（@Agent、Project 关口、输入快照） | [Issue 协作](../collaboration/interactions.md#task-modeagent) |
 | Thread 条目、用户轮次、空闲与结束 | [Thread](threads.md) |
 | 启动的等待上限与未知结果收尾 | [有界启动](startup-settlement.md) |
+| D4/D5 残留账本、系统清理责任与证据边界 | [残留回收](residual-reclamation.md) |
 | 对象存储、上传授权、Revision 登记与续接 | [Revision](revisions.md) |
 | 会话列表、归档与模型请求统计 | [会话读取](session-reads.md) |
 
@@ -48,6 +49,10 @@ Cloud 在接管上一阶段证据的事务里写入。
 和操作发起者，从 Project 默认分支克隆，不出现在任何公开的 Workspace 列表或接口里，也不接受其他运行或交互式会话。
 
 ## 后台循环
+
+D4/D5 业务收尾后的残留由独立账本对账继续处理，证据足够才授予一份持久的系统 owned-delete 责任；重试保持同一 operation，
+完成回收不重新结算 Run。当前仅覆盖 [残留回收的 Cloud 第 1 步](residual-reclamation.md)：受控运维入口、保留数据/外部确认、
+Controller/Sandbox Server 物理验收、跨仓联合验收和 D8 历史接管仍未完成；`done` 或对账已运行均不证明资源已回收。
 
 除了接管证据时的同步转换，Cloud server 进程里有一组每 10 秒执行一次的循环，负责那些没有外部事件可跟随的推进和收尾：
 

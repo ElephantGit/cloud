@@ -115,6 +115,8 @@ func deleteWorkflowRunWorkspace(t *transaction, runID string) Object {
 func deleteRunWorkspace(t *transaction, runID string) Object {
 	w := t.one("SELECT * FROM workspaces WHERE issue_run_id=$1", runID)
 	require(w != nil, 404, "not_found")
+	requireNoResidualConflict(t, w.S("id"))
+	require(t.one("SELECT run_id FROM agent_run_residuals WHERE workspace_id=$1 AND cleared_at IS NULL", w.S("id")) == nil, 409, "resource_in_use")
 	if w["deletedAt"] != nil {
 		return Object{"busy": false, "workspace": w}
 	}
@@ -124,7 +126,6 @@ func deleteRunWorkspace(t *transaction, runID string) Object {
 	if t.one("SELECT id FROM operations WHERE project_id=$1 AND state IN ('queued','running','retry_wait','blocked')", w.S("projectId")) != nil {
 		return Object{"busy": true}
 	}
-	require(t.one("SELECT run_id FROM agent_run_residuals WHERE workspace_id=$1 AND cleared_at IS NULL", w.S("id")) == nil, 409, "resource_in_use")
 	closeAdmission(t, w, "deleted")
 	actor := w.S("creatorUserId")
 	// The request carries the pre-declaration Workspace row, exactly as the public delete path does

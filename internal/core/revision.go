@@ -33,6 +33,10 @@ func (s *Store) prepareRevision(ctx context.Context, r *ControlRequest) (*revisi
 	e, err := s.transact(ctx, func(t *transaction) Object {
 		require(r.Service != nil && r.Service.Role == "controller", 403, "service_forbidden")
 		leaseValid(t, r)
+		t.residualFactSource = Object{
+			"kind": "controller", "holderId": r.Service.Subject,
+			"epoch": r.Body.N("epoch"), "submissionId": r.SubmissionID,
+		}
 		require(len(r.SubmissionID) <= 200, 400, "invalid_submission")
 		if old := t.one("SELECT * FROM control_submissions WHERE submission_id=$1", r.SubmissionID); old != nil {
 			require(old.S("requestHash") == requestHash(r.Action, r.Service.Subject, r.Body), 409, "submission_conflict")
@@ -41,6 +45,11 @@ func (s *Store) prepareRevision(ctx context.Context, r *ControlRequest) (*revisi
 		e := t.one("SELECT * FROM node_executions WHERE execution_id=$1 AND operation_id=$2 AND kind='deliver_revision'", r.Body.S("executionId"), r.Body.S("operationId"))
 		require(e != nil, 404, "not_found")
 		if len(e.O("result")) > 0 {
+			require(r.Body.O("result").O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
+			validateNodeResult(e, r.Body.O("result"))
+			if !acceptResidualExecutionFact(t, e, r.Body.O("result")) {
+				return Object{"residualFactConflict": true}
+			}
 			require(jsonText(e.O("result")) == jsonText(r.Body.O("result")), 409, "result_conflict")
 			return nil
 		}
@@ -53,6 +62,9 @@ func (s *Store) prepareRevision(ctx context.Context, r *ControlRequest) (*revisi
 	})
 	if err != nil || e == nil {
 		return nil, err
+	}
+	if e.B("residualFactConflict") {
+		return nil, &Fault{Status: 409, Code: "residual_fact_conflict", Params: Object{}}
 	}
 	result := r.Body.O("result")
 	verified := &revisionVerification{input: jsonText(e.O("input")), valid: true}
@@ -104,6 +116,10 @@ func validStoredObject(object Object) bool {
 // liveDelivery fences cancellation, deletion, replaced Nodes and closed runtime bindings again
 // after external verification. A stale result must not release a different Workspace generation.
 func liveDelivery(t *transaction, e Object) {
+	if residualExecutionIdentity(t, e) != nil {
+		// This is evidence about the original execution, not permission to execute it again.
+		return
+	}
 	require(e["terminatedByForceStopId"] == nil, 409, "dispatch_conflict")
 	w := t.one("SELECT * FROM workspaces WHERE id=$1 AND deleted_at IS NULL", e.S("workspaceId"))
 	require(w != nil && w.S("issueRunId") == e.S("operationId") && w.S("observedState") == "ready" && w.B("admissionOpen"), 409, "dispatch_conflict")

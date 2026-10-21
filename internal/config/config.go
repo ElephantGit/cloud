@@ -50,6 +50,10 @@ type IssueRunsConfig struct {
 	// rejects startup rather than silently selecting a zero-length window that would abandon every
 	// blocked creation the moment it blocked.
 	AgentWorkspaceBlockedTimeout time.Duration `mapstructure:"agent_workspace_blocked_timeout"`
+	// ResidualReconcileInterval is the cadence for Cloud's residual-ledger recovery pass. Omission
+	// selects one minute; an explicit non-positive or malformed duration rejects startup. This
+	// schedules reconciliation and is never a deadline proving external cleanup succeeded.
+	ResidualReconcileInterval time.Duration `mapstructure:"residual_reconcile_interval"`
 	// ThreadIdleTimeout is Thread D4's idle window: how long a Thread may sit `idle` before Cloud
 	// asks the session to end. It is a duration configured per deployment, never a per-run column,
 	// and the comparison that judges it runs on database time — no Cloud, Controller or Node process
@@ -187,6 +191,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("issue_runs.agent_restore_timeout", DefaultAgentRestoreTimeout)
 	v.SetDefault("issue_runs.agent_end_confirm_timeout", DefaultAgentEndConfirmTimeout)
 	v.SetDefault("issue_runs.agent_workspace_blocked_timeout", DefaultAgentWorkspaceBlockedTimeout)
+	v.SetDefault("issue_runs.residual_reconcile_interval", DefaultResidualReconcileInterval)
 	v.SetDefault("workflow.session_turn_timeout", DefaultWorkflowSessionTurnTimeout)
 	v.SetDefault("plugins.asset_import_interval", DefaultAssetImportInterval)
 	var cfg Config
@@ -210,6 +215,9 @@ func Load(configPath string) (*Config, error) {
 	}
 	if cfg.IssueRuns.AgentStartTimeout <= 0 || cfg.IssueRuns.AgentRestoreTimeout <= 0 || cfg.IssueRuns.AgentEndConfirmTimeout <= 0 || cfg.IssueRuns.AgentWorkspaceBlockedTimeout <= 0 {
 		return nil, fmt.Errorf("issue_runs startup, restore, end confirmation and workspace blocked timeouts must be positive durations")
+	}
+	if cfg.IssueRuns.ResidualReconcileInterval <= 0 {
+		return nil, fmt.Errorf("issue_runs.residual_reconcile_interval must be a positive duration")
 	}
 	// IssueRun D5's two approved defaults, applied for the same reason: an operator who omits the keys
 	// gets the limits the decision fixes, not a zero-length window that would abandon every delivery
@@ -246,6 +254,9 @@ const DefaultAgentEndConfirmTimeout = 5 * time.Minute
 // DefaultAgentWorkspaceBlockedTimeout is D5's creation-abandonment window, applied when
 // issue_runs.agent_workspace_blocked_timeout is absent or not positive.
 const DefaultAgentWorkspaceBlockedTimeout = 30 * time.Minute
+
+// DefaultResidualReconcileInterval is the residual-ledger recovery cadence when omitted.
+const DefaultResidualReconcileInterval = time.Minute
 
 // DefaultWorkflowSessionTurnTimeout is circus#299 option A's first-version window, applied when
 // workflow.session_turn_timeout is absent or not positive. It is the same order of magnitude as

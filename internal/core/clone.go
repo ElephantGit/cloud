@@ -53,6 +53,9 @@ func recordedSubmission(t *transaction, r *ControlRequest, hash string, apply fu
 		return old.O("response")
 	}
 	out := apply()
+	if t.residualFactConflict {
+		out["residualFactConflict"] = true
+	}
 	t.exec("INSERT INTO control_submissions(submission_id,holder_id,request_hash,response) VALUES($1,$2,$3,$4)", r.SubmissionID, r.Service.Subject, hash, jsonText(out))
 	return out
 }
@@ -116,7 +119,14 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 	require((outcome == "clone_ready" || outcome == "clone_failed") && result.O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
 	// A checkout of any other commit than the snapshot it was given is a contradiction, not a
 	// fact to record: the baseline would be wrong for every later delivery and resume (contract D3).
+	// Validate before receipt auditing intentionally: invalid results return 400 without audit, as on the Node path.
 	require(outcome != "clone_ready" || result.S("commit") == e.O("input").S("baseCommit"), 400, "base_commit_mismatch")
+	if withReceipt && !acceptResidualReceipt(t, e, r.Body.N("sequence"), r.Body.S("event"), "clone_event_receipts") {
+		return e
+	}
+	if !acceptResidualExecutionFact(t, e, result) {
+		return e
+	}
 	if previous := e.O("result"); len(previous) > 0 {
 		require(jsonText(previous) == jsonText(result), 409, "result_conflict")
 	} else {

@@ -48,6 +48,7 @@
 - [Agent IssueRun：一次 Agent 运行的全过程](agent-runs/issue-runs.md)
 - [Thread：Agent 运行的对话](agent-runs/threads.md)
 - [有界启动：等待上限与未知结果的收尾](agent-runs/startup-settlement.md)
+- [Agent Run 残留回收：Cloud 责任与证据](agent-runs/residual-reclamation.md)
 - [Revision：交付、校验登记与续接](agent-runs/revisions.md)
 - [会话读取：会话列表、归档与模型请求统计](agent-runs/session-reads.md)
 

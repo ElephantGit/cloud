@@ -32,7 +32,12 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		copyRequest.verification = prepared
 		r = &copyRequest
 	}
-	out, err := s.transact(ctx, func(t *transaction) Object {
+	out, err := s.transact(ctx, func(t *transaction) (response Object) {
+		defer func() {
+			if t.residualFactConflict && response != nil {
+				response["residualFactConflict"] = true
+			}
+		}()
 		if r.Action == "access" || r.Action == "admit" {
 			require(r.Service.Role == "controller", 403, "service_forbidden")
 			if r.Action == "admit" || r.Body.S("action") == "execute" {
@@ -54,6 +59,10 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 			return cloneCommand(t, r)
 		}
 		leaseValid(t, r)
+		t.residualFactSource = Object{
+			"kind": "controller", "holderId": r.Service.Subject,
+			"epoch": r.Body.N("epoch"), "submissionId": r.SubmissionID,
+		}
 		refreshRuntimeControls(t)
 		if r.Action == "effect_permit" {
 			return effectPermit(t, r)
@@ -87,11 +96,25 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		// return the recorded response, not fail the version check it already passed.
 		return submitted(t, r, func() Object { return operationCommand(t, r) })
 	})
+	if err == nil && out.B("residualFactConflict") {
+		return nil, &Fault{Status: 409, Code: "residual_fact_conflict", Params: Object{}}
+	}
 	return out, err
 }
 
 // operationCommand runs one Effect-level action on the operation the caller claimed.
 func operationCommand(t *transaction, r *ControlRequest) Object {
+	if r.Action == "effect_result" && validID(r.OperationID) {
+		// A completed residual operation has no execution authority left, but its original
+		// effect receipts still arrive through this existing intake. Do not require a running
+		// operation or its old version merely to preserve an identical fact or audit a conflict.
+		completed := t.one(`SELECT o.* FROM operations o JOIN agent_run_residuals ar ON ar.reclaim_operation_id=o.id
+ WHERE o.id=$1 AND o.kind='delete_workspace' AND o.state='succeeded'
+ AND ar.reclaim_state='cleared' AND ar.reclaim_mode='owned_delete'`, r.OperationID)
+		if completed != nil {
+			return effectResult(t, r, completed)
+		}
+	}
 	o := operation(t, r)
 	switch r.Action {
 	case "snapshot":
@@ -109,6 +132,12 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
 		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		if row := residualOperation(t, o); row != nil && row.S("reclaimMode") == "owned_delete" && row.S("reclaimState") == "reclaiming" && row["reclaimConflictedAt"] == nil {
+			// A3 has no public/operator retry path for this hidden Workspace. Preserve the
+			// same retryable operation even when the existing Controller requests blocked
+			// for an unconfirmed termination; plan/permit still require fresh real evidence.
+			state = "retry_wait"
+		}
 		if o.S("step") == "clone" && code == "clone_failed" {
 			deferWorkspaceClone(t, o)
 			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
@@ -266,6 +295,8 @@ func planEffect(t *transaction, r *ControlRequest, o Object) Object {
 	reconciled(t, o)
 	kind, wid := r.Body.S("kind"), r.Body.S("workspaceId")
 	require(validID(wid), 400, "invalid_effect_scope")
+	requireNoResidualConflict(t, wid)
+	checkResidualEffect(t, o, kind, wid, nil)
 	found := false
 	for _, w := range operationWorkspaces(t, o) {
 		if w.S("id") == wid {
@@ -314,21 +345,18 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 	e := t.one("SELECT * FROM external_effects WHERE id=$1 AND operation_id=$2", r.EffectID, o.S("id"))
 	require(e != nil, 404, "not_found")
 	require(e.S("kind") != "plugin_ensure" && e.S("kind") != "plugin_delete", 409, "invalid_step")
+	residual := residualEffectRow(t, e)
 	state := r.Body.S("state")
 	require(state == "running" || state == "succeeded" || state == "failed" || state == "absent", 400, "invalid_effect_state")
 	result := r.Body.O("result")
 	external := r.Body.S("externalId")
 	if state == "absent" {
-		require(e.S("state") == "planned", 409, "external_state_conflict")
 		state = "planned"
 	} else {
 		require(external != "" && len(external) <= 200, 400, "external_id_required")
-		if e.S("externalId") != "" {
+		if e.S("externalId") != "" && residual == nil {
 			require(external == e.S("externalId"), 409, "external_binding_conflict")
 		}
-	}
-	if e.S("state") == "succeeded" {
-		require(state == "succeeded" && jsonText(result) == jsonText(e.O("result")), 409, "external_state_conflict")
 	}
 	if state == "succeeded" {
 		switch e.S("kind") {
@@ -347,6 +375,26 @@ func effectResult(t *transaction, r *ControlRequest, o Object) Object {
 		case "plugin_delete":
 			require(result.B("removed"), 400, "invalid_cleanup_evidence")
 		}
+	}
+	if residual != nil {
+		fact := Object{
+			"kind": "effect", "effectKind": e.S("kind"), "state": state,
+			"externalId": external, "result": result,
+		}
+		if !acceptResidualEffectFact(t, residual, e, fact) {
+			return Object{"effect": e, "operation": t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))}
+		}
+		if residual.S("reclaimState") == "cleared" && residual.S("reclaimOperationId") == o.S("id") {
+			// Receipt only: neither canonical effects, operation versions nor resource rows may
+			// advance again after atomic completion. Contradictions already committed their block.
+			return Object{"effect": e, "operation": o}
+		}
+	}
+	if r.Body.S("state") == "absent" {
+		require(e.S("state") == "planned", 409, "external_state_conflict")
+	}
+	if e.S("state") == "succeeded" {
+		require(state == "succeeded" && jsonText(result) == jsonText(e.O("result")), 409, "external_state_conflict")
 	}
 	if state == "failed" && (e.S("kind") == "plugin_ensure" || e.S("kind") == "plugin_delete") {
 		// A failed install/remove surfaces on the space row immediately so the
@@ -382,6 +430,7 @@ func completedEffect(t *transaction, o Object, kind, wid string) Object {
 
 func advance(t *transaction, r *ControlRequest, o Object) Object {
 	reconciled(t, o)
+	checkResidualOperation(t, o)
 	next := ""
 	wid := o.S("workspaceId")
 	switch o.S("step") {
@@ -412,7 +461,7 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			require(!repositoryOperationsUnfinished(t, o.S("projectId")), 409, "repository_operation_unfinished")
 		}
 		for _, w := range operationWorkspaces(t, o) {
-			checkActivities(t, w)
+			checkResidualCleanupActivities(t, w, o)
 			live := t.one("SELECT id FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL", w.S("id"))
 			if live != nil {
 				require(t.one("SELECT id FROM node_instances WHERE sandbox_instance_id=$1 AND ended_at IS NULL AND idle_admission_epoch=$2 AND connection_state='connected' AND last_seen_at>clock_timestamp()-interval '30 seconds'", live.S("id"), w.N("admissionEpoch")) != nil, 409, "idle_unconfirmed")
@@ -424,6 +473,9 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			live := t.one("SELECT id FROM sandbox_instances WHERE workspace_id=$1 AND terminated_at IS NULL", w.S("id"))
 			if live != nil {
 				completedEffect(t, o, "sandbox_terminate", w.S("id"))
+				if row := residualOperation(t, o); row != nil {
+					require(residualSandboxTerminated(t, row, live.S("id")), 409, "termination_unconfirmed")
+				}
 				t.exec("UPDATE node_instances SET ended_at=now(),connection_state='ended',version=version+1 WHERE sandbox_instance_id=$1 AND ended_at IS NULL", live.S("id"))
 				t.exec("UPDATE sandbox_instances SET observed_state='terminated',terminated_at=now() WHERE id=$1", live.S("id"))
 			}
@@ -440,6 +492,9 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			next = "cleanup"
 		}
 	case "cleanup":
+		if !completeResidualReclamation(t, o) {
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
 		// Each Workspace's data was deleted by its own effect, planned only after its sandbox ended.
 		for _, w := range operationWorkspaces(t, o) {
 			completedEffect(t, o, "workspace_data_delete", w.S("id"))

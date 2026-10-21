@@ -983,6 +983,11 @@ func TestWorkflowConfirmValidatesAgainstTheChosenVersion(t *testing.T) {
 	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", missingIssue); n != 0 {
 		t.Fatalf("a refused confirm created %d runs", n)
 	}
+	// The refusal left the interaction usable: answering version 1's own form confirms it.
+	run = f.call("POST", confirmPath(f, missingIssue, missingIt.S("id")), core.Object{"values": withVersion(version1, v1.S("id"))}, "wf-diverge-c2b", 200).O("resource")
+	if got := f.call("GET", f.path("/issues/"+missingIssue+"/runs/"+run.S("id")), nil, "", 200).O("input").S("workflowSnapshotId"); got != v1.S("id") {
+		t.Fatalf("the run executed %q, want the selected version %q", got, v1.S("id"))
+	}
 
 	// And a key version 1 does not declare is refused by version 1: `scope` belongs to the live draft,
 	// not to the version the user selected, so it is not silently dropped or passed through.
@@ -992,6 +997,9 @@ func TestWorkflowConfirmValidatesAgainstTheChosenVersion(t *testing.T) {
 	extra := f.call("POST", confirmPath(f, extraIssue, extraIt.S("id")), core.Object{"values": withVersion(wide, v1.S("id"))}, "wf-diverge-c3", 400)
 	if code, field := extra.S("code"), extra.O("params").S("field"); code != "invalid_field_value" || field != "scope" {
 		t.Fatalf("a version-1 confirm carrying the draft's scope = %q on %q; want invalid_field_value on scope: %v", code, field, extra)
+	}
+	if n := f.scalar("SELECT count(*) FROM issue_runs WHERE issue_id=$1", extraIssue); n != 0 {
+		t.Fatalf("a refused confirm created %d runs", n)
 	}
 	// The same interaction confirms once the submission answers version 1's own form.
 	run = f.call("POST", confirmPath(f, extraIssue, extraIt.S("id")), core.Object{"values": withVersion(version1, v1.S("id"))}, "wf-diverge-c4", 200).O("resource")

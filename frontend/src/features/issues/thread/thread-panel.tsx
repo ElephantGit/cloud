@@ -8,8 +8,8 @@ import { RunDelivery } from './run-delivery'
 import { RunResume } from './run-resume'
 import { RunPreparation, SessionFailure } from './run-preparation'
 import { useLoadOlderThread, useThread, type ThreadRef, type ThreadSnapshot } from './thread-api'
-import { ThreadComposer } from './thread-composer'
-import { latestAgentRun, threadStateLabel } from './thread-entries'
+import { EndSessionControl, ThreadComposer } from './thread-composer'
+import { isThreadClosed, latestAgentRun, threadStateLabel } from './thread-entries'
 import { ThreadMessages } from './thread-messages'
 import { useThreadPreview } from '@/features/thread-preview/use-thread-preview'
 import { mergeThreadPreview } from '@/features/thread-preview/preview'
@@ -30,12 +30,38 @@ function chosenAgentRun(
   return latestAgentRun(runs)
 }
 
+function taskMayEndThread(
+  snapshot: Extract<ThreadSnapshot, { declared: true }>,
+  readOnly: boolean,
+  showEndControl: boolean,
+  endActorId: string | undefined,
+): boolean {
+  return (
+    readOnly &&
+    showEndControl &&
+    !!endActorId &&
+    endActorId === snapshot.initiatorUserId &&
+    snapshot.canEnd &&
+    !isThreadClosed(snapshot.threadState)
+  )
+}
+
+function isHistoricalSelection(
+  selectedRunId: string | undefined,
+  latestRunId: string | undefined,
+  showEndControl: boolean,
+): boolean {
+  return !!selectedRunId && selectedRunId !== latestRunId && !showEndControl
+}
+
 function DeclaredThread({
   threadRef,
   snapshot,
   names,
   preparation,
   readOnly,
+  showEndControl,
+  endActorId,
   onQuote,
 }: {
   threadRef: ThreadRef
@@ -43,6 +69,8 @@ function DeclaredThread({
   names: ReadonlyMap<string, string>
   preparation: IssueRun['preparation']
   readOnly: boolean
+  showEndControl: boolean
+  endActorId: string | undefined
   onQuote?: ((text: string) => void) | undefined
 }) {
   const loadOlder = useLoadOlderThread(threadRef)
@@ -88,6 +116,9 @@ function DeclaredThread({
           canEnd={snapshot.canEnd}
         />
       )}
+      {taskMayEndThread(snapshot, readOnly, showEndControl, endActorId) && (
+        <EndSessionControl threadRef={threadRef} closed={false} />
+      )}
     </>
   )
 }
@@ -108,6 +139,8 @@ function RunThread({
   names,
   runs,
   readOnly,
+  showEndControl,
+  endActorId,
   onQuote,
 }: {
   threadRef: ThreadRef
@@ -115,6 +148,8 @@ function RunThread({
   names: ReadonlyMap<string, string>
   runs: readonly IssueRun[]
   readOnly: boolean
+  showEndControl: boolean
+  endActorId: string | undefined
   onQuote?: ((text: string) => void) | undefined
 }) {
   const settled = ['completed', 'failed', 'cancelled'].includes(run.status)
@@ -145,6 +180,8 @@ function RunThread({
           names={names}
           preparation={run.preparation}
           readOnly={readOnly}
+          showEndControl={showEndControl}
+          endActorId={endActorId}
           onQuote={onQuote}
         />
       )}
@@ -169,6 +206,8 @@ export function IssueThreadPanel({
   members,
   selectedRunId,
   readOnly = false,
+  showEndControl = false,
+  endActorId,
   onQuote,
 }: {
   tid: string
@@ -178,6 +217,10 @@ export function IssueThreadPanel({
   selectedRunId?: string | undefined
   /** A task-level composer owns sends while multiple run transcripts are shown. */
   readOnly?: boolean
+  /** Permit ending the latest task Thread while its task-level composer owns all sends. */
+  showEndControl?: boolean
+  /** Current task user; only the original session initiator receives the task end action. */
+  endActorId?: string | undefined
   onQuote?: ((text: string, agentId: string) => void) | undefined
 }) {
   const { data: runs = [], isPending, isError } = useRuns(tid, issueId)
@@ -188,7 +231,7 @@ export function IssueThreadPanel({
   if (!run) return null
   return (
     <div className="min-w-0 w-full">
-      {selectedRunId && run.id !== latest?.id && (
+      {isHistoricalSelection(selectedRunId, latest?.id, showEndControl) && (
         <p className="mb-3 text-xs text-muted-foreground">
           正在查看历史执行；继续对话请返回最新执行。
         </p>
@@ -200,6 +243,8 @@ export function IssueThreadPanel({
         threadRef={{ tid, issueId, runId: run.id }}
         names={memberNameById(members)}
         readOnly={readOnly || (!!selectedRunId && run.id !== latest?.id)}
+        showEndControl={showEndControl}
+        endActorId={endActorId}
         onQuote={onQuote ? (text) => onQuote(text, run.executorId) : undefined}
       />
     </div>

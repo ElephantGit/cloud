@@ -40,6 +40,8 @@ cloudctl -config <path> residual get --tenant-id <tenant> --intent-id <intent>
 - `list` intersects optional `--project-id`, `--run-id`, `--workspace-id`, `--operation-id`, and `--reclaim-id` filters, with `--limit` (default 100) and `--after`. It returns `items/nextCursor`; operation filtering can match either the original failed D8 delete or the currently bound deletion operation.
 - `get` accepts one root/child `--intent-id`, or an exact `--run-id`, `--workspace-id`, or `--reclaim-id`. Other resource IDs may narrow a resource selector; an intent selector cannot be mixed with resource selectors. Queries return audit history, target evidence, and `openTargets` for external confirmation.
 
+Each `list` item, actual residual ledger rows from `get`, and the resource output when present expose persisted `stop_evidence` as `stopEvidence`; the resource is returned only when no intent is selected. Without evidence the field is an empty object `{}`; legacy D8 list items without a ledger also return `{}`, while a synthetic legacy D8 residual in `get` may omit the field. An existing unconfirmed-stop record retains `kind=stop_unconfirmed`, `source=cloud`, `observedAt`, and the original-identity `executionId`. This field is display-only: it grants no termination, deletion, or ledger-clearance authority and does not change reclamation responsibility.
+
 Termination and data deletion are separate commands, each requiring a reason, idempotency key, and affirmative confirmation. `terminate` requires at least a Run or Workspace; all additional IDs must identify the same original resource. D8 also requires the original failed delete `--operation-id`. Project/tenant selectors cannot authorize batch writes.
 
 ```sh

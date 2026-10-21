@@ -72,6 +72,8 @@ Workspace 软删除并写 `cleared/released`，不改 Run 的 phase/status/resul
 | `delete-data` | 一个已真实终止成功且 retained 的根意图，独立 reason、幂等键和数据删除确认；不能按裸 Workspace 发起 |
 | `confirm-external` | 一个已存在且未完成的根或从属意图，reason、幂等键、说明、每个未完成目标的外部事实引用及承担剩余责任的确认 |
 
+`list` 条目、`get` 的实际 residual 账本行以及存在时的资源输出通过 `stopEvidence` 展示持久化的 `stop_evidence`；资源仅在未选择意图时返回。没有证据时返回 `{}`，没有账本的历史 D8 列表条目同样返回 `{}`，但 `get` 中合成的历史 D8 residual 可能省略该字段。停止未确认记录保留 `kind=stop_unconfirmed`、`source=cloud`、`observedAt` 以及原身份的 `executionId`。这只是已有观察的展示，不证明物理终止，不授予终止、删除或清账权限，也不改变回收责任。
+
 写命令不接受 tenant/Project 批量处置。所有命令键共用 tenant 内的回执空间；同键同规范输入返回原回执和当前进度，
 同键不同动作、资源、父意图、reason 或确认返回 `idempotency_conflict`。重放不创建新责任或重复外部取证。
 

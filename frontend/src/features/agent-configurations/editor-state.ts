@@ -119,7 +119,9 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
         latest.selectionVersion === draft.selectionVersion &&
         latest.declaration.fingerprint === draft.fingerprint
       if (confirmed)
-        setDraft((current) => agentConfigurationDraft(latest, written.cleared ? undefined : current))
+        setDraft((current) =>
+          agentConfigurationDraft(latest, written.cleared ? undefined : current),
+        )
       setComparing(!confirmed)
       setAcceptedRepair(false)
       setConfirmClear(false)

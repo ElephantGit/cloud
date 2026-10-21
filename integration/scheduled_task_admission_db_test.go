@@ -32,7 +32,7 @@ func seedScheduledTaskModelChain(t *testing.T, store *core.Store, userID string)
 }
 
 // seedEnabledScheduledTask inserts an enabled every_hours task due from `enabledAt`.
-func seedEnabledScheduledTask(t *testing.T, store *core.Store, s skeletonSeed, agentID string, enabledAt string) string {
+func seedEnabledScheduledTask(t *testing.T, store *core.Store, s skeletonSeed, agentID, enabledAt string) string {
 	t.Helper()
 	taskID := uuid.NewString()
 	_, err := store.Pool.Exec(`INSERT INTO scheduled_tasks

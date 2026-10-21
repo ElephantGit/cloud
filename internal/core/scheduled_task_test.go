@@ -124,3 +124,42 @@ func TestDuePointRespectsResumeAndAnchor(t *testing.T) {
 		t.Fatalf("duePoint with no resume = %v", got)
 	}
 }
+
+func TestLatestDueLandsOnTheNewestPoint(t *testing.T) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := func(y int, m time.Month, d, hh, mm int) time.Time {
+		return time.Date(y, m, d, hh, mm, 0, 0, loc)
+	}
+	anchor := day(2026, 1, 1, 0, 0)
+
+	// every_hours is anchored at the enable instant: the newest point <= now skips swallowed hours.
+	hourly := scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 1}
+	if got := hourly.latestDue(anchor, day(2026, 1, 1, 2, 30), loc); !got.Equal(day(2026, 1, 1, 2, 0)) {
+		t.Fatalf("every_hours latestDue = %v, want 02:00", got)
+	}
+	if got := hourly.latestDue(anchor, day(2026, 1, 1, 0, 30), loc); !got.IsZero() {
+		t.Fatalf("every_hours latestDue before the first interval = %v, want zero", got)
+	}
+
+	// daily skips straight to today's wall clock when it has already passed.
+	daily := scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 0}
+	if got := daily.latestDue(anchor, day(2026, 1, 1, 10, 0), loc); !got.Equal(day(2026, 1, 1, 9, 0)) {
+		t.Fatalf("daily latestDue = %v, want today 09:00", got)
+	}
+	if got := daily.latestDue(anchor, day(2026, 1, 1, 8, 0), loc); !got.IsZero() {
+		t.Fatalf("daily latestDue before the first wall clock = %v, want zero", got)
+	}
+
+	// weekly lands on the most recent matching weekday.
+	weekly := scheduledTaskSchedule{Kind: "weekly", Hour: 18, Minute: 0, Weekdays: []time.Weekday{time.Monday, time.Friday}}
+	// 2026-01-01 is a Thursday; Friday 2026-01-02 is the first due point, Monday 2026-01-05 the next.
+	if got := weekly.latestDue(anchor, day(2026, 1, 3, 12, 0), loc); !got.Equal(day(2026, 1, 2, 18, 0)) {
+		t.Fatalf("weekly latestDue on Saturday = %v, want Friday 18:00", got)
+	}
+	if got := weekly.latestDue(anchor, day(2026, 1, 5, 20, 0), loc); !got.Equal(day(2026, 1, 5, 18, 0)) {
+		t.Fatalf("weekly latestDue on Monday night = %v, want Monday 18:00", got)
+	}
+}

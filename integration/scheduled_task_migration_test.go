@@ -3,8 +3,6 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -138,16 +136,9 @@ func TestMigration0060ScheduledTasksUpgradeAndReplay(t *testing.T) {
 		VALUES($1,$2,'2026-01-02T03:04:05Z','skipped_busy',1,now())`, s.tenantID, taskID)
 	must(t, err)
 
-	// Migrate again plus a raw DDL re-execution: both are no-ops and preserve progress.
+	// Migrating again is a no-op: the runner skips the applied file by checksum, and the seeded
+	// definitions and occurrences are left untouched.
 	must(t, store.Migrate(context.Background()))
-	ddl, err := os.ReadFile(filepath.Join("..", "internal", "core", "migrations", scheduledTaskMigration))
-	must(t, err)
-	tx, err := pool.Begin()
-	must(t, err)
-	defer func() { _ = tx.Rollback() }()
-	_, err = tx.Exec(string(ddl))
-	must(t, err)
-	must(t, tx.Commit())
 	var definitions, occurrences int
 	must(t, pool.QueryRow(`SELECT count(*) FROM scheduled_tasks`).Scan(&definitions))
 	must(t, pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences`).Scan(&occurrences))

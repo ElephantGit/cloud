@@ -44,6 +44,7 @@ describe('workspacePaths', () => {
     expect(p.sessions).toBe('/w/acme/sessions')
     expect(p.agentSession('issue', 'run')).toBe('/w/acme/sessions/agent/issue/run')
     expect(p.issueDetail('42')).toBe('/w/acme/issues/42')
+    expect(p.scheduledTasks).toBe('/w/acme/scheduled-tasks')
     expect(p.workflowDetail('42')).toBe('/w/acme/workflows/42')
     expect(p.spaces).toBe('/w/acme/spaces')
     expect(p.skills).toBe('/w/acme/skills')

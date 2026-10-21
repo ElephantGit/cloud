@@ -75,6 +75,8 @@ New tests are assigned automatically without changing existing names' assignment
 and verifies the actual top-level starts and results after execution. Examples and fuzz seeds are included; benchmarks remain disabled as in the original command.
 The `packages` job retains every other package, format, proto, lint and command-build check. All groups retain real PostgreSQL,
 RustFS, race detection and the existing `-timeout 20m`.
+Each shard builds Git Server before fixtures create leases, so cold compilation previously warmed by earlier tests cannot consume grant lifetimes.
+The test-output `tee` pipeline uses Bash with `pipefail` to preserve a failing `go test` exit code.
 
 The final `check` status depends on every matrix job and cannot pass after a failure or cancellation. It verifies that the
 four executed sets form exactly the discovered list, then merges every job's binary coverage with `go tool covdata merge -pcombine`

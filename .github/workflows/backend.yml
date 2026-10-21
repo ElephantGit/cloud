@@ -127,6 +127,11 @@ jobs:
         run: go tool golangci-lint run
       - name: Prepare coverage directory
         run: mkdir -p "$GOCOVERDIR"
+      - name: Warm Git Server build cache before fixture leases start
+        if: matrix.shard != 'packages'
+        # startGitServer builds this command after creating short-lived grants. Each fresh
+        # shard needs the non-race build cache that earlier tests used to warm implicitly.
+        run: go build -o "$RUNNER_TEMP/git-server" ./cmd/git-server
       - name: Test non-integration packages
         if: matrix.shard == 'packages'
         run: |
@@ -144,6 +149,7 @@ jobs:
           python3 .github/scripts/integration_shards.py plan "$RUNNER_TEMP/integration-list.txt" "$SHARD" "$GOCOVERDIR/shard.json" >> "$GITHUB_OUTPUT"
       - name: Test integration shard
         if: matrix.shard != 'packages'
+        shell: bash
         env:
           TEST_PATTERN: ${{ steps.shard.outputs.pattern }}
         run: |

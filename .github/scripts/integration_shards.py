@@ -47,11 +47,12 @@ def record(manifest, log):
     finished = []
     for line in log.read_text().splitlines():
         start = re.fullmatch(r"=== RUN\s+(\S+)", line)
-        end = re.fullmatch(r"--- (?:PASS|FAIL|SKIP): (\S+) \([0-9.]+s\)", line)
+        end = re.fullmatch(r"--- (?P<status>PASS|FAIL|SKIP): (?P<name>\S+) \([0-9.]+s\)", line)
         if start and "/" not in start[1]:
             starts.append(start[1])
-        if end and "/" not in end[1]:
-            finished.append(end[1])
+        if end and "/" not in end["name"]:
+            require(end["status"] != "FAIL", f"failed top-level test: {end['name']}")
+            finished.append(end["name"])
     expected = Counter(data["selected"])
     require(Counter(starts) == expected, "actual top-level starts differ from planned shard")
     require(Counter(finished) == expected, "actual top-level results differ from planned shard")

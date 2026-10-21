@@ -62,6 +62,7 @@ Cloud 的正确性主要来自真实边界上的测试：真实的 PostgreSQL �
 Backend 在四个独立 runner 上运行 integration，按顶层测试名的 UTF-8 CRC32 对 4 取模分组；新增测试自动归组，已有测试名的归属不变。
 每个 runner 用 `go test -list '.*' ./integration` 发现测试，生成锚定完整名称的 `-run '^(A|B|...)$'`，并检查分组无遗漏、无重复；执行后再核对实际运行和结束的顶层名单。Example 和 fuzz seed 同样归组，Benchmark 与原命令一样不执行。
 其他包、格式、proto、lint 和命令构建在 `packages` job 中保持原检查。每组仍使用真实 PostgreSQL、RustFS、race 和原来的 `-timeout 20m`。
+分片会在 fixture 创建租约前预编译 Git Server，避免原先由较早测试隐式预热的冷编译耗尽授权时间。测试输出的 `tee` 管道使用带 `pipefail` 的 Bash，不能掩盖 `go test` 的失败退出码。
 
 最终 `check` 状态依赖全部矩阵 job；任何 job 失败或取消都不能通过。它复核四组实际执行的并集等于完整列表，
 再通过 `go tool covdata merge -pcombine` 合并所有 job 的二进制覆盖率，并用 `textfmt` 生成 `coverage.out`（`coverage` artifact）。

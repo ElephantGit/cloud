@@ -392,6 +392,17 @@ export const workflowTranslations = {
     'workflows.run.runHint': '对已发布快照执行一次这个工作流',
     'workflows.run.noSnapshotHint': '请先发布一个版本，才能运行这个工作流',
     'workflows.run.noPublishedSnapshot': '这个工作流还没有已发布的版本，无法运行。',
+    'workflows.run.startTitle': '运行这个工作流',
+    'workflows.run.startDescription': '选择要运行的版本，填写该版本的输入后启动一次运行。',
+    'workflows.run.project': '项目',
+    'workflows.run.chooseProject': '选择一个项目',
+    'workflows.run.projectRequired': '先选一个项目：运行的工作区建在这个项目里。',
+    'workflows.run.noProjects': '这个空间还没有项目，先创建一个项目再运行。',
+    'workflows.run.projectsUnavailable': '项目列表加载失败，请刷新后重试。',
+    'workflows.run.version': '版本',
+    'workflows.run.start': '开始运行',
+    'workflows.run.noInput': '这个版本没有需要填写的输入。',
+    'workflows.run.missingRequired': '还需要填写：{{fields}}',
     'workflows.run.history': '运行历史',
     'workflows.run.historyHint': '查看这个工作流的运行历史',
     'workflows.run.historyEmpty': '还没有运行记录。',
@@ -425,6 +436,10 @@ export const workflowTranslations = {
     'workflows.errors.nameBlank': '工作流名称不能为空。',
     'workflows.errors.notFound': '未找到该工作流。',
     'workflows.errors.stale': '该工作流已被他人修改，请刷新后重试。',
+    'workflows.errors.requiredField': '还有必填项没有填写，请补齐后再运行。',
+    'workflows.errors.invalidField': '有一项输入不符合所选版本的要求，请按字段提示修改后重试。',
+    'workflows.errors.executorUnconfigured':
+      '所选版本引用的执行器槽位还没有配置。请先在模型设置里为每个槽位选择执行器，再回来运行。',
     'workflows.errors.unknown': '操作失败，请稍后重试。',
   },
   'en-US': {
@@ -809,6 +824,20 @@ export const workflowTranslations = {
     'workflows.run.runHint': 'Execute this workflow once against a published snapshot',
     'workflows.run.noSnapshotHint': 'Publish a version before running this workflow',
     'workflows.run.noPublishedSnapshot': 'This workflow has no published version to run against.',
+    'workflows.run.startTitle': 'Run this workflow',
+    'workflows.run.startDescription':
+      'Choose the version to run, answer what it asks for, and start one run.',
+    'workflows.run.project': 'Project',
+    'workflows.run.chooseProject': 'Choose a Project',
+    'workflows.run.projectRequired':
+      'Choose a Project first: the run’s Workspace is provisioned in it.',
+    'workflows.run.noProjects': 'This space has no Project yet. Create one, then start the run.',
+    'workflows.run.projectsUnavailable':
+      'The Project list could not be loaded. Refresh and try again.',
+    'workflows.run.version': 'Version',
+    'workflows.run.start': 'Start run',
+    'workflows.run.noInput': 'This version asks for no input.',
+    'workflows.run.missingRequired': 'Still needed: {{fields}}',
     'workflows.run.history': 'Run history',
     'workflows.run.historyHint': 'Browse this workflow’s run history',
     'workflows.run.historyEmpty': 'No runs yet.',
@@ -841,6 +870,11 @@ export const workflowTranslations = {
     'workflows.errors.nameBlank': 'Workflow name cannot be blank.',
     'workflows.errors.notFound': 'Workflow not found.',
     'workflows.errors.stale': 'This workflow changed elsewhere; reload and try again.',
+    'workflows.errors.requiredField': 'A required field is still empty. Fill it in and run again.',
+    'workflows.errors.invalidField':
+      'One value does not fit the selected version. Fix the field it names and try again.',
+    'workflows.errors.executorUnconfigured':
+      'The selected version references an executor slot you have not configured. Choose an executor for each slot in model settings, then run again.',
     'workflows.errors.unknown': 'Something went wrong. Try again in a moment.',
   },
 } satisfies TranslationBundle

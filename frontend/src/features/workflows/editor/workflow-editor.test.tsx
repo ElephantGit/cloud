@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workflow, WorkflowRun, WorkflowSnapshot } from '@/api/generated.schemas'
 import { createDefaultWorkflowCapabilities } from '@/features/workflows/runtime/capabilities'
 import { WorkflowEditor } from '@/features/workflows/editor/workflow-editor'
-import { installCloudSpaceHandlers, TEST_TENANT_ID, workflowFixture } from '@/test/cloud-handlers'
+import {
+  TEST_PROJECT_ID,
+  TEST_TENANT_ID,
+  chooseProject,
+  installCloudSpaceHandlers,
+  installSpaceProjectHandlers,
+  workflowFixture,
+} from '@/test/cloud-handlers'
 import { server } from '@/test/msw-server'
 import { stubViewportGeometry } from '@/test/viewport'
 import { renderWithProviders } from '@/test/render'
@@ -201,8 +208,12 @@ function renderEditor({
     ),
   )
   installCloudSpaceHandlers('admin')
+  // The run dialog lists the space's Projects, and the editor mounts in the `cloud-dev` space the
+  // fixtures declare, so the space's Project list has to answer before a run can name one.
+  installSpaceProjectHandlers()
   renderWithProviders(
     <WorkflowEditor tenantId={TEST_TENANT_ID} workflow={workflowFixture({ graph })} />,
+    { slug: 'cloud-dev' },
   )
   return bodies
 }
@@ -1022,7 +1033,7 @@ describe('WorkflowEditor run tools', () => {
     expect(screen.getByText('还没有运行记录。')).toBeInTheDocument()
   })
 
-  it('starts no run from the toolbar, which cannot state the Project a run freezes', async () => {
+  it('starts the published version in the Project the member picks', async () => {
     const published: WorkflowSnapshot = {
       id: 'snap-1',
       tenantId: TEST_TENANT_ID,
@@ -1047,10 +1058,16 @@ describe('WorkflowEditor run tools', () => {
       }),
     )
     fireEvent.click(runButton)
+    // The toolbar button opens the start dialog; the run is created by its own submit, once the
+    // member has seen — and answered — what the published version asks for. The Project is one of
+    // those answers: nothing else could name where the run's Workspace provisions.
+    await chooseProject()
+    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
 
-    // The run form that picks the Project is not built yet, so the mutation refuses the run before
-    // the request is sent and this capture stays empty.
-    await waitFor(() => expect(runButton).toBeEnabled())
-    expect(bodies).toEqual([])
+    // The version's Start node declares nothing, so there is nothing to answer and the run carries
+    // the empty input the server reads as "use this version's own defaults".
+    await waitFor(() =>
+      expect(bodies).toEqual([{ projectId: TEST_PROJECT_ID, snapshotId: 'snap-1', input: {} }]),
+    )
   })
 })

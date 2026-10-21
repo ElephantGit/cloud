@@ -107,6 +107,7 @@ func residualTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScene,
 		kind = "deliver_revision"
 		result = deliveredResult(scene, in, revisionFinalCommit)
 		conflict = deliveredResult(scene, in, strings.Repeat("2", 40))
+		f.push(in, revisionFinalCommit)
 	}
 	request := func(submission string, fact *controlpb.ExecutionResult) *controlpb.TakeOverNodeEventRequest {
 		return &controlpb.TakeOverNodeEventRequest{
@@ -132,8 +133,8 @@ func residualTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScene,
 	if got := f.scalar(`SELECT count(*) FROM node_event_receipts WHERE execution_id=$1 AND sequence=$2`, execution, sequence); got != 0 {
 		t.Fatalf("invalid target created a receipt: %d", got)
 	}
-	if delivery && len(f.objects.probed()) != 0 {
-		t.Fatal("invalid original target reached object verification")
+	if delivery && (len(f.refs.queried()) != 0 || len(f.objects.probed()) != 0) {
+		t.Fatal("invalid original target reached Git or object verification")
 	}
 
 	// A successful transport response is the ACK. Force the ledger write to fail, proving the
@@ -184,17 +185,36 @@ func residualTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScene,
 	if delivery {
 		row := f.revisionRow(scene.runID)
 		project, repository := f.runPlacement(scene.runID)
-		if row == nil || row.RunID != scene.runID || row.TenantID != scene.tenantID || row.WorkspaceID != f.runWorkspaceID(scene.runID) || row.ProjectID != project || row.RepositoryURL != repository || row.FinalCommit != revisionFinalCommit || row.HistoryKey != in.S("historyKey") || row.BundleKey != in.S("bundleKey") {
+		if row == nil || row.RunID != scene.runID || row.TenantID != scene.tenantID || row.WorkspaceID != f.runWorkspaceID(scene.runID) || row.ProjectID != project || row.RepositoryURL != repository || row.FinalCommit != revisionFinalCommit || row.BaseCommit != in.S("baseCommit") || row.RevisionRef != in.S("revisionRef") || row.DeliveryRef != in.S("deliveryRef") {
 			t.Fatalf("late verified delivery registered wrong original Revision: %#v", row)
 		}
-		if verdict := f.revisionVerification(execution); verdict.S("outcome") != "delivered" {
-			t.Fatalf("actual object verification missing: %v", verdict)
+		if row.HistoryKey != in.S("historyKey") || row.HistorySize != revisionHistorySize || row.HistorySHA256 != revisionHistorySHA {
+			t.Fatalf("late verified delivery lost its declared history: %#v", row)
 		}
-		// Both the failed transaction's attempt and its successful retry verified the two declared
-		// objects via the existing real-HTTP HEAD fixture. No pre-seeded verification verdict is used.
+		if row.BundleKey != "" || row.BundleSize != nil || row.BundleSHA256 != "" {
+			t.Fatalf("late Git delivery registered a retired bundle: %#v", row)
+		}
+		if verdict := f.revisionVerification(execution); verdict.S("outcome") != "delivered" {
+			t.Fatalf("actual Git and history verification missing: %v", verdict)
+		}
+		// Both the failed transaction's attempt and its successful retry queried the attempt's own
+		// delivery ref and verified its history via the real-HTTP HEAD fixture. The pinned Git ref
+		// stands for an accepted Node push; no pre-seeded Cloud verification verdict is used.
+		refs := f.refs.queried()
+		if len(refs) != 2 || refs[0] != in.S("deliveryRef") || refs[1] != in.S("deliveryRef") {
+			t.Fatalf("wrong actual Git verification requests: %v", refs)
+		}
 		probes := f.objects.probed()
-		if len(probes) != 4 || probes[0].S("key") != in.S("historyKey") || probes[1].S("key") != in.S("bundleKey") || probes[2].S("key") != in.S("historyKey") || probes[3].S("key") != in.S("bundleKey") {
+		if len(probes) != 2 {
 			t.Fatalf("wrong actual storage verification requests: %v", probes)
+		}
+		for _, probe := range probes {
+			if probe.S("key") != in.S("historyKey") || probe.N("size") != revisionHistorySize || probe.S("sha256") != revisionHistorySHA {
+				t.Fatalf("wrong actual history verification request: %v", probe)
+			}
+		}
+		if got := f.objects.nonHeadRequests(); got != 0 {
+			t.Fatalf("late verification sent %d non-HEAD object-store requests", got)
 		}
 	}
 
@@ -203,7 +223,7 @@ func residualTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScene,
 	must(t, f.store.Pool.QueryRow(`SELECT r.reclaim_version,e.result::text FROM agent_run_residuals r
  JOIN node_executions e ON e.operation_id=r.run_id WHERE e.execution_id=$1`, execution).Scan(&evidenceVersion, &canonical))
 	// Replays use the same persisted event identity. A different submission must also be idempotent,
-	// and successful delivery replay must not need to contact object storage again.
+	// and successful delivery replay must not contact the Git Server or object storage again.
 	_, err = f.executions.TakeOverNodeEvent(ctx, request("residual-terminal", result))
 	must(t, err)
 	_, err = f.executions.TakeOverNodeEvent(ctx, request("residual-terminal-replay", result))
@@ -231,8 +251,8 @@ func residualTerminalIntakeCase(t *testing.T, f *fixture, scene liveThreadScene,
 	if !audited {
 		t.Fatal("conflict response rolled back audit or rewrote canonical result/receipt")
 	}
-	if delivery && len(f.objects.probed()) != 4 {
-		t.Fatal("known replay or canonical conflict repeated object verification")
+	if delivery && (len(f.refs.queried()) != 2 || len(f.objects.probed()) != 2) {
+		t.Fatal("known replay or canonical conflict repeated Git or object verification")
 	}
 	if after := residualIntakeSnapshot(t, f, scene); after != before {
 		t.Fatalf("late facts changed business terminal/version, admission, resource identity or dispatch counts:\nbefore=%s\nafter=%s", before, after)

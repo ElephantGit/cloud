@@ -107,7 +107,7 @@ written together with the phase on entering `releasing`, and accompanied by a ti
 
 Whether the output was saved is stated by `result.deliveryState`: `saved` (a Revision with changes was
 registered), `unchanged` (a Revision without changes was registered), `failed` (delivery was given up),
-`skipped` (the deployment has no object storage, or the run was cancelled before any session). `failed`
+`skipped` (the deployment has no object storage or no Git Server, or the run was cancelled before any session). `failed`
 and `cancelled` runs still try to save their output and can have a Revision too.
 
 On the timeline an Agent run has one `run.enqueued` activity, and on entering `releasing` a

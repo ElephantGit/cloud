@@ -20,14 +20,11 @@ HTTP conventions are in [HTTP API conventions](http-api.en.md).
   tables and runs no migrations. GORM is used solely to open the pool (`internal/repository`);
   every business query is hand-written, parameterized SQL.
 - The `Store` carries the collaborators needed at run time: the object storage configuration
-  `ObjectStore`, the workflow asset downloader `WorkflowAssets`, the collaboration ports
+  `ObjectStore`, the Git Server repository address and ref query `GitServer`, the workflow asset downloader `WorkflowAssets`, the collaboration ports
   (`Directory`, `Forms` and others, see [Issue collaboration](../collaboration/interactions.en.md)),
   the IssueRun business hooks and window settings, the SSE event hub `Events` and the Controller
   signal hub `Signals`. `cmd/*` assembles them at startup; core never reads configuration or
   environment variables itself.
-- `core.NewDevelopmentStore` exists only for test fixtures and the in-process simulator. It
-  additionally opens a retired, unscoped clone contract and must never be used by the production
-  server.
 
 ## Transactions: `transact`
 
@@ -90,7 +87,7 @@ discarded on rollback:
 | Collected item | Action after commit |
 |---|---|
 | A newly queued or retried Workspace operation | `ControlHub` sends `OperationAvailable` |
-| A new clone request or execution work item | `ControlHub` sends `WorkAvailable` |
+| A new execution work item (an Agent session or a Revision delivery) | `ControlHub` sends `WorkAvailable` |
 | A new Thread command | `ControlHub` sends `ThreadCommandAvailable` |
 | A business change inside a Space | `SpaceHub` sends an invalidation event to that Space's SSE subscribers |
 

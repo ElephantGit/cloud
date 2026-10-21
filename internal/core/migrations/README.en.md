@@ -6,7 +6,7 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 54 SQL files.
+There are currently 57 SQL files.
 
 | SQL file | Schema change |
 |---|---|
@@ -63,7 +63,10 @@ There are currently 54 SQL files.
 | [0049_thread_commands_workflow_run.sql](0049_thread_commands_workflow_run.sql) | WorkflowRun session-command ownership and node scope |
 | [0050_personal_agent_configurations.sql](0050_personal_agent_configurations.sql) | Persistent personal Agent configuration revisions and private run snapshots |
 | [0051_workflow_run_cancel.sql](0051_workflow_run_cancel.sql) | WorkflowRun cancellation requests |
-| [0052_agent_run_residual_reclamation.sql](0052_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
+| [0052_legacy_workflow_issue_run_settlement.sql](0052_legacy_workflow_issue_run_settlement.sql) | One-time settlement of legacy queued workflow IssueRuns |
+| [0053_retire_tenant_level_clones.sql](0053_retire_tenant_level_clones.sql) | Retire tenant-level clones |
+| [0054_git_delivery_refs.sql](0054_git_delivery_refs.sql) | Revisions delivered over Git |
+| [0055_agent_run_residual_reclamation.sql](0055_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 
 ## Immutability and upgrades
 
@@ -77,7 +80,10 @@ There are currently 54 SQL files.
 - 0049 lets `thread_commands` accept a WorkflowRun owner and requires a graph node on workflow commands; each node holds at most one `end_session`, so the scheduler can replay it safely. Every old row carries `run_id` and is not backfilled. Semantics are in [workflows](../../../docs/workflows/workflows.en.md); coverage is in the `TestWorkflowSessionEndsAfterSuccessfulTurn` DB tests.
 - 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
 - 0051 adds the cancellation-request instant to `workflow_runs` and backfills no old row; the request records intent only and is settled by the scheduler on later passes. Semantics are in [workflows](../../../docs/workflows/workflows.en.md#scheduling); coverage is in the `TestWorkflowRunCancelBeforeStartNeverStarts` DB tests.
-- 0052 only adds residual-ledger columns: defaults initialize existing D4/D5 rows as `reconciling`, without backfilling targets or evidence, rewriting old `reason`, `responsibility` or business settlement, or backfilling D8. Legacy rows with non-null `cleared_at` cause an explicit migration error and rollback pending compatibility handling (A2). Reentrant DDL preserves progressed rows. The schema accepts `released`, `terminated_data_retained` and `externally_confirmed`; this step's automatic path implements only `released`, leaving the other dispositions to later controlled entry points. The authorization transaction checks the operation's tenant and Workspace relationships; a UUID foreign key alone does not establish resource scope. See [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go) for fresh, upgrade, DDL replay and constraint coverage.
+- 0052 settles the live `executor_type='workflow'` IssueRuns still `queued`/`dispatched` at upgrade time: they have no executor and no frozen workflow identity, so the ADR's D3 marks them failed with `failure_reason='workflow_execution_unavailable'` instead of migrating them. Other runs and soft-deleted rows are untouched. Rows of that shape stop being produced only once the workflow launch gate binds a manual run to a real WorkflowRun; until that gate (circus#71) lands, `createRun` keeps producing new ones, and this migration runs once at upgrade time and does not settle them. Coverage is `TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades`.
+- 0053 is the switch to Workspaces cloned from Git Server snapshots and migrates no data: clone executions that belong to no Workspace and their receipts are deleted, `clone_executions.clone_request_id` and the `one_request_execution` index are dropped, `clone_executions.workspace_id` becomes NOT NULL, and `clone_requests` is dropped; Workspace clone executions and their receipts stay, and it is retry-safe. See [Workspaces](../../../docs/runtime/workspaces.en.md); upgrading a database that still holds tenant-level clones is covered by `TestMigration0053RetiresTenantLevelClonesKeepingWorkspaceClones`.
+- 0054 is the switch to Revisions delivered over Git and migrates no data: `revisions` gains `delivery_ref`, and `revisions_bundle_shape` is replaced by `revisions_shape` (with a NULL `delivery_ref` a row keeps a legacy bundle shape; with one it must be a well-formed `refs/ora/deliveries/<UUID>` and carry no bundle column); the partial unique index `revisions_delivery_ref` lets one delivery ref belong to one Revision only. Existing bundle rows are never rewritten, and it is retry-safe. See [Revisions](../../../docs/agent-runs/revisions.en.md); the constraints are covered by `TestRevisionShapeKeepsGitAndBundleRowsApart`.
+- 0055 only adds residual-ledger columns: defaults initialize existing D4/D5 rows as `reconciling`, without backfilling targets or evidence, rewriting old `reason`, `responsibility` or business settlement, or backfilling D8. Legacy rows with non-null `cleared_at` cause an explicit migration error and rollback pending compatibility handling (A2). Reentrant DDL preserves progressed rows. The schema accepts `released`, `terminated_data_retained` and `externally_confirmed`; this step's automatic path implements only `released`, leaving the other dispositions to later controlled entry points. The authorization transaction checks the operation's tenant and Workspace relationships; a UUID foreign key alone does not establish resource scope. See [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go) for fresh, upgrade, DDL replay and constraint coverage.
 - New migrations must verify fresh databases, upgrades from the preceding schema, repeated application and key constraints. See [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) and domain upgrade tests in integration.
 
 See [Persistence](../../../docs/core/persistence.en.md) for ownership/transactions, and [Workflows](../../../docs/workflows/workflows.en.md) / [External Git line](../../../docs/repositories/external-git.en.md) for runtime semantics.

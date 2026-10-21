@@ -66,7 +66,7 @@ func TestResidualProvisioningFactsAcrossReclaimStatesOverGRPC(t *testing.T) {
 				},
 				{
 					Epoch: c.epoch, OperationId: operation, Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_CLONE, ExecutionId: clone,
-					ExecutionResult: &controlpb.ExecutionResult{Node: &controlpb.NodeIdentity{NodeId: "node-late", NodeIncarnationId: "inc-late"}, Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_BRANCH_NOT_FOUND}}},
+					ExecutionResult: &controlpb.ExecutionResult{Node: &controlpb.NodeIdentity{NodeId: "node-late", NodeIncarnationId: "inc-late"}, Outcome: &controlpb.ExecutionResult_CloneFailed{CloneFailed: &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason_CLONE_FAILURE_REASON_SNAPSHOT_UNAVAILABLE}}},
 				},
 				{
 					Epoch: c.epoch, OperationId: operation, Kind: controlpb.ProvisioningFactKind_PROVISIONING_FACT_KIND_PLUGIN, ExecutionId: plugin,

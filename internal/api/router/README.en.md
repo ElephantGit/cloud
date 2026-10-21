@@ -6,7 +6,7 @@
 
 ## Package processing
 
-- Establish `X-Request-Id` and logging context. Health checks read database readiness and object-store configuration, without probing S3.
+- Establish `X-Request-Id` and logging context. Health checks read database readiness and the object-store and Git Server configuration, without probing S3 or the Git Server.
 - Verify service/user credentials and caller binding; validate public fields using `Route.Fields` and `validField`.
 - The default body cap is 64 KiB. `ThreadMessagePath` and `TaskConversationMessagesPath` have a separate 256 KiB cap to contain a legal message's JSON envelope; core still limits decoded text to 64 KiB.
 - The JSON decoder uses `UseNumber` and rejects unknown fields, extra JSON values and invalid types; query parsing follows each read entrypoint's constraints.

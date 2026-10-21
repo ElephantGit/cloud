@@ -18,7 +18,7 @@
 | Credential Store | `/app/credential-store` | 凭据的独立保管：浏览器提交、执行器兑换、Cloud 管理、撤销与过期清扫；只保存密文 |
 | cloudctl | `/app/cloudctl` | 迁移、首个租户引导、凭据引用登记；一次性运行，不是服务 |
 | PostgreSQL 17 | — | 唯一的业务权威 |
-| S3 兼容对象存储 | — | Revision 对象（bundle、会话 JSONL）；可选 |
+| S3 兼容对象存储 | — | Revision 的会话 JSONL（改走 Git 之前的 Revision 另有 bundle）；可选，没有它时不交付 Revision |
 
 Cloud 之外，cluster 还部署 Controller（desktop 的 `ora-controller`）、Sandbox Server（cluster 自己的 Substrate 实现）和 Node 镜像（desktop 的
 `ora-node`）。
@@ -80,7 +80,7 @@ cluster 的 Compose 把服务分在四个网络上，生产部署应保持同样
 
 | 进程 | 需要的材料 |
 |---|---|
-| Cloud server | Gateway 的两个验证公钥（`auth.keys`）；控制监听的服务证书、私钥、Controller 客户端 CA；对象存储凭据文件；企业部署的目录机器密钥 |
+| Cloud server | Gateway 的两个验证公钥（`auth.keys`）；控制监听的服务证书、私钥、Controller 客户端 CA；对象存储凭据文件；Git Server ref 查询的 CA 与 Cloud 的客户端证书、私钥；企业部署的目录机器密钥 |
 | Gateway | service 与 user 两把签名私钥；PKCE 密钥；所选 provider 的 client secret；model-gateway 的公开 CA |
 | model-gateway | 服务证书与私钥；校验 Node 模型客户端证书的 CA；加密主密钥；Gateway 的验证公钥（经 Cloud 配置） |
 | git-server | 服务证书与私钥；沙盒 git-access 证书的 CA；Repo Executor 证书的 CA；Cloud 的 ref 查询客户端证书 |
@@ -120,7 +120,7 @@ Cloud server、全部 model-gateway 与全部 Repo Executor 只读挂载同一�
 
 | 进程 | 检查 |
 |---|---|
-| Cloud server | `GET /healthz`：数据库不可达返回 `503 database_unavailable`；报告对象存储是否已配置，不代表存储在线。响应头还有 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
+| Cloud server | `GET /healthz`：数据库不可达返回 `503 database_unavailable`；报告对象存储与 Git Server 是否已配置（`objectStore`、`gitServer`），不代表它们在线。响应头还有 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 | Gateway | `GET /healthz`：PostgreSQL 探活 |
 | model-gateway | `model-gateway -healthcheck`：正常校验 HTTPS 和公开 CA，检查数据库就绪，不读取用户 Key 或主密钥，也不报告出网摘要。凭据监听上的 `GET /healthz` 才带与 Cloud 相同的 `X-Ora-Egress-Schema` 与 `X-Ora-Egress-Digest` |
 | git-server | `git-server -healthcheck`：访问 ref 监听的 `/healthz`，用部署 CA 校验服务端证书，不读取私钥 |
@@ -158,7 +158,7 @@ Controller 信号只在进程内传递：浏览器只能收到它所连实例上
 | PostgreSQL | 全部业务状态 |
 | model-gateway 主密钥卷 | 没有它，数据库里的 Key 密文无法解密；**必须与数据库一起备份** |
 | git-server 仓库卷 | Project 仓库（`GIT_SERVER_REPOSITORY_ROOT`） |
-| 对象存储桶 | Revision 的 bundle 与会话 JSONL |
+| 对象存储桶 | Revision 的会话 JSONL（以及改走 Git 之前登记的 bundle） |
 | Credential Store 凭据卷与 KEK keyring | 外部 Git 凭据的密文和它的密钥；**必须一起备份**，丢失 keyring 就无法解密卷里的凭据 |
 | 证书与密钥卷 | 各进程的身份材料；Repo Executor 没有需要备份的数据，任务目录是 tmpfs |
 

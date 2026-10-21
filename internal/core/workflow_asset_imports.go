@@ -466,7 +466,7 @@ func importWorkflowAssetDocument(t *transaction, job *workflowAssetJob, result *
 			failureCode = "name_conflict"
 		} else {
 			w := insertWorkflow(t, job.TenantID, name, "", string(result.Document.Content))
-			snapshot := insertSnapshotGraph(t, w, name, string(result.Document.Content))
+			snapshot := insertSnapshotGraph(t, w, name, normalizedSnapshotGraphText(Object(result.Parsed.Graph), string(result.Document.Content)))
 			workflowID, snapshotID, snapshotVersion = w.S("id"), snapshot.S("id"), snapshot.N("version")
 		}
 	}

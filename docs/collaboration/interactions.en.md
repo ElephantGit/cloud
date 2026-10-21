@@ -97,6 +97,12 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
   workflow declares a variable of the same name, the workflow's declaration wins.
+- **The version selector lists only selectable versions.** The platform-owned `snapshotId` field offers
+  only published versions whose graph no longer declares the reserved field `snapshotId`; the option cap
+  counts only those, and the default is the newest one. When nothing is selectable the form carries no
+  selector. If versions are withheld for this reason, the selector's description says why and asks the
+  author to republish from a live draft that no longer declares the key (see
+  [Workflows](../workflows/workflows.en.md)).
 - **AI assist** (`POST .../issues/:iid/collaboration/assist`) only returns a field-level suggestion patch
   and suggested context references: it never creates a run and never writes persistent context
   references. Applying a suggestion is the user's action. It judges the shape of the submission against
@@ -107,10 +113,14 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   - Frontend validation is only for user experience. On confirm Cloud resolves the target **again** and
     validates the submitted values against the form of **the published version being confirmed**; a
     workflow with no published version cannot be confirmed, because an unpublished draft cannot run.
-  - Cloud validates against the selected published version's own fields alone, no longer comparing
-    them with the live draft. Choosing an older version runs that snapshot: a submission that matches
-    its form is accepted even when its fields differ from the current draft, and a missing required
-    field or a field that version never declared is refused by that version's schema.
+  - The form the user saw comes from the current document; if its fields no longer match the confirmed
+    version's, the confirm is refused with the changed fields listed
+    (`409 workflow_version_fields_changed`), rather than validating the user's values against a schema
+    they never saw.
+  - When the live draft does not declare `snapshotId` — the platform owns the key — and the resolved
+    published version's graph does, the confirm returns `409 workflow_version_reserved_field` with the
+    version and the field in its params. This holds with or without a version cursor: Cloud neither
+    substitutes another version nor leaves a run or a claimed interaction behind.
   - The submitted values are kept as the interaction's input and the executed version is frozen into the
     run input, so the run still knows which version it executed after the workflow is edited or
     published again.

@@ -67,6 +67,20 @@ While iterating, run the smallest relevant task first, and the full gate before 
 skip a test, raise a timeout or weaken an assertion or security check just to make a gate pass; when an exception is needed,
 document the approved reason next to the narrowest possible suppression.
 
+## Backend CI shards and coverage
+
+Backend runs integration on four independent runners, assigning each top-level UTF-8 test name by CRC32 modulo 4.
+New tests are assigned automatically without changing existing names' assignments. Each runner discovers tests with
+`go test -list '.*' ./integration`, builds a fully anchored `-run '^(A|B|...)$'`, checks for missing or duplicate assignments,
+and verifies the actual top-level starts and results after execution. Examples and fuzz seeds are included; benchmarks remain disabled as in the original command.
+The `packages` job retains every other package, format, proto, lint and command-build check. All groups retain real PostgreSQL,
+RustFS, race detection and the existing `-timeout 20m`.
+
+The final `check` status depends on every matrix job and cannot pass after a failure or cancellation. It verifies that the
+four executed sets form exactly the discovered list, then merges every job's binary coverage with `go tool covdata merge -pcombine`
+and generates `coverage.out` with `textfmt` (the `coverage` artifact). Instrumentation remains `-coverpkg=./internal/...`.
+`GOCOVERDIR` together with `-test.gocoverdir` retains test-process data instead of losing it in `go test`'s internal temporary directory.
+
 ## Writing tests
 
 - Every behavior change adds or changes tests. Use table-driven tests for genuine input matrices, compare complete values where

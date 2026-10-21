@@ -78,7 +78,7 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   workflow's schema and binds to no schema technology. Fields come in three bands: platform fields, the
   variables declared by the workflow's Start node, and the graph's global variables.
   The frontend first reads the current document only to locate the platform version selector and its
-  default version. Once the default (the newest published version) is known, the initial form is read
+  default version. Once the default (the newest selectable published version) is known, the initial form is read
   from that version through `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…`,
   and switching the selector reloads the new version the same way. The form shown and the version Confirm
   validates are therefore always the same, and fields the live draft has not published never appear in

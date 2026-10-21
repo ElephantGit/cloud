@@ -1,6 +1,10 @@
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { expect } from 'vitest'
 import type {
   GitCredential,
+  Project,
   ProjectRepository,
   RepositoryOperation,
   Workflow,
@@ -164,6 +168,54 @@ export function installWorkflowPublish(
 
 /** The Project the repository fixtures belong to. */
 export const TEST_PROJECT_ID = '55555555-5555-5555-5555-555555555555'
+
+/** One Project of the shared `cloud-dev` space, active unless a test says otherwise. */
+export function projectFixture(overrides: Partial<Project> = {}): Project {
+  return {
+    id: TEST_PROJECT_ID,
+    tenantId: TEST_TENANT_ID,
+    spaceId: TEST_SPACE_ID,
+    name: 'Cloud Dev',
+    repositoryUrl: 'https://example.com/acme/cloud.git',
+    defaultBranch: 'main',
+    credentialRefId: null,
+    lifecycle: 'active',
+    ownerUserId: TEST_USER_ID,
+    version: 1,
+    createdAt: '2026-09-20T10:00:00+08:00',
+    deletedAt: null,
+    ...overrides,
+  }
+}
+
+/**
+ * Installs the space's Project list, which surfaces that pick a Project to act
+ * in read. {@link installCloudSpaceHandlers} supplies the space itself; this
+ * answers the projects query scoped by its id.
+ */
+export function installSpaceProjectHandlers(projects: Project[] = [projectFixture()]): void {
+  server.use(
+    http.get(`/api/v1/tenants/${TEST_TENANT_ID}/spaces/${TEST_SPACE_ID}/projects`, () =>
+      HttpResponse.json({ items: projects, nextCursor: '' }),
+    ),
+  )
+}
+
+/**
+ * Picks the fixture Project in a run's start dialog.
+ *
+ * A run must state the Project its Workspace provisions in, and the dialog offers no default, so a
+ * test that starts a run goes through this first. The trigger stays disabled until the space's
+ * Project list resolves, hence the wait before opening it.
+ */
+export async function chooseProject(name = 'Cloud Dev'): Promise<void> {
+  const user = userEvent.setup()
+  const picker = await screen.findByRole('combobox', { name: '项目' })
+  await waitFor(() => expect(picker).toBeEnabled())
+  await user.click(picker)
+  await user.click(await screen.findByRole('option', { name }))
+}
+
 /** The Binding the repository fixtures expose. */
 export const TEST_BINDING_ID = '66666666-6666-6666-6666-666666666666'
 /** The credential the repository fixtures bind and offer for publication. */

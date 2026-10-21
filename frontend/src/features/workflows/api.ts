@@ -574,10 +574,9 @@ export interface CreateWorkflowRunInput {
   /**
    * The Project the run's Workspace provisions in. The contract requires it — a run that names
    * none is refused with 409 `workflow_run_project_required` — so the mutation refuses a caller
-   * that has none instead of sending a body the contract does not describe. Optional here only
-   * because the run form that picks a Project is not built yet.
+   * that has none instead of sending a body the contract does not describe.
    */
-  projectId?: string
+  projectId: string
   /** Optional display name; defaults to the workflow's name. */
   name?: string
   /** The exact snapshot to execute, or omit to pin the latest published one. */
@@ -597,8 +596,8 @@ export interface CreateWorkflowRunInput {
  * minting a second execution.
  *
  * The run's Project is required by the contract — a run that names none is refused with 409
- * `workflow_run_project_required` — and this editor states none yet: the run form that picks a
- * Project is not built, so a run started here is refused until that lands.
+ * `workflow_run_project_required` — and the run form cannot submit before one is chosen, so the
+ * refusal here is the backstop for a caller that builds its own request.
  *
  * @param tenantId - Tenant the workflow belongs to.
  * @returns The create mutation; `data` is the stored run.
@@ -613,7 +612,7 @@ export function useCreateWorkflowRun(tenantId: string | undefined) {
       // aggregate that can never provision the Workspace its agent nodes need, so the service
       // answers this same code (409) and there is no value the client could put in the field
       // instead — the caller either names a Project or names none.
-      if (input.projectId === undefined || input.projectId === '') {
+      if (input.projectId === '') {
         throw new Error('workflow_run_project_required')
       }
       return postApiV1TenantsTidWorkflowsWfidRuns(

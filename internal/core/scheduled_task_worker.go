@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -45,7 +46,12 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 			admitScheduledTaskDue(t, taskID)
 			return nil
 		}); err != nil {
-			// 单个任务的失败（资格校验冲突、暂时的数据库错误）不影响其它任务；下一 pass 重试。
+			var fault *Fault
+			if errors.As(err, &fault) {
+				// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
+				continue
+			}
+			// 系统级故障（数据库不可用、上下文取消、损坏的调度数据）停止本轮，交给 RunSyncLoop 记录。
 			return err
 		}
 	}
@@ -78,15 +84,11 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		panic(databaseFailure{fmt.Errorf("scheduled task %s has a corrupt schedule: %w", taskID, err)})
 	}
 
-	var resume *time.Time
-	if latest := t.one(`SELECT MAX(scheduled_at) AS latest FROM scheduled_task_occurrences WHERE task_id=$1`, taskID); latest != nil {
-		if at, ok := latest["latest"].(time.Time); ok {
-			resume = &at
-		}
-	}
+	// D2：直接落到 `now` 之前的最新到期点。停机期间更早的到期点一律不写——一次停机至多一条
+	// missed，窗口内的最新点照常接纳。幂等由 occurrence 的 (task_id, scheduled_at) 主键保证。
 	anchor, _ := task["enabledAt"].(time.Time)
-	due := duePoint(schedule, resume, anchor, loc)
-	if due.After(now) {
+	due := schedule.latestDue(anchor, now, loc)
+	if due.IsZero() {
 		return
 	}
 	dueText := due.UTC().Format(time.RFC3339Nano)
@@ -120,7 +122,10 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
 		return
 	}
-	agentRunGate(t, issue, agent)
+	if !agentRunGateOK(t, issue, agent) {
+		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
+		return
+	}
 	if !creatorModelReady(t, task.S("creatorUserId"), agent.S("pluginId")) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
 		return
@@ -138,7 +143,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	runContext := buildRunContext(t, issue, task.S("prompt"), "agent", task.S("agentId"), nil, nil)
 	input := snapshotAgentRunInput(runContext, agent)
 	run := enqueueAdmittedRun(t, task.S("tenantId"), task.S("issueId"), "agent", task.S("agentId"),
-		input, "scheduled_task", taskID+"@"+dueText, "user", task.S("creatorUserId"))
+		input, "scheduled_task", taskID, "user", task.S("creatorUserId"))
 
 	// 截止时刻随接纳持久化（D4）；deadline_cancelled_at 留给截止写入者。
 	t.exec(`UPDATE scheduled_task_occurrences

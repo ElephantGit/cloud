@@ -143,6 +143,53 @@ func duePoint(schedule scheduledTaskSchedule, resume *time.Time, anchor time.Tim
 	return schedule.nextDue(after, loc)
 }
 
+// latestDue returns the most recent scheduled point at or before `now` that is strictly after the
+// enable anchor, evaluated in the task timezone. The zero time means no point is due yet. Unlike
+// nextDue, it lands straight on the newest due point, so an outage leaves at most one `missed` per
+// task (D2): every earlier point the outage swallowed is simply never written.
+func (s scheduledTaskSchedule) latestDue(anchor, now time.Time, loc *time.Location) time.Time {
+	if anchor.IsZero() || now.Before(anchor) {
+		return time.Time{}
+	}
+	local := now.In(loc)
+	switch s.Kind {
+	case "every_hours":
+		step := time.Duration(s.IntervalHours) * time.Hour
+		steps := int64(now.Sub(anchor) / step)
+		if steps < 1 {
+			return time.Time{}
+		}
+		return anchor.Add(time.Duration(steps) * step)
+	case "daily":
+		candidate := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc)
+		if candidate.After(now) {
+			candidate = candidate.AddDate(0, 0, -1)
+		}
+		if !candidate.After(anchor) {
+			return time.Time{}
+		}
+		return candidate
+	case "weekly":
+		for back := 0; back < 7; back++ {
+			candidate := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc).AddDate(0, 0, -back)
+			if candidate.After(now) {
+				continue
+			}
+			if !candidate.After(anchor) {
+				return time.Time{}
+			}
+			for _, day := range s.Weekdays {
+				if candidate.Weekday() == day {
+					return candidate
+				}
+			}
+		}
+		return time.Time{}
+	default:
+		return time.Time{}
+	}
+}
+
 // scheduledWeekdayNames renders the persisted weekday set for storage.
 func scheduledWeekdayNames(weekdays []time.Weekday) []string {
 	byName := map[time.Weekday]string{
@@ -254,18 +301,18 @@ func scheduledFailureReason(kind string) string {
 // runs, and the IssueRun pending-executor uniqueness also covers runs of the same issue+agent that
 // predate the ledger (a manual run, or a run whose occurrence row was already pruned). `due` is the
 // RFC3339 text of the point being admitted so the task's own just-inserted occurrence never makes
-// it look busy.
+// it look busy. "Live" follows the ADR's terminal-status definition — anything not completed,
+// failed or cancelled, including a run in its releasing phase.
 func scheduledTaskBusy(t *transaction, taskID, issueID, agentID, due string) bool {
 	if t.one(`SELECT 1
 		FROM scheduled_task_occurrences o
 		JOIN issue_runs r ON r.id = o.run_id
-		WHERE o.task_id=$1 AND o.run_id IS NOT NULL AND o.scheduled_at <> $3::timestamptz
-		  AND (r.status IN ('queued','dispatched')
-		       OR r.phase IN ('provisioning','starting','running','delivering'))`, taskID, issueID, due) != nil {
+		WHERE o.task_id=$1 AND o.run_id IS NOT NULL AND o.scheduled_at <> $2::timestamptz
+		  AND r.status NOT IN ('completed','failed','cancelled')`, taskID, due) != nil {
 		return true
 	}
 	return t.one(`SELECT 1
 		FROM issue_runs
 		WHERE issue_id=$1 AND executor_type='agent' AND executor_id=$2
-		  AND status IN ('queued','dispatched') AND deleted_at IS NULL`, issueID, agentID) != nil
+		  AND status NOT IN ('completed','failed','cancelled') AND deleted_at IS NULL`, issueID, agentID) != nil
 }

@@ -177,8 +177,8 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 	updated := t.execRows(`UPDATE scheduled_tasks
 		SET name=$1, prompt=$2, agent_id=$3, schedule=$4, timezone=$5,
 		    revision=$6, version=version+1, updated_at=now()
-		WHERE id=$7 AND tenant_id=$2 AND creator_user_id=$8 AND deleted_at IS NULL
-		  AND version=$9`, name, prompt, agentID, jsonText(scheduleDoc), timezone,
+		WHERE id=$7 AND tenant_id=$8 AND creator_user_id=$9 AND deleted_at IS NULL
+		  AND version=$10`, name, prompt, agentID, jsonText(scheduleDoc), timezone,
 		revision, task.S("id"), r.TenantID, uid, body.N("version"))
 	require(updated == 1, 409, "version_conflict")
 	return scheduledTaskOut(t.one("SELECT * FROM scheduled_tasks WHERE id=$1", task.S("id")))

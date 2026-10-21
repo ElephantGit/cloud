@@ -26,6 +26,8 @@
 
 ## 测试隔离性不变量
 
+强制终止进程后的遗留模板与副本清理命令见[测试文档](../docs/development/testing.md#清理遗留测试数据库)；测试运行时不能清理。
+
 - **普通 fixture 隔离**：`fixture_template_test.go` 在每个测试进程内迁移一次空白模板库，关闭迁移连接并禁止连接模板。`setup`、Gateway 和 gRPC fixture 通过 PostgreSQL `CREATE DATABASE … TEMPLATE` 取得独立副本，完整保留表、索引、约束、触发器及迁移记录；副本由 `t.Cleanup` 删除。测试账号需要 `CREATEDB`；模板只在包结束时删除，不接收测试业务写入。
 - **迁移测试保留原入口**：`testSchema` 仍创建空白、独立的 schema，`TestMigration*`、旧版快照升级及 skeleton 迁移测试继续实际执行迁移与重放。串行受控回收矩阵沿用原有清空业务状态的方式复用一个独立副本，每个场景仍创建自己的 Store 和服务栈。
 - **模板回归**：`fixture_template_isolation_test.go` 验证数据、DDL、迁移历史、后续副本与并行副本隔离，并确认迁移 fixture 仍为空白。包结束输出模板迁移与复制的累计耗时，便于区分准备成本。

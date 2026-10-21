@@ -27,6 +27,21 @@ Cloud 的正确性主要来自真实边界上的测试：真实的 PostgreSQL �
 - **不能静默跳过**：`task test`、`task test:integration`、`task test:race`、`task check` 都设置 `REQUIRE_POSTGRES=1`，没有配置数据库时直接
   失败。直接运行 `go test ./...` 而没有配置数据库时，需要数据库的测试会显式跳过，此时的通过不能当作完整验证。
 
+### 清理遗留测试数据库
+
+测试进程被强制终止时，模板和副本可能来不及删除。**仅在没有测试运行时**，连接 `TEST_DATABASE_URL` 指向的本地测试 PostgreSQL，先列出遗留库，再删除。以下命令只匹配 `integration/fixture_template_test.go` 及其调用方使用的完整名称：列出的前缀加 32 位小写十六进制 UUID；不会匹配其他名称，也不清理旧式测试 schema。使用创建这些库的测试账号（或有删除权限的管理员），并连接基础测试库，不要连接待删除的副本。`WITH (FORCE)` 会断开匹配库的连接。
+
+```sh
+psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
+SELECT datname FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname;
+SQL
+
+psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
+SELECT format('DROP DATABASE %I WITH (FORCE);', datname) FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname
+\gexec
+SQL
+```
+
 ## S3
 
 `task test:revision` 设置 `REQUIRE_S3=1`，强制使用真实的 S3 兼容存储：

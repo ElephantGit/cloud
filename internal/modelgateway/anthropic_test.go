@@ -19,7 +19,8 @@ const pinnedClaudeBetas = "claude-code-20250219,interleaved-thinking-2025-05-14,
 // Each pinned CLI's exact first-request header for a Claude model is forwarded unchanged.
 func TestPinnedCLIClaudeModelBetas(t *testing.T) {
 	for name, betas := range map[string]string{
-		// Claude Code 2.1.303 through the pinned ACP adapter, with claude-haiku-5-5.
+		// Claude Code 2.1.303 run directly with the adapter's alias and model environment, with
+		// claude-haiku-5-5; the Agent SDK's own additions are covered separately below.
 		"claude": "interleaved-thinking-2025-05-14,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,claude-code-20250219,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,effort-2025-11-24",
 		// OpenCode 1.19.3 through @ai-sdk/anthropic, with claude-haiku-5-5.
 		"opencode": "thinking-binding-controls-2026-08-01,structured-outputs-2025-11-13",

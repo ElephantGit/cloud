@@ -40,6 +40,8 @@ cloudctl -config <path> residual get --tenant-id <tenant> --intent-id <intent>
 - `list` 支持 `--project-id`、`--run-id`、`--workspace-id`、`--operation-id`、`--reclaim-id` 相交过滤，以及 `--limit`（默认 100）和 `--after`。返回 `items/nextCursor`；operation 过滤可命中 D8 原 failed delete 或当前绑定的删除操作。
 - `get` 接受一个根/从属 `--intent-id`，或精确的 `--run-id`、`--workspace-id`、`--reclaim-id`。原资源选择器可用其他资源 ID 进一步限制范围；意图选择器不能混用资源选择器。查询返回审计、目标证据和 `openTargets`，供外部确认引用。
 
+`list` 的每个条目、`get` 的实际 residual 账本行，以及存在时的资源输出都通过 `stopEvidence` 展示持久化的 `stop_evidence`；资源仅在未选择意图时返回。没有证据时输出空对象 `{}`；没有账本的历史 D8 列表条目也输出 `{}`，但 `get` 中合成的历史 D8 residual 可能省略该字段。已有停止未确认记录会保留 `kind=stop_unconfirmed`、`source=cloud`、`observedAt` 和原身份的 `executionId`。此字段仅供查看，不授予终止、删除或清账权限，也不改变回收责任。
+
 终止和删数据是两次独立命令，各自需要 reason、幂等 key 和真实确认。`terminate` 至少指定 Run 或 Workspace；提供的其他 ID 必须属于同一个原资源。D8 还必须提供原 failed delete 的 `--operation-id`。Project/tenant 不能作为批量写入范围。
 
 ```sh

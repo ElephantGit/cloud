@@ -16,6 +16,39 @@ import (
 
 const pinnedClaudeBetas = "claude-code-20250219,interleaved-thinking-2025-05-14,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-tool-changes-2026-07-01,effort-2025-11-24"
 
+// Each pinned CLI's exact first-request header for a Claude model is forwarded unchanged.
+func TestPinnedCLIClaudeModelBetas(t *testing.T) {
+	for name, betas := range map[string]string{
+		// Claude Code 2.1.303 run directly with the adapter's alias and model environment, with
+		// claude-haiku-5-5; the Agent SDK's own additions are covered separately below.
+		"claude": "interleaved-thinking-2025-05-14,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,claude-code-20250219,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,effort-2025-11-24",
+		// OpenCode 1.19.3 through @ai-sdk/anthropic, with claude-haiku-5-5.
+		"opencode": "thinking-binding-controls-2026-08-01,structured-outputs-2025-11-13",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int64
+			service, _ := anthropicFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.Header.Get("Anthropic-Beta") != betas {
+					t.Error("pinned betas changed while forwarding")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, "{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture-model\",\"content\":[{\"type\":\"text\",\"text\":\"{}\"}],\"stop_reason\":\"end_turn\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}")
+			}))
+			request := httptest.NewRequest(http.MethodPost, "/runtime/anthropic/v1/messages", strings.NewReader("{\"model\":\"fixture-model\",\"messages\":[],\"max_tokens\":16}"))
+			request.Header.Set("X-Api-Key", strings.Repeat("r", 40))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Anthropic-Version", anthropicVersion)
+			request.Header.Set("Anthropic-Beta", betas)
+			response := httptest.NewRecorder()
+			service.ModelHandler(response, request)
+			if response.Code != 200 || calls.Load() != 1 {
+				t.Fatalf("pinned %s betas rejected: status=%d calls=%d", name, response.Code, calls.Load())
+			}
+		})
+	}
+}
+
 // Agent SDK query creation enables these additional capabilities on the same pinned native CLI.
 func TestPinnedClaudeAgentSDKCapabilities(t *testing.T) {
 	betas := pinnedClaudeBetas + ",structured-outputs-2025-12-15,thinking-display-updates-2026-08-18"

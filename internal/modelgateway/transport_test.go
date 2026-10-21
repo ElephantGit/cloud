@@ -4,7 +4,36 @@ import (
 	"context"
 	"net/netip"
 	"testing"
+	"time"
+
+	"github.com/wanglongan587/cloud/internal/egress"
 )
+
+func TestUpstreamTimeoutConfiguration(t *testing.T) {
+	for _, c := range []struct {
+		name             string
+		connect, headers time.Duration
+		wantConnect      time.Duration
+		wantHeaders      time.Duration
+	}{
+		{"production defaults", 0, 0, 10 * time.Second, 30 * time.Second},
+		{"nonpositive retains bounds", -time.Second, -time.Second, 10 * time.Second, 30 * time.Second},
+		{"injected limits", 50 * time.Millisecond, 150 * time.Millisecond, 50 * time.Millisecond, 150 * time.Millisecond},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			client, err := NewUpstreamClientWithTimeouts(UpstreamConfig{DNS: egress.DefaultDNSConfig()}, nil,
+				UpstreamTimeouts{Connect: c.connect, ResponseHeader: c.headers})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(client.CloseIdleConnections)
+			transport := client.Transport.(*upstreamTransport)
+			if transport.TLSHandshakeTimeout != c.wantConnect || transport.ResponseHeaderTimeout != c.wantHeaders {
+				t.Fatalf("timeouts = %s/%s, want %s/%s", transport.TLSHandshakeTimeout, transport.ResponseHeaderTimeout, c.wantConnect, c.wantHeaders)
+			}
+		})
+	}
+}
 
 type fixedResolver []netip.Addr
 

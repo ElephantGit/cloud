@@ -61,10 +61,11 @@ type devConfig struct {
 // devPluginsConfig mirrors the service's config.PluginConfig; the interval is a
 // string here because TOML durations are spelled "5m" and the service parses it.
 type devPluginsConfig struct {
-	MarketplaceURL    string `toml:"marketplace_url"`
-	MarketplaceBranch string `toml:"marketplace_branch"`
-	SyncInterval      string `toml:"sync_interval"`
-	SyncEnabled       bool   `toml:"sync_enabled"`
+	PersonalAgentTarget string `toml:"personal_agent_target"`
+	MarketplaceURL      string `toml:"marketplace_url"`
+	MarketplaceBranch   string `toml:"marketplace_branch"`
+	SyncInterval        string `toml:"sync_interval"`
+	SyncEnabled         bool   `toml:"sync_enabled"`
 }
 
 // defaultPluginsConfig is the backfill for config.toml files predating the
@@ -252,6 +253,7 @@ func renderEnv(cfg *devConfig) string {
 		{"GATEWAY_IDAAS_CLIENT_ID", cfg.IDaaS.ClientID},
 		{"GATEWAY_IDAAS_DISPLAY_NAME_FIELD", cfg.IDaaS.DisplayNameField},
 		{"CLOUD_PLUGINS_MARKETPLACE_URL", cfg.Plugins.MarketplaceURL},
+		{"CLOUD_PLUGINS_PERSONAL_AGENT_TARGET", cfg.Plugins.PersonalAgentTarget},
 		{"CLOUD_PLUGINS_MARKETPLACE_BRANCH", cfg.Plugins.MarketplaceBranch},
 		{"CLOUD_PLUGINS_SYNC_INTERVAL", cfg.Plugins.SyncInterval},
 		{"CLOUD_PLUGINS_SYNC_ENABLED", strconv.FormatBool(cfg.Plugins.SyncEnabled)},

@@ -71,7 +71,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0057_agent_run_residual_reclamation.sql](0057_agent_run_residual_reclamation.sql) | 残留回收责任、追加证据和处置状态 |
 | [0058_agent_run_controlled_reclamation.sql](0058_agent_run_controlled_reclamation.sql) | 部署受控回收意图、从属数据删除与逐目标终态 |
 | [0059_agent_restore_stop_evidence.sql](0059_agent_restore_stop_evidence.sql) | 停止未确认的命名证据，不改变残留责任和回收授权 |
-| [0060_scheduled_tasks.sql](0060_scheduled_tasks.sql) | 定时任务定义、幂等接纳台账与截止取消事实 |
+| [0060_node_model_adapter.sql](0060_node_model_adapter.sql) | Node 实例登记的插件模型 adapter 能力 |
+| [0061_scheduled_tasks.sql](0061_scheduled_tasks.sql) | 定时任务定义、幂等接纳台账与截止取消事实 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
@@ -94,7 +95,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0057 只给残留账本增列：存量 D4/D5 行通过默认值初始化为 `reconciling`，不回填目标或证据，不改旧 `reason`、`responsibility` 或业务结算，也不回填 D8。历史行若已有非空 `cleared_at`，迁移明确报错并回滚，等待显式兼容处理（A2）。DDL 可重入，不会重置已推进条目。数据库接受 `released`、`terminated_data_retained`、`externally_confirmed` 三种处置；本步自动路径只实现 `released`，其余处置留给后续受控入口。operation 的租户和 Workspace 关联由授权事务比对，UUID 外键本身不证明资源范围。空库、升级、DDL 重放和约束覆盖见 [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go)。
 - 0058 不改 0057 的历史列、责任、证据、处置或首次 `cleared_at`，也不回填 D8；无账本的 D8 只由显式根意图承载保护与证据。根终止与从属删卷各自三态；每资源一个根、最多一个从属删除意图及固定删除 operation，命令键按 tenant 范围统一唯一。目标的成功约束要求两个布尔确认均为 true，缺字段不能以 SQL NULL 通过。新库、0057 升级与约束覆盖见 [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go)。
 - 0059 只增 `stop_evidence`，存量为空对象，不追认历史未知停止；覆盖见 `TestMigration0059RestoreStopEvidenceFreshUpgradeAndRepeat`。
-- 0060 增加 `scheduled_tasks`（冻结 Prompt、agent ref、`schedule` jsonb、IANA 时区、无人值守同意与软删除墓碑）和 `scheduled_task_occurrences`（`(task_id, scheduled_at)` 唯一的幂等接纳台账，含截止时刻与截止取消事实）；不回填历史行。接纳由工作线程在同一事务里创建绑定 issue 下的 agent IssueRun，插件版本在接纳时按 Space 当时值快照而非定义上冻结。语义见 specs 根决策 `decisions/cloud/scheduled-task`；空库、升级与重复应用的集成覆盖随 Web 与端到端验收 commit 一并补齐。
+- 0060 给 `node_instances` 增加 `model_adapter`（jsonb 对象，默认 `{}`），记录 Node 实例登记时声明的插件模型 adapter 能力；不回填，既有实例按空能力处理，不会被派发需要 adapter 的会话，直到以新版本重新登记。空库与升级覆盖见 `TestMigration0060ModelAdapterFreshAndUpgrade`。
+- 0061 增加 `scheduled_tasks`（冻结 Prompt、agent ref、`schedule` jsonb、IANA 时区、无人值守同意与软删除墓碑）和 `scheduled_task_occurrences`（`(task_id, scheduled_at)` 唯一的幂等接纳台账，含截止时刻与截止取消事实）；不回填历史行。接纳由工作线程在同一事务里创建绑定 issue 下的 agent IssueRun，插件版本在接纳时按 Space 当时值快照而非定义上冻结。语义见 specs 根决策 `decisions/cloud/scheduled-task`；空库、升级与重复应用的集成覆盖随 Web 与端到端验收 commit 一并补齐。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

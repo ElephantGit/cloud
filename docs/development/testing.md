@@ -22,8 +22,8 @@ Cloud 的正确性主要来自真实边界上的测试：真实的 PostgreSQL �
 
 ## 数据库
 
-- 测试通过 `TEST_DATABASE_URL` 连接 PostgreSQL；`task setup` 会把它写进 `.local/dev.env`。账号需要 `CREATE SCHEMA` 权限。
-- **每个测试一个 schema**：测试为自己建一个独立的 schema，在里面执行迁移，并在 `t.Cleanup` 里删除，测试之间不共享可变的数据库状态。
+- 测试通过 `TEST_DATABASE_URL` 连接 PostgreSQL；`task setup` 会把它写进 `.local/dev.env`。账号需要 `CREATE SCHEMA`；integration 的模板副本还需要测试账号具备 `CREATEDB`。
+- **独立数据库状态**：integration 普通 fixture 每个进程只迁移一次模板，再为各 fixture 创建独立数据库副本；模板关闭连接并禁止业务写入。迁移/升级用例继续从空白或旧版独立 schema 实际运行迁移，core 的独立 helper 也继续使用各自 schema。每个测试保留自己的清理，不共享可变业务状态，见 [integration fixture](../../integration/README.md#测试隔离性不变量)。
 - **不能静默跳过**：`task test`、`task test:integration`、`task test:race`、`task check` 都设置 `REQUIRE_POSTGRES=1`，没有配置数据库时直接
   失败。直接运行 `go test ./...` 而没有配置数据库时，需要数据库的测试会显式跳过，此时的通过不能当作完整验证。
 

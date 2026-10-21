@@ -26,7 +26,9 @@
 
 ## Hermetic testing invariants
 
-- **Schema isolation**: Every test executes within an isolated, dynamically provisioned PostgreSQL schema (`CREATE SCHEMA <unique_name>`). Schemas are completely destroyed in `t.Cleanup` (`DROP SCHEMA <unique_name> CASCADE`), guaranteeing tests do not share mutable database state.
+- **Ordinary fixture isolation**: `fixture_template_test.go` migrates a fresh template database once per test process, closes its migration pool and disallows connections to the source. `setup`, Gateway and gRPC fixtures use PostgreSQL `CREATE DATABASE … TEMPLATE` for independent copies containing tables, indexes, constraints, triggers and migration records; `t.Cleanup` drops each copy. The test role needs `CREATEDB`. The template receives no business writes and is dropped at package shutdown.
+- **Migration fixtures keep their original path**: `testSchema` still creates a fresh isolated schema. `TestMigration*`, older-snapshot upgrades and skeleton migration tests continue to execute migrations and replays. Serial controlled-reclamation matrices retain their existing business-state reset while reusing one independent copy; every case still creates its own Store and service stack.
+- **Template regression coverage**: `fixture_template_isolation_test.go` checks data, DDL, migration-history, later-copy and parallel-copy isolation, and proves migration fixtures remain empty. Package shutdown prints cumulative template migration and copy timings to distinguish preparation costs.
 - **Mandatory PostgreSQL**: When running under CI (`REQUIRE_POSTGRES=1`), tests fail immediately if `TEST_DATABASE_URL` is unset rather than silently skipping.
 - **Parallel execution & race detection**: Tests are designed to run safely with `go test -race` under `task test:race` to verify concurrency invariants and lock ordering.
 

@@ -8,6 +8,8 @@
 
 本文说明 Cloud 一侧的四件事：连接与默认模型、密钥的保管、运行时固定的绑定，以及模型请求的临时授权。
 
+声明式 Agent 运行默认关闭；部署完成后以 `plugins.personal_agent_target` 指定精确 Linux target。Cloud 冻结包、声明、adapter 版本、配置 revision、模型元数据和数值原文；Controller 与 Node 必须证明同一 target、版本及协议才可开始。Settings 以经过校验的 JSON 文本跨控制边界，避免大整数和高精度小数被中间层舍入；运行 token 只在 mTLS grant 与插件启动内存通道出现。当前 Node 不支持时按能力缺失结算，未连接或过期的 Node 不构成确定性拒绝。
+
 ## 连接与默认模型
 
 个人模型连接属于**用户本人**，与租户无关：用户加入任何空间之前就可以配置。

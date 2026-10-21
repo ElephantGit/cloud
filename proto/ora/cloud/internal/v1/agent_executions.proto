@@ -82,6 +82,32 @@ message AgentSessionSpec {
   string model_binding_id = 7;
   // Workspaces of this Project, newest first, at most 100, fixed when the work item was released.
   repeated WorkspaceListing workspace_directory = 8;
+  // Exact non-secret configuration frozen at run admission; authority is acquired over mTLS.
+  AgentModelConfiguration agent_configuration = 9;
+}
+
+// Versioned adapter identity, never a runtime token or upstream credential.
+message AgentModelConfiguration {
+  string plugin_id = 1;
+  string plugin_version = 2;
+  string target = 3;
+  string package_sha256 = 4;
+  uint32 schema_version = 5;
+  string declaration_fingerprint = 6;
+  uint32 adapter_version = 7;
+  uint64 configuration_revision = 8;
+  // Canonical scalar JSON preserves number lexemes that protobuf Struct would round.
+  string settings_json = 9;
+  string protocol = 10;
+  AgentBoundModel model = 11;
+}
+
+// Model catalog metadata frozen in the binding, independent of live personal configuration.
+message AgentBoundModel {
+  string id = 1;
+  string name = 2;
+  uint64 context_window = 3;
+  uint64 max_tokens = 4;
 }
 
 enum AgentSessionEndReason {

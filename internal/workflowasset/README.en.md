@@ -13,4 +13,6 @@ Downloads and verifies plugin packages, extracts workflow JSON and parses names 
 
 Packages are bounded to 16 MiB, expanded total to 64 MiB, entries to 512 and candidate documents to 1–256. Ignored ZIP entries still consume the expansion budget; extraction also bounds actual reads. Package failure returns no document list; the caller handles each JSON failure independently so other documents can proceed.
 
+`Fetcher.Timeout` can inject the whole HTTPS download deadline before first use; nonpositive values retain 60 seconds. Production wiring keeps the default. Boundary tests shorten deadlines while retaining the real transport, TLS and failure cleanup paths instead of waiting production durations.
+
 `Failure.Detail` is for structured logs only; persisted provenance uses bounded codes. `DocumentError` supplies bounded reasons. Tests cover download digests/limits/cancellation/redirects, ZIP bounds and document parsing. Import leases, idempotency and database writes belong to `core/workflow_asset_imports.go`; see [Plugin marketplace](../../docs/plugins/marketplace.en.md).

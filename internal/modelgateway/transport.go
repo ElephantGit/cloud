@@ -58,7 +58,11 @@ func (d *secureDialer) dial(ctx context.Context, network, address string) (net.C
 			return nil, endpointForbidden
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	timeout := d.dialer.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for _, a := range addresses {
 		connection, dialErr := d.dialer.DialContext(ctx, network, net.JoinHostPort(a.String(), port))
@@ -82,10 +86,17 @@ type UpstreamConfig struct {
 	Policy           *egress.Policy
 }
 
+// UpstreamTimeouts bounds individual stages of an upstream request. Nonpositive fields retain
+// the production defaults: ten seconds each for TCP/TLS and thirty seconds for headers.
+type UpstreamTimeouts struct {
+	Connect        time.Duration
+	ResponseHeader time.Duration
+}
+
 // NewUpstreamClient disables environmental proxies and redirects, and enforces the deployment
 // policy on every request and new connection. Exact fixture host exemptions are deployment-owned, development only.
 func NewUpstreamClient(config UpstreamConfig) (*http.Client, error) {
-	return newUpstreamClient(config, nil)
+	return newUpstreamClient(config, nil, UpstreamTimeouts{})
 }
 
 // NewUpstreamClientWithRoots builds the same client but verifies upstream identity against roots
@@ -96,10 +107,24 @@ func NewUpstreamClientWithRoots(config UpstreamConfig, roots *x509.CertPool) (*h
 	if roots == nil {
 		return nil, errors.New("upstream TLS trust requires an explicit root pool")
 	}
-	return newUpstreamClient(config, roots)
+	return newUpstreamClient(config, roots, UpstreamTimeouts{})
 }
 
-func newUpstreamClient(config UpstreamConfig, roots *x509.CertPool) (*http.Client, error) {
+// NewUpstreamClientWithTimeouts injects stage limits without replacing the checked transport.
+// A nil root pool uses platform trust, as NewUpstreamClient does; explicit roots retain normal
+// TLS verification against that pool. The ordinary constructors keep production defaults.
+func NewUpstreamClientWithTimeouts(config UpstreamConfig, roots *x509.CertPool, limits UpstreamTimeouts) (*http.Client, error) {
+	return newUpstreamClient(config, roots, limits)
+}
+
+func newUpstreamClient(config UpstreamConfig, roots *x509.CertPool, limits UpstreamTimeouts) (*http.Client, error) {
+	timeouts := UpstreamTimeouts{Connect: 10 * time.Second, ResponseHeader: 30 * time.Second}
+	if limits.Connect > 0 {
+		timeouts.Connect = limits.Connect
+	}
+	if limits.ResponseHeader > 0 {
+		timeouts.ResponseHeader = limits.ResponseHeader
+	}
 	if config.Policy.Enterprise() && len(config.DevelopmentHosts) != 0 {
 		return nil, errors.New("enterprise egress conflicts with development hosts")
 	}
@@ -118,8 +143,8 @@ func newUpstreamClient(config UpstreamConfig, roots *x509.CertPool) (*http.Clien
 			return nil, err
 		}
 	}
-	d := &secureDialer{resolver: resolver, fixtures: net.DefaultResolver, dialer: net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}, allowed: allowed, policy: config.Policy}
-	transport := &http.Transport{Proxy: nil, DialContext: d.dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 60 * time.Second, MaxIdleConns: 64, MaxConnsPerHost: 32, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: !config.Policy.Enterprise()}
+	d := &secureDialer{resolver: resolver, fixtures: net.DefaultResolver, dialer: net.Dialer{Timeout: timeouts.Connect, KeepAlive: 30 * time.Second}, allowed: allowed, policy: config.Policy}
+	transport := &http.Transport{Proxy: nil, DialContext: d.dial, TLSHandshakeTimeout: timeouts.Connect, ResponseHeaderTimeout: timeouts.ResponseHeader, IdleConnTimeout: 60 * time.Second, MaxIdleConns: 64, MaxConnsPerHost: 32, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: !config.Policy.Enterprise()}
 	if roots != nil {
 		transport.TLSClientConfig = &tls.Config{RootCAs: roots}
 	}

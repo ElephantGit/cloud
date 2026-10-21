@@ -487,11 +487,13 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 				// Model capability belongs to the production Controller gRPC registration/record.
 				if strings.HasPrefix(route.Action, "node_") {
 					delete(out, "modelProxy")
+					delete(out, "modelAdapter")
 				}
 				// Claim and snapshot both return the same snapshot document.
 				if nodes, ok := out["nodes"].([]core.Object); ok {
 					for _, node := range nodes {
 						delete(node, "modelProxy")
+						delete(node, "modelAdapter")
 					}
 				}
 			}

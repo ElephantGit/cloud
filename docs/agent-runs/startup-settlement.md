@@ -34,6 +34,7 @@
 |---|---|
 | 用户先结束了会话，或运行被取消 | `cancelled` |
 | 当前 Node 已初始化、已连接、30 秒内有心跳，并且**明确**不具备模型代理能力，而运行使用个人模型 | `failed`，`failureReason = model_proxy_unavailable` |
+| 同样的 Node **明确**不具备运行冻结的 Agent 声明所需的 adapter 能力（target、契约版本或协议不符） | `failed`，`failureReason = agent_adapter_unavailable` |
 | 启动窗口到期 | `failed`，`failureReason = agent_start_failed` |
 
 撤回与派发登记共用同一把事务锁，所以撤回之后迟到的登记找不到工作项。运行进入 `releasing`，交付状态为 `skipped`，排队中的用户

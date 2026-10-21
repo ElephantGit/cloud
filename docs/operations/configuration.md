@@ -40,6 +40,7 @@
 | `directory.endpoint`、`hw_id`、`environment`、`app_key_file` | 空 | 企业员工目录；`endpoint` 为空即公网部署，见 [用户、租户与成员](../identity/tenancy.md#加入租户) |
 | `collaboration.development_fixtures` | `false` | 开发夹具，生产必须关闭，见 [Issue 协作](../collaboration/interactions.md#端口issue-只拥有消费侧的契约) |
 | `plugins.sync_enabled` | — | 是否同步插件市场 |
+| `plugins.personal_agent_target` | 空 | 声明式个人 Agent 的部署 target；空值关闭，支持 `x86_64-unknown-linux-gnu` 或 `aarch64-unknown-linux-gnu`，部署完 adapter 再启用 |
 | `plugins.marketplace_url`、`marketplace_branch`、`sync_interval` | — | 开启同步时必填：`https` Git 地址（不带查询和片段）、合法分支名、正的间隔 |
 | `plugins.asset_import_enabled`、`asset_import_interval` | —、`30s` | 工作流插件资产导入 |
 | `issue_runs.thread_idle_timeout` | `15m` | Thread 空闲窗口；非正值取默认 |

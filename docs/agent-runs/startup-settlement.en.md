@@ -46,6 +46,7 @@ atomically** and settles the run in these cases:
 |---|---|
 | The user ended the session first, or the run was cancelled | `cancelled` |
 | The current Node is initialized, connected, with a heartbeat within 30 seconds, and **definitively** lacks the model proxy capability while the run uses a personal model | `failed`, `failureReason = model_proxy_unavailable` |
+| Such a Node **definitively** lacks the adapter capability the run's frozen Agent declaration needs (target, contract version or protocol differs) | `failed`, `failureReason = agent_adapter_unavailable` |
 | The startup window expired | `failed`, `failureReason = agent_start_failed` |
 
 Withdrawal and dispatch registration share the same transaction lock, so a registration arriving after the

@@ -45,6 +45,7 @@ Each process in this repository has its own configuration sources:
 | `directory.endpoint`, `hw_id`, `environment`, `app_key_file` | Empty | The corporate employee directory; an empty `endpoint` means a public deployment, see [Users, tenants and members](../identity/tenancy.en.md#joining-a-tenant) |
 | `collaboration.development_fixtures` | `false` | Development fixtures; production must keep it off, see [Issue collaboration](../collaboration/interactions.en.md#ports-issues-own-only-the-consuming-side-contract) |
 | `plugins.sync_enabled` | — | Whether to sync the plugin marketplace |
+| `plugins.personal_agent_target` | Empty | Declared personal-Agent deployment target; empty disables it. Supports `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu`; enable only after adapter rollout |
 | `plugins.marketplace_url`, `marketplace_branch`, `sync_interval` | — | Required when sync is on: an `https` Git URL (no query or fragment), a valid branch name, a positive interval |
 | `plugins.asset_import_enabled`, `asset_import_interval` | —, `30s` | Workflow plugin asset import |
 | `issue_runs.thread_idle_timeout` | `15m` | The Thread idle window; non-positive values take the default |

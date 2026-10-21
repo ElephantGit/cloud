@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const scheduledTaskMigration = "0060_scheduled_tasks.sql"
+const scheduledTaskMigration = "0061_scheduled_tasks.sql"
 
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
 func seedScheduledTaskAgent(t *testing.T, pool *sql.DB, s skeletonSeed) string {
@@ -36,7 +36,7 @@ func insertScheduledTask(t *testing.T, pool *sql.DB, s skeletonSeed, agentID, ta
 	return id
 }
 
-func TestMigration0060ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
+func TestMigration0061ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
 	_, pool := skeletonStore(t)
 	s := seedAgentIssueRunSkeleton(t, pool)
 	agentID := seedScheduledTaskAgent(t, pool, s)
@@ -116,7 +116,7 @@ func TestMigration0060ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
 	must(t, e)
 }
 
-func TestMigration0060ScheduledTasksUpgradeAndReplay(t *testing.T) {
+func TestMigration0061ScheduledTasksUpgradeAndReplay(t *testing.T) {
 	pool, _ := testSchema(t, "test_scheduled59u_")
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, scheduledTaskMigration))
 	s := seedAgentIssueRunSkeleton(t, pool)

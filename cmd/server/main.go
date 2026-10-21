@@ -109,6 +109,9 @@ func run() (runErr error) {
 		return e
 	}
 	configureCollaboration(store, cfg.Collaboration.DevelopmentFixtures, log)
+	if cfg.Plugins.PersonalAgentTarget != "" {
+		store.PersonalAgentRuntime = &core.PersonalAgentRuntime{Target: cfg.Plugins.PersonalAgentTarget, ContractVersion: 1, Protocols: []string{"openai-completions", "anthropic-messages"}}
+	}
 	// The B side of the Agent Run seam: Cloud's IssueRun/Thread lifecycle is driven by these five
 	// callbacks, each of which runs inside the control-plane transaction that just persisted the
 	// evidence it reacts to (controller-integration D6). They are the only writer of the B-side

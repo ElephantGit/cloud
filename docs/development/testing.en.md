@@ -26,9 +26,11 @@ in [`integration/`](../../integration/README.en.md).
 ## Database
 
 - Tests connect to PostgreSQL through `TEST_DATABASE_URL`, which `task setup` writes into `.local/dev.env`. The account
-  needs `CREATE SCHEMA`.
-- **One schema per test**: each test creates its own schema, runs the migrations in it and drops it in `t.Cleanup`, so tests
-  share no mutable database state.
+  needs `CREATE SCHEMA`; integration template copies also require `CREATEDB` for the test role.
+- **Independent database state**: ordinary integration fixtures migrate a template once per process and receive independent
+  database copies; the source has no open connections and accepts no business writes. Migration/upgrade cases still execute
+  migrations from empty or older isolated schemas, and core's separate helper retains its per-schema path. Each test owns its
+  cleanup without sharing mutable business state; see [integration fixtures](../../integration/README.en.md#hermetic-testing-invariants).
 - **No silent skipping**: `task test`, `task test:integration`, `task test:race` and `task check` set `REQUIRE_POSTGRES=1` and
   fail outright when no database is configured. Running `go test ./...` directly without a database skips the tests that need
   one explicitly, and a pass in that mode does not count as full verification.

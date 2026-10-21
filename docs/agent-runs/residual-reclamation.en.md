@@ -86,6 +86,8 @@ Workspaces continue to return 404.
 | `delete-data` | One root intent with successful physical termination and retained disposition, separate reason/key and data-deletion confirmation; no bare-Workspace deletion |
 | `confirm-external` | One existing unfinished root or dependent intent, reason/key, explanation, external fact references for every unfinished target and explicit acceptance of remaining responsibility |
 
+`list` items, actual residual ledger rows from `get`, and the resource output when present expose persisted `stop_evidence` as `stopEvidence`; the resource is returned only when no intent is selected. Without evidence the field is `{}`; legacy D8 list items without a ledger also return `{}`, while a synthetic legacy D8 residual in `get` may omit the field. An unconfirmed-stop record retains `kind=stop_unconfirmed`, `source=cloud`, `observedAt`, and the original-identity `executionId`. This only displays an existing observation: it does not prove physical termination, grant termination, deletion, or ledger-clearance authority, or change reclamation responsibility.
+
 Mutations do not accept tenant/Project batch scope. All command keys share one tenant-scoped receipt space. The same key and normalized input
 return the original receipt and current progress; a different action, resource, parent intent, reason or confirmation returns
 `idempotency_conflict`. Replay creates neither a new responsibility nor repeated external evidence collection.

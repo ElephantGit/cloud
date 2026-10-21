@@ -81,7 +81,10 @@ browser-access marker never reach the supplier.
 
 The same pinned CLI also declares `structured-outputs-2025-12-15` and
 `thinking-display-updates-2026-08-18` when queries are created through Agent SDK 0.3.303 /
-ACP adapter 0.94.0. Both are included in the bounded whitelist. An upgrade must verify its
+ACP adapter 0.94.0, and `per-turn-control-2026-07-01` on its first request for
+`claude-haiku-5-5`. The pinned OpenCode 1.19.3 declares `thinking-binding-controls-2026-08-01`
+and `structured-outputs-2025-11-13` when it requests a Claude model through
+`@ai-sdk/anthropic`. All of these are included in the bounded whitelist. An upgrade must verify its
 observed protocol surface before extending the policy.
 
 | Method and path | Query | Behavior |

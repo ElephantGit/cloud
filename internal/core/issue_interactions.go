@@ -148,7 +148,7 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 	validateFormValues(snapshotFormDescriptor(t, w, s, &issueContext), values, true)
 
 	input := buildRunContext(t, i, "", targetType, targetID, values, appliedContextRefs(r.Body))
-	runObj := enqueueWorkflowInvocation(t, r.TenantID, i.S("id"), w, s, values, input, "interaction", it.S("id"), uid)
+	runObj := enqueueWorkflowInvocation(t, r.TenantID, i.S("id"), w, s, values, input, formKickoff(s.O("graph"), values), "interaction", it.S("id"), uid)
 	claimed := t.execRows("UPDATE issue_interactions SET input=$3, run_id=$4 WHERE id=$1 AND tenant_id=$2 AND run_id IS NULL", it.S("id"), r.TenantID, jsonText(values), runObj.S("id"))
 	require(claimed == 1, 409, "interaction_already_confirmed")
 	return Object{"resource": runObj}

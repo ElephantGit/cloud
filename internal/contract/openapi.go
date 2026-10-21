@@ -326,6 +326,7 @@ func Document() map[string]any {
 	s["PluginCatalog"] = object(obj{"items": array(ref("PluginCatalogEntry")), "syncedAt": optional(timestamp())}, "items")
 	s["SpacePlugin"] = resource("id spaceId tenantId sourceNamespace identifier desiredState desiredVersion observedState observedVersion installError version createdAt updatedAt", "observedVersion installError")
 	spacePluginProps := properties(s, "SpacePlugin")
+	spacePluginProps["kind"] = enumeration("workbench", "agent", "webview", "skill", "mcp", "hook", "pack", "workflow")
 	for _, key := range []string{"affectedCount", "completedCount", "waitingStartCount", "waitingControlCount", "unavailableCount", "failedCount", "desiredRevision"} {
 		spacePluginProps[key] = number()
 	}

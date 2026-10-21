@@ -23,7 +23,7 @@ Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run�
 | `run-delivery.tsx` | 会话下方的 Revision 交付一行（`role=status`，名称「Revision 交付」）：已登记的 Revision 显示短提交与是否交付了新提交（续接后无新提交时说明沿用了续接的成果）；Revision 经 Git 交付，不显示 bundle 大小，否则按 `result.deliveryState` 说明跳过或失败，会话已结束但运行未结算时显示保存中 |
 | `run-resume.tsx` | 会话上方的续接一行（`role=note`，名称「续接」）：运行续接了同一 Issue 之前的 Revision 时，从该 Issue 的运行列表中找到它并显示短提交；全新运行不渲染 |
 | `run-preparation.tsx` | `RunPreparation` 显示服务器提供的环境、克隆、Agent 准备和启动阶段，以及三次克隆预算、重试等待；`snapshot_not_ready` 显示为等待项目首次同步仓库（等待而非失败），`repository_sync_failed` 无论阶段都显示为失败，并附上形如 snake_case 的 `syncErrorCode`（其他值丢弃）；`SessionFailure` 仅显示白名单安全错误码，失败不继续显示等待或空闲 |
-| `thread-failure.ts` | `sessionFailureMessage`：状态提示与持久失败条目共用的有限错误分类文案；未知字段替换为固定提示，不显示供应商诊断 |
+| `thread-failure.ts` | `sessionFailureMessage`：状态提示与持久失败条目共用的有限错误分类文案；Agent 模型配置的几类失败（缺少、不一致、协议不支持、授权不符、adapter 未应用、节点不支持）各有文案；未知字段替换为固定提示，不显示供应商诊断 |
 | `*.test.ts(x)` | 纯函数单测与 MSW 集成测试 |
 
 ## 依赖

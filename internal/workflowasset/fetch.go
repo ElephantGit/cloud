@@ -25,6 +25,9 @@ const FetchTimeout = 60 * time.Second
 type Fetcher struct {
 	objects *objectstore.Config
 	client  *http.Client
+	// Timeout bounds an HTTPS download through its last byte. Nonpositive values use
+	// FetchTimeout. Configure it before the first Fetch; concurrent fetches only read it.
+	Timeout time.Duration
 }
 
 // NewFetcher returns a fetcher over the given object store configuration and HTTPS transport.
@@ -34,7 +37,7 @@ func NewFetcher(objects *objectstore.Config, transport http.RoundTripper) *Fetch
 	if transport == nil {
 		transport = refusingTransport{}
 	}
-	return &Fetcher{objects: objects, client: &http.Client{
+	return &Fetcher{objects: objects, Timeout: FetchTimeout, client: &http.Client{
 		Transport: transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -66,7 +69,11 @@ func (f *Fetcher) Fetch(ctx context.Context, locator, digest string) ([]byte, er
 	if e != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
 		return nil, failure(FailureInvalid, "invalid https locator")
 	}
-	ctx, cancel := context.WithTimeout(ctx, FetchTimeout)
+	timeout := f.Timeout
+	if timeout <= 0 {
+		timeout = FetchTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), http.NoBody)
 	if e != nil {

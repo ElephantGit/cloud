@@ -99,6 +99,13 @@ func TestWorkflowRunWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("runtime control state=%q run=%q; want maintenance reserved for the workflow run", state, maintenanceRun)
 	}
 
+	// The deletion below belongs to a terminal run: since 0055 the delete hook records the WorkflowRun's
+	// release fact and refuses a completion whose run never declared a terminal state, so the run is
+	// settled first, exactly as the scheduler settles it before declaring the delete.
+	if _, err := store.Pool.Exec(`UPDATE workflow_runs SET status='succeeded', version=version+1 WHERE id=$1`, runID); err != nil {
+		t.Fatalf("settle the run terminal: %v", err)
+	}
+
 	// Deletion: declared like the scheduler declares it, settled through the terminal step, and
 	// accepted by the delete hook — the terminal transaction must not abort on a workflow run id.
 	if _, err := store.transact(context.Background(), func(tx *transaction) Object {

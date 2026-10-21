@@ -1602,8 +1602,7 @@ func TestDeliveryWithoutAGitServerIsSkipped(t *testing.T) {
 		t.Fatalf("a skipped delivery registers no Revision, got result %v", got)
 	}
 	// Enqueuing again, as a retry or a replay would, stays skipped and still releases nothing.
-	// Reuse the run's Workspace so controlled-reclamation protection still checks its real scope.
-	out, e := f.store.EnqueueExecutionWork(t.Context(), scene.runID, "deliver_revision", core.Object{"kind": "deliver_revision"}, core.Object{"workspaceId": f.runWorkspaceID(scene.runID), "sandboxInstanceId": "s", "nodeId": "n"}, time.Time{})
+	out, e := f.store.EnqueueExecutionWork(t.Context(), scene.runID, "deliver_revision", core.Object{"kind": "deliver_revision"}, core.Object{"workspaceId": "w", "sandboxInstanceId": "s", "nodeId": "n"}, time.Time{})
 	must(t, e)
 	if !out.B("skipped") || len(f.deliveryWork(scene.runID)) != 0 {
 		t.Fatalf("a repeated enqueue must stay skipped, got %v", out)

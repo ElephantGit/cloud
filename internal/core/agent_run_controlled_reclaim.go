@@ -139,7 +139,7 @@ func registerControlledTermination(t *transaction, r *ResidualManagementRequest,
 }
 
 func controlledRootForWorkspace(t *transaction, wid string) Object {
-	if wid == "" {
+	if !validID(wid) {
 		return nil
 	}
 	return t.one("SELECT * FROM agent_run_reclamation_intents WHERE workspace_id=$1 AND root_intent_id IS NULL", wid)

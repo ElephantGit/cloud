@@ -3,14 +3,14 @@ package integration
 import "testing"
 
 // A named observation is additive evidence; old responsibility and business facts are immutable.
-func TestMigration0058RestoreStopEvidenceFreshUpgradeAndRepeat(t *testing.T) {
+func TestMigration0059RestoreStopEvidenceFreshUpgradeAndRepeat(t *testing.T) {
 	fresh, _ := testSchema(t, "test_stop58f_")
 	migratedTwice(t, newStoreOnSchema(t, fresh))
 	if columnNullable(t, fresh, "agent_run_residuals", "stop_evidence") {
 		t.Fatal("stop evidence must be an object, including when empty")
 	}
 	pool, _ := testSchema(t, "test_stop58u_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0058_agent_restore_stop_evidence.sql"))
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0059_agent_restore_stop_evidence.sql"))
 	seed := seedOwnershipChain(t, pool)
 	_, err := pool.Exec(`INSERT INTO agent_run_residuals(run_id,tenant_id,project_id,workspace_id,runtime_generation,responsibility,reason)
 	 VALUES($1,$2,$3,$4,0,'{"original":"retained"}','agent_start_failed')`, seed.runID, seed.tenantID, seed.projectID, seed.runWorkspaceID)

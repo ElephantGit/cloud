@@ -6,7 +6,7 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 60 SQL files.
+There are currently 61 SQL files.
 
 | SQL file | Schema change |
 |---|---|
@@ -70,7 +70,7 @@ There are currently 60 SQL files.
 | [0056_workflow_invocation_reference.sql](0056_workflow_invocation_reference.sql) | Invocation reference from workflow IssueRuns to WorkflowRuns |
 | [0057_agent_run_residual_reclamation.sql](0057_agent_run_residual_reclamation.sql) | Residual reclamation responsibility, appended evidence and disposition |
 | [0058_agent_run_controlled_reclamation.sql](0058_agent_run_controlled_reclamation.sql) | Deployment-controlled reclamation intents, dependent data deletion and per-target termination |
-| [0058_agent_restore_stop_evidence.sql](0058_agent_restore_stop_evidence.sql) | Named unconfirmed-stop evidence without changing residual responsibility or reclaim authority |
+| [0059_agent_restore_stop_evidence.sql](0059_agent_restore_stop_evidence.sql) | Named unconfirmed-stop evidence without changing residual responsibility or reclaim authority |
 
 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
 
@@ -92,7 +92,7 @@ There are currently 60 SQL files.
 - 0056 first settles every unlinked non-terminal historical workflow IssueRun (including running and deferred) as failed with `workflow_execution_unavailable_before_invocation_linkage`, preserving its input and outcome without inventing an execution. It then adds the `(workflow_invocation_ref, tenant_id)` → `workflow_runs(id, tenant_id)` composite foreign key (targeting the `workflow_run_tenant_identity` unique constraint 0044 already added, without duplicating it), a unique reference, and a CHECK that non-terminal workflow rows carry a reference while other executors carry none, all unconditionally validated. Historical terminal workflow rows may keep a NULL reference. Fresh, seeded upgrade, repeated application and constraint validation coverage is in `integration/workflow_invocation_migration_test.go`.
 - 0057 only adds residual-ledger columns: defaults initialize existing D4/D5 rows as `reconciling`, without backfilling targets or evidence, rewriting old `reason`, `responsibility` or business settlement, or backfilling D8. Legacy rows with non-null `cleared_at` cause an explicit migration error and rollback pending compatibility handling (A2). Reentrant DDL preserves progressed rows. The schema accepts `released`, `terminated_data_retained` and `externally_confirmed`; this step's automatic path implements only `released`, leaving the other dispositions to later controlled entry points. The authorization transaction checks the operation's tenant and Workspace relationships; a UUID foreign key alone does not establish resource scope. See [agent_run_residual_reclaim_migration_test.go](../../../integration/agent_run_residual_reclaim_migration_test.go) for fresh, upgrade, DDL replay and constraint coverage.
 - 0058 preserves 0057 history, responsibility, evidence, disposition and first `cleared_at`, and never backfills D8. Only an explicit root intent owns protection and evidence for ledgerless D8. Root termination and dependent data deletion each have three states; each resource has one root, at most one deletion intent and one fixed deletion operation. Command keys are unique throughout a tenant. Successful targets require both boolean confirmations, so a missing JSON field cannot pass through SQL NULL. Fresh, 0057-upgrade and constraint coverage is in [agent_run_controlled_reclaim_migration_test.go](../../../integration/agent_run_controlled_reclaim_migration_test.go).
-- 0058 only adds `stop_evidence`, initially empty for existing rows; no historical stop observation is invented. Covered by `TestMigration0058RestoreStopEvidenceFreshUpgradeAndRepeat`.
+- 0059 only adds `stop_evidence`, initially empty for existing rows; no historical stop observation is invented. Covered by `TestMigration0059RestoreStopEvidenceFreshUpgradeAndRepeat`.
 - New migrations must verify fresh databases, upgrades from the preceding schema, repeated application and key constraints. See [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) and domain upgrade tests in integration.
 
 See [Persistence](../../../docs/core/persistence.en.md) for ownership/transactions, and [Workflows](../../../docs/workflows/workflows.en.md) / [External Git line](../../../docs/repositories/external-git.en.md) for runtime semantics.

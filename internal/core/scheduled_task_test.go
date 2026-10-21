@@ -12,10 +12,9 @@ func TestParseScheduledTaskSchedule(t *testing.T) {
 		raw  any
 		want scheduledTaskSchedule
 	}{
-		{"every_hours", Object{"kind": "every_hours", "intervalHours": 6}, scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 6}},
-		{"daily", Object{"kind": "daily", "hour": 9, "minute": 30}, scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 30}},
-		{"weekly", Object{"kind": "weekly", "hour": 18, "minute": 0, "weekdays": []string{"monday", "friday"}},
-			scheduledTaskSchedule{Kind: "weekly", Hour: 18, Weekdays: []time.Weekday{time.Monday, time.Friday}}},
+		{name: "every_hours", raw: Object{"kind": "every_hours", "intervalHours": 6}, want: scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 6}},
+		{name: "daily", raw: Object{"kind": "daily", "hour": 9, "minute": 30}, want: scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 30}},
+		{name: "weekly", raw: Object{"kind": "weekly", "hour": 18, "minute": 0, "weekdays": []string{"monday", "friday"}}, want: scheduledTaskSchedule{Kind: "weekly", Hour: 18, Weekdays: []time.Weekday{time.Monday, time.Friday}}},
 	}
 	for _, tc := range valid {
 		t.Run(tc.name, func(t *testing.T) {
@@ -48,10 +47,9 @@ func TestScheduleJSONCanonical(t *testing.T) {
 		in   scheduledTaskSchedule
 		want Object
 	}{
-		{scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 3}, Object{"kind": "every_hours", "intervalHours": 3}},
-		{scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 30}, Object{"kind": "daily", "hour": 9, "minute": 30}},
-		{scheduledTaskSchedule{Kind: "weekly", Hour: 18, Weekdays: []time.Weekday{time.Monday, time.Friday}},
-			Object{"kind": "weekly", "weekdays": []string{"monday", "friday"}, "hour": 18, "minute": 0}},
+		{in: scheduledTaskSchedule{Kind: "every_hours", IntervalHours: 3}, want: Object{"kind": "every_hours", "intervalHours": 3}},
+		{in: scheduledTaskSchedule{Kind: "daily", Hour: 9, Minute: 30}, want: Object{"kind": "daily", "hour": 9, "minute": 30}},
+		{in: scheduledTaskSchedule{Kind: "weekly", Hour: 18, Weekdays: []time.Weekday{time.Monday, time.Friday}}, want: Object{"kind": "weekly", "weekdays": []string{"monday", "friday"}, "hour": 18, "minute": 0}},
 	}
 	for _, tc := range cases {
 		got, err := scheduleJSON(tc.in)
@@ -101,12 +99,12 @@ func TestNextDueSpringForwardNeverRetries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2026-03-08 exists at 02:34 local; 02:35 does not (spring forward). The 02:34 daily slot is
-	// normalized forward and is not re-emitted, matching "DST 跳过不补跑".
+	// 2026-03-08 (spring forward): a daily 02:34 slot is normalized forward and never re-emitted,
+	// matching "DST 跳过不补跑".
 	daily := scheduledTaskSchedule{Kind: "daily", Hour: 2, Minute: 34}
 	after := time.Date(2026, 3, 8, 2, 0, 0, 0, loc)
 	got := daily.nextDue(after, loc)
-	if got.IsDST() || got.Sub(after) <= 0 {
+	if got.IsDST() || !got.After(after) {
 		t.Fatalf("spring-forward 02:34 must normalize to a later non-DST instant, got %v", got)
 	}
 }

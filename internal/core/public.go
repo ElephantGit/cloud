@@ -235,7 +235,12 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		case strings.Contains(r.Path, "/scheduled-tasks"):
 			// Cloud Scheduled Task 的管理端点（D1：管理仅创建者，读取跟随绑定 issue 可见性，
 			// 不存在与无权限统一 404）。分支放在 issue 臂之前，因为路径不含 :iid。
-			out = scheduledTaskPublic(t, r, uid)
+			resolved := scheduledTaskPublic(t, r, uid)
+			if r.Method == "DELETE" {
+				out = resolved
+			} else {
+				out = Object{"resource": resolved}
+			}
 			if r.Method == "POST" && !strings.HasSuffix(r.Path, "/history") {
 				status = 200
 			}

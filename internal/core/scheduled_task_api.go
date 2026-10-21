@@ -51,6 +51,7 @@ func scheduledTaskOut(task Object) Object {
 		"schedule":              task["schedule"],
 		"timezone":              task.S("timezone"),
 		"revision":              task["revision"],
+		"version":               task.N("version"),
 		"enabled":               task.B("enabled"),
 		"unattendedPolicy":      task.S("unattendedPolicy"),
 		"unattendedConsentedAt": task["unattendedConsentedAt"],

@@ -6,7 +6,7 @@
 
 运行中的 Thread 同时依赖 `features/thread-preview` 的可选快照。预览按历史位置覆盖，已定型记录始终优先；流式思考展开，定型后折叠。连接状态与部分缺失明确展示，预览更新保留历史阅读位置。
 
-Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。任务级组合以只读模式展示各 Run，发送交给任务统一输入框；独立会话组件保留原有发送/结束控制，供旧服务升级期间使用。
+Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run，也接受任务页 URL 明确选择的历史 Run，读取其 Thread（`/runs/:rid/thread`），双向分页显示，接收空间事件实时刷新。任务级组合以只读模式展示各 Run，发送交给任务统一输入框；当前占用任务的会话可单独开放带确认步骤的结束控制，历史会话不开放。独立会话组件保留原有发送/结束控制，供旧服务升级期间使用。
 
 不负责：run 的创建与列表（`features/issues/api` 的 `useRuns`）、SSE 连接本身（空间事件由 `features/spaces/use-space-events`、预览由 `features/thread-preview` 拥有）、Issue 其他栏目。
 
@@ -18,7 +18,7 @@ Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run�
 | `thread-api.ts` | TanStack Query 层：`threadQueryKey`、`useThread`（尾部首读 + 增量读 + 404 等待 + 兜底轮询）、`useLoadOlderThread`、`useSendThreadMessage`、`useEndThread`、故障文案 |
 | `thread-messages.tsx` | 展示组件：消息列表（`role=list`，名称「会话消息」）与「加载更早」按钮 |
 | `thread-row.tsx` | 安全 Markdown、折叠执行上下文、思考和可展开的工具输入输出 |
-| `thread-composer.tsx` | 输入框「给 Agent 发送消息」、「发送」与带确认步骤的「结束会话」 |
+| `thread-composer.tsx` | 输入框「给 Agent 发送消息」、「发送」与可供任务页复用的确认式「结束会话」 |
 | `thread-panel.tsx` | `IssueThreadPanel`：选 run、标题「Agent 会话」、状态徽章、等待提示与组合 |
 | `run-delivery.tsx` | 会话下方的 Revision 交付一行（`role=status`，名称「Revision 交付」）：已登记的 Revision 显示短提交与是否交付了新提交（续接后无新提交时说明沿用了续接的成果）；Revision 经 Git 交付，不显示 bundle 大小，否则按 `result.deliveryState` 说明跳过或失败，会话已结束但运行未结算时显示保存中 |
 | `run-resume.tsx` | 会话上方的续接一行（`role=note`，名称「续接」）：运行续接了同一 Issue 之前的 Revision 时，从该 Issue 的运行列表中找到它并显示短提交；全新运行不渲染 |
@@ -42,6 +42,7 @@ Node 条目公开其真实 `turnId`，工具调用与更新优先按该轮次关
 - GET 404 表示会话尚未声明，是正常的等待状态（每 2.5s 轮询），不是错误；已声明后在非 `ended` 状态下每 5s 兜底轮询，防止 SSE 掉线。
 - Revision 只显示公开元数据（提交、是否有改动）；Git 交付的 Revision `bundleSize` 为 null，交付行从不显示大小；运行结算没有空间事件，依赖 `useRuns` 在 agent 运行未结束时的轮询刷新。
 - `ending` / `ended` 时禁用发送与结束（与服务端 409 `thread_closed` 规则一致）；发送与结束各自的幂等键在同一次提交的重试间保持不变。服务端返回 `canAppend` / `canEnd` 决定操作：只有发起者可追加模型请求，管理员可结束，其他成员只读。面板展示冻结的连接/模型摘要和成员显示名称，不显示密钥。
+- 任务页只对 `activeRunId` 指向、`canEnd` 为真且当前用户是发起者的存活 Thread 单独展示结束控制；它调用正常 Thread end，不调用任务停止，后续队列不因此暂停。独立 Thread 面板原有管理员结束权限不变。
 
 模型授权失效后，旧运行保持只读；重新配置连接不会重新开放旧会话，页面提示结束后重新发起任务。
 

@@ -6,7 +6,7 @@
 
 Live Threads also consume optional snapshots from `features/thread-preview`. History positions identify replacements and settled records always win. Live thoughts open and fold when settled. Connection/missing-content states are visible and updates preserve historical reading position.
 
-The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. The task composition shows each Run read-only and sends from the task-level composer; the standalone Thread component retains its original authorized send/end controls for upgrades from an older server.
+The task's main conversation surface defaults to the latest Agent Run and accepts an explicitly selected historical Run. It reads the Thread (`/runs/:rid/thread`), pages both ways and refreshes from space events. Task composition shows each Run read-only and sends from the task-level composer; the session currently occupying the task may expose a separate confirmed end action, while historical sessions cannot. The standalone Thread component retains its original authorized send/end controls for upgrades from an older server.
 
 Not owned: creating and listing runs (`useRuns` in `features/issues/api`), SSE connections (`features/spaces/use-space-events` for invalidation and `features/thread-preview` for optional content), the issue's other columns.
 
@@ -18,7 +18,7 @@ Not owned: creating and listing runs (`useRuns` in `features/issues/api`), SSE c
 | `thread-api.ts` | TanStack Query layer: `threadQueryKey`, `useThread` (tail first read + incremental reads + 404 waiting + fallback poll), `useLoadOlderThread`, `useSendThreadMessage`, `useEndThread`, fault messages |
 | `thread-messages.tsx` | Presentational: the message list (`role=list`, named "会话消息") and the "加载更早" button |
 | `thread-row.tsx` | Safe Markdown, collapsed execution context, thoughts and expandable tool input/output |
-| `thread-composer.tsx` | The "给 Agent 发送消息" textarea, "发送", and "结束会话" with a confirm step |
+| `thread-composer.tsx` | The "给 Agent 发送消息" textarea, "发送", and a confirmed "结束会话" action reusable by the task page |
 | `run-delivery.tsx` | The Revision delivery line under the Thread (`role=status`, named "Revision 交付"): a registered Revision shows its short commit and whether the run delivered new commits (or, for a resumed run with no new commits, that it reused the resumed work); otherwise `result.deliveryState` explains a skip or failure, and an ended session whose run has not settled shows saving; Revisions are delivered over Git, so no bundle size is shown |
 | `run-resume.tsx` | The resume line above the Thread (`role=note`, named "续接"): when the run resumed an earlier Revision of the same Issue, it finds that Revision among the Issue's runs and shows its short commit; a fresh run renders nothing |
 | `run-preparation.tsx` | `RunPreparation` displays server-projected environment, clone, Agent preparation/start phases, the three-attempt clone budget and retry waiting; `snapshot_not_ready` shows as waiting for the Project's first repository sync (a wait, not a failure), and `repository_sync_failed` shows as a failure whatever the stage, with `syncErrorCode` appended only when it is a snake_case code (other values are dropped); `SessionFailure` renders only allowlisted safe codes, with no waiting/idle presentation after failure |
@@ -42,6 +42,7 @@ Node entries expose their actual `turnId`; tool calls and updates use that ident
 - A GET 404 means the session is not declared yet; it is a normal waiting state (polled every 2.5s), not an error. Once declared, a 5s fallback poll runs in every state but `ended`, in case SSE drops.
 - A Revision shows public metadata only (commits, changed); a Git-delivered Revision has a null `bundleSize` and the delivery line never shows a size; run settlement publishes no space event, so the line relies on `useRuns` polling while an agent run is unsettled.
 - Sending and ending are disabled in `ending` / `ended` (the server's 409 `thread_closed` rule); each submission's idempotency key stays stable across its retries. Server-provided `canAppend` / `canEnd` control actions: only the initiator may append model requests, administrators may end, and other members remain read-only. The panel shows frozen connection/model metadata and member display names, never credentials.
+- On the task page only, the end action appears for the live Thread named by `activeRunId` when `canEnd` is true and the current user initiated it. It uses normal Thread end, not task stop, so it does not pause the following queue. The standalone Thread panel retains its existing administrator end permission.
 
 A revoked model authorization leaves the old run read-only. Reconfiguring the connection does not reopen that Thread; the send fault asks the user to end it and launch a new task.
 

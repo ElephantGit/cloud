@@ -97,6 +97,16 @@ function conversationRows(
   return rows.toSorted((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
 }
 
+function visibleAgentRuns(
+  runs: IssueRun[],
+  count: number,
+  activeRunId: string | null | undefined,
+): IssueRun[] {
+  const recent = runs.slice(-count)
+  const active = runs.find((run) => run.id === activeRunId)
+  return active && !recent.some((run) => run.id === active.id) ? [active, ...recent] : recent
+}
+
 function WaitingMessage({
   message,
   name,
@@ -178,6 +188,8 @@ function RunConversation({
   issueId,
   members,
   workspaceSlug,
+  activeRunId,
+  currentUserId,
   onQuote,
 }: {
   run: IssueRun
@@ -186,6 +198,8 @@ function RunConversation({
   issueId: string
   members: TenantMember[]
   workspaceSlug: string | undefined
+  activeRunId: string | null | undefined
+  currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
   const task = run.input['task']
@@ -224,6 +238,8 @@ function RunConversation({
         members={members}
         selectedRunId={run.id}
         readOnly
+        showEndControl={run.id === activeRunId}
+        endActorId={currentUserId}
         onQuote={(text, agentId) => onQuote({ text, agentId })}
       />
     </li>
@@ -237,6 +253,7 @@ function ConversationRowItem({
   issueId,
   members,
   workspaceSlug,
+  activeRunId,
   currentUserId,
   onQuote,
 }: {
@@ -246,6 +263,7 @@ function ConversationRowItem({
   issueId: string
   members: TenantMember[]
   workspaceSlug: string | undefined
+  activeRunId: string | null | undefined
   currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
@@ -260,6 +278,8 @@ function ConversationRowItem({
         issueId={issueId}
         members={members}
         workspaceSlug={workspaceSlug}
+        activeRunId={activeRunId}
+        currentUserId={currentUserId}
         onQuote={onQuote}
       />
     )
@@ -291,6 +311,7 @@ function ConversationRows({
   members,
   targets,
   workspaceSlug,
+  activeRunId,
   currentUserId,
   onQuote,
 }: {
@@ -300,6 +321,7 @@ function ConversationRows({
   members: TenantMember[]
   targets: CollaborationTargetSummary[]
   workspaceSlug: string | undefined
+  activeRunId: string | null | undefined
   currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
@@ -314,6 +336,7 @@ function ConversationRows({
           issueId={issueId}
           members={members}
           workspaceSlug={workspaceSlug}
+          activeRunId={activeRunId}
           currentUserId={currentUserId}
           onQuote={onQuote}
         />
@@ -406,12 +429,10 @@ export function TaskConversationPanel({
   const agents = runs
     .filter((run) => run.executorType === 'agent')
     .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-  const shown = agents.slice(-visibleRuns)
+  const current = conversation.data?.pages[0]
+  const shown = visibleAgentRuns(agents, visibleRuns, current?.activeRunId)
   const messages = loadedTaskMessages(conversation.data?.pages)
   const rows = conversationRows(shown, messages, timeline.data ?? [])
-  const last = agents.at(-1)
-  const waiting = messages.some((message) => message.state === 'waiting')
-  const current = conversation.data?.pages[0]
   // During a rolling upgrade an older Cloud may not have the task endpoint yet. Preserve its
   // original Thread composer until the authoritative task queue becomes available.
   if (conversation.isError && faultCode(conversation.error) === 'not_found') {
@@ -433,6 +454,8 @@ export function TaskConversationPanel({
           members={members}
           selectedRunId={selectedRunId}
           readOnly
+          showEndControl={selectedRunId === current?.activeRunId}
+          endActorId={currentUserId}
           onQuote={(text, agentId) => draft.quote({ text, agentId })}
         />
       ) : (
@@ -449,6 +472,7 @@ export function TaskConversationPanel({
             members={members}
             targets={targets}
             workspaceSlug={workspaceSlug}
+            activeRunId={current?.activeRunId}
             currentUserId={currentUserId}
             onQuote={draft.quote}
           />
@@ -464,13 +488,13 @@ export function TaskConversationPanel({
         issueId={issueId}
         current={current}
         runs={agents}
-        waiting={waiting}
+        waiting={messages.some((message) => message.state === 'waiting')}
       />
       <ConversationComposer
         tid={tid}
         issueId={issueId}
         targets={targets}
-        latestRun={last}
+        latestRun={agents.at(-1)}
         state={draft}
         onSent={onLatest}
         readiness={current?.agentReadiness}

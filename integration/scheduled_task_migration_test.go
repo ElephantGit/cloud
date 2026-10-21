@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const scheduledTaskMigration = "0059_scheduled_tasks.sql"
+const scheduledTaskMigration = "0060_scheduled_tasks.sql"
 
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
 func seedScheduledTaskAgent(t *testing.T, pool *sql.DB, s skeletonSeed) string {
@@ -33,7 +33,7 @@ func insertScheduledTask(t *testing.T, pool *sql.DB, s skeletonSeed, agentID, ta
 	return id
 }
 
-func TestMigration0059ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
+func TestMigration0060ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
 	_, pool := skeletonStore(t)
 	s := seedAgentIssueRunSkeleton(t, pool)
 	agentID := seedScheduledTaskAgent(t, pool, s)
@@ -90,16 +90,17 @@ func TestMigration0059ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
 	guard(`'x','','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1`, "23514") // empty prompt
 	guard(`'x','x','[]'::jsonb,'Asia/Shanghai',1,1`, "23514")                                      // array schedule
 	guard(`'x','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'',1,1`, "23514")             // empty timezone
-	_, e := pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,'x','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, uuid.NewString())
-	wantPGError(t, e, "23503") // foreign agent
-	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,'x','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`, uuid.NewString(), s.tenantID, uuid.NewString(), s.userID, agentID)
-	wantPGError(t, e, "23503") // foreign issue
 
-	// enabled=true demands both the consent fact and the enable instant.
-	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`,enabled) VALUES($1,$2,$3,$4,$5,'x','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID)
+	_, e := pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`,enabled) VALUES($1,$2,$3,$4,$5,'enabled-no-consent','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID)
 	wantPGError(t, e, "23514")
-	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`,enabled,unattended_policy,unattended_consented_at) VALUES($1,$2,$3,$4,$5,'x','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true,'full_auto_in_cloud_workspace',now())`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID)
+	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`,enabled,unattended_policy,unattended_consented_at) VALUES($1,$2,$3,$4,$5,'enabled-no-instant','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true,'full_auto_in_cloud_workspace',now())`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID)
 	wantPGError(t, e, "23514")
+
+	// Foreign agent and issue must hit the FK, not the (tenant, issue, creator, name) unique key.
+	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,'foreign-agent','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, uuid.NewString())
+	wantPGError(t, e, "23503") // foreign agent
+	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,'foreign-issue','x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`, uuid.NewString(), s.tenantID, uuid.NewString(), s.userID, agentID)
+	wantPGError(t, e, "23503") // foreign issue
 
 	// One definition per (tenant, issue, creator, name).
 	_, e = pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,'Daily sync','Sync','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID)
@@ -112,7 +113,7 @@ func TestMigration0059ScheduledTasksFreshSchemaAndConstraints(t *testing.T) {
 	must(t, e)
 }
 
-func TestMigration0059ScheduledTasksUpgradeAndReplay(t *testing.T) {
+func TestMigration0060ScheduledTasksUpgradeAndReplay(t *testing.T) {
 	pool, _ := testSchema(t, "test_scheduled59u_")
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, scheduledTaskMigration))
 	s := seedAgentIssueRunSkeleton(t, pool)

@@ -119,7 +119,7 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 	require(e != nil, 404, "not_found")
 	require(result.O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
 	validateNodeResult(e, result)
-	if withReceipt && !acceptResidualReceipt(t, e, r.Body.N("sequence"), r.Body.S("event")) {
+	if withReceipt && !acceptResidualReceipt(t, e, r.Body.N("sequence"), r.Body.S("event"), "node_event_receipts") {
 		return e
 	}
 	if !acceptResidualExecutionFact(t, e, result) {

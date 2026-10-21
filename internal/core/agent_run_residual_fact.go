@@ -158,29 +158,20 @@ func acceptResidualEffectFact(t *transaction, row, e, incoming Object) bool {
 	return appendResidualFact(t, row.S("runId"), key, incoming)
 }
 
-func acceptResidualReceipt(t *transaction, e Object, sequence int64, event string) bool {
+// receipts is a constant selected by the node/clone registry call sites, never request input.
+func acceptResidualReceipt(t *transaction, e Object, sequence int64, event, receipts string) bool {
 	row := residualForWorkspace(t, e.S("workspaceId"))
 	if row == nil {
 		return true
 	}
-	old := t.one("SELECT event FROM node_event_receipts WHERE execution_id=$1 AND sequence=$2", e.S("executionId"), sequence)
+	old := t.one("SELECT event FROM "+receipts+" WHERE execution_id=$1 AND sequence=$2", e.S("executionId"), sequence)
 	if old != nil && old.S("event") != event {
-		key := "receipt:" + e.S("executionId") + ":" + fmt.Sprint(sequence)
-		return appendResidualConflict(t, row, key, Object{"kind": "receipt", "event": old.S("event")}, Object{"kind": "receipt", "event": event})
-	}
-	return true
-}
-
-// Clone receipts use a separate registry. Audit a conflicting event before cloneResult can
-// reject it with a rollback, retaining the original receipt and blocking further disposal.
-func acceptResidualCloneReceipt(t *transaction, e Object, sequence int64, event string) bool {
-	row := residualForWorkspace(t, e.S("workspaceId"))
-	if row == nil {
-		return true
-	}
-	old := t.one("SELECT event FROM clone_event_receipts WHERE execution_id=$1 AND sequence=$2", e.S("executionId"), sequence)
-	if old != nil && old.S("event") != event {
-		key := "receipt:" + e.S("executionId") + ":" + fmt.Sprint(sequence)
+		prefix := "receipt:"
+		// Separate primary keys do not guarantee uniqueness across the two execution registries.
+		if receipts == "clone_event_receipts" {
+			prefix = "clone_receipt:"
+		}
+		key := prefix + e.S("executionId") + ":" + fmt.Sprint(sequence)
 		return appendResidualConflict(t, row, key, Object{"kind": "receipt", "event": old.S("event")}, Object{"kind": "receipt", "event": event})
 	}
 	return true

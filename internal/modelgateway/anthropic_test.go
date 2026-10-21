@@ -48,6 +48,30 @@ func TestPinnedCLIClaudeModelBetas(t *testing.T) {
 	}
 }
 
+// Agent SDK query creation enables these additional capabilities on the same pinned native CLI.
+func TestPinnedClaudeAgentSDKCapabilities(t *testing.T) {
+	betas := pinnedClaudeBetas + ",structured-outputs-2025-12-15,thinking-display-updates-2026-08-18"
+	var calls atomic.Int64
+	service, _ := anthropicFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get("Anthropic-Beta") != betas || r.URL.RawQuery != "beta=true" {
+			t.Error("SDK capabilities changed while forwarding")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, "{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture-model\",\"content\":[{\"type\":\"text\",\"text\":\"{}\"}],\"stop_reason\":\"end_turn\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}")
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/runtime/anthropic/v1/messages?beta=true", strings.NewReader("{\"model\":\"fixture-model\",\"messages\":[],\"max_tokens\":16}"))
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Anthropic-Version", anthropicVersion)
+	request.Header.Set("Anthropic-Beta", betas)
+	response := httptest.NewRecorder()
+	service.ModelHandler(response, request)
+	if response.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("pinned SDK request rejected: status=%d calls=%d", response.Code, calls.Load())
+	}
+}
+
 // anthropicFixture keeps the upstream key separate from the workload's short-lived token.
 func anthropicFixture(t *testing.T, handler http.Handler) (*Service, *fakePolicy) {
 	t.Helper()

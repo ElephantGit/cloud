@@ -28,12 +28,11 @@ type controlHarness struct {
 
 func newControlHarness(t *testing.T) *controlHarness {
 	t.Helper()
-	pool, _ := testSchema(t, "grpc_")
+	pool, _ := migratedTestSchema(t, "grpc_")
 	db, e := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	must(t, e)
 	store, e := core.NewStore(db)
 	must(t, e)
-	must(t, store.Migrate(context.Background()))
 	return &controlHarness{store: store, conn: controlConn(t, store)}
 }
 

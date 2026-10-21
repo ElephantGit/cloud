@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -14,8 +13,8 @@ var (
 	controlledFixtureCleanups []func() error
 )
 
-// TestMain owns only the controlled suite's reusable schema and immutable source. Other tests keep
-// their ordinary per-test fixtures and cleanups; every controlled case still has a fresh service stack.
+// TestMain owns the sealed database template and the controlled suite's reusable resources.
+// Ordinary fixtures clean up their independent copies before these package resources are released.
 func TestMain(m *testing.M) {
 	code := m.Run()
 	for i := len(controlledFixtureCleanups) - 1; i >= 0; i-- {
@@ -23,6 +22,10 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "controlled fixture cleanup:", err)
 			code = 1
 		}
+	}
+	if err := closeFixtureTemplate(); err != nil {
+		fmt.Fprintln(os.Stderr, "fixture template cleanup:", err)
+		code = 1
 	}
 	os.Exit(code)
 }
@@ -34,12 +37,10 @@ func controlledPreparedResources(t *testing.T) *fixture {
 	if controlledPreparedFixture != nil {
 		return controlledPreparedFixture
 	}
-	pool, config := testSchemaWithCleanup(t, "test_controlled_", func(cleanup func() error) {
+	pool, config := migratedTestSchemaWithCleanup(t, "test_controlled_", func(cleanup func() error) {
 		controlledFixtureCleanups = append(controlledFixtureCleanups, cleanup)
 	})
 	store := &core.Store{Pool: pool}
-	must(t, store.Migrate(context.Background()))
-	must(t, store.Migrate(context.Background()))
 	root, err := os.MkdirTemp("", "ora-cloud-controlled-")
 	must(t, err)
 	controlledFixtureCleanups = append(controlledFixtureCleanups, func() error { return os.RemoveAll(root) })

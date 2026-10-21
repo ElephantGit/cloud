@@ -83,23 +83,15 @@ func testSchema(t *testing.T, prefix string) (*sql.DB, *pgx.ConnConfig) {
 	})
 }
 
-// testSchemaWithCleanup lets the controlled-only suite keep its schema until package shutdown.
-// Ordinary callers still register exactly the same resource lifetime through testSchema.
+// testSchemaWithCleanup keeps the empty-schema route independent of migrated template copies.
+// Migration tests retain their original schema lifetime through testSchema.
 func testSchemaWithCleanup(t *testing.T, prefix string, registerCleanup func(func() error)) (*sql.DB, *pgx.ConnConfig) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		if os.Getenv("REQUIRE_POSTGRES") == "1" {
-			t.Fatal("TEST_DATABASE_URL is required; PostgreSQL integration must not skip")
-		}
-		t.Skip("real PostgreSQL: set TEST_DATABASE_URL (task test:integration requires it)")
-	}
-	config, e := pgx.ParseConfig(dsn)
-	must(t, e)
+	config := testDatabaseConfig(t)
 	admin := stdlib.OpenDB(*config)
 	must(t, admin.Ping())
 	schema := prefix + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, e = admin.Exec("CREATE SCHEMA " + schema)
+	_, e := admin.Exec("CREATE SCHEMA " + schema)
 	must(t, e)
 	config.RuntimeParams["search_path"] = schema
 	pool := stdlib.OpenDB(*config)
@@ -110,6 +102,20 @@ func testSchemaWithCleanup(t *testing.T, prefix string, registerCleanup func(fun
 		return errors.Join(poolErr, dropErr, adminErr)
 	})
 	return pool, config
+}
+
+func testDatabaseConfig(t *testing.T) *pgx.ConnConfig {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		if os.Getenv("REQUIRE_POSTGRES") == "1" {
+			t.Fatal("TEST_DATABASE_URL is required; PostgreSQL integration must not skip")
+		}
+		t.Skip("real PostgreSQL: set TEST_DATABASE_URL (task test:integration requires it)")
+	}
+	config, e := pgx.ParseConfig(dsn)
+	must(t, e)
+	return config
 }
 
 // setGinTestModeOnce makes setup safe to call from parallel tests: gin.SetMode writes a
@@ -130,7 +136,7 @@ func setupWithPreparedResources(t *testing.T, prepared *fixture) *fixture {
 	var pool *sql.DB
 	var config *pgx.ConnConfig
 	if prepared == nil {
-		pool, config = testSchema(t, "test_")
+		pool, config = migratedTestSchema(t, "test_")
 	} else {
 		pool, config = prepared.store.Pool, prepared.pgConfig
 	}
@@ -145,10 +151,6 @@ func setupWithPreparedResources(t *testing.T, prepared *fixture) *fixture {
 	// Plugin execution has no real executor yet; the simulation capability is what the fixtures above
 	// stand in for, and it must be opted into explicitly (see plugin_maintenance.go).
 	store.PluginExecution = core.PluginExecutionSimulation
-	if prepared == nil {
-		must(t, store.Migrate(context.Background()))
-		must(t, store.Migrate(context.Background()))
-	}
 	credentials, e := simulator.NewCredentials()
 	must(t, e)
 	auth, e := core.NewAuthenticator("ora-cloud", credentials.Trust)

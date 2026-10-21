@@ -731,7 +731,7 @@ func TestAuthorDeclaredSnapshotIDDoesNotTakeTheKeyBack(t *testing.T) {
 		core.Object{"name": "scope", "displayName": "Scope", "fieldType": "text-input", "valueType": "string", "required": true},
 	}))
 	seedLegacySnapshot(t, f, wid, 2, startInputGraph(variables))
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it"}, "wf-version-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Release it", "projectRef": runProject(t, f, "wf-version-project")}, "wf-version-issue", 200).O("resource")
 
 	// The form is the platform's: a version selector, not the author's text control, opening on the
 	// newest selectable version rather than on the stock one the confirm would refuse.
@@ -854,8 +854,11 @@ func TestWorkflowConfirmReadsThePreRenameVersionKey(t *testing.T) {
 		t.Fatalf("the selection was not stored under the platform's key: %v", stored)
 	}
 	linked := f.call("GET", f.path("/workflows/"+owned+"/runs/"+run.S("workflowInvocationRef")), nil, "", 200)
-	if linked.O("input").S("snapshotId") != "1.2.3" || linked.S("snapshotId") != ownedOlder.S("id") {
-		t.Fatalf("the invocation confused the author's variable with the selected snapshot: %v", linked)
+	// The invocation's own input is the workflow's parameters, and `snapshotId` is not one of them any
+	// more: the value under the key selected the version, so it must not also arrive as a parameter.
+	// The version it ran is the invocation's `snapshotId`, which is where the platform records it.
+	if _, leaked := linked.O("input")["snapshotId"]; leaked || linked.S("snapshotId") != ownedOlder.S("id") {
+		t.Fatalf("the invocation handed the version selection to the workflow as a parameter: %v", linked)
 	}
 	if _, kept := stored["version"]; kept {
 		t.Fatalf("the pre-rename key was stored: %v", stored)

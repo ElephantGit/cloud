@@ -23,13 +23,14 @@ func seedResidualMigrationRow(t *testing.T, pool *sql.DB, seed skeletonSeed, rea
 }
 
 // Compare the complete old ledger and business rows, rather than only the newly added defaults.
+// Columns added by later additive migrations are excluded, as in the other upgrade-path tests.
 func residualMigrationHistory(t *testing.T, pool *sql.DB) string {
 	t.Helper()
 	var snapshot string
 	must(t, pool.QueryRow(`SELECT jsonb_build_object(
 		'residuals',(SELECT jsonb_agg(to_jsonb(r)-ARRAY['reclaim_state','disposition','reclaim_id','reclaim_mode',
 		  'reclaim_operation_id','reclaim_authorization','reclaim_targets','reclaim_evidence','reclaim_version',
-		  'reclaim_checked_at','reclaim_conflicted_at'] ORDER BY run_id) FROM agent_run_residuals r),
+		  'reclaim_checked_at','reclaim_conflicted_at','stop_evidence'] ORDER BY run_id) FROM agent_run_residuals r),
 		'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM issue_runs r),
 		'workspaces',(SELECT jsonb_agg(to_jsonb(w) ORDER BY id) FROM workspaces w),
 		'operations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM operations o))::text`).Scan(&snapshot))

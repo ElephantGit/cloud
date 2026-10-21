@@ -83,6 +83,16 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   and switching the selector reloads the new version the same way. The form shown and the version Confirm
   validates are therefore always the same, and fields the live draft has not published never appear in
   the default view.
+  That promise assumes the platform can name the version, and the selector itself comes from the live
+  draft. When the live draft declares the reserved key `snapshotId` (or removes it through a launch
+  field) there is no version to choose: the @ form renders the live draft while Confirm still applies
+  the live draft's version rule and runs the newest published version. When the selector does exist but
+  the chosen version's own graph declares `snapshotId` (or its select offers options that are not all
+  published ids), that version's snapshot form has no platform field while Confirm still treats the key
+  as the platform's: the author's value is read as a version cursor, so an empty value runs the newest
+  published version and a non-id value is refused. Both are the boundary of an author occupying a
+  reserved key, not a supported configuration: authors must not name their own variables `snapshotId`.
+  Whether switching to such a version should be refused or warned about is a later decision (circus#405).
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the

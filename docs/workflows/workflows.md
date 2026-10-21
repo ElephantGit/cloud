@@ -91,7 +91,8 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   `workflow.session_turn_timeout`（默认 2 小时）后节点以 `session_turn_deadline_exceeded` 失败，运行进入终态。这也是 Cloud 自己下的
   判断，按执行行计时（重试产生的新执行行重新计时），只使用数据库时钟，回放、重启和副本推进都不会重置。判断顺序是结果优先：
   已提交的结果按它自己的原因结算，Node 不可达仍报 `node_unavailable`，两者都不成立时才轮到窗口；窗口把运行带入终态之后才到达的结果
-  保留在执行行上，不改写已经终态的运行。运行进入终态后，Cloud 声明删除这次运行的 Workspace。
+  保留在执行行上，不改写已经终态的运行。运行进入终态后，Cloud 声明删除这次运行的 Workspace。第一阶段这个会话没有 Git Server 访问（读写都返回 `403`），它的 Workspace 也不进 IssueRun 会话的 Workspace
+  目录，见 [Git Server](../repositories/git-server.md)。
 - **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
   命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
   `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。

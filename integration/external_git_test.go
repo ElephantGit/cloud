@@ -122,8 +122,17 @@ func (f *fixture) leasedSync() (string, core.RepositoryTask) {
 	return pid, tasks[0]
 }
 
+// manualSync asks for a sync of an active Project the way a member does and returns its ID.
+func (f *fixture) manualSync(pid string) string {
+	f.t.Helper()
+	return f.gitCall("POST", f.path("/projects/"+pid+"/repository/syncs"), nil, "", 202).O("resource").S("id")
+}
+
 func TestRepositorySyncLeaseFencingReplayAndResyncAreAtomic(t *testing.T) {
 	f := setup(t)
+	// These cases drive the Project's own first sync through the repository worker, so the
+	// fixture must not settle it from its local source repository.
+	f.withoutSnapshot = true
 	ctx := context.Background()
 	pid, task := f.leasedSync()
 	// Pending/leased can be reclaimed, but stale generations must never start.
@@ -189,6 +198,9 @@ func TestRepositorySyncSystemSuccessorRecordsSkipReason(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := setup(t)
+			// These cases drive the Project's own first sync through the repository worker, so the
+			// fixture must not settle it from its local source repository.
+			f.withoutSnapshot = true
 			ctx := context.Background()
 			pid, task := f.leasedSync()
 			must(t, firstErr(f.store.Pool.Exec("UPDATE projects SET lifecycle=$2 WHERE id=$1", pid, c.lifecycle)))
@@ -223,8 +235,11 @@ func TestRepositorySyncSystemSuccessorRecordsSkipReason(t *testing.T) {
 
 func TestRepositorySyncConcurrentLeasesAndIdempotentTrigger(t *testing.T) {
 	f := setup(t)
+	// The fixture settles the Project's first sync, so the Project is active and the sync the
+	// workers race for is one a member asked for.
 	pid := f.create("concurrent-sync").O("resource").S("id")
 	f.drain()
+	f.manualSync(pid)
 	var wg sync.WaitGroup
 	results := make(chan []core.RepositoryTask, 2)
 	errs := make(chan error, 2)
@@ -251,7 +266,7 @@ func TestRepositorySyncConcurrentLeasesAndIdempotentTrigger(t *testing.T) {
 		t.Fatalf("concurrent workers leased %d times", count)
 	}
 	op := f.gitCall("POST", f.path("/projects/"+pid+"/repository/syncs"), nil, "", 200).O("resource")
-	if op.S("state") != "leased" || f.scalar("SELECT count(*) FROM repository_operations") != 1 {
+	if op.S("state") != "leased" || f.scalar("SELECT count(*) FROM repository_operations WHERE state IN ('pending','leased','running')") != 1 {
 		t.Fatalf("manual trigger duplicated sync: %v", op)
 	}
 }

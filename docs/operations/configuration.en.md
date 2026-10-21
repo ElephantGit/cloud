@@ -53,6 +53,9 @@ Each process in this repository has its own configuration sources:
 | `issue_runs.delivery_give_up_after`, `delivery_unreachable_after` | `2h`, `30m` | Give-up limits for delivery and deletion; `delivery_unreachable_after` is also the window that decides whether a Node is still there, and an in-flight workflow session settles on it; non-positive values take the defaults |
 | `workflow.session_turn_timeout` | `2h` | The initial turn's window for a workflow session: once the execution row's `created_at` is older than this with neither a committed result nor a successful `turnEnded`, the node fails as `session_turn_deadline_exceeded`; timed per execution row, non-positive values take the default, see [Workflows](../workflows/workflows.en.md#scheduling) |
 | `object_store.*` | `enabled: false` | See [Revisions](../agent-runs/revisions.en.md#object-storage): `endpoint`, `public_endpoint`, `region`, `bucket`, `path_style`, `access_key_id_file`, `secret_access_key_file`, `upload_grant_ttl` |
+| `git_server.repository_base_url` | empty | The Git Server repository base URL sandboxes reach (`https`, no userinfo, query, fragment or trailing slash), written into clone, session and delivery inputs; empty runs without a Git Server: clone steps stay `blocked` (`git_server_unconfigured`) and deliveries settle as `skipped` |
+| `git_server.ref_query_url`, `ca_file`, `client_cert_file`, `client_key_file` | empty | Required with `repository_base_url`: the ref query listener's `https://host[:port]`, the CA to verify it, and Cloud's client certificate and private key files. Startup only reads the files and makes no network call; an unreachable Git Server or a mismatched certificate only makes verification unavailable and never stops startup. See [Git Server](../repositories/git-server.en.md#ref-queries) |
+| `git_server.ref_query_timeout` | `10s` | Timeout of one ref query; a non-positive value takes the default |
 | `repository.enabled` | `false` | Enables the external Git line and the credential routes; with it off Projects are still created, but no sync runs and credential creation answers `503`; see [The external Git line](../repositories/external-git.en.md) |
 | `repository.executor_url`, `executor_ca_file`, `dispatcher_cert_file`, `dispatcher_key_file` | URL defaults to `https://repo-executor:8471`; files required | The Repo Executor's task listener and Cloud's dispatcher mTLS client identity |
 | `repository.authorization_key_file` | Required | The Ed25519 (PKCS#8) key signing execution authorizations; must differ from `submission_key_file` |
@@ -64,6 +67,10 @@ Each process in this repository has its own configuration sources:
 
 With `repository.enabled` true, startup checks that the two private keys differ, that the ingress URL is set, and loads
 three sets of mTLS client material (executor, Credential Store, Git Server) without making any network call.
+
+Both sections reach the same Git Server ref query listener (`GET /internal/v1/refs`), each with its own client: `git_server.*`
+serves Workspace clone inputs and Revision delivery verification, and `repository.git_refs_*` serves the repository worker,
+publish source checks and the Workspace branch list.
 
 `cloudctl` reads the same configuration but only uses the database connection; it needs a migration account with rights
 to create tables.

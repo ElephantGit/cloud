@@ -134,7 +134,9 @@ seconds):
   Results win: a committed result settles by its own reason, an unreachable Node is still `node_unavailable`, and only
   when neither holds does the window apply. A result that arrives after the window already settled the run is kept on the
   execution row and never rewrites the terminal run. Once the run reaches a terminal state, Cloud declares the deletion
-  of its Workspace.
+  of its Workspace. In the first phase this session has no Git Server
+  access (reads and writes get `403`), and its Workspace is not listed in an IssueRun session's Workspace directory;
+  see [Git Server](../repositories/git-server.en.md).
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
   receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the

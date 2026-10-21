@@ -17,7 +17,6 @@ import { JoinContinue, JoinPage } from '@/features/onboarding/join-page'
 import { PluginsPage } from '@/features/plugins/plugins-page'
 import { ProjectDetailPage } from '@/features/projects/project-detail-page'
 import { ProjectsPage } from '@/features/projects/projects-page'
-import { RepositoriesPage } from '@/features/clones/repositories-page'
 import { RuntimesPage } from '@/features/runtimes/runtimes-page'
 import { GeneralSettingsPage } from '@/features/settings/general-settings-page'
 import { GitCredentialsPage } from '@/features/repositories/credential-page'
@@ -125,7 +124,6 @@ export const routes: RouteObject[] = [
       { path: 'my-issues', element: <CloudScope component={MyIssuesPage} /> },
       { path: 'projects', element: <WithSlug component={ProjectsPage} /> },
       { path: 'projects/:projectId', element: <WithSlug component={ProjectDetailPage} /> },
-      { path: 'repositories', element: <WithSlug component={RepositoriesPage} /> },
       { path: 'workflows', element: <CloudScope component={WorkflowsPage} /> },
       {
         path: 'workflows/:workflowId',

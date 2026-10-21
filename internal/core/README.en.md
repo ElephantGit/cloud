@@ -20,7 +20,7 @@ This package owns business state, authorization, transactions and recovery decis
 | `revision*.go`, `session_*.go` | Revision registration, archives, session listing and statistics | [Revision](../../docs/agent-runs/revisions.en.md), [Session reads](../../docs/agent-runs/session-reads.en.md) |
 | `model_*.go` | Personal configuration, frozen bindings, grant digests and request observations; no API Key decryption | [Model access](../../docs/models/model-access.en.md) |
 | `plugins.go`, `plugin_*.go`, `workflow_asset_imports.go` | Catalog snapshots with Agent declaration copies, space selection, Node install plans with frozen declaration associations and asset import ledger | [Plugin marketplace](../../docs/plugins/marketplace.en.md) |
-| `workflow*.go` | Graphs, published snapshots, admission, run identity and scheduler | [Workflows](../../docs/workflows/workflows.en.md) |
+| `workflow*.go` | Graphs, published snapshots, admission, run identity and scheduler; WorkflowRun creation shared by Issue confirm/manual and direct starts, the `workflow_invocation_ref` link, and the scheduler's projection of WorkflowRun status onto the linked IssueRun | [Workflows](../../docs/workflows/workflows.en.md), [Issue collaboration](../../docs/collaboration/interactions.en.md) |
 | `hub.go`, `signals.go` | Post-commit invalidation and control hints; no authoritative state | [HTTP API](../../docs/core/http-api.en.md) |
 
 ## Store and transaction boundaries

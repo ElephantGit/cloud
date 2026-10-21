@@ -9,9 +9,12 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -184,6 +187,173 @@ func TestWorkflowAdvanceConditionOnUnsetKickoffReadsAbsent(t *testing.T) {
 
 	if branch := wfSelectedBranch(t, store, runID); branch != "absent" {
 		t.Fatalf("condition selected %q; want absent — an unset kickoff read as present", branch)
+	}
+	var activities, linked int
+	if err := store.Pool.QueryRow(`SELECT (SELECT count(*) FROM issue_activities),
+		(SELECT count(*) FROM issue_runs WHERE workflow_invocation_ref=$1)`, runID).Scan(&activities, &linked); err != nil || activities != 0 || linked != 0 {
+		t.Fatalf("direct run created collaboration records: activities=%d linked=%d err=%v", activities, linked, err)
+	}
+}
+
+func TestWorkflowAdvanceProjectsConcurrentPassesOnce(t *testing.T) {
+	store := dispatcherDB(t)
+	s := seedWorkflowProjection(t, store)
+	graph := wfGraph([]Object{wfNode("s", "start", ""), wfNode("o", "output", "")}, [][3]string{{"s", "o", ""}})
+	if _, err := store.Pool.Exec(`UPDATE workflow_snapshots SET graph=$2::jsonb
+		WHERE id=(SELECT snapshot_id FROM workflow_runs WHERE id=$1)`, s.workflowRun, jsonText(graph)); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = store.AdvanceWorkflowRunsOnce(context.Background())
+		}()
+	}
+	close(start)
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var version int
+	if err := store.Pool.QueryRow("SELECT status,version FROM issue_runs WHERE id=$1", s.issueRun).Scan(&status, &version); err != nil || status != "completed" || version != 3 {
+		t.Fatalf("linked run: status=%s version=%d err=%v", status, version, err)
+	}
+	activities := workflowProjectionActivities(t, store, s)
+	actions := make([]string, len(activities))
+	for i, activity := range activities {
+		actions[i] = activity.S("action")
+	}
+	if !reflect.DeepEqual(actions, []string{"run.enqueued", "run.started", "run.completed"}) {
+		t.Fatalf("concurrent/repeated passes emitted %v", actions)
+	}
+}
+
+func TestWorkflowSettleLostCASDoesNotProject(t *testing.T) {
+	store := dispatcherDB(t)
+	for _, withStates := range []bool{false, true} {
+		name := "without-states"
+		if withStates {
+			name = "with-states"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := seedWorkflowProjection(t, store)
+			// A concurrent writer won, but its IssueRun is deliberately still queued: calling
+			// projection after our lost CAS would now emit run.started from that winner's row.
+			if _, err := store.Pool.Exec("UPDATE workflow_runs SET status='running',started_at=now(),version=version+1 WHERE id=$1", s.workflowRun); err != nil {
+				t.Fatal(err)
+			}
+			var states map[string]workflowNodeState
+			if withStates {
+				states = map[string]workflowNodeState{"s": {Status: "succeeded"}}
+			}
+			_, err := store.transact(context.Background(), func(tx *transaction) Object {
+				if settleWorkflowRunStates(tx, s.workflowRun, 1, "failed", "stale failure", states) {
+					t.Fatal("stale version unexpectedly applied")
+				}
+				return Object{}
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			status, runErr, committed, version := readWorkflowRun(t, store, s.workflowRun)
+			if status != "running" || runErr != "" || len(committed) != 0 || version != 2 {
+				t.Fatalf("lost CAS changed winner: %s %q %v version=%d", status, runErr, committed, version)
+			}
+			var issueStatus string
+			if err := store.Pool.QueryRow("SELECT status FROM issue_runs WHERE id=$1", s.issueRun).Scan(&issueStatus); err != nil || issueStatus != "queued" {
+				t.Fatalf("lost CAS projected: status=%s err=%v", issueStatus, err)
+			}
+			if activities := workflowProjectionActivities(t, store, s); len(activities) != 1 {
+				t.Fatalf("lost CAS emitted activities: %v", activities)
+			}
+		})
+	}
+}
+
+func TestWorkflowSettleTruncatesIssueSummary(t *testing.T) {
+	store := dispatcherDB(t)
+	for _, source := range []string{"error", "output"} {
+		t.Run(source, func(t *testing.T) {
+			s := seedWorkflowProjection(t, store)
+			text := strings.Repeat("界", 7000)
+			status, runErr := "failed", text
+			var states map[string]workflowNodeState
+			if source == "output" {
+				graph := wfGraph([]Object{wfNode("s", "start", ""), wfNode("o", "output", "")}, [][3]string{{"s", "o", ""}})
+				if _, err := store.Pool.Exec(`UPDATE workflow_snapshots SET graph=$2::jsonb
+					WHERE id=(SELECT snapshot_id FROM workflow_runs WHERE id=$1)`, s.workflowRun, jsonText(graph)); err != nil {
+					t.Fatal(err)
+				}
+				status, runErr = "succeeded", ""
+				states = map[string]workflowNodeState{"o": {Status: "succeeded", Output: Object{"text": text}}}
+			}
+			_, err := store.transact(context.Background(), func(tx *transaction) Object {
+				if !settleWorkflowRunStates(tx, s.workflowRun, 1, status, runErr, states) {
+					t.Fatal("settle did not apply")
+				}
+				return Object{}
+			})
+			if err != nil {
+				t.Fatalf("oversized summary rolled back settlement: %v", err)
+			}
+			activities := workflowProjectionActivities(t, store, s)
+			if len(activities) != 3 || activities[1].S("action") != "run.message" {
+				t.Fatalf("terminal summary activities: %v", activities)
+			}
+			message := activities[1].O("details").S("message")
+			if len(message) < 19997 || len(message) > 20000 || !utf8.ValidString(message) {
+				t.Fatalf("summary bytes=%d valid UTF-8=%v", len(message), utf8.ValidString(message))
+			}
+			actual, actualErr, _, version := readWorkflowRun(t, store, s.workflowRun)
+			if actual != status || actualErr != runErr || version != 2 {
+				t.Fatalf("settle did not preserve execution result: status=%s error bytes=%d version=%d", actual, len(actualErr), version)
+			}
+			var issueStatus string
+			wantIssueStatus := "failed"
+			if status == "succeeded" {
+				wantIssueStatus = "completed"
+			}
+			if err := store.Pool.QueryRow("SELECT status FROM issue_runs WHERE id=$1", s.issueRun).Scan(&issueStatus); err != nil || issueStatus != wantIssueStatus {
+				t.Fatalf("terminal IssueRun: status=%s err=%v", issueStatus, err)
+			}
+		})
+	}
+}
+
+func TestWorkflowAdvanceProjectionFailureRollsBackClaim(t *testing.T) {
+	store := dispatcherDB(t)
+	s := seedWorkflowProjection(t, store)
+	if _, err := store.Pool.Exec("ALTER TABLE issue_activities ADD CONSTRAINT reject_scheduler_start CHECK(action <> 'run.started')"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := store.transact(context.Background(), func(tx *transaction) Object {
+		advanceWorkflowRun(tx, s.workflowRun, store.DeliveryUnreachableAfter)
+		return Object{}
+	})
+	if err == nil {
+		t.Fatal("failed projection must abort the scheduler transaction")
+	}
+	status, _, _, version := readWorkflowRun(t, store, s.workflowRun)
+	if status != "pending" || version != 1 {
+		t.Fatalf("projection failure left claimed workflow: %s version=%d", status, version)
+	}
+	var issueStatus string
+	if err := store.Pool.QueryRow("SELECT status FROM issue_runs WHERE id=$1", s.issueRun).Scan(&issueStatus); err != nil || issueStatus != "queued" {
+		t.Fatalf("projection failure changed IssueRun: status=%s err=%v", issueStatus, err)
+	}
+	if activities := workflowProjectionActivities(t, store, s); len(activities) != 1 {
+		t.Fatalf("rolled-back claim emitted activities: %v", activities)
 	}
 }
 

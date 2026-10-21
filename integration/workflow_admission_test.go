@@ -384,7 +384,7 @@ func manualWorkflowRun(t *testing.T, f *fixture, iid, executorID, key string, in
 // be used to start a run the other two entries would refuse.
 func TestManualWorkflowRunResolvesItsExecutor(t *testing.T) {
 	f := setup(t)
-	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Manual workflow run"}, "adm-manual-issue", 200).O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{"title": "Manual workflow run", "projectRef": runProject(t, f, "adm-manual-project")}, "adm-manual-issue", 200).O("resource")
 	iid := iss.S("id")
 
 	// An id that names no workflow of this tenant, published or not.

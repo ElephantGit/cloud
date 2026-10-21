@@ -62,8 +62,8 @@ Workflows have three start entries, all sharing one admission gate:
 | Entry | Produces |
 |---|---|
 | `POST .../workflows/:wfid/runs` | A WorkflowRun (`workflow_runs`) |
-| `POST .../issues/:iid/runs` with `executorType = workflow` | A workflow IssueRun |
-| Confirming an @workflow form on an Issue | A workflow IssueRun (see [Issue collaboration](../collaboration/interactions.en.md#form-mode-workflow)) |
+| `POST .../issues/:iid/runs` with `executorType = workflow` | A WorkflowRun and the workflow IssueRun linked to it |
+| Confirming an @workflow form on an Issue | A WorkflowRun and the workflow IssueRun linked to it (see [Issue collaboration](../collaboration/interactions.en.md#form-mode-workflow)) |
 
 **Admission** is decided once, in the caller's transaction:
 
@@ -77,8 +77,10 @@ Workflows have three start entries, all sharing one admission gate:
 If any check fails, no run, claimed interaction or activity is left behind. The executed version is frozen onto the
 run, so the run still knows which version it executed after the workflow is edited or published again.
 
-**A run's identity is frozen at creation.** A direct run must name its `projectId`: a missing one is `409
-workflow_run_project_required`, an unusable, archived or foreign-space Project is refused as `404`, and one being
+**A run's identity is frozen at creation.** All three entries share one creation function: a direct
+start takes the Project from the request body's `projectId`, while Confirm/manual take it from the
+Issue's `project_ref`. A missing Project is `409 workflow_run_project_required` for every entry;
+an unusable, archived or foreign-space Project is refused as `404`, and one being
 deleted is `409 resource_unavailable`. The run writes the initiating user (`created_by`) and that Project
 (`project_id`) into its row and never changes them — a workflow document belongs to a tenant, not to a Project, so
 there is nothing to default to, and the run's Workspace, its clone and its whole checkout land in the Project that
@@ -165,7 +167,12 @@ seconds):
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.
-Workflow IssueRuns currently have no executor in production and stay `queued` (see
+A workflow IssueRun is linked through `workflow_invocation_ref` to the WorkflowRun created in the same transaction,
+and the scheduling loop above advances that run. After a WorkflowRun status update affects a row, its state,
+timestamps and errors are projected onto the linked IssueRun in that same transaction. An update affecting no rows
+does not project; contract conflicts roll back the transaction. `awaiting_input` leaves the IssueRun unchanged,
+and direct runs without a linked IssueRun create no collaboration records. Output summaries are `system`
+`run.message` activities, bounded to 20000 bytes of valid UTF-8, never workflow-authored comments (see
 [Issue collaboration](../collaboration/interactions.en.md#ports-issues-own-only-the-consuming-side-contract)).
 
 ## Plugin asset import

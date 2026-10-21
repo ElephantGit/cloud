@@ -41,9 +41,16 @@ func workflowRunSnapshot(t *transaction, tid, wid, sid string) Object {
 	if sid != "" {
 		return workflowSnapshot(t, tid, wid, sid)
 	}
-	s := t.one("SELECT * FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT 1", tid, wid)
+	s := workflowLatestSnapshot(t, tid, wid)
 	require(s != nil, 400, "workflow_no_published_snapshot")
 	return s
+}
+
+// workflowLatestSnapshot returns the workflow's newest published version, or nil while nothing is
+// published. Callers that gate on a run require one; callers that only project a form can fall back to
+// the live document, which is the only form such a workflow has.
+func workflowLatestSnapshot(t *transaction, tid, wid string) Object {
+	return t.one("SELECT * FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 ORDER BY version DESC LIMIT 1", tid, wid)
 }
 
 // requireWorkflowRunInput refuses a run whose input does not answer the variables the frozen graph

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -212,8 +211,8 @@ func workflowSnapshotOptions(t *transaction, tid, wid string) []Object {
 }
 
 // workflowDescriptorSource is the projection input for one graph of a workflow: its live document, or
-// one of its frozen versions. Both descriptors a confirm compares are built from here, so the graph is
-// the only thing that can differ between them — a source assembled any other way could make them
+// one of its frozen versions. Both are built from here, so for the same graph the live form and a
+// version's form differ only in the graph — a source assembled any other way could make a version
 // differ for a reason that has nothing to do with what the user was shown.
 func workflowDescriptorSource(t *transaction, w, graph Object) *workflowFormSource {
 	return &workflowFormSource{
@@ -225,96 +224,22 @@ func workflowDescriptorSource(t *transaction, w, graph Object) *workflowFormSour
 	}
 }
 
-// liveFormDescriptor projects a workflow's live document — the document the client rendered the form
-// from, since the read routes resolve it through WorkflowFormDescriptors. A confirm projects it here
-// rather than through that provider because the provider may not be wired at all: what a confirm needs
-// must not depend on a service being available, which is the same reason it resolves the version itself.
-func liveFormDescriptor(t *transaction, w Object, issue *IssueFormContext) FormDescriptor {
-	return formDescriptorFromGraph(workflowDescriptorSource(t, w, w.O("graph")), issue)
-}
-
 // snapshotFormDescriptor projects one *frozen* snapshot onto the form descriptor a confirm validates
-// against, rather than the live document the form was rendered from.
+// against, rather than the live document.
 //
 // The distinction is the whole point of confirming against a version: an edit made after the last
 // publish must not retroactively change what an already-offered version accepts, and a variable an
 // older version declared must still be submittable when that version is the one chosen. The
 // platform's own launch fields are still injected — they describe the invocation, not the version —
-// so the descriptor carries the same field set the form showed for this version.
-//
-// That last clause is a promise this projection cannot keep on its own: the form was rendered from the
-// live document, so the two describe the same fields only while the draft has not moved on from this
-// version. A confirm checks that before it validates — see workflowFieldDivergence.
+// so the descriptor carries the same field set the form showed for this version. A confirm validates
+// against this descriptor alone, so selecting an older version whose fields differ from the live
+// draft runs that version on its own schema.
 func snapshotFormDescriptor(t *transaction, w, s Object, issue *IssueFormContext) FormDescriptor {
 	descriptor := formDescriptorFromGraph(workflowDescriptorSource(t, w, s.O("graph")), issue)
 	// Fail closed, exactly as the provider path does: a descriptor that cannot be rendered is a 500
 	// rather than a form that silently accepts less than it shows.
 	validateFormDescriptor(descriptor)
 	return descriptor
-}
-
-// judgedField is what a descriptor says about one key that decides whether a submitted value is
-// accepted: which control receives it, whether the run must be given one, and which values it offers.
-// A label, a description, a placeholder and a default judge none of that — they change what the form
-// looks like, not what it takes — so they are deliberately left out and a draft that changed only one
-// of them is not a divergence.
-type judgedField struct {
-	Type     string
-	Required bool
-	Options  []string
-}
-
-// sameAs compares two judged controls. The offered values are compared as a set: reordering a select's
-// options changes the order the form draws them in, not which submissions it accepts.
-func (f judgedField) sameAs(other judgedField) bool {
-	return f.Type == other.Type && f.Required == other.Required && slices.Equal(f.Options, other.Options)
-}
-
-// judgedFields reduces a descriptor to the keys that judge a submission, for comparison.
-func judgedFields(d FormDescriptor) map[string]judgedField {
-	out := make(map[string]judgedField, len(d.Fields))
-	for i := range d.Fields {
-		field := &d.Fields[i]
-		options := make([]string, 0, len(field.Options))
-		for _, option := range field.Options {
-			options = append(options, option.Value)
-		}
-		slices.Sort(options)
-		out[field.Key] = judgedField{Type: field.Type, Required: field.Required, Options: options}
-	}
-	return out
-}
-
-// workflowFieldDivergence names the fields on which the form the client rendered and the version being
-// confirmed disagree, sorted, or nothing when they agree about every field.
-//
-// A confirm validates the submitted values against the version it will execute, and that is only a
-// meaningful thing to do while the version still describes the form the user filled in. The form is
-// rendered from the live document — a draft is a legitimate document — so an author editing between
-// publishing a version and confirming against it hands the client a form that version does not accept:
-// the user is shown a field the version rejects as unknown, or is never shown one the version insists
-// on, and either way the submission can only be refused by a fault that blames a value the user was
-// legitimately given. Naming the divergence says the true thing instead: this version no longer matches
-// the form, so publish it or select another.
-//
-// The comparison is of the whole descriptor rather than of the submission in hand. A divergence means
-// the values are answers to a different question, and accepting them because they happen to fit the
-// version too would be luck rather than agreement.
-func workflowFieldDivergence(rendered, version FormDescriptor) []string {
-	live, frozen := judgedFields(rendered), judgedFields(version)
-	diverged := []string{}
-	for key, want := range frozen {
-		if got, ok := live[key]; !ok || !got.sameAs(want) {
-			diverged = append(diverged, key)
-		}
-	}
-	for key := range live {
-		if _, ok := frozen[key]; !ok {
-			diverged = append(diverged, key)
-		}
-	}
-	slices.Sort(diverged)
-	return diverged
 }
 
 // Reserved keys of the fields the platform injects into every workflow form (Issue collaboration D8). They

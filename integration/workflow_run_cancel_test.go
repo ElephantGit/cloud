@@ -244,6 +244,17 @@ func TestWorkflowRunCancelSettlesThroughTheScheduler(t *testing.T) {
 	if n := f.scalar(`SELECT count(*) FROM operations o JOIN workspaces w ON w.id=o.workspace_id WHERE w.workflow_run_id=$1 AND o.kind='delete_workspace'`, runID); n != 0 {
 		t.Fatalf("a cancelled-before-start run derived %d Workspace deletions", n)
 	}
+	// S5 records the release fact in the transaction that settles the run. This run never
+	// provisioned a Workspace, so the honest state is not_required — and no release instant is
+	// invented for a deletion Cloud never observed.
+	var releaseState, releaseErr string
+	var releasedAt *time.Time
+	must(t, f.store.Pool.QueryRow(`SELECT workspace_release_state, workspace_release_error, workspace_released_at
+		FROM workflow_runs WHERE id=$1`, runID).Scan(&releaseState, &releaseErr, &releasedAt))
+	if releaseState != "not_required" || releaseErr != "" || releasedAt != nil {
+		t.Fatalf("cancelled-before-start release = state %q reason %q released_at %v; want not_required with no release instant",
+			releaseState, releaseErr, releasedAt)
+	}
 
 	// The request outlives the settlement: a repeat returns the same instant rather than a conflict.
 	if again := f.cancelWorkflowRun(wfid, runID, "wf-cancel-after-settlement", 202, ""); again.S("cancelRequestedAt") != instant {

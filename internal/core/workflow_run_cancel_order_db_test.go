@@ -29,6 +29,18 @@ func commitSessionResult(store *Store, runID, execution, nodeService, reason str
 	return err
 }
 
+// assertWorkflowRunReleaseDeclared proves S5's half of the terminal settlement: the transaction that
+// settled the run also recorded the release intent for its live Workspace, and nothing claims the
+// Workspace is gone before Cloud observed the delete complete.
+func assertWorkflowRunReleaseDeclared(t *testing.T, store *Store, runID string) {
+	t.Helper()
+	release := readWorkflowRelease(t, store, runID)
+	if release.state != workflowReleaseReleasing || release.reason != "" || release.releasedAt.Valid {
+		t.Fatalf("terminal release = state %q reason %q released_at %v; want releasing with no reason and no released_at",
+			release.state, release.reason, release.releasedAt)
+	}
+}
+
 // prepareRunningCancelScene advances a seeded run into a live, dispatched session and returns the
 // facts the ordering cases race over.
 func prepareRunningCancelScene(t *testing.T, store *Store) (runID, tid, wid, nodeService, execution string) {
@@ -110,6 +122,7 @@ func TestWorkflowRunCancelRacesTheSchedulerPass(t *testing.T) {
 		t.Fatalf("final node a = %v; want cancelled with reason cancelled", states["a"])
 	}
 	assertRunWorkspaceReleased(t, store, runID)
+	assertWorkflowRunReleaseDeclared(t, store, runID)
 	if recorded := readCancelRequestedAt(t, store, runID); !recorded.Valid {
 		t.Fatal("the final state lost the recorded request")
 	}
@@ -187,6 +200,7 @@ func TestWorkflowRunCancelAndTheSessionCallbackRace(t *testing.T) {
 			}
 		}
 		assertRunWorkspaceReleased(t, store, runID)
+		assertWorkflowRunReleaseDeclared(t, store, runID)
 		if status == "cancelled" {
 			// The recorded instant is the seam the outcome is read from; a settled run keeps it.
 			if again, _, err := workflowRunCancelCall(t, store, tid, wid, runID, "wf-cancel-callback-replay", caller); err != nil || again.S("cancelRequestedAt") != cancelOut.S("cancelRequestedAt") {
@@ -271,6 +285,7 @@ func TestWorkflowRunCancelWindowAndALateCallbackRace(t *testing.T) {
 			t.Fatalf("attempt %d: the late result was discarded; want it kept on the execution row", attempt)
 		}
 		assertRunWorkspaceReleased(t, store, runID)
+		assertWorkflowRunReleaseDeclared(t, store, runID)
 		if !readCancelRequestedAt(t, store, runID).Valid {
 			t.Fatalf("attempt %d: the final state lost the recorded request", attempt)
 		}

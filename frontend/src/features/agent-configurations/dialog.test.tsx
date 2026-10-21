@@ -130,6 +130,46 @@ describe('personal Agent configuration dialog', () => {
     expect(writes[1]).toEqual(expect.objectContaining({ revision: 2 }))
   })
 
+  it('requires reconciliation when the read after a save shows a later write by another editor', async () => {
+    installCloudSpaceHandlers('member')
+    const state: PluginState = { revision: 1, cleared: false, settings: { style: 'initial' } }
+    servePlugin(state)
+    const writes: unknown[] = []
+    server.use(
+      http.put(PATH, async ({ request }) => {
+        const body: unknown = await request.json()
+        writes.push(body)
+        const confirmed = state.revision + 1
+        // Another editor's save lands between this write's response and the follow-up read.
+        state.revision = confirmed + 1
+        state.settings = { style: 'other editor' }
+        return HttpResponse.json({
+          resource: { revision: confirmed, cleared: false, settings: submittedSettings(body) },
+        })
+      }),
+    )
+    const user = await openDialog()
+    await user.type(screen.getByLabelText('风格 *'), ' my edit')
+    await user.click(screen.getByRole('button', { name: '保存我的配置' }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+
+    expect(await screen.findByRole('heading', { name: '最新保存版本 3' })).toBeInTheDocument()
+    expect(screen.getByText('other editor')).toBeInTheDocument()
+    expect(screen.getByLabelText('风格 *')).toHaveValue('initial my edit')
+    expect(screen.getByRole('button', { name: '保存我的配置' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: '采用服务器配置' }))
+    expect(screen.getByLabelText('风格 *')).toHaveValue('other editor')
+    await user.click(screen.getByRole('button', { name: '保存我的配置' }))
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes[1]).toEqual(
+      expect.objectContaining({
+        revision: 3,
+        settings: expect.objectContaining({ style: 'other editor' }),
+      }),
+    )
+  })
+
   it('advances the option baseline on clear without remounting the default draft', async () => {
     installCloudSpaceHandlers('member')
     const state: PluginState = { revision: 1, cleared: false, settings: { style: 'initial' } }

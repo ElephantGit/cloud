@@ -102,15 +102,25 @@ export function useAgentEditor({ context, scope, onReload, onSaved }: AgentEdito
     selectConnection(connection.id, connection.models[0]?.id ?? '')
   }
   /**
-   * Advances only this session's option baseline. Values stay as submitted (or fall back
-   * to defaults after a clear), and the default-model draft keeps its own state and CAS
-   * version, so an unsaved default selection never silently reverts.
+   * Advances only this session's option baseline, and only to the revision this write
+   * confirmed. The follow-up read is adopted in place when it is that revision in the same
+   * release context; values stay as submitted (or fall back to defaults after a clear). A
+   * read showing another editor's later write or a changed selection keeps the draft on the
+   * confirmed revision and requires an explicit reconciliation, so a retained draft never
+   * gains a newer CAS revision it was not compared against. The default-model draft keeps
+   * its own state and CAS version, so an unsaved default selection never silently reverts.
    */
   async function adoptWrite(written: { revision: number; cleared: boolean }) {
     setDraft((current) => ({ ...current, revision: written.revision, requiresRepair: false }))
     try {
       const latest = await onSaved()
-      setDraft((current) => agentConfigurationDraft(latest, written.cleared ? undefined : current))
+      const confirmed =
+        latest.revision === written.revision &&
+        latest.selectionVersion === draft.selectionVersion &&
+        latest.declaration.fingerprint === draft.fingerprint
+      if (confirmed)
+        setDraft((current) => agentConfigurationDraft(latest, written.cleared ? undefined : current))
+      setComparing(!confirmed)
       setAcceptedRepair(false)
       setConfirmClear(false)
       setReloadFailed(false)

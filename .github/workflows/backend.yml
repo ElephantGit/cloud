@@ -18,6 +18,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Bounds the whole job if a test hangs past go test's own -timeout below.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17.11
@@ -109,5 +111,6 @@ jobs:
       # Same pinned golangci-lint (go.mod `tool` directive) and config as `task lint` locally.
       - run: go tool golangci-lint config verify
       - run: go tool golangci-lint run
-      - run: go test -race -count=1 -v -coverpkg=./internal/... -coverprofile=coverage.out ./...
+      # The integration package alone takes 7-9 minutes; Go's default 10m per-package limit fails slow runners.
+      - run: go test -race -count=1 -timeout 20m -v -coverpkg=./internal/... -coverprofile=coverage.out ./...
       - run: go build ./cmd/server ./cmd/gateway ./cmd/cloudctl ./cmd/simulator

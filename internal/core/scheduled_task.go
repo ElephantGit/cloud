@@ -97,8 +97,16 @@ func (s scheduledTaskSchedule) nextDue(after time.Time, loc *time.Location) time
 	case "daily":
 		return nextWallClock(local, loc, s.Hour, s.Minute, 1)
 	case "weekly":
-		for step := 1; step <= 7; step++ {
-			candidate := nextWallClock(local, loc, s.Hour, s.Minute, step)
+		// Try the next wall clock at H:M on each of the next 0..7 days, returning the first whose
+		// weekday is in the set. The anchor must step forward every day even when today's H:M is
+		// still ahead of `after`, otherwise the scan would pin to today and never reach a later
+		// matching weekday.
+		base := time.Date(local.Year(), local.Month(), local.Day(), s.Hour, s.Minute, 0, 0, loc)
+		for step := 0; step <= 7; step++ {
+			candidate := base.AddDate(0, 0, step)
+			if !candidate.After(after) {
+				continue
+			}
 			for _, day := range s.Weekdays {
 				if candidate.Weekday() == day {
 					return candidate

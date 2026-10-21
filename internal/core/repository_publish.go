@@ -47,10 +47,12 @@ func preparePublish(t *transaction, r *PublicRequest, uid string) publishRequest
 		require(validID(id), 400, "invalid_revision")
 		rev := t.one("SELECT * FROM revisions WHERE id=$1 AND project_id=$2 AND tenant_id=$3", id, p.S("id"), r.TenantID)
 		require(rev != nil, 404, "revision_not_found")
-		// The Revision's delivery ref and final commit are values Cloud already verified.
-		name, ok := ParseGitRef(rev.S("revisionRef"))
+		// The Revision's delivery ref and final commit are values Cloud already verified (revision
+		// ADR D4). revision_ref is only the Node-local refs/ora/revisions/<run> and never exists on
+		// the Git Server; a Revision registered in the bundle shape has no delivery ref to publish.
+		name, ok := ParseGitRef(rev.S("deliveryRef"))
 		require(ok && name.Namespace == GitDelivery, 409, "revision_not_publishable")
-		q.revisionID, q.sourceRef, q.sourceCommit = id, rev.S("revisionRef"), rev.S("finalCommit")
+		q.revisionID, q.sourceRef, q.sourceCommit = id, rev.S("deliveryRef"), rev.S("finalCommit")
 	} else {
 		q.sourceRef, q.sourceCommit = r.Body.S("sourceRef"), r.Body.S("sourceCommit")
 		name, ok := ParseGitRef(q.sourceRef)

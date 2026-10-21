@@ -189,7 +189,8 @@ func Document() map[string]any {
 	runProps["preparation"] = optional(object(preparationProps, preparationFields...))
 	// revision is the run's registered Revision as metadata only (Cloud Revision D5): no object key,
 	// ref, digest or URL is public. Null until a Revision is registered, and for every non-agent run.
-	// `changed` says whether the run stored a bundle of its own; `priorRevisionId` is the Revision it
+	// `changed` is Cloud's verification verdict that the run delivered new commits, and `bundleSize`
+	// is null for a Revision delivered over Git (Revision D8); `priorRevisionId` is the Revision it
 	// resumed (issue-run resume decision D4, D5).
 	runProps["revision"] = optional(object(obj{"id": uuid(), "baseCommit": str(), "finalCommit": str(), "changed": boolean(), "bundleSize": optional(number()), "historySize": number(), "priorRevisionId": optional(uuid()), "createdAt": timestamp()}, "id", "baseCommit", "finalCommit", "changed", "bundleSize", "historySize", "priorRevisionId", "createdAt"))
 	// resumeRevisionId is the Revision an agent run resumes, fixed at session start; null otherwise.
@@ -325,7 +326,7 @@ func Document() map[string]any {
 	s["PluginUniversalRelease"] = object(obj{"url": str(), "sha256": str()}, "url", "sha256")
 	s["PluginReleaseTarget"] = object(obj{"target": str(), "url": str(), "sha256": str()}, "target", "url", "sha256")
 	s["PluginLogoCandidate"] = object(obj{"role": enumeration("universal", "light", "dark"), "extension": enumeration("svg", "png", "webp", "jpg", "jpeg")}, "role", "extension")
-	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "syncOwed": boolean(), "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision"))})
+	s["OperationRequest"] = object(obj{"previous": obj{"type": "object", "additionalProperties": ref("Workspace")}, "syncOwed": boolean(), "pluginId": str(), "version": str(), "desiredRevision": number(), "release": ref("PluginCatalogEntry"), "plugins": array(obj{"type": "object", "additionalProperties": true}), "pluginMeta": array(object(obj{"pluginId": str(), "desiredRevision": number()}, "pluginId", "desiredRevision")), "clone": ref("CloneInput")})
 	s["OperationResult"] = object(obj{"resourceId": uuid(), "forceStopId": uuid()})
 	s["Operation"] = resource("id tenantId actorUserId projectId workspaceId kind state step request result errorCode idempotencyKey requestHash controllerEpoch retryAt version createdAt updatedAt", "workspaceId errorCode controllerEpoch retryAt")
 	opProps := properties(s, "Operation")
@@ -361,14 +362,16 @@ func Document() map[string]any {
 	ep["externalId"] = optional(str())
 	ep["request"] = ref("EffectRequest")
 	ep["result"] = ref("EffectResult")
-	s["ControllerProject"] = resource("id tenantId ownerUserId spaceId name repositoryUrl defaultBranch credentialRefId lifecycle version createdAt deletedAt secretRef", "credentialRefId deletedAt secretRef")
+	// The Controller sees the Project's identity and lifecycle only: its external repository and
+	// credential reference stay in Cloud, and a clone step carries its frozen cloneInput instead.
+	s["ControllerProject"] = resource("id tenantId ownerUserId spaceId name lifecycle version createdAt deletedAt", "deletedAt")
 	s["ControllerWorkspace"] = resource("id tenantId ownerUserId projectId kind desiredState observedState runtimeGeneration version admissionOpen admissionEpoch createdAt deletedAt requestedRef baseCommitId creatorUserId creatorOperationId creatorEvidence", "deletedAt baseCommitId creatorUserId creatorOperationId")
 	properties(s, "ControllerWorkspace")["issueRunId"] = optional(uuid())
 	for _, name := range []string{"Workspace", "WorkspaceListItem", "ControllerWorkspace"} {
 		properties(s, name)["baseCommitId"] = optional(obj{"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"})
 	}
 	// A Workspace operation's clone executions, registered through the gRPC ExecutionService.
-	s["CloneExecution"] = resource("executionId operationId workspaceId cloneRequestId nodeId input result dispatchedEpoch createdAt updatedAt nodeOperationId terminatedByForceStopId", "workspaceId cloneRequestId result terminatedByForceStopId")
+	s["CloneExecution"] = resource("executionId operationId workspaceId nodeId input result dispatchedEpoch createdAt updatedAt nodeOperationId terminatedByForceStopId", "result terminatedByForceStopId")
 	ce := properties(s, "CloneExecution")
 	ce["credentialRefId"] = optional(uuid())
 	ce["credentialRefVersion"] = optional(number())
@@ -390,19 +393,14 @@ func Document() map[string]any {
 	ne["result"] = optional(obj{"type": "object", "additionalProperties": true})
 	ne["dispatchedEpoch"] = number()
 	ne["lastEventSequence"] = number()
-	s["Snapshot"] = object(obj{"operation": ref("Operation"), "project": ref("ControllerProject"), "workspaces": array(ref("ControllerWorkspace")), "sandboxes": array(ref("Sandbox")), "nodes": array(ref("Node")), "effects": array(ref("Effect")), "clones": array(ref("CloneExecution")), "pluginExecutions": array(ref("NodeExecution")), "pluginInput": obj{"type": "object", "additionalProperties": true}}, "operation", "project", "workspaces", "sandboxes", "nodes", "effects", "clones", "pluginExecutions")
+	s["Snapshot"] = object(obj{"operation": ref("Operation"), "project": ref("ControllerProject"), "workspaces": array(ref("ControllerWorkspace")), "sandboxes": array(ref("Sandbox")), "nodes": array(ref("Node")), "effects": array(ref("Effect")), "clones": array(ref("CloneExecution")), "pluginExecutions": array(ref("NodeExecution")), "pluginInput": obj{"type": "object", "additionalProperties": true}, "cloneInput": ref("CloneInput")}, "operation", "project", "workspaces", "sandboxes", "nodes", "effects", "clones", "pluginExecutions")
 	s["EmptyClaim"] = object(obj{"operation": obj{"type": "object", "nullable": true, "enum": []any{nil}}}, "operation")
 	s["Access"] = object(obj{"userId": uuid(), "tenantId": uuid(), "workspaceId": uuid(), "allowedAction": enumeration("read", "execute"), "executable": boolean(), "runtimeGeneration": number()}, "userId", "tenantId", "workspaceId", "allowedAction", "executable", "runtimeGeneration")
 	s["IdleRefusal"] = object(obj{"accepted": boolean(), "errorCode": enumeration("resource_in_use")}, "accepted", "errorCode")
-	// Clone requests mirror the transitional Controller DTO: the tagged state carries the terminal
-	// fact, and identities assigned at dispatch are null until a Controller records it.
-	s["CloneState"] = object(obj{"kind": enumeration("pending", "succeeded", "failed"), "path": str(), "commit": str(), "reason": enumeration("sourceUnavailable", "branchNotFound", "destinationConflict", "operationFailed", "interrupted", "unspecified"), "retainedPath": str()}, "kind")
-	cloneProps := fields("operationId createdAt updatedAt")
-	for _, name := range []string{"requestId", "repository", "branch"} {
-		cloneProps[name] = str()
-	}
-	cloneProps["executionId"], cloneProps["nodeId"], cloneProps["state"] = optional(str()), optional(str()), ref("CloneState")
-	s["CloneOperation"] = object(cloneProps, "operationId", "requestId", "repository", "branch", "executionId", "nodeId", "state", "createdAt", "updatedAt")
+	// The clone step's input, frozen from the Binding's current snapshot before a Controller can see
+	// the step and forwarded verbatim: a Git Server repository, a snapshot ref, its commit and the
+	// Workspace's branch there. It names no external repository and no credential.
+	s["CloneInput"] = object(obj{"kind": enumeration("clone"), "repositoryUrl": str(), "snapshotRef": str(), "baseCommit": obj{"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"}, "workspaceRef": str()}, "kind", "repositoryUrl", "snapshotRef", "baseCommit", "workspaceRef")
 	repositorySchemas(s)
 	paths := obj{}
 	for _, r := range router.Routes() {
@@ -520,7 +518,7 @@ func Document() map[string]any {
 			"404": obj{"description": errorDescription("404"), "content": obj{"application/json": obj{"schema": ref("Error")}}},
 		},
 	}}
-	paths["/healthz"] = obj{"get": obj{"operationId": "health", "tags": []string{"health"}, "summary": "PostgreSQL readiness and optional dependency configuration", "responses": obj{"200": obj{"description": "Database reachable", "content": obj{"application/json": obj{"schema": object(obj{"status": enumeration("ok"), "dependencies": object(obj{"objectStore": enumeration("configured", "unconfigured")}, "objectStore")}, "status")}}}, "503": obj{"description": "Database unavailable", "content": obj{"application/json": obj{"schema": ref("Error")}}}}}}
+	paths["/healthz"] = obj{"get": obj{"operationId": "health", "tags": []string{"health"}, "summary": "PostgreSQL readiness and optional dependency configuration", "responses": obj{"200": obj{"description": "Database reachable", "content": obj{"application/json": obj{"schema": object(obj{"status": enumeration("ok"), "dependencies": object(obj{"objectStore": enumeration("configured", "unconfigured"), "gitServer": enumeration("configured", "unconfigured")}, "objectStore", "gitServer")}, "status")}}}, "503": obj{"description": "Database unavailable", "content": obj{"application/json": obj{"schema": ref("Error")}}}}}}
 	paths["/api/v1/tenants/{tid}/issues/{iid}/runs/{rid}/thread/preview/events"] = obj{"get": obj{
 		"operationId": "getThreadPreviewEvents", "tags": []string{"tenants"}, "summary": "Stream ephemeral Thread replacement snapshots", "description": "Bounded optional previews, never durable history. Credentials and active membership are checked before each snapshot; terminal records supersede previews. Disconnect does not stop the Agent.",
 		"parameters": []any{obj{"name": "tid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "iid", "in": "path", "required": true, "schema": uuid()}, obj{"name": "rid", "in": "path", "required": true, "schema": uuid()}},
@@ -560,8 +558,6 @@ func tag(r router.Route) string {
 		return "repository"
 	case strings.HasPrefix(r.Path, "/api/v1/me"):
 		return "me"
-	case strings.Contains(r.Path, "/clones"):
-		return "clones"
 	case strings.Contains(r.Path, "/spaces"):
 		return "spaces"
 	case strings.Contains(r.Path, "/workflows"):
@@ -593,7 +589,7 @@ func isList(r router.Route) bool {
 	if r.Path == "/api/v1/me/model-connections" || r.Path == router.AgentSessionsPath || r.Path == router.SessionModelCallsPath || r.Path == router.WorkflowModelCallsPath || r.Path == "/api/v1/me/executor-slot-mappings" {
 		return r.Method == "GET"
 	}
-	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/clones"))
+	return r.Method == "GET" && (strings.HasSuffix(r.Path, "/tenants") || strings.HasSuffix(r.Path, "/members") || strings.HasSuffix(r.Path, "/projects") || strings.HasSuffix(r.Path, "/workspaces") || strings.HasSuffix(r.Path, "/spaces") || strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/issue-statuses") || strings.HasSuffix(r.Path, "/labels") || strings.HasSuffix(r.Path, "/issue-views") || strings.HasSuffix(r.Path, "/workflows") || strings.HasSuffix(r.Path, "/snapshots") || strings.HasSuffix(r.Path, "/runs") || strings.HasSuffix(r.Path, "/comments") || strings.HasSuffix(r.Path, "/subscribers") || strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests"))
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
@@ -896,15 +892,6 @@ func responseSchema(r router.Route) (schema obj, status string) {
 			return object(obj{"items": array(ref("Issue")), "nextCursor": str()}, "items", "nextCursor"), "200"
 		}
 		return ref("Issue"), "200"
-	case strings.Contains(r.Path, "/clones"):
-		switch {
-		case isList(r):
-			return object(obj{"items": array(ref("CloneOperation")), "nextCursor": str()}, "items", "nextCursor"), "200"
-		case r.Method == "GET":
-			return ref("CloneOperation"), "200"
-		default:
-			return ref("CloneOperation"), "202"
-		}
 	case r.Path == "/api/v1/tenants" && r.Method == "POST":
 		return ref("TenantCreated"), "201"
 	}
@@ -1175,13 +1162,13 @@ func description(r router.Route) string {
 	case "lease_acquire", "lease_renew", "lease_release":
 		return "Controller subject is holderId. Global lease lasts 30 seconds using PostgreSQL clock_timestamp(); renew every 10 seconds. Expired acquisition increments epoch, active same-holder acquisition returns current lease. Release and renew require exact live holder+epoch."
 	case "claim":
-		return base + "Claims queued/due retry/any running operation; reclaiming with the same epoch increments the operation version and fences stale in-memory workers. Returns a full scoped recovery snapshot. Reconcile every existing effect with Substrate by stable ID before planning or advancing. No automatic prompt replay."
+		return base + "Claims queued/due retry/any running operation; reclaiming with the same epoch increments the operation version and fences stale in-memory workers. Returns a full scoped recovery snapshot. Reconcile every existing effect with Substrate by stable ID before planning or advancing. No automatic prompt replay. A clone step is handed out only with its cloneInput, frozen once per operation from the Project's current Binding snapshot; without a snapshot the operation is parked as retry_wait snapshot_not_ready while the Binding's latest sync is unfinished, fails as repository_sync_failed once it ended unsuccessfully, and is blocked as git_server_unconfigured without a Git Server. delete_project is not handed out to quiesce while a sync or publish of the Project is unfinished (retry_wait repository_operation_running). A parked operation never empties the claim: the next claimable one is returned."
 	case "plan":
 		return base + "Only the effect kind appropriate to the current step is allowed. Scope is restricted to operation workspaces. Plan persists BEFORE dispatch; sandbox plan atomically increments generation and allocates a unique live instance. Old instance must be confirmed terminated. Same plan returns the same effect ID."
 	case "effect_result":
 		return base + "Reports/reconciles one scoped external effect. External ID cannot change; succeeded evidence is immutable. absent is allowed only for a planned effect. Sandbox success requires its preallocated instance ID and the nodeId its Node will present; termination requires terminated; Workspace data deletion requires removed. This endpoint trusts the authenticated controller's Substrate observation, not client-supplied status."
 	case "advance":
-		return base + "Derives the next step server-side. Requires current-epoch successful effects. Create goes sandbox, node, clone; start goes sandbox, node. quiesce requires all tickets finished and fresh exact-epoch idle proof from each live Node. The clone step requires the operation's latest clone execution (registered over gRPC) to have succeeded on the current Node; it records the baseline commit and commits Workspace Ready/admission with operation success, re-checking the fresh initialized current Node. start commits the same readiness at its node step. Workspace data deletion is planned and completed only after termination confirmation."
+		return base + "Derives the next step server-side. Requires current-epoch successful effects. Create goes sandbox, node, clone; start goes sandbox, node. quiesce requires all tickets finished and fresh exact-epoch idle proof from each live Node. Entering the clone step freezes its cloneInput, or parks or fails the operation as claim does. The clone step requires the operation's latest clone execution (registered over gRPC with exactly the frozen input) to have succeeded on the current Node with exactly the input's baseCommit; it records that commit as the baseline and commits Workspace Ready/admission with operation success, re-checking the fresh initialized current Node. start commits the same readiness at its node step. Workspace data deletion is planned and completed only after termination confirmation."
 	case "defer":
 		return base + "Preserves operation/effect/resource references and current step; sets blocked or retry_wait with bounded retry delay. Never reports cleanup success on timeout."
 	case "node_register", "node_status", "node_idle", "node_finish":
@@ -1207,9 +1194,6 @@ func description(r router.Route) string {
 	}
 	if r.Path == "/api/v1/tenants" && r.Method == "POST" {
 		base = "Public requests require a gateway service credential plus a caller-bound user credential. The verified identity authorizes self-service provisioning without prior membership. Atomically creates a tenant and its sole visible collaboration space with the same name and the given globally unique, immutable slug; the caller becomes its first administrator. The idempotency key is matched per user across tenants and recorded under the new tenant. "
-	}
-	if strings.Contains(r.Path, "/clones") {
-		base += "Unscoped clone submission is retired in production and returns 410 runtime_scope_required; existing requests remain readable by their original submitter. An explicit development store can exercise the legacy coordination fixture without enabling a production bypass. requestId is the caller's durable request identity: repeating it with the same repository and branch returns the original request, a different input is 409 idempotency_conflict. repository must be an https or ssh URL the Controller can clone; branch is a short branch name, never HEAD. executionId and nodeId are null until a dispatch is recorded; a pending state means awaiting reconciliation, never failure. "
 	}
 	if strings.HasSuffix(r.Path, "/thread/messages") {
 		// The Thread POST's own fault vocabulary. It is stated here rather than added to the shared
@@ -1260,10 +1244,10 @@ func description(r router.Route) string {
 		base += "Requires matching resource version and no active project operation. Atomically closes new execution admission. Active tickets return 409 resource_in_use without changing admission. Unknown Node activity requires later proof and remains pending/blocked. main Workspace cannot be independently deleted. "
 	}
 	if strings.HasSuffix(r.Path, "/projects") && r.Method == "POST" {
-		base += "Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl must be HTTPS with no user information, query or fragment; it becomes the Project's Binding together with defaultBranch, the one branch phase one synchronizes (required, a branch name, not HEAD). credentialRefId is optional (public repositories need none); a personal credential may be bound only by its owner and a team one only by an admin, and it must be stored, available and scoped to the repository. The same transaction records the first sync, which must succeed before any Workspace can clone. Sandbox, Node and clone initialization is asynchronous. "
+		base += "Creates Project/main Workspace/operation atomically in the tenant's sole collaboration space. repositoryUrl must be HTTPS with no user information, query or fragment; it becomes the Project's Binding together with defaultBranch, the one branch phase one synchronizes (required, a branch name, not HEAD). credentialRefId is optional (public repositories need none); a personal credential may be bound only by its owner and a team one only by an admin, and it must be stored, available and scoped to the repository. The same transaction records the first sync, which must succeed before any Workspace can clone. Sandbox, Node and clone initialization is asynchronous; the main Workspace clones the Binding's first snapshot and waits for it. "
 	}
 	if strings.HasSuffix(r.Path, "/workspaces") && r.Method == "POST" {
-		base += "Creates one isolated Workspace and Task display identity. title/baseRef required; baseRef becomes the Workspace's requestedRef, which its Node clones; HEAD means the Project's defaultBranch. "
+		base += "Creates one isolated Workspace and Task display identity. title is required. The Workspace clones the Project's current snapshot of its Binding branch: baseRef may be omitted, empty, HEAD or that branch, and any other value is 400 base_ref_not_synced with nothing recorded. The branch becomes the Workspace's requestedRef, the short name of its Git Server branch refs/heads/workspaces/<workspaceId>/<requestedRef>. "
 	}
 	pagination := "Lists use ascending UUID pagination."
 	if r.Path == "/api/v1/me/tenants" {

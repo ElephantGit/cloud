@@ -40,6 +40,7 @@ func startOperation(t *testing.T, f *fixture, id string) {
 // mismatched tenant or Project is the same denial.
 func TestGitOperationAccessFollowsOperationAndProjectLifecycle(t *testing.T) {
 	f := setup(t)
+	f.withoutSnapshot = true
 	pid := f.create("operation-access").O("resource").S("id")
 	bid := f.bindingOf(pid).S("id")
 	ctx := context.Background()
@@ -93,6 +94,7 @@ func TestGitServerAuthorizesExecutorSyncFromCloudState(t *testing.T) {
 		t.Fatal("git is required for the Git Server boundary")
 	}
 	f := setup(t)
+	f.withoutSnapshot = true
 	pid := f.create("executor-sync").O("resource").S("id")
 	bid := f.bindingOf(pid).S("id")
 	var sync string

@@ -741,7 +741,7 @@ export const usePostApiV1TenantsTidProjectsPidRepositoryOperationsRoidReject = <
       return useMutation(getPostApiV1TenantsTidProjectsPidRepositoryOperationsRoidRejectMutationOptions(options), queryClient);
     }
     /**
- * Creates a PublishOperation: fast-forward targetBranch of the Binding's repository from expectedOldOid (40/64 zeros creates the branch) to sourceCommit, taken from sourceRef (any Workspace branch or delivery ref of this Project, confirmed through the Git Server ref query) or from revisionId. Fields are immutable. A personal credential is approved by its owner only, a team credential by a tenant admin; when the requester is the approver it starts pending. The credential must have proven publish (409 credential_publish_unverified). 400 nothing_to_publish when expectedOldOid equals sourceCommit; 409 source_ref_not_found.
+ * Creates a PublishOperation: fast-forward targetBranch of the Binding's repository from expectedOldOid (40/64 zeros creates the branch) to sourceCommit, taken from sourceRef (any Workspace branch or delivery ref of this Project, confirmed through the Git Server ref query) or from revisionId (the Revision's delivery ref and final commit verified when it was registered; 409 revision_not_publishable for a Revision without a delivery ref). Fields are immutable. A personal credential is approved by its owner only, a team credential by a tenant admin; when the requester is the approver it starts pending. The credential must have proven publish (409 credential_publish_unverified). 400 nothing_to_publish when expectedOldOid equals sourceCommit; 409 source_ref_not_found.
  * @summary POST /api/v1/tenants/:tid/projects/:pid/repository/publishes
  */
 export const postApiV1TenantsTidProjectsPidRepositoryPublishes = (

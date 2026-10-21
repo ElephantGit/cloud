@@ -6,7 +6,7 @@
 
 ## 包内处理顺序
 
-- 为请求建立 `X-Request-Id` 与日志上下文；健康检查读取数据库就绪与对象存储配置状态，不探测 S3。
+- 为请求建立 `X-Request-Id` 与日志上下文；健康检查读取数据库就绪与对象存储、Git Server 的配置状态，不探测 S3 或 Git Server。
 - 验证服务/用户凭据及 caller 绑定；公开字段由 `Route.Fields` 白名单与 `validField` 校验。
 - 默认请求体上限为 64 KiB；`ThreadMessagePath` 与 `TaskConversationMessagesPath` 单独使用 256 KiB，以容纳合法消息的 JSON 封装；正文仍由领域核心限制为 64 KiB。
 - JSON decoder 使用 `UseNumber`，拒绝未知字段、额外 JSON 值和非法类型；查询解析按对应读取入口约束。

@@ -44,11 +44,12 @@
 ## 发布
 
 发布（`repository_publish`）是 Ora 写外部仓库的唯一方式，只能由用户显式创建。它的字段在创建后不可变：源 ref 与提交
-（工作区分支、交付 ref，或一个已有 Revision）、目标分支、期望旧值 `expectedOldOid` 和凭据引用；`expectedOldOid` 必须与
+（工作区分支、交付 ref，或一个已有 Revision：取它登记时核验过的交付 ref 与最终提交，没有交付 ref 的 bundle 形态
+Revision 以 `revision_not_publishable` 拒绝）、目标分支、期望旧值 `expectedOldOid` 和凭据引用；`expectedOldOid` 必须与
 源提交不同。
 
-1. Cloud 先经 ref 查询确认源 ref 确实指向这个提交，再创建 Operation。源提交是否可从源 ref 到达由执行器检查，因为 Cloud
-   不读取 Git 对象。
+1. Cloud 先经 ref 查询确认源 ref 存在（不存在时以 `409 source_ref_not_found` 拒绝），再创建 Operation；它不比对源 ref
+   的当前提交。源提交是否可从源 ref 到达由执行器检查，因为 Cloud 不读取 Git 对象。
 2. 凭据的当前版本必须已具备 `publish` 能力。个人凭据由所有者批准；租户管理员用别人的个人凭据发布时需要所有者在
    `awaiting_approval` 上批准，管理员不能代批。团队凭据由租户管理员直接发布。批准把字段与凭据版本绑定，有效期 24 小时；
    期间凭据出现新版本时，这次发布以 `credential_changed` 取消或拒绝。
@@ -80,8 +81,9 @@ token 从浏览器直接进入 Credential Store，任何 Cloud 路径都不会�
    `invalid`；个人凭据的所有者离开租户后，凭据被冻结。
 
 凭据只有在 `stored`、可用、作用域与 Project 的仓库一致且具备所需能力时才能支撑新的远端工作，这个判断在创建工作和签发
-授权时各做一次。Project 的 Workspace clone 目前仍直接从外部仓库地址克隆：公开仓库可以匿名克隆，带凭据的项目在 Node 侧
-凭据接入之前会以 `repository_credential_executor_unavailable` 拒绝新的远端工作，绝不退化成匿名克隆或使用全局凭据。
+授权时各做一次。Workspace 的 clone 不访问外部仓库，也不使用凭据：它只从 Binding 的当前快照 clone（见
+[Workspace 生命周期](../runtime/workspaces.md#clone-步骤从-binding-快照-clone)），所以带凭据的 Project 与公开仓库的 Project
+clone 方式相同。
 
 ## 授权与最小权限
 

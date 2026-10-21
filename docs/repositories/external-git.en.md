@@ -65,12 +65,15 @@ snapshot present is recorded `applied`.
 
 A publish (`repository_publish`) is the only way Ora writes an external repository, and only a user
 can create one explicitly. Its fields are immutable after creation: the source ref and commit (a
-workspace branch, a delivery ref, or an existing Revision), the target branch, the expected old value
+workspace branch, a delivery ref, or an existing Revision, which contributes the delivery ref and final
+commit Cloud verified when registering it; a bundle-shaped Revision without a delivery ref is refused
+with `revision_not_publishable`), the target branch, the expected old value
 `expectedOldOid`, and the credential reference; `expectedOldOid` must differ from the source commit.
 
-1. Cloud first confirms through the ref query that the source ref really names that commit, then
-   creates the Operation. Whether the source commit is reachable from the source ref is checked by
-   the executor, because Cloud reads no Git objects.
+1. Cloud first confirms through the ref query that the source ref exists (refusing with
+   `409 source_ref_not_found` when it does not), then creates the Operation; it does not compare the
+   source ref's current commit. Whether the source commit is reachable from the source ref is checked
+   by the executor, because Cloud reads no Git objects.
 2. The credential's current version must already have the `publish` capability. A personal credential
    is approved by its owner; when a tenant administrator publishes with somebody else's personal
    credential, the owner approves on `awaiting_approval` and an administrator cannot approve on their
@@ -125,10 +128,10 @@ the Credential Store; no Cloud path ever sees it.
 
 A credential supports new remote work only when it is `stored`, available, scoped to the Project's
 repository and has the required capability; Cloud evaluates this both when creating work and when
-issuing the authorization. A Project's Workspace clone still clones directly from the external
-repository URL: public repositories clone anonymously, while a Project with a credential refuses new
-remote work with `repository_credential_executor_unavailable` until the Node-side credential
-provider exists, and never falls back to an anonymous clone or a global credential.
+issuing the authorization. A Workspace clone never reaches the external repository and uses no
+credential: it clones only the Binding's current snapshot (see
+[Workspace lifecycle](../runtime/workspaces.en.md#the-clone-step-clones-the-binding-snapshot)), so a
+Project with a credential clones exactly like one with a public repository.
 
 ## Authorization and least privilege
 

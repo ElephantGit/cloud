@@ -12,7 +12,8 @@ import (
 // occurrence 的 `(task_id, scheduled_at)` 主键使多副本、重启与重复扫描天然幂等（D2 不变量 2）。
 
 const (
-	// scheduledTaskEvalBatchSize 限制单个评估 pass 处理的任务数，其余等下一个 pass。
+	// scheduledTaskEvalBatchSize bounds each database page; a pass advances a stable keyset cursor
+	// through every enabled task so a fixed first page cannot starve later definitions.
 	scheduledTaskEvalBatchSize = 100
 )
 
@@ -23,37 +24,53 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	rows, err := s.Pool.QueryContext(ctx, `SELECT id FROM scheduled_tasks
-		WHERE enabled AND deleted_at IS NULL
-		ORDER BY updated_at, id LIMIT $1`, scheduledTaskEvalBatchSize)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	var taskIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+	var cursorAt *time.Time
+	var cursorID *string
+	for {
+		rows, err := s.Pool.QueryContext(ctx, `SELECT id, updated_at FROM scheduled_tasks
+			WHERE enabled AND deleted_at IS NULL
+			  AND ($1::timestamptz IS NULL OR (updated_at, id) > ($1, $2::uuid))
+			ORDER BY updated_at, id LIMIT $3`, cursorAt, cursorID, scheduledTaskEvalBatchSize)
+		if err != nil {
 			return err
 		}
-		taskIDs = append(taskIDs, id)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, taskID := range taskIDs {
-		if _, err := s.transact(ctx, func(t *transaction) Object {
-			admitScheduledTaskDue(t, taskID)
-			return nil
-		}); err != nil {
-			var fault *Fault
-			if errors.As(err, &fault) {
-				// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
-				continue
+		type taskPageEntry struct {
+			id        string
+			updatedAt time.Time
+		}
+		var page []taskPageEntry
+		for rows.Next() {
+			var entry taskPageEntry
+			if err := rows.Scan(&entry.id, &entry.updatedAt); err != nil {
+				rows.Close()
+				return err
 			}
-			// 系统级故障（数据库不可用、上下文取消、损坏的调度数据）停止本轮，交给 RunSyncLoop 记录。
+			page = append(page, entry)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
 			return err
 		}
+		rows.Close()
+		if len(page) == 0 {
+			break
+		}
+		for _, entry := range page {
+			if _, err := s.transact(ctx, func(t *transaction) Object {
+				admitScheduledTaskDue(t, entry.id)
+				return nil
+			}); err != nil {
+				var fault *Fault
+				if errors.As(err, &fault) {
+					// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
+					continue
+				}
+				// 系统级故障（数据库不可用、上下文取消、损坏的调度数据）停止本轮，交给 RunSyncLoop 记录。
+				return err
+			}
+		}
+		last := page[len(page)-1]
+		cursorAt, cursorID = &last.updatedAt, &last.id
 	}
 	return nil
 }

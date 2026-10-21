@@ -34,14 +34,14 @@ func seedScheduledTaskModelChain(t *testing.T, store *core.Store, userID string)
 	must(t, err)
 }
 
-// seedEnabledScheduledTask inserts an enabled every_hours task due from `enabledAt`.
-func seedEnabledScheduledTask(t *testing.T, store *core.Store, s skeletonSeed, agentID, enabledAt string) string {
+// seedEnabledScheduledTask inserts an enabled every_hours task due `enabledAgoMinutes` ago.
+func seedEnabledScheduledTask(t *testing.T, store *core.Store, s skeletonSeed, agentID, name string, enabledAgoMinutes int) string {
 	t.Helper()
 	taskID := uuid.NewString()
 	_, err := store.Pool.Exec(`INSERT INTO scheduled_tasks
 		(id,tenant_id,issue_id,creator_user_id,agent_id,name,prompt,schedule,timezone,revision,version,enabled,enabled_at,unattended_policy,unattended_consented_at)
-		VALUES($1,$2,$3,$4,$5,'Every hour','Sync','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true,$6,'full_auto_in_cloud_workspace',now())`,
-		taskID, s.tenantID, s.issueID, s.userID, agentID, enabledAt)
+		VALUES($1,$2,$3,$4,$5,$6,'Sync','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1,true,now() - $7 * interval '1 minute','full_auto_in_cloud_workspace',now())`,
+		taskID, s.tenantID, s.issueID, s.userID, agentID, name, enabledAgoMinutes)
 	must(t, err)
 	return taskID
 }
@@ -74,7 +74,9 @@ func occurrenceCount(t *testing.T, store *core.Store, taskID string) (int, strin
 // trigger evidence and creates an IssueRun.
 func TestScheduledTaskAdmissionCreatesARun(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	taskID := seedEnabledScheduledTask(t, store, s, agentID, "now() - interval '65 minutes'")
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Admission", 65)
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	// A duplicate scan for the same due point must not create a second occurrence or IssueRun.
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 
 	count, outcome := occurrenceCount(t, store, taskID)
@@ -92,7 +94,7 @@ func TestScheduledTaskAdmissionCreatesARun(t *testing.T) {
 // TestScheduledTaskMissedRecoverySingleOccurrence (FIX-5): a long outage writes exactly one missed.
 func TestScheduledTaskMissedRecoverySingleOccurrence(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	taskID := seedEnabledScheduledTask(t, store, s, agentID, "now() - interval '150 minutes'")
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Missed recovery", 150)
 	// Two passes: the second must not write another missed point.
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
@@ -107,8 +109,11 @@ func TestScheduledTaskMissedRecoverySingleOccurrence(t *testing.T) {
 // healthy task in the same pass.
 func TestScheduledTaskSingleFailureDoesNotBlock(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	badTask := seedEnabledScheduledTask(t, store, s, uuid.NewString(), "now() - interval '65 minutes'")
-	goodTask := seedEnabledScheduledTask(t, store, s, agentID, "now() - interval '65 minutes'")
+	badAgentID := seedScheduledTaskAgent(t, store.Pool, s)
+	_, err := store.Pool.Exec(`UPDATE space_agents SET status='retired' WHERE id=$1`, badAgentID)
+	must(t, err)
+	badTask := seedEnabledScheduledTask(t, store, s, badAgentID, "Retired agent", 65)
+	goodTask := seedEnabledScheduledTask(t, store, s, agentID, "Healthy agent", 65)
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 
 	badCount, badOutcome := occurrenceCount(t, store, badTask)
@@ -121,11 +126,27 @@ func TestScheduledTaskSingleFailureDoesNotBlock(t *testing.T) {
 	}
 }
 
+// TestScheduledTaskEvaluationProcessesMoreThanOnePage prevents a fixed first 100-task page from
+// starving later enabled definitions forever.
+func TestScheduledTaskEvaluationProcessesMoreThanOnePage(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	const taskCount = 101 // worker page size is 100; retain an explicit overflow case here.
+	for i := 0; i < taskCount; i++ {
+		seedEnabledScheduledTask(t, store, s, agentID, "Paged "+uuid.NewString(), 65)
+	}
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var count int
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences`).Scan(&count))
+	if count != taskCount {
+		t.Fatalf("evaluation must visit every enabled task, got %d", count)
+	}
+}
+
 // TestScheduledTaskUpdateAppliesPatch (FIX-3): the PATCH writer's WHERE clause binds the right
 // tenant, creator and version so a legal rename succeeds and bumps the version.
 func TestScheduledTaskUpdateAppliesPatch(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	taskID := seedEnabledScheduledTask(t, store, s, agentID, "now() - interval '65 minutes'")
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Patch", 65)
 	caller := scheduledTaskCaller(t, store, s.tenantID)
 
 	out, status, err := store.Public(context.Background(), &core.PublicRequest{

@@ -382,7 +382,6 @@ export const workflowTranslations = {
     // Run viewer: run-level lifecycle and the read-only Overview surfaces.
     'workflows.run.status.pending': '等待中',
     'workflows.run.status.running': '运行中',
-    'workflows.run.status.awaiting_input': '等待输入',
     'workflows.run.status.succeeded': '成功',
     'workflows.run.status.failed': '失败',
     'workflows.run.status.cancelled': '已取消',
@@ -814,7 +813,6 @@ export const workflowTranslations = {
     // Run viewer: run-level lifecycle and the read-only Overview surfaces.
     'workflows.run.status.pending': 'Pending',
     'workflows.run.status.running': 'Running',
-    'workflows.run.status.awaiting_input': 'Awaiting input',
     'workflows.run.status.succeeded': 'Succeeded',
     'workflows.run.status.failed': 'Failed',
     'workflows.run.status.cancelled': 'Cancelled',

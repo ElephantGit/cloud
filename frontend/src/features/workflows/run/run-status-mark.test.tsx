@@ -13,7 +13,6 @@ type RunStatus = GraphWorkflowRunStatus | GraphWorkflowNodeStatus
 const ZHU_LABELS: ReadonlyArray<[RunStatus, string]> = [
   ['pending', '等待中'],
   ['running', '运行中'],
-  ['awaiting_input', '等待输入'],
   ['succeeded', '成功'],
   ['failed', '失败'],
   ['cancelled', '已取消'],
@@ -39,12 +38,6 @@ describe('RunStatusBadge', () => {
 describe('RunStatusMark', () => {
   it('spins a working cue for a live running status', () => {
     const { unmount } = renderWithProviders(<RunStatusMark status="running" live />)
-    expect(svgCount()).toBe(1)
-    unmount()
-  })
-
-  it('spins a working cue while an input gate is open', () => {
-    const { unmount } = renderWithProviders(<RunStatusMark status="awaiting_input" live />)
     expect(svgCount()).toBe(1)
     unmount()
   })

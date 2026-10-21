@@ -105,8 +105,8 @@ Issue 协作通过一组端口向外部能力请求"做一件事"，而不定义
 Agent 运行不走 `ExecutionDispatcher`，由 Cloud 自己的调度推进（见 [Agent IssueRun](../agent-runs/issue-runs.md)）。直接从工作流
 发起的运行是另一个聚合 WorkflowRun，见 [工作流](../workflows/workflows.md)。
 
-关联工作流的 IssueRun 由 WorkflowRun 的实际状态更新在同一事务内推进：未更新到行时不投影，`awaiting_input` 不改变 IssueRun，
-契约冲突使事务回滚。输出摘要写成 `system` 的 `run.message` 活动，最多 20000 字节且保持合法 UTF-8，不创建工作流作者评论。
+关联工作流的 IssueRun 由 WorkflowRun 的实际状态更新在同一事务内推进：未更新到行时不投影，保留值 `awaiting_input`（首期没有写入者，
+见 [工作流](../workflows/workflows.md)）不改变 IssueRun，契约冲突使事务回滚。输出摘要写成 `system` 的 `run.message` 活动，最多 20000 字节且保持合法 UTF-8，不创建工作流作者评论。
 没有关联 IssueRun 的直接工作流运行不产生这些协作记录。
 
 **开发夹具。** `collaboration.development_fixtures: true`（环境变量 `CLOUD_COLLABORATION_DEVELOPMENT_FIXTURES`）在 Store 上装入

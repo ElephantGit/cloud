@@ -152,8 +152,8 @@ Agent runs do not go through `ExecutionDispatcher`; Cloud's own scheduling carri
 aggregate, WorkflowRun; see [Workflows](../workflows/workflows.en.md).
 
 For a linked workflow IssueRun, actual WorkflowRun status updates advance it in the same transaction:
-updates affecting no rows do not project, `awaiting_input` leaves it unchanged, and contract conflicts
-roll back the transaction. Output summaries are `system` `run.message` activities bounded to 20000
+updates affecting no rows do not project, the reserved `awaiting_input` value (no writer in phase one; see
+[Workflows](../workflows/workflows.en.md)) leaves it unchanged, and contract conflicts roll back the transaction. Output summaries are `system` `run.message` activities bounded to 20000
 bytes of valid UTF-8, never workflow-authored comments. Direct workflow runs without a linked IssueRun
 create none of these collaboration records.
 

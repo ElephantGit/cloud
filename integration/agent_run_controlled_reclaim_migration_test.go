@@ -137,10 +137,11 @@ func TestControlledResidualMigrationUpgradePreserves0057HistoryAndDoesNotInventD
 		uuid.NewString(), d8.tenantID, d8.userID, d8.projectID, d8.runWorkspaceID)
 	must(t, err)
 	const snapshot = `SELECT jsonb_build_object(
- 'residuals',(SELECT jsonb_agg(to_jsonb(r) ORDER BY run_id) FROM agent_run_residuals r),
+ 'residuals',(SELECT jsonb_agg(to_jsonb(r)-'stop_evidence' ORDER BY run_id) FROM agent_run_residuals r),
  'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM issue_runs r),
  'workspaces',(SELECT jsonb_agg(to_jsonb(w) ORDER BY id) FROM workspaces w),
  'operations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM operations o))::text`
+	// Migrate applies every later migration too; stop_evidence is 0059's additive column, not a rewrite of history.
 	var before, after string
 	must(t, pool.QueryRow(snapshot).Scan(&before))
 	store := newStoreOnSchema(t, pool)

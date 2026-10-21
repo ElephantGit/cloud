@@ -26,7 +26,8 @@ Pick one:
 - **Windows**: `./scripts/postgres.ps1 start` installs and starts a pinned PostgreSQL 17 under the project's `.local/`,
   listening only on `127.0.0.1:55432` with local trust authentication and no system service;
   `./scripts/postgres.ps1 stop` stops it and keeps the data.
-- **Your own server**: the role must own the database (migrations create tables and tests create schemas).
+- **Your own server**: the role must own the database (migrations create tables and migration tests create schemas).
+  Ordinary integration fixtures also require `CREATEDB` for their independent template copies.
 
 ## Configure and start
 

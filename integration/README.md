@@ -26,7 +26,9 @@
 
 ## 测试隔离性不变量
 
-- **Schema 隔离**：每个测试都在独立、动态创建的 PostgreSQL Schema（`CREATE SCHEMA <unique_name>`）中执行。这些 Schema 会在 `t.Cleanup` 中彻底删除（`DROP SCHEMA <unique_name> CASCADE`），保证测试之间不共享可变数据库状态。
+- **普通 fixture 隔离**：`fixture_template_test.go` 在每个测试进程内迁移一次空白模板库，关闭迁移连接并禁止连接模板。`setup`、Gateway 和 gRPC fixture 通过 PostgreSQL `CREATE DATABASE … TEMPLATE` 取得独立副本，完整保留表、索引、约束、触发器及迁移记录；副本由 `t.Cleanup` 删除。测试账号需要 `CREATEDB`；模板只在包结束时删除，不接收测试业务写入。
+- **迁移测试保留原入口**：`testSchema` 仍创建空白、独立的 schema，`TestMigration*`、旧版快照升级及 skeleton 迁移测试继续实际执行迁移与重放。串行受控回收矩阵沿用原有清空业务状态的方式复用一个独立副本，每个场景仍创建自己的 Store 和服务栈。
+- **模板回归**：`fixture_template_isolation_test.go` 验证数据、DDL、迁移历史、后续副本与并行副本隔离，并确认迁移 fixture 仍为空白。包结束输出模板迁移与复制的累计耗时，便于区分准备成本。
 - **强制真实 PostgreSQL**：在 CI 环境下（`REQUIRE_POSTGRES=1`），若未配置 `TEST_DATABASE_URL`，测试将立即报错退出，绝不静默跳过。
 - **并行执行与竞态检测**：测试经过设计，可在 `task test:race` 中使用 `go test -race` 安全运行，以验证并发不变量和加锁顺序。
 

@@ -977,6 +977,114 @@ func TestWorkflowSessionNodeSilenceWithinWindowHolds(t *testing.T) {
 	}
 }
 
+// An explicit disconnect is not an expired unknown-Node window. The real connection-report writer
+// preserves the last connected instant, and the scheduler holds the session until that instant ages
+// past the configured limit.
+func TestWorkflowSessionDisconnectedWithinWindowHoldsUntilExpired(t *testing.T) {
+	store := dispatcherDB(t)
+	store.DeliveryUnreachableAfter = time.Hour
+	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	dispatchSession(t, store, runID, "a", nodeService, spec)
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '5 minutes' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatalf("age the last connected report inside the window: %v", err)
+	}
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		n := tx.one("SELECT * FROM node_instances WHERE workspace_id=$1 AND node_id=$2", wsID, nodeService)
+		w := tx.one("SELECT * FROM workspaces WHERE id=$1", wsID)
+		nodeStatus(tx, &ControlRequest{Body: Object{
+			"version": n.N("version"), "connectionState": "disconnected", "initialized": true,
+		}}, n, w)
+		return Object{}
+	}); err != nil {
+		t.Fatalf("report the Node disconnected: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after disconnect within the window: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	agent, _ := asWorkflowObject(states["a"])
+	if status != "running" || runErr != "" || agent == nil || agent.S("status") != "running" {
+		t.Fatalf("a disconnect within the window settled run %q error %q states=%v; want it held", status, runErr, states)
+	}
+
+	if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, wsID); err != nil {
+		t.Fatalf("age the disconnected Node past the window: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after the disconnected window expires: %v", err)
+	}
+	status, runErr, states, _ = readWorkflowRun(t, store, runID)
+	agent, _ = asWorkflowObject(states["a"])
+	if status != "failed" || runErr != workflowSessionNodeUnavailable || agent == nil || agent.S("status") != "failed" || agent.S("error") != workflowSessionNodeUnavailable {
+		t.Fatalf("past the disconnected window: run %q error %q states=%v; want failed/%s", status, runErr, states, workflowSessionNodeUnavailable)
+	}
+	if reason := agent.O("output").S("reason"); reason != workflowSessionNodeUnavailable {
+		t.Fatalf("node a output = %v; want reason %s", agent.O("output"), workflowSessionNodeUnavailable)
+	}
+}
+
+// Cancellation inside the disconnected window still issues EndSession and waits for its own
+// confirmation deadline. Aging that command alone must settle cancellation without waiting for
+// the longer unknown-Node window or changing the production confirmation timeout.
+func TestWorkflowRunCancelDisconnectedWithinWindowWaitsForEndConfirmation(t *testing.T) {
+	store := dispatcherDB(t)
+	store.DeliveryUnreachableAfter = time.Hour
+	runID, tid, _, _, _ := seedWorkflowSessionScene(t, store)
+	wid := workflowRunWorkflowID(t, store, runID)
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	execution := dispatchSession(t, store, runID, "a", nodeService, spec)
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		n := tx.one("SELECT * FROM node_instances WHERE workspace_id=$1 AND node_id=$2", wsID, nodeService)
+		w := tx.one("SELECT * FROM workspaces WHERE id=$1", wsID)
+		nodeStatus(tx, &ControlRequest{Body: Object{
+			"version": n.N("version"), "connectionState": "disconnected", "initialized": true,
+		}}, n, w)
+		return Object{}
+	}); err != nil {
+		t.Fatalf("report the Node disconnected: %v", err)
+	}
+	mustCancelWorkflowRun(t, store, tid, wid, runID, "wf-cancel-disconnected-window", cancelCaller(t, store, tid))
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance cancellation within the disconnected window: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	agent, _ := asWorkflowObject(states["a"])
+	if status != "running" || runErr != "" || agent == nil || agent.S("status") != "running" {
+		t.Fatalf("cancellation skipped confirmation: run %q error %q states=%v; want it held", status, runErr, states)
+	}
+	commands := claimCommands(t, store)
+	if len(commands) != 1 {
+		t.Fatalf("released %d commands; want one end request: %v", len(commands), commands)
+	}
+	cmd := commands[0]
+	if cmd.S("kind") != "end_session" || cmd.O("body").S("reason") != "cancelled" || cmd.S("runId") != runID || cmd.S("executionId") != execution || cmd.S("nodeId") != nodeService {
+		t.Fatalf("command = %v; want end_session/cancelled for run %s execution %s node %s", cmd, runID, execution, nodeService)
+	}
+
+	// Only the command ages: the disconnected Node remains inside the one-hour window, while the
+	// existing five-minute EndSession confirmation deadline has elapsed on database time.
+	if _, err := store.Pool.Exec(`UPDATE thread_commands SET created_at=clock_timestamp()-interval '6 minutes' WHERE id=$1`, cmd.S("commandId")); err != nil {
+		t.Fatalf("age the end request past its confirmation deadline: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance past EndSession confirmation: %v", err)
+	}
+	status, runErr, states, _ = readWorkflowRun(t, store, runID)
+	agent, _ = asWorkflowObject(states["a"])
+	if status != "cancelled" || runErr != "" || agent == nil || agent.S("status") != "cancelled" || agent.S("error") != "" || agent.O("output").S("reason") != "cancelled" {
+		t.Fatalf("after EndSession confirmation expires: run %q error %q states=%v; want cancelled with no error", status, runErr, states)
+	}
+}
+
 // An unconfigured window fails closed here exactly as it does in the IssueRun release paths: with no
 // configured tolerance for a silent Node, Cloud holds the session rather than failing a node on a
 // limit nobody set, and a deployment that never set the key loses only the settlement — the run stays

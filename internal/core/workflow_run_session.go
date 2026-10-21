@@ -266,15 +266,14 @@ func finishWorkflowRun(t *transaction, runID string, version int64, status, runE
 	}
 }
 
-// finishWorkflowRunCleanup deletes the run's unregistered execution work and re-declares the
-// run Workspace's deletion for a terminal run. Safe to call on any terminal run in any pass.
+// finishWorkflowRunCleanup deletes the run's unregistered execution work and records the run
+// Workspace's release: `not_required` when the run never provisioned one, otherwise the `releasing`
+// intent together with the delete declaration (declareWorkflowRunWorkspaceRelease). The release fact
+// and the declaration commit in the transaction that settles the run, so a terminal run is never
+// without either. Safe to call on any terminal run in any pass.
 func finishWorkflowRunCleanup(t *transaction, runID string) {
 	t.exec("DELETE FROM execution_work WHERE workflow_run_id=$1 AND execution_id IS NULL", runID)
-	if w := t.one("SELECT * FROM workspaces WHERE workflow_run_id=$1", runID); w != nil {
-		// Re-declaring an already-declared delete is a no-op; a busy Project leaves the
-		// declaration to a later pass — a terminal run's Workspace is never left live forever.
-		deleteWorkflowRunWorkspace(t, runID)
-	}
+	declareWorkflowRunWorkspaceRelease(t, runID)
 }
 
 // workflowSessionTarget resolves the Workspace's current connected Node the way currentNode does,

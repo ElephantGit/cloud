@@ -1474,7 +1474,7 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 		}
 	}
 
-	// assertChained pins the state the whole sequence reaches. 0055 retires every remaining unlinked
+	// assertChained pins the state the whole sequence reaches. 0056 retires every remaining unlinked
 	// non-terminal workflow row — `running`, and the soft-deleted `queued` row — because a row with no
 	// WorkflowRun can never be finished by an executor, and its validated CHECK requires a reference on
 	// every non-terminal workflow row, soft-deleted ones included.
@@ -1490,7 +1490,7 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 			got := read(t, pool, id)
 			if got.status != "failed" || got.reason != "workflow_execution_unavailable_before_invocation_linkage" ||
 				!got.completedAt.Valid || got.version != 2 {
-				t.Fatalf("%s: unlinked run %s = %+v; want 0055 to settle it with the invocation-linkage reason", stage, id, got)
+				t.Fatalf("%s: unlinked run %s = %+v; want 0056 to settle it with the invocation-linkage reason", stage, id, got)
 			}
 		}
 		for id, want := range map[string]runShape{
@@ -1518,7 +1518,7 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 	pool, _ := testSchema(t, "test_wf52_")
 	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0052_legacy_workflow_issue_run_settlement.sql"))
 	ids := seedRuns(t, pool)
-	// Apply 0052 alone so the assertions below show what this file itself changes; 0055 runs later and
+	// Apply 0052 alone so the assertions below show what this file itself changes; 0056 runs later and
 	// settles the rows 0052 deliberately left alone.
 	applyMigrationsUpTo(t, pool, []string{"0052_legacy_workflow_issue_run_settlement.sql"})
 	assertUpgraded(t, pool, ids, "0052")
@@ -1528,4 +1528,210 @@ func TestMigration0052LegacyWorkflowIssueRunSettlementAppliesFreshAndUpgrades(t 
 	// applied file by its checksum, so nothing can bump a version a second time.
 	migratedTwice(t, newStoreOnSchema(t, pool))
 	assertChained(t, pool, ids, "replay")
+}
+
+// 0055 adds the WorkflowRun Workspace release fact (circus#75 S5; specs decisions/cloud/workflow
+// 0-cloud-side-scheduler-owns-workflow-execution D3/D7). The upgrade path is what matters: a
+// deployment that stopped at 0052 can hold terminal runs that never provisioned a Workspace, terminal
+// runs whose Workspace is still live, Workspaces already deleted by a project deletion, and runs
+// still executing. The backfill records only the fact each row supports — `released` always takes an
+// observed deletion instant, never a claimed one — and the derived-state CHECK constraints refuse the
+// shapes that would claim a release without evidence. A fresh database has nothing to backfill,
+// reaches the same shape, and a second Migrate changes nothing.
+func TestMigration0055WorkflowRunWorkspaceReleaseAppliesFreshAndUpgrades(t *testing.T) {
+	columns := func(pool *sql.DB) map[string]string {
+		t.Helper()
+		rows, e := pool.Query(`SELECT column_name, is_nullable, coalesce(column_default,'')
+			FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='workflow_runs'
+			  AND column_name IN ('workspace_release_state','workspace_release_error','workspace_released_at')`)
+		must(t, e)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var name, nullable, dflt string
+			must(t, rows.Scan(&name, &nullable, &dflt))
+			out[name] = nullable + "|" + dflt
+		}
+		must(t, rows.Err())
+		return out
+	}
+	constraints := func(pool *sql.DB) map[string]string {
+		t.Helper()
+		rows, e := pool.Query(`SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+			WHERE conrelid='workflow_runs'::regclass AND contype='c'
+			  AND conname IN ('workflow_run_release_released_at','workflow_run_release_abandoned_error')`)
+		must(t, e)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var name, def string
+			must(t, rows.Scan(&name, &def))
+			out[name] = def
+		}
+		must(t, rows.Err())
+		return out
+	}
+	assertShape := func(t *testing.T, pool *sql.DB, stage string) {
+		t.Helper()
+		cols := columns(pool)
+		if got := cols["workspace_release_state"]; got != "NO|'pending'::text" {
+			t.Fatalf("%s: workspace_release_state = %q; want NOT NULL default pending", stage, got)
+		}
+		if got := cols["workspace_release_error"]; got != "NO|''::text" {
+			t.Fatalf("%s: workspace_release_error = %q; want NOT NULL default ''", stage, got)
+		}
+		if got := cols["workspace_released_at"]; got != "YES|" {
+			t.Fatalf("%s: workspace_released_at = %q; want nullable with no default", stage, got)
+		}
+		cons := constraints(pool)
+		if len(cons) != 2 || !strings.Contains(cons["workflow_run_release_released_at"], "workspace_released_at IS NOT NULL") {
+			t.Fatalf("%s: release constraints = %v; want the released-at guard", stage, cons)
+		}
+		if !strings.Contains(cons["workflow_run_release_abandoned_error"], "btrim(workspace_release_error)") {
+			t.Fatalf("%s: abandoned-error constraint = %q; want a non-blank reason guard", stage, cons["workflow_run_release_abandoned_error"])
+		}
+	}
+
+	type releaseShape struct {
+		state, reason string
+		releasedAt    sql.NullTime
+		version       int64
+	}
+	read := func(t *testing.T, pool *sql.DB, id string) releaseShape {
+		t.Helper()
+		var s releaseShape
+		must(t, pool.QueryRow(`SELECT workspace_release_state, workspace_release_error, workspace_released_at, version
+			FROM workflow_runs WHERE id=$1`, id).Scan(&s.state, &s.reason, &s.releasedAt, &s.version))
+		return s
+	}
+	seedRuns := func(t *testing.T, pool *sql.DB) (ids, workspaces map[string]string) {
+		t.Helper()
+		uid, tid, space, project := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+		wf, snap := uuid.NewString(), uuid.NewString()
+		ids = map[string]string{
+			"noWorkspace": uuid.NewString(), "live": uuid.NewString(),
+			"deleted": uuid.NewString(), "running": uuid.NewString(),
+		}
+		workspaces = map[string]string{"live": uuid.NewString(), "deleted": uuid.NewString(), "running": uuid.NewString()}
+		tx, e := pool.Begin()
+		must(t, e)
+		defer func() { _ = tx.Rollback() }()
+		for _, s := range []struct {
+			query string
+			args  []any
+		}{
+			{`INSERT INTO users(id,display_name,status) VALUES($1,'Release user','active')`, []any{uid}},
+			{`INSERT INTO tenants(id,name,status) VALUES($1,'Release tenant','active')`, []any{tid}},
+			{`INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')`, []any{tid, uid}},
+			{`INSERT INTO collab_workspaces(id,tenant_id,name,slug,created_by) VALUES($1,$2,'Release space',$3,$4)`, []any{space, tid, "release-" + space[:8], uid}},
+			{`INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,lifecycle)
+				VALUES($1,$2,$3,$4,'Release project','active')`, []any{project, tid, uid, space}},
+			// A live project requires its main Workspace; without it the deferred aggregate check refuses
+			// the commit before the run Workspaces this test is about are ever examined.
+			{`INSERT INTO workspaces(id,tenant_id,owner_user_id,creator_evidence,project_id,kind,desired_state,observed_state,runtime_generation,requested_ref)
+				VALUES($1,$2,$3,'unknown',$4,'main','running','ready',1,'HEAD')`, []any{uuid.NewString(), tid, uid, project}},
+			{`INSERT INTO workflows(id,tenant_id,name,graph) VALUES($1,$2,'Release workflow','{"nodes":[],"edges":[]}'::jsonb)`, []any{wf, tid}},
+			{`INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph)
+				VALUES($1,$2,$3,1,'v1','{"nodes":[],"edges":[]}'::jsonb)`, []any{snap, tid, wf}},
+		} {
+			_, e := tx.Exec(s.query, s.args...)
+			must(t, e)
+		}
+		insertRun := func(id, status string) {
+			_, e := tx.Exec(`INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status)
+				VALUES($1,$2,$3,$4,'Release run',$5)`, id, tid, wf, snap, status)
+			must(t, e)
+		}
+		insertWorkspace := func(id, runID string, deleted bool) {
+			_, e := tx.Exec(`INSERT INTO workspaces(id,tenant_id,owner_user_id,creator_evidence,project_id,kind,
+				desired_state,observed_state,runtime_generation,requested_ref,workflow_run_id,deleted_at)
+				VALUES($1,$2,$3,'unknown',$4,'isolated',CASE WHEN $6 THEN 'deleted' ELSE 'running' END,
+				CASE WHEN $6 THEN 'deleted' ELSE 'ready' END,1,'HEAD',$5,
+				CASE WHEN $6 THEN clock_timestamp() END)`, id, tid, uid, project, runID, deleted)
+			must(t, e)
+			// A live isolated Workspace carries exactly one task identity; a deleted one carries none.
+			if !deleted {
+				_, e = tx.Exec(`INSERT INTO tasks(id,workspace_id,title) VALUES($1,$2,'Release task')`, uuid.NewString(), id)
+				must(t, e)
+			}
+		}
+		insertRun(ids["noWorkspace"], "succeeded")
+		insertRun(ids["live"], "failed")
+		insertWorkspace(workspaces["live"], ids["live"], false)
+		insertRun(ids["deleted"], "cancelled")
+		insertWorkspace(workspaces["deleted"], ids["deleted"], true)
+		insertRun(ids["running"], "running")
+		insertWorkspace(workspaces["running"], ids["running"], false)
+		must(t, tx.Commit())
+		return ids, workspaces
+	}
+	assertBackfilled := func(t *testing.T, pool *sql.DB, ids, workspaces map[string]string, stage string) {
+		t.Helper()
+		for name, want := range map[string]struct {
+			state   string
+			instant bool
+		}{
+			"noWorkspace": {"not_required", false},
+			"live":        {"releasing", false},
+			"deleted":     {"released", true},
+			"running":     {"pending", false},
+		} {
+			got := read(t, pool, ids[name])
+			if got.state != want.state || got.reason != "" || got.releasedAt.Valid != want.instant {
+				t.Fatalf("%s: %s run release = %+v; want %s (instant=%v) with no reason", stage, name, got, want.state, want.instant)
+			}
+			if got.version != 1 {
+				t.Fatalf("%s: %s run version = %d; the backfill must not invent a transition", stage, name, got.version)
+			}
+		}
+		// The one run that may claim a release carries the Workspace's own deletion instant, not the
+		// migration's clock.
+		var same bool
+		must(t, pool.QueryRow(`SELECT r.workspace_released_at = w.deleted_at FROM workflow_runs r
+			JOIN workspaces w ON w.workflow_run_id=r.id WHERE r.id=$1`, ids["deleted"]).Scan(&same))
+		if !same {
+			t.Fatalf("%s: released instant does not equal the Workspace deletion instant", stage)
+		}
+		// And the live/deleted Workspaces themselves are untouched: a migration never deletes data.
+		var live, gone int
+		must(t, pool.QueryRow(`SELECT count(*) FILTER (WHERE deleted_at IS NULL), count(*) FILTER (WHERE deleted_at IS NOT NULL)
+			FROM workspaces WHERE id IN ($1,$2,$3)`,
+			workspaces["live"], workspaces["deleted"], workspaces["running"]).Scan(&live, &gone))
+		if live != 2 || gone != 1 {
+			t.Fatalf("%s: Workspace rows live=%d deleted=%d; want 2/1 untouched", stage, live, gone)
+		}
+	}
+
+	freshPool, _ := testSchema(t, "test_wfr53f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	assertShape(t, freshPool, "fresh")
+	var rows int
+	must(t, freshPool.QueryRow(`SELECT count(*) FROM workflow_runs`).Scan(&rows))
+	if rows != 0 {
+		t.Fatalf("fresh database has %d workflow runs; want 0", rows)
+	}
+
+	pool, _ := testSchema(t, "test_wfr55_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0055_workflow_run_workspace_release.sql"))
+	ids, workspaces := seedRuns(t, pool)
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertShape(t, pool, "upgrade")
+	assertBackfilled(t, pool, ids, workspaces, "upgrade")
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertBackfilled(t, pool, ids, workspaces, "replay")
+
+	// The constraints are the guard rail the code relies on: no state may claim a release without an
+	// observed instant, and no abandonment may be silent about why.
+	refuse := func(query string, args ...any) {
+		t.Helper()
+		tx, e := pool.Begin()
+		must(t, e)
+		defer func() { _ = tx.Rollback() }()
+		if _, e := tx.Exec(query, args...); e == nil {
+			t.Fatalf("statement %q was accepted; want the derived-state CHECK to refuse it", query)
+		}
+	}
+	refuse(`UPDATE workflow_runs SET workspace_release_state='released', workspace_released_at=NULL WHERE id=$1`, ids["running"])
+	refuse(`UPDATE workflow_runs SET workspace_release_state='abandoned', workspace_release_error='   ' WHERE id=$1`, ids["running"])
+	refuse(`UPDATE workflow_runs SET workspace_release_state='settled' WHERE id=$1`, ids["running"])
 }

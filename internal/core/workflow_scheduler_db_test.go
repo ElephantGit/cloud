@@ -95,8 +95,8 @@ func TestWorkflowAdvanceSucceedsLinearRun(t *testing.T) {
 	if status != "succeeded" || runErr != "" {
 		t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
 	}
-	if version != 3 { // claim +1, settle +1
-		t.Fatalf("version = %d; want 3", version)
+	if version != 4 { // claim +1, settle +1, release fact +1 (not_required: the graph has no agent node)
+		t.Fatalf("version = %d; want 4", version)
 	}
 	for id, want := range map[string]string{"s": "succeeded", "o": "succeeded"} {
 		state, ok := asWorkflowObject(states[id])
@@ -531,8 +531,8 @@ func TestWorkflowAdvanceFailsACyclicSnapshot(t *testing.T) {
 	if len(states) != 0 {
 		t.Fatalf("a refused cyclic run committed node states: %v", states)
 	}
-	if version != 3 { // claim +1, settle +1, and no node ever committed
-		t.Fatalf("version = %d; want 3", version)
+	if version != 4 { // claim +1, settle +1, release fact +1, and no node ever committed
+		t.Fatalf("version = %d; want 4", version)
 	}
 	// The refusal is terminal: the retry loop never rescans the run, so it cannot drift to succeeded.
 	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
@@ -585,8 +585,8 @@ func TestWorkflowAdvanceIsIdempotent(t *testing.T) {
 	if status != "succeeded" || runErr != "" {
 		t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
 	}
-	if version != 3 {
-		t.Fatalf("version = %d after three passes; want 3 (claim + settle only)", version)
+	if version != 4 {
+		t.Fatalf("version = %d after three passes; want 4 (claim + settle + the release fact, with later passes adding nothing)", version)
 	}
 }
 

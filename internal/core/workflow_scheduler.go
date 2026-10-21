@@ -86,6 +86,11 @@ func (s *Store) scanAdvancableWorkflowRuns(ctx context.Context, limit int) ([]st
 // that same window through the same shared check (runWorkspaceNodeUnknown) the IssueRun release
 // paths use. An unconfigured window (zero or negative) fails closed there — a session is held rather
 // than failed — so a deployment that never set the limit loses nothing it was promised.
+//
+// The pass also closes each terminal run's release: the bounded give-up whose Node is gone, and the
+// reconciliation that heals or re-declares the Workspace delete. Together with the delete-completion
+// hook they leave every terminal run with a durable release fact and never report `released` for a
+// Workspace still holding resources.
 func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -102,47 +107,13 @@ func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 			_ = err
 		}
 	}
-	return s.redeclareWorkflowRunWorkspaceDeletes(ctx)
-}
-
-// redeclareWorkflowRunWorkspaceDeletes re-declares the Workspace deletion of every terminal run
-// still holding a live Workspace. finishWorkflowRunCleanup declares delete in the pass that
-// settles the run; a busy Project (another operation in flight) returns busy, so the declaration
-// waits for a later pass — this second scan is the retry. Idempotent: deleteWorkflowRunWorkspace
-// treats an already-declared or already-deleted Workspace as done.
-func (s *Store) redeclareWorkflowRunWorkspaceDeletes(ctx context.Context) error {
-	rows, err := s.Pool.QueryContext(ctx, `
-		SELECT r.id FROM workflow_runs r
-		JOIN workspaces w ON w.workflow_run_id=r.id
-		WHERE r.status IN ('failed','cancelled','succeeded') AND r.deleted_at IS NULL
-		  AND w.deleted_at IS NULL
-		  AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.workspace_id=w.id AND o.kind='delete_workspace'
-		   AND o.state IN ('queued','running','retry_wait','blocked','succeeded'))
-		ORDER BY r.created_at, r.id LIMIT $1`, workflowAdvanceBatchSize)
-	if err != nil {
+	// The release half of the terminal lifecycle: runs the scheduler no longer scans still owe a
+	// Workspace release fact. The give-up pass runs first so a run whose Node is gone is abandoned in
+	// this tick instead of having one more delete declared for it.
+	if err := s.giveUpWorkflowRunWorkspaceReleases(ctx); err != nil {
 		return err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if _, err := s.transact(ctx, func(t *transaction) Object {
-			finishWorkflowRunCleanup(t, id)
-			return Object{}
-		}); err != nil {
-			_ = err
-		}
-	}
-	return nil
+	return s.reconcileWorkflowRunWorkspaceReleases(ctx)
 }
 
 // workflowNodeView is one node of the frozen snapshot graph the scheduler executes.

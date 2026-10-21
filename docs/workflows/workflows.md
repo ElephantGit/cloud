@@ -101,6 +101,12 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   调度器复用该节点已有的结束请求（没有就放出 `end_session{cancelled}`），等待上限仍是 `issue_runs.agent_end_confirm_timeout`，超过后节点和运行都以
   `cancelled` 结束；Node 已不可达时取消优先于 `node_unavailable`，同样以 `cancelled` 收尾。每种终态都声明删除运行的 Workspace；请求记录之后才到达的结果
   保留在执行行上，不改写已经终态的运行。
+- **Workspace 的释放是终态之后的独立事实，并且有界。** 运行进入终态（`succeeded`/`failed`/`cancelled`）的同一个事务里，Cloud 在运行行上记录释放状态并声明
+  删除这次运行的 Workspace：没有 Workspace 的运行记为 `not_required`，其余记为 `releasing`。删除操作成功、Workspace 被软删除的同一个事务把它记为 `released`，
+  释放时刻就是那一刻；Workspace 被项目删除等其他路径直接删掉的，调度器按 Workspace 自己的 `deleted_at` 补记为 `released`，不会一直停在 `releasing`。
+  Workspace 仍有存活沙箱、而它的 Node 超过 `issue_runs.delivery_unreachable_after`（默认 30 分钟；未配置时不放弃）没有任何心跳时，调度器放弃这次释放：
+  未完成的删除操作以 `node_unavailable` 失败，运行记为 `abandoned` 并写明原因，Workspace 行保留可查，也不写释放时刻。**只有 `released` 表示 Cloud
+  观察到 Workspace 已被删除**；`abandoned` 永远不会被报告成释放成功，也不会被后续轮次重新声明或重试。重复的删除完成回执和重复的清扫都是无操作。
 
 开发夹具（`collaboration.development_fixtures`）会装入一个确定性的运行模拟器，在创建运行时就填好执行轨迹，并在输出里说明没有真实执行；生产环境
 不装它。工作流 IssueRun 通过 `workflow_invocation_ref` 关联同一事务里创建的 WorkflowRun，执行由上面的调度循环推进。

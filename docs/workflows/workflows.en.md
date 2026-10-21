@@ -152,6 +152,18 @@ seconds):
   `cancelled`. A Node that can no longer report is a cancellation too, not `node_unavailable`. Every terminal path
   declares the run Workspace's deletion, and a result arriving after the run is terminal is kept on the execution row
   without rewriting the run.
+- **A Workspace release is an independent fact after the terminal state, and it is bounded.** In the same transaction
+  that settles the run `succeeded`/`failed`/`cancelled`, Cloud records the release state on the run row and declares the
+  run Workspace's deletion: a run that never had a Workspace records `not_required`, every other run records
+  `releasing`. The transaction that writes the delete operation `succeeded` and soft-deletes the Workspace records
+  `released`, with that instant as the release fact; a Workspace deleted by another path — a project deletion, for
+  example — is healed to `released` from the Workspace's own `deleted_at` instead of staying `releasing`. When the
+  Workspace still holds a live sandbox whose Node has sent no heartbeat for longer than
+  `issue_runs.delivery_unreachable_after` (30 minutes by default; an unconfigured window never gives up), the scheduler
+  gives up the release: the unfinished delete operation fails as `node_unavailable`, the run records `abandoned` with
+  its reason, the Workspace row stays readable, and no release instant is written. **Only `released` means Cloud
+  observed the Workspace deleted**; `abandoned` is never reported as a successful release and is never re-declared or
+  retried by a later pass. Replayed delete completions and repeated reconciliation passes are no-ops.
 
 Development fixtures (`collaboration.development_fixtures`) install a deterministic run simulator that fills in the
 execution trace at run creation and says in its output that nothing really ran; production never installs it.

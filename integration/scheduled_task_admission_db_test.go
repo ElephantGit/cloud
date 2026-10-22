@@ -163,6 +163,31 @@ func TestScheduledTaskSingleFailureDoesNotBlock(t *testing.T) {
 	}
 }
 
+// TestScheduledTaskCorruptDefinitionDoesNotBlock keeps an invalid persisted definition from
+// starving a later healthy task. The corrupt row remains untouched and is still returned to the
+// sync loop as an error; only its own short transaction is rolled back.
+func TestScheduledTaskCorruptDefinitionDoesNotBlock(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	badTask := seedEnabledScheduledTask(t, store, s, agentID, "Corrupt timezone", 65)
+	goodTask := seedEnabledScheduledTask(t, store, s, agentID, "Healthy after corruption", 65)
+	_, err := store.Pool.Exec(`UPDATE scheduled_tasks
+		SET timezone='Not/AZone', updated_at=now() - interval '1 minute'
+		WHERE id=$1`, badTask)
+	must(t, err)
+
+	if err := store.EvaluateScheduledTasksOnce(context.Background()); err == nil {
+		t.Fatal("corrupt definition must remain visible to the sync loop")
+	}
+	badCount, _ := occurrenceCount(t, store, badTask)
+	goodCount, goodOutcome := occurrenceCount(t, store, goodTask)
+	if badCount != 0 {
+		t.Fatalf("corrupt definition must not create an occurrence, got %d", badCount)
+	}
+	if goodCount != 1 || goodOutcome != "admitted" {
+		t.Fatalf("healthy task must admit despite corrupt peer, got %d %q", goodCount, goodOutcome)
+	}
+}
+
 // TestScheduledTaskBusyRunSkipsTheNextOccurrence keeps a run that is still releasing from being
 // treated as terminal merely because its business result is already completed.
 func TestScheduledTaskBusyRunSkipsTheNextOccurrence(t *testing.T) {

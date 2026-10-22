@@ -296,16 +296,16 @@ func scheduleJSON(schedule scheduledTaskSchedule) (Object, error) {
 }
 
 // scheduledTaskLocation resolves the persisted IANA timezone. An unknown zone is a save-time
-// rejection (the API validates before insert), so a worker-side failure here is invariant
-// corruption and is surfaced as a panic like every other store invariant.
+// rejection (the API validates before insert); a worker-side violation is isolated to that
+// definition while EvaluateScheduledTasksOnce continues evaluating healthy tasks.
 func scheduledTaskLocation(task Object, taskID string) *time.Location {
 	zone := task.S("timezone")
 	if zone == "" {
-		panic(databaseFailure{fmt.Errorf("scheduled task %s has no timezone", taskID)})
+		panic(databaseFailure{&scheduledTaskDefinitionError{err: fmt.Errorf("scheduled task %s has no timezone", taskID)}})
 	}
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
-		panic(databaseFailure{fmt.Errorf("scheduled task %s has an unresolvable timezone %q: %w", taskID, zone, err)})
+		panic(databaseFailure{&scheduledTaskDefinitionError{err: fmt.Errorf("scheduled task %s has an unresolvable timezone %q: %w", taskID, zone, err)}})
 	}
 	return loc
 }

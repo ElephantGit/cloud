@@ -277,8 +277,7 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 	entries := t.list(`
 		SELECT o.scheduled_at, o.outcome, o.failure_reason, o.task_revision,
 		       o.deadline_cancelled_at, o.observed_at,
-		       r.id AS run_id, r.status AS run_status, r.failure_reason AS run_failure_reason,
-		       r.session_id AS run_session_id
+		       r.id AS run_id, r.status AS run_status, r.failure_reason AS run_failure_reason
 		FROM scheduled_task_occurrences o
 		LEFT JOIN issue_runs r ON r.id = o.run_id
 		WHERE o.task_id=$1
@@ -304,7 +303,6 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 				break
 			}
 			item["runId"] = entry.S("runId")
-			item["sessionId"] = entry["runSessionId"]
 			status := entry.S("runStatus")
 			if entry["deadlineCancelledAt"] != nil && status == "cancelled" {
 				// D4: the deadline fact AND a cancelled terminal state — and only that pair —

@@ -92,6 +92,42 @@ func TestScheduledTaskAdmissionCreatesARun(t *testing.T) {
 	}
 }
 
+// TestScheduledTaskHistoryReadsEmptyAndAdmitted verifies the public history path against PostgreSQL
+// before and after admission. IssueRun has no session_id fact, so history must not manufacture one.
+func TestScheduledTaskHistoryReadsEmptyAndAdmitted(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "History", 65)
+	caller := scheduledTaskCaller(t, store, s.tenantID)
+	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks/" + taskID + "/history"
+	readHistory := func(key string) core.Object {
+		out, status, err := store.Public(context.Background(), &core.PublicRequest{
+			Method:          "GET",
+			Key:             key,
+			Path:            path,
+			TenantID:        s.tenantID,
+			ScheduledTaskID: taskID,
+			Identity:        caller,
+		})
+		must(t, err)
+		if status != 200 {
+			t.Fatalf("history read status = %d, want 200", status)
+		}
+		return out.O("resource")
+	}
+	if entries, ok := readHistory("scheduled-history-empty")["entries"].([]core.Object); !ok || len(entries) != 0 {
+		t.Fatalf("empty history entries = %v, want an empty list", entries)
+	}
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	entries, ok := readHistory("scheduled-history-admitted")["entries"].([]core.Object)
+	if !ok || len(entries) != 1 || entries[0].S("runId") == "" {
+		t.Fatalf("admitted history entries = %v, want one entry with a run ID", entries)
+	}
+	if _, exists := entries[0]["sessionId"]; exists {
+		t.Fatalf("history must not expose a session ID without an IssueRun fact: %v", entries[0])
+	}
+}
+
 // TestScheduledTaskMissedRecoverySingleOccurrence (FIX-5): a long outage writes exactly one missed.
 func TestScheduledTaskMissedRecoverySingleOccurrence(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)

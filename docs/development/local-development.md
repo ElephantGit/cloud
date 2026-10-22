@@ -24,7 +24,7 @@
   这也是 `config.toml.template` 的默认值。
 - **Windows**：`./scripts/postgres.ps1 start` 在项目的 `.local/` 下安装并启动一个固定版本的 PostgreSQL 17，只监听 `127.0.0.1:55432`，使用本地
   trust 认证，不创建系统服务；`./scripts/postgres.ps1 stop` 停止，数据保留。
-- **自己的服务器**：角色需要拥有数据库（迁移要建表，迁移测试要建 schema）；integration 普通 fixture 的独立模板副本还要求测试账号具备 `CREATEDB`。
+- **自己的服务器**：角色需要拥有数据库（迁移要建表，迁移测试要建 schema）；integration 与 core 普通 fixture 的独立模板副本还要求测试账号具备 `CREATEDB`。
 
 ## 配置与启动
 

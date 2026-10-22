@@ -95,7 +95,7 @@ row immediately, and the Controller carries it forward:
 | `queued` | Waiting for the Controller to claim it |
 | `running` | Claimed and at some step |
 | `retry_wait` | Paused; claimable again once `retry_at` passes |
-| `blocked` | Paused; continues only when a user explicitly retries it (`POST /operations/:oid/retry`); Cloud never retries it automatically; a run Workspace creation is the exception and is abandoned by Cloud beyond its limit (see [Bounded startup](../agent-runs/startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)) |
+| `blocked` | Paused; unknown work is never automatically re-executed, and a user may explicitly retry (`POST /operations/:oid/retry`). A definitive original clone result continues the same operation as described below; Cloud abandons a run Workspace creation beyond its limit (see [Bounded startup](../agent-runs/startup-settlement.en.md#bounded-abandonment-of-a-blocked-creation)) |
 | `succeeded`, `failed` | Terminal |
 
 **A Project has at most one unfinished operation at a time** (`queued`, `running`, `retry_wait`,
@@ -168,6 +168,12 @@ transaction, just as a Controller deferral to `blocked` does (see
   every retry is a new clone execution. On the third failure the operation fails and the Workspace
   becomes `unavailable`. A clone whose outcome is unknown (`clone_result_unknown`) is never retried
   automatically and cannot be registered a second time.
+  When its original execution gains a definitive result before the creation deadline, Cloud continues
+  the same operation from that fact: success makes the operation claimable again, while failure keeps
+  the original attempt count and backoff. A result committed before a stale unknown defer is handled
+  the same way. This does not redispatch the original clone, renew its frozen deadline, or reopen an
+  expired, terminal or force-stopping creation. Admission opens only after the Controller validates
+  the original result and advances the lifecycle.
 - **Stopping requires proven idleness.** `stop`, `restart` and deletions first check in one transaction
   that no execution is unfinished, close admission and increment `admission_epoch`, and then ask the
   Node to report idleness. When the Node reports "not idle", the operation fails with
@@ -249,5 +255,5 @@ of a Workspace operation.
 - [Workspace creation and start gain a plugin step executed by the Node](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20260928-plugin-step-and-run-workspace-release.md)
 - [Internal Control gRPC adds Workspace operations and Controller-reported Nodes](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260926-workspace-operations-and-controller-reported-nodes.md)
 - [Projects belong to a Space: membership replaces personal ownership as the visibility and authorization boundary](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/0-project-space-scoping.md)
-- [Repository credentials are managed as team, personal or unknown attribution](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md) (approved)
-- [A Workspace's clone step consumes the Binding's current snapshot; tenant-level clones are removed](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md) (approved; the clone step section above describes its implementation)
+- [Repository credentials are managed as team, personal or unknown attribution](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md) (implemented)
+- [A Workspace's clone step consumes the Binding's current snapshot; tenant-level clones are removed](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md) (implemented; the clone step section above describes its implementation)

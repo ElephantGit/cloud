@@ -216,6 +216,14 @@ func validateWorkflowGlobals(graph Object) []workflowGraphProblem {
 			continue
 		}
 		name := strings.TrimSpace(variable.S("name"))
+		// The platform's reserved form key is refused for that reason alone, and it is reported by
+		// validateWorkflowReservedFields. Letting the qualified-name rule complain here too would ask
+		// the author to fix a syntax problem as well as the name, while the name is the whole fault.
+		// The comparison is exact because that is the comparison the form makes: a global is keyed by
+		// its declared name, so only the exact name can collide with the platform's key.
+		if variable.S("name") == fieldKeySnapshotID {
+			continue
+		}
 		if !strings.Contains(name, ".") || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
 			problems = append(problems, workflowGraphProblem{Code: "global_name_invalid", Name: name})
 			continue
@@ -268,7 +276,68 @@ func validateWorkflowGraph(graph Object) []workflowGraphProblem {
 	problems = append(problems, validateWorkflowEdges(graph, nodes)...)
 	problems = append(problems, validateWorkflowAcyclic(graph)...)
 	problems = append(problems, validateWorkflowSlots(graph, nodes)...)
+	problems = append(problems, validateWorkflowReservedFields(nodes, globals)...)
 	return problems
+}
+
+// validateWorkflowReservedFields refuses a graph that claims a name the platform owns in the `@`
+// form as one of the workflow's own variables. It is the publish gate for a name, not for a value:
+// the only way into the form is a declaration, so refusing the declaration is what keeps
+// `snapshotId` meaning exactly one thing — the version the platform resolved — instead of sometimes
+// also being a value the author asked the workflow to receive
+// (20261021-snapshot-id-is-a-reserved-field.md D1).
+//
+// The walk is deliberately the same one the version selector uses to withhold stock versions
+// (workflowDeclaresReservedField): the gate and the selector have to agree about what a declaration
+// is, or a version publishing accepts could still be withheld, or the reverse. It is also why the
+// qualified-name rule in validateWorkflowGlobals steps aside for this name: that rule is about
+// qualification syntax, and it would only add a second, less useful complaint about the same entry.
+//
+// Only a Start input variable and a global variable can enter the form, so only those two positions
+// are read. `launchFields` withdrawing `snapshotId` is not a declaration and is not read here: it
+// asks the platform to drop its own field, which cannot collide with the cursor either.
+func validateWorkflowReservedFields(nodes []any, globals []Object) []workflowGraphProblem {
+	problems := []workflowGraphProblem{}
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		o := Object(node)
+		data := o.O("data")
+		if data.S("kind") != "start" {
+			continue
+		}
+		declared, _ := data["inputVariables"].([]any)
+		for _, rawVariable := range declared {
+			variable, ok := rawVariable.(map[string]any)
+			if !ok {
+				continue
+			}
+			if Object(variable).S("name") == fieldKeySnapshotID {
+				problems = append(problems, workflowGraphProblem{Code: "reserved_field_name", NodeID: o.S("id"), Field: fieldKeySnapshotID})
+			}
+		}
+	}
+	// A global enters the form under its declared name, so the comparison is exact: a name that differs
+	// only by surrounding whitespace is a different key and is dropped from the form by the
+	// qualified-name rule rather than colliding with the platform's. It carries `name` rather than
+	// `field`: the global is not inside a node, and the entry the author has to change is the global's
+	// own name.
+	for _, variable := range globals {
+		if variable.S("name") == fieldKeySnapshotID {
+			problems = append(problems, workflowGraphProblem{Code: "reserved_field_name", Name: fieldKeySnapshotID})
+		}
+	}
+	return problems
+}
+
+// workflowDeclaresReservedField reports whether a graph claims the platform's reserved form key at
+// all. It asks the publish gate's own walk, so the versions the selector withholds, the versions a
+// confirm refuses and the declarations publishing refuses are one rule rather than three that could
+// drift apart.
+func workflowDeclaresReservedField(graph Object) bool {
+	return len(validateWorkflowReservedFields(workflowNodes(graph), workflowGlobalVariables(graph))) > 0
 }
 
 // validateWorkflowAcyclic refuses a graph that contains a cycle. The first phase executes a DAG and

@@ -125,11 +125,15 @@ func applyCommentTargets(t *transaction, i Object, r *PublicRequest, uid, commen
 // split forbids. The resolved version is frozen onto the run's input, so the run still says what it
 // executed after the workflow has been edited or published again.
 //
-// `snapshotId` is the platform's key only while the author's own Start node leaves it alone; a workflow
-// that declares a variable under that name owns the key, and the value submitted under it is that
-// variable's rather than a version selection — see workflowVersionCursor. A submission still carrying
-// the pre-rename `version` key is read under it, so the version the user picked is the one that runs,
-// and the key is folded away before the values are validated — see foldLegacyVersionAnswer.
+// `snapshotId` is always the platform's key: the issue form does not render an author declaration under
+// it (see withoutPlatformOwnedDeclarations), the submission's value under it is the version selection,
+// and a resolved version that declares the key itself is refused rather than executed. That refusal
+// answers before the executor-slot gate: the version can never run, so naming a slot the initiator
+// would have to configure first would send them to fix something that cannot make this confirm work.
+// A submission
+// still carrying the pre-rename `version` key is read under it, so the version the user picked is the
+// one that runs, and the key is folded away before the values are validated — see
+// foldLegacyVersionAnswer.
 func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 	it := interaction(t, r.TenantID, r.IssueID, r.InteractionID)
 	require(it.S("mode") == "form", 409, "interaction_not_confirmable")
@@ -141,7 +145,22 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 	w := workflow(t, r.TenantID, targetID)
 	cursor := workflowVersionCursor(w.O("graph"), values)
 	foldLegacyVersionAnswer(w.O("graph"), values)
-	s := admitWorkflowRun(t, r.TenantID, targetID, cursor, uid)
+	s := workflowRunSnapshot(t, r.TenantID, targetID, cursor)
+	// `snapshotId` belongs to the platform in every `@` form, so the submitted value was read as a
+	// version cursor — including when the live document still declares a variable of that name, which
+	// it can no longer publish. A resolved version whose own graph declares that key would give the one
+	// submission two meanings — the version the platform resolves and a value the workflow receives —
+	// which is the ambiguity 20261021-snapshot-id-is-a-reserved-field.md D3 refuses to execute. Such
+	// versions are stock: the publish gate no longer creates them (D1), and the selector no longer
+	// offers them (D2), so this is the backstop for a cursor that reaches one anyway, or for a confirm
+	// that submitted no cursor and resolved to the newest one. Substituting a selectable version instead
+	// would execute something the user did not choose.
+	if workflowDeclaresReservedField(s.O("graph")) {
+		rejectWith(409, "workflow_version_reserved_field", Object{"snapshotId": s.S("id"), "field": fieldKeySnapshotID})
+	}
+	// Only a version that may actually run is worth asking the initiator to configure slots for. This is
+	// the same gate the other entries use; it just runs after the reserved-key refusal above.
+	requireWorkflowExecutorSlots(t, s.O("graph"), uid)
 	issueContext := formContextForIssue(t, r.TenantID, i)
 	// The chosen version's own schema decides what the submission may contain: the form offers the
 	// selected version's fields, so a live draft that has moved on neither adds nor removes a question.

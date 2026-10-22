@@ -226,15 +226,10 @@ func startGitServer(t *testing.T, f *fixture, root string) *gitServerHarness {
 	pki.issue(t, "server", "", x509.ExtKeyUsageServerAuth)
 	cloud := pki.issue(t, "cloud", "spiffe://ora.local/cloud/git-ref-query", x509.ExtKeyUsageClientAuth)
 	deployment := gitserver.Config{CertificateFile: filepath.Join(pki.dir, "server.pem"), PrivateKeyFile: filepath.Join(pki.dir, "server-key.pem"), SandboxCAFile: filepath.Join(pki.dir, "ca.pem"), CloudClientCertFile: filepath.Join(pki.dir, "cloud.pem")}
-	// The hook is the shipped command, so the pre-receive path under test is the deployed one.
-	hook := filepath.Join(t.TempDir(), "git-server")
-	build := exec.Command("go", "build", "-o", hook, "../cmd/git-server")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build git-server: %v: %s", err, out)
-	}
+	// TestMain builds the shipped command before any fixture's freshness window starts.
 	cloudLeaf, err := deployment.CloudClient()
 	must(t, err)
-	service, err := gitserver.New(&gitserver.Options{Store: f.store, RepositoryRoot: root, GitProgram: "git", CloudClient: cloudLeaf, Hook: []string{hook, "-pre-receive"}, Health: f.store.Pool.PingContext})
+	service, err := gitserver.New(&gitserver.Options{Store: f.store, RepositoryRoot: root, GitProgram: "git", CloudClient: cloudLeaf, Hook: []string{gitServerBinary, "-pre-receive"}, Health: f.store.Pool.PingContext})
 	must(t, err)
 	repoTLS, err := deployment.RepositoryTLS()
 	must(t, err)

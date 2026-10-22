@@ -27,7 +27,7 @@ Pick one:
   listening only on `127.0.0.1:55432` with local trust authentication and no system service;
   `./scripts/postgres.ps1 stop` stops it and keeps the data.
 - **Your own server**: the role must own the database (migrations create tables and migration tests create schemas).
-  Ordinary integration fixtures also require `CREATEDB` for their independent template copies.
+  Ordinary integration and core fixtures also require `CREATEDB` for their independent template copies.
 
 ## Configure and start
 

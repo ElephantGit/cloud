@@ -350,15 +350,19 @@ func newID() string         { return uuid.NewString() }
 func validID(s string) bool { _, e := uuid.Parse(s); return e == nil }
 
 // Advisory-lock keys. PostgreSQL keeps the one-bigint and the two-integer key spaces apart, so the
-// control-plane key and the workflow keys can never collide even where their numbers agree:
+// control-plane key and the workflow keys can never collide even where their numbers agree. The
+// two-integer keys are listed in the order a transaction takes them (see lockWorkflowRunIssue and
+// lockProjectOperations), so the list doubles as the lock-order record:
 //
 //	67420911                    the control-plane transaction lock (int8)
 //	(67420911, key(runID))      one WorkflowRun's serial-executor lock (int4,int4)
+//	(67420913, key(issueID))    one Issue's Timeline-append lock (int4,int4)
 //	(67420912, key(projectID))  one Project's operation-declaration lock (int4,int4)
 const (
 	controlPlaneLockKey      int64 = 67420911
 	workflowRunLockClass     int32 = 67420911
 	workflowProjectLockClass int32 = 67420912
+	workflowIssueLockClass   int32 = 67420913
 )
 
 // transact serializes mutations within the single-cluster phase-one control plane.
@@ -380,12 +384,19 @@ func (s *Store) transact(ctx context.Context, fn func(*transaction) Object) (Obj
 // process-local table is involved, so a replica that never saw the other one still cannot advance
 // the same run concurrently. A hash collision between two run ids only makes them share one lock
 // (extra serialization); it can never give one run two executors.
+//
+// After the run right is held, the transaction also takes the lock of the Issue the run projects
+// onto, because two different runs of one Issue may otherwise append to its Timeline concurrently.
 func (s *Store) transactWorkflowRun(ctx context.Context, runID string, fn func(*transaction) Object) (Object, bool, error) {
 	if !validID(runID) {
 		return nil, false, nil
 	}
 	return s.transactLocked(ctx, lockControlPlaneShared, func(t *transaction) bool {
-		return t.one("SELECT pg_try_advisory_xact_lock($1,$2) AS locked", workflowRunLockClass, advisoryKey(runID)).B("locked")
+		if !t.one("SELECT pg_try_advisory_xact_lock($1,$2) AS locked", workflowRunLockClass, advisoryKey(runID)).B("locked") {
+			return false
+		}
+		lockWorkflowRunIssue(t, runID)
+		return true
 	}, fn)
 }
 
@@ -456,13 +467,32 @@ func advisoryKey(id string) int32 {
 	return int32(h.Sum32()) // #nosec G115 -- every 32-bit pattern is a valid key; the sign is meaningless.
 }
 
+// lockWorkflowRunIssue serializes a WorkflowRun transaction against other runs that project onto the
+// same Issue. Timeline positions are allocated as MAX(seq)+1 per Issue (nextTimelineSeq), so two runs
+// of one Issue that wrote concurrently could both read the same maximum — the loser's insert then
+// violates UNIQUE(issue_id, seq) and loses its whole transition. The run lock cannot order them: it
+// is per run by design. Runs without an IssueRun association have no Issue Timeline to write and
+// take no lock.
+//
+// The lookup is the same one the projection uses, and the unique constraint on
+// workflow_invocation_ref makes it at most one row. It is taken after the run lock and before fn, so
+// every path that takes both orders them consistently: control plane -> run -> Issue -> Project.
+func lockWorkflowRunIssue(t *transaction, runID string) {
+	i := t.one(`SELECT issue_id FROM issue_runs
+		WHERE workflow_invocation_ref=$1 AND executor_type='workflow' AND deleted_at IS NULL`, runID)
+	if i == nil {
+		return
+	}
+	t.exec("SELECT pg_advisory_xact_lock($1,$2)", workflowIssueLockClass, advisoryKey(i.S("issueId")))
+}
+
 // lockProjectOperations serializes the Project-level decision a WorkflowRun transaction makes when
 // it provisions or declares the deletion of a run Workspace: "this Project has at most one live
 // operation". That rule spans runs, so the per-run lock cannot express it; ordinary control-plane
 // writers are already excluded by the shared control-plane lock, and this lock orders the run
-// transactions that share a Project. Lock order is control plane -> run -> Project everywhere, so it
-// cannot cycle: no transaction takes the Project lock while waiting for a run lock it does not
-// already hold.
+// transactions that share a Project. Lock order is control plane -> run -> Issue -> Project
+// everywhere, so it cannot cycle: no transaction takes the Project lock while waiting for a lock it
+// does not already hold.
 func lockProjectOperations(t *transaction, projectID string) {
 	if projectID == "" {
 		return

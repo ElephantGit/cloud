@@ -2,10 +2,10 @@ package core
 
 // The WorkflowRun serial-executor evidence for specs decisions/cloud/workflow
 // 0-cloud-side-scheduler-owns-workflow-execution.md D1 条件②: the per-run exclusive transaction
-// right is cross-process and released with the transaction, and the Project lock keeps the one
-// invariant that spans runs. Every scene is a real PostgreSQL database; "another replica" is a
-// second Store with its own connection pool over the same database, so nothing but PostgreSQL is
-// shared.
+// right is cross-process and released with the transaction, the Issue lock keeps one Issue's
+// Timeline seq writes serial, and the Project lock keeps the one invariant that spans runs. Every
+// scene is a real PostgreSQL database; "another replica" is a second Store with its own connection
+// pool over the same database, so nothing but PostgreSQL is shared.
 
 import (
 	"context"
@@ -122,6 +122,92 @@ func seedWorkflowRunInProject(t *testing.T, store *Store, sourceRunID, uid strin
 		t.Fatalf("seed second run in the Project: %v", err)
 	}
 	return id
+}
+
+// seedLinkedRunsOnOneIssue adds a second pending run in the same tenant and workflow as
+// sourceRunID, creates one Issue, and links both runs to it through issue_runs. Both runs carry the
+// same linear start -> output graph, which one pass settles, so the scheduler projects each run's
+// Timeline entries onto the shared Issue.
+//
+// The source run is staged already claimed (running, with its IssueRun started), the state a replica
+// leaves behind between ticks. That is also what lets both of them be linked at once: the pending
+// dedup index allows only one queued IssueRun per (issue, executor), while a running run and a
+// queued sibling are a normal pair. The pass below therefore projects run.completed for the source
+// run and run.started + run.completed for the second, all into one Issue Timeline.
+func seedLinkedRunsOnOneIssue(t *testing.T, store *Store, sourceRunID string) (issueID, secondRunID string) {
+	t.Helper()
+	issueID, secondRunID = uuid.NewString(), uuid.NewString()
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		tx.exec(`INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input)
+			SELECT $1,tenant_id,workflow_id,snapshot_id,'disp-2','pending',input
+			FROM workflow_runs WHERE id=$2`, secondRunID, sourceRunID)
+		user := tx.one(`SELECT user_id FROM tenant_memberships
+			WHERE tenant_id=(SELECT tenant_id FROM workflow_runs WHERE id=$1) LIMIT 1`, sourceRunID)
+		tx.exec(`INSERT INTO issues(id,tenant_id,creator_user_id,title,number)
+			SELECT $1,w.tenant_id,$2,'linked runs',
+			       COALESCE((SELECT max(i.number) FROM issues i WHERE i.tenant_id=w.tenant_id),0)+1
+			FROM workflow_runs w WHERE w.id=$3`, issueID, user.S("userId"), sourceRunID)
+		tx.exec(`INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,workflow_invocation_ref)
+			SELECT gen_random_uuid(),w.tenant_id,$1,'workflow',w.workflow_id,'queued',w.id
+			FROM workflow_runs w WHERE w.id=$2`, issueID, sourceRunID)
+		tx.exec(`UPDATE workflow_runs SET status='running', started_at=now(), version=version+1 WHERE id=$1`, sourceRunID)
+		tx.exec(`UPDATE issue_runs SET status='running', started_at=now(), version=version+1
+			WHERE workflow_invocation_ref=$1 AND deleted_at IS NULL`, sourceRunID)
+		// The sibling is queued only after the source run's IssueRun left the queued/dispatched
+		// states the pending dedup index covers.
+		tx.exec(`INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,workflow_invocation_ref)
+			SELECT gen_random_uuid(),w.tenant_id,$1,'workflow',w.workflow_id,'queued',w.id
+			FROM workflow_runs w WHERE w.id=$2`, issueID, secondRunID)
+		return Object{}
+	}); err != nil {
+		t.Fatalf("seed two runs linked to one Issue: %v", err)
+	}
+	return issueID, secondRunID
+}
+
+// assertLinkedRunsSettled checks the shared Issue Timeline at the storage boundary after both linked
+// runs reached their terminal state: every activity has its own position, dense from 1, and both
+// linked IssueRuns completed.
+func assertLinkedRunsSettled(t *testing.T, store *Store, issueID string, runIDs ...string) {
+	t.Helper()
+	for _, runID := range runIDs {
+		status, runErr, states, _ := readWorkflowRun(t, store, runID)
+		if status != "succeeded" || runErr != "" {
+			t.Fatalf("run %s: status=%q err=%q states=%v; want succeeded", runID, status, runErr, states)
+		}
+	}
+	rows, err := store.Pool.Query(`SELECT seq FROM issue_activities WHERE issue_id=$1 ORDER BY seq`, issueID)
+	if err != nil {
+		t.Fatalf("read Issue Timeline: %v", err)
+	}
+	defer rows.Close()
+	var seqs []int64
+	for rows.Next() {
+		var seq int64
+		if err := rows.Scan(&seq); err != nil {
+			t.Fatalf("read Issue Timeline seq: %v", err)
+		}
+		seqs = append(seqs, seq)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read Issue Timeline: %v", err)
+	}
+	// The source run completes and the second run starts and completes, all onto this one Issue.
+	if len(seqs) != 3 {
+		t.Fatalf("Issue Timeline has seq %v; want 3 activities (completed for the running run, started+completed for the queued one)", seqs)
+	}
+	for i, seq := range seqs {
+		if seq != int64(i+1) {
+			t.Fatalf("Issue Timeline seq = %v; want a dense 1..3 range with no duplicate or gap", seqs)
+		}
+	}
+	var completed int
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE issue_id=$1 AND status='completed'`, issueID).Scan(&completed); err != nil {
+		t.Fatalf("count completed IssueRuns: %v", err)
+	}
+	if completed != 2 {
+		t.Fatalf("%d linked IssueRuns completed; want 2", completed)
+	}
 }
 
 // A replica cannot advance a run while another replica holds that run's exclusive transaction right:
@@ -264,4 +350,69 @@ func TestWorkflowRunRightIsReleasedWhenTheTransactionAborts(t *testing.T) {
 	if status, _, states, _ := readWorkflowRun(t, replica, runID); status != "running" {
 		t.Fatalf("run after crash takeover: status=%q states=%v; want running", status, states)
 	}
+}
+
+// linearRunGraph is the smallest graph a single pass settles without a Node or a Workspace.
+func linearRunGraph() Object {
+	return wfGraph([]Object{wfNode("s", "start", ""), wfNode("o", "output", "done")},
+		[][3]string{{"s", "o", ""}})
+}
+
+// A run's transaction takes the lock of the Issue it is linked to before running fn. The observable
+// consequence is that a sibling run of the same Issue waits: while one replica keeps a run's right
+// (and therefore its Issue lock) open, another replica's advance of the other run stops at the Issue
+// lock instead of appending to the same Timeline concurrently.
+func TestWorkflowRunWaitsForItsLinkedIssuesTimelineLock(t *testing.T) {
+	store := dispatcherDB(t)
+	replica := secondReplica(t, store)
+	first := seedWorkflowRunScene(t, store, linearRunGraph())
+	issueID, second := seedLinkedRunsOnOneIssue(t, store, first)
+
+	release, done := holdRunRight(t, replica, first)
+	advance := make(chan error, 1)
+	go func() { advance <- store.AdvanceWorkflowRunsOnce(context.Background()) }()
+
+	waitForAdvisoryWait(t, store, workflowIssueLockClass, advisoryKey(issueID))
+	release()
+	if err := <-done; err != nil {
+		t.Fatalf("release the held run: %v", err)
+	}
+	if err := <-advance; err != nil {
+		t.Fatalf("advance once the Issue lock was free: %v", err)
+	}
+	// The pass could not touch the held run; the sibling run advanced. A later pass settles the
+	// held run from committed state exactly as any tick after a lock release does.
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance the formerly held run: %v", err)
+	}
+	assertLinkedRunsSettled(t, store, issueID, first, second)
+}
+
+// Two replicas advance the two runs of one Issue at the same time. Each run still has its own
+// executor, but both project onto one Timeline, so the Issue lock must order the two transactions:
+// both runs reach succeeded, both IssueRuns complete, and seq stays dense and unique. The passes are
+// allowed to interleave differently from run to run; the deterministic witness that the Issue lock is
+// what orders them is TestWorkflowRunWaitsForItsLinkedIssuesTimelineLock, and this test pins the end
+// state that ordering exists for.
+func TestWorkflowRunsOfOneIssueAdvanceConcurrentlyWithUniqueTimelineSeq(t *testing.T) {
+	store := dispatcherDB(t)
+	replica := secondReplica(t, store)
+	first := seedWorkflowRunScene(t, store, linearRunGraph())
+	issueID, second := seedLinkedRunsOnOneIssue(t, store, first)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for _, s := range []*Store{store, replica} {
+		go func(s *Store) {
+			<-start
+			errs <- s.AdvanceWorkflowRunsOnce(context.Background())
+		}(s)
+	}
+	close(start)
+	for range []*Store{store, replica} {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent advance pass: %v", err)
+		}
+	}
+	assertLinkedRunsSettled(t, store, issueID, first, second)
 }

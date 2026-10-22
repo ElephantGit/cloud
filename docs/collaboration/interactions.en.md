@@ -78,25 +78,32 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
   workflow's schema and binds to no schema technology. Fields come in three bands: platform fields, the
   variables declared by the workflow's Start node, and the graph's global variables.
   The frontend first reads the current document only to locate the platform version selector and its
-  default version. Once the default (the newest published version) is known, the initial form is read
+  default version. Once the default (the newest selectable published version) is known, the initial form is read
   from that version through `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…`,
   and switching the selector reloads the new version the same way. The form shown and the version Confirm
   validates are therefore always the same, and fields the live draft has not published never appear in
   the default view.
-  That promise assumes the platform can name the version, and the selector itself comes from the live
-  draft. When the live draft declares the reserved key `snapshotId` (or removes it through a launch
-  field) there is no version to choose: the @ form renders the live draft while Confirm still applies
-  the live draft's version rule and runs the newest published version. When the selector does exist but
-  the chosen version's own graph declares `snapshotId` (or its select offers options that are not all
-  published ids), that version's snapshot form has no platform field while Confirm still treats the key
-  as the platform's: the author's value is read as a version cursor, so an empty value runs the newest
-  published version and a non-id value is refused. Both are the boundary of an author occupying a
-  reserved key, not a supported configuration: authors must not name their own variables `snapshotId`.
-  Whether switching to such a version should be refused or warned about is a later decision (circus#405).
+  That promise does not depend on the live draft: whenever a selectable published version exists the
+  form carries the platform's version selector, defaulting to the newest selectable version, and a
+  same-named declaration in the live draft is neither rendered nor read as the cursor. Versions
+  published before this rule that declare `snapshotId` themselves are not offered by the selector, and
+  Confirm refuses one it resolves to with `409 workflow_version_reserved_field` instead of choosing
+  another version (see [Workflows](../workflows/workflows.en.md)). When a launch field withdraws the
+  selector the form has none: leaving the key out resolves the newest published version, and submitting
+  it is still read as the version cursor; a resolved version that declares the reserved key itself is
+  likewise refused with `409 workflow_version_reserved_field` instead of running.
 - **Platform fields** are injected only when the form is opened for an Issue: repository URL and branch
   (defaulting to the repository and default branch of the Issue's Project; required), a prompt, the
   published version to run `snapshotId`, and additional context references `context_refs`. When the
-  workflow declares a variable of the same name, the workflow's declaration wins.
+  workflow declares a variable of the same name, the workflow's declaration wins — except for the
+  reserved field `snapshotId`, which always belongs to the platform and is never projected from the
+  author's declaration (see [Workflows](../workflows/workflows.en.md)).
+- **The version selector lists only selectable versions.** The platform-owned `snapshotId` field offers
+  only published versions whose graph no longer declares the reserved field `snapshotId`; the option cap
+  counts only those, and the default is the newest one. When nothing is selectable the form carries no
+  selector. If versions are withheld for this reason, the selector's description says why and asks the
+  author to republish from a live draft that no longer declares the key (see
+  [Workflows](../workflows/workflows.en.md)).
 - **AI assist** (`POST .../issues/:iid/collaboration/assist`) only returns a field-level suggestion patch
   and suggested context references: it never creates a run and never writes persistent context
   references. Applying a suggestion is the user's action. It judges the shape of the submission against
@@ -111,6 +118,11 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
     them with the live draft. Choosing an older version runs that snapshot: a submission that matches
     its form is accepted even when its fields differ from the current draft, and a missing required
     field or a field that version never declared is refused by that version's schema.
+  - `snapshotId` always belongs to the platform: the submitted value under it is always the version
+    cursor, whether or not the live draft still declares a variable of that name. When the resolved
+    published version's graph declares the key, the confirm returns `409 workflow_version_reserved_field`
+    with the version and the field in its params. This holds with or without a version cursor: Cloud
+    neither substitutes another version nor leaves a run or a claimed interaction behind.
   - The submitted values are kept as the interaction's input and the executed version is frozen into the
     run input, so the run still knows which version it executed after the workflow is edited or
     published again.
@@ -158,3 +170,4 @@ failure never falls back to a fixture identity. The doubles create no simulated 
 - [Issue collaboration: `@` only selects typed targets; execution comes only from explicit intent](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)
 - [An @Agent IssueRun on an Issue is orchestrated by Cloud](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/0-agent-run-in-disposable-isolated-workspace.md)
 - [Workflows are executed by a Cloud-side scheduler](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
+- [`snapshotId` is a reserved field: the publish gate refuses author declarations and stock versions are not selectable](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md) (approved)

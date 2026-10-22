@@ -721,6 +721,18 @@ func TestWorkflowPublishRefusesInvalidGlobals(t *testing.T) {
 			want:    []any{Object{"code": "global_value_missing", "name": "g.region"}},
 		},
 		{
+			name:    "a global claiming the platform's reserved form key",
+			globals: []any{Object{"name": "snapshotId", "valueType": "string", "value": "v1"}},
+			want:    []any{Object{"code": "reserved_field_name", "name": "snapshotId"}},
+		},
+		{
+			// The form keys a global by its declared name, so a surrounding-whitespace variant is a
+			// different key that never enters the form; it is refused for its syntax, not for the name.
+			name:    "a whitespace variant is not the reserved form key",
+			globals: []any{Object{"name": " snapshotId ", "valueType": "string", "value": "v1"}},
+			want:    []any{Object{"code": "global_name_invalid", "name": "snapshotId"}},
+		},
+		{
 			name:    "a value that does not match the declared type",
 			globals: []any{Object{"name": "g.count", "valueType": "integer", "value": "many"}},
 			want:    []any{Object{"code": "global_value_mismatch", "name": "g.count"}},
@@ -754,6 +766,83 @@ func TestWorkflowPublishRefusesInvalidGlobals(t *testing.T) {
 			got := problemObjects(validateWorkflowGraph(decodeGraph(t, graphWithGlobals(tc.globals))))
 			if len(got) != 0 {
 				t.Fatalf("refused: %v", got)
+			}
+		})
+	}
+}
+
+// TestWorkflowPublishRefusesReservedFieldDeclarations covers the reserved `snapshotId` gate
+// (20261021-snapshot-id-is-a-reserved-field.md D1) at the two positions that reach the `@` form. The
+// declaration is refused wherever it is written; everything that merely mentions the name without
+// declaring it — a `launchFields` withdrawal, the pre-rename `version` key, an ordinary variable — is
+// admitted, because refusing those would refuse documents that cannot collide with the cursor.
+func TestWorkflowPublishRefusesReservedFieldDeclarations(t *testing.T) {
+	reserved := []any{Object{"name": "snapshotId", "displayName": "Release", "valueType": "string"}}
+	startNode := func(variables []any) Object {
+		return Object{"id": "s", "data": Object{"kind": "start", "inputVariables": variables}}
+	}
+	graph := func(node, extra Object) Object {
+		g := workflowGraph([]any{node}, []any{}, nil)
+		for key, value := range extra {
+			g[key] = value
+		}
+		return g
+	}
+	cases := []struct {
+		name  string
+		graph Object
+		want  []any
+	}{
+		{
+			name:  "a Start variable claims the key",
+			graph: graph(startNode(reserved), nil),
+			want:  []any{Object{"code": "reserved_field_name", "nodeId": "s", "field": "snapshotId"}},
+		},
+		{
+			name:  "a global claims the key",
+			graph: graph(graphStart("s"), Object{"globalVariables": []any{Object{"name": "snapshotId", "valueType": "string", "value": "v1"}}}),
+			want:  []any{Object{"code": "reserved_field_name", "name": "snapshotId"}},
+		},
+		{
+			name:  "both positions claim the key",
+			graph: graph(startNode(reserved), Object{"globalVariables": []any{Object{"name": "snapshotId", "valueType": "string", "value": "v1"}}}),
+			want: []any{
+				Object{"code": "reserved_field_name", "nodeId": "s", "field": "snapshotId"},
+				Object{"code": "reserved_field_name", "name": "snapshotId"},
+			},
+		},
+		{
+			name:  "withdrawing the platform field is not a declaration",
+			graph: graph(graphStart("s"), Object{"launchFields": []any{Object{"key": "snapshotId", "enabled": false}}}),
+			want:  []any{},
+		},
+		{
+			name:  "the pre-rename version key is not reserved",
+			graph: graph(startNode([]any{Object{"name": "version", "displayName": "Version", "valueType": "string"}}), nil),
+			want:  []any{},
+		},
+		{
+			name:  "an ordinary variable is not reserved",
+			graph: graph(startNode([]any{Object{"name": "releaseId", "displayName": "Release", "valueType": "string"}}), nil),
+			want:  []any{},
+		},
+		{
+			// The form keys a Start variable by its declared name, so a whitespace variant is a
+			// different key that never enters the form; it is not a claim on the platform's key.
+			name:  "a whitespace variant is not the reserved form key",
+			graph: graph(startNode([]any{Object{"name": " snapshotId ", "displayName": "Release", "valueType": "string"}}), nil),
+			want:  []any{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			decoded := decodeGraph(t, tc.graph)
+			got := problemObjects(validateWorkflowGraph(decoded))
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("problems = %v, want %v", got, tc.want)
+			}
+			if declared := workflowDeclaresReservedField(decoded); declared != (len(tc.want) > 0) {
+				t.Fatalf("workflowDeclaresReservedField = %t, want %t", declared, len(tc.want) > 0)
 			}
 		})
 	}

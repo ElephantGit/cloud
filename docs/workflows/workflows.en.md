@@ -38,6 +38,17 @@ refuses them rather than freezing a graph whose nodes would be silently dropped.
 that Cloud does not execute are likewise refused by name, so an author never believes a setting is in effect when
 no runner will apply it.
 
+**Reserved field.** `snapshotId` is the run-version key the platform owns in the `@` form, and an author cannot
+declare it as a variable of their own. When a Start node's input variables or a global variable declare that name,
+publishing and workflow asset import both refuse it, naming the node or field in the problem
+(`reserved_field_name`), and freeze no published version; saving the draft is unaffected. Versions published before
+this rule that declare the key themselves are neither rewritten nor deleted, but they no longer appear in the `@`
+form's version selector. Until a live draft that still declares the key is republished, that author variable is not
+projected into the `@` form either: whenever a selectable published version exists the form carries the
+platform's version selector, and with none — never published, or every version withheld — it has no selector.
+`snapshotId` on confirm is always the version cursor. Withdrawing the platform field through `launchFields` is a different request
+and still works (see [Issue collaboration](../collaboration/interactions.en.md)).
+
 ## Executor slots
 
 Agent nodes do not hard-code an Agent CLI or model ID in the graph; they reference an **executor slot**:
@@ -211,3 +222,4 @@ rewrites imported documents or published versions.
 - [Plugin asset import produces published snapshots: the asset lifecycle never rewrites snapshots, and runs freeze only the snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow plugin assets are fetched by Cloud and imported document by document as editable copies](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [Personal slot mappings resolve a workflow's executors; each run pins one model binding per slot](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md) (approved)
+- [`snapshotId` is a reserved field: the publish gate refuses author declarations and stock versions are not selectable](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md) (approved)

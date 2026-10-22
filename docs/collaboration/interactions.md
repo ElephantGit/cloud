@@ -60,17 +60,20 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
 
 - **表单描述**（`GET /tenants/:tid/collaboration/forms/:formRef?issueId=…`）是面向 Issue 的渲染描述：`formRef`、标题、说明和
   字段列表。它不是工作流的 schema，也不绑定任何 schema 技术。字段分三段：平台字段、工作流 Start 节点声明的变量、图的全局变量。
-  前端先读取当前文档，只为定位平台版本选择器及其默认版本；确定默认版本（最新已发布版本）后，初次打开就按该版本通过
+  前端先读取当前文档，只为定位平台版本选择器及其默认版本；确定默认版本（最新的可选已发布版本）后，初次打开就按该版本通过
   `GET /tenants/:tid/workflows/:wfid/snapshots/:snapshotId/form?issueId=…` 读取表单，切换版本时按新版本重新读取。
   因此显示的表单与 Confirm 校验的版本始终相同，活稿里未发布的字段不出现在默认视图。
-  这条同源承诺的前提是平台能指定版本，而选择器由活稿决定。活稿自己声明了保留键 `snapshotId`（或用启动字段移除它）时没有
-  可选的版本：`@` 表单按活稿渲染，Confirm 仍按活稿的版本规则执行最新已发布版本，显示的字段可能与执行的版本不同。
-  选择器存在、但用户切到的那个版本自己的图声明了 `snapshotId`（或它的 select 选项不全是已发布 id）时，该版本的快照表单里
-  没有平台字段，Confirm 仍按活稿判定这个键归平台，提交里的作者值会被当成版本游标：空值落到最新已发布版本，非 id 值被拒。
-  两种情况都是作者占用保留键时的边界，不是可依赖的配置：作者不应把 `snapshotId` 用作自己的变量名。是否在切换时禁止或提示
-  这类版本，由后续决策另行确定（circus#405）。
+  这条同源承诺不依赖活稿：只要还有可选的已发布版本，表单就注入平台版本选择器并默认最新的可选版本，活稿里的同名声明既不渲染、
+  也不参与版本游标解析。本次决策之前发布、自己声明了 `snapshotId` 的版本不进入选择器，Confirm 解析到它时返回
+  `409 workflow_version_reserved_field`，不改选别的版本（见 [工作流](../workflows/workflows.md)）。用启动字段撤下选择器时界面
+  没有选择器：不提交该键时按最新已发布版本解析，提交了仍按版本游标读取；解析到的版本自己声明了保留键时同样返回
+  `409 workflow_version_reserved_field`，不会执行。
 - **平台字段**只在带着 Issue 打开表单时注入：仓库地址和分支（默认取 Issue 关联 Project 的仓库与默认分支，必填）、提示词、要执行
-  的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准。
+  的已发布版本 `snapshotId`、附加的上下文引用 `context_refs`。工作流自己声明了同名变量时，以工作流的声明为准；保留字段
+  `snapshotId` 例外，这个键始终属于平台，作者的声明不进入表单（见 [工作流](../workflows/workflows.md)）。
+- **版本选择器只列出可选的版本。** `snapshotId` 这个平台字段只提供图里不再声明保留字段 `snapshotId` 的已发布版本，选项上限也只
+  计这些版本，默认值是最新的一个；一个可选项都没有时表单不带选择器。有版本因此被排除时，选择器的说明会写明原因并请作者从
+  不再声明该字段的活稿重新发布（见 [工作流](../workflows/workflows.md)）。
 - **AI 辅助**（`POST .../issues/:iid/collaboration/assist`）只返回字段级的建议补丁和建议的上下文引用：从不创建运行，也不写入
   持久的上下文引用。应用建议是用户的动作。它按与 Confirm 相同的版本描述判断提交值的形状，所以有已发布版本时只接受该版本声明的字段。
   生产环境没有接入辅助提供方，返回 `503 assist_unavailable`。
@@ -79,6 +82,9 @@ Agent 名册（`space_agents`，由已安装的 Agent 插件形成，见 [插件
     工作流不能确认，因为不能执行未发布的草稿。
   - Cloud 只按所选发布版本自身的字段校验，不再与当前活稿比较。选择旧版本就是按那份快照执行：即使它的字段与活稿不同，
     提交符合该版本表单即可通过；缺少该版本必填字段或提交它未声明的字段时，按该版本的 schema 拒绝。
+  - `snapshotId` 始终由平台拥有，提交里的这个键始终是版本游标，不看活稿是否还声明着同名变量。解析到的已发布版本如果在自己的图里声明了
+    它，确认返回 `409 workflow_version_reserved_field`，参数带上版本和字段；带不带版本游标都一样，既不会静默换成别的版本，也不会留下
+    运行或已认领的交互。
   - 提交的值作为交互的输入保存，被执行的版本冻结进运行输入；运行之后工作流再被编辑或发布，它仍然知道自己执行的是哪个版本。
   - 同一事务里创建一个 WorkflowRun 和一个 IssueRun，IssueRun 的 `workflowInvocationRef` 指向该 WorkflowRun（与租户一起的复合外键，且唯一）；直接运行、manual 工作流 IssueRun 与确认共用同一个创建函数。已关联的 IssueRun 不交给 `ExecutionDispatcher`。
   - 用 `run_id IS NULL` 的比较并交换认领交互，重复确认返回 `409 interaction_already_confirmed`；对非表单交互确认返回
@@ -113,3 +119,4 @@ Agent 运行不走 `ExecutionDispatcher`，由 Cloud 自己的调度推进（见
 - [Issue 协作：`@` 只选择类型化目标，执行只来自显式意图](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/0-typed-targets-and-explicit-execution-intent.md)
 - [Issue 上 @Agent 的 IssueRun 由 Cloud 编排](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/0-agent-run-in-disposable-isolated-workspace.md)
 - [工作流由 Cloud 侧调度器执行](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
+- [`snapshotId` 是保留字段：发布门禁拒绝作者声明，存量版本不可选](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md)（approved）

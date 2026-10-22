@@ -315,6 +315,28 @@ func TestWorkflowSessionRunsTwoAgentNodesInOrder(t *testing.T) {
 			t.Fatalf("session %d = %v; want %v", i, sessions[i], w)
 		}
 	}
+
+	// D4 executes the run's agent nodes serially through the run's one Workspace: both executions
+	// name that same Workspace, and the run owns exactly one Workspace row (unique ownership).
+	var runWorkspace, ws1, ws2 string
+	if err := store.Pool.QueryRow(`SELECT id FROM workspaces WHERE workflow_run_id=$1`, runID).Scan(&runWorkspace); err != nil {
+		t.Fatalf("read the run Workspace: %v", err)
+	}
+	if err := store.Pool.QueryRow(`SELECT
+		(SELECT workspace_id FROM node_executions WHERE execution_id=$1),
+		(SELECT workspace_id FROM node_executions WHERE execution_id=$2)`, execution1, execution2).Scan(&ws1, &ws2); err != nil {
+		t.Fatalf("read session Workspaces: %v", err)
+	}
+	if ws1 != runWorkspace || ws2 != runWorkspace {
+		t.Fatalf("session Workspaces = %q, %q; want both %q", ws1, ws2, runWorkspace)
+	}
+	var workspaceRows int
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM workspaces WHERE workflow_run_id=$1`, runID).Scan(&workspaceRows); err != nil {
+		t.Fatalf("count run Workspaces: %v", err)
+	}
+	if workspaceRows != 1 {
+		t.Fatalf("run owns %d Workspace rows; want exactly 1", workspaceRows)
+	}
 }
 
 // Dispatch stays bounded now that the per-run agent_session uniqueness applies to IssueRuns alone:

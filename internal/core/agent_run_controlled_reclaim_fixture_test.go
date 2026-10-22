@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -8,23 +9,30 @@ import (
 
 var (
 	controlledPrepared *Store
-	controlledCleanup  func()
+	controlledCleanup  func() error
 )
 
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if controlledCleanup != nil {
-		controlledCleanup()
+		if err := controlledCleanup(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			code = 1
+		}
+	}
+	if err := closeCoreFixtureTemplate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		code = 1
 	}
 	os.Exit(code)
 }
 
-// Controlled tests are serial and share only a migrated schema. Cleanup belongs to TestMain,
+// Controlled tests are serial and share only a migrated database copy. Cleanup belongs to TestMain,
 // not the first test. Every leaf starts empty so schema-wide claims/scans remain isolated.
 func controlledStores(t *testing.T) func(*testing.T) *Store {
 	t.Helper()
 	if controlledPrepared == nil {
-		controlledPrepared = dispatcherDBWithCleanup(t, func(cleanup func()) { controlledCleanup = cleanup })
+		controlledPrepared = dispatcherDBWithCleanup(t, func(cleanup func() error) { controlledCleanup = cleanup })
 	}
 	prepared := controlledPrepared
 	var tables string

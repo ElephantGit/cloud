@@ -79,7 +79,7 @@ Cloud 不直接调用 Substrate 或 Node。它只保存意图和证据，并按�
 | `queued` | 等待 Controller 领取 |
 | `running` | 已被领取，正在某个步骤上 |
 | `retry_wait` | 暂停，`retry_at` 到期后可再次领取 |
-| `blocked` | 暂停，只有用户显式重试（`POST /operations/:oid/retry`）才继续，Cloud 不自动重试；运行 Workspace 的创建例外，超过上限由 Cloud 放弃（见 [有界启动](../agent-runs/startup-settlement.md#创建-blocked-的有界放弃)） |
+| `blocked` | 暂停，未知结果不会被自动重新执行；用户可显式重试（`POST /operations/:oid/retry`）。原 clone 的确定结果到达时按下文继续同一操作；运行 Workspace 创建超过上限由 Cloud 放弃（见 [有界启动](../agent-runs/startup-settlement.md#创建-blocked-的有界放弃)） |
 | `succeeded`、`failed` | 终态 |
 
 **一个 Project 同一时间至多一个未结束的操作**（`queued`、`running`、`retry_wait`、`blocked`）。新的生命周期请求
@@ -139,6 +139,9 @@ Workspace 不从外部仓库 clone，只从 Project 的 Binding 在 Git Server �
 - **clone 有界重试。** Node 报告 clone 失败后，Controller 以 `clone_failed` 延期，Cloud 按第 1、2 次失败后等待
   5、10 秒安排重试，每次重试都是一次新的 clone 执行；第 3 次失败时操作失败，Workspace 进入 `unavailable`。
   结果未知（`clone_result_unknown`）的 clone 不会被自动重试，也不能登记第二次。
+  原执行的确定结果在创建截止前到达时，Cloud 根据已接管的原事实让同一操作继续：成功结果使操作重新可领取，失败结果沿用原次数与退避。
+  结果先到、Controller 后报告未知时同样按已知结果处理。这个推进不重新派发原 clone，不延长已冻结截止，也不重开已过期、已结束或正在强停的创建；
+  准入仍要等 Controller 验证原结果并推进生命周期后才开放。
 - **停止要先证明空闲。** `stop`、`restart`、删除先在同一事务里检查没有未结束的执行，关闭准入并递增
   `admission_epoch`，再请 Node 报告空闲。Node 报告"不空闲"时，操作以 `resource_in_use` 失败，所有 Workspace
   恢复到操作之前的状态；Project 删除被拒绝时 Project 也回到 `active`，不取消任何工作。没有 Node、心跳过期或
@@ -203,5 +206,5 @@ Controller 对 Substrate 的每个动作都先在 Cloud 计划成一行 `externa
 - [Workspace 创建与启动增加 plugin 步骤并由 Node 执行](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20260928-plugin-step-and-run-workspace-release.md)
 - [Internal Control gRPC 增加 Workspace 操作与 Controller 代报 Node](https://github.com/ora-space/specs/blob/main/decisions/cloud/controller-integration/20260926-workspace-operations-and-controller-reported-nodes.md)
 - [Project 归属 Space：以成员身份取代个人所有作为可见与授权边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/0-project-space-scoping.md)
-- [仓库访问凭据按团队、个人或未知归属管理](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md)（approved）
-- [Workspace 的 clone 步骤改为消费 Binding 当前快照，删除租户级 clone](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（approved；本文 clone 步骤一节描述的就是它的实现）
+- [仓库访问凭据按团队、个人或未知归属管理](https://github.com/ora-space/specs/blob/main/decisions/cloud/project/20260927-repository-credential-continuity.md)（implemented）
+- [Workspace 的 clone 步骤改为消费 Binding 当前快照，删除租户级 clone](https://github.com/ora-space/specs/blob/main/decisions/cloud/operation/20261016-clone-step-consumes-binding-snapshot.md)（implemented；本文 clone 步骤一节描述的就是它的实现）

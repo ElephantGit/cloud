@@ -32,7 +32,7 @@
 - `Object` 是边界 JSON 值；`Fault` 与 `ErrorCode` 将可预期错误和数据库失败转换为安全公开错误。领域内部的 panic 只在事务控制边界转换，不能吞掉未知 panic。
 - `Store` 的端口与策略时长由命令装配。开发协作端口见 [collab](../collab/README.md)；物理执行证据不由模拟结果代替。
 
-迁移目录与完整文件名见 [migrations](migrations/README.md)。包内 `*_db_test.go` 需独立真实 PostgreSQL schema；跨 HTTP、Git 与存储边界的覆盖在 [integration](../../integration/README.md)。
+迁移目录与完整文件名见 [migrations](migrations/README.md)。包内 `dispatcherDB` fixture 每个进程迁移一次真实 PostgreSQL 模板，再为各 fixture 创建独立数据库副本；跨 HTTP、Git 与存储边界的覆盖在 [integration](../../integration/README.md)。
 
 残留事实继续由原入口接管：`agent_run_provisioning_fact.go` 处理创建侧，`node_execution.go` 与 `revision.go` 处理原执行终态和交付，
 `runtime_control_delivery.go` 接收已有 `runtime_ack` 的完整运行时证据。`run_workspace.go`、`control.go` 及 effect/许可路径检查原责任绑定；
@@ -42,3 +42,11 @@
 受控目标借既有 `ListForceStops` / `ConfirmForceStop` / `GetEffectPermit` 字段交付，普通 force-stop 历史与业务收尾保持独立。
 D8 按原身份显式接管，不回填账本。自动层 A1–A6、两阶段处置和恢复保护见上述专页；本文说明 Cloud 实现合同，
 不声明测试通过，Controller/Sandbox 物理证明及跨仓故障验收仍分别属于第 3/4 步。
+
+## 数据库测试 fixture
+
+`fixture_template_test.go` 只用于本包测试：以 `core_template_` 加 32 位 UUID 建立并迁移模板，关闭迁移连接后封闭模板；每个 fixture 取得 `core_run_` 加 32 位 UUID 的独立副本。测试账号需要 `CREATEDB`。普通副本由 `t.Cleanup` 删除，受控回收矩阵沿用逐用例重置，并在 `TestMain` 先清理其副本、再清理模板。模板不接收业务写入，新的 Store 继续绑定原业务 hooks。包结束输出模板迁移和复制累计耗时。
+
+`fixture_template_isolation_test.go` 验证数据、DDL、迁移记录、后续副本与并行副本隔离，并调用产品的 `CheckSchema`；迁移/升级专用测试仍走 integration 的空白/旧 schema 入口，不使用最新模板替代迁移。清理强制终止进程留下的库见[测试文档](../../docs/development/testing.md#清理遗留测试数据库)。
+
+本包镜像 integration 的小型测试 helper：integration 的 `_test.go` 代码不能作为包导入，而且 integration 已依赖 core；抽取共享包会额外引入回调 API 并改动另一套 fixture。生产代码不依赖这些全局测试状态。

@@ -32,7 +32,7 @@ This package owns business state, authorization, transactions and recovery decis
 - `Object` is the boundary JSON value. `Fault` and `ErrorCode` convert expected failures and database errors into safe public errors. Domain panics are converted only at the transaction control boundary; unexpected panics must not be swallowed.
 - Commands wire Store ports and policy durations. See [collab](../collab/README.en.md) for development ports; simulated results do not replace physical execution evidence.
 
-See [migrations](migrations/README.en.md) for complete migration filenames. Package `*_db_test.go` tests need isolated real PostgreSQL schemas; [integration](../../integration/README.en.md) covers HTTP, Git and storage boundaries.
+See [migrations](migrations/README.en.md) for complete migration filenames. Package `dispatcherDB` fixtures migrate one real PostgreSQL template per process and give each fixture an independent database copy; [integration](../../integration/README.en.md) covers HTTP, Git and storage boundaries.
 
 Residual facts retain their original intake: `agent_run_provisioning_fact.go` handles creation facts, `node_execution.go` and `revision.go` handle
 original execution terminals and delivery, and `runtime_control_delivery.go` accepts full runtime evidence through existing `runtime_ack`.
@@ -45,3 +45,11 @@ Controlled targets use existing `ListForceStops` / `ConfirmForceStop` / `GetEffe
 and business completion. D8 takeover is explicit and uses original identity without ledger backfill. See the dedicated page for automatic
 A1–A6 eligibility, two-stage disposition and recovery guards. This describes the Cloud implementation contract, not passing tests;
 Controller/Sandbox physical proof and cross-repository fault acceptance remain steps 3 and 4 respectively.
+
+## Database test fixtures
+
+`fixture_template_test.go` is local to this test package. It creates and migrates a `core_template_` database with a 32-character UUID suffix, closes the migration pool and seals the source. Each fixture receives an independent `core_run_` database with a 32-character UUID suffix. The test role requires `CREATEDB`. Ordinary copies belong to `t.Cleanup`; controlled-reclamation matrices retain their per-case resets, and `TestMain` drops their copy before the template. The template accepts no business writes; fresh Stores retain the existing business hooks. Package shutdown reports cumulative migration and copy time.
+
+`fixture_template_isolation_test.go` covers data, DDL, migration history, later copies and parallel copies, and calls the product's `CheckSchema`. Migration/upgrade tests retain integration's empty/older-schema path rather than substituting the latest template. See the [testing guide](../../docs/development/testing.en.md#cleaning-up-leftover-test-databases) for cleanup after a killed process.
+
+This package mirrors integration's small test helper: its `_test.go` code is not importable, and integration already depends on core. Extracting a shared package would add a callback API and change another fixture implementation. Production code does not depend on these global test states.

@@ -155,6 +155,49 @@ func deferWorkspaceClone(t *transaction, o Object) {
 	failWorkspaceClone(t, o, "clone_failed")
 }
 
+// resumeKnownWorkspaceClone continues the same creation after its original unknown clone gained a
+// definitive result. It never registers another clone or renews the frozen abandonment deadline.
+// The Controller still owns lifecycle advancement; a successful receipt alone opens no admission.
+func resumeKnownWorkspaceClone(t *transaction, o Object) bool {
+	if o == nil || o.S("step") != "clone" || (o.S("kind") != "create_project" && o.S("kind") != "create_workspace") {
+		return false
+	}
+	if o.S("state") != "running" && (o.S("state") != "blocked" || o.S("errorCode") != "clone_result_unknown") {
+		return false
+	}
+	wid := o.S("workspaceId")
+	// An expired or already settled business creation remains the abandonment policy's concern.
+	// A late execution fact must not turn it into a new attempt or resurrect its Workspace.
+	if t.one(`SELECT id FROM issue_runs WHERE workspace_id=$1 AND executor_type='agent'
+	 AND (phase<>'provisioning' OR (workspace_deadline_at IS NOT NULL AND workspace_deadline_at<=clock_timestamp()))`, wid) != nil {
+		return false
+	}
+	w := t.one("SELECT * FROM workspaces WHERE id=$1 AND deleted_at IS NULL", wid)
+	if w == nil || w.S("desiredState") != "running" {
+		return false
+	}
+	if t.one("SELECT id FROM runtime_force_stops WHERE workspace_id=$1 AND state<>'succeeded'", wid) != nil {
+		return false
+	}
+	e := t.one("SELECT * FROM clone_executions WHERE operation_id=$1 ORDER BY created_at DESC,execution_id DESC LIMIT 1", o.S("id"))
+	if e == nil || currentNode(t, wid).S("nodeId") != e.S("nodeId") {
+		return false
+	}
+	switch e.O("result").S("outcome") {
+	case "clone_ready":
+		t.exec(`UPDATE operations SET state='queued',error_code=NULL,retry_at=NULL,
+	 version=version+1,updated_at=now() WHERE id=$1`, o.S("id"))
+		t.queued = append(t.queued, o.S("id"))
+		return true
+	case "clone_failed":
+		// The original failure keeps the same durable attempt count and server-owned backoff.
+		deferWorkspaceClone(t, o)
+		return true
+	default:
+		return false
+	}
+}
+
 // failWorkspaceClone ends a clone step for good: admission stays closed, runtime maintenance is
 // handed back, a run Workspace takes its failure release and a failed create_project still leaves
 // the Project usable, so it can be repaired or deleted.

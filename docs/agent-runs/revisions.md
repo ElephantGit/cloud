@@ -107,6 +107,21 @@ Cloud：事务外经 ref 查询核验交付 ref、HEAD 核验 JSONL ──▶ �
 每个交付 ref 至多属于一个 Revision（部分唯一索引 `revisions_delivery_ref`）。改走 Git 之前登记的 bundle 形状的 Revision 原样保留，
 数据库约束让两种形状互斥（迁移 `0054`）。
 
+### 放弃交付后的原事实
+
+根 D5 已将运行以 `deliveryState=failed`、`revisionId=null` 移到 `releasing`，或随后根 D8 将其移到 `done` 时，
+原已登记交付仍可按原 execution、work、Workspace、Node 和 sandbox/generation 身份提交终态，无需残留账本或运维接管意图。
+这条入口不放宽普通 `liveDelivery` 或新派发资格，也不改变运行、原失败 delete、admission 或回收责任。
+原声明、事件 receipt、submission 和必要证据原子提交后，现有 takeover 成功才允许 ACK；ACK 只表示事实已接管。
+迟到失败不重试、不结算业务；成功声明仍按上述证据规则核验。
+
+根 D5/D8 和已有残留救援均只在同租户同 Issue 没有后创建 Run 时首次登记迟到 Revision。判断使用每个 Run 创建时同事务写入的
+`run.enqueued` 活动 seq，在最终登记事务内与 Run 创建互斥；不按时间戳、UUID、执行者、状态或软删除筛选。
+顺序证据缺失、有歧义或已有后创建 Run 时，只保存原声明与 receipt，不登记 Revision 或 verified delivery。
+同事实重放保留第一次结论，不重新读取外部证据、登记或调用业务 hook；真实冲突仍按原规则拒绝，已有 ledger 的冲突审计不变。
+正常释放在独立事务中继续，D8 的历史失败删除不会因迟到接收重启。依据
+[迟到事实接管 ADR D1–D3](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261022-late-delivery-fact-takeover.md)（approved，落地运行负责实施状态与联合验收）。
+
 ## 续接前序 Revision
 
 同一个 Issue 上再次 @Agent 时，新运行仍然得到全新的运行 Workspace，但在 Agent 启动之前，Node 先从 Git Server 取回该 Issue 最近

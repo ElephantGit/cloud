@@ -99,7 +99,8 @@ func seedStartingAgentRun(t *testing.T, store *core.Store) (runID, workspaceID, 
 	// The frozen run-create snapshot: renderAgentInitialTurn and the AgentSession spec both read it.
 	// `gitIdentity` is part of it because the AgentSession wire contract carries one and
 	// runGitIdentity refuses to invent it: a run whose input names none resolves its trigger actor
-	// instead, and a directly seeded run has no `run.enqueued` activity to resolve one from.
+	// instead. This fixture also preserves the atomic run.enqueued creation evidence used by
+	// late-delivery ordering, rather than asking a test to reconstruct it after dispatch.
 	input := core.Object{
 		"task":               "Fix the auth flow",
 		"interactionValues":  core.Object{"scope": "web"},
@@ -127,6 +128,8 @@ func seedStartingAgentRun(t *testing.T, store *core.Store) (runID, workspaceID, 
 	exec("agent", `INSERT INTO space_agents(id,space_id,tenant_id,plugin_id,display_name,status) VALUES($1,$2,$3,'official/hello-world','Hello','active')`, agent, space, tenant)
 	exec("issue", `INSERT INTO issues(id,tenant_id,creator_user_id,project_ref,title,number) VALUES($1,$2,$3,$4,'takeover issue',1)`, issue, tenant, user, project)
 	exec("run", `INSERT INTO issue_runs(id,tenant_id,issue_id,executor_type,executor_id,status,phase,input) VALUES($1,$2,$3,'agent',$4,'dispatched','starting',$5)`, runID, tenant, issue, agent, mustJSON(t, input))
+	exec("run-creation", `INSERT INTO issue_activities(id,tenant_id,issue_id,seq,actor_type,actor_id,action,details)
+		VALUES(gen_random_uuid(),$1,$2,1,'user',$3,'run.enqueued',jsonb_build_object('runId',$4::text))`, tenant, issue, user, runID)
 	// The run Workspace: isolated, bound to this exact run, live — the predicate the session
 	// start and the takeover both re-read. A live isolated workspace needs exactly one task identity,
 	// and the workspace/task inserts must share the transaction for that deferred trigger. Admission

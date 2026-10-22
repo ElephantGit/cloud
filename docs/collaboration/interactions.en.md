@@ -107,8 +107,12 @@ select workflow ──▶ read form descriptor ──▶ fill in (optional AI as
 - **AI assist** (`POST .../issues/:iid/collaboration/assist`) only returns a field-level suggestion patch
   and suggested context references: it never creates a run and never writes persistent context
   references. Applying a suggestion is the user's action. It judges the shape of the submission against
-  the same version descriptor Confirm uses, so once anything is published it accepts only the fields
-  that version declares. Production has no assist provider wired in and returns `503 assist_unavailable`.
+  the form the user is filling: the version named by the cursor when there is one, otherwise the newest
+  selectable published version the selector opens on, and the live draft when nothing is selectable. It
+  therefore accepts only the fields that version declares. Confirm still resolves a cursorless submission
+  to the newest published version and refuses it under the reserved-field rule rather than choosing
+  another version; assist executes nothing and substitutes nothing. Production has no assist provider
+  wired in and returns `503 assist_unavailable`.
 - **Confirm** (`POST .../issues/:iid/interactions/:ixid/confirm`) is the only transition that turns a
   workflow interaction into execution intent:
   - Frontend validation is only for user experience. On confirm Cloud resolves the target **again** and

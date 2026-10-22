@@ -59,7 +59,8 @@ PostgreSQL                                       ▼       │
 ## Principles throughout
 
 1. **PostgreSQL is the only authority.** No other process holds a second copy of business state. Every decision is made
-   in a short transaction in `internal/core`, and transactions are serialized by one global advisory lock (see
+   in a short transaction in `internal/core`; ordinary transactions are serialized by one global advisory lock, while a
+   WorkflowRun transaction takes that lock in shared mode and then the run's exclusive transaction lock (see
    [Authoritative persistence and the transaction model](core/persistence.en.md)).
 2. **Transactions do database work only.** Calls to HTTP, Git, object storage, Nodes and the Substrate happen outside
    transactions; where needed a flow is split into "transaction → external call → transaction", and the second

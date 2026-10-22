@@ -26,9 +26,10 @@ HTTP conventions are in [HTTP API conventions](http-api.en.md).
   signal hub `Signals`. `cmd/*` assembles them at startup; core never reads configuration or
   environment variables itself.
 
-## Transactions: `transact`
+## Transactions: `transact` and `transactWorkflowRun`
 
-Every read and write goes through `Store.transact`:
+Ordinary reads and writes go through `Store.transact`; a WorkflowRun's advance, release and
+reconciliation go through `Store.transactWorkflowRun`:
 
 ```text
 BeginTx
@@ -36,13 +37,36 @@ BeginTx
   fn(t)                                     ← business logic, database work only
 Commit
   publish post-commit hints: Controller signals, SSE events
+
+BeginTx
+  SELECT pg_advisory_xact_lock_shared(67420911)             ← the global lock in shared mode
+  SELECT pg_try_advisory_xact_lock(67420911, hash(runId))   ← this WorkflowRun's exclusive transaction lock
+  [SELECT pg_advisory_xact_lock(67420912, hash(projectId))] ← only when deciding a Project-level invariant
+  fn(t)
+Commit
 ```
 
-**The global lock.** Every transaction first takes the same transaction-scoped advisory lock, so
-all core transactions — read-only requests included — run serially in the database. This is a
-deliberate trade: write throughput is exchanged for a simple, auditable lock order, and cross-table
+**The global lock.** Every ordinary transaction first takes the same transaction-scoped advisory
+lock, so ordinary core transactions — read-only requests included — run serially in the database and
+are mutually exclusive with every WorkflowRun transaction. This is
+a deliberate trade: write throughput is exchanged for a simple, auditable lock order, and cross-table
 invariants need no per-row locking design. The lock is released automatically on commit or
 rollback and is never held across requests.
+
+**A WorkflowRun's exclusive right to execute.** A WorkflowRun transaction first takes the global
+lock in shared mode, so it is still mutually exclusive with every ordinary transaction; then it
+tries to take that run's exclusive lock. Not getting it means another replica is executing the same
+run right now: this tick exits without forming a decision, writing, or publishing a hint, and the
+next tick retries. The lock is the transaction itself, released by PostgreSQL on commit, rollback,
+or the disconnect of a crashed replica — there is no renewal, no expiry window, and no process-local
+state, so replicas that never saw each other still cannot advance the same run concurrently.
+Different runs' locks do not conflict, so several replicas can advance different runs in parallel. A
+hash collision only makes two runs share one lock (some extra serialization); it never gives one run
+two executors.
+
+Project-level invariants ("a Project has at most one live operation") span runs and cannot be
+expressed by a run lock, so creating a run Workspace or declaring its deletion also takes the
+Project lock. Both paths use the same order — global, run, Project — so it cannot cycle.
 
 **Transactions do database work only.** A transaction never sends HTTP, runs Git, touches object
 storage, reads or writes files, or waits on a Node. Flows that need external I/O are split into

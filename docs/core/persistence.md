@@ -20,9 +20,9 @@ git-server 都不持有另一份业务状态。`internal/core` 是唯一直接�
   业务钩子和时间窗口配置、SSE 事件 hub `Events` 与 Controller 信号 hub `Signals`。它们都由
   `cmd/*` 在启动时组装，core 不自行读取配置或环境变量。
 
-## 事务：`transact`
+## 事务：`transact` 与 `transactWorkflowRun`
 
-所有读写都经过 `Store.transact`：
+普通读写经过 `Store.transact`，WorkflowRun 的推进、释放与对账经过 `Store.transactWorkflowRun`：
 
 ```text
 BeginTx
@@ -30,11 +30,28 @@ BeginTx
   fn(t)                                     ← 业务逻辑，只做数据库操作
 Commit
   发布提交后的提示：Controller 信号、SSE 事件
+
+BeginTx
+  SELECT pg_advisory_xact_lock_shared(67420911)             ← 全局锁的共享模式
+  SELECT pg_try_advisory_xact_lock(67420911, hash(runId))   ← 该 WorkflowRun 的排他事务锁
+  [SELECT pg_advisory_xact_lock(67420912, hash(projectId))] ← 只在决定 Project 级不变量时
+  fn(t)
+Commit
 ```
 
-**全局锁。** 每个事务开始时先取同一把事务级 advisory lock，于是所有 core 事务（包括只读请求）在
-数据库里串行执行。这是一项有意的取舍：用写吞吐换取简单、可审计的锁顺序，跨表不变量不必逐一
-设计行锁。锁在事务提交或回滚时自动释放，不会跨请求保留。
+**全局锁。** 普通事务开始时先取同一把事务级 advisory lock，于是普通的 core 事务（包括只读请求）在
+数据库里彼此串行，并与所有 WorkflowRun 事务互斥。这是一项有意的取舍：用写吞吐换取简单、可审计的
+锁顺序，跨表不变量不必逐一设计行锁。锁在事务提交或回滚时自动释放，不会跨请求保留。
+
+**WorkflowRun 的排他执行权。** WorkflowRun 的事务先以共享模式取全局锁，因此仍与所有普通事务互斥；
+再以 `pg_try_advisory_xact_lock` 尽力取该 run 的排他锁。取不到说明另一个副本此刻正在执行同一个 run：
+本次 tick 直接退出，不形成决策、不写、不发提示，下一次 tick 再试。锁就是事务本身，提交、回滚或副本
+崩溃导致连接断开时由 PostgreSQL 释放，没有续期、没有过期窗口，也不依赖任何进程内状态；因此没见过
+彼此的副本同样不能并发推进同一个 run。不同 run 的锁互不冲突，多个副本可以并行推进不同 run。哈希冲突
+只会让两个 run 共用一把锁（多串行化一点），不会让一个 run 出现两个执行者。
+
+Project 级不变量（“一个 Project 至多一个活动 operation”）跨 run，单 run 的锁表达不了，所以创建与声明
+删除 run Workspace 时再取 Project 锁。两条路径的锁顺序一致：全局 → run → Project，不会成环。
 
 **事务里只做数据库工作。** 事务内不发 HTTP、不调 Git、不访问对象存储、不读写文件、不等待 Node。
 需要外部 I/O 的流程拆成"事务 → 外部调用 → 事务"：

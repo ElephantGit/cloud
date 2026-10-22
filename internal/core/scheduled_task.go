@@ -225,7 +225,10 @@ func (s scheduledTaskSchedule) latestDue(anchor, now time.Time, loc *time.Locati
 		return anchor.Add(time.Duration(steps) * step)
 	case "daily":
 		base := scheduledCalendarDate(local, loc)
-		for back := 0; back <= 1; back++ {
+		// A spring-forward gap can make yesterday's wall-clock slot nonexistent. Looking back one
+		// additional calendar day preserves the most recent valid occurrence when recovery happens
+		// before today's slot, without replaying the outage one point at a time.
+		for back := 0; back <= 2; back++ {
 			date := base.AddDate(0, 0, -back)
 			candidate, ok := scheduledWallClock(date.Year(), date.Month(), date.Day(), s.Hour, s.Minute, loc)
 			if !ok || candidate.After(now) {

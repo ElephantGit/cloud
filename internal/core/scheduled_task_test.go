@@ -194,6 +194,10 @@ func TestLatestDueRespectsDSTWallClockPolicy(t *testing.T) {
 		if got := daily.latestDue(anchor, now, loc); !got.Equal(want) {
 			t.Fatalf("daily latestDue across spring forward = %v, want %v", got, want)
 		}
+		nextDayBeforeSlot := time.Date(2026, 3, 9, 2, 33, 0, 0, loc)
+		if got := daily.latestDue(anchor, nextDayBeforeSlot, loc); !got.Equal(want) {
+			t.Fatalf("daily latestDue before the next slot after spring forward = %v, want %v", got, want)
+		}
 		weekly := scheduledTaskSchedule{Kind: "weekly", Hour: 2, Minute: 34, Weekdays: []time.Weekday{time.Sunday}}
 		weeklyAnchor := time.Date(2026, 2, 28, 0, 0, 0, 0, loc)
 		weeklyWant := time.Date(2026, 3, 1, 2, 34, 0, 0, loc)

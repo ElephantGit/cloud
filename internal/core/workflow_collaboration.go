@@ -282,6 +282,24 @@ func workflowSnapshotOptions(t *transaction, tid, wid string) ([]Object, bool) {
 	return snapshots, withheld.B("withheld")
 }
 
+// workflowLatestSelectableSnapshot returns the version the `@` form opens on: the newest published
+// version the selector may offer, or nil when nothing is published or every published version is
+// withheld for claiming the reserved `snapshotId` (20261021-snapshot-id-is-a-reserved-field.md D2).
+//
+// It is what assist validates a submission without a version cursor against. Assist answers for the
+// form the user is filling, and that form's `snapshotId` field defaults to the first *selectable*
+// option; the newest published row is a different version whenever a stock snapshot is withheld. A
+// withheld version may declare a different field set, so resolving it would make assist refuse fields
+// the visible form asks for. When every version is withheld the selector is absent and the form is the
+// live document, which is why this returns nil instead of falling back to a withheld version.
+//
+// A run's own resolution deliberately does not use this: Confirm without a cursor still resolves the
+// newest published version and refuses it by name (D3). Silently executing or substituting a version
+// the user did not choose is the outcome the decision exists to prevent.
+func workflowLatestSelectableSnapshot(t *transaction, tid, wid string) Object {
+	return t.one("SELECT * FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND NOT ("+workflowSnapshotReservedFieldSQL+") ORDER BY version DESC LIMIT 1", tid, wid)
+}
+
 // workflowDescriptorSource is the projection input for one graph of a workflow: its live document, or
 // one of its frozen versions. Both are built from here, so for the same graph the live form and a
 // version's form differ only in the graph — a source assembled any other way could make a version

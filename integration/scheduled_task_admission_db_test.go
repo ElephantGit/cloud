@@ -194,7 +194,9 @@ func TestScheduledTaskModelBindingFailureIsDurable(t *testing.T) {
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Invalid default", 65)
 	// creatorModelReady still sees an enabled credential-backed connection; only the authoritative
 	// binding policy detects that the configured default model is no longer offered.
-	_, err := store.Pool.Exec(`UPDATE personal_model_connections SET models='[]'::jsonb WHERE user_id=$1`, s.userID)
+	_, err := store.Pool.Exec(`UPDATE personal_model_connections
+		SET models=jsonb_set(models, '{0,id}', '"vendor/model-v2"'::jsonb)
+		WHERE user_id=$1`, s.userID)
 	must(t, err)
 
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))

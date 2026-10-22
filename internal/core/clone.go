@@ -141,6 +141,9 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 			t.exec("INSERT INTO clone_event_receipts(execution_id,sequence,event) VALUES($1,$2,$3)", execution, sequence, event)
 		}
 	}
+	if o := t.one("SELECT * FROM operations WHERE id=$1", operation); o.S("state") == "blocked" && o.S("errorCode") == "clone_result_unknown" {
+		resumeKnownWorkspaceClone(t, o)
+	}
 	return t.one("SELECT * FROM clone_executions WHERE execution_id=$1", execution)
 }
 

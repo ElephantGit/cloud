@@ -166,6 +166,13 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
 		return
 	}
+	// bindRunModel rejects after enqueueing for an invalid default or declared configuration. Probe
+	// the same read-only policy first so that rejection becomes this occurrence's durable D5 result
+	// instead of rolling back the ledger row and later being mistaken for a missed schedule point.
+	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent); personal && gap != "" {
+		failScheduledOccurrenceWithReason(t, taskID, due, scheduledAgentBindingReason(gap))
+		return
+	}
 
 	// skipped_busy（D6）：同一任务上一次接纳的运行尚未到达终态时跳过，不排队不补跑。
 	if scheduledTaskBusy(t, taskID, task.S("issueId"), task.S("agentId"), dueText) {

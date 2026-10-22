@@ -84,5 +84,10 @@ func threadModelPermissions(t *transaction, run Object, uid string) Object {
 	if taskThreadAppendBlocker(t, run, taskAppendAtQueueTail) != "" {
 		out["canAppend"] = false
 	}
+	if scheduledTaskRun(t, run.S("id")) {
+		// A scheduled occurrence is headless for its complete lifetime, not merely after it becomes
+		// idle. The append endpoint applies the matching 409 guard authoritatively.
+		out["canAppend"] = false
+	}
 	return out
 }

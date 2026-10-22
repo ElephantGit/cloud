@@ -220,7 +220,10 @@ func run() (runErr error) {
 	// delivery loops below.
 	{
 		const agentThreadEndInterval = 10 * time.Second
+		const scheduledTaskLoopInterval = 10 * time.Second
+		const scheduledTaskDeadlineLoopInterval = time.Minute
 		store.ThreadIdleTimeout = cfg.IssueRuns.ThreadIdleTimeout
+		store.ScheduledTaskAcceptanceEnabled = cfg.IssueRuns.ScheduledTaskAcceptanceEnabled
 		syncGroup.Add(1)
 		go func() {
 			defer syncGroup.Done()
@@ -230,6 +233,20 @@ func run() (runErr error) {
 		go func() {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.ReactToCancelledAgentRunsOnce, agentThreadEndInterval, pluginmarket.ContextSleep, log)
+		}()
+		// Cloud Scheduled Task (specs decisions/cloud/scheduled-task): the evaluation pass
+		// admits due occurrences (D2/D3/D5) and the deadline pass writes the 60-minute
+		// cancellation request and its scheduled-layer fact (D4) for the shared G-026 writer
+		// machinery (the React loop above) to consume.
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.EvaluateScheduledTasksOnce, scheduledTaskLoopInterval, pluginmarket.ContextSleep, log)
+		}()
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			pluginmarket.RunSyncLoop(ctx, store.WriteScheduledTaskDeadlinesOnce, scheduledTaskDeadlineLoopInterval, pluginmarket.ContextSleep, log)
 		}()
 	}
 	// Delivery/release loops. The first applies IssueRun D5's give-up limits to runs still

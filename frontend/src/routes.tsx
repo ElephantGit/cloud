@@ -32,6 +32,7 @@ import { WorkflowEditorPage } from '@/features/workflows/workflow-editor-page'
 import { WorkflowsPage } from '@/features/workflows/workflows-page'
 import { SessionListPage } from '@/features/sessions/session-list-page'
 import { SessionDetailPage } from '@/features/sessions/session-detail-page'
+import { ScheduledTasksPage } from '@/features/scheduled-tasks/scheduled-tasks-page'
 import { db } from '@/mocks/data/store'
 import { WORKSPACE_ROUTE_PATTERN } from '@/lib/paths'
 
@@ -116,6 +117,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <Navigate to="issues" replace /> },
       { path: 'issues', element: <CloudScope component={IssuesPage} /> },
       { path: 'issues/:issueId', element: <CloudScope component={IssueDetailPage} /> },
+      { path: 'scheduled-tasks', element: <CloudScope component={ScheduledTasksPage} /> },
       { path: 'sessions', element: <CloudScope component={SessionListPage} /> },
       {
         path: 'sessions/agent/:issueId/:runId',

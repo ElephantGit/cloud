@@ -1958,6 +1958,94 @@ export interface Sandbox {
   workspaceId: string;
 }
 
+export type ScheduledTaskScheduleKind = typeof ScheduledTaskScheduleKind[keyof typeof ScheduledTaskScheduleKind];
+
+
+export const ScheduledTaskScheduleKind = {
+  every_hours: 'every_hours',
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export type ScheduledTaskScheduleWeekdaysItem = typeof ScheduledTaskScheduleWeekdaysItem[keyof typeof ScheduledTaskScheduleWeekdaysItem];
+
+
+export const ScheduledTaskScheduleWeekdaysItem = {
+  sunday: 'sunday',
+  monday: 'monday',
+  tuesday: 'tuesday',
+  wednesday: 'wednesday',
+  thursday: 'thursday',
+  friday: 'friday',
+  saturday: 'saturday',
+} as const;
+
+export interface ScheduledTaskSchedule {
+  /** @nullable */
+  hour?: number | null;
+  /** @nullable */
+  intervalHours?: number | null;
+  kind: ScheduledTaskScheduleKind;
+  /** @nullable */
+  minute?: number | null;
+  /** @nullable */
+  weekdays?: ScheduledTaskScheduleWeekdaysItem[] | null;
+}
+
+export interface ScheduledTask {
+  agentId: string;
+  createdAt: string;
+  /** @nullable */
+  disabledReason?: string | null;
+  enabled: boolean;
+  id: string;
+  issueId: string;
+  name: string;
+  prompt: string;
+  revision: number;
+  schedule: ScheduledTaskSchedule;
+  timezone: string;
+  /** @nullable */
+  unattendedConsentedAt?: string | null;
+  /** @nullable */
+  unattendedPolicy?: string | null;
+  updatedAt: string;
+  version: number;
+}
+
+export type ScheduledTaskApprovalPolicy = typeof ScheduledTaskApprovalPolicy[keyof typeof ScheduledTaskApprovalPolicy];
+
+
+export const ScheduledTaskApprovalPolicy = {
+  full_auto_in_cloud_workspace: 'full_auto_in_cloud_workspace',
+} as const;
+
+export interface ScheduledTaskApproval {
+  policy: ScheduledTaskApprovalPolicy;
+}
+
+export interface ScheduledTaskOccurrence {
+  /** @nullable */
+  failureReason?: string | null;
+  observedAt: string;
+  outcome: string;
+  /** @nullable */
+  runId?: string | null;
+  scheduledAt: string;
+  /** @nullable */
+  sessionId?: string | null;
+  taskRevision: number;
+}
+
+export interface ScheduledTaskHistory {
+  entries: ScheduledTaskOccurrence[];
+  taskId: string;
+}
+
+export interface ScheduledTaskList {
+  tasks: ScheduledTask[];
+}
+
 export type SessionHistoryRecordsItem = { [key: string]: unknown };
 
 export type SessionHistorySource = typeof SessionHistorySource[keyof typeof SessionHistorySource];
@@ -4135,6 +4223,69 @@ after?: string;
 export type GetApiV1TenantsTidResourceStatus200 = {
   items: AdminResource[];
   nextCursor: string;
+};
+
+export type PostApiV1TenantsTidScheduledTasksBody = {
+  agentId: string;
+  approval: ScheduledTaskApproval;
+  enabled?: boolean;
+  issueId: string;
+  name: string;
+  prompt: string;
+  schedule: ScheduledTaskSchedule;
+  /**
+     * IANA timezone name the schedule evaluates in (e.g. Asia/Shanghai).
+     * @minLength 1
+     * @maxLength 64
+     */
+  timezone: string;
+};
+
+export type PostApiV1TenantsTidScheduledTasks200 = {
+  resource: ScheduledTask;
+};
+
+export type DeleteApiV1TenantsTidScheduledTasksStidBody = { [key: string]: unknown };
+
+export type DeleteApiV1TenantsTidScheduledTasksStid200 = {
+  taskId: string;
+};
+
+export type PatchApiV1TenantsTidScheduledTasksStidBody = {
+  agentId?: string;
+  name?: string;
+  prompt?: string;
+  schedule?: ScheduledTaskSchedule;
+  /**
+     * IANA timezone name the schedule evaluates in (e.g. Asia/Shanghai).
+     * @minLength 1
+     * @maxLength 64
+     */
+  timezone?: string;
+  /** @minimum 0 */
+  version: number;
+};
+
+export type PatchApiV1TenantsTidScheduledTasksStid200 = {
+  resource: ScheduledTask;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidDisableBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidDisable200 = {
+  resource: ScheduledTask;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidEnableBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidEnable200 = {
+  resource: ScheduledTask;
+};
+
+export type PostApiV1TenantsTidScheduledTasksStidRevokeConsentBody = { [key: string]: unknown };
+
+export type PostApiV1TenantsTidScheduledTasksStidRevokeConsent200 = {
+  resource: ScheduledTask;
 };
 
 export type GetApiV1TenantsTidSpacesParams = {

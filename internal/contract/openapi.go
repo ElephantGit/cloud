@@ -228,6 +228,40 @@ func Document() map[string]any {
 		"createdAt": timestamp(),
 	}, "id", "seq", "userId", "agentId", "body", "state", "runId", "threadSeq", "errorCode", "createdAt")
 	s["TaskAgentReadiness"] = object(obj{"agentId": uuid(), "requiresPersonalModel": boolean(), "errorCode": optional(str())}, "agentId", "requiresPersonalModel", "errorCode")
+	// Scheduled Task (specs decisions/cloud/scheduled-task, approved): one definition bound to an
+	// issue, running an agent IssueRun per due point. The schedule is a closed three-shape union —
+	// the scheduler never parses cron — and the approval is the personal unattended-consent grant,
+	// frozen with a server-side consent instant at save time.
+	s["ScheduledTaskSchedule"] = object(obj{
+		"kind":          enumeration("every_hours", "daily", "weekly"),
+		"intervalHours": optional(number()),
+		"hour":          optional(number()),
+		"minute":        optional(number()),
+		"weekdays":      optional(array(enumeration("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"))),
+	}, "kind")
+	s["ScheduledTaskApproval"] = object(obj{"policy": enumeration("full_auto_in_cloud_workspace")}, "policy")
+	s["ScheduledTask"] = object(obj{
+		"id": uuid(), "issueId": uuid(), "name": str(), "prompt": str(), "agentId": uuid(),
+		"schedule": ref("ScheduledTaskSchedule"), "timezone": str(),
+		"revision":              number(),
+		"version":               number(),
+		"enabled":               boolean(),
+		"unattendedPolicy":      optional(str()),
+		"unattendedConsentedAt": optional(timestamp()),
+		"disabledReason":        optional(str()),
+		"createdAt":             timestamp(), "updatedAt": timestamp(),
+	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
+	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask"))}, "tasks")
+	s["ScheduledTaskOccurrence"] = object(obj{
+		"scheduledAt":   timestamp(),
+		"outcome":       str(),
+		"taskRevision":  number(),
+		"observedAt":    timestamp(),
+		"failureReason": optional(str()),
+		"runId":         optional(uuid()),
+		"sessionId":     optional(uuid()),
+	}, "scheduledAt", "outcome", "taskRevision", "observedAt")
+	s["ScheduledTaskHistory"] = object(obj{"taskId": uuid(), "entries": array(ref("ScheduledTaskOccurrence"))}, "taskId", "entries")
 	s["ContextRef"] = resource("id tenantId issueId refType refId createdAt", "")
 	contextRefProps := properties(s, "ContextRef")
 	contextRefProps["refType"] = contextRefTypeEnum()
@@ -566,6 +600,8 @@ func tag(r router.Route) string {
 		return "workflows"
 	case strings.Contains(r.Path, "/workspaces"):
 		return "workspaces"
+	case strings.Contains(r.Path, "/scheduled-tasks"):
+		return "scheduledTasks"
 	case strings.Contains(r.Path, "/projects"):
 		return "projects"
 	case strings.Contains(r.Path, "/members"):
@@ -662,6 +698,21 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		default:
 			return ref("Operation"), "200"
 		}
+	}
+	if strings.Contains(r.Path, "/scheduled-tasks") {
+		if strings.HasSuffix(r.Path, "/history") {
+			return ref("ScheduledTaskHistory"), "200"
+		}
+		if r.Method == "GET" && strings.HasSuffix(r.Path, "/scheduled-tasks") {
+			return ref("ScheduledTaskList"), "200"
+		}
+		if r.Method == "GET" {
+			return ref("ScheduledTask"), "200"
+		}
+		if r.Method == "DELETE" {
+			return object(obj{"taskId": uuid()}, "taskId"), "200"
+		}
+		return object(obj{"resource": ref("ScheduledTask")}, "resource"), "200"
 	}
 	if r.Path == "/api/v1/tenants/:tid/people" {
 		return object(obj{"items": array(ref("DirectoryPerson"))}, "items"), "200"
@@ -960,6 +1011,9 @@ func optionalField(name string, r router.Route) bool {
 	if isRepositoryRoute(r) {
 		return repositoryOptional(name, r)
 	}
+	if strings.Contains(r.Path, "/scheduled-tasks") {
+		return name == "enabled" || (r.Method == "PATCH" && name != "version")
+	}
 	if strings.HasPrefix(r.Path, "/api/v1/me/model-") {
 		return name == "enabled"
 	}
@@ -1059,8 +1113,14 @@ func inputSchema(name string, r router.Route) obj {
 		return uuid()
 	case "category":
 		return enumeration("unstarted", "started", "done", "closed")
-	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId", "agentId", "runId":
+	case "labelId", "userId", "assigneeId", "executorId", "refId", "parentId", "projectRef", "targetId", "agentId", "runId", "issueId":
 		return uuid()
+	case "schedule":
+		return ref("ScheduledTaskSchedule")
+	case "approval":
+		return ref("ScheduledTaskApproval")
+	case "timezone":
+		return obj{"type": "string", "minLength": 1, "maxLength": 64, "description": "IANA timezone name the schedule evaluates in (e.g. Asia/Shanghai)."}
 	case "projectId":
 		return obj{"type": "string", "format": "uuid", "description": "The Project the run's Workspace provisions in. Required: a run that names none is refused with 409 workflow_run_project_required, never persisted without one. Frozen at creation for the run's whole lifetime. Authorized against the caller's own collaboration space: an unknown, archived or foreign Project is 404."}
 	case "ids":

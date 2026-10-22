@@ -116,7 +116,7 @@ describe('AppSidebar workspace switcher', () => {
     const issues = screen.getByRole('link', { name: '任务' })
     const group = issues.closest('[data-sidebar="group"]')
     const labels = Array.from(group?.querySelectorAll('a') ?? [], (link) => link.textContent)
-    expect(labels).toEqual(['任务', '项目', '工作流', '会话分析'])
+    expect(labels).toEqual(['任务', '定时任务', '项目', '工作流', '会话分析'])
     expect(screen.queryByRole('link', { name: /仓库/ })).not.toBeInTheDocument()
   })
 

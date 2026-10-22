@@ -141,6 +141,13 @@ type Store struct {
 	// the moment it went idle.
 	ThreadIdleTimeout time.Duration
 
+	// ScheduledTaskAcceptanceEnabled is the deployment gate for the first Cloud scheduled-task
+	// rollout. It defaults to false: until the end-to-end acceptance run is explicitly complete,
+	// Cloud rejects definition writes/enables and the worker performs no admission or deadline work.
+	// Keeping this on Store makes the gate explicit in production composition and lets integration
+	// tests exercise the already-approved worker behind an intentional test-only enablement.
+	ScheduledTaskAcceptanceEnabled bool
+
 	// AgentStartTimeout bounds waiting for a first authoritative Node record. Expiry of registered
 	// execution requests termination; confirmation expiry retains an independent residual ledger.
 	// Zero-value stores select the approved defaults when each durable window is first frozen.

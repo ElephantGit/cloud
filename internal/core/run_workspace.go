@@ -63,6 +63,11 @@ func createWorkflowRunWorkspace(t *transaction, runID string) Object {
 		op := t.one("SELECT * FROM operations WHERE workspace_id=$1 AND kind='create_workspace' ORDER BY created_at,id LIMIT 1", existing.S("id"))
 		return Object{"busy": false, "workspace": existing, "operation": op}
 	}
+	// The Project's "at most one live operation" rule spans runs. The global control-plane lock used
+	// to enforce it implicitly; under per-run locking two runs of the same Project can reach this
+	// point together, so the decision is serialized on the Project itself. The project id is frozen
+	// on the run row and never changes, so it is safe to name it before the locked re-read.
+	lockProjectOperations(t, run.S("projectId"))
 	// projectView, not the projects table: 0037 moved the repository to the Project's Binding, so
 	// `default_branch` is read back under the Project's published name from there. It is the same
 	// read its IssueRun counterpart above makes, and the reason both now require a Binding.
@@ -94,6 +99,9 @@ func deleteWorkflowRunWorkspace(t *transaction, runID string) Object {
 	if existing := t.one("SELECT * FROM operations WHERE workspace_id=$1 AND kind='delete_workspace' AND state IN ('queued','running','retry_wait','blocked','succeeded') ORDER BY created_at DESC,id DESC LIMIT 1", w.S("id")); existing != nil {
 		return Object{"busy": false, "workspace": w, "operation": existing}
 	}
+	// Cross-run decision: another run of the same Project may be declaring an operation right now.
+	// The workspace binding and its project are immutable, so the lock is taken by the id just read.
+	lockProjectOperations(t, w.S("projectId"))
 	if t.one("SELECT id FROM operations WHERE project_id=$1 AND state IN ('queued','running','retry_wait','blocked')", w.S("projectId")) != nil {
 		return Object{"busy": true}
 	}

@@ -100,7 +100,9 @@ func (s *Store) AdvanceWorkflowRunsOnce(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		if _, err := s.transact(ctx, func(t *transaction) Object {
+		// The run's exclusive transaction right is the serial executor: a sibling replica that
+		// already holds it makes this tick a no-op for this run, and the next tick retries.
+		if _, _, err := s.transactWorkflowRun(ctx, id, func(t *transaction) Object {
 			advanceWorkflowRun(t, id, s.DeliveryUnreachableAfter)
 			return Object{}
 		}); err != nil {

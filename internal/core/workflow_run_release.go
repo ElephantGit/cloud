@@ -223,7 +223,7 @@ func (s *Store) giveUpWorkflowRunWorkspaceReleases(ctx context.Context) error {
 		return err
 	}
 	for _, c := range candidates {
-		if _, err := s.transact(ctx, func(t *transaction) Object {
+		if _, _, err := s.transactWorkflowRun(ctx, c.runID, func(t *transaction) Object {
 			// Re-read the predicate inside the transaction that writes: a run that settled its release
 			// between the scan and this pass is a deterministic no-op, never a wrongful abandonment.
 			if t.one(`
@@ -265,16 +265,73 @@ func (s *Store) giveUpWorkflowRunWorkspaceReleases(ctx context.Context) error {
 // an `abandoned` run is never re-entered: D8's residual Workspace is intentionally left with no
 // operation and no retry.
 func (s *Store) reconcileWorkflowRunWorkspaceReleases(ctx context.Context) error {
-	if _, err := s.Pool.ExecContext(ctx, `
-		UPDATE workflow_runs r
-		SET workspace_release_state='released', workspace_release_error='',
-		    workspace_released_at=w.deleted_at, version=r.version+1, updated_at=now()
-		FROM workspaces w
-		WHERE w.workflow_run_id=r.id AND w.deleted_at IS NOT NULL
-		  AND r.status IN ('succeeded','failed','cancelled') AND r.deleted_at IS NULL
-		  AND r.workspace_release_state IN ('pending','releasing')`); err != nil {
+	// The heal runs per run, not as one set-based UPDATE: every WorkflowRun writer takes that run's
+	// exclusive transaction right (transactWorkflowRun), and a statement outside any transaction
+	// would be the one writer that bypasses it. The scan only proposes; the transaction re-reads the
+	// predicate before writing, so a run that settled meanwhile is a no-op.
+	healIDs, err := s.scanWorkflowRunReleasesNeedingHeal(ctx)
+	if err != nil {
 		return err
 	}
+	for _, id := range healIDs {
+		if _, _, err := s.transactWorkflowRun(ctx, id, func(t *transaction) Object {
+			t.exec(`
+				UPDATE workflow_runs r
+				SET workspace_release_state='released', workspace_release_error='',
+				    workspace_released_at=w.deleted_at, version=r.version+1, updated_at=now()
+				FROM workspaces w
+				WHERE r.id=$1 AND w.workflow_run_id=r.id AND w.deleted_at IS NOT NULL
+				  AND r.status IN ('succeeded','failed','cancelled') AND r.deleted_at IS NULL
+				  AND r.workspace_release_state IN ('pending','releasing')`, id)
+			return Object{}
+		}); err != nil {
+			_ = err
+		}
+	}
+	ids, err := s.scanWorkflowRunReleasesNeedingDeclaration(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, _, err := s.transactWorkflowRun(ctx, id, func(t *transaction) Object {
+			finishWorkflowRunCleanup(t, id)
+			return Object{}
+		}); err != nil {
+			_ = err
+		}
+	}
+	return nil
+}
+
+// scanWorkflowRunReleasesNeedingHeal returns the bounded, deterministically ordered ids of terminal
+// runs whose Workspace was already soft-deleted while the run still reads `pending` or `releasing`.
+func (s *Store) scanWorkflowRunReleasesNeedingHeal(ctx context.Context) ([]string, error) {
+	rows, err := s.Pool.QueryContext(ctx, `
+		SELECT r.id FROM workflow_runs r
+		JOIN workspaces w ON w.workflow_run_id=r.id
+		WHERE w.deleted_at IS NOT NULL
+		  AND r.status IN ('succeeded','failed','cancelled') AND r.deleted_at IS NULL
+		  AND r.workspace_release_state IN ('pending','releasing')
+		ORDER BY r.created_at, r.id LIMIT $1`, workflowAdvanceBatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// scanWorkflowRunReleasesNeedingDeclaration returns the bounded, deterministically ordered ids of
+// terminal runs still holding a live Workspace and no unfinished delete operation: the retry of a
+// release declaration a busy Project refused when the run settled.
+func (s *Store) scanWorkflowRunReleasesNeedingDeclaration(ctx context.Context) ([]string, error) {
 	rows, err := s.Pool.QueryContext(ctx, `
 		SELECT r.id FROM workflow_runs r
 		JOIN workspaces w ON w.workflow_run_id=r.id
@@ -285,29 +342,18 @@ func (s *Store) reconcileWorkflowRunWorkspaceReleases(ctx context.Context) error
 		   AND o.state IN ('queued','running','retry_wait','blocked','succeeded'))
 		ORDER BY r.created_at, r.id LIMIT $1`, workflowAdvanceBatchSize)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return err
+			return nil, err
 		}
 		ids = append(ids, id)
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if _, err := s.transact(ctx, func(t *transaction) Object {
-			finishWorkflowRunCleanup(t, id)
-			return Object{}
-		}); err != nil {
-			_ = err
-		}
-	}
-	return nil
+	return ids, rows.Err()
 }
 
 // runWorkspaceReleaseGivenUp is D8's single give-up condition, shared by both run kinds: the run

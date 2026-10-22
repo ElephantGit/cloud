@@ -163,6 +163,50 @@ func TestScheduledTaskSingleFailureDoesNotBlock(t *testing.T) {
 	}
 }
 
+// TestScheduledTaskBusyRunSkipsTheNextOccurrence keeps a run that is still releasing from being
+// treated as terminal merely because its business result is already completed.
+func TestScheduledTaskBusyRunSkipsTheNextOccurrence(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Busy run", 65)
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+
+	var runID string
+	must(t, store.Pool.QueryRow(`SELECT run_id FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&runID))
+	_, err := store.Pool.Exec(`UPDATE issue_runs SET phase='releasing', status='completed' WHERE id=$1`, runID)
+	must(t, err)
+	// Move the admitted ledger point back one interval so the worker evaluates the current due point
+	// while the prior run remains in its required release phase.
+	_, err = store.Pool.Exec(`UPDATE scheduled_task_occurrences SET scheduled_at=scheduled_at - interval '1 hour' WHERE task_id=$1`, taskID)
+	must(t, err)
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var admitted, skipped, runs int
+	must(t, store.Pool.QueryRow(`SELECT count(*) FILTER (WHERE outcome='admitted'), count(*) FILTER (WHERE outcome='skipped_busy'), count(DISTINCT run_id) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&admitted, &skipped, &runs))
+	if admitted != 1 || skipped != 1 || runs != 1 {
+		t.Fatalf("releasing run must leave one admitted run and one skipped occurrence, got admitted=%d skipped=%d runs=%d", admitted, skipped, runs)
+	}
+}
+
+// TestScheduledTaskModelBindingFailureIsDurable verifies the final model-binding gate cannot roll
+// back an admitted ledger row and later let the worker relabel it as missed.
+func TestScheduledTaskModelBindingFailureIsDurable(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Invalid default", 65)
+	// creatorModelReady still sees an enabled credential-backed connection; only the authoritative
+	// binding policy detects that the configured default model is no longer offered.
+	_, err := store.Pool.Exec(`UPDATE personal_model_connections SET models='[]'::jsonb WHERE user_id=$1`, s.userID)
+	must(t, err)
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var count, runs int
+	var outcome, reason string
+	must(t, store.Pool.QueryRow(`SELECT count(*), COALESCE(min(outcome),''), COALESCE(min(failure_reason),''), count(run_id) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&count, &outcome, &reason, &runs))
+	if count != 1 || outcome != "failed" || reason != "model_unavailable" || runs != 0 {
+		t.Fatalf("binding rejection must remain one model-unavailable failure without a run, got count=%d outcome=%q reason=%q runs=%d", count, outcome, reason, runs)
+	}
+}
+
 // TestScheduledTaskEvaluationProcessesMoreThanOnePage prevents a fixed first 100-task page from
 // starving later enabled definitions forever.
 func TestScheduledTaskEvaluationProcessesMoreThanOnePage(t *testing.T) {

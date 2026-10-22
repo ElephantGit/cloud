@@ -384,11 +384,12 @@ func scheduledTaskBusy(t *transaction, taskID, issueID, agentID, due string) boo
 		FROM scheduled_task_occurrences o
 		JOIN issue_runs r ON r.id = o.run_id
 		WHERE o.task_id=$1 AND o.run_id IS NOT NULL AND o.scheduled_at <> $2::timestamptz
-		  AND r.status NOT IN ('completed','failed','cancelled')`, taskID, due) != nil {
+		  AND NOT (r.phase='done' AND r.status IN ('completed','failed','cancelled'))`, taskID, due) != nil {
 		return true
 	}
 	return t.one(`SELECT 1
 		FROM issue_runs
 		WHERE issue_id=$1 AND executor_type='agent' AND executor_id=$2
-		  AND status NOT IN ('completed','failed','cancelled') AND deleted_at IS NULL`, issueID, agentID) != nil
+		  AND NOT (phase='done' AND status IN ('completed','failed','cancelled'))
+		  AND deleted_at IS NULL`, issueID, agentID) != nil
 }

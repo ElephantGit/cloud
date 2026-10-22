@@ -173,32 +173,45 @@ func TestLateDeliveryFactRootD5AndD8OverGRPC(t *testing.T) {
 }
 
 func TestLateDeliveryFactAtomicRollbackOverGRPC(t *testing.T) {
-	for _, table := range []string{"node_executions", "node_event_receipts", "control_submissions", "revision_verifications", "revisions"} {
-		t.Run(table, func(t *testing.T) {
-			f := setup(t)
-			scene, req := lateDeliveryRegistered(t, f)
-			lateDeliveryGiveUp(t, f, scene, false)
-			before := lateDeliveryBusinessSnapshot(t, f, scene)
-			clause := "INSERT"
-			if table == "node_executions" {
-				clause = "UPDATE OF result"
+	for _, later := range []bool{false, true} {
+		for _, table := range []string{"node_executions", "node_event_receipts", "control_submissions", "revision_verifications", "revisions"} {
+			if later && (table == "revision_verifications" || table == "revisions") {
+				continue // Receipt-only intake never writes these tables.
 			}
-			_, err := f.store.Pool.Exec(`CREATE FUNCTION reject_late_delivery_write() RETURNS trigger LANGUAGE plpgsql AS $$
+			t.Run(fmt.Sprintf("later=%v/%s", later, table), func(t *testing.T) {
+				f := setup(t)
+				scene, req := lateDeliveryRegistered(t, f)
+				lateDeliveryGiveUp(t, f, scene, later)
+				if later {
+					lateDeliveryEnqueueLater(t, f, scene)
+				}
+				lateDeliveryNoSettlement(f)
+				before := lateDeliveryBusinessSnapshot(t, f, scene)
+				clause := "INSERT"
+				if table == "node_executions" {
+					clause = "UPDATE OF result"
+				}
+				_, err := f.store.Pool.Exec(`CREATE FUNCTION reject_late_delivery_write() RETURNS trigger LANGUAGE plpgsql AS $$
  BEGIN RAISE EXCEPTION 'injected late delivery persistence failure'; END $$;
  CREATE TRIGGER reject_late_delivery_write BEFORE ` + clause + ` ON ` + table + ` FOR EACH ROW EXECUTE FUNCTION reject_late_delivery_write()`)
-			must(t, err)
-			response, err := f.executions.TakeOverNodeEvent(asController("ctrl-a"), req)
-			if err == nil || response != nil {
-				t.Fatalf("%s failure returned an ACKable response: %v %v", table, response, err)
-			}
-			lateDeliveryNoFact(t, f, req)
-			_, err = f.store.Pool.Exec("DROP TRIGGER reject_late_delivery_write ON " + table + "; DROP FUNCTION reject_late_delivery_write()")
-			must(t, err)
-			lateDeliveryAccepted(t, f, req)
-			if after := lateDeliveryBusinessSnapshot(t, f, scene); after != before {
-				t.Fatal("failed write or clean retry changed business state")
-			}
-		})
+				must(t, err)
+				response, err := f.executions.TakeOverNodeEvent(asController("ctrl-a"), req)
+				if err == nil || response != nil {
+					t.Fatalf("%s failure returned an ACKable response: %v %v", table, response, err)
+				}
+				lateDeliveryNoFact(t, f, req)
+				_, err = f.store.Pool.Exec("DROP TRIGGER reject_late_delivery_write ON " + table + "; DROP FUNCTION reject_late_delivery_write()")
+				must(t, err)
+				if later {
+					lateDeliveryReceiptOnly(t, f, req)
+				} else {
+					lateDeliveryAccepted(t, f, req)
+				}
+				if after := lateDeliveryBusinessSnapshot(t, f, scene); after != before {
+					t.Fatal("failed write or clean retry changed business state")
+				}
+			})
+		}
 	}
 }
 
@@ -234,33 +247,147 @@ func TestLateDeliveryFactIdentitySequenceAndConflictFencesOverGRPC(t *testing.T)
 		t.Fatal("invalid original identity or sequence reached external verification")
 	}
 	lateDeliveryAccepted(t, f, req)
-	canonical := mustJSON(t, f.nodeResult(req.ExecutionId))
-	for _, tc := range []struct {
-		name   string
-		change func(*controlpb.TakeOverNodeEventRequest)
-	}{
-		{"event", func(r *controlpb.TakeOverNodeEventRequest) { r.Event = []byte("changed original event") }},
-		{"result", func(r *controlpb.TakeOverNodeEventRequest) {
-			r.Result.GetRevisionDelivered().FinalCommit = strings.Repeat("2", 40)
-		}},
-		{"extra-sequence", func(r *controlpb.TakeOverNodeEventRequest) { r.Sequence = 2 }},
-		{"submission-content", func(r *controlpb.TakeOverNodeEventRequest) {
-			r.SubmissionId = req.SubmissionId
-			r.Event = []byte("different same submission")
-		}},
-	} {
-		bad := proto.Clone(req).(*controlpb.TakeOverNodeEventRequest)
-		bad.SubmissionId = "late-conflict-" + tc.name
-		tc.change(bad)
-		response, err := f.executions.TakeOverNodeEvent(asController("ctrl-a"), bad)
-		if response != nil {
-			t.Fatalf("%s conflict became ACKable: %v", tc.name, response)
-		}
-		expectStatus(t, err, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
-	}
-	if mustJSON(t, f.nodeResult(req.ExecutionId)) != canonical || f.receiptEvent(req.ExecutionId, 1) != string(req.Event) ||
-		f.nodeSequence(req.ExecutionId) != 1 || len(f.refs.queried()) != 1 || len(f.objects.probed()) != 1 ||
+	if len(f.refs.queried()) != 1 || len(f.objects.probed()) != 1 ||
 		lateDeliveryBusinessSnapshot(t, f, scene) != before {
-		t.Fatal("conflict rewrote canonical facts/business or repeated external verification")
+		t.Fatal("invalid intake or acceptance changed business or repeated external verification")
+	}
+}
+
+// All replay checks start from a terminal accepted through the real intake. The receipt-only
+// variant is selected by a production-created later Run, never by deleting a verified Revision.
+func lateDeliveryAcceptedState(t *testing.T, f *fixture, state string) (liveThreadScene, *controlpb.TakeOverNodeEventRequest) {
+	t.Helper()
+	scene, req := lateDeliveryRegistered(t, f)
+	if state == "revision_failed" {
+		req.Result = revisionFailedResult(scene, controlpb.RevisionFailureReason_REVISION_FAILURE_REASON_UPLOAD_FAILED)
+	}
+	lateDeliveryGiveUp(t, f, scene, true)
+	if state == "receipt-only" {
+		lateDeliveryEnqueueLater(t, f, scene)
+	}
+	lateDeliveryNoSettlement(f)
+	if state == "receipt-only" {
+		lateDeliveryReceiptOnly(t, f, req)
+	} else {
+		lateDeliveryAccepted(t, f, req)
+	}
+	return scene, req
+}
+
+func lateDeliveryCanonicalSnapshot(t *testing.T, f *fixture, execution string) string {
+	t.Helper()
+	var snapshot string
+	must(t, f.store.Pool.QueryRow(`SELECT jsonb_build_object(
+ 'execution',to_jsonb(e),
+ 'receipts',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.sequence),'[]') FROM node_event_receipts r WHERE r.execution_id=e.execution_id),
+ 'verification',(SELECT to_jsonb(v) FROM revision_verifications v WHERE v.execution_id=e.execution_id),
+ 'revision',(SELECT to_jsonb(r) FROM revisions r WHERE r.execution_id=e.execution_id))::text
+ FROM node_executions e WHERE e.execution_id=$1`, execution).Scan(&snapshot))
+	return snapshot
+}
+
+func TestLateDeliveryFactAcceptedConflictMatrixOverGRPC(t *testing.T) {
+	for _, state := range []string{"verified", "receipt-only", "revision_failed"} {
+		t.Run(state, func(t *testing.T) {
+			f := setup(t)
+			scene, req := lateDeliveryAcceptedState(t, f, state)
+			canonical, business := lateDeliveryCanonicalSnapshot(t, f, req.ExecutionId), lateDeliveryBusinessSnapshot(t, f, scene)
+			reads, probes := len(f.refs.queried()), len(f.objects.probed())
+			for _, tc := range []struct {
+				name   string
+				change func(*controlpb.TakeOverNodeEventRequest)
+			}{
+				{"event", func(r *controlpb.TakeOverNodeEventRequest) { r.Event = []byte("changed original event") }},
+				{"result", func(r *controlpb.TakeOverNodeEventRequest) {
+					if state == "revision_failed" {
+						r.Result.GetRevisionFailed().Reason = controlpb.RevisionFailureReason_REVISION_FAILURE_REASON_PUSH_FAILED
+					} else {
+						r.Result.GetRevisionDelivered().FinalCommit = strings.Repeat("2", 40)
+					}
+				}},
+				{"extra-sequence", func(r *controlpb.TakeOverNodeEventRequest) { r.Sequence = 2 }},
+				{"submission-content", func(r *controlpb.TakeOverNodeEventRequest) {
+					r.SubmissionId = req.SubmissionId
+					r.Event = []byte("different same submission")
+				}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					bad := proto.Clone(req).(*controlpb.TakeOverNodeEventRequest)
+					bad.SubmissionId = "late-conflict-" + tc.name
+					tc.change(bad)
+					response, err := f.executions.TakeOverNodeEvent(asController("ctrl-a"), bad)
+					if response != nil {
+						t.Fatalf("conflicting accepted %s terminal became ACKable: %v", state, response)
+					}
+					expectStatus(t, err, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+					if bad.SubmissionId != req.SubmissionId && f.scalar("SELECT count(*) FROM control_submissions WHERE submission_id=$1", bad.SubmissionId) != 0 {
+						t.Fatal("refused conflict persisted a successful submission")
+					}
+				})
+			}
+			if lateDeliveryCanonicalSnapshot(t, f, req.ExecutionId) != canonical || lateDeliveryBusinessSnapshot(t, f, scene) != business ||
+				len(f.refs.queried()) != reads || len(f.objects.probed()) != probes {
+				t.Fatal("accepted-terminal conflict rewrote canonical facts/business or repeated external verification")
+			}
+		})
+	}
+}
+
+func TestLateDeliveryFactReplayLeaseAndOriginalResourceFencesOverGRPC(t *testing.T) {
+	for _, state := range []string{"verified", "receipt-only", "revision_failed"} {
+		t.Run(state, func(t *testing.T) {
+			f := setup(t)
+			scene, req := lateDeliveryAcceptedState(t, f, state)
+			canonical, business := lateDeliveryCanonicalSnapshot(t, f, req.ExecutionId), lateDeliveryBusinessSnapshot(t, f, scene)
+			reads, probes := len(f.refs.queried()), len(f.objects.probed())
+			for _, sameSubmission := range []bool{false, true} {
+				for _, fence := range []string{"epoch", "holder", "expired", "node", "operation", "execution"} {
+					t.Run(fmt.Sprintf("same-submission=%v/%s", sameSubmission, fence), func(t *testing.T) {
+						replay := proto.Clone(req).(*controlpb.TakeOverNodeEventRequest)
+						if !sameSubmission {
+							replay.SubmissionId = "late-fenced-replay-" + fence
+						}
+						ctx := asController("ctrl-a")
+						code, detail := codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT
+						switch fence {
+						case "epoch":
+							replay.Epoch++
+						case "holder":
+							ctx = asController("wrong-controller")
+						case "expired":
+							_, err := f.store.Pool.Exec("UPDATE controller_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE name='global'")
+							must(t, err)
+							defer func() {
+								_, err := f.store.Pool.Exec("UPDATE controller_leases SET expires_at=clock_timestamp()+interval '30 minutes' WHERE name='global'")
+								must(t, err)
+							}()
+						case "node":
+							replay.Result.Node.NodeId = "wrong-original-node"
+						case "operation":
+							replay.OperationId = uuid.NewString()
+						case "execution":
+							replay.ExecutionId = "not-the-original-execution"
+						}
+						if fence == "epoch" || fence == "holder" || fence == "expired" {
+							code, detail = codes.FailedPrecondition, controlpb.ErrorCode_ERROR_CODE_STALE_CONTROLLER
+						} else if !sameSubmission && (fence == "operation" || fence == "execution") {
+							code, detail = codes.NotFound, controlpb.ErrorCode_ERROR_CODE_NOT_FOUND
+						}
+						response, err := f.executions.TakeOverNodeEvent(ctx, replay)
+						if response != nil {
+							t.Fatalf("replay bypassed %s fence: %v", fence, response)
+						}
+						expectStatus(t, err, code, detail)
+						if !sameSubmission && f.scalar("SELECT count(*) FROM control_submissions WHERE submission_id=$1", replay.SubmissionId) != 0 {
+							t.Fatal("fenced replay persisted a successful submission")
+						}
+					})
+				}
+			}
+			if lateDeliveryCanonicalSnapshot(t, f, req.ExecutionId) != canonical || lateDeliveryBusinessSnapshot(t, f, scene) != business ||
+				len(f.refs.queried()) != reads || len(f.objects.probed()) != probes {
+				t.Fatal("fenced replay changed canonical facts/business or repeated external evidence or settlement")
+			}
+		})
 	}
 }

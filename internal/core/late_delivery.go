@@ -20,10 +20,13 @@ func lateOriginalDelivery(t *transaction, e Object) bool {
 	if e.S("kind") != "deliver_revision" {
 		return false
 	}
+	// D1 retains the original identity after soft deletion; visibility is not takeover eligibility.
 	run := t.one("SELECT * FROM issue_runs WHERE id=$1", e.S("operationId"))
+	if run == nil {
+		return false
+	}
 	givenUpPhase := run.S("phase") == "releasing" || (run.S("phase") == "done" && run.S("failureReason") == "workspace_unavailable")
-	if run == nil || run.S("executorType") != "agent" || run.O("result").S("deliveryState") != "failed" ||
-		!givenUpPhase {
+	if run.S("executorType") != "agent" || run.O("result").S("deliveryState") != "failed" || !givenUpPhase {
 		return false
 	}
 	require(run.O("result")["revisionId"] == nil && e["terminatedByForceStopId"] == nil && e.S("nodeOperationId") == e.S("executionId"), 409, "dispatch_conflict")

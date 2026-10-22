@@ -5,9 +5,34 @@ import (
 	"testing"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/wanglongan587/cloud/internal/controlpb"
 )
+
+func TestLateDeliveryFactCurrentWorkspaceGenerationFenceOverGRPC(t *testing.T) {
+	f := setup(t)
+	scene, req := lateDeliveryRegistered(t, f)
+	lateDeliveryGiveUp(t, f, scene, false)
+	// Production freezes the sandbox identity without an explicit runtimeGeneration target
+	// field. Advancing the Workspace generation must still fence that original sandbox.
+	var explicitGeneration bool
+	must(t, f.store.Pool.QueryRow(`SELECT target ? 'runtimeGeneration' FROM execution_work WHERE execution_id=$1`, req.ExecutionId).Scan(&explicitGeneration))
+	if explicitGeneration {
+		t.Fatal("production delivery unexpectedly carries an explicit target runtimeGeneration")
+	}
+	_, err := f.store.Pool.Exec("UPDATE workspaces SET runtime_generation=runtime_generation+1,version=version+1 WHERE issue_run_id=$1", scene.runID)
+	must(t, err)
+	response, err := f.executions.TakeOverNodeEvent(asController("ctrl-a"), req)
+	if response != nil || status.Convert(err).Message() != "dispatch_conflict" {
+		t.Fatalf("a newer Workspace generation must refuse the original late fact: %v %v", response, err)
+	}
+	expectStatus(t, err, codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+	lateDeliveryNoFact(t, f, req)
+	if len(f.refs.queried()) != 0 || len(f.objects.probed()) != 0 {
+		t.Fatal("a stale sandbox generation reached external evidence")
+	}
+}
 
 func TestLateDeliveryFactOriginalResourceFencesOverGRPC(t *testing.T) {
 	for _, field := range []string{"workspaceId", "sandboxInstanceId", "nodeId", "runtimeGeneration", "nodeOperationId", "workBinding"} {

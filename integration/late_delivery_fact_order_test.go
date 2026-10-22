@@ -205,9 +205,20 @@ func TestLateDeliveryFactNoLaterRunResumesRescuedRevisionOverGRPC(t *testing.T) 
 	f := setup(t)
 	scene, req := lateDeliveryRegistered(t, f)
 	lateDeliveryGiveUp(t, f, scene, true)
-	// Unrelated tenants/Issues carry their own creation records and cannot block this Issue.
+	// A larger creation sequence in another tenant/Issue cannot block this Issue. Equal
+	// sequences would not catch an ordering query that accidentally dropped those scope fences.
 	unrelated := seedLiveThreadScene(t, f)
-	_, err := f.store.Pool.Exec("UPDATE issue_runs SET phase='done',status='cancelled',completed_at=now() WHERE id=$1", unrelated.runID)
+	_, err := f.store.Pool.Exec(`UPDATE issue_activities SET seq=(
+ SELECT seq+10 FROM issue_activities WHERE action='run.enqueued' AND details->>'runId'=$2)
+ WHERE action='run.enqueued' AND details->>'runId'=$1`, unrelated.runID, scene.runID)
+	must(t, err)
+	var unrelatedIsLater bool
+	must(t, f.store.Pool.QueryRow(`SELECT a.seq>b.seq FROM issue_activities a CROSS JOIN issue_activities b
+ WHERE a.action='run.enqueued' AND a.details->>'runId'=$1 AND b.action='run.enqueued' AND b.details->>'runId'=$2`, unrelated.runID, scene.runID).Scan(&unrelatedIsLater))
+	if unrelated.tenantID == scene.tenantID || unrelated.issueID == scene.issueID || !unrelatedIsLater {
+		t.Fatal("unrelated Run must belong to another tenant/Issue and have a larger creation sequence")
+	}
+	_, err = f.store.Pool.Exec("UPDATE issue_runs SET phase='done',status='cancelled',completed_at=now() WHERE id=$1", unrelated.runID)
 	must(t, err)
 	lateDeliveryAccepted(t, f, req)
 	row := f.revisionRow(scene.runID)
@@ -215,6 +226,12 @@ func TestLateDeliveryFactNoLaterRunResumesRescuedRevisionOverGRPC(t *testing.T) 
 		t.Fatal("unrelated Issue prevented original Revision rescue")
 	}
 	next := seedFollowUpRun(t, f, scene, false)
+	// The storage fixture must include its real creation record before session startup and
+	// the replay below; seedFollowUpRun itself only creates the Run and runtime resources.
+	_, err = f.store.Pool.Exec(`INSERT INTO issue_activities(id,tenant_id,issue_id,seq,actor_type,actor_id,action,details)
+ SELECT gen_random_uuid(),tenant_id,id,(SELECT max(seq)+7 FROM issue_activities WHERE issue_id=$1),
+ 'user',creator_user_id,'run.enqueued',jsonb_build_object('runId',$2::text) FROM issues WHERE id=$1`, scene.issueID, next.runID)
+	must(t, err)
 	next.start(t, f)
 	if prior := f.sessionInput(next.executionID).O("priorRevision"); prior.S("revisionId") != row.ID {
 		t.Fatalf("rescued original Revision was not the next session's frozen candidate: %v", prior)

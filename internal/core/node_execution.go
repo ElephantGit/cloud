@@ -158,7 +158,7 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 		deliverySettled(t, operation, execution, Object{"outcome": "failed", "reason": result.S("reason")})
 	}
 	if fresh && e.S("kind") == "deliver_revision" && revisionSuccess(result) {
-		settleVerifiedRevision(t, r, e)
+		settleVerifiedRevision(t, r, e, lateDelivery)
 	}
 	return t.one("SELECT "+nodeExecutionColumns+" FROM node_executions WHERE execution_id=$1", execution)
 }

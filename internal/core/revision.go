@@ -54,7 +54,8 @@ func (s *Store) prepareRevision(ctx context.Context, r *ControlRequest) (*revisi
 			return nil
 		}
 		validateDeliveryDeclaration(e, r.Body.O("result"))
-		deliveryFactIsLate(t, e)
+		// Validate eligibility before external I/O; classify again in the final write transaction.
+		_ = deliveryFactIsLate(t, e)
 		require(r.Body.N("sequence") == e.N("lastEventSequence")+1 && r.Body.S("event") != "", 409, "receipt_conflict")
 		w := t.one("SELECT tenant_id,project_id FROM workspaces WHERE id=$1", e.S("workspaceId"))
 		e["tenantId"], e["projectId"] = w.S("tenantId"), w.S("projectId")
@@ -132,10 +133,9 @@ func liveDelivery(t *transaction, e Object) {
 	require(node.S("nodeId") == e.S("nodeId") && node.S("sandboxInstanceId") == work.O("target").S("sandboxInstanceId"), 409, "dispatch_conflict")
 }
 
-func settleVerifiedRevision(t *transaction, r *ControlRequest, e Object) {
+func settleVerifiedRevision(t *transaction, r *ControlRequest, e Object, late bool) {
 	verification := r.verification
 	require(verification != nil && verification.input == jsonText(e.O("input")), 409, "invalid_delivery_verification")
-	late := deliveryFactIsLate(t, e)
 	if late && !lateRevisionMayRegister(t, e) {
 		// The original declaration and receipt are still committed by nodeExecutionResult.
 		// A replay cannot turn this receipt-only decision into a new registration attempt.

@@ -26,26 +26,27 @@ in [`integration/`](../../integration/README.en.md).
 ## Database
 
 - Tests connect to PostgreSQL through `TEST_DATABASE_URL`, which `task setup` writes into `.local/dev.env`. The account
-  needs `CREATE SCHEMA`; integration template copies also require `CREATEDB` for the test role.
-- **Independent database state**: ordinary integration fixtures migrate a template once per process and receive independent
-  database copies; the source has no open connections and accepts no business writes. Migration/upgrade cases still execute
-  migrations from empty or older isolated schemas, and core's separate helper retains its per-schema path. Each test owns its
-  cleanup without sharing mutable business state; see [integration fixtures](../../integration/README.en.md#hermetic-testing-invariants).
+  needs `CREATE SCHEMA`; integration and core template copies also require `CREATEDB` for the test role.
+- **Independent database state**: ordinary integration and core fixtures each migrate a template once per test process and
+  receive independent database copies; the source has no open connections and accepts no business writes. Migration/upgrade
+  cases still execute migrations from empty or older isolated schemas. Core's `dispatcherDB` receives an independent database
+  copy; controlled-reclamation matrices retain their existing per-case resets. Each test owns its cleanup without sharing
+  mutable business state; see [integration fixtures](../../integration/README.en.md#hermetic-testing-invariants).
 - **No silent skipping**: `task test`, `task test:integration`, `task test:race` and `task check` set `REQUIRE_POSTGRES=1` and
   fail outright when no database is configured. Running `go test ./...` directly without a database skips the tests that need
   one explicitly, and a pass in that mode does not count as full verification.
 
 ### Cleaning up leftover test databases
 
-A killed test process may leave its template and copies behind. **Run this only when no tests are running**, against the local test PostgreSQL selected by `TEST_DATABASE_URL`: list leftovers first, then drop them. These commands match only the complete names used by `integration/fixture_template_test.go` and its callers: one of the listed prefixes followed by a 32-character lowercase hexadecimal UUID. Other names and legacy test schemas are excluded. Use the test role that created the databases (or an administrator with permission to drop them), connected to the base test database, not a copy being dropped. `WITH (FORCE)` disconnects sessions in matching databases.
+A killed test process may leave its template and copies behind. **Run this only when no tests are running**, against the local test PostgreSQL selected by `TEST_DATABASE_URL`: list leftovers first, then drop them. These commands match only the complete names used by `integration/fixture_template_test.go`, `internal/core/fixture_template_test.go` and their callers: one of the listed prefixes followed by a 32-character lowercase hexadecimal UUID. Other names and legacy test schemas are excluded. Use the test role that created the databases (or an administrator with permission to drop them), connected to the base test database, not a copy being dropped. `WITH (FORCE)` disconnects sessions in matching databases.
 
 ```sh
 psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
-SELECT datname FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname;
+SELECT datname FROM pg_database WHERE datname ~ '^(core_template_|core_run_|test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname;
 SQL
 
 psql -X -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" <<'SQL'
-SELECT format('DROP DATABASE %I WITH (FORCE);', datname) FROM pg_database WHERE datname ~ '^(test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname
+SELECT format('DROP DATABASE %I WITH (FORCE);', datname) FROM pg_database WHERE datname ~ '^(core_template_|core_run_|test_template_|test_|grpc_|test_gateway_|test_controlled_|test_copy_first_|test_copy_second_|test_copy_later_|test_copy_parallel_)[0-9a-f]{32}$' ORDER BY datname
 \gexec
 SQL
 ```

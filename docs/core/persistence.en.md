@@ -41,6 +41,7 @@ Commit
 BeginTx
   SELECT pg_advisory_xact_lock_shared(67420911)             ← the global lock in shared mode
   SELECT pg_try_advisory_xact_lock(67420911, hash(runId))   ← this WorkflowRun's exclusive transaction lock
+  [SELECT pg_advisory_xact_lock(67420913, hash(issueId))]   ← when the run is linked to an Issue
   [SELECT pg_advisory_xact_lock(67420912, hash(projectId))] ← only when deciding a Project-level invariant
   fn(t)
 Commit
@@ -64,9 +65,18 @@ Different runs' locks do not conflict, so several replicas can advance different
 hash collision only makes two runs share one lock (some extra serialization); it never gives one run
 two executors.
 
+**Ordering Issue Timeline writes.** A Timeline `seq` is `MAX+1` per Issue, shared by `issue_comments`
+and `issue_activities`; two concurrent writers of the same Issue would read the same maximum, and the
+one that writes second would violate `UNIQUE(issue_id, seq)` and lose its whole transaction. The run
+lock is per run by design and cannot express this, so after taking the run lock a transaction also
+takes the Issue's transaction lock (`pg_advisory_xact_lock`) when the run is linked to an IssueRun.
+A direct run with no Issue writes no Timeline and takes no such lock. Ordinary transactions are
+serialized by the exclusive global lock, WorkflowRun transactions by this Issue lock; together they
+keep one Issue's `seq` monotonic and duplicate-free.
+
 Project-level invariants ("a Project has at most one live operation") span runs and cannot be
 expressed by a run lock, so creating a run Workspace or declaring its deletion also takes the
-Project lock. Both paths use the same order — global, run, Project — so it cannot cycle.
+Project lock. Both paths use the same order — global, run, Issue, Project — so it cannot cycle.
 
 **Transactions do database work only.** A transaction never sends HTTP, runs Git, touches object
 storage, reads or writes files, or waits on a Node. Flows that need external I/O are split into

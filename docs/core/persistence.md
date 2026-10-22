@@ -34,6 +34,7 @@ Commit
 BeginTx
   SELECT pg_advisory_xact_lock_shared(67420911)             ← 全局锁的共享模式
   SELECT pg_try_advisory_xact_lock(67420911, hash(runId))   ← 该 WorkflowRun 的排他事务锁
+  [SELECT pg_advisory_xact_lock(67420913, hash(issueId))]   ← 该 run 关联 Issue 时
   [SELECT pg_advisory_xact_lock(67420912, hash(projectId))] ← 只在决定 Project 级不变量时
   fn(t)
 Commit
@@ -50,8 +51,15 @@ Commit
 彼此的副本同样不能并发推进同一个 run。不同 run 的锁互不冲突，多个副本可以并行推进不同 run。哈希冲突
 只会让两个 run 共用一把锁（多串行化一点），不会让一个 run 出现两个执行者。
 
+**Issue Timeline 的写入顺序。** Timeline 的 `seq` 按 Issue 取 `MAX+1`（`issue_comments` 与
+`issue_activities` 共用），并发写入同一 Issue 的两次读取会得到同一个值，后写入的一方会撞上
+`UNIQUE(issue_id, seq)` 而丢掉整个事务。run 锁按 run 划分，表达不了这个约束，所以取到 run 锁后，
+如果该 run 关联了 IssueRun，再取该 Issue 的事务锁（`pg_advisory_xact_lock`）；没有关联 Issue 的
+直接运行不写 Timeline，不取这把锁。普通事务由全局排他锁串行，WorkflowRun 事务由这把 Issue 锁串行，
+两条路径合起来保证同一 Issue 的 `seq` 单调且不重复。
+
 Project 级不变量（“一个 Project 至多一个活动 operation”）跨 run，单 run 的锁表达不了，所以创建与声明
-删除 run Workspace 时再取 Project 锁。两条路径的锁顺序一致：全局 → run → Project，不会成环。
+删除 run Workspace 时再取 Project 锁。两条路径的锁顺序一致：全局 → run → Issue → Project，不会成环。
 
 **事务里只做数据库工作。** 事务内不发 HTTP、不调 Git、不访问对象存储、不读写文件、不等待 Node。
 需要外部 I/O 的流程拆成"事务 → 外部调用 → 事务"：

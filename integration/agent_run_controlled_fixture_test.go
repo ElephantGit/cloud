@@ -3,20 +3,37 @@ package integration
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
 var (
+	gitServerBinary           string
 	controlledPreparedFixture *fixture
 	controlledFixtureCleanups []func() error
 )
 
-// TestMain owns the sealed database template and the controlled suite's reusable resources.
+// TestMain owns the Git Server binary, sealed database template and reusable controlled resources.
 // Ordinary fixtures clean up their independent copies before these package resources are released.
 func TestMain(m *testing.M) {
-	code := m.Run()
+	dir, err := os.MkdirTemp("", "ora-cloud-git-server-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "git-server build directory:", err)
+		os.Exit(1)
+	}
+	gitServerBinary = filepath.Join(dir, "git-server")
+	// Build the shipped hook before m.Run can create fixtures with short-lived heartbeats or grants.
+	// A cold Go build cache must never consume their freshness window; all harnesses reuse this file.
+	build := exec.Command("go", "build", "-o", gitServerBinary, "../cmd/git-server")
+	code := 1
+	if out, err := build.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "build git-server: %v: %s\n", err, out)
+	} else {
+		code = m.Run()
+	}
 	for i := len(controlledFixtureCleanups) - 1; i >= 0; i-- {
 		if err := controlledFixtureCleanups[i](); err != nil {
 			fmt.Fprintln(os.Stderr, "controlled fixture cleanup:", err)
@@ -25,6 +42,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := closeFixtureTemplate(); err != nil {
 		fmt.Fprintln(os.Stderr, "fixture template cleanup:", err)
+		code = 1
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		fmt.Fprintln(os.Stderr, "git-server binary cleanup:", err)
 		code = 1
 	}
 	os.Exit(code)

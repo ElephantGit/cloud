@@ -23,7 +23,7 @@ jobs:
       matrix:
         shard: [packages, 0, 1, 2, 3]
     runs-on: ubuntu-latest
-    # Bounds the whole job if a test hangs past go test's own -timeout below.
+    # Bounds setup, builds and tests; each go test invocation retains its default 10m timeout.
     timeout-minutes: 30
     services:
       postgres:
@@ -127,18 +127,13 @@ jobs:
         run: go tool golangci-lint run
       - name: Prepare coverage directory
         run: mkdir -p "$GOCOVERDIR"
-      - name: Warm Git Server build cache before fixture leases start
-        if: matrix.shard != 'packages'
-        # startGitServer builds this command after creating short-lived grants. Each fresh
-        # shard needs the non-race build cache that earlier tests used to warm implicitly.
-        run: go build -o "$RUNNER_TEMP/git-server" ./cmd/git-server
       - name: Test non-integration packages
         if: matrix.shard == 'packages'
         run: |
           go list ./... > "$RUNNER_TEMP/packages.txt"
           module=$(go list -m)
           mapfile -t packages < <(grep -Fxv "$module/integration" "$RUNNER_TEMP/packages.txt")
-          go test -race -count=1 -timeout 20m -v -coverpkg=./internal/... "${packages[@]}" -args -test.gocoverdir="$GOCOVERDIR"
+          go test -race -count=1 -v -coverpkg=./internal/... "${packages[@]}" -args -test.gocoverdir="$GOCOVERDIR"
       - name: List and partition integration tests
         if: matrix.shard != 'packages'
         id: shard
@@ -154,7 +149,7 @@ jobs:
           TEST_PATTERN: ${{ steps.shard.outputs.pattern }}
         run: |
           # go test overrides GOCOVERDIR internally; the testing flag retains its binary data for covdata.
-          go test -race -count=1 -timeout 20m -v -coverpkg=./internal/... -run "$TEST_PATTERN" ./integration -args -test.gocoverdir="$GOCOVERDIR" | tee "$RUNNER_TEMP/integration.log"
+          go test -race -count=1 -v -coverpkg=./internal/... -run "$TEST_PATTERN" ./integration -args -test.gocoverdir="$GOCOVERDIR" | tee "$RUNNER_TEMP/integration.log"
           python3 .github/scripts/integration_shards.py record "$GOCOVERDIR/shard.json" "$RUNNER_TEMP/integration.log"
       - if: matrix.shard == 'packages'
         run: go build ./cmd/server ./cmd/gateway ./cmd/cloudctl ./cmd/simulator

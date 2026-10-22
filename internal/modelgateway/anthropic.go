@@ -10,8 +10,9 @@ import (
 
 const anthropicVersion = "2023-06-01"
 
-// These protocol capabilities were observed with the pinned Claude 2.1.303 CLI and, for
-// Claude models over Anthropic Messages, the pinned OpenCode 1.19.3 CLI. A CLI upgrade must
+// These protocol capabilities were observed with the pinned Claude 2.1.303 CLI, including when
+// it is started through Agent SDK 0.3.303 / ACP adapter 0.94.0, and, for Claude models over
+// Anthropic Messages, the pinned OpenCode 1.19.3 CLI. A CLI, SDK or adapter upgrade must
 // exercise its requests before extending this set.
 var claudeBetaHeaders = map[string]bool{
 	"claude-code-20250219":                     true,

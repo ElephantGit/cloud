@@ -78,25 +78,27 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 			break
 		}
 		for _, entry := range page {
-			if _, err := s.transact(ctx, func(t *transaction) Object {
+			_, err := s.transact(ctx, func(t *transaction) Object {
 				admitScheduledTaskDue(t, entry.id)
 				return nil
-			}); err != nil {
-				var fault *Fault
-				if errors.As(err, &fault) {
-					// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
-					continue
-				}
-				var definitionErr *scheduledTaskDefinitionError
-				if errors.As(err, &definitionErr) {
-					// 已持久化的损坏定义只回滚本任务的事务；保留错误供 RunSyncLoop
-					// 记录，但继续评估同批及后续页的健康任务。
-					definitionErrors = append(definitionErrors, err)
-					continue
-				}
-				// 系统级故障（数据库不可用、上下文取消）停止本轮，交给 RunSyncLoop 记录。
-				return err
+			})
+			if err == nil {
+				continue
 			}
+			var fault *Fault
+			if errors.As(err, &fault) {
+				// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
+				continue
+			}
+			var definitionErr *scheduledTaskDefinitionError
+			if errors.As(err, &definitionErr) {
+				// 已持久化的损坏定义只回滚本任务的事务；保留错误供 RunSyncLoop
+				// 记录，但继续评估同批及后续页的健康任务。
+				definitionErrors = append(definitionErrors, err)
+				continue
+			}
+			// 系统级故障（数据库不可用、上下文取消）停止本轮，交给 RunSyncLoop 记录。
+			return err
 		}
 		last := page[len(page)-1]
 		cursorAt, cursorID = &last.updatedAt, &last.id

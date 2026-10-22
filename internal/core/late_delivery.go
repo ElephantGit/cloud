@@ -29,7 +29,9 @@ func lateOriginalDelivery(t *transaction, e Object) bool {
 	require(run.O("result")["revisionId"] == nil && e["terminatedByForceStopId"] == nil && e.S("nodeOperationId") == e.S("executionId"), 409, "dispatch_conflict")
 	w := t.one(`SELECT w.* FROM workspaces w JOIN projects p ON p.id=w.project_id AND p.tenant_id=w.tenant_id
  WHERE w.id=$1 AND w.issue_run_id=$2 AND w.tenant_id=$3`, e.S("workspaceId"), run.S("id"), run.S("tenantId"))
-	require(w != nil && run.S("workspaceId") == w.S("id") && w.S("desiredState") == "deleted", 409, "dispatch_conflict")
+	// A failed quiesce restores running/ready and admission while the Run stays given up.
+	// Eligibility belongs to the Run and original identity, not the current delete attempt.
+	require(w != nil && run.S("workspaceId") == w.S("id"), 409, "dispatch_conflict")
 	work := t.one("SELECT * FROM execution_work WHERE id=$1 AND run_id=$2 AND kind='deliver_revision'", e.S("workId"), run.S("id"))
 	require(work != nil && work.S("executionId") == e.S("executionId") && jsonText(work.O("input")) == jsonText(e.O("input")), 409, "dispatch_conflict")
 	target := work.O("target")

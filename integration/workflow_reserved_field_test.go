@@ -339,3 +339,52 @@ func TestWorkflowReservedFieldRefusalOutranksTheExecutorSlotGate(t *testing.T) {
 		t.Fatalf("control refusal = %v, want workflow_executor_unconfigured", slots)
 	}
 }
+
+// TestWorkflowReservedFieldAssistUsesTheSelectorDefault covers the assist side of D2. Assist answers
+// for the form the user is filling, and that form opens on the newest *selectable* version; the newest
+// published version can be a withheld stock one with a different field set, so resolving it instead
+// would refuse exactly the fields the visible form offers. When every version is withheld the form has
+// no selector and is the live draft, which assist has to follow as well.
+func TestWorkflowReservedFieldAssistUsesTheSelectorDefault(t *testing.T) {
+	f := setup(t)
+	// The selectable version is the form's default and declares `notes`. The newer withheld version
+	// declares the reserved key and no `notes`, so the two schemas disagree about a key the user sees.
+	wid := createWorkflow(t, f, "Assist Default", "reserved-assist", notesVariables())
+	selectable := publishWorkflow(t, f, wid, "reserved-assist-pub-1")
+	seedLegacySnapshot(t, f, wid, 2, startInputGraph(reservedVariables()))
+
+	project := f.create("reserved-assist-project").O("resource")
+	iss := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Fill the shown form", "projectRef": project.S("id"),
+	}, "reserved-assist-issue", 200).O("resource")
+	fields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+wid+"?issueId="+iss.S("id")), nil, "", 200))
+	if got := fields["snapshotId"]["defaultValue"]; got != selectable.S("id") {
+		t.Fatalf("the form did not open on the selectable version: %v", got)
+	}
+	if _, ok := fields["notes"]; !ok {
+		t.Fatalf("the form did not render the selectable version's field: %v", fields)
+	}
+	// This submission is exactly what that form shows. The newer version does not declare `notes`,
+	// so judging the submission against it would make a legal form value an unknown-key 400.
+	f.call("POST", assistPath(f, iss.S("id")), workflowAssistBody(wid, core.Object{
+		"repository": project.S("repositoryUrl"), "branch": "main", "notes": "release notes",
+	}), "reserved-assist-a1", 200)
+
+	// Every published version withheld: the form has no selector and is the live draft, which still
+	// declares `notes`. Assist has to answer for that draft, not for a version the user cannot choose.
+	allWid := createWorkflow(t, f, "Assist All Withheld", "reserved-assist-all", notesVariables())
+	seedLegacySnapshot(t, f, allWid, 1, startInputGraph(reservedVariables()))
+	allIss := f.call("POST", f.path("/issues"), core.Object{
+		"title": "Fill the draft form", "projectRef": project.S("id"),
+	}, "reserved-assist-all-issue", 200).O("resource")
+	allFields := formFields(t, f.call("GET", f.path("/collaboration/forms/"+allWid+"?issueId="+allIss.S("id")), nil, "", 200))
+	if selector, ok := allFields["snapshotId"]; ok {
+		t.Fatalf("a wholly withheld workflow still projected a selector: %v", selector)
+	}
+	if _, ok := allFields["notes"]; !ok {
+		t.Fatalf("the draft form did not render its own field: %v", allFields)
+	}
+	f.call("POST", assistPath(f, allIss.S("id")), workflowAssistBody(allWid, core.Object{
+		"repository": project.S("repositoryUrl"), "branch": "main", "notes": "draft notes",
+	}), "reserved-assist-all-a1", 200)
+}

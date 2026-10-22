@@ -187,9 +187,12 @@ func confirmInteraction(t *transaction, r *PublicRequest, uid string) Object {
 //
 // The descriptor is the version's, not the live document's, whenever the submission names a published
 // version or the workflow has one: the client renders the selected version's form even on its default,
-// so assist has to answer for the fields that form shows. A workflow with nothing published has no
-// frozen descriptor, and the live one is both what the form shows and what a confirm would refuse to
-// run.
+// so assist has to answer for the fields that form shows. "The default" is the selector's default — the
+// newest *selectable* version — not the newest published row: a stock version that claims the reserved
+// `snapshotId` is withheld from the selector (20261021-snapshot-id-is-a-reserved-field.md D2), and
+// judging the submission against it would refuse fields the visible form offers. A workflow with no
+// selectable version has no selector and the live document is the form, exactly as it is when nothing
+// is published.
 func assistWorkflow(t *transaction, r *PublicRequest) Object {
 	i := issue(t, r.TenantID, r.IssueID)
 	targetID := r.Body.S("targetId")
@@ -202,7 +205,7 @@ func assistWorkflow(t *transaction, r *PublicRequest) Object {
 	current := interactionValues(r.Body)
 	cursor := workflowVersionCursor(w.O("graph"), current)
 	foldLegacyVersionAnswer(w.O("graph"), current)
-	s := workflowLatestSnapshot(t, r.TenantID, targetID)
+	s := workflowLatestSelectableSnapshot(t, r.TenantID, targetID)
 	if cursor != "" {
 		s = workflowSnapshot(t, r.TenantID, targetID, cursor)
 	}

@@ -114,13 +114,29 @@ func TestScheduledTaskHistoryReadsEmptyAndAdmitted(t *testing.T) {
 		}
 		return out.O("resource")
 	}
-	if entries, ok := readHistory("scheduled-history-empty")["entries"].([]core.Object); !ok || len(entries) != 0 {
+	entriesOf := func(history core.Object) []core.Object {
+		t.Helper()
+		raw, ok := history["entries"].([]any)
+		if !ok {
+			t.Fatalf("history entries = %T, want an HTTP array", history["entries"])
+		}
+		entries := make([]core.Object, 0, len(raw))
+		for _, value := range raw {
+			entry, ok := value.(map[string]any)
+			if !ok {
+				t.Fatalf("history entry = %T, want an HTTP object", value)
+			}
+			entries = append(entries, core.Object(entry))
+		}
+		return entries
+	}
+	if entries := entriesOf(readHistory("scheduled-history-empty")); len(entries) != 0 {
 		t.Fatalf("empty history entries = %v, want an empty list", entries)
 	}
 
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
-	entries, ok := readHistory("scheduled-history-admitted")["entries"].([]core.Object)
-	if !ok || len(entries) != 1 || entries[0].S("runId") == "" {
+	entries := entriesOf(readHistory("scheduled-history-admitted"))
+	if len(entries) != 1 || entries[0].S("runId") == "" {
 		t.Fatalf("admitted history entries = %v, want one entry with a run ID", entries)
 	}
 	if _, exists := entries[0]["sessionId"]; exists {

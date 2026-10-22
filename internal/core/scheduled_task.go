@@ -372,6 +372,24 @@ func scheduledFailureReason(kind string) string {
 	}
 }
 
+// scheduledAgentBindingReason classifies a resolved agent binding gap for the D5/D7 failure ledger.
+// The binding resolver surfaces both the creator's own model-configuration gaps and the target-side
+// gaps in one code space, but D5 commits an occurrence to only two reasons: a model-side gap (broken
+// connection, missing credential, missing default, or a protocol mismatch) is model_unavailable, and
+// every other gap — a missing or invalid declaration, a release conflict, a missing personal
+// configuration, or an adapter/target mismatch — is target_unavailable, because the agent or target,
+// not the creator's own model configuration, is what must be fixed.
+func scheduledAgentBindingReason(gap string) string {
+	switch gap {
+	case slotReasonConnectionDown, slotReasonCredentialMissing, slotReasonModelUnavailable,
+		"model_connection_unavailable", "model_credential_required", "model_default_required",
+		"agent_model_protocol_mismatch":
+		return "model_unavailable"
+	default:
+		return "target_unavailable"
+	}
+}
+
 // scheduledTaskBusy reports whether an earlier admitted run of this task is still live (ADR D6:
 // skipped_busy，不排队不补跑). Two probes are needed: the occurrence ledger names this task's own
 // runs, and the IssueRun pending-executor uniqueness also covers runs of the same issue+agent that

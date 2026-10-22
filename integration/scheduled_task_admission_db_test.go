@@ -209,6 +209,25 @@ func TestScheduledTaskModelBindingFailureIsDurable(t *testing.T) {
 	}
 }
 
+// TestScheduledTaskNonModelBindingFailureIsTargetUnavailable pins the D5 mapping for a target-side
+// binding gap: a Claude agent that passes save-time eligibility (active agent, usable creator model)
+// but has no declaration is recorded as failed/target_unavailable, not model_unavailable, so the
+// creator is pointed at the agent's configuration rather than their own model connection.
+func TestScheduledTaskNonModelBindingFailureIsTargetUnavailable(t *testing.T) {
+	store, s, _ := scheduledTaskStore(t)
+	claudeAgentID := seedScheduledTaskAgentWithPlugin(t, store.Pool, s, "official/ora-space.claude")
+	taskID := seedEnabledScheduledTask(t, store, s, claudeAgentID, "Undeclared Claude", 65)
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var count, runs int
+	var outcome, reason string
+	must(t, store.Pool.QueryRow(`SELECT count(*), COALESCE(min(outcome),''), COALESCE(min(failure_reason),''), count(run_id) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&count, &outcome, &reason, &runs))
+	if count != 1 || outcome != "failed" || reason != "target_unavailable" || runs != 0 {
+		t.Fatalf("undeclared Claude agent must leave one failed target_unavailable occurrence without a run, got count=%d outcome=%q reason=%q runs=%d", count, outcome, reason, runs)
+	}
+}
+
 // TestScheduledTaskEvaluationProcessesMoreThanOnePage prevents a fixed first 100-task page from
 // starving later enabled definitions forever.
 func TestScheduledTaskEvaluationProcessesMoreThanOnePage(t *testing.T) {

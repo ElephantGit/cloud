@@ -170,7 +170,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	// the same read-only policy first so that rejection becomes this occurrence's durable D5 result
 	// instead of rolling back the ledger row and later being mistaken for a missed schedule point.
 	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent); personal && gap != "" {
-		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
+		failScheduledOccurrenceWithReason(t, taskID, due, scheduledAgentBindingReason(gap))
 		return
 	}
 

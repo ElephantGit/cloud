@@ -301,10 +301,17 @@ func TestScheduledTaskUpdateAppliesPatch(t *testing.T) {
 // if it bypasses the Web route. The worker carries the matching gate separately.
 func TestScheduledTaskWritesRequireAcceptance(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
-	store.ScheduledTaskAcceptanceEnabled = false
 	caller := scheduledTaskCaller(t, store, s.tenantID)
 	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
 	listed, status, err := store.Public(context.Background(), &core.PublicRequest{
+		Method: "GET", Path: path, TenantID: s.tenantID, Identity: caller,
+	})
+	if err != nil || status != 200 || !listed.B("acceptanceEnabled") {
+		t.Fatalf("enabled list = %#v, status %d, err %v; want acceptanceEnabled=true", listed, status, err)
+	}
+
+	store.ScheduledTaskAcceptanceEnabled = false
+	listed, status, err = store.Public(context.Background(), &core.PublicRequest{
 		Method: "GET", Path: path, TenantID: s.tenantID, Identity: caller,
 	})
 	if err != nil || status != 200 || listed.B("acceptanceEnabled") {

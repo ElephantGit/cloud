@@ -1873,18 +1873,9 @@ func TestNodeMayNotReportTheReservedBundleFailure(t *testing.T) {
 	}
 }
 
-// D4's last clause and invariant 9 at the integration boundary: a delivery result that
-// arrives after the run left `delivering` decides nothing. The delivered shape is the one that
-// matters, because it is the only one that would otherwise register a Revision.
-//
-// The scene is the one D5's give-up describes: the pass releases a run whose delivery attempt is
-// still open because the Node never reported. The delivered result therefore arrives at a run that has
-// already been released, with its delete declared and its result decided — and the control plane's own
-// fence stops it there, before verification: a released run's Workspace is no longer `ready` with
-// admission open, so the takeover is refused with the classified conflict and never reaches the
-// object store or the registration step. The refusal is asserted rather than assumed, because
-// "registers nothing" is only meaningful if the call really was refused.
-func TestLateDeliveredRevisionRegistersNothingOnAReleasedRun(t *testing.T) {
+// A late declaration whose delivery ref is missing is receipted as the original fact, without
+// registering a Revision or changing D5's business conclusion. Evidence is checked only once.
+func TestLateInvalidRevisionIsReceiptedWithoutChangingReleasedRun(t *testing.T) {
 	f := setup(t)
 	objects := f.useObjectStore()
 	scene := deliveringScene(t, f)
@@ -1899,10 +1890,10 @@ func TestLateDeliveredRevisionRegistersNothingOnAReleasedRun(t *testing.T) {
 	status, _ := f.runStatusVersion(scene.runID)
 
 	res := deliveredResult(scene, in, revisionFinalCommit)
-	expectStatus(t, errOnly(f.deliveryTerminal(scene, execution, "p5-late-delivered", 1, res, "revision_delivered")),
-		codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
-	if probed := objects.probed(); len(probed) != 0 {
-		t.Fatalf("a released run's late delivery must not reach the object store, probed %v", probed)
+	_, err := f.deliveryTerminal(scene, execution, "p5-late-delivered", 1, res, "revision_delivered")
+	must(t, err)
+	if probed := objects.probed(); len(probed) != 1 {
+		t.Fatalf("a fresh late declaration must use the original evidence verification, probed %v", probed)
 	}
 
 	if row := f.revisionRow(scene.runID); row != nil {
@@ -1930,19 +1921,21 @@ func TestLateDeliveredRevisionRegistersNothingOnAReleasedRun(t *testing.T) {
 	if got := len(f.deliveryAttempts(scene.runID)); got != 1 {
 		t.Fatalf("a late delivered result must not release another attempt, got %d", got)
 	}
-	// The refused event is receipted not at all: the fence refuses it before the takeover commits
-	// anything, including the receipt that would otherwise tell the Node it may forget the event.
-	if got := f.nodeSequence(execution); got != 0 {
-		t.Fatalf("a refused late result must not be receipted, got sequence %d", got)
+	// Missing delivery evidence prevents a Revision, but the original fact is durably receipted.
+	if got := f.nodeSequence(execution); got != 1 {
+		t.Fatalf("the late fact must be receipted, got sequence %d", got)
 	}
-	if got := len(f.receipts(execution)); got != 0 {
-		t.Fatalf("a refused late result must not write a receipt, got %v", got)
+	if got := len(f.receipts(execution)); got != 1 {
+		t.Fatalf("the late fact must write one receipt, got %v", got)
 	}
-	// The refusal is deterministic: the Node's replay gets the same answer and commits nothing more.
-	expectStatus(t, errOnly(f.deliveryTerminal(scene, execution, "", 1, res, "revision_delivered")),
-		codes.Aborted, controlpb.ErrorCode_ERROR_CODE_CONFLICT)
+	// Replaying the accepted fact cannot re-read evidence or change the business verdict.
+	_, err = f.deliveryTerminal(scene, execution, "", 1, res, "revision_delivered")
+	must(t, err)
+	if probed := objects.probed(); len(probed) != 1 {
+		t.Fatalf("a replay must not verify evidence again, probed %v", probed)
+	}
 	if got := f.runVersion(scene.runID); got != version {
-		t.Fatalf("a replay of the refused result must not write the run: version %d → %d", version, got)
+		t.Fatalf("a replay must not write the run: version %d → %d", version, got)
 	}
 }
 

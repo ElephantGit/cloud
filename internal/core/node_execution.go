@@ -127,12 +127,13 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 		return e
 	}
 	fresh := len(e.O("result")) == 0
+	lateDelivery := false
 	if !fresh {
 		require(jsonText(e.O("result")) == jsonText(result), 409, "result_conflict")
 	} else {
 		validateNodeResult(e, result)
 		if e.S("kind") == "deliver_revision" {
-			liveDelivery(t, e)
+			lateDelivery = deliveryFactIsLate(t, e)
 		}
 		if e.S("kind") == "install_plugins" || e.S("kind") == "remove_plugins" {
 			applyPluginResults(t, e, result)
@@ -153,11 +154,11 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 	if fresh && e.S("kind") == "agent_session" {
 		sessionEnded(t, operation, execution, result)
 	}
-	if fresh && e.S("kind") == "deliver_revision" && result.S("outcome") == "revision_failed" {
+	if fresh && !lateDelivery && e.S("kind") == "deliver_revision" && result.S("outcome") == "revision_failed" {
 		deliverySettled(t, operation, execution, Object{"outcome": "failed", "reason": result.S("reason")})
 	}
 	if fresh && e.S("kind") == "deliver_revision" && revisionSuccess(result) {
-		settleVerifiedRevision(t, r, e)
+		settleVerifiedRevision(t, r, e, lateDelivery)
 	}
 	return t.one("SELECT "+nodeExecutionColumns+" FROM node_executions WHERE execution_id=$1", execution)
 }

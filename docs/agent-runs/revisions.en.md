@@ -134,6 +134,24 @@ Each delivery ref belongs to at most one Revision (the partial unique index `rev
 Revisions registered before the switch to Git are kept as they are, and a database constraint keeps the two shapes
 mutually exclusive (migration `0054`).
 
+### Original facts after delivery give-up
+
+After root D5 moves a Run to `releasing` with `deliveryState=failed` and `revisionId=null`, or root D8 subsequently moves it to `done`,
+the registered delivery may still submit its original terminal under the original execution, work, Workspace, Node and sandbox/generation identity.
+No residual ledger or operator intent is required. This intake does not relax ordinary `liveDelivery` or dispatch eligibility, change the Run,
+historical failed delete or admission, or create reclamation responsibility. The declaration, exact receipt, submission and necessary evidence commit
+atomically before the existing takeover success permits ACK. ACK means fact takeover only. Late failures do not retry or resettle business;
+success declarations retain the evidence rules above.
+
+Both root D5/D8 intake and existing residual rescue first register a late Revision only when the same tenant/Issue has no later-created Run.
+The final registration transaction compares the same-transaction `run.enqueued` activity seq for every Run and serializes with Run creation.
+Timestamps, UUIDs, executor, status and soft deletion do not determine this order. Missing or ambiguous evidence, or any later-created Run,
+means declaration and receipt only, with no Revision or verified delivery. Identical replays preserve the original decision without external reads,
+registration or business hooks; real conflicts and existing ledger conflict audits retain their rules. Normal release proceeds independently;
+late takeover does not restart a historical D8 failed delete. See
+[late-fact ADR D1–D3](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261022-late-delivery-fact-takeover.md)
+(approved; the landing run owns implementation status and joint acceptance).
+
 ## Resuming a prior Revision
 
 When an Agent is `@`-mentioned again on the same Issue, the new run still gets a brand-new run Workspace, but

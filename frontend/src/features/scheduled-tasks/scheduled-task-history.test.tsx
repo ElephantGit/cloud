@@ -51,6 +51,12 @@ describe('ScheduledTaskHistory', () => {
     expect(screen.getByText(/产物 2 项（1 项被拒）/)).toBeInTheDocument()
   })
 
+  it('distinguishes expired artifacts from a run that produced none', async () => {
+    renderHistory([entry({ artifactsExpired: true, artifactCount: 0 })])
+    expect(await screen.findByText(/产物已过期/)).toBeInTheDocument()
+    expect(screen.queryByText(/产物 0 项/)).not.toBeInTheDocument()
+  })
+
   it('says 未报告 for a run that never reported a verdict', async () => {
     renderHistory([entry()])
     expect(await screen.findByText(/结论 未报告/)).toBeInTheDocument()

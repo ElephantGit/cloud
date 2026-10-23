@@ -283,6 +283,7 @@ func Document() map[string]any {
 		"verdictDetail":         optional(str()),
 		"artifactCount":         optional(number()),
 		"rejectedArtifactCount": optional(number()),
+		"artifactsExpired":      optional(boolean()),
 		"sessionId":             optional(uuid()),
 	}, "scheduledAt", "outcome", "taskRevision", "observedAt")
 	s["ScheduledTaskHistory"] = object(obj{"taskId": uuid(), "entries": array(ref("ScheduledTaskOccurrence"))}, "taskId", "entries")

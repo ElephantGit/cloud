@@ -41,3 +41,5 @@ rejection count). Do not mock internal modules.
 The creation entry trusts the Cloud list response’s `acceptanceEnabled`; this module does not choose the gate, and the server independently validates writes.
 
 Artifact lists carry no download capability. Explicit clicks request current authorization; collapsing the list discards links. Downloads accept only HTTP(S) URLs without embedded credentials and open separately without a referrer; artifact content is never rendered inside the app.
+
+History uses `artifactsExpired` to identify artifacts removed after successful delivery; a run that produced none is never labeled expired.

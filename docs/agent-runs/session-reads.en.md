@@ -119,3 +119,5 @@ Grants prefer the configured public endpoint (otherwise the default endpoint), w
 
 The UI expands metadata on demand and requests links only on explicit clicks; it never renders artifact content inside the app. `scheduled_task.artifacts_updated` triggers history/index refetches without carrying artifact facts or granting access. History trimming preserves run facts; independent retention governs artifacts. See the
 [verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md).
+
+Artifact reads by authenticated callers without membership return `404 not_found`. History explicitly marks artifacts as expired when their index was cleared after successful/partial delivery; no-output and failed-upload runs are not expired.

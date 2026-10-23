@@ -107,7 +107,7 @@ export function ScheduledTaskHistory({
                     结论 {verdictLabel(entry.verdict)}
                     {entry.verdictDetail ? `：${entry.verdictDetail}` : ''}
                     {entry.runId
-                      ? ` · 产物 ${entry.artifactCount ?? 0} 项${
+                      ? `${entry.artifactsExpired ? ' · 产物已过期' : ` · 产物 ${entry.artifactCount ?? 0} 项`}${
                           entry.rejectedArtifactCount
                             ? `（${entry.rejectedArtifactCount} 项被拒）`
                             : ''

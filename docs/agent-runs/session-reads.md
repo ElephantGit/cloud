@@ -92,3 +92,5 @@ Agent 运行时在最后的 `turnEnded` 里也可能带着 ACP 的 `token_usage`
 界面按需展开文件列表，点击时才申请链接；产物正文不在应用内渲染。`scheduled_task.artifacts_updated` 只提示重读历史与索引，
 不携带产物事实或签发授权。任务历史裁剪不删除运行级事实，产物按独立保留策略清理；详见
 [verdict 与产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
+
+产物接口对已认证但无成员权限的读取统一返回 `404 not_found`。历史明确标注已成功/部分交付后索引被清理的产物为「已过期」，从未产生产物或上传失败不算过期。

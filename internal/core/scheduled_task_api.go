@@ -279,6 +279,9 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 		       o.deadline_cancelled_at, o.observed_at,
 		       r.id AS run_id, r.status AS run_status, r.failure_reason AS run_failure_reason,
 		       sr.verdict, sr.verdict_detail,
+		       EXISTS (SELECT 1 FROM scheduled_run_artifact_deliveries d
+		         WHERE d.issue_run_id = o.run_id AND d.state IN ('delivered','partial')
+		           AND NOT EXISTS (SELECT 1 FROM scheduled_run_artifacts a WHERE a.issue_run_id = o.run_id)) AS artifacts_expired,
 		       (SELECT count(*) FROM scheduled_run_artifacts a WHERE a.issue_run_id = o.run_id) AS artifact_count,
 		       (SELECT count(*) FROM scheduled_run_artifact_rejections j WHERE j.issue_run_id = o.run_id) AS rejected_artifact_count
 		FROM scheduled_task_occurrences o
@@ -334,6 +337,9 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 			// neither number requires reading an object.
 			item["artifactCount"] = entry.N("artifactCount")
 			item["rejectedArtifactCount"] = entry.N("rejectedArtifactCount")
+			// A settled success without its registered index has been pruned; an empty/failed run
+			// never establishes this fact. No occurrence lifetime is used to infer expiry.
+			item["artifactsExpired"] = entry.B("artifactsExpired")
 		}
 		out = append(out, item)
 	}

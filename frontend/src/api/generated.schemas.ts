@@ -2049,6 +2049,8 @@ export interface ScheduledTaskOccurrence {
   /** @nullable */
   artifactCount?: number | null;
   /** @nullable */
+  artifactsExpired?: boolean | null;
+  /** @nullable */
   failureReason?: string | null;
   observedAt: string;
   outcome: string;

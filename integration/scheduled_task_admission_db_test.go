@@ -137,6 +137,35 @@ func TestScheduledTaskHistoryReadsEmptyAndAdmitted(t *testing.T) {
 	if entries[0].N("artifactCount") != 0 || entries[0].N("rejectedArtifactCount") != 0 {
 		t.Fatalf("artifact counts = %v, want zero for a run without artifacts", entries[0])
 	}
+	if entries[0].B("artifactsExpired") {
+		t.Fatal("a run that never registered artifacts must not look expired")
+	}
+	runID := entries[0].S("runId")
+	_, err := store.Pool.Exec(`INSERT INTO scheduled_run_artifact_deliveries
+		(issue_run_id,tenant_id,task_id,occurrence_id,scheduled_at,state,deadline_at,settled_at)
+		SELECT run_id,tenant_id,task_id,id,scheduled_at,'delivered',now(),now()
+		FROM scheduled_task_occurrences WHERE run_id=$1`, runID)
+	must(t, err)
+	_, err = store.Pool.Exec(`INSERT INTO scheduled_run_artifacts
+		(tenant_id,issue_run_id,task_id,occurrence_id,scheduled_at,artifact_index,object_key,display_name,kind,size_bytes,sha256)
+		SELECT tenant_id,run_id,task_id,id,scheduled_at,0,'test-artifact','result.txt','text',5,repeat('a',64)
+		FROM scheduled_task_occurrences WHERE run_id=$1`, runID)
+	must(t, err)
+	available := readHistory("scheduled-history-available")["entries"].([]core.Object)[0]
+	if available.B("artifactsExpired") || available.N("artifactCount") != 1 {
+		t.Fatalf("registered artifacts must remain available: %v", available)
+	}
+	_, err = store.Pool.Exec("DELETE FROM scheduled_run_artifacts WHERE issue_run_id=$1", runID)
+	must(t, err)
+	for _, state := range []string{"delivered", "partial", "failed", "skipped"} {
+		_, err = store.Pool.Exec("UPDATE scheduled_run_artifact_deliveries SET state=$1 WHERE issue_run_id=$2", state, runID)
+		must(t, err)
+		item := readHistory("scheduled-history-" + state)["entries"].([]core.Object)[0]
+		wantExpired := state == "delivered" || state == "partial"
+		if item.B("artifactsExpired") != wantExpired || item.N("artifactCount") != 0 {
+			t.Fatalf("state %s history = %v; want expired=%t and zero registered files", state, item, wantExpired)
+		}
+	}
 }
 
 // TestScheduledTaskMissedRecoverySingleOccurrence (FIX-5): a long outage writes exactly one missed.

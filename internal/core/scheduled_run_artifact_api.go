@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ func (s *Store) SessionRunArtifact(ctx context.Context, r *PublicRequest) (Objec
 		return scheduledArtifactRegistration(t, r)
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, scheduledArtifactReadFault(err)
 	}
 	if s.ObjectStore == nil {
 		return nil, 0, &Fault{Status: 503, Code: "object_store_unavailable", Params: Object{}}
@@ -66,7 +67,7 @@ func (s *Store) SessionRunArtifacts(ctx context.Context, r *PublicRequest) (Obje
 		return Object{"artifacts": items}
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, scheduledArtifactReadFault(err)
 	}
 	return artifacts, 200, nil
 }
@@ -101,4 +102,13 @@ func scheduledArtifactRegistration(t *transaction, r *PublicRequest) Object {
 	require(len(parts) == 4 && parts[0] == "scheduled-runs" && parts[1] == r.TenantID &&
 		parts[2] == r.RunID && parts[3] == strconv.Itoa(index), 502, "artifact_invalid")
 	return artifact
+}
+
+// Artifact visibility hides tenant membership failures behind the same 404 as a missing run.
+func scheduledArtifactReadFault(err error) error {
+	var fault *Fault
+	if errors.As(err, &fault) && fault.Code == "membership_required" {
+		return &Fault{Status: 404, Code: "not_found", Params: Object{}}
+	}
+	return err
 }

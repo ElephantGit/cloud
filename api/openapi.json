@@ -4528,6 +4528,10 @@
             "nullable": true,
             "type": "integer"
           },
+          "artifactsExpired": {
+            "nullable": true,
+            "type": "boolean"
+          },
           "failureReason": {
             "nullable": true,
             "type": "string"

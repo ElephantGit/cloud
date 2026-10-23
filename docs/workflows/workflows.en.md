@@ -113,6 +113,15 @@ node states, session or Workspace; the scheduler settles it on its next pass (se
 bindings frozen on the run: on a bound run only the initiator and the tenant's administrators may cancel, and any
 other member answers `403 workflow_run_cancel_forbidden`; an unbound run keeps the Issue Thread's member rule.
 
+**The resume endpoint is registered but unavailable in this phase.** `POST .../workflows/:wfid/runs/:rid/resume`
+validates the request against the final contract: `mode` is optional and is one of `keep` (the default), `node_files`
+and `checkpoint`; an unknown field is `400 unknown_field` and an invalid value is `400 invalid_field_value`.
+Authorization is cancellation's: on a bound run only the initiator and the tenant's administrators may call it, and
+any other member answers `403 workflow_run_resume_forbidden`. Every valid request answers
+`501 workflow_run_resume_unavailable` and writes nothing — no run state and no idempotency record — so a repeat is
+the same refusal rather than a replay of a recorded success. A failed run's Workspace is already declared deleted,
+leaving `keep` nothing to resume onto, so the frontend offers no resume entry point.
+
 ## Scheduling
 
 WorkflowRuns are carried forward by a scheduling loop in the Cloud server (`AdvanceWorkflowRunsOnce`, every 10
@@ -160,6 +169,18 @@ seconds):
   of its Workspace. In the first phase this session has no Git Server
   access (reads and writes get `403`), and its Workspace is not listed in an IssueRun session's Workspace directory;
   see [Git Server](../repositories/git-server.en.md).
+- **Agent-node retry is decided by the `agentConfig.retry` frozen on the node.** A session retries only when it ends
+  as `agent_failed`, the policy is enabled and the budget is not spent: the budget is `maxRetries + 1` attempts
+  (`maxRetries` ranges 0–5 and defaults to 2), and the next attempt starts after `initialDelaySeconds × 2^(n-1)`
+  (`initialDelaySeconds` ranges 0–300 and defaults to 10, with a 600-second cap per wait). While it waits, the node
+  commits `retrying`: the run stays `running`, the node keeps the failed attempt's `startedAt`, `error` and
+  `output.reason`, records `retryAt` from the database clock and clears `finishedAt`; it keeps the run's single
+  session slot until `retryAt` arrives. The new attempt has its own execution identity (`workflow_node_attempt`), so
+  the previous attempt's result and end request are never reused. A spent budget, a disabled policy or a reason
+  outside `agent_failed` fails the node with the last reason, and the run reaches a terminal state and releases its
+  Workspace. At publish, `agentConfig.retry` must be a complete object; absent or `null` means the default policy,
+  and unknown keys are ignored. A frozen historical snapshot is never re-gated, and a policy that cannot be parsed
+  runs as the default.
 - **A workflow session is single-turn, and Cloud decides when it ends.** Once the initial turn's `turnEnded`
   receipt arrives (with a `stop_reason` other than `cancelled`), the scheduler ends the session through the existing
   `EndSession` command relay; the session result the Node reports remains the node's only terminal evidence. If the
@@ -231,6 +252,7 @@ rewrites imported documents or published versions.
 - [Workflows are executed by a Cloud-side scheduler: WorkflowRun is the execution aggregate](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
 - [Workflow agent nodes reference executors by executor slot; graphs no longer store Agent CLIs or model IDs](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md) (approved)
 - [A workflow session ends after its initial turn by the Cloud scheduler, with a bounded wait on the end request](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261019-workflow-session-end-after-initial-turn.md)
+- [Workflow agent nodes retry under a retry policy; the resume endpoint is registered against its final contract but unavailable in the first phase](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261021-node-retry-and-resume-contract.md) (approved)
 - [Plugin asset import produces published snapshots: the asset lifecycle never rewrites snapshots, and runs freeze only the snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow plugin assets are fetched by Cloud and imported document by document as editable copies](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [Personal slot mappings resolve a workflow's executors; each run pins one model binding per slot](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md) (approved)

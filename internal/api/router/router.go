@@ -150,6 +150,10 @@ func Routes() []Route {
 		{"POST", "/api/v1/tenants/:tid/workflows/:wfid/runs", "", []string{"name", "snapshotId", "input", "projectId"}},
 		{"GET", "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid", "", nil},
 		{"POST", "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/cancel", "", nil},
+		// Resume is registered with its final request shape and refuses every valid request with a
+		// named 501 (retry-and-resume decision D7). Registering it lets clients tell "unavailable"
+		// from "wrong path" while the implementation lands in a later phase.
+		{"POST", "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/resume", "", []string{"mode"}},
 		{"GET", WorkflowStatisticsPath, "", nil},
 		{"GET", WorkflowModelCallsPath, "", nil},
 		{"GET", "/api/v1/tenants/:tid/issue-views", "", nil},
@@ -729,6 +733,11 @@ func validField(name string, value any) bool {
 	case "idle", "initialized", "impactConfirmed", "enabled":
 		_, ok := value.(bool)
 		return ok
+	case "mode":
+		// The workflow-run resume request owns this vocabulary: every present value that is not one
+		// of the three mode strings — including null and a non-string — is the route's own 400
+		// invalid_field_value, so the value must reach core instead of becoming invalid_field_type.
+		return true
 	case "result":
 		o, ok := value.(map[string]any)
 		if !ok {

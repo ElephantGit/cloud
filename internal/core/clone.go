@@ -151,6 +151,16 @@ func cloneResult(t *transaction, r *ControlRequest, withReceipt bool) Object {
 
 // isCloneAction reports whether a control action belongs to the execution registry, including the
 // Agent session methods that share its lease and submission rules.
+//
+// The upload grants are listed explicitly rather than matched by prefix: a grant is issued against a
+// registered execution under the same lease, so it must reach the same handler the Node's claim does,
+// and a typo in a new action name must not silently fall through to the operation command path where
+// it would be answered by a different handler with a different error.
 func isCloneAction(action string) bool {
-	return strings.HasPrefix(action, "clone_") || strings.HasPrefix(action, "thread_") || action == "grant_revision_upload"
+	switch action {
+	case "grant_revision_upload", "grant_scheduled_artifact_upload":
+		return true
+	default:
+		return strings.HasPrefix(action, "clone_") || strings.HasPrefix(action, "thread_")
+	}
 }

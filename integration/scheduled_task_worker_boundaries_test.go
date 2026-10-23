@@ -11,7 +11,10 @@ import (
 func TestScheduledTaskCreatorInactiveAutoDisables(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Creator inactive", 65)
-	_, err := store.Pool.Exec(`UPDATE tenant_memberships SET status='disabled' WHERE tenant_id=$1 AND user_id=$2`, s.tenantID, s.userID)
+	// Disable the creator's user account rather than their membership: the membership row is the
+	// tenant's last active administrator and carries an aggregate guard, while creatorMembershipActive
+	// also requires the joined users.status to stay 'active'.
+	_, err := store.Pool.Exec(`UPDATE users SET status='disabled' WHERE id=$1`, s.userID)
 	must(t, err)
 
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))

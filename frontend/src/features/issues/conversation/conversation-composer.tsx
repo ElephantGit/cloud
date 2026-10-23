@@ -188,10 +188,7 @@ export function ConversationComposer({
   else if (mode === 'comment') buttonLabel = '发表评论'
 
   return (
-    <form
-      onSubmit={submit}
-      className="sticky bottom-0 z-10 space-y-3 rounded-xl border bg-background/95 p-4 shadow-sm backdrop-blur"
-    >
+    <form onSubmit={submit} className="space-y-2">
       <AgentRecipient
         agents={agents}
         agentId={agentId}
@@ -207,6 +204,7 @@ export function ConversationComposer({
         onChange={(event) => setDraft(event.target.value)}
         placeholder={mode === 'comment' ? '写下任务评论…' : '给 Agent 发送消息…'}
         rows={3}
+        className="max-h-40 resize-none [field-sizing:content]"
         disabled={busy}
       />
       {mode === 'agent' && (

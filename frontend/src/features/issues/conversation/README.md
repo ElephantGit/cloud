@@ -6,6 +6,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
+| `conversation-footer.tsx` | 绑定当前执行的结束、停止、恢复与常驻输入区 |
 | `api.ts` | 任务消息双向分页、发送、停止、取消/重试、恢复/放弃未交付成果 API 与安全错误文案。 |
 | `conversation-panel.tsx` | 聚合任务评论、Agent Run 与待交接消息；只对当前占用任务的会话展示授权的结束入口。 |
 | `conversation-composer.tsx` | 单一 Agent 目标选择、显式提及菜单、Agent 消息/仅评论模式及交接提示。 |
@@ -15,3 +16,5 @@
 | `*.test.ts(x)` | MSW 与组件场景，覆盖终态续聊、切换、失败与队列。 |
 
 依赖 `src/api` 生成客户端、`features/issues/api`、`features/issues/thread`、`features/spaces/api`、`features/conversation-content` 和 `components/ui`。只使用服务端授权后的目标名册；选择器和 `@` 菜单只在明确选择后改变接收者，普通文本中的 `@名称` 不参与路由，本地选择也不触发执行。历史选中 Run 只读；任务级发送框始终把新消息发往当前目标。结束入口只指向服务端 `activeRunId`，还须 Thread 的 `canEnd` 为真且当前用户是该会话发起者；排在后面的 Run 不能遮住当前会话的结束入口。分页按服务端 seq 合并，响应丢失后的重试保留同一个幂等键。
+
+`conversation-footer.tsx` 将当前会话结束、任务停止/恢复和输入区固定在正文之外，操作始终绑定当前执行。正文以轻量 Run 分隔连续阅读，作者来自消息或 Thread 发起者，只有当前用户显示“你”；Agent 名称显式传给消息展示。正文借用 thread 的统一 viewport，授权拒绝后隐藏旧消息。

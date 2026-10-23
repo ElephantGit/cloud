@@ -97,6 +97,31 @@ function renderConversation(runs: IssueRun[], currentUserId = 'u1') {
 }
 
 describe('TaskConversationPanel', () => {
+  it('does not label another member as the current user in a waiting message', async () => {
+    mockConversation(
+      [],
+      [
+        {
+          id: 'm-other',
+          seq: 1,
+          agentId: 'a1',
+          body: '另一个成员的消息',
+          userId: 'other',
+          createdAt: '2026-10-18T00:00:00Z',
+          state: 'waiting',
+          runId: null,
+          threadSeq: null,
+          errorCode: null,
+        },
+      ],
+    )
+    renderConversation([])
+    expect(await screen.findByText('另一个成员的消息')).toBeInTheDocument()
+    expect(screen.getByText('用户 → OpenCode')).toBeInTheDocument()
+    expect(screen.queryByText('你 → OpenCode')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '取消等待' })).not.toBeInTheDocument()
+  })
+
   it('ends the active Thread from the task page without stopping or pausing the queue', async () => {
     const runs = [
       run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z'),

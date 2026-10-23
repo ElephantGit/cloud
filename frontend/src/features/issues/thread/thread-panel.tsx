@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useInlineThread } from './conversation-viewport'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useRuns } from '@/features/issues/api'
@@ -54,6 +55,15 @@ function isHistoricalSelection(
   return !!selectedRunId && selectedRunId !== latestRunId && !showEndControl
 }
 
+function threadAuthor(
+  id: string | null,
+  current: string | undefined,
+  names: ReadonlyMap<string, string>,
+) {
+  if (id && id === current) return '你'
+  return names.get(id ?? '') ?? '用户'
+}
+
 function DeclaredThread({
   threadRef,
   snapshot,
@@ -83,6 +93,7 @@ function DeclaredThread({
         <RunPreparation progress={preparation} />
       )}
       <ThreadMessages
+        userName={threadAuthor(snapshot.initiatorUserId, endActorId, names)}
         entries={mergeThreadPreview(snapshot.entries, preview.snapshot)}
         liveRevision={preview.snapshot.version}
         hasOlder={oldest !== undefined && oldest > 1}
@@ -99,15 +110,23 @@ function DeclaredThread({
         </p>
       )}
       {loadOlder.isError && <p className="text-xs text-destructive">加载更早的消息失败</p>}
-      <p className="text-xs text-muted-foreground">
-        发起者：
-        {snapshot.initiatorUserId ? (names.get(snapshot.initiatorUserId) ?? '用户') : '历史会话'}
-      </p>
-      {snapshot.model && (
-        <p className="break-all text-xs text-muted-foreground">
-          {snapshot.model.connectionName} · {snapshot.model.modelName}（{snapshot.model.modelId}）
-        </p>
-      )}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">执行身份与模型</summary>
+        <div className="mt-2 space-y-1">
+          <p className="text-xs text-muted-foreground">
+            发起者：
+            {snapshot.initiatorUserId
+              ? (names.get(snapshot.initiatorUserId) ?? '用户')
+              : '历史会话'}
+          </p>
+          {snapshot.model && (
+            <p className="break-all text-xs text-muted-foreground">
+              {snapshot.model.connectionName} · {snapshot.model.modelName}（{snapshot.model.modelId}
+              ）
+            </p>
+          )}
+        </div>
+      </details>
       {!readOnly && (
         <ThreadComposer
           threadRef={threadRef}
@@ -152,14 +171,18 @@ function RunThread({
   endActorId: string | undefined
   onQuote?: ((text: string) => void) | undefined
 }) {
+  const inline = useInlineThread()
   const settled = ['completed', 'failed', 'cancelled'].includes(run.status)
   const thread = useThread(threadRef, settled)
   const headingId = useId()
-  const snapshot = thread.data
+  const snapshot = thread.isError ? undefined : thread.data
 
   return (
-    <section aria-labelledby={headingId} className="space-y-3 rounded-lg border p-3">
-      <div className="flex items-center justify-between gap-2">
+    <section
+      aria-labelledby={headingId}
+      className={inline ? 'space-y-3' : 'space-y-3 rounded-lg border p-3'}
+    >
+      <div className={inline ? 'sr-only' : 'flex items-center justify-between gap-2'}>
         <h2 id={headingId} className="text-sm font-semibold">
           Agent 会话
         </h2>
@@ -224,6 +247,7 @@ export function IssueThreadPanel({
   onQuote?: ((text: string, agentId: string) => void) | undefined
 }) {
   const { data: runs = [], isPending, isError } = useRuns(tid, issueId)
+  const inline = useInlineThread()
   const latest = latestAgentRun(runs)
   const run = chosenAgentRun(runs, selectedRunId)
   if (isError) return <p role="alert">执行记录加载失败，请稍后重试。</p>
@@ -231,7 +255,7 @@ export function IssueThreadPanel({
   if (!run) return null
   return (
     <div className="min-w-0 w-full">
-      {isHistoricalSelection(selectedRunId, latest?.id, showEndControl) && (
+      {isHistoricalSelection(selectedRunId, latest?.id, showEndControl || inline) && (
         <p className="mb-3 text-xs text-muted-foreground">
           正在查看历史执行；继续对话请返回最新执行。
         </p>
@@ -242,7 +266,7 @@ export function IssueThreadPanel({
         runs={runs}
         threadRef={{ tid, issueId, runId: run.id }}
         names={memberNameById(members)}
-        readOnly={readOnly || (!!selectedRunId && run.id !== latest?.id)}
+        readOnly={readOnly || isHistoricalSelection(selectedRunId, latest?.id, false)}
         showEndControl={showEndControl}
         endActorId={endActorId}
         onQuote={onQuote ? (text) => onQuote(text, run.executorId) : undefined}

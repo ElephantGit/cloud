@@ -12,7 +12,7 @@ import (
 // workflow_node_id is the graph node a session ran for. It is denormalized onto the row (migration
 // 0041) so the one_session_per_workflow_node partial index has a predicate to test and so the
 // scheduler can attribute a result without joining through execution_work. workflow_node_attempt is
-// the node's attempt (migration 0061), denormalized the same way for the same reasons. No Controller
+// the node's attempt (migration 0062), denormalized the same way for the same reasons. No Controller
 // contract declares either: the proto ExecutionRecord has none, and the JSON binding's NodeExecution
 // schema is closed.
 var nodeExecutionInternalColumns = map[string]bool{

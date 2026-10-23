@@ -179,7 +179,7 @@ func (s *Store) ImportWorkflowAssetsOnce(ctx context.Context) error {
 			if err := s.finishWorkflowAssetImport(ctx, job, revision, nil, code); err != nil {
 				failures = append(failures, err)
 			}
-			failures = append(failures, fmt.Errorf("%s/%s for %s: %s", job.Namespace, job.Identifier, job.SpaceID, code))
+			failures = append(failures, fmt.Errorf("%s/%s for %s: %s", job.Namespace, job.Identifier, job.SpaceID, assetFailureDetail(fetchErr, code)))
 			continue
 		}
 		documents, extractErr := workflowasset.Documents(pkg)
@@ -408,6 +408,17 @@ func assetFailureCode(err error) string {
 		return packageFailure.Code
 	}
 	return workflowasset.FailureUnavailable
+}
+
+// assetFailureDetail is the logged attribution for one package failure: the stable code plus the
+// bounded detail the package type allows for structured logs (checked-address reasons, bounds).
+// Unexpected errors keep only their code so transport text never enters the log.
+func assetFailureDetail(err error, code string) string {
+	var packageFailure *workflowasset.Failure
+	if errors.As(err, &packageFailure) && packageFailure.Detail != "" {
+		return packageFailure.Code + ": " + packageFailure.Detail
+	}
+	return code
 }
 
 // finishWorkflowAssetImport writes per-document results and the package outcome in one transaction.

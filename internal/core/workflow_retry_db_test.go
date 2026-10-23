@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -268,6 +269,71 @@ func TestWorkflowRetryWaitsThenStartsTheNextAttempt(t *testing.T) {
 		t.Fatalf("registered sessions = %v; want one per attempt %v", sessions, want)
 	}
 	assertRunWorkspaceReleased(t, store, runID)
+}
+
+// The wake is serialized by the run's exclusive transaction (D3): two replicas advancing the same
+// due retry at the same time release exactly one next attempt. The pass that loses reads the
+// winning attempt as running and releases nothing, so the run cannot end up with two session work
+// items for the same attempt or skip an attempt number.
+func TestWorkflowRetryDueStartsOneAttemptUnderConcurrentPasses(t *testing.T) {
+	store := dispatcherDB(t)
+	replica := secondReplica(t, store)
+	runID, _, _, _, _ := seedWorkflowSessionSceneGraph(t, store, workflowRetryGraph(true, 2, 0))
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	execution := "exec-concurrent-due-" + runID[:8]
+	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution, spec)
+	reportSessionEnd(t, store, runID, execution, nodeService, "agent_failed")
+	requireRetrying(t, readWorkflowNodeState(t, store, runID, "a"), 1)
+	makeWorkflowRetryDue(t, store, runID, "a")
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, s := range []*Store{store, replica} {
+		wg.Add(1)
+		go func(s *Store) {
+			defer wg.Done()
+			<-start
+			errs <- s.AdvanceWorkflowRunsOnce(context.Background())
+		}(s)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent pass: %v", err)
+		}
+	}
+
+	state := readWorkflowNodeState(t, store, runID, "a")
+	if state.S("status") != "running" || state.N("attempt") != 2 || state.S("retryAt") != "" {
+		t.Fatalf("state after concurrent passes = %v; want running attempt 2 with no retryAt", state)
+	}
+	rows, err := store.Pool.Query(`SELECT workflow_node_attempt FROM execution_work
+		WHERE workflow_run_id=$1 AND workflow_node_id='a' AND execution_id IS NULL ORDER BY workflow_node_attempt`, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var released []int64
+	for rows.Next() {
+		var attempt int64
+		if err := rows.Scan(&attempt); err != nil {
+			t.Fatal(err)
+		}
+		released = append(released, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(released) != 1 || released[0] != 2 {
+		t.Fatalf("released session work attempts = %v; want exactly [2]", released)
+	}
 }
 
 // The budget is `maxRetries + 1` attempts (D1/D6). After the last allowed attempt fails, the node

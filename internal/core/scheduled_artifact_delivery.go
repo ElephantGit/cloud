@@ -85,6 +85,6 @@ func recordScheduledArtifacts(t *transaction, runID, executionID string, ended O
 	enqueueExecutionWork(t, runID, "deliver_scheduled_artifacts", Object{
 		"kind":               "deliver_scheduled_artifacts",
 		"sessionExecutionId": executionID,
-	}, sessionStartTarget(t, run.S("workspaceId")), "", time.Time{})
+	}, sessionStartTarget(t, run.S("workspaceId")), "", 0, time.Time{})
 	return nil
 }

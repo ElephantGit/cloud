@@ -103,7 +103,9 @@ function WorkflowRunDetailBody({
           </span>
         </div>
         <div className="flex min-h-0 flex-1">
-          <div className="min-w-0 flex-1">
+          {/* The canvas sizes itself with `h-full` inside a `flex-1` root, so its column must be a
+              flex container: a block column lets `flex-1` go inert and collapses the canvas to 0. */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <RunOverviewCanvas
               definitionSnapshot={run.definitionSnapshot}
               nodeStates={nodeStates}

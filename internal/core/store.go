@@ -114,6 +114,10 @@ type Store struct {
 	// OnDeliverySettled receives saved/unchanged with revisionId and Revision metadata, failed with
 	// a safe reason, or skipped when storage is unconfigured. It runs after receipt/Revision writes.
 	OnDeliverySettled func(context.Context, *sql.Tx, string, string, Object) error
+	// OnScheduledArtifactsSettled receives a scheduled run's verified artifact delivery: the objects
+	// Cloud confirmed, per-object results and the absolute deadline verdict, computed outside the
+	// transaction. It runs after the receipt is recorded.
+	OnScheduledArtifactsSettled func(context.Context, *sql.Tx, string, string, Object) error
 
 	// Collaboration ports (consuming-side seams; see collaboration.go). NewStore wires the real
 	// workflow-backed Directory and Forms, because Cloud owns the workflow document and needs no
@@ -256,12 +260,14 @@ type transaction struct {
 	onRunWorkspaceSettled func(context.Context, *sql.Tx, string, string) error
 	onRunWorkspaceDeleted func(context.Context, *sql.Tx, string) error
 	onDeliverySettled     func(context.Context, *sql.Tx, string, string, Object) error
-	queued                []string
-	workSignals           []string
-	commandSignals        []string
-	events                []SpaceEvent
-	residualFactConflict  bool
-	residualFactSource    Object
+	// onScheduledArtifactsSettled receives the verified artifact delivery of one scheduled run.
+	onScheduledArtifactsSettled func(context.Context, *sql.Tx, string, string, Object) error
+	queued                      []string
+	workSignals                 []string
+	commandSignals              []string
+	events                      []SpaceEvent
+	residualFactConflict        bool
+	residualFactSource          Object
 }
 
 func (t *transaction) exec(q string, args ...any) {
@@ -434,6 +440,7 @@ func (s *Store) transactLocked(ctx context.Context, lock func(*transaction), cla
 	}()
 	t := &transaction{tx: tx, ctx: ctx, store: s, pluginExecution: s.PluginExecution, directory: s.Directory, contextBuilder: s.Context, forms: s.Forms, assist: s.Assist, simulator: s.Simulator, objectStore: s.ObjectStore, onThreadEvents: s.OnThreadEvents, onSessionEnded: s.OnSessionEnded}
 	t.onRunWorkspaceSettled, t.onRunWorkspaceDeleted, t.onDeliverySettled = s.OnRunWorkspaceSettled, s.OnRunWorkspaceDeleted, s.OnDeliverySettled
+	t.onScheduledArtifactsSettled = s.OnScheduledArtifactsSettled
 	// Publish this transaction to the B-side hooks, which the seams below invoke with the *sql.Tx
 	// alone. Without it a hook could only wrap the handle in a second transaction view, and every
 	// enqueue, Thread entry and post-commit hint it produced would be collected in a set that is

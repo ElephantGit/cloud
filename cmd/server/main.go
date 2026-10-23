@@ -282,6 +282,27 @@ func run() (runErr error) {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
 		}()
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			// A scheduled run's artifact window is fixed when its declaration is stored, so expiry is
+			// the same clock-driven pass as the others: one short transaction per run, no policy.
+			pluginmarket.RunSyncLoop(ctx, store.ExpireScheduledArtifactDeliveriesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			// Retention applies D5's ten-run cost boundary per task; the object-store deletions happen
+			// between transactions, exactly like the reads.
+			pluginmarket.RunSyncLoop(ctx, store.PruneScheduledRunArtifactsOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			// The prefix sweep is the lifetime fallback for objects a presigned PUT wrote after Cloud
+			// stopped granting them: deterministic keys, no bucket listing, no receipt needed.
+			pluginmarket.RunSyncLoop(ctx, store.CollectScheduledArtifactObjectsOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
 	}
 	// Residual recovery remains independent of a run's business terminal state. Cloud consumes
 	// existing, identity-bound facts; a missing fact leaves its ledger open rather than treating

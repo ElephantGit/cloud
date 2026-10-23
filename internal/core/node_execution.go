@@ -16,7 +16,7 @@ const nodeExecutionColumns = `execution_id,kind,operation_id,work_id,workspace_i
 func nodeDispatch(t *transaction, r *ControlRequest) Object {
 	operation, execution, node := r.Body.S("operationId"), r.Body.S("executionId"), r.Body.S("nodeId")
 	input := r.Body.O("input")
-	if input.S("kind") == "agent_session" || input.S("kind") == "deliver_revision" {
+	if input.S("kind") == "agent_session" || input.S("kind") == "deliver_revision" || input.S("kind") == "deliver_scheduled_artifacts" {
 		require(t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", operation) == nil, 409, "dispatch_conflict")
 	}
 	require(execution != "" && node != "" && len(input) > 0, 400, "invalid_dispatch")
@@ -28,7 +28,7 @@ func nodeDispatch(t *transaction, r *ControlRequest) Object {
 	switch input.S("kind") {
 	case "install_plugins", "remove_plugins":
 		return dispatchPluginExecution(t, r, operation, execution, node, input)
-	case "agent_session", "deliver_revision":
+	case "agent_session", "deliver_revision", "deliver_scheduled_artifacts":
 		return dispatchRunExecution(t, r, operation, execution, node, input)
 	default:
 		reject(400, "invalid_dispatch")
@@ -93,10 +93,15 @@ func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, n
 			require(t.one("SELECT execution_id FROM node_executions WHERE operation_id=$1 AND kind='agent_session'", runID) == nil, 409, "dispatch_conflict")
 		}
 	}
-	if input.S("kind") == "deliver_revision" {
+	if input.S("kind") == "deliver_revision" || input.S("kind") == "deliver_scheduled_artifacts" {
 		require(t.one("SELECT execution_id FROM node_executions WHERE execution_id=$1 AND operation_id=$2 AND workspace_id=$3 AND kind='agent_session' AND result->>'outcome'='agent_session_ended'", input.S("sessionExecutionId"), runID, wid) != nil, 409, "dispatch_conflict")
 	}
-	require(t.one("SELECT execution_id FROM node_executions WHERE operation_id=$1 AND kind IN ('agent_session','deliver_revision') AND result IS NULL AND terminated_by_force_stop_id IS NULL", runID) == nil, 409, "dispatch_conflict")
+	// Both deliveries may run together after their session ended. A session still excludes all
+	// run executions, and each delivery excludes another pending execution of its own kind.
+	require(t.one(`SELECT execution_id FROM node_executions WHERE operation_id=$1
+		AND kind IN ('agent_session','deliver_revision','deliver_scheduled_artifacts')
+		AND (kind='agent_session' OR kind=$2 OR $2='agent_session')
+		AND result IS NULL AND terminated_by_force_stop_id IS NULL`, runID, input.S("kind")) == nil, 409, "dispatch_conflict")
 	t.exec(`INSERT INTO node_executions(execution_id,kind,operation_id,work_id,workspace_id,node_id,node_operation_id,input,dispatched_epoch,workflow_node_id)
 		VALUES($1,$2,$3,$4,$5,$6,$1,$7,$8,NULLIF($9,''))`,
 		execution, input.S("kind"), runID, work.S("id"), wid, node, jsonText(input), r.Body.N("epoch"), work.S("workflowNodeId"))
@@ -140,7 +145,7 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 		}
 		t.exec("UPDATE node_executions SET result=$2,updated_at=now() WHERE execution_id=$1", execution, jsonText(result))
 	}
-	if withReceipt || e.S("kind") == "agent_session" || e.S("kind") == "deliver_revision" {
+	if withReceipt || e.S("kind") == "agent_session" || e.S("kind") == "deliver_revision" || e.S("kind") == "deliver_scheduled_artifacts" {
 		require(withReceipt, 400, "invalid_receipt")
 		// Plugin queries settle the result without an ACK receipt. Only their first real
 		// terminal event may add that missing receipt; later terminal replays, sessions and
@@ -160,6 +165,9 @@ func nodeExecutionResult(t *transaction, r *ControlRequest, withReceipt bool) Ob
 	if fresh && e.S("kind") == "deliver_revision" && revisionSuccess(result) {
 		settleVerifiedRevision(t, r, e, lateDelivery)
 	}
+	if fresh && e.S("kind") == "deliver_scheduled_artifacts" {
+		settleVerifiedArtifacts(t, r, operation, execution, result)
+	}
 	return t.one("SELECT "+nodeExecutionColumns+" FROM node_executions WHERE execution_id=$1", execution)
 }
 
@@ -173,6 +181,22 @@ func validateNodeResult(e, result Object) {
 	case "agent_session":
 		require(result.S("outcome") == "agent_session_ended", 409, "result_conflict")
 		require(sessionEndReasons[result.S("reason")], 400, "invalid_result")
+	case "deliver_scheduled_artifacts":
+		// A scheduled run reports either what it uploaded, as objects Cloud verifies itself, or why it
+		// could not. The declared set is never taken from this payload: Cloud reads it from the
+		// session's immutable terminal result.
+		switch result.S("outcome") {
+		case "scheduled_artifacts_delivered":
+			uploaded := objectRows(result["artifacts"])
+			require(len(uploaded) <= maxScheduledArtifactItems, 400, "invalid_result")
+			for _, object := range uploaded {
+				require(object.S("key") != "" && object.N("size") >= 0 && lowerHexDigest(object.S("sha256")), 400, "invalid_result")
+			}
+		case "scheduled_artifacts_failed":
+			require(scheduledArtifactsFailureReasons[result.S("reason")], 400, "invalid_result")
+		default:
+			reject(409, "result_conflict")
+		}
 	default:
 		switch result.S("outcome") {
 		case "revision_delivered", "revision_unchanged":
@@ -187,6 +211,20 @@ func validateNodeResult(e, result Object) {
 
 var sessionEndReasons = map[string]bool{
 	"user_ended": true, "idle_timeout": true, "cancelled": true, "agent_failed": true, "interrupted": true,
+}
+
+// settleVerifiedArtifacts hands a scheduled run's artifact delivery to the business side. A reported
+// failure carries no verification (there is nothing to verify), while a reported upload must come
+// with the object-store verdict prepared outside this transaction.
+func settleVerifiedArtifacts(t *transaction, r *ControlRequest, runID, executionID string, result Object) {
+	if result.S("outcome") == "scheduled_artifacts_failed" {
+		scheduledArtifactsSettled(t, runID, executionID, Object{"outcome": "failed", "reason": result.S("reason")})
+		return
+	}
+	require(r.artifacts != nil, 409, "invalid_delivery_verification")
+	scheduledArtifactsSettled(t, runID, executionID, Object{
+		"outcome": "delivered", "input": r.artifacts.input, "objects": r.artifacts.objects,
+	})
 }
 
 // revisionFailureReasons is the closed set a Node may report. The retired bundle_failed value is

@@ -24,6 +24,21 @@
 | `workflow*.go` | 图、发布快照、准入、运行身份、调度器；Issue Confirm/manual 与直接启动共用的 WorkflowRun 创建、`workflow_invocation_ref` 关联，以及调度器把 WorkflowRun 状态投影回关联 IssueRun | [工作流](../../docs/workflows/workflows.md)、[Issue 协作](../../docs/collaboration/interactions.md) |
 | `hub.go`、`signals.go` | 提交后失效通知和控制信号；不承载权威状态 | [HTTP API](../../docs/core/http-api.md) |
 
+## 定时运行的产物交付
+
+`scheduled_artifact*.go` 保存声明、签发授权、核验对象并收敛交付，依据
+[verdict 与产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
+Revision 与产物可以分别派发，每类最多一个未完成执行，两者均收敛后才释放运行 Workspace。
+上传授权不超过运行的固定截止；到期回执仍按原执行身份确认，但不请求 HEAD、不登记对象。
+最终登记在持锁后以数据库实际当前时间检查截止，不能沿用等待锁之前的事务开始时间。
+整批失败或到期时，同事务为冻结清单中未登记的文件补齐拒绝事实；既有采集/核验拒绝与成功登记保持不变，重放不增记。
+对象核验与删除都在事务外执行。清理按确定性键删除索引未覆盖的对象，已结算运行每分钟可再次扫描，
+包含已被保留策略淘汰索引的成功交付；`artifacts_gc_at` 表示上次扫描时间，不表示永久完成。
+
+零字节文件可声明、上传并登记；每个条目的 index 和名称分别去重。会话原始清单及交付行保留
+`omitted_rejections` 和 `walk_truncated`，不会把有界拒绝明细当成完整遍历结果。只有拒绝或截断信息、
+没有可上传文件时，保留这些事实并直接收敛，不派发空上传或等待截止。
+
 ## Store 与事务边界
 
 - `NewStore` 从注入的 GORM 获取 `*sql.DB`，装配真实 Workflow Directory/Forms；不连接、迁移或建立全局数据库。

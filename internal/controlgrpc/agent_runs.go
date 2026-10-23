@@ -3,6 +3,7 @@ package controlgrpc
 import (
 	"context"
 	"encoding/json"
+	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -98,6 +99,33 @@ func (s *agentRunService) GrantRevisionUpload(ctx context.Context, req *controlp
 		grants = append(grants, grantMessage(row))
 	}
 	return &controlpb.GrantRevisionUploadResponse{Grants: grants}, nil
+}
+
+// GrantScheduledArtifactUpload issues fresh grants for the artifacts a scheduled run declared. Each
+// requested entry must name a declared index whose size and digest Cloud persisted; a request that
+// tries to describe an object Cloud did not freeze is refused instead of granted.
+func (s *agentRunService) GrantScheduledArtifactUpload(ctx context.Context, req *controlpb.GrantScheduledArtifactUploadRequest) (*controlpb.GrantScheduledArtifactUploadResponse, error) {
+	artifacts := make([]core.Object, 0, len(req.GetArtifacts()))
+	for _, artifact := range req.GetArtifacts() {
+		if artifact.GetSize() > math.MaxInt64 {
+			return nil, invalidInput("invalid_upload_checksum")
+		}
+		artifacts = append(artifacts, core.Object{
+			// #nosec G115 -- sizes above MaxInt64 were refused just above.
+			"index": int64(artifact.GetIndex()), "size": int64(artifact.GetSize()), "sha256": artifact.GetSha256(),
+		})
+	}
+	out, e := control(ctx, s.store, "grant_scheduled_artifact_upload", "", "", core.Object{
+		"epoch": req.GetEpoch(), "executionId": req.GetExecutionId(), "artifacts": artifacts,
+	})
+	if e != nil {
+		return nil, e
+	}
+	grants := make([]*controlpb.UploadGrant, 0)
+	for _, row := range rows(out["grants"]) {
+		grants = append(grants, grantMessage(row))
+	}
+	return &controlpb.GrantScheduledArtifactUploadResponse{Grants: grants}, nil
 }
 
 func threadCommand(row core.Object) *controlpb.ThreadCommand {

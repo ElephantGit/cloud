@@ -24,6 +24,27 @@ This package owns business state, authorization, transactions and recovery decis
 | `workflow*.go` | Graphs, published snapshots, admission, run identity and scheduler; WorkflowRun creation shared by Issue confirm/manual and direct starts, the `workflow_invocation_ref` link, and the scheduler's projection of WorkflowRun status onto the linked IssueRun | [Workflows](../../docs/workflows/workflows.en.md), [Issue collaboration](../../docs/collaboration/interactions.en.md) |
 | `hub.go`, `signals.go` | Post-commit invalidation and control hints; no authoritative state | [HTTP API](../../docs/core/http-api.en.md) |
 
+## Scheduled-run artifact delivery
+
+`scheduled_artifact*.go` persists declarations, signs grants, verifies objects and settles delivery under
+the [verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md).
+Revision and artifact deliveries dispatch independently, with at most one unfinished execution of
+each kind; both must settle before the run Workspace releases. Upload grants never outlive the run's
+fixed deadline. Expired receipts still acknowledge the original execution without HEAD or registration.
+Final registration checks the actual database clock after acquiring the lock, rather than the
+transaction start before the lock wait. Batch failure or expiry atomically records rejections for
+unregistered files in the frozen manifest, preserving existing collection/verification rejections
+and registered successes without adding facts on replay.
+Object verification and deletion happen outside transactions. Cleanup derives deterministic keys and
+deletes objects absent from the index. Settled runs become eligible for another sweep after one minute,
+including successful deliveries whose index retention has pruned. `artifacts_gc_at` records the last
+sweep, never permanent completion.
+
+Zero-length files may be declared, uploaded and registered; indices and names are deduplicated
+independently. The original session manifest and delivery row preserve `omitted_rejections` and
+`walk_truncated`, so a bounded refusal list never implies a complete walk. A declaration containing
+only refusals or truncation facts settles immediately without an empty upload or deadline wait.
+
 ## Store and transaction boundaries
 
 - `NewStore` obtains `*sql.DB` from injected GORM and wires the real Workflow Directory/Forms; it neither connects nor migrates nor creates a global database.

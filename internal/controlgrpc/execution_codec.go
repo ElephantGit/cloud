@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -30,6 +31,8 @@ func inputObject(in *controlpb.ExecutionInput) (core.Object, error) {
 		return sessionObject(spec.AgentSession)
 	case *controlpb.ExecutionInput_DeliverRevision:
 		return deliveryObject(spec.DeliverRevision)
+	case *controlpb.ExecutionInput_DeliverScheduledArtifacts:
+		return scheduledArtifactsObject(spec.DeliverScheduledArtifacts)
 	default:
 		return nil, invalidInput("invalid_dispatch")
 	}
@@ -45,6 +48,8 @@ func input(o core.Object) *controlpb.ExecutionInput {
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_AgentSession{AgentSession: sessionMessage(o)}}
 	case "deliver_revision":
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_DeliverRevision{DeliverRevision: deliveryMessage(o)}}
+	case "deliver_scheduled_artifacts":
+		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_DeliverScheduledArtifacts{DeliverScheduledArtifacts: &controlpb.DeliverScheduledArtifactsSpec{SessionExecutionId: o.S("sessionExecutionId")}}}
 	default:
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: cloneMessage(o)}}
 	}
@@ -166,7 +171,26 @@ func sessionObject(spec *controlpb.AgentSessionSpec) (core.Object, error) {
 		}
 		out["workspaceDirectory"] = directory
 	}
+	// The admission is part of the frozen input: a dispatch that disagrees with the work item about
+	// whether this run is a scheduled occurrence conflicts like any other changed field.
+	switch spec.GetTrigger() {
+	case controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED:
+	case controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_SCHEDULED:
+		out["trigger"] = "scheduled"
+	default:
+		return nil, invalidInput("invalid_dispatch")
+	}
 	return out, nil
+}
+
+// scheduledArtifactsObject is the durable form of the artifact-upload input: it names the ended
+// session whose declaration Cloud persisted and never a location. Object keys belong to Cloud and
+// reach the Node only through an upload grant.
+func scheduledArtifactsObject(spec *controlpb.DeliverScheduledArtifactsSpec) (core.Object, error) {
+	if spec.GetSessionExecutionId() == "" {
+		return nil, invalidInput("invalid_dispatch")
+	}
+	return core.Object{"kind": "deliver_scheduled_artifacts", "sessionExecutionId": spec.GetSessionExecutionId()}, nil
 }
 
 // priorObject is the durable form of a PriorRevision. A session spec's names where the Node fetches
@@ -205,7 +229,17 @@ func sessionMessage(o core.Object) *controlpb.AgentSessionSpec {
 		InitialTurn:        &controlpb.UserTurn{TurnId: turn.S("turnId"), Content: contentMessages(rows(turn["content"]))},
 		PriorRevision:      priorMessage(o.O("priorRevision")),
 		WorkspaceDirectory: directoryMessages(rows(o["workspaceDirectory"])),
+		Trigger:            sessionTriggerMessage(o),
 	}
+}
+
+// sessionTriggerMessage is the admission Cloud froze for this session. An absent field is a manual
+// IssueRun, which is also how every session released before the field existed reads.
+func sessionTriggerMessage(o core.Object) controlpb.AgentSessionTrigger {
+	if o.S("trigger") == "scheduled" {
+		return controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_SCHEDULED
+	}
+	return controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED
 }
 
 func contentObjects(blocks []*controlpb.ContentBlock) []core.Object {
@@ -272,8 +306,62 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 		out["outcome"], out["reason"] = "plugins_failed", shortEnum(outcome.PluginsFailed.GetReason().String(), "PLUGINS_FAILURE_REASON_")
 	case *controlpb.ExecutionResult_AgentSessionEnded:
 		out["outcome"], out["reason"] = "agent_session_ended", shortEnum(outcome.AgentSessionEnded.GetReason().String(), "AGENT_SESSION_END_REASON_")
-		if outcome.AgentSessionEnded.Detail != nil {
-			out["detail"] = outcome.AgentSessionEnded.GetDetail()
+		ended := outcome.AgentSessionEnded
+		if ended.Detail != nil {
+			out["detail"] = ended.GetDetail()
+		}
+		// The business verdict stays a structured value Cloud only validates: it is never derived
+		// from the Thread, the end reason or the execution status, and it travels only when the
+		// executor reported it (an unspecified verdict is a malformed report, not "not reported").
+		if result := ended.GetScheduledResult(); result != nil {
+			if result.GetVerdict() == controlpb.ScheduledVerdict_SCHEDULED_VERDICT_UNSPECIFIED {
+				return nil, invalidInput("invalid_result")
+			}
+			scheduled := core.Object{"verdict": shortEnum(result.GetVerdict().String(), "SCHEDULED_VERDICT_")}
+			if result.VerdictDetail != nil {
+				if utf8.RuneCountInString(result.GetVerdictDetail()) > core.MaxScheduledRunVerdictDetailRunes {
+					return nil, invalidInput("invalid_result")
+				}
+				scheduled["verdictDetail"] = result.GetVerdictDetail()
+			}
+			out["scheduledResult"] = scheduled
+		}
+		// The declaration is the executor's report of what it will upload; it travels with the
+		// terminal event so Cloud can freeze the window and hand out grants. Dropping it here would
+		// lose the run's artifacts silently - the settlement would see an empty manifest and stop -
+		// so the boundary either carries it whole or refuses it.
+		if declared := ended.GetArtifactManifest(); declared != nil {
+			items := make([]core.Object, 0, len(declared.GetItems()))
+			for _, item := range declared.GetItems() {
+				if item.GetSizeBytes() > math.MaxInt64 {
+					return nil, invalidInput("invalid_result")
+				}
+				kind := shortEnum(item.GetKind().String(), "SCHEDULED_ARTIFACT_KIND_")
+				if kind == "" {
+					return nil, invalidInput("invalid_result")
+				}
+				items = append(items, core.Object{
+					// The durable object stores plain integers: N() reads float64/int64, so a uint32 or
+					// uint64 kept as-is would read back as zero and silently lose the index or size.
+					"index": int64(item.GetIndex()), "displayName": item.GetDisplayName(), "kind": kind,
+					"sizeBytes": int64(item.GetSizeBytes()), "sha256": item.GetSha256(), // #nosec G115 -- values above MaxInt64 are refused above.
+				})
+			}
+			rejections := make([]core.Object, 0, len(declared.GetRejections()))
+			for _, rejection := range declared.GetRejections() {
+				reason := shortEnum(rejection.GetReason().String(), "SCHEDULED_ARTIFACT_REJECTION_REASON_")
+				if reason == "" {
+					return nil, invalidInput("invalid_result")
+				}
+				rejections = append(rejections, core.Object{"displayName": rejection.GetDisplayName(), "reason": reason})
+			}
+			out["artifactManifest"] = core.Object{"items": items, "rejections": rejections}
+			if declared.GetOmittedRejections() != 0 {
+				out.O("artifactManifest")["omittedRejections"] = int64(declared.GetOmittedRejections())
+			}
+			if declared.GetWalkTruncated() {
+				out.O("artifactManifest")["walkTruncated"] = true
+			}
 		}
 	case *controlpb.ExecutionResult_RevisionDelivered:
 		out["outcome"] = "revision_delivered"
@@ -285,6 +373,19 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 		unchanged := outcome.RevisionUnchanged
 		out["finalCommit"], out["baseCommit"], out["revisionRef"] = unchanged.GetFinalCommit(), unchanged.GetBaseCommit(), unchanged.GetRevisionRef()
 		out["history"] = storedObject(unchanged.GetHistory())
+	case *controlpb.ExecutionResult_ScheduledArtifactsDelivered:
+		out["outcome"] = "scheduled_artifacts_delivered"
+		artifacts := outcome.ScheduledArtifactsDelivered.GetArtifacts()
+		uploaded := make([]core.Object, 0, len(artifacts))
+		for _, artifact := range artifacts {
+			if artifact == nil || artifact.GetSize() > math.MaxInt64 {
+				return nil, invalidInput("invalid_result")
+			}
+			uploaded = append(uploaded, storedObject(artifact))
+		}
+		out["artifacts"] = uploaded
+	case *controlpb.ExecutionResult_ScheduledArtifactsFailed:
+		out["outcome"], out["reason"] = "scheduled_artifacts_failed", shortEnum(outcome.ScheduledArtifactsFailed.GetReason().String(), "SCHEDULED_ARTIFACTS_FAILURE_REASON_")
 	case *controlpb.ExecutionResult_RevisionFailed:
 		out["outcome"], out["reason"] = "revision_failed", shortEnum(outcome.RevisionFailed.GetReason().String(), "REVISION_FAILURE_REASON_")
 	default:
@@ -337,6 +438,43 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		if detail := o.S("detail"); detail != "" {
 			ended.Detail = &detail
 		}
+		// A stored verdict returns to the Controller as the same structured value it reported, so a
+		// recovered execution is queried with the business result it actually carried.
+		if scheduled := o.O("scheduledResult"); len(scheduled) > 0 {
+			reported := &controlpb.ScheduledRunResult{Verdict: controlpb.ScheduledVerdict(enum(controlpb.ScheduledVerdict_value, "SCHEDULED_VERDICT_", scheduled.S("verdict")))}
+			if detail := scheduled.S("verdictDetail"); detail != "" {
+				reported.VerdictDetail = &detail
+			}
+			ended.ScheduledResult = reported
+		}
+		// A stored declaration returns to the Controller as the same structure it reported, so a
+		// recovered session is queried with the artifacts it actually carried.
+		if declared := o.O("artifactManifest"); len(declared) > 0 {
+			manifest := &controlpb.ScheduledArtifactManifest{
+				OmittedRejections: boundedSchemaVersion(declared.N("omittedRejections")), WalkTruncated: declared.B("walkTruncated"),
+			}
+			for _, item := range objectsOf(declared["items"]) {
+				index, size := item.N("index"), item.N("sizeBytes")
+				if index < 0 || index > math.MaxUint32 {
+					index = 0
+				}
+				if size < 0 {
+					size = 0
+				}
+				manifest.Items = append(manifest.Items, &controlpb.ScheduledArtifactItem{
+					Index: uint32(index), DisplayName: item.S("displayName"), // #nosec G115 -- bounded above.
+					Kind:      controlpb.ScheduledArtifactKind(enum(controlpb.ScheduledArtifactKind_value, "SCHEDULED_ARTIFACT_KIND_", item.S("kind"))),
+					SizeBytes: uint64(size), Sha256: item.S("sha256"), // #nosec G115 -- nonnegative above.
+				})
+			}
+			for _, rejection := range objectsOf(declared["rejections"]) {
+				manifest.Rejections = append(manifest.Rejections, &controlpb.ScheduledArtifactRejection{
+					DisplayName: rejection.S("displayName"),
+					Reason:      controlpb.ScheduledArtifactRejectionReason(enum(controlpb.ScheduledArtifactRejectionReason_value, "SCHEDULED_ARTIFACT_REJECTION_REASON_", rejection.S("reason"))),
+				})
+			}
+			ended.ArtifactManifest = manifest
+		}
 		out.Outcome = &controlpb.ExecutionResult_AgentSessionEnded{AgentSessionEnded: ended}
 	case "revision_delivered":
 		out.Outcome = &controlpb.ExecutionResult_RevisionDelivered{RevisionDelivered: &controlpb.RevisionDelivered{FinalCommit: o.S("finalCommit"), BaseCommit: o.S("baseCommit"), RevisionRef: o.S("revisionRef"), History: storedMessage(o.O("history"))}}
@@ -344,6 +482,14 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		out.Outcome = &controlpb.ExecutionResult_RevisionUnchanged{RevisionUnchanged: &controlpb.RevisionUnchanged{FinalCommit: o.S("finalCommit"), BaseCommit: o.S("baseCommit"), RevisionRef: o.S("revisionRef"), History: storedMessage(o.O("history"))}}
 	case "revision_failed":
 		out.Outcome = &controlpb.ExecutionResult_RevisionFailed{RevisionFailed: &controlpb.RevisionFailed{Reason: controlpb.RevisionFailureReason(enum(controlpb.RevisionFailureReason_value, "REVISION_FAILURE_REASON_", o.S("reason")))}}
+	case "scheduled_artifacts_delivered":
+		delivered := &controlpb.ScheduledArtifactsDelivered{}
+		for _, artifact := range rows(o["artifacts"]) {
+			delivered.Artifacts = append(delivered.Artifacts, storedMessage(artifact))
+		}
+		out.Outcome = &controlpb.ExecutionResult_ScheduledArtifactsDelivered{ScheduledArtifactsDelivered: delivered}
+	case "scheduled_artifacts_failed":
+		out.Outcome = &controlpb.ExecutionResult_ScheduledArtifactsFailed{ScheduledArtifactsFailed: &controlpb.ScheduledArtifactsFailed{Reason: controlpb.ScheduledArtifactsFailureReason(enum(controlpb.ScheduledArtifactsFailureReason_value, "SCHEDULED_ARTIFACTS_FAILURE_REASON_", o.S("reason")))}}
 	default:
 		failed := &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason(controlpb.CloneFailureReason_value[o.S("reason")])}
 		if retained, ok := o["retainedPath"].(string); ok {
@@ -424,4 +570,27 @@ func boundedSchemaVersion(value int64) uint32 {
 		return 0
 	}
 	return uint32(value) // #nosec G115 -- bounded above.
+}
+
+// objectsOf decodes an array of objects out of a stored result. The value arrives either as the typed
+// slice the codec just built or as the generic form jsonb returns, so both are accepted rather than
+// making one caller reshape what the other produced.
+func objectsOf(value any) []core.Object {
+	switch rows := value.(type) {
+	case []core.Object:
+		return rows
+	case []any:
+		out := make([]core.Object, 0, len(rows))
+		for _, row := range rows {
+			switch item := row.(type) {
+			case core.Object:
+				out = append(out, item)
+			case map[string]any:
+				out = append(out, core.Object(item))
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

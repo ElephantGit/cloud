@@ -271,6 +271,100 @@ func TestWorkflowRetryWaitsThenStartsTheNextAttempt(t *testing.T) {
 	assertRunWorkspaceReleased(t, store, runID)
 }
 
+// Attempt identity scopes the session's end request and its terminal evidence, not only the session
+// itself (D4). Once the node has retried, attempt 1's outstanding end request is neither claimable
+// for attempt 2's session nor accepted as delivered to it, attempt 2 gets its own request, and
+// replaying attempt 1's terminal result cannot settle the in-flight attempt 2.
+func TestWorkflowRetryKeepsAttemptOneRequestAndResultOutOfAttemptTwo(t *testing.T) {
+	store := dispatcherDB(t)
+	runID, _, _, _, _ := seedWorkflowSessionSceneGraph(t, store, workflowRetryGraph(true, 1, 0))
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec1 := startSessionNode(t, store, runID, wsID, "a")
+	execution1 := "exec-attempt-scope-1-" + runID[:8]
+	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution1, spec1)
+
+	// The initial turn ends, so Cloud releases attempt 1's end request; the session then fails
+	// before the request is ever delivered (the Controller may not have claimed it), which leaves
+	// the row undelivered while the node waits for its retry.
+	takeOverWorkflowEvents(t, store, runID, execution1, []Object{threadEvent(1, turnEndedRecord("end_turn"), "")})
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after turn end: %v", err)
+	}
+	first := claimCommands(t, store)
+	if len(first) != 1 || first[0].S("executionId") != execution1 || first[0].S("kind") != "end_session" {
+		t.Fatalf("attempt 1 commands = %v; want one end_session addressed to %s", first, execution1)
+	}
+	reportSessionEndAt(t, store, runID, execution1, nodeService, "agent_failed", 2)
+	requireRetrying(t, readWorkflowNodeState(t, store, runID, "a"), 1)
+
+	// The retry starts attempt 2 and registers its own session, which stays in flight.
+	makeWorkflowRetryDue(t, store, runID, "a")
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance at due: %v", err)
+	}
+	spec2 := sessionWorkSpec(t, store, runID, "a")
+	execution2 := "exec-attempt-scope-2-" + runID[:8]
+	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution2, spec2)
+
+	// Attempt 1's request names attempt 1: it is not claimable against attempt 2's live session
+	// (whose own turn has not ended), and naming that execution on delivery is refused.
+	if got := claimCommands(t, store); len(got) != 0 {
+		t.Fatalf("attempt 2 claimed attempt 1's request: %v", got)
+	}
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		recordThreadCommandDelivered(tx, &ControlRequest{Body: Object{"commandId": first[0].S("commandId"), "executionId": execution2}})
+		return Object{}
+	}); err == nil || ErrorCode(err).Code != "dispatch_conflict" {
+		t.Fatalf("cross-attempt delivery: err=%v; want dispatch_conflict", err)
+	}
+	var attempt int64
+	var node, deliveredExecution string
+	if err := store.Pool.QueryRow(`SELECT workflow_node_attempt, workflow_node_id, COALESCE(delivered_execution_id,'')
+		FROM thread_commands WHERE id=$1`, first[0].S("commandId")).Scan(&attempt, &node, &deliveredExecution); err != nil {
+		t.Fatalf("read attempt 1's request: %v", err)
+	}
+	if attempt != 1 || node != "a" || deliveredExecution != "" {
+		t.Fatalf("attempt 1's request names node %q attempt %d, delivered to %q; want a/1 delivered to nothing", node, attempt, deliveredExecution)
+	}
+
+	// Replaying attempt 1's terminal result is a receipt replay, not evidence for attempt 2: its
+	// lookup names the current attempt, so the committed node stays the running attempt 2.
+	reportSessionEndAt(t, store, runID, execution1, nodeService, "agent_failed", 2)
+	if state := readWorkflowNodeState(t, store, runID, "a"); state.S("status") != "running" || state.N("attempt") != 2 || state.S("retryAt") != "" {
+		t.Fatalf("state after replaying attempt 1's result = %v; want running attempt 2", state)
+	}
+	if status, runErr, _, _ := readWorkflowRun(t, store, runID); status != "running" || runErr != "" {
+		t.Fatalf("run after replaying attempt 1's result = %q error %q; want running", status, runErr)
+	}
+
+	// Attempt 2's own turn end releases a fresh request addressed to attempt 2 — attempt 1's row
+	// neither suppresses it nor gets reused for it — and delivering that request is accepted.
+	takeOverWorkflowEvents(t, store, runID, execution2, []Object{threadEvent(1, turnEndedRecord("end_turn"), "")})
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance after attempt 2 turn end: %v", err)
+	}
+	second := claimCommands(t, store)
+	if len(second) != 1 || second[0].S("executionId") != execution2 || second[0].S("commandId") == first[0].S("commandId") {
+		t.Fatalf("attempt 2 commands = %v; want a new request addressed to %s", second, execution2)
+	}
+	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+		recordThreadCommandDelivered(tx, &ControlRequest{Body: Object{"commandId": second[0].S("commandId"), "executionId": execution2}})
+		return Object{}
+	}); err != nil {
+		t.Fatalf("deliver attempt 2's request: %v", err)
+	}
+	if got := claimCommands(t, store); len(got) != 0 {
+		t.Fatalf("commands after delivery: %v; want none", got)
+	}
+	reportSessionEndAt(t, store, runID, execution2, nodeService, "idle_timeout", 2)
+	if status, runErr, _, _ := readWorkflowRun(t, store, runID); status != "succeeded" || runErr != "" {
+		t.Fatalf("run settled %q error %q; want succeeded from attempt 2", status, runErr)
+	}
+}
+
 // The wake is serialized by the run's exclusive transaction (D3): two replicas advancing the same
 // due retry at the same time release exactly one next attempt. The pass that loses reads the
 // winning attempt as running and releases nothing, so the run cannot end up with two session work

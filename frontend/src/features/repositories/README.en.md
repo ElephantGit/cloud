@@ -30,3 +30,5 @@ Depends on `features/spaces/current-space` (tenant id and role), the generated c
 ## Testing
 
 MSW serves the code source, operation history, credentials, workspaces and branches; the `repositoryFixture`, `repositoryOperationFixture` and `installRepositoryHandlers` fixtures in `src/test/cloud-handlers.ts` are shared with later modules. Tests compare whole request bodies and assert the role differences a member sees; no internal module is mocked.
+
+An unconfigured credential service prompts users to contact the deployment administrator and enable external Git services, rather than blaming their token.

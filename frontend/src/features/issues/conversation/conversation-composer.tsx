@@ -188,10 +188,7 @@ export function ConversationComposer({
   else if (mode === 'comment') buttonLabel = '发表评论'
 
   return (
-    <form
-      onSubmit={submit}
-      className="sticky bottom-0 z-10 space-y-3 rounded-xl border bg-background/95 p-4 shadow-sm backdrop-blur"
-    >
+    <form onSubmit={submit} className="space-y-3 rounded-xl border bg-background p-4 shadow-sm">
       <AgentRecipient
         agents={agents}
         agentId={agentId}

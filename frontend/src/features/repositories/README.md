@@ -30,3 +30,5 @@
 ## 测试
 
 MSW 提供代码来源、操作记录、凭据、Workspace 与分支；`src/test/cloud-handlers.ts` 的 `repositoryFixture`、`repositoryOperationFixture`、`installRepositoryHandlers` 等夹具供本模块与后续模块共用。测试断言发出的请求体（完整比较）和可见的角色差异，不 mock 内部模块。
+
+凭据服务未配置时提示联系部署管理员启用外部 Git 服务；不将部署错误误报为 token 错误。

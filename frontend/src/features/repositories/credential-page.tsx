@@ -34,7 +34,11 @@ export function GitCredentialsPage() {
       <p>凭据仅用于所填仓库。个人凭据的发布由所有者批准；团队凭据由管理员批准。</p>
       <CredentialForm onCreate={create} pending={actions.isPending} />
       {(list.isError || actions.isError) && (
-        <p role="alert">{faultCode(actions.error) ?? '无法读取凭据，请重试'}</p>
+        <p role="alert">
+          {faultCode(actions.error ?? list.error) === 'credential_store_unconfigured'
+            ? '仓库凭据服务尚未配置，请联系部署管理员启用外部 Git 服务（Credential Store），然后重试。'
+            : (faultCode(actions.error) ?? '无法读取凭据，请重试')}
+        </p>
       )}
       {pending && (
         <SecretSubmission

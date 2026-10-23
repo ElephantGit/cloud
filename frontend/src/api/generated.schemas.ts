@@ -1958,6 +1958,15 @@ export interface Sandbox {
   workspaceId: string;
 }
 
+export interface ScheduledArtifactRead {
+  expiresAt: string;
+  kind: string;
+  name: string;
+  sha256: string;
+  sizeBytes: number;
+  url: string;
+}
+
 export type ScheduledTaskScheduleKind = typeof ScheduledTaskScheduleKind[keyof typeof ScheduledTaskScheduleKind];
 
 

@@ -255,6 +255,16 @@ func Document() map[string]any {
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
 	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
 	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")
+	s["ScheduledArtifactRead"] = object(obj{
+		"name":      str(),
+		"kind":      str(),
+		"sizeBytes": number(),
+		"sha256":    str(),
+		// The URL is a short-lived capability issued to an already authorised caller; it expires
+		// with the object-store grant TTL, so a reader must not treat it as shareable.
+		"url":       str(),
+		"expiresAt": timestamp(),
+	}, "name", "kind", "sizeBytes", "sha256", "url", "expiresAt")
 	s["ScheduledTaskOccurrence"] = object(obj{
 		"scheduledAt":   timestamp(),
 		"outcome":       str(),

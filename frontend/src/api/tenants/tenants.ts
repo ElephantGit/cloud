@@ -4039,6 +4039,120 @@ export function useGetApiV1TenantsTidIssuesIidRunsRid<TData = Awaited<ReturnType
 
 
 /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts/:aidx
+ */
+export const getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx = (
+    tid: string,
+    iid: string,
+    rid: string,
+    aidx: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<IssueRun>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryKey = (tid: string,
+    iid: string,
+    rid: string,
+    aidx: string,) => {
+    return [
+    `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(tid: string,
+    iid: string,
+    rid: string,
+    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryKey(tid,iid,rid,aidx);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>> = ({ signal }) => getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx(tid,iid,rid,aidx, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && iid !== null && iid !== undefined && rid !== null && rid !== undefined && aidx !== null && aidx !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>>
+export type GetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    rid: string,
+    aidx: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    rid: string,
+    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    rid: string,
+    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts/:aidx
+ */
+
+export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(
+ tid: string,
+    iid: string,
+    rid: string,
+    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryOptions(tid,iid,rid,aidx,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
  * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Records the user's cancellation request on a live agent run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never moves the run's phase, status, Thread or Workspace, never settles a Revision and never deletes anything — the run's session shuts down on its own evidence, its Thread reaches ending on the next reconciliation, and delivery and release proceed as they otherwise would. Accepted for a run that is queued, or in provisioning, starting or running; a run that has already left those phases answers 409 run_not_cancellable, because its session is over and what remains is delivery and release rather than a live conversation. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since moved on, so the recorded instant is never replaced. Authorized like ending the Thread, except that on a run carrying a model Binding only that Binding's initiator and the tenant's administrators may cancel: an active tenant member who is neither answers 403 model_run_cancel_forbidden. A missing or mismatched tenant, Issue or run, a soft-deleted run, and a run that is not an agent run are all 404 not_found. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
  * @summary POST /api/v1/tenants/:tid/issues/:iid/runs/:rid/cancel
  */

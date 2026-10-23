@@ -13,7 +13,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // PublicRequest is populated only after service and final-user credentials are verified.
 type PublicRequest struct {
-	Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, ConversationMessageID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, ScheduledTaskID, Key, After, Before, Query, GroupBy string
+	Method, Path, TenantID, ProjectID, WorkspaceID, SpaceID, OperationID, UserID, IssueID, CommentID, ConversationMessageID, LabelID, StatusID, ViewID, RunID, ContextRefID, InteractionID, WorkflowID, SnapshotID, FormRef, InvitationID, JoinLinkID, JoinRequestID, ScheduledTaskID, ArtifactIndex, Key, After, Before, Query, GroupBy string
 	// FormIssueID is the optional `issueId` query parameter of the form-descriptor route. It is
 	// deliberately its own field rather than a fallback into IssueID: IssueID drives dispatch in both
 	// readPublic and Public, so a query parameter folded into it would let `GET /issues?issueId=…`
@@ -51,6 +51,9 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		return s.SessionHistory(ctx, r)
 	}
 	runPath := "/api/v1/tenants/" + r.TenantID + "/issues/" + r.IssueID + "/runs/" + r.RunID
+	if r.Method == "GET" && r.ArtifactIndex != "" && r.Path == runPath+"/artifacts/"+r.ArtifactIndex {
+		return s.SessionRunArtifact(ctx, r)
+	}
 	if r.Method == "GET" && (r.Path == runPath+"/statistics" || r.Path == runPath+"/model-calls") {
 		return s.sessionModelRead(ctx, r)
 	}

@@ -147,13 +147,13 @@ func (s *Store) settleDelivery(t *transaction, runID, executionID string, settle
 		if !validID(revisionID) {
 			return fmt.Errorf("deliverySettled: run %s execution %s reports %s without a registered Revision", runID, executionID, outcome)
 		}
-		return s.releaseAfterDelivery(t, o, outcome, revisionID)
+		return s.settleRevisionForRun(t, o, outcome, revisionID)
 	case deliveryStateSkipped:
 		// No object store or Git Server is configured, so no delivery attempt was ever declared and none ever will
 		// be: the control plane's enqueue recorded the skip instead of a work item. Release with
 		// deliveryState=skipped, which is D4's own spelling for "no delivery happened", rather than
 		// waiting on a give-up window that no attempt is running against.
-		return s.releaseAfterDelivery(t, o, deliveryStateSkipped, "")
+		return s.settleRevisionForRun(t, o, deliveryStateSkipped, "")
 	}
 
 	// A failure. The reason is either the wire's closed set or Cloud's own `verification_failed`
@@ -166,7 +166,7 @@ func (s *Store) settleDelivery(t *transaction, runID, executionID string, settle
 		return fmt.Errorf("deliverySettled: run %s execution %s carries failure reason %q, outside the closed set", runID, executionID, reason)
 	}
 	if s.deliveryGivenUp(t, o) {
-		return s.releaseAfterDelivery(t, o, deliveryStateFailed, "")
+		return s.settleRevisionForRun(t, o, deliveryStateFailed, "")
 	}
 	// D5: the failure releases a new delivery execution and the run keeps `delivering` — the sandbox
 	// stays running because the Revision is not registered yet. The retry is a fresh work item whose

@@ -77,7 +77,73 @@ func runReleaseStatus(reason string) string {
 // writing a comment would mean guessing a foreign schema. The conflict is left as an open
 // question for the ADR rather than resolved here by a silent choice.
 func (s *Store) releaseAfterDelivery(t *transaction, o Object, state, revisionID string) error {
+	recordDeliveryOutcome(t, o, state, revisionID)
+	return s.finishRelease(t, o)
+}
+
+// recordDeliveryOutcome writes the run's delivery conclusion into its result without leaving
+// `delivering`.
+//
+// The conclusion and the phase are two facts, and a scheduled run needs them apart: its artifacts
+// may still be uploading when the Revision has settled, so the run states what the Revision decided
+// first and finishes releasing once the artifacts converge or their window expires. Writing it here
+// keeps one authority over the run's outcome, and `finishRelease` reads it back instead of taking it
+// from a caller that may have decided it in another transaction.
+//
+// `revisionId` is written beside `deliveryState` (IssueRun D4 spells the run's result as
+// `{revisionId | null, deliveryState}`): an absent key would be indistinguishable from a Revision
+// whose id Cloud failed to record, so a delivery that saved nothing writes an explicit JSON null.
+// Both parameters are cast explicitly because `jsonb_build_object` is variadic `"any"`: the server
+// cannot infer a bare parameter's type from it, so `$3` alone is rejected at parse time with
+// SQLSTATE 42P18. The `revisionId` cast also makes the empty string mean NULL, which is what a
+// failed delivery passes.
+func recordDeliveryOutcome(t *transaction, o Object, state, revisionID string) {
+	t.exec(`
+		UPDATE issue_runs
+		SET result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('revisionId', NULLIF($3::text,'')::uuid, 'deliveryState', $2::text),
+		    version=version+1, updated_at=now()
+		WHERE id=$1`, o.S("id"), state, revisionID)
+}
+
+// deliveryOutcomeRecorded reports whether the run already states what its Revision delivery decided.
+// It is the precondition for releasing a run that also awaits artifacts.
+func deliveryOutcomeRecorded(t *transaction, runID string) bool {
+	o := t.one("SELECT result->>'deliveryState' AS delivery_state FROM issue_runs WHERE id=$1", runID)
+	return o != nil && o.S("deliveryState") != ""
+}
+
+// artifactDeliveryPending reports whether one run's artifact delivery is still inside its window.
+func artifactDeliveryPending(t *transaction, runID string) bool {
+	o := t.one("SELECT state FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", runID)
+	return o != nil && o.S("state") == "delivering"
+}
+
+// settleRevisionForRun records what the Revision delivery decided and releases the run only when no
+// artifact delivery still holds it.
+//
+// A scheduled run keeps `delivering` until both converge (scheduled-task verdict/artifacts ADR D3):
+// the artifact upload is registered in its own work item and settles independently, so recording the
+// Revision outcome here and leaving the release to whichever side settles last is what keeps a
+// released Workspace from cutting an upload off. A run without artifacts, and the two later calls
+// (artifact settlement or window expiry) that find the outcome already recorded, release exactly as
+// before.
+func (s *Store) settleRevisionForRun(t *transaction, o Object, state, revisionID string) error {
+	recordDeliveryOutcome(t, o, state, revisionID)
+	if artifactDeliveryPending(t, o.S("id")) {
+		return nil
+	}
+	return s.finishRelease(t, o)
+}
+
+// finishRelease performs the `delivering → releasing` transition from the outcome the run already
+// recorded.
+func (s *Store) finishRelease(t *transaction, o Object) error {
 	runID := o.S("id")
+	recorded := t.one("SELECT result->>'deliveryState' AS delivery_state FROM issue_runs WHERE id=$1", runID)
+	state := recorded.S("deliveryState")
+	if state == "" {
+		return fmt.Errorf("release agent run: run %s has no recorded delivery outcome", runID)
+	}
 	sess := runSessionExecution(t, runID)
 	if sess == nil {
 		return fmt.Errorf("release agent run: run %s has no settled agent_session execution", runID)
@@ -94,24 +160,11 @@ func (s *Store) releaseAfterDelivery(t *transaction, o Object, state, revisionID
 	// source phase is `delivering` and nothing else: the other two ways into `releasing` (the
 	// provisioning failure and the no-session cancel) already ran their own write, and a second
 	// entry from here would be a second authority over the same transition.
-	//
-	// `result` gains `revisionId` beside the deliveryState: D4 spells the run's result as
-	// `{revisionId | null, deliveryState}`, and an absent key would be indistinguishable from a
-	// Revision whose id Cloud failed to record. A delivery that saved nothing writes an explicit JSON
-	// null, so "no Revision" is a value rather than a missing field.
-	//
-	// Both parameters are cast explicitly because `jsonb_build_object` is variadic `"any"`: the server
-	// cannot infer a bare parameter's type from it, so `$3` alone is rejected at parse time with
-	// SQLSTATE 42P18. The `revisionId` cast also makes the empty string mean NULL, which is what a
-	// failed delivery passes: `NULLIF($4::text,'')::uuid` cannot turn a Revision id into an invalid
-	// uuid, because the only other value ever passed is one the control plane just generated.
 	if t.execRows(`
 		UPDATE issue_runs
-		SET phase='releasing', status=$2, completed_at=now(),
-		    result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('revisionId', NULLIF($4::text,'')::uuid, 'deliveryState', $3::text),
-		    version=version+1, updated_at=now()
+		SET phase='releasing', status=$2, completed_at=now(), version=version+1, updated_at=now()
 		WHERE id=$1 AND executor_type='agent' AND deleted_at IS NULL AND phase='delivering'`,
-		runID, status, state, revisionID) != 1 {
+		runID, status) != 1 {
 		now := t.one("SELECT phase, status FROM issue_runs WHERE id=$1", runID)
 		return fmt.Errorf("release agent run: run %s was not moved to releasing (phase=%q status=%q)", runID, now.S("phase"), now.S("status"))
 	}

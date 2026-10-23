@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,23 @@ func workflowTwoAgentGraph() Object {
 	)
 }
 
+// workflowSessionPluginRelease is the catalog release the scene's Space has selected for the Agent CLI:
+// one universal package plus one target-specific artifact, the shape the plugin step forwards to the
+// Node. Two artifacts keep a test able to tell "the frozen package" from "the current selection" by the
+// digest alone, even when both carry the same version string.
+func workflowSessionPluginRelease(version string) Object {
+	return Object{
+		"id": opencodeAgentCLI, "version": version,
+		"url":    "https://example.invalid/opencode-" + version + ".tgz",
+		"sha256": strings.Repeat("a", 64),
+		"targets": []Object{{
+			"target": "x86_64-unknown-linux-gnu",
+			"url":    "https://example.invalid/opencode-" + version + "-linux.tgz",
+			"sha256": strings.Repeat("b", 64),
+		}},
+	}
+}
+
 // seedWorkflowSessionScene stages a project-backed run one advance away from session start: the
 // binding and the plugin version (the same freezes the creation transaction performs), and the
 // project space carries the production plugin. Returns the ids the tests read back.
@@ -59,11 +77,16 @@ func seedWorkflowSessionSceneGraph(t *testing.T, store *Store, graph Object) (ru
 		exec("space", `INSERT INTO collab_workspaces(id,tenant_id,name,slug,created_by) VALUES($1,$2,'wfs','wfs-'||left($4::text,8),$3)`, space, tid, uid, project)
 		exec("project", `WITH p AS (INSERT INTO projects(id,tenant_id,owner_user_id,space_id,name,lifecycle) VALUES($1,$2,$3,$4,'wfs','active') RETURNING id,tenant_id) INSERT INTO repository_bindings(id,tenant_id,project_id,repository_url,branch) SELECT gen_random_uuid(),tenant_id,id,'https://example.invalid/wfs.git','main' FROM p`, project, tid, uid, space)
 		exec("main", `INSERT INTO workspaces(id,tenant_id,owner_user_id,creator_user_id,creator_evidence,project_id,kind,desired_state,observed_state,runtime_generation,requested_ref) VALUES($1,$2,$3,$3,'verified_request',$4,'main','running','ready',1,'HEAD')`, uuid.NewString(), tid, uid, project)
-		exec("plugin", `INSERT INTO space_plugins(space_id,tenant_id,source_namespace,identifier,desired_state,desired_version,observed_state) VALUES($1,$2,'official','ora-space.opencode','installed','1.0.0','installed')`, space, tid)
+		exec("plugin", `INSERT INTO space_plugins(space_id,tenant_id,source_namespace,identifier,desired_state,desired_version,observed_state,selected_release) VALUES($1,$2,'official','ora-space.opencode','installed','1.0.0','installed',$3)`, space, tid, jsonText(workflowSessionPluginRelease("1.0.0")))
 		graphJSON, _ := json.Marshal(graph)
 		exec("workflow", `INSERT INTO workflows(id,tenant_id,name,graph) VALUES($1,$2,'wfs',$3::jsonb)`, wid, tid, string(graphJSON))
 		exec("snapshot", `INSERT INTO workflow_snapshots(id,tenant_id,workflow_id,version,name,graph) VALUES($1,$2,$3,1,'v1',$4::jsonb)`, sid, tid, wid, string(graphJSON))
-		exec("run", `INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id,plugin_version) VALUES($1,$2,$3,$4,'disp','pending','{}'::jsonb,$5,$6,$7)`, rid, tid, wid, sid, uid, project, resolveWorkflowRunPluginVersion(tx, tid, project))
+		pluginVersion, pluginRelease := resolveWorkflowRunPlugin(tx, tid, project)
+		var frozenRelease any
+		if pluginRelease != nil {
+			frozenRelease = jsonText(pluginRelease)
+		}
+		exec("run", `INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id,plugin_version,plugin_release) VALUES($1,$2,$3,$4,'disp','pending','{}'::jsonb,$5,$6,$7,$8)`, rid, tid, wid, sid, uid, project, pluginVersion, frozenRelease)
 		cred := uuid.NewString()
 		conn := uuid.NewString()
 		exec("credential", `INSERT INTO personal_model_credentials(id,user_id,ciphertext,key_id) VALUES($1,$2,repeat('c',64),'test-key')`, cred, uid)
@@ -554,7 +577,8 @@ func pluginVersionOf(t *testing.T, store *Store, tid, project string) string {
 	t.Helper()
 	frozen := ""
 	if _, err := store.transact(context.Background(), func(tx *transaction) Object {
-		frozen, _ = resolveWorkflowRunPluginVersion(tx, tid, project).(string)
+		version, _ := resolveWorkflowRunPlugin(tx, tid, project)
+		frozen, _ = version.(string)
 		return Object{}
 	}); err != nil {
 		t.Fatalf("resolve plugin version: %v", err)

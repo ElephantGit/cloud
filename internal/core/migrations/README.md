@@ -73,6 +73,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0059_agent_restore_stop_evidence.sql](0059_agent_restore_stop_evidence.sql) | 停止未确认的命名证据，不改变残留责任和回收授权 |
 | [0060_node_model_adapter.sql](0060_node_model_adapter.sql) | Node 实例登记的插件模型 adapter 能力 |
 | [0061_scheduled_tasks.sql](0061_scheduled_tasks.sql) | 定时任务定义、幂等接纳台账与截止取消事实 |
+| [0062_workflow_run_plugin_release.sql](0062_workflow_run_plugin_release.sql) | 冻结运行插件 release 包 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
@@ -97,6 +98,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0059 只增 `stop_evidence`，存量为空对象，不追认历史未知停止；覆盖见 `TestMigration0059RestoreStopEvidenceFreshUpgradeAndRepeat`。
 - 0060 给 `node_instances` 增加 `model_adapter`（jsonb 对象，默认 `{}`），记录 Node 实例登记时声明的插件模型 adapter 能力；不回填，既有实例按空能力处理，不会被派发需要 adapter 的会话，直到以新版本重新登记。空库与升级覆盖见 `TestMigration0060ModelAdapterFreshAndUpgrade`。
 - 0061 增加 `scheduled_tasks`（冻结 Prompt、agent ref、`schedule` jsonb、IANA 时区、无人值守同意与软删除墓碑）和 `scheduled_task_occurrences`（`(task_id, scheduled_at)` 唯一的幂等接纳台账，含截止时刻与截止取消事实）；不回填历史行。接纳由工作线程在同一事务里创建绑定 issue 下的 agent IssueRun，插件版本在接纳时按 Space 当时值快照而非定义上冻结。语义见 specs 根决策 `decisions/cloud/scheduled-task`；空库、升级与重复应用的集成覆盖随 Web 与端到端验收 commit 一并补齐。
+- 0062 给 `workflow_runs` 增加可空 `plugin_release`（jsonb），记录创建事务冻结的 Agent 插件 release 包；仅当 Space 的 `selected_release` 版本等于冻结的 `plugin_version` 时写入，其余为 NULL，不回填。运行 Workspace 的 `plugin` 步骤用它替换 Space 当前选择里的 Agent 插件条目；Space 已移除该插件时不追加，交由启动判定以 `agent_plugin_unavailable` 失败。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `internal/core/workflow_run_plugin_db_test.go`。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

@@ -14,6 +14,10 @@
 DROP INDEX one_unregistered_execution_work;
 CREATE UNIQUE INDEX one_unregistered_execution_work ON execution_work(run_id, kind)
  WHERE execution_id IS NULL AND workflow_run_id IS NULL;
+-- The kind itself is a closed set; the artifact upload is the third kind of IssueRun work.
+ALTER TABLE execution_work DROP CONSTRAINT execution_work_kind_check;
+ALTER TABLE execution_work ADD CONSTRAINT execution_work_kind_check
+ CHECK (kind IN ('agent_session','deliver_revision','deliver_scheduled_artifacts'));
 
 CREATE TABLE scheduled_run_artifact_deliveries (
  issue_run_id uuid PRIMARY KEY REFERENCES issue_runs(id),
@@ -27,11 +31,17 @@ CREATE TABLE scheduled_run_artifact_deliveries (
  settled_at timestamptz,
  -- 收敛原因：skipped 记 object_store_unconfigured，failed 记窗口到期或上传失败。
  settled_reason text,
+ -- 前缀清理扫过这一刻之后就不再重扫：清理按确定性对象键删除已上传未登记的对象，
+ -- 不需要列举桶，但需要记住"这个运行已经清过"，否则每一轮都会重删。
+ artifacts_gc_at timestamptz,
  created_at timestamptz NOT NULL DEFAULT now()
 );
 -- 到期结算扫描只需要仍在交付中的行。
 CREATE INDEX scheduled_run_artifact_deliveries_due ON scheduled_run_artifact_deliveries(deadline_at)
  WHERE state='delivering';
+-- 前缀清理只关心尚未清过、且已经收敛的交付。
+CREATE INDEX scheduled_run_artifact_deliveries_gc ON scheduled_run_artifact_deliveries(settled_at)
+ WHERE state IN ('failed','partial','skipped') AND artifacts_gc_at IS NULL;
 
 CREATE TABLE scheduled_run_artifacts (
  tenant_id uuid NOT NULL REFERENCES tenants(id),

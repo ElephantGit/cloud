@@ -4386,6 +4386,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -5078,7 +5082,8 @@
               "issue_run.thread_changed",
               "project.repository_updated",
               "issue.conversation_changed",
-              "scheduled_task.artifacts_updated"
+              "scheduled_task.artifacts_updated",
+              "space.scheduled_tasks_updated"
             ],
             "type": "string"
           },

@@ -10,6 +10,29 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
+// scheduledTaskState is the persisted scheduled-task contract relevant to management writes. It
+// deliberately includes immutable ownership as well as every PATCH-managed field so 404/CAS
+// failures prove they did not leave a partial change behind.
+type scheduledTaskState struct {
+	issueID, creatorUserID, agentID, name, prompt, schedule, timezone, disabledReason, unattendedPolicy string
+	revision, version                                                                                   int64
+	enabled, hasEnabledAt, hasUnattendedConsent                                                         bool
+}
+
+func readScheduledTaskState(t *testing.T, store *core.Store, taskID string) scheduledTaskState {
+	t.Helper()
+	var state scheduledTaskState
+	must(t, store.Pool.QueryRow(`SELECT issue_id, creator_user_id, agent_id, name, prompt,
+		schedule::text, timezone, revision, version, enabled, COALESCE(disabled_reason,''),
+		COALESCE(unattended_policy,''), enabled_at IS NOT NULL, unattended_consented_at IS NOT NULL
+		FROM scheduled_tasks WHERE id=$1`, taskID).Scan(
+		&state.issueID, &state.creatorUserID, &state.agentID, &state.name, &state.prompt,
+		&state.schedule, &state.timezone, &state.revision, &state.version, &state.enabled,
+		&state.disabledReason, &state.unattendedPolicy, &state.hasEnabledAt, &state.hasUnattendedConsent,
+	))
+	return state
+}
+
 // scheduledTaskOtherMember seeds a second active tenant member (distinct from the task creator) with
 // a verified identity, and returns the Claims the store resolves that member from.
 func scheduledTaskOtherMember(t *testing.T, store *core.Store, tenantID string) *core.Claims {
@@ -47,6 +70,20 @@ func TestScheduledTaskManagementIsCreatorOnly(t *testing.T) {
 	})
 	if fault := core.ErrorCode(err); fault.Status != 404 || fault.Code != "not_found" {
 		t.Fatalf("non-creator delete must be a 404 not_found fault, got %v", err)
+	}
+
+	beforePatch := readScheduledTaskState(t, store, taskID)
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
+		Method: "PATCH", Key: "other-patch", Path: base,
+		TenantID: s.tenantID, ScheduledTaskID: taskID,
+		Body:     core.Object{"name": "Other member edit", "version": beforePatch.version},
+		Identity: other,
+	})
+	if fault := core.ErrorCode(err); fault.Status != 404 || fault.Code != "not_found" {
+		t.Fatalf("non-creator PATCH must be a 404 not_found fault, got %v", err)
+	}
+	if afterPatch := readScheduledTaskState(t, store, taskID); afterPatch != beforePatch {
+		t.Fatalf("non-creator PATCH must not modify the task: before=%+v after=%+v", beforePatch, afterPatch)
 	}
 
 	// The creator still owns it: the management write they are entitled to must keep working.
@@ -96,19 +133,32 @@ func TestScheduledTaskVersionConflict(t *testing.T) {
 	creator := scheduledTaskCaller(t, store, s.tenantID)
 	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks/" + taskID
 
-	_, _, err := store.Public(context.Background(), &core.PublicRequest{
+	_, status, err := store.Public(context.Background(), &core.PublicRequest{
+		Method: "PATCH", Key: "committed-version", Path: path,
+		TenantID: s.tenantID, ScheduledTaskID: taskID,
+		Body:     core.Object{"name": "Committed edit", "prompt": "Committed prompt", "version": int64(1)},
+		Identity: creator,
+	})
+	must(t, err)
+	if status != 200 {
+		t.Fatalf("current-version edit must succeed with 200, got %d", status)
+	}
+	committed := readScheduledTaskState(t, store, taskID)
+	if committed.name != "Committed edit" || committed.prompt != "Committed prompt" || committed.revision != 2 || committed.version != 2 {
+		t.Fatalf("successful content edit must persist and advance revision/version, got %+v", committed)
+	}
+
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
 		Method: "PATCH", Key: "stale-version", Path: path,
 		TenantID: s.tenantID, ScheduledTaskID: taskID,
-		Body:     core.Object{"name": "Stale edit", "version": int64(2)},
+		Body:     core.Object{"name": "Stale edit", "prompt": "Stale prompt", "version": int64(1)},
 		Identity: creator,
 	})
 	if fault := core.ErrorCode(err); fault.Status != 409 || fault.Code != "version_conflict" {
 		t.Fatalf("stale version must be a 409 version_conflict fault, got %v", err)
 	}
-	var version int64
-	must(t, store.Pool.QueryRow(`SELECT version FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&version))
-	if version != 1 {
-		t.Fatalf("a rejected edit must not bump version, got %d", version)
+	if afterStale := readScheduledTaskState(t, store, taskID); afterStale != committed {
+		t.Fatalf("a stale edit must retain every committed field and version: committed=%+v after=%+v", committed, afterStale)
 	}
 }
 
@@ -129,10 +179,10 @@ func TestScheduledTaskRevokeConsentDisables(t *testing.T) {
 		t.Fatalf("revoke-consent must succeed with 200, got %d", status)
 	}
 
-	var enabled bool
+	var enabled, consentedAtCleared bool
 	var reason, policy string
-	must(t, store.Pool.QueryRow(`SELECT enabled, COALESCE(disabled_reason,''), COALESCE(unattended_policy,'') FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&enabled, &reason, &policy))
-	if enabled || reason != "consent_revoked" || policy != "" {
-		t.Fatalf("revoke-consent must disable the task and clear consent, got enabled=%v reason=%q policy=%q", enabled, reason, policy)
+	must(t, store.Pool.QueryRow(`SELECT enabled, COALESCE(disabled_reason,''), COALESCE(unattended_policy,''), unattended_consented_at IS NULL FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&enabled, &reason, &policy, &consentedAtCleared))
+	if enabled || reason != "consent_revoked" || policy != "" || !consentedAtCleared {
+		t.Fatalf("revoke-consent must disable the task and clear consent, got enabled=%v reason=%q policy=%q consentedAtCleared=%v", enabled, reason, policy, consentedAtCleared)
 	}
 }

@@ -13,6 +13,8 @@ resources; the module requests, renders and turns user actions into mutations.
 | `scheduled-task-form.tsx` | Create and edit form |
 | `scheduled-task-history.tsx` | History dialog: each occurrence's admission result, verdict and artifact counts |
 | `scheduled-tasks-page.test.tsx` | Page behavior tests |
+| `scheduled-run-artifacts.tsx` | Expands registered artifacts and requests separate short-lived downloads |
+| `scheduled-run-artifacts.test.tsx` | Download authorization, refusal, retry and link safety tests |
 | `scheduled-task-history.test.tsx` | History rendering tests, including "not reported" |
 
 ## Dependencies
@@ -37,3 +39,5 @@ The history tests serve fixed responses through MSW and assert what renders (the
 rejection count). Do not mock internal modules.
 
 The creation entry trusts the Cloud list response’s `acceptanceEnabled`; this module does not choose the gate, and the server independently validates writes.
+
+Artifact lists carry no download capability. Explicit clicks request current authorization; collapsing the list discards links. Downloads accept only HTTP(S) URLs without embedded credentials and open separately without a referrer; artifact content is never rendered inside the app.

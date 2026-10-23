@@ -24,7 +24,13 @@ function renderHistory(entries: ScheduledTaskOccurrence[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <ScheduledTaskHistory tid="tid1" taskId="st1" title="每日同步" onClose={() => {}} />
+      <ScheduledTaskHistory
+        tid="tid1"
+        issueId="i1"
+        taskId="st1"
+        title="每日同步"
+        onClose={() => {}}
+      />
     </QueryClientProvider>,
   )
 }
@@ -32,7 +38,12 @@ function renderHistory(entries: ScheduledTaskOccurrence[]) {
 describe('ScheduledTaskHistory', () => {
   it('shows the reported verdict and the artifact counts', async () => {
     renderHistory([
-      entry({ verdict: 'pass', verdictDetail: '两项检查通过', artifactCount: 2, rejectedArtifactCount: 1 }),
+      entry({
+        verdict: 'pass',
+        verdictDetail: '两项检查通过',
+        artifactCount: 2,
+        rejectedArtifactCount: 1,
+      }),
     ])
     expect(await screen.findByText(/结论 通过/)).toBeInTheDocument()
     expect(screen.getByText(/两项检查通过/)).toBeInTheDocument()

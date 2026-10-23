@@ -11,6 +11,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ScheduledTaskOccurrence } from '@/api/generated.schemas'
 import { useScheduledTaskHistory } from './api'
+import { ScheduledRunArtifacts } from './scheduled-run-artifacts'
 
 const OUTCOME_LABELS: Record<string, string> = {
   admitted: '待执行',
@@ -57,11 +58,13 @@ function timestamp(value: string): string {
 export function ScheduledTaskHistory({
   tid,
   taskId,
+  issueId,
   title,
   onClose,
 }: {
   tid: string
   taskId: string
+  issueId: string
   title: string
   onClose: () => void
 }) {
@@ -115,6 +118,9 @@ export function ScheduledTaskHistory({
                     计划 {timestamp(entry.scheduledAt)} · 观察 {timestamp(entry.observedAt)} · 版本{' '}
                     {entry.taskRevision}
                   </p>
+                  {entry.runId && (
+                    <ScheduledRunArtifacts tid={tid} issueId={issueId} runId={entry.runId} />
+                  )}
                 </div>
               </li>
             ))}

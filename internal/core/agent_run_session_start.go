@@ -176,6 +176,12 @@ func (s *Store) sessionStartSpec(t *transaction, o, snap Object, turnID, content
 		spec["priorRevision"] = prior
 	}
 	spec["workspaceDirectory"] = workspaceDirectory(t, wid)
+	// Only a scheduled occurrence may report a business verdict or run artifacts, and the executor
+	// must know which admission it runs under before it starts. A manual run leaves the field out:
+	// that is the shape every session released before this field existed already has.
+	if scheduledTaskRun(t, runID) {
+		spec["trigger"] = "scheduled"
+	}
 	return spec, nil
 }
 

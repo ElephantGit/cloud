@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -166,6 +167,15 @@ func sessionObject(spec *controlpb.AgentSessionSpec) (core.Object, error) {
 		}
 		out["workspaceDirectory"] = directory
 	}
+	// The admission is part of the frozen input: a dispatch that disagrees with the work item about
+	// whether this run is a scheduled occurrence conflicts like any other changed field.
+	switch spec.GetTrigger() {
+	case controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED:
+	case controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_SCHEDULED:
+		out["trigger"] = "scheduled"
+	default:
+		return nil, invalidInput("invalid_dispatch")
+	}
 	return out, nil
 }
 
@@ -205,7 +215,17 @@ func sessionMessage(o core.Object) *controlpb.AgentSessionSpec {
 		InitialTurn:        &controlpb.UserTurn{TurnId: turn.S("turnId"), Content: contentMessages(rows(turn["content"]))},
 		PriorRevision:      priorMessage(o.O("priorRevision")),
 		WorkspaceDirectory: directoryMessages(rows(o["workspaceDirectory"])),
+		Trigger:            sessionTriggerMessage(o),
 	}
+}
+
+// sessionTriggerMessage is the admission Cloud froze for this session. An absent field is a manual
+// IssueRun, which is also how every session released before the field existed reads.
+func sessionTriggerMessage(o core.Object) controlpb.AgentSessionTrigger {
+	if o.S("trigger") == "scheduled" {
+		return controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_SCHEDULED
+	}
+	return controlpb.AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED
 }
 
 func contentObjects(blocks []*controlpb.ContentBlock) []core.Object {
@@ -272,8 +292,25 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 		out["outcome"], out["reason"] = "plugins_failed", shortEnum(outcome.PluginsFailed.GetReason().String(), "PLUGINS_FAILURE_REASON_")
 	case *controlpb.ExecutionResult_AgentSessionEnded:
 		out["outcome"], out["reason"] = "agent_session_ended", shortEnum(outcome.AgentSessionEnded.GetReason().String(), "AGENT_SESSION_END_REASON_")
-		if outcome.AgentSessionEnded.Detail != nil {
-			out["detail"] = outcome.AgentSessionEnded.GetDetail()
+		ended := outcome.AgentSessionEnded
+		if ended.Detail != nil {
+			out["detail"] = ended.GetDetail()
+		}
+		// The business verdict stays a structured value Cloud only validates: it is never derived
+		// from the Thread, the end reason or the execution status, and it travels only when the
+		// executor reported it (an unspecified verdict is a malformed report, not "not reported").
+		if result := ended.GetScheduledResult(); result != nil {
+			if result.GetVerdict() == controlpb.ScheduledVerdict_SCHEDULED_VERDICT_UNSPECIFIED {
+				return nil, invalidInput("invalid_result")
+			}
+			scheduled := core.Object{"verdict": shortEnum(result.GetVerdict().String(), "SCHEDULED_VERDICT_")}
+			if result.VerdictDetail != nil {
+				if utf8.RuneCountInString(result.GetVerdictDetail()) > core.MaxScheduledRunVerdictDetailRunes {
+					return nil, invalidInput("invalid_result")
+				}
+				scheduled["verdictDetail"] = result.GetVerdictDetail()
+			}
+			out["scheduledResult"] = scheduled
 		}
 	case *controlpb.ExecutionResult_RevisionDelivered:
 		out["outcome"] = "revision_delivered"
@@ -336,6 +373,15 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		ended := &controlpb.AgentSessionEnded{Reason: controlpb.AgentSessionEndReason(enum(controlpb.AgentSessionEndReason_value, "AGENT_SESSION_END_REASON_", o.S("reason")))}
 		if detail := o.S("detail"); detail != "" {
 			ended.Detail = &detail
+		}
+		// A stored verdict returns to the Controller as the same structured value it reported, so a
+		// recovered execution is queried with the business result it actually carried.
+		if scheduled := o.O("scheduledResult"); scheduled != nil {
+			reported := &controlpb.ScheduledRunResult{Verdict: controlpb.ScheduledVerdict(enum(controlpb.ScheduledVerdict_value, "SCHEDULED_VERDICT_", scheduled.S("verdict")))}
+			if detail := scheduled.S("verdictDetail"); detail != "" {
+				reported.VerdictDetail = &detail
+			}
+			ended.ScheduledResult = reported
 		}
 		out.Outcome = &controlpb.ExecutionResult_AgentSessionEnded{AgentSessionEnded: ended}
 	case "revision_delivered":

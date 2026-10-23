@@ -135,6 +135,12 @@ func (s *Store) settleSessionEnded(t *transaction, runID, executionID string, en
 	t.execRows(`
 		UPDATE thread_entries SET status='discarded'
 		WHERE run_id=$1 AND source='user' AND status='queued'`, runID)
+	// The business verdict of a scheduled run lands in the same transaction as its terminal state and
+	// the delivery release (scheduled-task verdict/artifacts ADR D1/D2): it is a run-level fact, so it
+	// neither waits for the delivery settlement nor derives from the status that settlement writes.
+	if err := recordScheduledRunResult(t, runID, ended); err != nil {
+		return err
+	}
 	if ended.S("reason") == "agent_failed" {
 		appendSessionFailure(t, o, ended.S("detail"))
 	}

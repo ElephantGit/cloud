@@ -86,6 +86,8 @@ TLS verifies the original model hostname. Only exact deployment-owned developmen
 system DNS, and that exemption cannot be combined with enterprise mode. Both `2001:2::/48` and
 `198.18.0.0/15` are denied. See [Shared deployment egress](../../docs/operations/deployment-egress.en.md).
 
+The whole dial budget remains `Connect` (ten seconds by default) and checked addresses are still tried in DNS order; each attempt receives the remaining whole-dial budget divided by the addresses left, with a roughly two-second floor, so one silent edge address cannot exhaust the time reserved for the addresses after it. When every address fails, the error and the structured log's `detail` list a bounded reason per address (timeout, connection refused, network unreachable or not attempted) using only numeric addresses and reasons, never a URL, query, header or credential.
+
 `NewUpstreamClientWithTimeouts` accepts `UpstreamTimeouts` to inject construction-time `Connect` and `ResponseHeader` limits; nonpositive fields retain the production defaults of ten seconds each for TCP/TLS and thirty seconds for headers. The original constructors keep those defaults. Workflow asset boundary tests shorten waits without replacing the secure transport.
 
 Raw keys stay in this service's memory. Ciphertext uses fresh nonces; runtime tokens persist only as

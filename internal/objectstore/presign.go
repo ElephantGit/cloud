@@ -45,7 +45,7 @@ func PresignPUT(cfg *Config, key string, now time.Time) (Grant, error) {
 
 // PresignGET signs a short-lived read of one object Cloud already registered.
 //
-// The grant uses PublicEndpoint when configured, just like Node-facing uploads. Core must authorise
+// The grant uses PublicEndpoint when configured, just like Node-facing uploads. Core must authorize
 // the registered key first; signing performs no I/O and grants no access to any other object.
 func PresignGET(cfg *Config, key string, now time.Time) (Grant, error) {
 	return presign(cfg, key, "GET", map[string]string{}, now)

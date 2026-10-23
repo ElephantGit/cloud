@@ -11,7 +11,7 @@ import (
 
 // Reading one registered scheduled artifact (ADR D4).
 //
-// The read is two steps for the same reason the Revision history read is: authorisation and the
+// The read is two steps for the same reason the Revision history read is: authorization and the
 // registered row belong to one short transaction, and the object store must never be called inside
 // it. The row decides which object is served - a caller names a run and an index, never a key - and
 // the persisted key is re-checked against the layout Cloud generates, so a stored value cannot turn
@@ -71,7 +71,7 @@ func (s *Store) SessionRunArtifacts(ctx context.Context, r *PublicRequest) (Obje
 	return artifacts, 200, nil
 }
 
-// scheduledArtifactRun authorises a run-scoped artifact read and fails when the run is not the
+// scheduledArtifactRun authorizes a run-scoped artifact read and fails when the run is not the
 // caller's to read.
 func scheduledArtifactRun(t *transaction, r *PublicRequest) Object {
 	require(r != nil && r.Method == "GET", 405, "method_not_allowed")
@@ -85,7 +85,7 @@ func scheduledArtifactRun(t *transaction, r *PublicRequest) Object {
 	return run
 }
 
-// scheduledArtifactRegistration authorises the read and returns the registered artifact row.
+// scheduledArtifactRegistration authorizes the read and returns the registered artifact row.
 func scheduledArtifactRegistration(t *transaction, r *PublicRequest) Object {
 	require(r != nil && r.Method == "GET", 405, "method_not_allowed")
 	scheduledArtifactRun(t, r)

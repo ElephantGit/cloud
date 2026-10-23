@@ -264,7 +264,7 @@ func Document() map[string]any {
 		"kind":      str(),
 		"sizeBytes": number(),
 		"sha256":    str(),
-		// The URL is a short-lived capability issued to an already authorised caller; it expires
+		// The URL is a short-lived capability issued to an already authorized caller; it expires
 		// with the object-store grant TTL, so a reader must not treat it as shareable.
 		"url":       str(),
 		"expiresAt": timestamp(),

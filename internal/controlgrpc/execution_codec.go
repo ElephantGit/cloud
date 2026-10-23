@@ -378,6 +378,9 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 		artifacts := outcome.ScheduledArtifactsDelivered.GetArtifacts()
 		uploaded := make([]core.Object, 0, len(artifacts))
 		for _, artifact := range artifacts {
+			if artifact == nil || artifact.GetSize() > math.MaxInt64 {
+				return nil, invalidInput("invalid_result")
+			}
 			uploaded = append(uploaded, storedObject(artifact))
 		}
 		out["artifacts"] = uploaded

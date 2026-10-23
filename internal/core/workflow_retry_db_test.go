@@ -377,6 +377,73 @@ func TestWorkflowRetryOnlyRetriesAgentFailedWithinBudget(t *testing.T) {
 	}
 }
 
+// D2's closed set is keyed on the session's result.reason, not on the public reason derived from
+// its detail. The Controller reports a pinned-plugin startup failure as `agent_failed` with
+// `detail=agent_plugin_unavailable`; the decision therefore retries it, and the waiting state keeps
+// the raw `agent_failed`. Only the terminal state lifts the detail (the mapping issue-runs share),
+// so an exhausted budget still reports the precise public cause. Widening the set to exclude the
+// detail is an ADR change, not an implementation detail.
+func TestWorkflowRetryDecidesOnTheSessionReasonNotItsDetail(t *testing.T) {
+	store := dispatcherDB(t)
+	runID, _, _, _, _ := seedWorkflowSessionSceneGraph(t, store, workflowRetryGraph(true, 1, 0))
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance 1: %v", err)
+	}
+	wsID := settleSessionWorkspace(t, store, runID)
+	nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+	reportPluginFailure := func(execution string) {
+		t.Helper()
+		if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+			executionResult(tx, &ControlRequest{Body: Object{
+				"operationId": runID, "executionId": execution, "sequence": int64(1), "event": "ended",
+				"result": Object{
+					"outcome": "agent_session_ended", "reason": "agent_failed",
+					"detail": "agent_plugin_unavailable", "node": Object{"nodeId": nodeService},
+				},
+			}}, true)
+			return Object{}
+		}); err != nil {
+			t.Fatalf("report session end: %v", err)
+		}
+		if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+			t.Fatalf("advance after result: %v", err)
+		}
+	}
+	execution1 := "exec-plugin-detail-1-" + runID[:8]
+	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution1, spec)
+	reportPluginFailure(execution1)
+	requireRetrying(t, readWorkflowNodeState(t, store, runID, "a"), 1)
+
+	// The single retry runs and fails the same way; the budget is then spent, and the terminal row
+	// carries the public reason lifted from the detail.
+	makeWorkflowRetryDue(t, store, runID, "a")
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance at due: %v", err)
+	}
+	spec2 := sessionWorkSpec(t, store, runID, "a")
+	execution2 := "exec-plugin-detail-2-" + runID[:8]
+	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution2, spec2)
+	reportPluginFailure(execution2)
+
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	if status != "failed" || runErr != "agent_plugin_unavailable" {
+		t.Fatalf("run settled %q error %q states=%v; want failed/agent_plugin_unavailable", status, runErr, states)
+	}
+	agent, _ := asWorkflowObject(states["a"])
+	if agent == nil || agent.S("status") != "failed" || agent.N("attempt") != 2 || agent.S("retryAt") != "" ||
+		agent.S("error") != "agent_plugin_unavailable" || agent.O("output").S("reason") != "agent_plugin_unavailable" {
+		t.Fatalf("agent state = %v; want failed attempt 2 with the lifted reason and no retryAt", states["a"])
+	}
+	var unregistered int
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM execution_work WHERE workflow_run_id=$1 AND execution_id IS NULL`, runID).Scan(&unregistered); err != nil {
+		t.Fatal(err)
+	}
+	if unregistered != 0 {
+		t.Fatalf("%d work items released after the budget was spent", unregistered)
+	}
+	assertRunWorkspaceReleased(t, store, runID)
+}
+
 // Cancellation wins over a waiting retry (D5): the node settles cancelled without waiting for the
 // committed due instant, the run settles cancelled, the Workspace is released — and even a due
 // instant that has already passed starts no attempt. The cancelled node keeps the attempt it failed

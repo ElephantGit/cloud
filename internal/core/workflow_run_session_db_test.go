@@ -750,6 +750,10 @@ func TestWorkflowSessionRefusesUnusablePinnedPlugin(t *testing.T) {
 // `detail=agent_plugin_unavailable`. A WorkflowRun has no Thread, so the node and run rows are the
 // only public place the cause can appear; `agent_plugin_unavailable` is lifted out of the detail and
 // every other detail stays out (the same bounded set IssueRun threads use).
+//
+// Retry is disabled on this graph: the test is about which detail becomes public, so it asserts the
+// terminal rows directly. The retry-enabled settlement — the decision reads the raw `agent_failed`,
+// and the exhausted terminal row still lifts the detail — is asserted in workflow_retry_db_test.go.
 func TestWorkflowSessionPluginFailureReachesThePublicRow(t *testing.T) {
 	for _, tc := range []struct {
 		name, detail, want string
@@ -759,7 +763,7 @@ func TestWorkflowSessionPluginFailureReachesThePublicRow(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := dispatcherDB(t)
-			runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+			runID, _, _, _, _ := seedWorkflowSessionSceneGraph(t, store, workflowSessionNoRetryGraph())
 			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
 				t.Fatalf("advance to workspace create: %v", err)
 			}

@@ -254,7 +254,10 @@ func workflowSessionEndReason(reason string) string {
 // The retry decision is made from result.reason before the reason is mapped (D2). The mapping sends
 // several unrelated reasons to `failed` — interrupted, Cloud's own deadlines, node_unavailable —
 // and treats every unknown reason as success; deriving the retry from the mapped status would both
-// retry what the ADR forbids and skip the decision for reasons that map to success.
+// retry what the ADR forbids and skip the decision for reasons that map to success. The decision
+// reads the session's reason and not its detail: a pinned-plugin failure is agent_failed with
+// detail=agent_plugin_unavailable, so D2's closed set keeps it retryable; the lifted public reason
+// is applied only when the node settles.
 func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
 	nodeID := node.ID
 	state := states[nodeID]

@@ -97,13 +97,17 @@ func scheduledRunBeyondRetention(t *transaction, runID string) bool {
 //
 // Keys are Cloud's own and deterministic (`scheduledArtifactKey`), so the sweep needs no bucket
 // listing: it can name every object the run could have written and delete the ones the index does not
-// back. That is the lifetime fallback the ADR asks for - it depends on no receipt, because a
-// presigned PUT stays valid after Cloud stopped granting them.
+// back. Settled runs remain eligible for recurring sweeps: a PUT admitted before grant expiry can
+// finish after an earlier DELETE, and retention can remove an index after a successful delivery.
 func (s *Store) CollectScheduledArtifactObjectsOnce(ctx context.Context) error {
+	if s.ObjectStore == nil {
+		return nil
+	}
 	rows, err := s.Pool.QueryContext(ctx, `
 		SELECT issue_run_id, tenant_id FROM scheduled_run_artifact_deliveries
-		WHERE state IN ('failed','partial','skipped') AND artifacts_gc_at IS NULL
-		ORDER BY settled_at
+		WHERE state IN ('delivered','failed','partial','skipped')
+		  AND (artifacts_gc_at IS NULL OR artifacts_gc_at <= now() - interval '1 minute')
+		ORDER BY artifacts_gc_at NULLS FIRST, settled_at, issue_run_id
 		LIMIT $1`, scheduledArtifactCleanupBatch)
 	if err != nil {
 		return err
@@ -133,7 +137,7 @@ func (s *Store) CollectScheduledArtifactObjectsOnce(ctx context.Context) error {
 		}
 		if _, err := s.transact(ctx, func(t *transaction) Object {
 			t.exec(`UPDATE scheduled_run_artifact_deliveries SET artifacts_gc_at=now()
-				WHERE issue_run_id=$1 AND state IN ('failed','partial','skipped') AND artifacts_gc_at IS NULL`, entry.runID)
+				WHERE issue_run_id=$1 AND state IN ('delivered','failed','partial','skipped')`, entry.runID)
 			return Object{}
 		}); err != nil {
 			return err

@@ -90,6 +90,18 @@ func TestCollectScheduledArtifactObjectsRemovesOnlyUnregisteredKeys(t *testing.T
 	if paths := deleted(); len(paths) != 1 {
 		t.Fatalf("deletions = %v, want the second pass to delete nothing", paths)
 	}
+	// Delivered runs also remain eligible after retention removes their index. A PUT that finished
+	// after pruning must not become permanently unreachable to the collector.
+	if _, err := store.Pool.Exec(`UPDATE scheduled_run_artifact_deliveries
+		SET state='delivered', artifacts_gc_at=now()-interval '2 minutes' WHERE issue_run_id=$1`, scene.run); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CollectScheduledArtifactObjectsOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if paths := deleted(); len(paths) != 2 || !strings.HasSuffix(paths[1], want) {
+		t.Fatalf("a later pass must revisit a pruned delivered run: %v", paths)
+	}
 }
 
 // Retention keeps the ten newest artifact-bearing runs of a task and drops the rest, objects first.

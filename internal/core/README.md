@@ -24,6 +24,15 @@
 | `workflow*.go` | 图、发布快照、准入、运行身份、调度器；Issue Confirm/manual 与直接启动共用的 WorkflowRun 创建、`workflow_invocation_ref` 关联，以及调度器把 WorkflowRun 状态投影回关联 IssueRun | [工作流](../../docs/workflows/workflows.md)、[Issue 协作](../../docs/collaboration/interactions.md) |
 | `hub.go`、`signals.go` | 提交后失效通知和控制信号；不承载权威状态 | [HTTP API](../../docs/core/http-api.md) |
 
+## 定时运行的产物交付
+
+`scheduled_artifact*.go` 保存声明、签发授权、核验对象并收敛交付，依据
+[verdict 与产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
+Revision 与产物可以分别派发，每类最多一个未完成执行，两者均收敛后才释放运行 Workspace。
+上传授权不超过运行的固定截止；到期回执仍按原执行身份确认，但不请求 HEAD、不登记对象。
+对象核验与删除都在事务外执行。清理按确定性键删除索引未覆盖的对象，已结算运行每分钟可再次扫描，
+包含已被保留策略淘汰索引的成功交付；`artifacts_gc_at` 表示上次扫描时间，不表示永久完成。
+
 ## Store 与事务边界
 
 - `NewStore` 从注入的 GORM 获取 `*sql.DB`，装配真实 Workflow Directory/Forms；不连接、迁移或建立全局数据库。

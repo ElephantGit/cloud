@@ -17,9 +17,8 @@ var errScheduledDeclarationUnavailable = errors.New("scheduled artifact declarat
 // the Node can neither pick a location nor store different bytes than it declared. Nothing about the
 // URL is written down: the signature is returned to the caller and forgotten.
 //
-// The absolute delivery deadline is enforced where it matters - at registration, on the database's
-// own clock - so a grant issued just before the window closes may still be used, and whatever it
-// writes past the deadline is refused there and cleaned up by the prefix GC.
+// Grants expire no later than the run's frozen deadline. An already-started PUT can still finish
+// later; registration fences it on the database clock and the recurring GC removes its object.
 func scheduledArtifactGrants(t *transaction, executionID string, requested []Object) Object {
 	e := t.one("SELECT * FROM node_executions WHERE execution_id=$1 AND kind='deliver_scheduled_artifacts'", executionID)
 	require(e != nil, 404, "not_found")
@@ -27,8 +26,18 @@ func scheduledArtifactGrants(t *transaction, executionID string, requested []Obj
 	require(t.objectStore != nil, 409, "object_store_unconfigured")
 	delivery := t.one("SELECT * FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
 	require(delivery != nil && delivery.S("state") == "delivering", 409, "dispatch_conflict")
-	open := t.one("SELECT now() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
-	require(open.B("open"), 409, "artifact_delivery_expired")
+	clock := t.one("SELECT clock_timestamp() AS now")
+	at, timeErr := time.Parse(time.RFC3339Nano, clock.S("now"))
+	require(timeErr == nil, 409, "dispatch_conflict")
+	deadline, timeErr := time.Parse(time.RFC3339Nano, delivery.S("deadlineAt"))
+	require(timeErr == nil, 409, "dispatch_conflict")
+	config := *t.objectStore
+	if config.UploadGrantTTL <= 0 {
+		config.UploadGrantTTL = 15 * time.Minute
+	}
+	config.UploadGrantTTL = min(config.UploadGrantTTL, deadline.Sub(at)).Truncate(time.Second)
+	// SigV4 has whole-second precision. Never round a sub-second remainder up past the deadline.
+	require(config.UploadGrantTTL >= time.Second, 409, "artifact_delivery_expired")
 	declaration, err := scheduledArtifactDeclarationOf(t, delivery.S("tenantId"), e)
 	require(err == nil, 400, "invalid_upload_checksum")
 	grants := make([]Object, 0, len(requested))
@@ -36,7 +45,7 @@ func scheduledArtifactGrants(t *transaction, executionID string, requested []Obj
 		artifact := declaration.artifact(int(want.N("index")))
 		require(artifact != nil, 400, "invalid_upload_checksum")
 		require(want.N("size") == artifact.Size && want.S("sha256") == artifact.Sha256, 400, "invalid_upload_checksum")
-		signed, presignErr := objectstore.PresignPUTChecksum(t.objectStore, artifact.Key, artifact.Sha256, time.Now())
+		signed, presignErr := objectstore.PresignPUTChecksum(&config, artifact.Key, artifact.Sha256, at)
 		require(presignErr == nil, 400, "invalid_upload_checksum")
 		grants = append(grants, Object{
 			"objectKey": artifact.Key, "url": signed.URL, "method": signed.Method,

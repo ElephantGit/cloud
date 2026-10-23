@@ -119,6 +119,26 @@ func (s *Store) settleScheduledArtifacts(t *transaction, runID, executionID stri
 // closeArtifactDelivery settles the delivery row and releases the run when its Revision delivery has
 // already settled as well.
 func (s *Store) closeArtifactDelivery(t *transaction, o Object, state, reason string) error {
+	if state == "failed" || state == "partial" {
+		// A whole-batch failure (including expiry before dispatch) has no per-object result.
+		// The work item's frozen session binding still names the complete accepted manifest.
+		// Preserve collection/verification refusals and registered successes; fill only missing
+		// failure facts in the same transaction as the first settlement and release.
+		t.exec(`
+			INSERT INTO scheduled_run_artifact_rejections
+				(tenant_id, issue_run_id, task_id, occurrence_id, scheduled_at, display_name, reason)
+			SELECT d.tenant_id, d.issue_run_id, d.task_id, d.occurrence_id, d.scheduled_at,
+				item->>'displayName', COALESCE(NULLIF($2,''),'upload_failed')
+			FROM scheduled_run_artifact_deliveries d
+			JOIN execution_work w ON w.run_id=d.issue_run_id AND w.kind='deliver_scheduled_artifacts'
+			JOIN node_executions e ON e.execution_id=w.input->>'sessionExecutionId'
+				AND e.operation_id=d.issue_run_id AND e.kind='agent_session'
+			CROSS JOIN LATERAL jsonb_array_elements(e.result->'artifactManifest'->'items') AS item
+			WHERE d.issue_run_id=$1 AND d.state='delivering'
+				AND NOT EXISTS (SELECT 1 FROM scheduled_run_artifacts a
+					WHERE a.issue_run_id=d.issue_run_id AND a.artifact_index=(item->>'index')::int)
+			ON CONFLICT (issue_run_id, display_name) DO NOTHING`, o.S("id"), reason)
+	}
 	t.exec(`
 		UPDATE scheduled_run_artifact_deliveries
 		SET state=$2, settled_at=clock_timestamp(), settled_reason=NULLIF($3,'')

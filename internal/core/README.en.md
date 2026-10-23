@@ -31,6 +31,10 @@ the [verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decision
 Revision and artifact deliveries dispatch independently, with at most one unfinished execution of
 each kind; both must settle before the run Workspace releases. Upload grants never outlive the run's
 fixed deadline. Expired receipts still acknowledge the original execution without HEAD or registration.
+Final registration checks the actual database clock after acquiring the lock, rather than the
+transaction start before the lock wait. Batch failure or expiry atomically records rejections for
+unregistered files in the frozen manifest, preserving existing collection/verification rejections
+and registered successes without adding facts on replay.
 Object verification and deletion happen outside transactions. Cleanup derives deterministic keys and
 deletes objects absent from the index. Settled runs become eligible for another sweep after one minute,
 including successful deliveries whose index retention has pruned. `artifacts_gc_at` records the last

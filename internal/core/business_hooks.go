@@ -59,6 +59,7 @@ func BindBusinessHooks(s *Store) {
 	s.OnRunWorkspaceSettled = onRunWorkspaceSettled
 	s.OnRunWorkspaceDeleted = onRunWorkspaceDeleted
 	s.OnDeliverySettled = onDeliverySettled
+	s.OnScheduledArtifactsSettled = onScheduledArtifactsSettled
 }
 
 // onThreadEvents stores one batch of a session execution's history records as Thread entries and
@@ -126,4 +127,13 @@ func onRunWorkspaceDeleted(ctx context.Context, tx *sql.Tx, run string) error {
 func onDeliverySettled(ctx context.Context, tx *sql.Tx, run, execution string, settled Object) error {
 	t := businessTransaction(ctx, tx)
 	return t.store.settleDelivery(t, run, execution, settled)
+}
+
+// onScheduledArtifactsSettled registers the artifacts Cloud verified and finishes the run's release
+// once its Revision delivery has also settled (scheduled-task verdict/artifacts ADR D3). The settled
+// object is the control plane's own verdict: per-object verification and the absolute-deadline
+// comparison, both computed outside the transaction and bound to the frozen execution input.
+func onScheduledArtifactsSettled(ctx context.Context, tx *sql.Tx, run, execution string, settled Object) error {
+	t := businessTransaction(ctx, tx)
+	return t.store.settleScheduledArtifacts(t, run, execution, settled)
 }

@@ -46,7 +46,7 @@ func scheduledRunResultIsReportable(reason string) bool {
 // written when the executor reported nothing, which the reader projects as "not reported".
 func recordScheduledRunResult(t *transaction, runID string, ended Object) error {
 	result := ended.O("scheduledResult")
-	if result == nil {
+	if len(result) == 0 {
 		return nil
 	}
 	if !scheduledRunResultIsReportable(ended.S("reason")) {

@@ -15,6 +15,7 @@ type ControlRequest struct {
 	Service                                              *Claims
 	Identity                                             *Claims
 	verification                                         *revisionVerification
+	artifacts                                            *artifactVerification
 }
 
 // Control is the finite internal command API. Controllers have no table-write or SQL interface.
@@ -30,6 +31,17 @@ func (s *Store) Control(ctx context.Context, r *ControlRequest) (Object, error) 
 		}
 		copyRequest := *r
 		copyRequest.verification = prepared
+		r = &copyRequest
+	}
+	// A scheduled run's artifacts are checked the same way: the object store is asked between two
+	// short transactions, and the answer travels bound to the frozen execution input.
+	if r.Action == "clone_takeover" && r.Body.O("result").S("outcome") == "scheduled_artifacts_delivered" {
+		prepared, err := s.prepareArtifactVerification(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		copyRequest := *r
+		copyRequest.artifacts = prepared
 		r = &copyRequest
 	}
 	out, err := s.transact(ctx, func(t *transaction) (response Object) {

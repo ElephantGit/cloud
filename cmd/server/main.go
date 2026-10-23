@@ -282,6 +282,13 @@ func run() (runErr error) {
 			defer syncGroup.Done()
 			pluginmarket.RunSyncLoop(ctx, store.GiveUpStaleWorkspaceReleasesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
 		}()
+		syncGroup.Add(1)
+		go func() {
+			defer syncGroup.Done()
+			// A scheduled run's artifact window is fixed when its declaration is stored, so expiry is
+			// the same clock-driven pass as the others: one short transaction per run, no policy.
+			pluginmarket.RunSyncLoop(ctx, store.ExpireScheduledArtifactDeliveriesOnce, agentDeliveryInterval, pluginmarket.ContextSleep, log)
+		}()
 	}
 	// Residual recovery remains independent of a run's business terminal state. Cloud consumes
 	// existing, identity-bound facts; a missing fact leaves its ledger open rather than treating

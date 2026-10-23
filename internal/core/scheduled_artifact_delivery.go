@@ -27,7 +27,7 @@ const scheduledArtifactSkippedObjectStore = "object_store_unconfigured"
 // was told to report artifacts Cloud cannot attribute or verify.
 func recordScheduledArtifacts(t *transaction, runID, executionID string, ended Object) error {
 	manifest := ended.O("artifactManifest")
-	if manifest == nil || !scheduledRunResultIsReportable(ended.S("reason")) {
+	if len(manifest) == 0 || !scheduledRunResultIsReportable(ended.S("reason")) {
 		return nil
 	}
 	occurrence := t.one(`

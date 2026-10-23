@@ -3,9 +3,12 @@ import type {
   GraphWorkflowRunStatus,
 } from '@/features/workflows/runtime/types'
 
-/** Node is actively executing — the only spinner-worthy state. */
+/**
+ * Node owns the run's live progress: executing, or waiting for its next retry. These are the
+ * only spinner-worthy states — the run has not moved on from them.
+ */
 export function isNodeWorking(status: GraphWorkflowRunStatus | GraphWorkflowNodeStatus): boolean {
-  return status === 'running'
+  return status === 'running' || status === 'retrying'
 }
 
 /** Shared run/node status chrome — color is never the only signal (dot + label + tone). */
@@ -22,6 +25,15 @@ export function runStatusTone(status: GraphWorkflowRunStatus | GraphWorkflowNode
         ring: 'border-sky-500/50 ring-sky-500/20',
         badge: 'border-sky-500/30 bg-sky-500/10 text-sky-800 dark:text-sky-300',
         labelKey: 'workflows.run.status.running',
+      }
+    case 'retrying':
+      // Orange reads as a transient warning distinct from the amber of `pending`: the node
+      // failed an attempt, but the run will carry on by itself.
+      return {
+        dot: 'bg-orange-500',
+        ring: 'border-orange-500/50 ring-orange-500/20',
+        badge: 'border-orange-500/35 bg-orange-500/10 text-orange-900 dark:text-orange-200',
+        labelKey: 'workflows.run.status.retrying',
       }
     case 'succeeded':
       return {

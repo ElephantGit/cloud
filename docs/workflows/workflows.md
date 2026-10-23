@@ -81,6 +81,12 @@ Project 缺失时统一返回 `409 workflow_run_project_required`，不可用、
 `pending` 和 `running` 的运行接受请求；已经进入终态的运行返回 `409 run_not_cancellable`。授权按运行上冻结的模型绑定判断：带绑定的运行只有发起人和
 租户管理员可以取消，其他成员返回 `403 workflow_run_cancel_forbidden`；没有绑定的运行沿用 Issue 线程的成员规则。
 
+**恢复接口已注册，但本阶段不可用。** `POST .../workflows/:wfid/runs/:rid/resume` 按最终契约校验请求体：`mode` 可选，取值
+`keep`（默认）、`node_files`、`checkpoint`，未知字段返回 `400 unknown_field`，非法取值返回 `400 invalid_field_value`；授权与取消相同，
+带冻结绑定的运行只有发起人和租户管理员可以调用，其他成员返回 `403 workflow_run_resume_forbidden`。任何合法请求都返回
+`501 workflow_run_resume_unavailable`，不改动运行状态，也不写幂等记录——重复请求得到同样的拒绝，而不是重放一条记录下来的成功。运行的
+Workspace 在失败时已经声明删除，`keep` 没有可恢复的状态，所以前端不提供恢复入口。
+
 ## 调度
 
 WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce`，每 10 秒一轮）：
@@ -107,6 +113,13 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   已提交的结果按它自己的原因结算，Node 不可达仍报 `node_unavailable`，两者都不成立时才轮到窗口；窗口把运行带入终态之后才到达的结果
   保留在执行行上，不改写已经终态的运行。运行进入终态后，Cloud 声明删除这次运行的 Workspace。第一阶段这个会话没有 Git Server 访问（读写都返回 `403`），它的 Workspace 也不进 IssueRun 会话的 Workspace
   目录，见 [Git Server](../repositories/git-server.md)。
+- **Agent 节点重试由冻结在节点上的 `agentConfig.retry` 决定。** 只有会话以 `agent_failed` 结束、策略启用且预算未用完时才重试：预算是
+  `maxRetries + 1` 次尝试（`maxRetries` 取值 0–5，默认 2），下一次尝试在 `initialDelaySeconds × 2^(n-1)` 之后开始（`initialDelaySeconds`
+  取值 0–300，默认 10，单次等待上限 600 秒）。等待期间节点提交 `retrying`：运行仍是 `running`，节点保留失败尝试的 `startedAt`、
+  `error` 和 `output.reason`，写入数据库时钟计算的 `retryAt` 并清空 `finishedAt`；它继续占用运行唯一的会话位置，直到 `retryAt` 到达才启动
+  下一次尝试。新尝试使用自己的执行身份（`workflow_node_attempt`），上一次尝试的结果和结束请求不会被它复用。预算用完、策略关闭或原因不在
+  `agent_failed` 内时，节点以最后一次的原因失败，运行进入终态并释放 Workspace。发布时 `agentConfig.retry` 必须是完整对象，缺失或为 `null`
+  表示默认策略，未知键忽略；已冻结的历史快照不重新校验，无法解析的策略按默认值执行。
 - **工作流会话是单回合的，结束由 Cloud 决定。** 初始回合的 `turnEnded` 回执（`stop_reason` 不是 `cancelled`）到达后，调度器通过既有的 `EndSession`
   命令让 Node 结束会话；Node 上报的会话执行结果仍是节点终态的唯一证据。结束请求放出后超过确认窗口仍没有会话终态时，节点以
   `session_end_deadline_exceeded` 失败，运行进入终态并释放 Workspace——不会再有永久 `running` 的运行。
@@ -151,6 +164,7 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 - [工作流由 Cloud 侧调度器执行：WorkflowRun 是执行聚合](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
 - [工作流 agent 节点按执行器槽位引用执行器，图里不再存 agent CLI 与模型 ID](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md)（approved）
 - [工作流会话在初始回合结束后由 Cloud 调度器结束，结束请求有界等待](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261019-workflow-session-end-after-initial-turn.md)
+- [工作流 agent 节点按重试策略重试，恢复接口按最终契约注册但在首期不可用](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261021-node-retry-and-resume-contract.md)（approved）
 - [插件资产导入产出已发布快照：资产生命周期不改写快照，运行只冻结 snapshotId](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261016-asset-import-and-published-snapshots.md)
 - [Workflow 插件资产由 Cloud 自行取包、逐文档导入为可编辑副本](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）

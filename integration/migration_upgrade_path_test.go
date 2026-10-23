@@ -1735,3 +1735,80 @@ func TestMigration0055WorkflowRunWorkspaceReleaseAppliesFreshAndUpgrades(t *test
 	refuse(`UPDATE workflow_runs SET workspace_release_state='abandoned', workspace_release_error='   ' WHERE id=$1`, ids["running"])
 	refuse(`UPDATE workflow_runs SET workspace_release_state='settled' WHERE id=$1`, ids["running"])
 }
+
+// 0069 gives workflow node sessions and end requests a per-attempt identity (retry decision D4). The
+// columns are NOT NULL with default 1 because every row that exists today belongs to its node's first
+// attempt; nothing is backfilled. The uniqueness of 0041/0049 is re-keyed on the attempt, so a second
+// attempt of the same node can register while the same attempt still cannot register twice. A fresh
+// database and one that stopped at 0068 must reach the same shape, and rerunning the migration must
+// change nothing.
+func TestMigration0069WorkflowNodeAttemptAppliesFreshAndUpgrades(t *testing.T) {
+	tables := []string{"execution_work", "node_executions", "thread_commands"}
+	columnShape := func(t *testing.T, pool *sql.DB, table string) (int, string) {
+		t.Helper()
+		var n int
+		var nullable, dflt sql.NullString
+		must(t, pool.QueryRow(`SELECT count(*), max(is_nullable), max(column_default)
+			FROM information_schema.columns WHERE table_schema=current_schema()
+			  AND table_name=$1 AND column_name='workflow_node_attempt'`, table).Scan(&n, &nullable, &dflt))
+		return n, nullable.String + "|" + dflt.String
+	}
+	assertAttemptColumns := func(t *testing.T, pool *sql.DB, stage string) {
+		t.Helper()
+		for _, table := range tables {
+			n, shape := columnShape(t, pool, table)
+			if n != 1 || shape != "NO|1" {
+				t.Fatalf("%s: %s.workflow_node_attempt columns %d nullable/default %q; want one NOT NULL DEFAULT 1", stage, table, n, shape)
+			}
+		}
+		// The uniqueness is re-keyed on the attempt, and stays partial: IssueRun sessions (no graph
+		// node) keep the lifetime rule of their own index, and IssueRun end commands keep none.
+		for _, index := range []string{"one_session_per_workflow_node", "one_workflow_session_end"} {
+			var def string
+			must(t, pool.QueryRow(`SELECT indexdef FROM pg_indexes
+				WHERE schemaname=current_schema() AND indexname=$1`, index).Scan(&def))
+			if !strings.Contains(def, "workflow_node_attempt") || !strings.Contains(def, "WHERE") {
+				t.Fatalf("%s: %s = %q; want a partial unique index keyed on the attempt", stage, index, def)
+			}
+		}
+	}
+
+	freshPool, _ := testSchema(t, "test_wfna69f_")
+	migratedTwice(t, newStoreOnSchema(t, freshPool))
+	assertAttemptColumns(t, freshPool, "fresh")
+
+	pool, _ := testSchema(t, "test_wfna69_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0069_workflow_node_attempt.sql"))
+	for _, table := range tables {
+		if n, _ := columnShape(t, pool, table); n != 0 {
+			t.Fatalf("before 0069: %s.workflow_node_attempt already exists", table)
+		}
+	}
+	// One session from before the migration. Its result is committed because 0024's pending-execution
+	// uniqueness admits only one open agent_session per operation; two rows coexist only as terminal
+	// facts.
+	operation := uuid.NewString()
+	insertSession := func(execution, attempt string) error {
+		_, e := pool.Exec(`INSERT INTO node_executions(execution_id,kind,operation_id,node_id,node_operation_id,input,result,dispatched_epoch,workflow_node_id,workflow_node_attempt)
+			VALUES($1,'agent_session',$2,'node','node-op','{}','{"outcome":"agent_session_ended","reason":"agent_failed"}',1,'a',$3)`, execution, operation, attempt)
+		return e
+	}
+	_, err := pool.Exec(`INSERT INTO node_executions(execution_id,kind,operation_id,node_id,node_operation_id,input,result,dispatched_epoch,workflow_node_id)
+		VALUES('legacy-session','agent_session',$1,'node','node-op','{}','{"outcome":"agent_session_ended","reason":"agent_failed"}',1,'a')`, operation)
+	must(t, err)
+
+	migratedTwice(t, newStoreOnSchema(t, pool))
+	assertAttemptColumns(t, pool, "upgrade")
+	var legacyAttempt int64
+	must(t, pool.QueryRow(`SELECT workflow_node_attempt FROM node_executions WHERE execution_id='legacy-session'`).Scan(&legacyAttempt))
+	if legacyAttempt != 1 {
+		t.Fatalf("legacy session reads attempt %d; want the default 1", legacyAttempt)
+	}
+	// A retry can register its own session for the same node, and the same attempt still cannot.
+	if err := insertSession("second-attempt", "2"); err != nil {
+		t.Fatalf("attempt 2 of the same node was refused: %v", err)
+	}
+	if err := insertSession("duplicate-attempt", "1"); err == nil {
+		t.Fatal("a second session for attempt 1 was accepted; want the re-keyed uniqueness to refuse it")
+	}
+}

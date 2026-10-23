@@ -351,7 +351,7 @@ export function isTerminalRunStatus(status: GraphWorkflowRunStatus): boolean {
 
 /** Per-node execution status overlaid on a frozen definition snapshot. */
 export type GraphWorkflowNodeStatus =
-  'idle' | 'inactive' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  'idle' | 'inactive' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'retrying'
 
 /** HITL timeout policy; MVP mock always waits (`wait`) until submit. */
 export type HitlTimeoutPolicy = 'fail' | 'skip' | 'wait'

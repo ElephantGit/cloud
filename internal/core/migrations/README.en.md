@@ -6,7 +6,7 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 62 SQL files.
+There are currently 71 SQL files.
 
 | SQL file | Schema change |
 |---|---|
@@ -80,6 +80,7 @@ There are currently 62 SQL files.
 | [0066_scheduled_artifact_recurring_gc.sql](0066_scheduled_artifact_recurring_gc.sql) | Recurring sweeps of settled runs for late PUTs and pruned successful deliveries |
 | [0067_scheduled_empty_artifacts.sql](0067_scheduled_empty_artifacts.sql) | Accept zero-length artifacts in verified registration |
 | [0068_scheduled_manifest_completeness.sql](0068_scheduled_manifest_completeness.sql) | Persist omitted rejection counts and walk truncation facts |
+| [0069_workflow_node_attempt.sql](0069_workflow_node_attempt.sql) | Per-attempt identity for workflow node work items, executions and end requests |
 
 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
 
@@ -107,6 +108,7 @@ There are currently 62 SQL files.
 - 0062 adds a nullable `plugin_release` (jsonb) to `workflow_runs` recording the Agent plugin release package the creation transaction froze; it is written only when the Space's `selected_release` version equals the frozen `plugin_version`, and stays NULL otherwise. The run Workspace's `plugin` step uses it in place of the Space's current selection for that plugin; a plugin the Space already removed is not appended, and the start gate fails the run as `agent_plugin_unavailable`. Semantics are in [workflows](../../../docs/workflows/workflows.en.md#scheduling); coverage is `internal/core/workflow_run_plugin_db_test.go`.
 - 0063 gives `scheduled_task_occurrences` a surrogate `id` (with a default, so the existing admission transaction needs no change) and adds `scheduled_run_results`: `issue_run_id` is the identity, `verdict` comes from the closed set, `verdict_detail` is at most 2000 characters, `task_id` and `scheduled_at` are the task ownership and planned instant frozen at write time, and `occurrence_id` is an audit reference only, nulled when the occurrence is trimmed. No historical run is backfilled. Semantics are in the specs decision `decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md`; coverage is in `TestSessionEndedWritesTheScheduledVerdict`, `TestScheduledRunResultIsWrittenOncePerRun`, `TestScheduledRunResultRefusesUnattributableReports` and `TestScheduledRunResultSurvivesOccurrenceTrim`.
 - 0064 adds the three scheduled-artifact tables: the delivery state with its non-renewable ten-minute window (and its prefix-cleanup marker), the verified object index and the rejection list; all three freeze `task_id`/`scheduled_at` and keep `occurrence_id` as an audit reference only. It also narrows `execution_work`'s unregistered uniqueness from "one per run" to "one per run and kind" and adds `deliver_scheduled_artifacts` to the kind set: a scheduled run holds its Revision delivery and its artifact upload at the same time. Coverage is in `TestScheduledArtifactsSkipWithoutObjectStorage`, `TestScheduledArtifactManifestIsValidatedBeforeStorage`, `TestCollectScheduledArtifactObjectsRemovesOnlyUnregisteredKeys` and `TestPruneScheduledRunArtifactsKeepsTheTenNewestRuns`.
+- 0069 adds `workflow_node_attempt` to `execution_work`, `node_executions` and `thread_commands` (integer, NOT NULL, default 1) and re-keys the `one_session_per_workflow_node` and `one_workflow_session_end` partial unique indexes on the attempt, so retrying an agent node can register a second session and its own end request without reusing the first attempt's evidence. Every existing row belongs to its node's first attempt, so nothing is backfilled. Fresh, 0068-upgrade, repeated application and constraint coverage is in `TestMigration0069WorkflowNodeAttemptAppliesFreshAndUpgrades`.
 - New migrations must verify fresh databases, upgrades from the preceding schema, repeated application and key constraints. See [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) and domain upgrade tests in integration.
 
 See [Persistence](../../../docs/core/persistence.en.md) for ownership/transactions, and [Workflows](../../../docs/workflows/workflows.en.md) / [External Git line](../../../docs/repositories/external-git.en.md) for runtime semantics.

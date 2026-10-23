@@ -44,6 +44,7 @@ import type {
   PostApiV1TenantsTidWorkflowsWfidRunsBody,
   PostApiV1TenantsTidWorkflowsWfidRunsRidCancel202,
   PostApiV1TenantsTidWorkflowsWfidRunsRidCancelBody,
+  PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBody,
   PutApiV1TenantsTidWorkflowsWfidBody,
   PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody,
   SessionModelStatistics,
@@ -1028,6 +1029,77 @@ export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awai
 
 
 /**
+ * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. Resumes a terminal failed workflow run inside the same run identity. The route is registered against its final request contract, but no resume mode can run in this phase: every valid request answers 501 workflow_run_resume_unavailable, changes no run, node or Workspace state, and records no idempotency entry, so repeating the request returns the same refusal instead of a replay. mode selects how much Workspace state rolls back — keep (the default when omitted), node_files or checkpoint — and any other value is 400 invalid_field_value; the body carries only mode, and any other field is 400 unknown_field. Authorization is exactly the cancellation request's: the run's initiator and the tenant's administrators on a run carrying frozen executor bindings, and an active tenant member who is neither answers 403 workflow_run_resume_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * @summary POST /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/resume
+ */
+export const postApiV1TenantsTidWorkflowsWfidRunsRidResume = (
+    tid: string,
+    wfid: string,
+    rid: string,
+    postApiV1TenantsTidWorkflowsWfidRunsRidResumeBody: PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<unknown>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/resume`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1TenantsTidWorkflowsWfidRunsRidResumeBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationKey = () => ['postApiV1TenantsTidWorkflowsWfidRunsRidResume'] as const;
+
+export const getPostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>, PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables> = (props) => {
+          const {tid,wfid,rid,data} = props ?? {};
+
+          return  postApiV1TenantsTidWorkflowsWfidRunsRidResume(tid,wfid,rid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>>
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationBody = PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBody
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationError = ErrorType<Error>
+    export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables = {tid: string;wfid: string;rid: string;data: PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBody}
+
+    /**
+ * @summary POST /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/resume
+ */
+export const usePostApiV1TenantsTidWorkflowsWfidRunsRidResume = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>, TError,PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1TenantsTidWorkflowsWfidRunsRidResume>>,
+        TError,
+        PostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1TenantsTidWorkflowsWfidRunsRidResumeMutationOptions(options), queryClient);
+    }
+    /**
  * Read-only active-member model statistics for a WorkflowRun. Covers all recorded model-gateway HTTP attempts owned by this WorkflowRun, independently of request-page pagination. The run must belong to the named workflow and be live; any active tenant member who can read the run can read its statistics. This is not a historical request backfill or billing ledger. Each metric exposes its own known/total coverage; absent values remain null, including a run with no observations. Input/cache semantics follow the source protocol; reasoning is an output subset. No query parameters accepted; private, no-store.
  * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/statistics
  */

@@ -44,7 +44,7 @@ export function RunStatusMark({
         className={cn(
           'inline-flex shrink-0 items-center justify-center rounded-full text-white',
           ICON_BOX,
-          'bg-sky-500',
+          tone.dot,
           className,
         )}
         aria-hidden

@@ -1,10 +1,11 @@
 package core
 
 // nodeExecutionColumns is the Controller-facing projection of node_executions: every column of the
-// table except workflow_node_id. That column is Cloud-internal routing — which graph node a session
-// ran for — and no Controller contract has a field for it: the proto ExecutionRecord declares none,
-// and the JSON binding's NodeExecution schema is closed, so a `SELECT *` that carried the column
-// failed the response contract the moment migration 0041 added it.
+// table except workflow_node_id and workflow_node_attempt. Those columns are Cloud-internal routing —
+// which graph node a session ran for, and which attempt of it — and no Controller contract has a field
+// for either: the proto ExecutionRecord declares none, and the JSON binding's NodeExecution schema is
+// closed, so a `SELECT *` that carried the column failed the response contract the moment migration
+// 0041 added it.
 //
 // So a row that reaches a response body is projected explicitly, the way workflowRunSummary projects
 // a run row, rather than read whole. A column added to the table therefore does not reach the wire by
@@ -102,9 +103,11 @@ func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, n
 		AND kind IN ('agent_session','deliver_revision','deliver_scheduled_artifacts')
 		AND (kind='agent_session' OR kind=$2 OR $2='agent_session')
 		AND result IS NULL AND terminated_by_force_stop_id IS NULL`, runID, input.S("kind")) == nil, 409, "dispatch_conflict")
-	t.exec(`INSERT INTO node_executions(execution_id,kind,operation_id,work_id,workspace_id,node_id,node_operation_id,input,dispatched_epoch,workflow_node_id)
-		VALUES($1,$2,$3,$4,$5,$6,$1,$7,$8,NULLIF($9,''))`,
-		execution, input.S("kind"), runID, work.S("id"), wid, node, jsonText(input), r.Body.N("epoch"), work.S("workflowNodeId"))
+	// The attempt is copied from the claimed work item, never from the wire: it is Cloud's routing
+	// identity for the execution (retry decision D4), and the Controller neither knows nor needs it.
+	t.exec(`INSERT INTO node_executions(execution_id,kind,operation_id,work_id,workspace_id,node_id,node_operation_id,input,dispatched_epoch,workflow_node_id,workflow_node_attempt)
+		VALUES($1,$2,$3,$4,$5,$6,$1,$7,$8,NULLIF($9,''),$10)`,
+		execution, input.S("kind"), runID, work.S("id"), wid, node, jsonText(input), r.Body.N("epoch"), work.S("workflowNodeId"), work.N("workflowNodeAttempt"))
 	t.exec("UPDATE execution_work SET execution_id=$2 WHERE id=$1", work.S("id"), execution)
 	return t.one("SELECT "+nodeExecutionColumns+" FROM node_executions WHERE execution_id=$1", execution)
 }

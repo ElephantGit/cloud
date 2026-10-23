@@ -37,6 +37,22 @@ describe('RunInspector', () => {
     expect(within(output).getByText(/"exit": 2/)).toBeInTheDocument()
   })
 
+  it('states the attempt and the next retry instant for a retrying node', () => {
+    const entry: RunNodeEntry = {
+      status: 'retrying',
+      attempt: 2,
+      startedAt: '2026-09-20T02:00:00.000Z',
+      retryAt: '2026-09-20T02:00:30.000Z',
+      error: 'agent_failed',
+    }
+    renderWithProviders(<RunInspector data={TOOL_DATA} entry={entry} />)
+
+    const execution = screen.getByRole('region', { name: '执行信息' })
+    expect(within(execution).getByText('第几次尝试')).toBeInTheDocument()
+    expect(within(execution).getByText('2')).toBeInTheDocument()
+    expect(within(execution).getByText('下次重试')).toBeInTheDocument()
+  })
+
   it('reveals a trace error in a destructive block', () => {
     const entry: RunNodeEntry = { ...FINISHED_ENTRY, error: '命令退出码 2' }
     renderWithProviders(<RunInspector data={TOOL_DATA} entry={entry} />)

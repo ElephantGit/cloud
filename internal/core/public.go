@@ -402,6 +402,13 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 				require(r.Method == "POST", 404, "not_found")
 				out = cancelWorkflowRunByUser(t, r, uid)
 				status = 202
+			case strings.HasSuffix(r.Path, "/resume"):
+				// D7: resume is registered against its final request shape and refuses every valid
+				// request with a named 501. Matched before /runs for the same reason as /cancel. The
+				// handler rejects through a Fault, so this transaction rolls back and the idempotency
+				// record below is never written.
+				require(r.Method == "POST", 404, "not_found")
+				resumeWorkflowRun(t, r, uid)
 			case strings.HasSuffix(r.Path, "/runs"):
 				out = Object{"resource": createWorkflowRun(t, r, uid)}
 			case strings.HasSuffix(r.Path, "/publish"):

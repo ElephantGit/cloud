@@ -137,7 +137,7 @@ func Document() map[string]any {
 	workflowRunProps["status"] = enumeration("pending", "running", "succeeded", "failed", "cancelled")
 	workflowRunProps["pluginVersion"] = optional(obj{"type": "string", "description": "The agent plugin version frozen into the run at creation: the frozen identity the run's agent sessions execute with. Null only when the space declared no plugin at creation (or the run predates migration 0042); the first agent node then fails with `agent_plugin_version_unfrozen`."})
 	workflowRunProps["input"] = obj{"type": "object", "additionalProperties": true, "description": "The run's input object: each form value keyed by variable name, plus the reserved `input` key carrying the kickoff text the run submitted. A run that submitted no kickoff evaluates against the Start node's authored instruction instead."}
-	workflowRunProps["nodeStates"] = obj{"type": "object", "additionalProperties": true, "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed."}
+	workflowRunProps["nodeStates"] = obj{"type": "object", "additionalProperties": true, "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed or is retrying. An agent node can be `retrying`, which means its last attempt failed with a retryable reason and the run is waiting for the next one: `retryAt` is the database-clock instant that attempt becomes due, `error` and `output.reason` name the failed attempt's reason, `startedAt` is the failed attempt's start, `finishedAt` is empty, and the run itself stays `running`. `attempt` is the 1-based attempt the state describes, present whenever the node has started at least once, so a terminal node states which attempt ended it; a node's retry budget is `maxRetries + 1` attempts."}
 	workflowRunProps["rounds"] = array(obj{"type": "object", "additionalProperties": true})
 	// definitionSnapshot lives only on a detail read (the history list trips without it);
 	// it is optional so one schema serves both list rows and the composed run page.
@@ -459,7 +459,13 @@ func Document() map[string]any {
 		}
 		description := description(r)
 		response, status := responseSchema(r)
-		responses := obj{status: obj{"description": "Successful command or resource response", "content": obj{"application/json": obj{"schema": response}}}}
+		responseDescription := "Successful command or resource response"
+		if status == "501" {
+			// An operation whose documented answer is its own unavailability states the refusal
+			// here instead of calling it a success.
+			responseDescription = errorDescription(status)
+		}
+		responses := obj{status: obj{"description": responseDescription, "content": obj{"application/json": obj{"schema": response}}}}
 		if r.Method == "POST" && strings.HasSuffix(r.Path, "/repository/syncs") {
 			responses["200"] = responses[status]
 		}
@@ -842,6 +848,13 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		if strings.HasSuffix(r.Path, "/restore") {
 			return ref("Workflow"), "200"
 		}
+		if strings.HasSuffix(r.Path, "/resume") {
+			// The run-resume request has no success representation in this phase: every valid
+			// request is refused with the named 501, so that refusal is the operation's only
+			// response instead of a success arm no caller can obtain. The arm must come before
+			// /runs for the same reason the core dispatcher matches it first.
+			return ref("Error"), "501"
+		}
 		if strings.HasSuffix(r.Path, "/cancel") {
 			// The workflow-run cancellation request answers the recorded instant, exactly like the
 			// IssueRun request; the branch must come before the /runs arm for the same reason the
@@ -1044,6 +1057,9 @@ func optionalField(name string, r router.Route) bool {
 	case "values":
 		// Confirm must state what it is confirming; assist may be asked with a still-empty form.
 		return strings.HasSuffix(r.Path, "/assist")
+	case "mode":
+		// Resume defaults to keep: an omitted mode and an explicit keep ask for the same thing.
+		return strings.Contains(r.Path, "/workflows") && strings.HasSuffix(r.Path, "/resume")
 	}
 	return name == "version" && r.Method == "POST" && strings.HasSuffix(r.Path, "/plugins") || name == "credentialRefId" || name == "role" && strings.HasSuffix(r.Path, "/members/huawei") || name == "version" && r.Method == "PUT" || name == "epoch" && r.Action == "access" || name == "workspaceId" && r.Action == "plan" || name == "externalId" && r.Action == "effect_result"
 }
@@ -1075,6 +1091,11 @@ func inputSchema(name string, r router.Route) obj {
 		return obj{"type": "object", "additionalProperties": obj{"oneOf": []any{str(), obj{"type": "number"}, boolean()}}}
 	case "retrySeconds":
 		return obj{"type": "integer", "minimum": 1, "maximum": 3600}
+	case "mode":
+		// The closed set the run-resume contract defines; the endpoint validates it now even
+		// though every accepted value ends in the same named 501. An absent mode means `keep`;
+		// a present value outside this set is the route's own invalid_field_value.
+		return enumeration("keep", "node_files", "checkpoint")
 	case "protocolVersion":
 		return obj{"type": "integer", "enum": []int{1}}
 	case "initialized", "idle", "impactConfirmed", "acknowledgeLostWork":
@@ -1284,6 +1305,12 @@ func description(r router.Route) string {
 		// request above because the run kinds differ in what a request means and who may make one.
 		base += "Records the user's cancellation request on a live workflow run and answers 202 with the instant it was recorded, so the run page can show that a cancellation is pending. The body is an empty JSON object and any field is 400 unknown_field. Cancellation is a request and not a transition: this endpoint never changes the run's status or node states and never touches its session or Workspace — the Cloud-side scheduler reacts on its next pass, settling the run cancelled without dispatching another node, stopping an in-flight session through the existing EndSession relay within the same bounded confirmation window an idle session gets, and declaring the Workspace deletion (see the workflow scheduling documentation). Accepted only while the run is pending or running; any other status answers 409 run_not_cancellable. Repeating the request is a no-op that returns the instant the first one recorded, whether or not the run has since settled, so the recorded instant is never replaced. Authorized for the run's initiator and the tenant's administrators on a run carrying frozen executor bindings; an active tenant member who is neither answers 403 workflow_run_cancel_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. "
 	}
+	if strings.HasSuffix(r.Path, "/runs/:rid/resume") && strings.Contains(r.Path, "/workflows") {
+		// The run-resume contract is registered before its implementation exists. This paragraph
+		// states the whole request vocabulary now so a client can integrate against the final
+		// shape and can tell "not available" apart from "wrong path".
+		base += "Resumes a terminal failed workflow run inside the same run identity. The route is registered against its final request contract, but no resume mode can run in this phase: every valid request answers 501 workflow_run_resume_unavailable, changes no run, node or Workspace state, and records no idempotency entry, so repeating the request returns the same refusal instead of a replay. mode selects how much Workspace state rolls back — keep (the default when omitted), node_files or checkpoint — and any other value is 400 invalid_field_value; the body carries only mode, and any other field is 400 unknown_field. Authorization is exactly the cancellation request's: the run's initiator and the tenant's administrators on a run carrying frozen executor bindings, and an active tenant member who is neither answers 403 workflow_run_resume_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. "
+	}
 	if strings.HasSuffix(r.Path, "/thread") {
 		// The Thread GET's own fault vocabulary and cursor semantics, stated here rather than in the
 		// shared per-status descriptions that unrelated routes also carry.
@@ -1337,6 +1364,8 @@ func errorDescription(code string) string {
 		return "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
 	case "428":
 		return "Version precondition required"
+	case "501":
+		return "The request is valid but the operation is not available in this deployment (e.g. workflow_run_resume_unavailable)"
 	case "503":
 		return "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
 	default:

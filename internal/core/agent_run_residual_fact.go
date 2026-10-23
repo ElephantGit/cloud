@@ -211,7 +211,7 @@ func residualExecutionIdentity(t *transaction, e Object) Object {
 	}
 	w := t.one("SELECT * FROM workspaces WHERE id=$1", row.S("workspaceId"))
 	require(w != nil && w.S("tenantId") == row.S("tenantId") && w.S("projectId") == row.S("projectId") && w.S("issueRunId") == row.S("runId"), 409, "residual_identity_conflict")
-	if e.S("kind") == "agent_session" || e.S("kind") == "deliver_revision" {
+	if e.S("kind") == "agent_session" || e.S("kind") == "deliver_revision" || e.S("kind") == "deliver_scheduled_artifacts" {
 		require(e.S("operationId") == row.S("runId"), 409, "residual_identity_conflict")
 		work := t.one("SELECT * FROM execution_work WHERE id=$1 AND run_id=$2", e.S("workId"), row.S("runId"))
 		require(work != nil && work.S("executionId") == e.S("executionId") && work.S("kind") == e.S("kind"), 409, "residual_identity_conflict")

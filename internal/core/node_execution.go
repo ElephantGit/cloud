@@ -16,7 +16,7 @@ const nodeExecutionColumns = `execution_id,kind,operation_id,work_id,workspace_i
 func nodeDispatch(t *transaction, r *ControlRequest) Object {
 	operation, execution, node := r.Body.S("operationId"), r.Body.S("executionId"), r.Body.S("nodeId")
 	input := r.Body.O("input")
-	if input.S("kind") == "agent_session" || input.S("kind") == "deliver_revision" {
+	if input.S("kind") == "agent_session" || input.S("kind") == "deliver_revision" || input.S("kind") == "deliver_scheduled_artifacts" {
 		require(t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", operation) == nil, 409, "dispatch_conflict")
 	}
 	require(execution != "" && node != "" && len(input) > 0, 400, "invalid_dispatch")
@@ -28,7 +28,7 @@ func nodeDispatch(t *transaction, r *ControlRequest) Object {
 	switch input.S("kind") {
 	case "install_plugins", "remove_plugins":
 		return dispatchPluginExecution(t, r, operation, execution, node, input)
-	case "agent_session", "deliver_revision":
+	case "agent_session", "deliver_revision", "deliver_scheduled_artifacts":
 		return dispatchRunExecution(t, r, operation, execution, node, input)
 	default:
 		reject(400, "invalid_dispatch")
@@ -93,10 +93,15 @@ func dispatchRunExecution(t *transaction, r *ControlRequest, runID, execution, n
 			require(t.one("SELECT execution_id FROM node_executions WHERE operation_id=$1 AND kind='agent_session'", runID) == nil, 409, "dispatch_conflict")
 		}
 	}
-	if input.S("kind") == "deliver_revision" {
+	if input.S("kind") == "deliver_revision" || input.S("kind") == "deliver_scheduled_artifacts" {
 		require(t.one("SELECT execution_id FROM node_executions WHERE execution_id=$1 AND operation_id=$2 AND workspace_id=$3 AND kind='agent_session' AND result->>'outcome'='agent_session_ended'", input.S("sessionExecutionId"), runID, wid) != nil, 409, "dispatch_conflict")
 	}
-	require(t.one("SELECT execution_id FROM node_executions WHERE operation_id=$1 AND kind IN ('agent_session','deliver_revision') AND result IS NULL AND terminated_by_force_stop_id IS NULL", runID) == nil, 409, "dispatch_conflict")
+	// Both deliveries may run together after their session ended. A session still excludes all
+	// run executions, and each delivery excludes another pending execution of its own kind.
+	require(t.one(`SELECT execution_id FROM node_executions WHERE operation_id=$1
+		AND kind IN ('agent_session','deliver_revision','deliver_scheduled_artifacts')
+		AND (kind='agent_session' OR kind=$2 OR $2='agent_session')
+		AND result IS NULL AND terminated_by_force_stop_id IS NULL`, runID, input.S("kind")) == nil, 409, "dispatch_conflict")
 	t.exec(`INSERT INTO node_executions(execution_id,kind,operation_id,work_id,workspace_id,node_id,node_operation_id,input,dispatched_epoch,workflow_node_id)
 		VALUES($1,$2,$3,$4,$5,$6,$1,$7,$8,NULLIF($9,''))`,
 		execution, input.S("kind"), runID, work.S("id"), wid, node, jsonText(input), r.Body.N("epoch"), work.S("workflowNodeId"))

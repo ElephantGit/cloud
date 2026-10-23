@@ -89,7 +89,8 @@ func TestScheduledTaskHistoryRetentionPrunesOldestNonActive(t *testing.T) {
 
 // TestScheduledTaskHistoryRetentionSkipsActiveRun pins D6 的活跃运行保护：最旧 occurrence 关联一个仍未终态的
 // IssueRun 时，清理跳过它、改删次旧的非活跃记录，且该 IssueRun 本身保留。fixture 里的骨架 run 处于 queued，
-// 正是一个非终态运行。
+// 正是一个非终态运行。第 101 个 occurrence 写入后，即便 worker 随后因该活跃运行判 busy，写入与顺延清理也已
+// 发生，因此断言必须证明「次旧被删 + 新 occurrence 记为 skipped_busy」，而不能只断言评估前就成立的事实。
 func TestScheduledTaskHistoryRetentionSkipsActiveRun(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Retention active", 65)
@@ -102,16 +103,29 @@ func TestScheduledTaskHistoryRetentionSkipsActiveRun(t *testing.T) {
 		WHERE task_id=$2 AND scheduled_at=(SELECT min(scheduled_at) FROM scheduled_task_occurrences WHERE task_id=$2)`, s.runID, taskID)
 	must(t, err)
 
+	// 最旧 occurrence 已挂到活跃 run；次旧（最旧的非活跃记录）就是第 101 条写入后顺延清理要删的那条。
+	var secondOldest string
+	must(t, store.Pool.QueryRow(`SELECT min(scheduled_at)::text FROM scheduled_task_occurrences WHERE task_id=$1 AND run_id IS NULL`, taskID).Scan(&secondOldest))
+
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 
-	var total, activeLinked, runStillThere int
+	var total, activeLinked, skippedBusy, secondOldestGone, runStillThere int
 	must(t, store.Pool.QueryRow(`SELECT count(*), count(*) FILTER (WHERE run_id=$1) FROM scheduled_task_occurrences WHERE task_id=$2`, s.runID, taskID).Scan(&total, &activeLinked))
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences WHERE task_id=$1 AND outcome='skipped_busy'`, taskID).Scan(&skippedBusy))
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences WHERE task_id=$1 AND scheduled_at::text=$2`, taskID, secondOldest).Scan(&secondOldestGone))
 	must(t, store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE id=$1`, s.runID).Scan(&runStillThere))
+
 	if total != 100 {
 		t.Fatalf("retention must keep 100 occurrences, got %d", total)
 	}
 	if activeLinked != 1 {
 		t.Fatalf("the occurrence backed by an active run must be skipped by retention, got %d linked rows", activeLinked)
+	}
+	if skippedBusy != 1 {
+		t.Fatalf("the newly admitted due point must be recorded skipped_busy, got %d", skippedBusy)
+	}
+	if secondOldestGone != 0 {
+		t.Fatalf("retention must prune the oldest non-active occurrence, but it is still present")
 	}
 	if runStillThere != 1 {
 		t.Fatalf("the active IssueRun must survive retention pruning")

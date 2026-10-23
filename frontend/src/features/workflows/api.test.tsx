@@ -97,7 +97,7 @@ describe('runPollInterval', () => {
   it('polls a run that can still change and stops once it settles', () => {
     expect(WORKFLOW_RUN_POLL_MS).toBe(5000)
     expect(runPollInterval(undefined, false)).toBe(false)
-    for (const status of ['pending', 'running', 'awaiting_input'] as const) {
+    for (const status of ['pending', 'running'] as const) {
       expect(runPollInterval(status, false)).toBe(WORKFLOW_RUN_POLL_MS)
     }
     for (const status of ['succeeded', 'failed', 'cancelled'] as const) {

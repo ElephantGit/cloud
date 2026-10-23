@@ -34,6 +34,10 @@
 确认里的 `snapshotId` 始终是版本游标。`launchFields` 撤下这个平台字段是另一回事，仍然有效
 （见 [Issue 协作](../collaboration/interactions.md)）。
 
+**首期不支持交互式节点。** `human` 节点和 agent 节点的 `interactive: true` 在发布时被拒绝，运行不会停在等待人工输入的状态。
+`workflow_runs.status` 的 CHECK 保留 `awaiting_input` 作为将来的保留值，但首期没有写入者：它不出现在公开 OpenAPI 的状态枚举里，
+页面也不会展示它；取消接口仍按不可取消处理，IssueRun 投影也不会因它推进。HITL 留待后续的交互式运行控制决策。
+
 ## 执行器槽位
 
 Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执行器槽位**：

@@ -49,6 +49,12 @@ platform's version selector, and with none — never published, or every version
 `snapshotId` on confirm is always the version cursor. Withdrawing the platform field through `launchFields` is a different request
 and still works (see [Issue collaboration](../collaboration/interactions.en.md)).
 
+**Interactive nodes are not supported in phase one.** Publishing rejects `human` nodes and `interactive: true` on
+agent nodes, so a run never stops waiting for human input. The `workflow_runs.status` CHECK retains `awaiting_input`
+as a reserved future value, but nothing writes it in phase one: it is absent from the public OpenAPI status enum
+and never shown by the UI; cancellation still treats it as not cancellable, and IssueRun projection does not
+advance on it. HITL is left to the later interactive-run-control decision.
+
 ## Executor slots
 
 Agent nodes do not hard-code an Agent CLI or model ID in the graph; they reference an **executor slot**:

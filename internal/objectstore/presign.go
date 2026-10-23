@@ -28,8 +28,8 @@ type Config struct {
 	UploadGrantTTL  time.Duration
 }
 
-// Grant is one presigned PUT. Headers must be sent unchanged; legacy uploaders also add their
-// computed checksum. The signed creation condition keeps still-live grants from replacing objects.
+// Grant is one method-bound presigned request. Headers must be sent unchanged; legacy uploaders
+// also add their computed checksum. PUT grants bind create-only semantics.
 type Grant struct {
 	URL     string
 	Method  string
@@ -45,9 +45,8 @@ func PresignPUT(cfg *Config, key string, now time.Time) (Grant, error) {
 
 // PresignGET signs a short-lived read of one object Cloud already registered.
 //
-// The URL is presigned on the server because the private endpoint never leaves it: a caller gets one
-// only after Cloud authorised the key, and it expires with the grant TTL, so an artifact read is as
-// bounded as the delivery that wrote it.
+// The grant uses PublicEndpoint when configured, just like Node-facing uploads. Core must authorise
+// the registered key first; signing performs no I/O and grants no access to any other object.
 func PresignGET(cfg *Config, key string, now time.Time) (Grant, error) {
 	return presign(cfg, key, "GET", map[string]string{}, now)
 }

@@ -88,13 +88,7 @@ func scheduledArtifactRun(t *transaction, r *PublicRequest) Object {
 // scheduledArtifactRegistration authorises the read and returns the registered artifact row.
 func scheduledArtifactRegistration(t *transaction, r *PublicRequest) Object {
 	require(r != nil && r.Method == "GET", 405, "method_not_allowed")
-	uid := sessionReadIdentity(t, r.Identity)
-	membership(t, r.TenantID, uid, false)
-	issue(t, r.TenantID, r.IssueID)
-	require(validID(r.RunID), 404, "not_found")
-	run := t.one(`SELECT id FROM issue_runs
-		WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND deleted_at IS NULL`, r.RunID, r.TenantID, r.IssueID)
-	require(run != nil, 404, "not_found")
+	scheduledArtifactRun(t, r)
 	index, err := strconv.Atoi(r.ArtifactIndex)
 	require(err == nil && index >= 0 && index < maxScheduledArtifactItems, 404, "artifact_unavailable")
 	artifact := t.one(`SELECT object_key, display_name, kind, size_bytes, sha256

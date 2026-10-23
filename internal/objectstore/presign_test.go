@@ -106,7 +106,7 @@ func TestPresignPUTUsesTheCanonicalObjectPath(t *testing.T) {
 
 // PresignGET signs a read of exactly this key with a GET, and nothing else.
 func TestPresignGETSignsTheKeyForReading(t *testing.T) {
-	cfg := Config{Endpoint: "https://objects.example.invalid", Region: "us-east-1", Bucket: "scheduled", PathStyle: true, AccessKeyID: "test-access", SecretAccessKey: "test-secret"}
+	cfg := Config{Endpoint: "https://objects.internal.invalid", PublicEndpoint: "https://downloads.example.invalid", Region: "us-east-1", Bucket: "scheduled", PathStyle: true, AccessKeyID: "test-access", SecretAccessKey: "test-secret"}
 	grant, err := PresignGET(&cfg, "scheduled-runs/tenant/run/0", time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestPresignGETSignsTheKeyForReading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if grant.Method != http.MethodGet || signed.Path != "/scheduled/scheduled-runs/tenant/run/0" {
+	if grant.Method != http.MethodGet || signed.Host != "downloads.example.invalid" || signed.Path != "/scheduled/scheduled-runs/tenant/run/0" {
 		t.Fatalf("grant = %s %s, want a GET of the canonical object path", grant.Method, signed.Path)
 	}
 	if signed.Query().Get("X-Amz-Signature") == "" || signed.Query().Get("X-Amz-Expires") == "" {

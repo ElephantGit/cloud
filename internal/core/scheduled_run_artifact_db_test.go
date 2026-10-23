@@ -29,8 +29,10 @@ func scheduledArtifactReadScene(t *testing.T, store *Store, withStorage bool) (*
 		WHERE r.id=$1`, scene.run).Scan(&tenantID, &issueID, &ownerID, &taskID); err != nil {
 		t.Fatalf("read the scheduled run: %v", err)
 	}
-	claims := &Claims{Source: "test-artifact-reader", Caller: "gateway",
-		RegisteredClaims: jwt.RegisteredClaims{Subject: "artifact-reader"}}
+	claims := &Claims{
+		Source: "test-artifact-reader", Caller: "gateway",
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "artifact-reader"},
+	}
 	historyExec(t, store, "INSERT INTO user_identities(user_id,source,subject) VALUES($1,$2,$3)", ownerID, claims.Source, claims.Subject)
 	key := scheduledArtifactKey(tenantID, scene.run, 0)
 	if _, err := store.Pool.Exec(`
@@ -111,5 +113,45 @@ func TestSessionRunArtifactsListsWhatWasRegistered(t *testing.T) {
 	}
 	if !strings.HasSuffix(key, "/0") {
 		t.Fatalf("key = %q, want the run's index 0", key)
+	}
+}
+
+// Both reads must enforce the same live identity, tenant, issue and run scope before returning facts.
+func TestSessionRunArtifactReadsRejectWrongScope(t *testing.T) {
+	store := dispatcherDB(t)
+	request, _ := scheduledArtifactReadScene(t, store, true)
+	for _, tc := range []struct {
+		name   string
+		change func(*PublicRequest)
+	}{
+		{"no identity", func(r *PublicRequest) { r.Identity = nil }},
+		{"other tenant", func(r *PublicRequest) { r.TenantID = "00000000-0000-4000-8000-000000000001" }},
+		{"other issue", func(r *PublicRequest) { r.IssueID = "00000000-0000-4000-8000-000000000002" }},
+		{"other run", func(r *PublicRequest) { r.RunID = "00000000-0000-4000-8000-000000000003" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scoped := *request
+			tc.change(&scoped)
+			for _, read := range []func(context.Context, *PublicRequest) (Object, int, error){store.SessionRunArtifacts, store.SessionRunArtifact} {
+				object, _, err := read(context.Background(), &scoped)
+				var fault *Fault
+				if !errors.As(err, &fault) || fault.Status < 400 || object != nil {
+					t.Fatalf("wrong-scope read returned %v, %v; want no facts and a public fault", object, err)
+				}
+			}
+		})
+	}
+}
+
+// A compromised registration must not become a capability for another object.
+func TestSessionRunArtifactRefusesAnOutOfScopeObjectKey(t *testing.T) {
+	store := dispatcherDB(t)
+	request, _ := scheduledArtifactReadScene(t, store, true)
+	historyExec(t, store, "UPDATE scheduled_run_artifacts SET object_key=$1 WHERE issue_run_id=$2",
+		"scheduled-runs/another-tenant/another-run/0", request.RunID)
+	object, _, err := store.SessionRunArtifact(context.Background(), request)
+	var fault *Fault
+	if !errors.As(err, &fault) || fault.Code != "artifact_invalid" || object != nil {
+		t.Fatalf("tampered-key read returned %v, %v; want artifact_invalid without a grant", object, err)
 	}
 }

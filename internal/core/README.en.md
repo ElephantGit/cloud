@@ -75,3 +75,5 @@ Controller/Sandbox physical proof and cross-repository fault acceptance remain s
 `fixture_template_isolation_test.go` covers data, DDL, migration history, later copies and parallel copies, and calls the product's `CheckSchema`. Migration/upgrade tests retain integration's empty/older-schema path rather than substituting the latest template. See the [testing guide](../../docs/development/testing.en.md#cleaning-up-leftover-test-databases) for cleanup after a killed process.
 
 This package mirrors integration's small test helper: its `_test.go` code is not importable, and integration already depends on core. Extracting a shared package would add a callback API and change another fixture implementation. Production code does not depend on these global test states.
+
+`scheduled_run_artifact_api.go` authorises the current member, Issue and Run within a short transaction. Lists return registered metadata only; downloads sign one bounded GET outside the transaction, without accepting caller-selected object keys. Registration/pruning emit transactional invalidation hints, and history reads verdict/counts from independent run facts.

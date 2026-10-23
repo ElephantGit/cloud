@@ -22,6 +22,14 @@ type scheduledTaskPageEntry struct {
 	updatedAt time.Time
 }
 
+// scheduledTaskDefinitionError marks an invalid persisted definition. New writes are validated at
+// the public boundary, but an old or manually corrupted row must not starve unrelated due tasks.
+// It is kept distinct from database and context errors so those still stop the pass.
+type scheduledTaskDefinitionError struct{ err error }
+
+func (e *scheduledTaskDefinitionError) Error() string { return e.err.Error() }
+func (e *scheduledTaskDefinitionError) Unwrap() error { return e.err }
+
 // scanEnabledScheduledTaskPage owns one short rows lifetime. Keeping Close in this helper makes
 // every error path close the cursor before the next page or transaction begins.
 func (s *Store) scanEnabledScheduledTaskPage(ctx context.Context, cursorAt *time.Time, cursorID *string) ([]scheduledTaskPageEntry, error) {
@@ -60,6 +68,7 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 	}
 	var cursorAt *time.Time
 	var cursorID *string
+	var definitionErrors []error
 	for {
 		page, err := s.scanEnabledScheduledTaskPage(ctx, cursorAt, cursorID)
 		if err != nil {
@@ -69,23 +78,32 @@ func (s *Store) EvaluateScheduledTasksOnce(ctx context.Context) error {
 			break
 		}
 		for _, entry := range page {
-			if _, err := s.transact(ctx, func(t *transaction) Object {
+			_, err := s.transact(ctx, func(t *transaction) Object {
 				admitScheduledTaskDue(t, entry.id)
 				return nil
-			}); err != nil {
-				var fault *Fault
-				if errors.As(err, &fault) {
-					// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
-					continue
-				}
-				// 系统级故障（数据库不可用、上下文取消、损坏的调度数据）停止本轮，交给 RunSyncLoop 记录。
-				return err
+			})
+			if err == nil {
+				continue
 			}
+			var fault *Fault
+			if errors.As(err, &fault) {
+				// 单个任务的业务性拒绝（资格失败已映射到 occurrence）不影响其它任务。
+				continue
+			}
+			var definitionErr *scheduledTaskDefinitionError
+			if errors.As(err, &definitionErr) {
+				// 已持久化的损坏定义只回滚本任务的事务；保留错误供 RunSyncLoop
+				// 记录，但继续评估同批及后续页的健康任务。
+				definitionErrors = append(definitionErrors, err)
+				continue
+			}
+			// 系统级故障（数据库不可用、上下文取消）停止本轮，交给 RunSyncLoop 记录。
+			return err
 		}
 		last := page[len(page)-1]
 		cursorAt, cursorID = &last.updatedAt, &last.id
 	}
-	return nil
+	return errors.Join(definitionErrors...)
 }
 
 // admitScheduledTaskDue 求值一个任务的最新到期点，并在同一事务里完成：自动停用检查 → 幂等
@@ -111,7 +129,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	now := dbNow(t)
 	schedule, err := parseScheduledTaskSchedule(task["schedule"])
 	if err != nil {
-		panic(databaseFailure{fmt.Errorf("scheduled task %s has a corrupt schedule: %w", taskID, err)})
+		panic(databaseFailure{&scheduledTaskDefinitionError{err: fmt.Errorf("scheduled task %s has a corrupt schedule: %w", taskID, err)}})
 	}
 
 	// D2：直接落到 `now` 之前的最新到期点。停机期间更早的到期点一律不写——一次停机至多一条
@@ -121,7 +139,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	// produced a zero anchor and made every enabled definition look not-yet-due.
 	anchor, err := time.Parse(time.RFC3339Nano, task.S("enabledAt"))
 	if err != nil {
-		panic(databaseFailure{fmt.Errorf("scheduled task %s has an invalid enabled_at: %w", taskID, err)})
+		panic(databaseFailure{&scheduledTaskDefinitionError{err: fmt.Errorf("scheduled task %s has an invalid enabled_at: %w", taskID, err)}})
 	}
 	due := schedule.latestDue(anchor, now, loc)
 	if due.IsZero() {

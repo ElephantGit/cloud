@@ -6,7 +6,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 65 个 SQL 文件。
+当前共 71 个 SQL 文件。
 
 | SQL 文件 | schema 变化 |
 |---|---|
@@ -73,7 +73,6 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0059_agent_restore_stop_evidence.sql](0059_agent_restore_stop_evidence.sql) | 停止未确认的命名证据，不改变残留责任和回收授权 |
 | [0060_node_model_adapter.sql](0060_node_model_adapter.sql) | Node 实例登记的插件模型 adapter 能力 |
 | [0061_scheduled_tasks.sql](0061_scheduled_tasks.sql) | 定时任务定义、幂等接纳台账与截止取消事实 |
-| [0062_workflow_node_attempt.sql](0062_workflow_node_attempt.sql) | 工作流节点工作项、执行与结束请求的尝试序号 |
 | [0062_workflow_run_plugin_release.sql](0062_workflow_run_plugin_release.sql) | 冻结运行插件 release 包 |
 | [0063_scheduled_run_results.sql](0063_scheduled_run_results.sql) | 定时运行的业务 verdict、冻结的任务归属与 occurrence 审计引用 |
 | [0064_scheduled_run_artifacts.sql](0064_scheduled_run_artifacts.sql) | 定时产物的交付窗口、已核对登记、被拒清单，以及每运行每类一个未登记工作项 |
@@ -81,6 +80,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0066_scheduled_artifact_recurring_gc.sql](0066_scheduled_artifact_recurring_gc.sql) | 已结算运行持续重扫，清理迟到 PUT 与被淘汰的成功交付 |
 | [0067_scheduled_empty_artifacts.sql](0067_scheduled_empty_artifacts.sql) | 产物大小下界改为零，允许空文件登记 |
 | [0068_scheduled_manifest_completeness.sql](0068_scheduled_manifest_completeness.sql) | 保存未列明的拒绝数和遍历截断事实 |
+| [0069_workflow_node_attempt.sql](0069_workflow_node_attempt.sql) | 工作流节点工作项、执行与结束请求的尝试序号 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
@@ -105,10 +105,10 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 - 0059 只增 `stop_evidence`，存量为空对象，不追认历史未知停止；覆盖见 `TestMigration0059RestoreStopEvidenceFreshUpgradeAndRepeat`。
 - 0060 给 `node_instances` 增加 `model_adapter`（jsonb 对象，默认 `{}`），记录 Node 实例登记时声明的插件模型 adapter 能力；不回填，既有实例按空能力处理，不会被派发需要 adapter 的会话，直到以新版本重新登记。空库与升级覆盖见 `TestMigration0060ModelAdapterFreshAndUpgrade`。
 - 0061 增加 `scheduled_tasks`（冻结 Prompt、agent ref、`schedule` jsonb、IANA 时区、无人值守同意与软删除墓碑）和 `scheduled_task_occurrences`（`(task_id, scheduled_at)` 唯一的幂等接纳台账，含截止时刻与截止取消事实）；不回填历史行。接纳由工作线程在同一事务里创建绑定 issue 下的 agent IssueRun，插件版本在接纳时按 Space 当时值快照而非定义上冻结。语义见 specs 根决策 `decisions/cloud/scheduled-task`；空库、升级与重复应用的集成覆盖随 Web 与端到端验收 commit 一并补齐。
-- 0062 给 `execution_work`、`node_executions` 和 `thread_commands` 增加 `workflow_node_attempt`（整数，NOT NULL，默认 1），并把 `one_session_per_workflow_node`、`one_workflow_session_end` 两个部分唯一索引按尝试重键，使 agent 节点重试时可以登记第二次会话及其自己的结束请求，而不复用第一次尝试的证据。既有行都属于各自节点的第一次尝试，不回填。空库、0061 升级、重复应用与约束覆盖见 `TestMigration0062WorkflowNodeAttemptAppliesFreshAndUpgrades`。
 - 0062 给 `workflow_runs` 增加可空 `plugin_release`（jsonb），记录创建事务冻结的 Agent 插件 release 包；仅当 Space 的 `selected_release` 版本等于冻结的 `plugin_version` 时写入，其余为 NULL，不回填。运行 Workspace 的 `plugin` 步骤用它替换 Space 当前选择里的 Agent 插件条目；Space 已移除该插件时不追加，交由启动判定以 `agent_plugin_unavailable` 失败。语义见[工作流](../../../docs/workflows/workflows.md#调度)，覆盖见 `internal/core/workflow_run_plugin_db_test.go`。
 - 0063 给 `scheduled_task_occurrences` 补一个代理 `id`（默认值，既有接纳事务不用改），并增加 `scheduled_run_results`：以 `issue_run_id` 为唯一身份，`verdict` 取自 Close 集、`verdict_detail` 至多 2000 字符，`task_id` 与 `scheduled_at` 是写入时冻结的任务归属与计划时间事实，`occurrence_id` 只作审计并在裁剪 occurrence 时置空。不回填任何历史运行。语义见 specs `decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md`；覆盖见 `TestSessionEndedWritesTheScheduledVerdict`、`TestScheduledRunResultIsWrittenOncePerRun`、`TestScheduledRunResultRefusesUnattributableReports` 与 `TestScheduledRunResultSurvivesOccurrenceTrim`。
 - 0064 增加定时产物的三张表：交付状态与不可续期 10 分钟窗口（含前缀清理标记）、已核对对象索引、被拒清单；三者都冻结 `task_id`/`scheduled_at` 并把 `occurrence_id` 只作审计。同时把 `execution_work` 的未登记唯一性从"每运行一个"改为"每运行每类一个"，并在 kind 闭集里加入 `deliver_scheduled_artifacts`——定时运行要同时持 Revision 交付项和产物上传项。覆盖见 `TestScheduledArtifactsSkipWithoutObjectStorage`、`TestScheduledArtifactManifestIsValidatedBeforeStorage`、`TestCollectScheduledArtifactObjectsRemovesOnlyUnregisteredKeys` 与 `TestPruneScheduledRunArtifactsKeepsTheTenNewestRuns`。
+- 0069 给 `execution_work`、`node_executions` 和 `thread_commands` 增加 `workflow_node_attempt`（整数，NOT NULL，默认 1），并把 `one_session_per_workflow_node`、`one_workflow_session_end` 两个部分唯一索引按尝试重键，使 agent 节点重试时可以登记第二次会话及其自己的结束请求，而不复用第一次尝试的证据。既有行都属于各自节点的第一次尝试，不回填。空库、0068 升级、重复应用与约束覆盖见 `TestMigration0069WorkflowNodeAttemptAppliesFreshAndUpgrades`。
 - 新增迁移须验证空库、前一 schema 升级、重复应用与关键约束。覆盖见 [migration_upgrade_path_test.go](../../../integration/migration_upgrade_path_test.go) 和 integration 的领域升级测试。
 
 数据归属与事务规则见 [持久化](../../../docs/core/persistence.md)，运行语义见 [工作流](../../../docs/workflows/workflows.md) 和 [外部 Git 线](../../../docs/repositories/external-git.md)。

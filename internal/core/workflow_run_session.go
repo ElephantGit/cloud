@@ -168,7 +168,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 // path exists to remove. The deadline is measured from the command's own `created_at`, so retries
 // and replicas all read the same window.
 func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID string, attempt int64, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
-	// The end request is one per (run, node, attempt): 0062 re-keys 0049's uniqueness on the attempt,
+	// The end request is one per (run, node, attempt): 0069 re-keys 0049's uniqueness on the attempt,
 	// so attempt 1's outstanding request is neither reused nor delivered to attempt 2's session.
 	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='end_session'", runID, nodeID, attempt)
 	if cmd == nil {

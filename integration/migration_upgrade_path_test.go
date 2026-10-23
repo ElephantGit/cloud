@@ -1736,13 +1736,13 @@ func TestMigration0055WorkflowRunWorkspaceReleaseAppliesFreshAndUpgrades(t *test
 	refuse(`UPDATE workflow_runs SET workspace_release_state='settled' WHERE id=$1`, ids["running"])
 }
 
-// 0062 gives workflow node sessions and end requests a per-attempt identity (retry decision D4). The
+// 0069 gives workflow node sessions and end requests a per-attempt identity (retry decision D4). The
 // columns are NOT NULL with default 1 because every row that exists today belongs to its node's first
 // attempt; nothing is backfilled. The uniqueness of 0041/0049 is re-keyed on the attempt, so a second
 // attempt of the same node can register while the same attempt still cannot register twice. A fresh
-// database and one that stopped at 0061 must reach the same shape, and rerunning the migration must
+// database and one that stopped at 0068 must reach the same shape, and rerunning the migration must
 // change nothing.
-func TestMigration0062WorkflowNodeAttemptAppliesFreshAndUpgrades(t *testing.T) {
+func TestMigration0069WorkflowNodeAttemptAppliesFreshAndUpgrades(t *testing.T) {
 	tables := []string{"execution_work", "node_executions", "thread_commands"}
 	columnShape := func(t *testing.T, pool *sql.DB, table string) (int, string) {
 		t.Helper()
@@ -1773,15 +1773,15 @@ func TestMigration0062WorkflowNodeAttemptAppliesFreshAndUpgrades(t *testing.T) {
 		}
 	}
 
-	freshPool, _ := testSchema(t, "test_wfna62f_")
+	freshPool, _ := testSchema(t, "test_wfna69f_")
 	migratedTwice(t, newStoreOnSchema(t, freshPool))
 	assertAttemptColumns(t, freshPool, "fresh")
 
-	pool, _ := testSchema(t, "test_wfna62_")
-	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0062_workflow_node_attempt.sql"))
+	pool, _ := testSchema(t, "test_wfna69_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, "0069_workflow_node_attempt.sql"))
 	for _, table := range tables {
 		if n, _ := columnShape(t, pool, table); n != 0 {
-			t.Fatalf("before 0062: %s.workflow_node_attempt already exists", table)
+			t.Fatalf("before 0069: %s.workflow_node_attempt already exists", table)
 		}
 	}
 	// One session from before the migration. Its result is committed because 0024's pending-execution

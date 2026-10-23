@@ -10,10 +10,10 @@ package core
 // withdrawn after creation cannot change what an already-created run executes, because the session
 // starter reads the frozen row rather than resolving the slot again.
 //
-// The plugin version is frozen too, but not here: it is part of the invocation identity rather than of
-// a slot's resolution, so the creation transaction reads it beside the Project it needs — see
-// resolveWorkflowRunPluginVersion. What matters is the same in both places: the session starter reads
-// the frozen value and never resolves it again.
+// The plugin version and its release package are frozen too, but not here: they are part of the
+// invocation identity rather than of a slot's resolution, so the creation transaction reads them
+// beside the Project it needs — see resolveWorkflowRunPlugin. What matters is the same in both places:
+// the session starter reads the frozen value and never resolves it again.
 //
 // Resolving a slot is one function (resolveWorkflowSlotExecutor), called by both halves in the same
 // transaction, so a slot cannot be admitted by one policy and frozen by another.

@@ -24,6 +24,7 @@ const (
 	AgentRunService_ClaimThreadCommands_FullMethodName          = "/ora.cloud.internal.v1.AgentRunService/ClaimThreadCommands"
 	AgentRunService_RecordThreadCommandDelivered_FullMethodName = "/ora.cloud.internal.v1.AgentRunService/RecordThreadCommandDelivered"
 	AgentRunService_GrantRevisionUpload_FullMethodName          = "/ora.cloud.internal.v1.AgentRunService/GrantRevisionUpload"
+	AgentRunService_GrantScheduledArtifactUpload_FullMethodName = "/ora.cloud.internal.v1.AgentRunService/GrantScheduledArtifactUpload"
 )
 
 // AgentRunServiceClient is the client API for AgentRunService service.
@@ -32,8 +33,9 @@ const (
 //
 // What an Agent IssueRun needs beyond ExecutionService: the session execution's non-terminal
 // Thread events, Thread commands (user turns and end requests) Cloud persisted for the Node, and
-// upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
-// ExecutionService and are fenced by the caller's lease `epoch`.
+// upload grants for a delivery execution or for the artifacts a scheduled run declared. Writes carry
+// `submission_id` with the same replay rules as ExecutionService and are fenced by the caller's lease
+// `epoch`.
 type AgentRunServiceClient interface {
 	// Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
 	PublishThreadPreview(ctx context.Context, in *PublishThreadPreviewRequest, opts ...grpc.CallOption) (*PublishThreadPreviewResponse, error)
@@ -47,6 +49,9 @@ type AgentRunServiceClient interface {
 	// Issues fresh upload grants for a registered delivery execution that has no result yet. Not a
 	// write: nothing is recorded, and every call issues new grants.
 	GrantRevisionUpload(ctx context.Context, in *GrantRevisionUploadRequest, opts ...grpc.CallOption) (*GrantRevisionUploadResponse, error)
+	// Issues fresh upload grants for the declared artifacts of a registered scheduled-artifact
+	// delivery execution. Not a write: nothing is recorded, and every call issues new grants.
+	GrantScheduledArtifactUpload(ctx context.Context, in *GrantScheduledArtifactUploadRequest, opts ...grpc.CallOption) (*GrantScheduledArtifactUploadResponse, error)
 }
 
 type agentRunServiceClient struct {
@@ -107,14 +112,25 @@ func (c *agentRunServiceClient) GrantRevisionUpload(ctx context.Context, in *Gra
 	return out, nil
 }
 
+func (c *agentRunServiceClient) GrantScheduledArtifactUpload(ctx context.Context, in *GrantScheduledArtifactUploadRequest, opts ...grpc.CallOption) (*GrantScheduledArtifactUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GrantScheduledArtifactUploadResponse)
+	err := c.cc.Invoke(ctx, AgentRunService_GrantScheduledArtifactUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentRunServiceServer is the server API for AgentRunService service.
 // All implementations must embed UnimplementedAgentRunServiceServer
 // for forward compatibility.
 //
 // What an Agent IssueRun needs beyond ExecutionService: the session execution's non-terminal
 // Thread events, Thread commands (user turns and end requests) Cloud persisted for the Node, and
-// upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
-// ExecutionService and are fenced by the caller's lease `epoch`.
+// upload grants for a delivery execution or for the artifacts a scheduled run declared. Writes carry
+// `submission_id` with the same replay rules as ExecutionService and are fenced by the caller's lease
+// `epoch`.
 type AgentRunServiceServer interface {
 	// Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
 	PublishThreadPreview(context.Context, *PublishThreadPreviewRequest) (*PublishThreadPreviewResponse, error)
@@ -128,6 +144,9 @@ type AgentRunServiceServer interface {
 	// Issues fresh upload grants for a registered delivery execution that has no result yet. Not a
 	// write: nothing is recorded, and every call issues new grants.
 	GrantRevisionUpload(context.Context, *GrantRevisionUploadRequest) (*GrantRevisionUploadResponse, error)
+	// Issues fresh upload grants for the declared artifacts of a registered scheduled-artifact
+	// delivery execution. Not a write: nothing is recorded, and every call issues new grants.
+	GrantScheduledArtifactUpload(context.Context, *GrantScheduledArtifactUploadRequest) (*GrantScheduledArtifactUploadResponse, error)
 	mustEmbedUnimplementedAgentRunServiceServer()
 }
 
@@ -152,6 +171,9 @@ func (UnimplementedAgentRunServiceServer) RecordThreadCommandDelivered(context.C
 }
 func (UnimplementedAgentRunServiceServer) GrantRevisionUpload(context.Context, *GrantRevisionUploadRequest) (*GrantRevisionUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GrantRevisionUpload not implemented")
+}
+func (UnimplementedAgentRunServiceServer) GrantScheduledArtifactUpload(context.Context, *GrantScheduledArtifactUploadRequest) (*GrantScheduledArtifactUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GrantScheduledArtifactUpload not implemented")
 }
 func (UnimplementedAgentRunServiceServer) mustEmbedUnimplementedAgentRunServiceServer() {}
 func (UnimplementedAgentRunServiceServer) testEmbeddedByValue()                         {}
@@ -264,6 +286,24 @@ func _AgentRunService_GrantRevisionUpload_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentRunService_GrantScheduledArtifactUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantScheduledArtifactUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentRunServiceServer).GrantScheduledArtifactUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentRunService_GrantScheduledArtifactUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentRunServiceServer).GrantScheduledArtifactUpload(ctx, req.(*GrantScheduledArtifactUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentRunService_ServiceDesc is the grpc.ServiceDesc for AgentRunService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -290,6 +330,10 @@ var AgentRunService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GrantRevisionUpload",
 			Handler:    _AgentRunService_GrantRevisionUpload_Handler,
+		},
+		{
+			MethodName: "GrantScheduledArtifactUpload",
+			Handler:    _AgentRunService_GrantScheduledArtifactUpload_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

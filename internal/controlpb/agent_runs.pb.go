@@ -1001,6 +1001,177 @@ func (x *GrantRevisionUploadResponse) GetGrants() []*UploadGrant {
 	return nil
 }
 
+// One declared artifact to upload, as the Node declared it. Cloud grants only indices it persisted
+// for this run and binds the declared size and digest into the PUT signature.
+type ScheduledArtifactUpload struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Index uint32                 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	Size  uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	// Lowercase hexadecimal SHA-256.
+	Sha256        string `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactUpload) Reset() {
+	*x = ScheduledArtifactUpload{}
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactUpload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactUpload) ProtoMessage() {}
+
+func (x *ScheduledArtifactUpload) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactUpload.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactUpload) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_runs_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ScheduledArtifactUpload) GetIndex() uint32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *ScheduledArtifactUpload) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ScheduledArtifactUpload) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+type GrantScheduledArtifactUploadRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Epoch int64                  `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// A scheduled-artifact delivery execution registered through RecordDispatch.
+	ExecutionId string `protobuf:"bytes,2,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	// At most 64 declared artifacts. An index outside the run's persisted declaration, a size or digest
+	// that differs from it, or one already registered fails with INVALID_ARGUMENT.
+	Artifacts     []*ScheduledArtifactUpload `protobuf:"bytes,3,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantScheduledArtifactUploadRequest) Reset() {
+	*x = GrantScheduledArtifactUploadRequest{}
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantScheduledArtifactUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantScheduledArtifactUploadRequest) ProtoMessage() {}
+
+func (x *GrantScheduledArtifactUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantScheduledArtifactUploadRequest.ProtoReflect.Descriptor instead.
+func (*GrantScheduledArtifactUploadRequest) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_runs_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GrantScheduledArtifactUploadRequest) GetEpoch() int64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *GrantScheduledArtifactUploadRequest) GetExecutionId() string {
+	if x != nil {
+		return x.ExecutionId
+	}
+	return ""
+}
+
+func (x *GrantScheduledArtifactUploadRequest) GetArtifacts() []*ScheduledArtifactUpload {
+	if x != nil {
+		return x.Artifacts
+	}
+	return nil
+}
+
+type GrantScheduledArtifactUploadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One grant per requested artifact, in the same order. The object key stays Cloud's choice.
+	Grants        []*UploadGrant `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantScheduledArtifactUploadResponse) Reset() {
+	*x = GrantScheduledArtifactUploadResponse{}
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantScheduledArtifactUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantScheduledArtifactUploadResponse) ProtoMessage() {}
+
+func (x *GrantScheduledArtifactUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_runs_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantScheduledArtifactUploadResponse.ProtoReflect.Descriptor instead.
+func (*GrantScheduledArtifactUploadResponse) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_runs_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GrantScheduledArtifactUploadResponse) GetGrants() []*UploadGrant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
 var File_ora_cloud_internal_v1_agent_runs_proto protoreflect.FileDescriptor
 
 const file_ora_cloud_internal_v1_agent_runs_proto_rawDesc = "" +
@@ -1075,18 +1246,29 @@ const file_ora_cloud_internal_v1_agent_runs_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Y\n" +
 	"\x1bGrantRevisionUploadResponse\x12:\n" +
+	"\x06grants\x18\x01 \x03(\v2\".ora.cloud.internal.v1.UploadGrantR\x06grants\"[\n" +
+	"\x17ScheduledArtifactUpload\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\rR\x05index\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\x12\x16\n" +
+	"\x06sha256\x18\x03 \x01(\tR\x06sha256\"\xac\x01\n" +
+	"#GrantScheduledArtifactUploadRequest\x12\x14\n" +
+	"\x05epoch\x18\x01 \x01(\x03R\x05epoch\x12!\n" +
+	"\fexecution_id\x18\x02 \x01(\tR\vexecutionId\x12L\n" +
+	"\tartifacts\x18\x03 \x03(\v2..ora.cloud.internal.v1.ScheduledArtifactUploadR\tartifacts\"b\n" +
+	"$GrantScheduledArtifactUploadResponse\x12:\n" +
 	"\x06grants\x18\x01 \x03(\v2\".ora.cloud.internal.v1.UploadGrantR\x06grants*\xa0\x01\n" +
 	"\x10EndSessionReason\x12\"\n" +
 	"\x1eEND_SESSION_REASON_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEND_SESSION_REASON_USER_ENDED\x10\x01\x12#\n" +
 	"\x1fEND_SESSION_REASON_IDLE_TIMEOUT\x10\x02\x12 \n" +
-	"\x1cEND_SESSION_REASON_CANCELLED\x10\x032\xa9\x05\n" +
+	"\x1cEND_SESSION_REASON_CANCELLED\x10\x032\xc3\x06\n" +
 	"\x0fAgentRunService\x12\x7f\n" +
 	"\x14PublishThreadPreview\x122.ora.cloud.internal.v1.PublishThreadPreviewRequest\x1a3.ora.cloud.internal.v1.PublishThreadPreviewResponse\x12\x7f\n" +
 	"\x14TakeOverThreadEvents\x122.ora.cloud.internal.v1.TakeOverThreadEventsRequest\x1a3.ora.cloud.internal.v1.TakeOverThreadEventsResponse\x12|\n" +
 	"\x13ClaimThreadCommands\x121.ora.cloud.internal.v1.ClaimThreadCommandsRequest\x1a2.ora.cloud.internal.v1.ClaimThreadCommandsResponse\x12\x97\x01\n" +
 	"\x1cRecordThreadCommandDelivered\x12:.ora.cloud.internal.v1.RecordThreadCommandDeliveredRequest\x1a;.ora.cloud.internal.v1.RecordThreadCommandDeliveredResponse\x12|\n" +
-	"\x13GrantRevisionUpload\x121.ora.cloud.internal.v1.GrantRevisionUploadRequest\x1a2.ora.cloud.internal.v1.GrantRevisionUploadResponseB\xdf\x01\n" +
+	"\x13GrantRevisionUpload\x121.ora.cloud.internal.v1.GrantRevisionUploadRequest\x1a2.ora.cloud.internal.v1.GrantRevisionUploadResponse\x12\x97\x01\n" +
+	"\x1cGrantScheduledArtifactUpload\x12:.ora.cloud.internal.v1.GrantScheduledArtifactUploadRequest\x1a;.ora.cloud.internal.v1.GrantScheduledArtifactUploadResponseB\xdf\x01\n" +
 	"\x19com.ora.cloud.internal.v1B\x0eAgentRunsProtoP\x01Z;github.com/wanglongan587/cloud/internal/controlpb;controlpb\xa2\x02\x03OCI\xaa\x02\x15Ora.Cloud.Internal.V1\xca\x02\x15Ora\\Cloud\\Internal\\V1\xe2\x02!Ora\\Cloud\\Internal\\V1\\GPBMetadata\xea\x02\x18Ora::Cloud::Internal::V1b\x06proto3"
 
 var (
@@ -1102,7 +1284,7 @@ func file_ora_cloud_internal_v1_agent_runs_proto_rawDescGZIP() []byte {
 }
 
 var file_ora_cloud_internal_v1_agent_runs_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ora_cloud_internal_v1_agent_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_ora_cloud_internal_v1_agent_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_ora_cloud_internal_v1_agent_runs_proto_goTypes = []any{
 	(EndSessionReason)(0),                        // 0: ora.cloud.internal.v1.EndSessionReason
 	(*ThreadEvent)(nil),                          // 1: ora.cloud.internal.v1.ThreadEvent
@@ -1120,37 +1302,44 @@ var file_ora_cloud_internal_v1_agent_runs_proto_goTypes = []any{
 	(*RecordThreadCommandDeliveredResponse)(nil), // 13: ora.cloud.internal.v1.RecordThreadCommandDeliveredResponse
 	(*GrantRevisionUploadRequest)(nil),           // 14: ora.cloud.internal.v1.GrantRevisionUploadRequest
 	(*GrantRevisionUploadResponse)(nil),          // 15: ora.cloud.internal.v1.GrantRevisionUploadResponse
-	nil,                                          // 16: ora.cloud.internal.v1.GrantRevisionUploadRequest.ChecksumsEntry
-	(*UserTurn)(nil),                             // 17: ora.cloud.internal.v1.UserTurn
-	(*WorkTarget)(nil),                           // 18: ora.cloud.internal.v1.WorkTarget
-	(*UploadGrant)(nil),                          // 19: ora.cloud.internal.v1.UploadGrant
+	(*ScheduledArtifactUpload)(nil),              // 16: ora.cloud.internal.v1.ScheduledArtifactUpload
+	(*GrantScheduledArtifactUploadRequest)(nil),  // 17: ora.cloud.internal.v1.GrantScheduledArtifactUploadRequest
+	(*GrantScheduledArtifactUploadResponse)(nil), // 18: ora.cloud.internal.v1.GrantScheduledArtifactUploadResponse
+	nil,                 // 19: ora.cloud.internal.v1.GrantRevisionUploadRequest.ChecksumsEntry
+	(*UserTurn)(nil),    // 20: ora.cloud.internal.v1.UserTurn
+	(*WorkTarget)(nil),  // 21: ora.cloud.internal.v1.WorkTarget
+	(*UploadGrant)(nil), // 22: ora.cloud.internal.v1.UploadGrant
 }
 var file_ora_cloud_internal_v1_agent_runs_proto_depIdxs = []int32{
 	2,  // 0: ora.cloud.internal.v1.PublishThreadPreviewRequest.blocks:type_name -> ora.cloud.internal.v1.ThreadPreviewBlock
 	1,  // 1: ora.cloud.internal.v1.TakeOverThreadEventsRequest.events:type_name -> ora.cloud.internal.v1.ThreadEvent
-	17, // 2: ora.cloud.internal.v1.SubmitUserTurn.turn:type_name -> ora.cloud.internal.v1.UserTurn
+	20, // 2: ora.cloud.internal.v1.SubmitUserTurn.turn:type_name -> ora.cloud.internal.v1.UserTurn
 	0,  // 3: ora.cloud.internal.v1.EndSession.reason:type_name -> ora.cloud.internal.v1.EndSessionReason
-	18, // 4: ora.cloud.internal.v1.ThreadCommand.target:type_name -> ora.cloud.internal.v1.WorkTarget
+	21, // 4: ora.cloud.internal.v1.ThreadCommand.target:type_name -> ora.cloud.internal.v1.WorkTarget
 	7,  // 5: ora.cloud.internal.v1.ThreadCommand.submit_user_turn:type_name -> ora.cloud.internal.v1.SubmitUserTurn
 	8,  // 6: ora.cloud.internal.v1.ThreadCommand.end_session:type_name -> ora.cloud.internal.v1.EndSession
 	9,  // 7: ora.cloud.internal.v1.ClaimThreadCommandsResponse.commands:type_name -> ora.cloud.internal.v1.ThreadCommand
-	16, // 8: ora.cloud.internal.v1.GrantRevisionUploadRequest.checksums:type_name -> ora.cloud.internal.v1.GrantRevisionUploadRequest.ChecksumsEntry
-	19, // 9: ora.cloud.internal.v1.GrantRevisionUploadResponse.grants:type_name -> ora.cloud.internal.v1.UploadGrant
-	3,  // 10: ora.cloud.internal.v1.AgentRunService.PublishThreadPreview:input_type -> ora.cloud.internal.v1.PublishThreadPreviewRequest
-	5,  // 11: ora.cloud.internal.v1.AgentRunService.TakeOverThreadEvents:input_type -> ora.cloud.internal.v1.TakeOverThreadEventsRequest
-	10, // 12: ora.cloud.internal.v1.AgentRunService.ClaimThreadCommands:input_type -> ora.cloud.internal.v1.ClaimThreadCommandsRequest
-	12, // 13: ora.cloud.internal.v1.AgentRunService.RecordThreadCommandDelivered:input_type -> ora.cloud.internal.v1.RecordThreadCommandDeliveredRequest
-	14, // 14: ora.cloud.internal.v1.AgentRunService.GrantRevisionUpload:input_type -> ora.cloud.internal.v1.GrantRevisionUploadRequest
-	4,  // 15: ora.cloud.internal.v1.AgentRunService.PublishThreadPreview:output_type -> ora.cloud.internal.v1.PublishThreadPreviewResponse
-	6,  // 16: ora.cloud.internal.v1.AgentRunService.TakeOverThreadEvents:output_type -> ora.cloud.internal.v1.TakeOverThreadEventsResponse
-	11, // 17: ora.cloud.internal.v1.AgentRunService.ClaimThreadCommands:output_type -> ora.cloud.internal.v1.ClaimThreadCommandsResponse
-	13, // 18: ora.cloud.internal.v1.AgentRunService.RecordThreadCommandDelivered:output_type -> ora.cloud.internal.v1.RecordThreadCommandDeliveredResponse
-	15, // 19: ora.cloud.internal.v1.AgentRunService.GrantRevisionUpload:output_type -> ora.cloud.internal.v1.GrantRevisionUploadResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	19, // 8: ora.cloud.internal.v1.GrantRevisionUploadRequest.checksums:type_name -> ora.cloud.internal.v1.GrantRevisionUploadRequest.ChecksumsEntry
+	22, // 9: ora.cloud.internal.v1.GrantRevisionUploadResponse.grants:type_name -> ora.cloud.internal.v1.UploadGrant
+	16, // 10: ora.cloud.internal.v1.GrantScheduledArtifactUploadRequest.artifacts:type_name -> ora.cloud.internal.v1.ScheduledArtifactUpload
+	22, // 11: ora.cloud.internal.v1.GrantScheduledArtifactUploadResponse.grants:type_name -> ora.cloud.internal.v1.UploadGrant
+	3,  // 12: ora.cloud.internal.v1.AgentRunService.PublishThreadPreview:input_type -> ora.cloud.internal.v1.PublishThreadPreviewRequest
+	5,  // 13: ora.cloud.internal.v1.AgentRunService.TakeOverThreadEvents:input_type -> ora.cloud.internal.v1.TakeOverThreadEventsRequest
+	10, // 14: ora.cloud.internal.v1.AgentRunService.ClaimThreadCommands:input_type -> ora.cloud.internal.v1.ClaimThreadCommandsRequest
+	12, // 15: ora.cloud.internal.v1.AgentRunService.RecordThreadCommandDelivered:input_type -> ora.cloud.internal.v1.RecordThreadCommandDeliveredRequest
+	14, // 16: ora.cloud.internal.v1.AgentRunService.GrantRevisionUpload:input_type -> ora.cloud.internal.v1.GrantRevisionUploadRequest
+	17, // 17: ora.cloud.internal.v1.AgentRunService.GrantScheduledArtifactUpload:input_type -> ora.cloud.internal.v1.GrantScheduledArtifactUploadRequest
+	4,  // 18: ora.cloud.internal.v1.AgentRunService.PublishThreadPreview:output_type -> ora.cloud.internal.v1.PublishThreadPreviewResponse
+	6,  // 19: ora.cloud.internal.v1.AgentRunService.TakeOverThreadEvents:output_type -> ora.cloud.internal.v1.TakeOverThreadEventsResponse
+	11, // 20: ora.cloud.internal.v1.AgentRunService.ClaimThreadCommands:output_type -> ora.cloud.internal.v1.ClaimThreadCommandsResponse
+	13, // 21: ora.cloud.internal.v1.AgentRunService.RecordThreadCommandDelivered:output_type -> ora.cloud.internal.v1.RecordThreadCommandDeliveredResponse
+	15, // 22: ora.cloud.internal.v1.AgentRunService.GrantRevisionUpload:output_type -> ora.cloud.internal.v1.GrantRevisionUploadResponse
+	18, // 23: ora.cloud.internal.v1.AgentRunService.GrantScheduledArtifactUpload:output_type -> ora.cloud.internal.v1.GrantScheduledArtifactUploadResponse
+	18, // [18:24] is the sub-list for method output_type
+	12, // [12:18] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_ora_cloud_internal_v1_agent_runs_proto_init() }
@@ -1171,7 +1360,7 @@ func file_ora_cloud_internal_v1_agent_runs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ora_cloud_internal_v1_agent_runs_proto_rawDesc), len(file_ora_cloud_internal_v1_agent_runs_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -84,6 +84,16 @@ message AgentSessionSpec {
   repeated WorkspaceListing workspace_directory = 8;
   // Exact non-secret configuration frozen at run admission; authority is acquired over mTLS.
   AgentModelConfiguration agent_configuration = 9;
+  // What admitted this session. Unspecified for a manual IssueRun, which is the shape every session
+  // released before Cloud admitted scheduled occurrences already has.
+  AgentSessionTrigger trigger = 10;
+}
+
+// What admitted an Agent session. Only a scheduled occurrence may report a business verdict or run
+// artifacts; a manual IssueRun leaves it unspecified.
+enum AgentSessionTrigger {
+  AGENT_SESSION_TRIGGER_UNSPECIFIED = 0;
+  AGENT_SESSION_TRIGGER_SCHEDULED = 1;
 }
 
 // Versioned adapter identity, never a runtime token or upstream credential.
@@ -127,6 +137,81 @@ message AgentSessionEnded {
   AgentSessionEndReason reason = 1;
   // Bounded code such as `agent_plugin_unavailable`; never raw Agent output.
   optional string detail = 2;
+  // The business result the executor parsed out of the run's final Assistant turn. Set only for a
+  // scheduled session that ended normally: Cloud verifies the values but never parses the Thread.
+  ScheduledRunResult scheduled_result = 3;
+  // What the scheduled run declared under its reserved artifact directory, before the Workspace was
+  // released. Accepted and rejected candidates are both visible, so a refusal is never silent.
+  ScheduledArtifactManifest artifact_manifest = 4;
+}
+
+// The frozen business verdict vocabulary Cloud shares with local scheduled runs.
+enum ScheduledVerdict {
+  SCHEDULED_VERDICT_UNSPECIFIED = 0;
+  SCHEDULED_VERDICT_PASS = 1;
+  SCHEDULED_VERDICT_WARN = 2;
+  SCHEDULED_VERDICT_FAIL = 3;
+  SCHEDULED_VERDICT_BLOCKED = 4;
+  SCHEDULED_VERDICT_IDLE = 5;
+  SCHEDULED_VERDICT_RANGE_UNRESOLVED = 6;
+}
+
+// The business conclusion of one scheduled run, independent of the execution-layer result: a
+// completed run may report FAIL, and neither value is ever derived from the other.
+message ScheduledRunResult {
+  ScheduledVerdict verdict = 1;
+  // Free text the agent attached to its verdict, at most 2000 characters; never a second
+  // machine-readable channel.
+  optional string verdict_detail = 2;
+}
+
+// The closed set of artifact types a scheduled run may declare.
+enum ScheduledArtifactKind {
+  SCHEDULED_ARTIFACT_KIND_UNSPECIFIED = 0;
+  SCHEDULED_ARTIFACT_KIND_MARKDOWN = 1;
+  SCHEDULED_ARTIFACT_KIND_JSON = 2;
+  SCHEDULED_ARTIFACT_KIND_TEXT = 3;
+  SCHEDULED_ARTIFACT_KIND_LOG = 4;
+  SCHEDULED_ARTIFACT_KIND_XML = 5;
+  SCHEDULED_ARTIFACT_KIND_HTML = 6;
+}
+
+// One artifact the run declared and Cloud grants a single object for. `index` identifies it in the
+// upload grant and registration; it is never part of an object key.
+message ScheduledArtifactItem {
+  uint32 index = 1;
+  // Forward-slash path relative to the reserved directory; for display only.
+  string display_name = 2;
+  ScheduledArtifactKind kind = 3;
+  uint64 size_bytes = 4;
+  // Lowercase hexadecimal SHA-256 the executor measured while collecting the file.
+  string sha256 = 5;
+}
+
+// Why one candidate was refused instead of declared. Cloud records the rejection next to the
+// artifacts that succeeded, so a refusal is visible to the reader.
+enum ScheduledArtifactRejectionReason {
+  SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED = 0;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE = 1;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_PATH_UNSAFE = 2;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_SYMLINK = 3;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_HARD_LINK = 4;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE = 5;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY = 6;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE = 7;
+  SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED = 8;
+}
+
+message ScheduledArtifactRejection {
+  // The candidate's relative path, or the reserved directory itself when it was refused whole.
+  string display_name = 1;
+  ScheduledArtifactRejectionReason reason = 2;
+}
+
+// Everything one scheduled run declared about its artifacts, in one message.
+message ScheduledArtifactManifest {
+  repeated ScheduledArtifactItem items = 1;
+  repeated ScheduledArtifactRejection rejections = 2;
 }
 
 message DeliverRevisionSpec {
@@ -201,6 +286,36 @@ enum RevisionFailureReason {
 
 message RevisionFailed {
   RevisionFailureReason reason = 1;
+}
+
+// Uploads the artifacts one scheduled session declared. Cloud registers this work item in the same
+// transaction that persists the declaration, and freezes the run's delivery deadline there.
+message DeliverScheduledArtifactsSpec {
+  // The ended session execution whose declaration Cloud persisted and whose checkout still holds the
+  // reserved directory. Cloud chooses every object key; the Node never picks a location.
+  string session_execution_id = 1;
+}
+
+// Per-artifact facts the Node measured, one per declared item it uploaded. Cloud verifies each
+// against the declaration before registering it and is the only writer of the index.
+message ScheduledArtifactsDelivered {
+  repeated StoredObject artifacts = 1;
+}
+
+enum ScheduledArtifactsFailureReason {
+  SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED = 0;
+  // The Node could not read the reserved directory it had declared.
+  SCHEDULED_ARTIFACTS_FAILURE_REASON_WORKSPACE_UNAVAILABLE = 1;
+  // An upload failed or was refused after the retries ran out.
+  SCHEDULED_ARTIFACTS_FAILURE_REASON_UPLOAD_FAILED = 2;
+  // The Node has no persisted declaration for the session, for example after a restart.
+  SCHEDULED_ARTIFACTS_FAILURE_REASON_DECLARATION_UNAVAILABLE = 3;
+  // The attempt was terminated before it reached its own verdict; a new execution may retry.
+  SCHEDULED_ARTIFACTS_FAILURE_REASON_INTERRUPTED = 4;
+}
+
+message ScheduledArtifactsFailed {
+  ScheduledArtifactsFailureReason reason = 1;
 }
 
 // A presigned single-object upload. It is a short-lived bearer credential: Cloud, the Controller

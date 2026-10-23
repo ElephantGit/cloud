@@ -60,9 +60,9 @@ func TestScheduledTaskDailyScheduleUsesTaskTimezone(t *testing.T) {
 	}
 }
 
-// TestScheduledTaskHistoryRetentionPrunesBeyond100 pins D6 100 条保留：第 101 个 occurrence 写入后在同一事务
-// 从最旧的非活跃记录开始清理，任务侧记录保持有界、不影响新接纳。
-func TestScheduledTaskHistoryRetentionPrunesBeyond100(t *testing.T) {
+// TestScheduledTaskHistoryRetentionPrunesOldestNonActive pins D6 100 条保留：第 101 个 occurrence 写入后在同一
+// 事务从最旧的非活跃记录开始清理——恰好删除最旧那条，其余历史与新接纳都保留，任务侧记录保持有界。
+func TestScheduledTaskHistoryRetentionPrunesOldestNonActive(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Retention", 65)
 	_, err := store.Pool.Exec(`INSERT INTO scheduled_task_occurrences
@@ -71,17 +71,49 @@ func TestScheduledTaskHistoryRetentionPrunesBeyond100(t *testing.T) {
 		FROM generate_series(1, 100) AS g`, s.tenantID, taskID)
 	must(t, err)
 
-	var before int
-	must(t, store.Pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&before))
-	if before != 100 {
-		t.Fatalf("seed must leave exactly 100 occurrences, got %d", before)
-	}
+	var oldest string
+	must(t, store.Pool.QueryRow(`SELECT min(scheduled_at)::text FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&oldest))
 
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 
-	var total, admitted int
+	var total, admitted, gone int
 	must(t, store.Pool.QueryRow(`SELECT count(*), count(*) FILTER (WHERE outcome='admitted') FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&total, &admitted))
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences WHERE task_id=$1 AND scheduled_at::text=$2`, taskID, oldest).Scan(&gone))
 	if total != 100 || admitted != 1 {
 		t.Fatalf("retention must keep 100 occurrences and admit exactly one, got total=%d admitted=%d", total, admitted)
+	}
+	if gone != 0 {
+		t.Fatalf("retention must prune the oldest non-active occurrence, but it is still present")
+	}
+}
+
+// TestScheduledTaskHistoryRetentionSkipsActiveRun pins D6 的活跃运行保护：最旧 occurrence 关联一个仍未终态的
+// IssueRun 时，清理跳过它、改删次旧的非活跃记录，且该 IssueRun 本身保留。fixture 里的骨架 run 处于 queued，
+// 正是一个非终态运行。
+func TestScheduledTaskHistoryRetentionSkipsActiveRun(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Retention active", 65)
+	_, err := store.Pool.Exec(`INSERT INTO scheduled_task_occurrences
+		(tenant_id, task_id, scheduled_at, outcome, task_revision, observed_at)
+		SELECT $1, $2, now() - (g * interval '1 hour'), 'missed', 1, now()
+		FROM generate_series(1, 100) AS g`, s.tenantID, taskID)
+	must(t, err)
+	_, err = store.Pool.Exec(`UPDATE scheduled_task_occurrences SET run_id=$1
+		WHERE task_id=$2 AND scheduled_at=(SELECT min(scheduled_at) FROM scheduled_task_occurrences WHERE task_id=$2)`, s.runID, taskID)
+	must(t, err)
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+
+	var total, activeLinked, runStillThere int
+	must(t, store.Pool.QueryRow(`SELECT count(*), count(*) FILTER (WHERE run_id=$1) FROM scheduled_task_occurrences WHERE task_id=$2`, s.runID, taskID).Scan(&total, &activeLinked))
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE id=$1`, s.runID).Scan(&runStillThere))
+	if total != 100 {
+		t.Fatalf("retention must keep 100 occurrences, got %d", total)
+	}
+	if activeLinked != 1 {
+		t.Fatalf("the occurrence backed by an active run must be skipped by retention, got %d linked rows", activeLinked)
+	}
+	if runStillThere != 1 {
+		t.Fatalf("the active IssueRun must survive retention pruning")
 	}
 }

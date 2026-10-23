@@ -45,6 +45,46 @@ func (s *Store) SessionRunArtifact(ctx context.Context, r *PublicRequest) (Objec
 	return out, 200, nil
 }
 
+// SessionRunArtifacts lists what one run registered, without handing out any URL.
+//
+// The list is what a reader needs before asking for bytes: name, kind, size and digest per index.
+// It is deliberately separate from the download read, so rendering a history view never mints a
+// capability, and an empty list is a valid answer - a run may simply have declared nothing.
+func (s *Store) SessionRunArtifacts(ctx context.Context, r *PublicRequest) (Object, int, error) {
+	artifacts, err := s.transact(ctx, func(t *transaction) Object {
+		scheduledArtifactRun(t, r)
+		rows := t.list(`SELECT artifact_index, display_name, kind, size_bytes, sha256
+			FROM scheduled_run_artifacts WHERE issue_run_id=$1 AND tenant_id=$2 ORDER BY artifact_index`,
+			r.RunID, r.TenantID)
+		items := make([]Object, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, Object{
+				"index": row.N("artifactIndex"), "name": row.S("displayName"), "kind": row.S("kind"),
+				"sizeBytes": row.N("sizeBytes"), "sha256": row.S("sha256"),
+			})
+		}
+		return Object{"artifacts": items}
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return artifacts, 200, nil
+}
+
+// scheduledArtifactRun authorises a run-scoped artifact read and fails when the run is not the
+// caller's to read.
+func scheduledArtifactRun(t *transaction, r *PublicRequest) Object {
+	require(r != nil && r.Method == "GET", 405, "method_not_allowed")
+	uid := sessionReadIdentity(t, r.Identity)
+	membership(t, r.TenantID, uid, false)
+	issue(t, r.TenantID, r.IssueID)
+	require(validID(r.RunID), 404, "not_found")
+	run := t.one(`SELECT id FROM issue_runs
+		WHERE id=$1 AND tenant_id=$2 AND issue_id=$3 AND deleted_at IS NULL`, r.RunID, r.TenantID, r.IssueID)
+	require(run != nil, 404, "not_found")
+	return run
+}
+
 // scheduledArtifactRegistration authorises the read and returns the registered artifact row.
 func scheduledArtifactRegistration(t *transaction, r *PublicRequest) Object {
 	require(r != nil && r.Method == "GET", 405, "method_not_allowed")

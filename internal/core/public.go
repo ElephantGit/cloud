@@ -51,6 +51,9 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		return s.SessionHistory(ctx, r)
 	}
 	runPath := "/api/v1/tenants/" + r.TenantID + "/issues/" + r.IssueID + "/runs/" + r.RunID
+	if r.Method == "GET" && r.ArtifactIndex == "" && r.Path == runPath+"/artifacts" {
+		return s.SessionRunArtifacts(ctx, r)
+	}
 	if r.Method == "GET" && r.ArtifactIndex != "" && r.Path == runPath+"/artifacts/"+r.ArtifactIndex {
 		return s.SessionRunArtifact(ctx, r)
 	}

@@ -186,6 +186,7 @@ func Routes() []Route {
 		{"PATCH", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", []string{"version", "name", "prompt", "agentId", "schedule", "timezone"}},
 		{"DELETE", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", nil},
 		{"GET", "/api/v1/tenants/:tid/scheduled-tasks/:stid/history", "", nil},
+		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts", "", nil},
 		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts/:aidx", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/enable", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/disable", "", nil},

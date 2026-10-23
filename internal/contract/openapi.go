@@ -255,6 +255,10 @@ func Document() map[string]any {
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
 	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
 	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")
+	s["ScheduledArtifactList"] = object(obj{"artifacts": array(ref("ScheduledArtifact"))}, "artifacts")
+	s["ScheduledArtifact"] = object(obj{
+		"index": number(), "name": str(), "kind": str(), "sizeBytes": number(), "sha256": str(),
+	}, "index", "name", "kind", "sizeBytes", "sha256")
 	s["ScheduledArtifactRead"] = object(obj{
 		"name":      str(),
 		"kind":      str(),

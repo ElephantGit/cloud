@@ -82,3 +82,34 @@ func TestSessionRunArtifactRefusesWithoutObjectStorage(t *testing.T) {
 		t.Fatalf("err = %v, want 503 object_store_unavailable", err)
 	}
 }
+
+// The list read tells a reader what a run registered without minting a single capability.
+func TestSessionRunArtifactsListsWhatWasRegistered(t *testing.T) {
+	store := dispatcherDB(t)
+	request, key := scheduledArtifactReadScene(t, store, true)
+	list := *request
+	list.ArtifactIndex = ""
+	read, status, err := store.SessionRunArtifacts(context.Background(), &list)
+	if err != nil || status != 200 {
+		t.Fatalf("list = %d %v, want 200", status, err)
+	}
+	items, ok := read["artifacts"].([]Object)
+	if !ok || len(items) != 1 {
+		t.Fatalf("artifacts = %v, want exactly the registered row", read["artifacts"])
+	}
+	item := items[0]
+	if item.N("index") != 0 || item.S("name") != "reports/review.md" || item.S("kind") != "markdown" ||
+		item.N("sizeBytes") != 5 || item.S("sha256") != strings.Repeat("ab", 32) {
+		t.Fatalf("item = %v, want the registered artifact's own facts", item)
+	}
+	// Listing must never leak a capability: the key and a signed URL belong to the download read.
+	if _, present := item["objectKey"]; present {
+		t.Fatalf("item = %v, must not expose the object key", item)
+	}
+	if _, present := item["url"]; present {
+		t.Fatalf("item = %v, must not mint a URL", item)
+	}
+	if !strings.HasSuffix(key, "/0") {
+		t.Fatalf("key = %q, want the run's index 0", key)
+	}
+}

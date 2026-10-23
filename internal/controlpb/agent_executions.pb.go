@@ -268,6 +268,8 @@ const (
 	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY         ScheduledArtifactRejectionReason = 6
 	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE  ScheduledArtifactRejectionReason = 7
 	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED      ScheduledArtifactRejectionReason = 8
+	// The bounded directory walk stopped before examining every candidate.
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_CANDIDATE_LIMIT ScheduledArtifactRejectionReason = 9
 )
 
 // Enum value maps for ScheduledArtifactRejectionReason.
@@ -282,6 +284,7 @@ var (
 		6: "SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY",
 		7: "SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE",
 		8: "SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED",
+		9: "SCHEDULED_ARTIFACT_REJECTION_REASON_CANDIDATE_LIMIT",
 	}
 	ScheduledArtifactRejectionReason_value = map[string]int32{
 		"SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED":      0,
@@ -293,6 +296,7 @@ var (
 		"SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY":         6,
 		"SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE":  7,
 		"SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED":      8,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_CANDIDATE_LIMIT":  9,
 	}
 )
 
@@ -1431,9 +1435,13 @@ func (x *ScheduledArtifactRejection) GetReason() ScheduledArtifactRejectionReaso
 
 // Everything one scheduled run declared about its artifacts, in one message.
 type ScheduledArtifactManifest struct {
-	state         protoimpl.MessageState        `protogen:"open.v1"`
-	Items         []*ScheduledArtifactItem      `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	Rejections    []*ScheduledArtifactRejection `protobuf:"bytes,2,rep,name=rejections,proto3" json:"rejections,omitempty"`
+	state      protoimpl.MessageState        `protogen:"open.v1"`
+	Items      []*ScheduledArtifactItem      `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Rejections []*ScheduledArtifactRejection `protobuf:"bytes,2,rep,name=rejections,proto3" json:"rejections,omitempty"`
+	// Refused candidates whose details did not fit in the bounded rejection list.
+	OmittedRejections uint32 `protobuf:"varint,3,opt,name=omitted_rejections,json=omittedRejections,proto3" json:"omitted_rejections,omitempty"`
+	// The walk stopped at its candidate budget; an unknown number was never examined.
+	WalkTruncated bool `protobuf:"varint,4,opt,name=walk_truncated,json=walkTruncated,proto3" json:"walk_truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1480,6 +1488,20 @@ func (x *ScheduledArtifactManifest) GetRejections() []*ScheduledArtifactRejectio
 		return x.Rejections
 	}
 	return nil
+}
+
+func (x *ScheduledArtifactManifest) GetOmittedRejections() uint32 {
+	if x != nil {
+		return x.OmittedRejections
+	}
+	return 0
+}
+
+func (x *ScheduledArtifactManifest) GetWalkTruncated() bool {
+	if x != nil {
+		return x.WalkTruncated
+	}
+	return false
 }
 
 type DeliverRevisionSpec struct {
@@ -2152,12 +2174,14 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x06sha256\x18\x05 \x01(\tR\x06sha256\"\x90\x01\n" +
 	"\x1aScheduledArtifactRejection\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12O\n" +
-	"\x06reason\x18\x02 \x01(\x0e27.ora.cloud.internal.v1.ScheduledArtifactRejectionReasonR\x06reason\"\xb2\x01\n" +
+	"\x06reason\x18\x02 \x01(\x0e27.ora.cloud.internal.v1.ScheduledArtifactRejectionReasonR\x06reason\"\x88\x02\n" +
 	"\x19ScheduledArtifactManifest\x12B\n" +
 	"\x05items\x18\x01 \x03(\v2,.ora.cloud.internal.v1.ScheduledArtifactItemR\x05items\x12Q\n" +
 	"\n" +
 	"rejections\x18\x02 \x03(\v21.ora.cloud.internal.v1.ScheduledArtifactRejectionR\n" +
-	"rejections\"\xb5\x03\n" +
+	"rejections\x12-\n" +
+	"\x12omitted_rejections\x18\x03 \x01(\rR\x11omittedRejections\x12%\n" +
+	"\x0ewalk_truncated\x18\x04 \x01(\bR\rwalkTruncated\"\xb5\x03\n" +
 	"\x13DeliverRevisionSpec\x120\n" +
 	"\x14session_execution_id\x18\x01 \x01(\tR\x12sessionExecutionId\x122\n" +
 	"\x15checkout_execution_id\x18\x02 \x01(\tR\x13checkoutExecutionId\x12\x1f\n" +
@@ -2232,7 +2256,7 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x1cSCHEDULED_ARTIFACT_KIND_TEXT\x10\x03\x12\x1f\n" +
 	"\x1bSCHEDULED_ARTIFACT_KIND_LOG\x10\x04\x12\x1f\n" +
 	"\x1bSCHEDULED_ARTIFACT_KIND_XML\x10\x05\x12 \n" +
-	"\x1cSCHEDULED_ARTIFACT_KIND_HTML\x10\x06*\xfd\x03\n" +
+	"\x1cSCHEDULED_ARTIFACT_KIND_HTML\x10\x06*\xb6\x04\n" +
 	" ScheduledArtifactRejectionReason\x123\n" +
 	"/SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED\x10\x00\x128\n" +
 	"4SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE\x10\x01\x123\n" +
@@ -2242,7 +2266,8 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"-SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE\x10\x05\x120\n" +
 	",SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY\x10\x06\x127\n" +
 	"3SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE\x10\a\x123\n" +
-	"/SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED\x10\b*\xde\x03\n" +
+	"/SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED\x10\b\x127\n" +
+	"3SCHEDULED_ARTIFACT_REJECTION_REASON_CANDIDATE_LIMIT\x10\t*\xde\x03\n" +
 	"\x15RevisionFailureReason\x12'\n" +
 	"#REVISION_FAILURE_REASON_UNSPECIFIED\x10\x00\x12/\n" +
 	"+REVISION_FAILURE_REASON_SESSION_NOT_SETTLED\x10\x01\x120\n" +

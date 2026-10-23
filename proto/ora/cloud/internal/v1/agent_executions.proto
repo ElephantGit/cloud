@@ -200,6 +200,8 @@ enum ScheduledArtifactRejectionReason {
   SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY = 6;
   SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE = 7;
   SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED = 8;
+  // The bounded directory walk stopped before examining every candidate.
+  SCHEDULED_ARTIFACT_REJECTION_REASON_CANDIDATE_LIMIT = 9;
 }
 
 message ScheduledArtifactRejection {
@@ -212,6 +214,10 @@ message ScheduledArtifactRejection {
 message ScheduledArtifactManifest {
   repeated ScheduledArtifactItem items = 1;
   repeated ScheduledArtifactRejection rejections = 2;
+  // Refused candidates whose details did not fit in the bounded rejection list.
+  uint32 omitted_rejections = 3;
+  // The walk stopped at its candidate budget; an unknown number was never examined.
+  bool walk_truncated = 4;
 }
 
 message DeliverRevisionSpec {

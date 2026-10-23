@@ -70,8 +70,9 @@ func (s *Store) settleScheduledArtifacts(t *transaction, runID, executionID stri
 		return fmt.Errorf("scheduledArtifactsSettled: run %s carries unknown outcome %q", runID, settled.S("outcome"))
 	}
 	// The absolute deadline is judged on the database's clock, in this transaction, whatever the
-	// expiry pass has done so far.
-	open := t.one("SELECT now() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", runID)
+	// expiry pass has done so far. now() is the transaction start, before waiting for the control-
+	// plane lock, so only the actual clock after acquiring that lock can fence registration.
+	open := t.one("SELECT clock_timestamp() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", runID)
 	if !open.B("open") {
 		return s.closeArtifactDelivery(t, o, "failed", scheduledArtifactDeadlineExpired)
 	}
@@ -120,7 +121,7 @@ func (s *Store) settleScheduledArtifacts(t *transaction, runID, executionID stri
 func (s *Store) closeArtifactDelivery(t *transaction, o Object, state, reason string) error {
 	t.exec(`
 		UPDATE scheduled_run_artifact_deliveries
-		SET state=$2, settled_at=now(), settled_reason=NULLIF($3,'')
+		SET state=$2, settled_at=clock_timestamp(), settled_reason=NULLIF($3,'')
 		WHERE issue_run_id=$1 AND state='delivering'`, o.S("id"), state, reason)
 	if !deliveryOutcomeRecorded(t, o.S("id")) {
 		return nil

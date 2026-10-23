@@ -21,7 +21,7 @@ const scheduledArtifactBatchSize = 100
 func (s *Store) ExpireScheduledArtifactDeliveriesOnce(ctx context.Context) error {
 	rows, err := s.Pool.QueryContext(ctx, `
 		SELECT issue_run_id FROM scheduled_run_artifact_deliveries
-		WHERE state='delivering' AND deadline_at <= now()
+		WHERE state='delivering' AND deadline_at <= clock_timestamp()
 		ORDER BY deadline_at
 		LIMIT $1`, scheduledArtifactBatchSize)
 	if err != nil {
@@ -43,7 +43,7 @@ func (s *Store) ExpireScheduledArtifactDeliveriesOnce(ctx context.Context) error
 		if _, err := s.transact(ctx, func(t *transaction) Object {
 			delivery := t.one(`
 				SELECT * FROM scheduled_run_artifact_deliveries
-				WHERE issue_run_id=$1 AND state='delivering' AND deadline_at <= now()`, runID)
+				WHERE issue_run_id=$1 AND state='delivering' AND deadline_at <= clock_timestamp()`, runID)
 			if delivery == nil {
 				return Object{}
 			}

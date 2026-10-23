@@ -40,7 +40,7 @@ func (s *Store) prepareArtifactVerification(ctx context.Context, r *ControlReque
 		}
 		validateNodeResult(e, r.Body.O("result"))
 		require(r.Body.N("sequence") == e.N("lastEventSequence")+1 && r.Body.S("event") != "", 409, "receipt_conflict")
-		delivery := t.one("SELECT *, now() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
+		delivery := t.one("SELECT *, clock_timestamp() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
 		require(delivery != nil, 409, "dispatch_conflict")
 		// Closed windows only take over the original event and its receipt. Return the frozen
 		// input so settlement can fence it without contacting storage or registering objects.

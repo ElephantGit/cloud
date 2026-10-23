@@ -17,6 +17,17 @@ import (
 // admission precondition is staged; no artifact work or execution rows are inserted by the test.
 func scheduledArtifactScene(t *testing.T, f *fixture) (liveThreadScene, string) {
 	t.Helper()
+	return scheduledArtifactSceneForManifest(t, f, &controlpb.ScheduledArtifactManifest{
+		Items: []*controlpb.ScheduledArtifactItem{{
+			Index: 3, DisplayName: "report.md", Kind: controlpb.ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_MARKDOWN,
+			SizeBytes: revisionHistorySize, Sha256: revisionHistorySHA,
+		}},
+		Rejections: []*controlpb.ScheduledArtifactRejection{{DisplayName: "notes.pdf", Reason: controlpb.ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE}},
+	})
+}
+
+func scheduledArtifactSceneForManifest(t *testing.T, f *fixture, manifest *controlpb.ScheduledArtifactManifest) (liveThreadScene, string) {
+	t.Helper()
 	scene := seedLiveThreadScene(t, f)
 	var taskID string
 	must(t, f.store.Pool.QueryRow(`INSERT INTO scheduled_tasks
@@ -30,17 +41,7 @@ func scheduledArtifactScene(t *testing.T, f *fixture) (liveThreadScene, string) 
 	must(t, err)
 	scene.start(t, f)
 	ended := sessionEndResult(scene, controlpb.AgentSessionEndReason_AGENT_SESSION_END_REASON_IDLE_TIMEOUT, "")
-	ended.GetAgentSessionEnded().ArtifactManifest = &controlpb.ScheduledArtifactManifest{
-		Items: []*controlpb.ScheduledArtifactItem{{
-			Index: 3, DisplayName: "report.md",
-			Kind:      controlpb.ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_MARKDOWN,
-			SizeBytes: revisionHistorySize, Sha256: revisionHistorySHA,
-		}},
-		Rejections: []*controlpb.ScheduledArtifactRejection{{
-			DisplayName: "notes.pdf",
-			Reason:      controlpb.ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE,
-		}},
-	}
+	ended.GetAgentSessionEnded().ArtifactManifest = manifest
 	_, err = f.executions.TakeOverNodeEvent(asController("ctrl-a"), &controlpb.TakeOverNodeEventRequest{
 		Epoch: 1, SubmissionId: "declare-artifacts", OperationId: scene.runID, ExecutionId: scene.executionID,
 		Sequence: 1, Event: []byte("declare-artifacts"), Result: ended,

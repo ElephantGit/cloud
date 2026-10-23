@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -39,6 +40,7 @@ var scheduledArtifactKinds = map[string]bool{
 var scheduledArtifactRejectionReasons = map[string]bool{
 	"unsupported_type": true, "path_unsafe": true, "symlink": true, "hard_link": true,
 	"too_large": true, "too_many": true, "total_too_large": true, "read_failed": true,
+	"candidate_limit": true,
 }
 
 // scheduledArtifact 是校验通过的一条声明，带有 Cloud 生成的对象键。
@@ -59,8 +61,10 @@ type scheduledArtifactRejection struct {
 
 // scheduledArtifactDeclaration 是一次声明在 Cloud 侧的权威视图。
 type scheduledArtifactDeclaration struct {
-	Artifacts  []scheduledArtifact
-	Rejections []scheduledArtifactRejection
+	Artifacts         []scheduledArtifact
+	Rejections        []scheduledArtifactRejection
+	OmittedRejections int64
+	WalkTruncated     bool
 }
 
 // scheduledArtifactKey 生成一个条目的对象键。键只取决于运行身份与声明序号，绝不使用用户文件名，所以
@@ -75,8 +79,13 @@ func scheduledArtifactKey(tenantID, runID string, index int) string {
 // 不合规、展示路径不是安全相对路径。执行端本应已经在采集时拦下这些，所以一旦出现就是矛盾的上报，
 // 拒绝整份声明而不是挑选一部分——半个清单会让运行看起来有产物而事实不全。
 func parseScheduledArtifactManifest(tenantID, runID string, manifest Object) (scheduledArtifactDeclaration, error) {
-	declaration := scheduledArtifactDeclaration{}
+	omitted := manifest.N("omittedRejections")
+	if omitted < 0 || omitted > math.MaxUint32 {
+		return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: invalid omitted rejection count")
+	}
+	declaration := scheduledArtifactDeclaration{OmittedRejections: omitted, WalkTruncated: manifest.B("walkTruncated")}
 	seen := map[string]bool{}
+	indices := map[int64]bool{}
 	var total int64
 	entries := objectRows(manifest["items"])
 	if len(entries) > maxScheduledArtifactItems {
@@ -87,6 +96,10 @@ func parseScheduledArtifactManifest(tenantID, runID string, manifest Object) (sc
 		if index < 0 || index >= maxScheduledArtifactItems {
 			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared index %d outside 0..%d", runID, index, maxScheduledArtifactItems-1)
 		}
+		if indices[index] {
+			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared index %d twice", runID, index)
+		}
+		indices[index] = true
 		if seen[entry.S("displayName")] {
 			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared %q twice", runID, entry.S("displayName"))
 		}
@@ -100,8 +113,8 @@ func parseScheduledArtifactManifest(tenantID, runID string, manifest Object) (sc
 			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared kind %q outside the whitelist", runID, kind)
 		}
 		size := entry.N("sizeBytes")
-		if size <= 0 || size > maxScheduledArtifactBytes {
-			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared %d bytes, outside 1..%d", runID, size, maxScheduledArtifactBytes)
+		if size < 0 || size > maxScheduledArtifactBytes {
+			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s declared %d bytes, outside 0..%d", runID, size, maxScheduledArtifactBytes)
 		}
 		digest := entry.S("sha256")
 		if !lowerHexDigest(digest) {
@@ -120,9 +133,15 @@ func parseScheduledArtifactManifest(tenantID, runID string, manifest Object) (sc
 			Sha256:      digest,
 		})
 	}
-	for _, entry := range objectRows(manifest["rejections"]) {
+	rejections := objectRows(manifest["rejections"])
+	if len(rejections) > maxScheduledArtifactItems {
+		return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: too many rejection details")
+	}
+	for _, entry := range rejections {
 		name, reason := entry.S("displayName"), entry.S("reason")
-		if !scheduledArtifactPath(name) || !scheduledArtifactRejectionReasons[reason] {
+		// A rejected path can be unsafe by definition. It is bounded display text, never a key or
+		// a filesystem path Cloud opens, so retain it instead of rejecting the session terminal.
+		if name == "" || len(name) > maxScheduledArtifactNameBytes || !utf8.ValidString(name) || strings.ContainsRune(name, 0) || !scheduledArtifactRejectionReasons[reason] {
 			return scheduledArtifactDeclaration{}, fmt.Errorf("artifactManifest: run %s reported an invalid rejection (%q, %q)", runID, name, reason)
 		}
 		if seen[name] {

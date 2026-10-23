@@ -190,7 +190,7 @@ func validateNodeResult(e, result Object) {
 			uploaded := objectRows(result["artifacts"])
 			require(len(uploaded) <= maxScheduledArtifactItems, 400, "invalid_result")
 			for _, object := range uploaded {
-				require(object.S("key") != "" && object.N("size") > 0 && lowerHexDigest(object.S("sha256")), 400, "invalid_result")
+				require(object.S("key") != "" && object.N("size") >= 0 && lowerHexDigest(object.S("sha256")), 400, "invalid_result")
 			}
 		case "scheduled_artifacts_failed":
 			require(scheduledArtifactsFailureReasons[result.S("reason")], 400, "invalid_result")

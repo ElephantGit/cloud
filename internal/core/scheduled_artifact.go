@@ -174,8 +174,11 @@ func objectRows(v any) []Object {
 	case []any:
 		rows := make([]Object, 0, len(typed))
 		for _, entry := range typed {
-			if object, ok := entry.(Object); ok {
+			switch object := entry.(type) {
+			case Object:
 				rows = append(rows, object)
+			case map[string]any:
+				rows = append(rows, Object(object))
 			}
 		}
 		return rows

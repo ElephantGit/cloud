@@ -431,7 +431,7 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		}
 		// A stored verdict returns to the Controller as the same structured value it reported, so a
 		// recovered execution is queried with the business result it actually carried.
-		if scheduled := o.O("scheduledResult"); scheduled != nil {
+		if scheduled := o.O("scheduledResult"); len(scheduled) > 0 {
 			reported := &controlpb.ScheduledRunResult{Verdict: controlpb.ScheduledVerdict(enum(controlpb.ScheduledVerdict_value, "SCHEDULED_VERDICT_", scheduled.S("verdict")))}
 			if detail := scheduled.S("verdictDetail"); detail != "" {
 				reported.VerdictDetail = &detail

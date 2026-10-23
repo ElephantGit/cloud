@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -18,6 +20,26 @@ func scheduledManifest() Object {
 			"sizeBytes": 5, "sha256": strings.Repeat("ab", 32),
 		}},
 		"rejections": []Object{{"displayName": "notes.pdf", "reason": "unsupported_type"}},
+	}
+}
+
+func TestScheduledArtifactManifestParsesDecodedJSON(t *testing.T) {
+	manifest := scheduledManifest()
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Object
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	want, err := parseScheduledArtifactManifest("tenant", "run", manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseScheduledArtifactManifest("tenant", "run", decoded)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("decoded declaration = %+v, %v; want %+v", got, err, want)
 	}
 }
 

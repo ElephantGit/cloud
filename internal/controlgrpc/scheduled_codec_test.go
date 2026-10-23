@@ -96,6 +96,9 @@ func TestScheduledRunResultCrossesAsAStructuredValue(t *testing.T) {
 	if bare["scheduledResult"] != nil {
 		t.Fatalf("an unreported verdict must store no field, got %+v", bare["scheduledResult"])
 	}
+	if result(bare).GetAgentSessionEnded().GetScheduledResult() != nil {
+		t.Fatal("an unreported verdict must also remain absent in a recovery query")
+	}
 	if _, err := resultObject(endedResult(nil, controlpb.ScheduledVerdict_SCHEDULED_VERDICT_UNSPECIFIED)); err == nil {
 		t.Fatal("an unspecified verdict must be refused")
 	}

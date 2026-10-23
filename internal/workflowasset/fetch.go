@@ -87,7 +87,7 @@ func (f *Fetcher) Fetch(ctx context.Context, locator, digest string) ([]byte, er
 		if ctx.Err() != nil {
 			return nil, failure(FailureUnavailable, "download timed out")
 		}
-		return nil, failure(FailureUnavailable, "download failed")
+		return nil, failure(FailureUnavailable, downloadFailure(e))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -111,6 +111,21 @@ func (f *Fetcher) Fetch(ctx context.Context, locator, digest string) ([]byte, er
 		return nil, failure(FailureDigestMismatch, "package sha256 does not match the catalog")
 	}
 	return data, nil
+}
+
+// checkedDialFailure exposes the checked dialer's bounded address-and-reason summary. The error
+// returned by http.Client is a *url.Error whose text carries the request URL, which may include a
+// signed asset query, so only this method's output may enter the failure detail.
+type checkedDialFailure interface{ DialFailureDetail() string }
+
+// downloadFailure keeps the checked dialer's attribution without copying the request URL. The
+// detail is bounded and holds only numeric addresses and failure reasons.
+func downloadFailure(err error) string {
+	var dial checkedDialFailure
+	if errors.As(err, &dial) {
+		return "download failed: " + dial.DialFailureDetail()
+	}
+	return "download failed"
 }
 
 // mapObjectError translates object-store classifications into the package-level codes; the

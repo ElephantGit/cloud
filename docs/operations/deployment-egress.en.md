@@ -72,6 +72,12 @@ application transport does not attempt HTTP/2. Only enterprise connections have 
 expiry closes active connections without automatically resending model generations. Public mode retains its
 existing behavior without a hard lifetime. Both modes use a 60-second idle timeout.
 
+Checked addresses are still dialed in DNS order inside one whole-dial budget. Each attempt gets the remaining budget
+divided by the addresses left, with a roughly two-second floor clamped by the total deadline, so one unresponsive
+edge address cannot spend the time reserved for the others. When every address fails, the bounded error and its
+structured-log detail list a reason per numeric address (timeout, connection refused, network unreachable, or not
+attempted); they never include the URL, query, headers or credentials.
+
 ## Updates, revocation and health
 
 Startup configuration errors identify the field path and reason, such as `targets[1].allowedCidrs: empty`,

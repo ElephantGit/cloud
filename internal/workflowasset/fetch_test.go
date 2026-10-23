@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -243,6 +244,38 @@ func TestFetchWithoutATransportFailsClosed(t *testing.T) {
 	// proxies and would bypass the checked outbound policy.
 	_, err := NewFetcher(nil, nil).Fetch(t.Context(), "https://example.invalid/p.orax", sha256Hex(nil))
 	requireFailure(t, err, FailureUnavailable)
+}
+
+// checkedDialError stands in for the model gateway's checked-dial failure: it exposes a bounded
+// address-and-reason detail and deliberately has no URL of its own.
+type checkedDialError string
+
+func (e checkedDialError) Error() string             { return "checked dial failed: " + string(e) }
+func (e checkedDialError) DialFailureDetail() string { return string(e) }
+
+type dialFailureTransport struct{ detail string }
+
+func (t dialFailureTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	// http.Client would wrap a transport error in *url.Error, whose text carries the full request
+	// URL including the signed query that must never reach the failure detail or a log.
+	return nil, &url.Error{Op: "Get", URL: "https://assets.example.invalid/package.orax?X-Amz-Signature=secret", Err: checkedDialError(t.detail)}
+}
+
+func TestFetchKeepsCheckedAddressAttributionWithoutTheSignedURL(t *testing.T) {
+	transport := dialFailureTransport{detail: "198.51.100.1:443 timeout; 198.51.100.2:443 connection refused"}
+	_, err := NewFetcher(nil, transport).Fetch(t.Context(), "https://assets.example.invalid/package.orax?X-Amz-Signature=secret", sha256Hex(nil))
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Code != FailureUnavailable {
+		t.Fatalf("error = %v, want the bounded unavailable failure", err)
+	}
+	if want := "download failed: " + transport.detail; failure.Detail != want {
+		t.Fatalf("detail = %q, want %q", failure.Detail, want)
+	}
+	for _, private := range []string{"X-Amz-Signature", "https://"} {
+		if strings.Contains(failure.Detail, private) {
+			t.Fatalf("failure detail leaked the request URL: %q", failure.Detail)
+		}
+	}
 }
 
 func TestFetchHonoursCancellation(t *testing.T) {

@@ -162,7 +162,11 @@ func (s *Service) ModelHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		code := upstreamFailureCode(err)
 		attempt.end("failed", code)
-		s.options.Logger.Warn("model upstream request rejected", zap.String("code", code))
+		fields := []zap.Field{zap.String("code", code)}
+		if detail := upstreamFailureDetail(err); detail != "" {
+			fields = append(fields, zap.String("detail", detail))
+		}
+		s.options.Logger.Warn("model upstream request rejected", fields...)
 		reject(w, 502, code)
 		return
 	}

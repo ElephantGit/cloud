@@ -73,6 +73,8 @@ Anthropic 合并 `message_start` 与累计 `message_delta`。
 fixture 主机使用系统 DNS，且不能与企业模式同时开启。`2001:2::/48` 和 `198.18.0.0/15` 均拒绝。详见
 [部署方共享出网配置](../../docs/operations/deployment-egress.md)。
 
+拨号总预算仍是 `Connect`（默认 10 秒），按 DNS 返回顺序逐个尝试受检地址；每次拨号分到「剩余总预算 ÷ 剩余地址数」，并有约 2 秒下限，一个不响应的边缘地址不会耗尽后面地址的时间。全部地址失败时，错误和结构化日志的 `detail` 按地址列出有限原因（timeout、connection refused、network unreachable 或未尝试），只含数字地址与原因，不含 URL、query、认证头或凭据。
+
 `NewUpstreamClientWithTimeouts` 接受 `UpstreamTimeouts`，可在构造时注入 `Connect` 与 `ResponseHeader` 时限；非正字段分别保留 TCP/TLS 各 10 秒、响应头 30 秒的生产默认值。原构造函数保持默认值；工作流资产边界测试只缩短等待，不替换安全 transport。
 
 原始 Key 仅在本服务内存中存在，密文写入前随机产生 nonce；Node 的临时令牌只保存摘要。

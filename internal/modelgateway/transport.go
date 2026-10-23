@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/wanglongan587/cloud/internal/egress"
@@ -27,10 +28,21 @@ type secureDialer struct {
 	dialer   net.Dialer
 	allowed  map[string]struct{}
 	policy   *egress.Policy
+
+	// dialContext substitutes the concrete dialer in tests that need a deterministic unresponsive
+	// address. Production leaves it nil and uses dialer.DialContext.
+	dialContext func(context.Context, string, string) (net.Conn, error)
 }
 
+// minAddressDialBudget stops one unresponsive address from spending the time budgeted for the
+// addresses after it. The caller's whole-dial deadline still bounds every attempt, so the floor
+// never extends the total wait past d.dialer.Timeout.
+const minAddressDialBudget = 2 * time.Second
+
 // dial resolves and checks all DNS answers immediately before connecting to a selected numeric
-// address. The HTTP URL retains the original hostname for normal TLS hostname verification.
+// address. The HTTP URL retains the original hostname for normal TLS hostname verification. The
+// whole-dial budget stays d.dialer.Timeout; each address gets an equal share of what remains so a
+// silent edge address cannot starve the later answers.
 func (d *secureDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
@@ -64,19 +76,103 @@ func (d *secureDialer) dial(ctx context.Context, network, address string) (net.C
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	for _, a := range addresses {
-		connection, dialErr := d.dialer.DialContext(ctx, network, net.JoinHostPort(a.String(), port))
+	deadline, _ := ctx.Deadline()
+	dial := d.dialContext
+	if dial == nil {
+		dial = d.dialer.DialContext
+	}
+	failures := make([]addressDialFailure, 0, len(addresses))
+	for index, a := range addresses {
+		target := net.JoinHostPort(a.String(), port)
+		budget := addressDialBudget(time.Until(deadline), len(addresses)-index)
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, budget)
+		connection, dialErr := dial(attemptCtx, network, target)
+		attemptCancel()
 		if dialErr == nil {
 			if d.policy.Enterprise() {
 				return leaseConnection(connection, upstreamConnectionLifetime), nil
 			}
 			return connection, nil
 		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		failures = append(failures, addressDialFailure{address: target, reason: dialFailureReason(dialErr)})
+		if err := ctx.Err(); err != nil {
+			// The whole-dial budget is gone. Report the addresses that were never tried so the log
+			// does not imply they failed for their own reason.
+			for _, remaining := range addresses[index+1:] {
+				failures = append(failures, addressDialFailure{address: net.JoinHostPort(remaining.String(), port), reason: "not attempted"})
+			}
+			return nil, &dialFailure{attempts: failures, cause: err}
 		}
 	}
-	return nil, endpointUnavailable
+	return nil, &dialFailure{attempts: failures}
+}
+
+// addressDialBudget divides the remaining whole-dial budget over the addresses still to try. The
+// floor keeps one silent address from consuming the share of the addresses after it; the caller's
+// parent deadline clamps an attempt whose floor exceeds the leftover budget.
+func addressDialBudget(remaining time.Duration, addresses int) time.Duration {
+	if addresses < 1 {
+		return minAddressDialBudget
+	}
+	share := remaining / time.Duration(addresses)
+	if share < minAddressDialBudget {
+		return minAddressDialBudget
+	}
+	return share
+}
+
+// addressDialFailure is one checked address and its bounded reason. It never holds the request URL,
+// query, headers or credentials.
+type addressDialFailure struct {
+	address string
+	reason  string
+}
+
+// dialFailure reports every checked address after none connected. Unwrap keeps the stable transport
+// classification while the text stays address-only for structured logs.
+type dialFailure struct {
+	attempts []addressDialFailure
+	cause    error
+}
+
+func (e *dialFailure) Error() string {
+	parts := make([]string, len(e.attempts))
+	for index, attempt := range e.attempts {
+		parts[index] = attempt.address + " " + attempt.reason
+	}
+	return "checked dial failed: " + strings.Join(parts, "; ")
+}
+
+// DialFailureDetail is the bounded address-and-reason summary safe for structured logs. The error
+// returned by http.Client wraps a URL, which can carry a signed asset query, so log callers must
+// use this method rather than the whole error text.
+func (e *dialFailure) DialFailureDetail() string { return e.Error() }
+
+// Unwrap classifies the whole failure. Every address that was tried failed on its own, so the
+// stable unavailable code applies; a budget or cancellation terminal keeps its own classification.
+func (e *dialFailure) Unwrap() error {
+	if e.cause != nil {
+		return e.cause
+	}
+	return endpointUnavailable
+}
+
+// dialFailureReason classifies one dial error without copying OS, provider or request text.
+func dialFailureReason(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	var timeout net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return "timeout"
+	}
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case errors.Is(err, syscall.EHOSTUNREACH), errors.Is(err, syscall.ENETUNREACH):
+		return "network unreachable"
+	}
+	return "dial failed"
 }
 
 // UpstreamConfig fixes deployment-owned DNS and exact development fixture exemptions.

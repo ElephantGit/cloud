@@ -53,6 +53,11 @@ const AgentSessionsPath = "/api/v1/tenants/:tid/agent-sessions"
 // SessionHistoryPath reads only the verified archive registered for this run.
 const SessionHistoryPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/history"
 
+const (
+	scheduledArtifactsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts"
+	scheduledArtifactPath  = scheduledArtifactsPath + "/:aidx"
+)
+
 // SessionStatisticsPath aggregates all recorded model HTTP attempts for an authorized run.
 const SessionStatisticsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/statistics"
 
@@ -186,8 +191,8 @@ func Routes() []Route {
 		{"PATCH", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", []string{"version", "name", "prompt", "agentId", "schedule", "timezone"}},
 		{"DELETE", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", nil},
 		{"GET", "/api/v1/tenants/:tid/scheduled-tasks/:stid/history", "", nil},
-		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts", "", nil},
-		{"GET", "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts/:aidx", "", nil},
+		{"GET", scheduledArtifactsPath, "", nil},
+		{"GET", scheduledArtifactPath, "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/enable", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/disable", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/revoke-consent", "", nil},
@@ -801,5 +806,6 @@ func validSessionQuery(c *gin.Context, path string) bool {
 
 func isSessionReadPath(path string) bool {
 	return path == AgentSessionsPath || path == SessionHistoryPath || path == SessionStatisticsPath || path == SessionModelCallsPath ||
-		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath
+		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath ||
+		path == scheduledArtifactsPath || path == scheduledArtifactPath
 }

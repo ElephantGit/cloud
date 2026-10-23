@@ -5102,7 +5102,8 @@
               "issue_run.thread_appended",
               "issue_run.thread_changed",
               "project.repository_updated",
-              "issue.conversation_changed"
+              "issue.conversation_changed",
+              "scheduled_task.artifacts_updated"
             ],
             "type": "string"
           },
@@ -18938,7 +18939,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueRun"
+                  "$ref": "#/components/schemas/ScheduledArtifactList"
                 }
               }
             },
@@ -19084,7 +19085,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueRun"
+                  "$ref": "#/components/schemas/ScheduledArtifactRead"
                 }
               }
             },

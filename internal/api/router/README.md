@@ -22,3 +22,5 @@
 ## 契约入口
 
 字段和状态码以 [OpenAPI](../../../api/openapi.json) 为准；生成规则见 [contract](../../contract/README.md)。跨模块语义见 [HTTP API](../../../docs/core/http-api.md)、[会话读取](../../../docs/agent-runs/session-reads.md) 和 [个人模型访问](../../../docs/models/model-access.md)。API Key 写入由 Gateway/model-gateway 承接，Cloud 路由在读取凭据请求体前拒绝，不能回退到普通 JSON 分派。
+
+定时产物列表与下载按只读会话边界处理：拒绝任何查询参数，成功响应使用 `private, no-store`，调用者只能通过路由选择运行与序号。

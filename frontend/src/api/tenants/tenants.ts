@@ -143,6 +143,8 @@ import type {
   PutApiV1TenantsTidIssuesIidBody,
   PutApiV1TenantsTidIssuesIidCommentsCidBody,
   PutApiV1TenantsTidLabelsLidBody,
+  ScheduledArtifactList,
+  ScheduledArtifactRead,
   SessionHistory,
   SessionModelStatistics,
   TenantCreated,
@@ -4050,7 +4052,7 @@ export const getApiV1TenantsTidIssuesIidRunsRidArtifacts = (
 ) => {
 
 
-      return customInstance<IssueRun>(
+      return customInstance<ScheduledArtifactList>(
       {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts`, method: 'GET', signal
     },
       options);
@@ -4158,7 +4160,7 @@ export const getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx = (
 ) => {
 
 
-      return customInstance<IssueRun>(
+      return customInstance<ScheduledArtifactRead>(
       {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`, method: 'GET', signal
     },
       options);

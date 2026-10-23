@@ -2260,6 +2260,7 @@ export const SpaceEventType = {
   issue_runthread_changed: 'issue_run.thread_changed',
   projectrepository_updated: 'project.repository_updated',
   issueconversation_changed: 'issue.conversation_changed',
+  scheduled_taskartifacts_updated: 'scheduled_task.artifacts_updated',
 } as const;
 
 export interface SpaceEvent {

@@ -251,7 +251,7 @@ func Document() map[string]any {
 		"disabledReason":        optional(str()),
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
 	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
-	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask"))}, "tasks")
+	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")
 	s["ScheduledTaskOccurrence"] = object(obj{
 		"scheduledAt":   timestamp(),
 		"outcome":       str(),

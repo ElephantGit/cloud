@@ -304,8 +304,14 @@ func TestScheduledTaskWritesRequireAcceptance(t *testing.T) {
 	store.ScheduledTaskAcceptanceEnabled = false
 	caller := scheduledTaskCaller(t, store, s.tenantID)
 	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
+	listed, status, err := store.Public(context.Background(), &core.PublicRequest{
+		Method: "GET", Path: path, TenantID: s.tenantID, Identity: caller,
+	})
+	if err != nil || status != 200 || listed.B("acceptanceEnabled") {
+		t.Fatalf("gated list = %#v, status %d, err %v; want acceptanceEnabled=false", listed, status, err)
+	}
 
-	_, _, err := store.Public(context.Background(), &core.PublicRequest{
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
 		Method:   "POST",
 		Key:      "scheduled-gated-create",
 		Path:     path,

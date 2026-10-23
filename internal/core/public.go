@@ -126,7 +126,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 			if strings.HasSuffix(r.Path, "/force-stop") {
 				return forceStopPublic(t, r, uid)
 			}
-			return readPublic(t, r, uid)
+			return readPublic(t, r, uid, s.ScheduledTaskAcceptanceEnabled)
 		}
 		authorizeRuntimeReplay(t, r, uid)
 		hash := requestHash(r.Method, r.Path, r.Body)
@@ -489,9 +489,9 @@ func window(t *transaction, q string, args []any, r *PublicRequest) Object {
 	return Object{"items": items, "nextCursor": next}
 }
 
-func readPublic(t *transaction, r *PublicRequest, uid string) Object {
+func readPublic(t *transaction, r *PublicRequest, uid string, scheduledTaskAcceptanceEnabled bool) Object {
 	if strings.Contains(r.Path, "/scheduled-tasks") {
-		return scheduledTaskPublicRead(t, r, uid)
+		return scheduledTaskPublicRead(t, r, uid, scheduledTaskAcceptanceEnabled)
 	}
 	if strings.Contains(r.Path, "/git-credentials") {
 		out, _ := gitCredentialsPublic(t, r, uid)

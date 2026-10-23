@@ -36,14 +36,14 @@ func scheduledTaskPublic(t *transaction, s *Store, r *PublicRequest, uid string)
 
 // scheduledTaskPublicRead dispatches one management read. List and history are member-visible
 // reads; the single definition read follows the same visibility.
-func scheduledTaskPublicRead(t *transaction, r *PublicRequest, uid string) Object {
+func scheduledTaskPublicRead(t *transaction, r *PublicRequest, uid string, acceptanceEnabled bool) Object {
 	switch {
 	case r.ScheduledTaskID != "" && strings.HasSuffix(r.Path, "/history"):
 		return scheduledTaskHistory(t, r)
 	case r.ScheduledTaskID != "":
 		return scheduledTaskOut(readableScheduledTask(t, r))
 	default:
-		return Object{"tasks": scheduledTaskList(t, r.TenantID)}
+		return Object{"tasks": scheduledTaskList(t, r.TenantID), "acceptanceEnabled": acceptanceEnabled}
 	}
 }
 

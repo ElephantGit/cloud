@@ -4425,6 +4425,9 @@
       "ScheduledTaskList": {
         "additionalProperties": false,
         "properties": {
+          "acceptanceEnabled": {
+            "type": "boolean"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/ScheduledTask"
@@ -4433,7 +4436,8 @@
           }
         },
         "required": [
-          "tasks"
+          "tasks",
+          "acceptanceEnabled"
         ],
         "type": "object"
       },

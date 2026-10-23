@@ -2043,6 +2043,7 @@ export interface ScheduledTaskHistory {
 }
 
 export interface ScheduledTaskList {
+  acceptanceEnabled: boolean;
   tasks: ScheduledTask[];
 }
 

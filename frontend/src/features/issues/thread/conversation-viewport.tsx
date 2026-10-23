@@ -9,7 +9,13 @@ export function useInlineThread() {
 }
 
 /** Owns task scrolling, preserving a visible message anchor while older content is inserted. */
-export function ConversationViewport({ children }: { children: React.ReactNode }) {
+export function ConversationViewport({
+  children,
+  followOutput = true,
+}: {
+  children: React.ReactNode
+  followOutput?: boolean
+}) {
   const viewport = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -18,7 +24,7 @@ export function ConversationViewport({ children }: { children: React.ReactNode }
   useEffect(() => {
     const element = viewport.current
     const body = content.current
-    if (!element || !body) return undefined
+    if (!element || !body || !followOutput) return undefined
     function remember() {
       if (!element || !body) return
       const top = element.getBoundingClientRect().top
@@ -57,7 +63,7 @@ export function ConversationViewport({ children }: { children: React.ReactNode }
       mutation.disconnect()
       element.removeEventListener('scroll', onScroll)
     }
-  }, [])
+  }, [followOutput])
   return (
     <div className="relative min-h-0 flex-1">
       <div

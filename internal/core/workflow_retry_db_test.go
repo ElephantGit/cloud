@@ -148,7 +148,7 @@ func TestWorkflowRetryWaitsThenStartsTheNextAttempt(t *testing.T) {
 	dispatchSessionAttempt(t, store, runID, "a", nodeService, execution1, spec1)
 	reportSessionEnd(t, store, runID, execution1, nodeService, "agent_failed")
 
-	status, runErr, _, _ := readWorkflowRun(t, store, runID)
+	status, runErr, _, version := readWorkflowRun(t, store, runID)
 	state := readWorkflowNodeState(t, store, runID, "a")
 	retryAt := requireRetrying(t, state, 1)
 	if status != "running" || runErr != "" {
@@ -170,6 +170,25 @@ func TestWorkflowRetryWaitsThenStartsTheNextAttempt(t *testing.T) {
 	}
 	if unregistered != 0 {
 		t.Fatalf("%d work items released while the retry waits; none should be", unregistered)
+	}
+
+	// Replaying the same terminal receipt — the Controller resending an already recorded result — is
+	// idempotent: the waiting state, its instant and the run version stay exactly as committed, and
+	// the replay releases no work. This is the late/duplicate callback half of the acceptance; the
+	// repeated wake below covers the other half.
+	reportSessionEnd(t, store, runID, execution1, nodeService, "agent_failed")
+	if replayed := readWorkflowNodeState(t, store, runID, "a"); jsonText(replayed) != jsonText(state) {
+		t.Fatalf("state after replaying the receipt = %v; want the unchanged waiting state %v", replayed, state)
+	}
+	if replayedStatus, replayedErr, _, replayedVersion := readWorkflowRun(t, store, runID); replayedStatus != status || replayedErr != runErr || replayedVersion != version {
+		t.Fatalf("run after replaying the receipt = %q error %q version %d; want %q error %q version %d",
+			replayedStatus, replayedErr, replayedVersion, status, runErr, version)
+	}
+	if err := store.Pool.QueryRow(`SELECT count(*) FROM execution_work WHERE workflow_run_id=$1 AND execution_id IS NULL`, runID).Scan(&unregistered); err != nil {
+		t.Fatal(err)
+	}
+	if unregistered != 0 {
+		t.Fatalf("%d work items released by the replayed receipt; none should be", unregistered)
 	}
 
 	// Before the committed instant the pass is a no-op: no new attempt, no work item.

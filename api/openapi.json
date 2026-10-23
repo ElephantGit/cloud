@@ -4367,6 +4367,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "creatorUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "disabledReason": {
             "nullable": true,
             "type": "string"
@@ -4419,6 +4423,7 @@
         "required": [
           "id",
           "issueId",
+          "creatorUserId",
           "name",
           "prompt",
           "agentId",

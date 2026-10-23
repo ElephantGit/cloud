@@ -31,3 +31,5 @@
 MSW 模拟生成客户端的网络边界；纯函数单测覆盖 slug、SSE 帧与重连间隔。
 
 创建表单复用 `CreateFormSubmit` 统一错误与等待反馈；SSE 同时支持租户成员撤权、插件选择和目录更新，刷新相应查询。`issue_run.thread_appended` / `issue_run.thread_changed` 失效该 run 的 Thread、任务对话和运行列表；`issue.conversation_changed` 失效任务消息与运行列表。两类事件都是失效提示，游标只由 REST 读取推进。缺少 `issueId` 的事件被忽略，身份不是字符串的事件在边界处丢弃。
+
+`scheduled_task.artifacts_updated` 只失效本租户的定时任务历史和指定运行的产物索引，不签发下载能力，不刷新其他租户或运行。

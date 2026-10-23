@@ -177,14 +177,27 @@ func advanceCancelledWorkflowRun(t *transaction, run Object, version int64, stat
 // failed node carries an error — a cancelled node was cancelled, not broken. The display name and
 // start instant survive: they describe the execution the result belongs to.
 func applyWorkflowAgentTerminal(states map[string]workflowNodeState, nodeID string, result Object) {
+	reason := workflowAgentTerminalReason(result)
 	state := states[nodeID]
 	state.Status = workflowSessionEndReason(result.S("reason"))
 	state.FinishedAt = nowRFC3339()
-	state.Output = Object{"reason": result.S("reason")}
+	state.Output = Object{"reason": reason}
 	if state.Status == "failed" {
-		state.Error = result.S("reason")
+		state.Error = reason
 	}
 	states[nodeID] = state
+}
+
+// workflowAgentTerminalReason maps a session result onto the node/run reason the public side reads.
+// The Node reports a failed plugin start as the generic `agent_failed` with
+// `detail=agent_plugin_unavailable`; a WorkflowRun has no Thread, so the node and run rows are the
+// only place its cause can surface. Other reasons pass through unchanged — only the bounded,
+// user-actionable plugin code that IssueRun threads already expose is lifted out of the detail.
+func workflowAgentTerminalReason(result Object) string {
+	if result.S("reason") == "agent_failed" && result.S("detail") == "agent_plugin_unavailable" {
+		return "agent_plugin_unavailable"
+	}
+	return result.S("reason")
 }
 
 // cancelWorkflowAgentNode commits one in-flight agent node cancelled. It is Cloud's own verdict for

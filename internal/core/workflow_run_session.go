@@ -242,12 +242,13 @@ func workflowSessionEndReason(reason string) string {
 // continue advancing in the same pass — the next wave executes downstream of it.
 func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
 	applyWorkflowAgentTerminal(states, nodeID, result)
+	reason := workflowAgentTerminalReason(result)
 	switch states[nodeID].Status {
 	case "failed":
-		finishWorkflowRun(t, runID, version, "failed", result.S("reason"), states)
+		finishWorkflowRun(t, runID, version, "failed", reason, states)
 		return states, false
 	case "cancelled":
-		finishWorkflowRun(t, runID, version, "cancelled", result.S("reason"), states)
+		finishWorkflowRun(t, runID, version, "cancelled", reason, states)
 		return states, false
 	default:
 		// The node succeeded; downstream waves continue in this same pass.
@@ -381,6 +382,15 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 		}
 		return
 	}
+	// A ready Workspace is not yet evidence that this run's pinned plugin is usable: the plugin step
+	// opens admission even when an item install failed, and it installs the space's current selection
+	// rather than the version the run froze (circus#527). Dispatching a session anyway makes the Node
+	// report agent_plugin_unavailable on the first turn, after the run has visibly started. The
+	// evidence to refuse it is already on the Workspace, so fail the node here and dispatch nothing.
+	if reason := workflowPinnedPluginGap(t, run, w); reason != "" {
+		failWorkflowAgentNode(t, runID, version, states, node, reason)
+		return
+	}
 	target := workflowSessionTarget(t, w.S("id"))
 	if target == nil {
 		return // no connected Node yet; the startup deadline eventually fails the node
@@ -401,6 +411,29 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 func failWorkflowAgentNode(t *transaction, runID string, version int64, states map[string]workflowNodeState, node workflowNodeView, reason string) {
 	states[node.ID] = workflowNodeState{Status: "failed", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339(), FinishedAt: nowRFC3339(), Error: reason, Output: Object{"reason": reason}}
 	finishWorkflowRun(t, runID, version, "failed", reason, states)
+}
+
+// workflowPinnedPluginGap reports the public reason the run's pinned Agent plugin cannot start on
+// this Workspace, or "" when it is installed at the frozen version. The plugin identity is the one
+// workflowSessionSpec dispatches (opencodeAgentCLI); the version is the run's frozen one, never the
+// space's current selection. A run with no frozen version is left to workflowSessionSpec's own
+// agent_plugin_version_unfrozen reason: there is no pinned version to compare, and substituting the
+// current one would execute something the run was not created against.
+func workflowPinnedPluginGap(t *transaction, run, w Object) string {
+	version := run.S("pluginVersion")
+	if version == "" {
+		return ""
+	}
+	namespace, identifier, ok := pluginIdentity(opencodeAgentCLI)
+	if !ok {
+		return "agent_plugin_unavailable"
+	}
+	inst := t.one(`SELECT * FROM workspace_plugin_instances
+		WHERE workspace_id=$1 AND source_namespace=$2 AND identifier=$3`, w.S("id"), namespace, identifier)
+	if inst == nil || inst.S("observedState") != "installed" || inst.S("observedVersion") != version {
+		return "agent_plugin_unavailable"
+	}
+	return ""
 }
 
 // workflowAnyCancelled reports whether any committed node was cancelled.

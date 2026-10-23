@@ -128,7 +128,10 @@ seconds):
   a node on the next edge starts only after the previous one settles — and the wait before a session starts is
   bounded. A Workspace that cannot be created fails the node as `workspace_unavailable`; a session that finds its
   frozen plugin version or slot binding missing fails as `agent_plugin_version_unfrozen` or
-  `workflow_executor_unconfigured` — never hanging in `running` or reporting success for work that never happened.
+  `workflow_executor_unconfigured`. A ready Workspace whose run-frozen Agent plugin has no usable instance — absent,
+  failed to install, or installed at another version — fails the node as `agent_plugin_unavailable` before any session
+  is handed over, and the run reaches a terminal state too. None of these hang in `running` or report success for work
+  that never happened.
   **When a session has started but its Node can no longer report**, the node settles failed as `node_unavailable`
   and the run reaches a terminal state: the judgement is the Node's reachability, not how long the session has been
   running — a heartbeat older than `issue_runs.delivery_unreachable_after` (30 minutes by default), or a sandbox gone

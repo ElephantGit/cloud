@@ -36,3 +36,5 @@ MSW 模拟真实 Cloud 接口；`onUnhandledRequest: 'error'` 下每个测试都
 `useWorkflowSnapshotForm` 复用生成的 snapshot form GET，查询键包含 tenant/workflow/snapshot/issue；API 测试逐项切换这些范围，避免不同版本或 Issue 共用表单默认值。
 
 `useWorkflowPublishedSnapshotIds` 按 tenant/workflow 缓存全部已发布版本 id，使用生成的列表接口逐页读取（每页 100，传递取消信号），不缓存图副本。活动表单用它判断下拉选项是否都属于已发布版本；API 测试验证第二页游标、完整 id 列表及租户/Workflow 隔离。
+
+任务详情使用固定高度工作区：标题、视图切换、唯一正文滚动区与独立占位输入区。详情侧栏按可用宽度切换抽屉；版本冲突仍由原更新入口处理，任务读取被拒绝时隐藏旧内容。

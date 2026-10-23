@@ -7,6 +7,8 @@ import { TaskConversationPanel } from '@/features/issues/conversation/conversati
 import type { CollaborationTargetSummary, IssueRun, TenantMember } from '@/features/issues/types'
 import { ActivityPanel } from './activity-panel'
 import { workspacePaths } from '@/lib/paths'
+import { TaskLayout } from './task-layout'
+import { ExecutionSidebar } from './execution-sidebar'
 
 const STATUS: Record<string, string> = {
   queued: '排队中',
@@ -76,16 +78,7 @@ function RunHeading({
   )
 }
 
-/** Task-level navigation preserves selected historical execution in the URL without starting work. */
-export function IssueWorkspace({
-  tid,
-  issueId,
-  members,
-}: {
-  tid: string
-  issueId: string
-  members: TenantMember[]
-}) {
+function useWorkspaceNavigation(tid: string, issueId: string) {
   const [params, setParams] = useSearchParams()
   const { session } = useSession()
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>()
@@ -97,7 +90,7 @@ export function IssueWorkspace({
   const agents = runs
     .filter((run) => run.executorType === 'agent')
     .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
-  const viewedRun = selected ? agents.find((run) => run.id === selected) : agents[0]
+  const viewedRun = selected ? agents.find((run) => run.id === selected) : undefined
   function navigate(view: string, runId?: string) {
     setParams((previous) => {
       const next = new URLSearchParams(previous)
@@ -107,41 +100,133 @@ export function IssueWorkspace({
       return next
     })
   }
+  return { session, workspaceSlug, runs, isError, targets, selected, tab, viewedRun, navigate }
+}
+
+/** Task-level navigation preserves historical URLs and a single mounted composer across views. */
+export function IssueWorkspace({
+  tid,
+  issueId,
+  members,
+  heading,
+  properties,
+  details,
+}: {
+  tid: string
+  issueId: string
+  members: TenantMember[]
+  heading?: React.ReactNode
+  properties?: React.ReactNode
+  details?: React.ReactNode
+}) {
+  const { session, workspaceSlug, runs, isError, targets, selected, tab, viewedRun, navigate } =
+    useWorkspaceNavigation(tid, issueId)
+  const records = (
+    <RunList
+      runs={runs}
+      targets={targets}
+      failed={isError}
+      onOpen={(id) => navigate('conversation', id)}
+      workspaceSlug={workspaceSlug}
+    />
+  )
+  const activity = (
+    <ActivityPanel
+      slug={tid}
+      issueId={issueId}
+      members={members}
+      onOpenRun={(id) => navigate('conversation', id)}
+      onTaskStarted={() => navigate('conversation')}
+    />
+  )
   return (
-    <Tabs value={tab} onValueChange={(value) => navigate(String(value))} className="min-w-0">
-      <TabsList variant="line">
-        <TabsTrigger value="conversation">对话</TabsTrigger>
-        <TabsTrigger value="runs">执行记录{agents.length ? ` · ${agents.length}` : ''}</TabsTrigger>
-        <TabsTrigger value="activity">任务动态</TabsTrigger>
-      </TabsList>
-      <TabsContent value="conversation" className="min-w-0 space-y-4 pt-4">
-        <RunHeading
-          run={viewedRun}
-          targets={targets}
-          workspaceSlug={workspaceSlug}
-          issueId={issueId}
-        />
-        {selected && (
-          <Button variant="ghost" size="sm" onClick={() => navigate('conversation')}>
-            返回最新执行
-          </Button>
-        )}
-        <TaskConversationPanel
-          tid={tid}
-          issueId={issueId}
-          members={members}
-          targets={targets}
-          runs={runs}
-          selectedRunId={selected}
-          workspaceSlug={workspaceSlug}
-          currentUserId={session.status === 'signed-in' ? session.user.id : undefined}
-          onLatest={() => navigate('conversation')}
-        />
-      </TabsContent>
-      <TabsContent value="runs" className="pt-4">
-        {isError && <p role="alert">执行记录加载失败，请稍后重试。</p>}
-        <ol aria-label="执行记录" className="space-y-3">
-          {agents.map((run) => (
+    <TaskLayout
+      sidebar={
+        <>
+          {properties}
+          <ExecutionSidebar
+            failed={isError}
+            tid={tid}
+            issueId={issueId}
+            runs={runs}
+            targets={targets}
+            members={members}
+            selected={selected}
+            workspaceSlug={workspaceSlug}
+            onOpen={(id) => navigate('conversation', id)}
+            onAll={() => navigate('runs')}
+          />
+          {details}
+        </>
+      }
+    >
+      <Tabs
+        value={tab}
+        onValueChange={(value) => navigate(String(value))}
+        className="min-h-0 min-w-0 flex-1 gap-0"
+      >
+        <div className="shrink-0 border-b">
+          <div className="mx-auto max-w-[840px] space-y-3 px-4 pt-4 sm:px-6">
+            {heading}
+            <WorkspaceTabs count={runs.length} />
+          </div>
+        </div>
+        <TabsContent value={tab} className="min-h-0">
+          <div className="flex h-full min-h-0 flex-col">
+            {selected && tab === 'conversation' && (
+              <div className="mx-auto flex w-full max-w-[840px] shrink-0 flex-wrap items-center justify-between px-4 py-2">
+                <RunHeading
+                  run={viewedRun}
+                  targets={targets}
+                  workspaceSlug={workspaceSlug}
+                  issueId={issueId}
+                />
+                <Button variant="ghost" size="sm" onClick={() => navigate('conversation')}>
+                  返回最新执行
+                </Button>
+              </div>
+            )}
+            <TaskConversationPanel
+              tid={tid}
+              issueId={issueId}
+              members={members}
+              targets={targets}
+              runs={runs}
+              selectedRunId={selected}
+              workspaceSlug={workspaceSlug}
+              currentUserId={session.status === 'signed-in' ? session.user.id : undefined}
+              onLatest={() => navigate('conversation')}
+              content={{ runs: records, activity, conversation: undefined }[tab]}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
+    </TaskLayout>
+  )
+}
+
+function RunList({
+  runs,
+  targets,
+  failed,
+  onOpen,
+  workspaceSlug,
+}: {
+  runs: IssueRun[]
+  targets: CollaborationTargetSummary[]
+  failed: boolean
+  onOpen: (id: string) => void
+  workspaceSlug: string | undefined
+}) {
+  const ordered = runs.toSorted(
+    (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+  )
+  return (
+    <>
+      {failed && <p role="alert">执行记录加载失败，请稍后重试。</p>}
+      <ol aria-label="执行记录" className="space-y-3">
+        {ordered.map((run) =>
+          run.executorType === 'agent' ? (
             <RunCard
               key={run.id}
               run={run}
@@ -149,23 +234,45 @@ export function IssueWorkspace({
                 targets.find((target) => target.type === 'agent' && target.id === run.executorId)
                   ?.displayName ?? 'Agent'
               }
-              onOpen={() => navigate('conversation', run.id)}
+              onOpen={() => onOpen(run.id)}
             />
-          ))}
-        </ol>
-        {!agents.length && !isError && (
-          <p className="py-6 text-sm text-muted-foreground">暂无 Agent 执行记录</p>
+          ) : (
+            <li key={run.id} className="border-b py-3">
+              <p>
+                {targets.find(
+                  (target) => target.type === run.executorType && target.id === run.executorId,
+                )?.displayName ?? run.executorType}
+              </p>
+              {run.executorType === 'workflow' && run.workflowInvocationRef && workspaceSlug ? (
+                <Link
+                  className="text-sm underline"
+                  to={workspacePaths(workspaceSlug).workflowRun(
+                    run.executorId,
+                    run.workflowInvocationRef,
+                  )}
+                >
+                  查看工作流运行
+                </Link>
+              ) : (
+                <p className="text-xs text-muted-foreground">{STATUS[run.status] ?? '状态未知'}</p>
+              )}
+            </li>
+          ),
         )}
-      </TabsContent>
-      <TabsContent value="activity">
-        <ActivityPanel
-          slug={tid}
-          issueId={issueId}
-          members={members}
-          onOpenRun={(runId) => navigate('conversation', runId)}
-          onTaskStarted={() => navigate('conversation')}
-        />
-      </TabsContent>
-    </Tabs>
+      </ol>
+      {!runs.length && !failed && (
+        <p className="py-6 text-sm text-muted-foreground">暂无执行记录</p>
+      )}
+    </>
+  )
+}
+
+function WorkspaceTabs({ count }: { count: number }) {
+  return (
+    <TabsList variant="line">
+      <TabsTrigger value="conversation">对话</TabsTrigger>
+      <TabsTrigger value="runs">执行记录{count ? ` · ${count}` : ''}</TabsTrigger>
+      <TabsTrigger value="activity">任务动态</TabsTrigger>
+    </TabsList>
   )
 }

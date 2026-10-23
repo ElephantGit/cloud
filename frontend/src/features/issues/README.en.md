@@ -40,3 +40,5 @@ Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned ass
 `useWorkflowSnapshotForm` reuses the generated snapshot-form GET with tenant/workflow/snapshot/issue-scoped query keys. The API test varies every scope so versions and Issues cannot share the wrong field defaults.
 
 `useWorkflowPublishedSnapshotIds` caches all published ids by tenant/workflow, following the generated list endpoint's cursors with a page limit of 100 and the caller's abort signal; it stores no graph copies. The activity form uses those ids to identify published-version options. API tests cover the second-page cursor, complete id list and tenant/workflow isolation.
+
+Issue details use a bounded workspace: heading, views, one transcript viewport and an in-flow composer. The details rail becomes a drawer based on available width; version conflicts retain the existing update path, and denied reads hide stale content.

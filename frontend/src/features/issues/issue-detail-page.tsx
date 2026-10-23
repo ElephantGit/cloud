@@ -1,12 +1,15 @@
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IssueWorkspace } from '@/features/issues/components/issue-workspace'
 import { ConversationMarkdown } from '@/features/conversation-content/markdown'
-import { IssuePropertiesPanel } from '@/features/issues/components/issue-properties-panel'
+import {
+  IssuePropertiesPanel,
+  IssueContextDetails,
+} from '@/features/issues/components/issue-properties-panel'
 import {
   useDeleteIssue,
   useIssue,
@@ -18,13 +21,11 @@ import {
 } from '@/features/issues/api'
 import { issueNumber } from '@/features/issues/present'
 import { workspacePaths } from '@/lib/paths'
+import { isUnauthorizedError, isForbiddenError } from '@/lib/api-client'
+import { useProjects } from '@/features/projects/api'
+import type { Issue, TenantMember } from './types'
 
-/**
- * One issue: the description and activity column, the properties column and,
- * when the issue has an agent run, the "Agent 会话" Thread column. The `slug`
- * prop is the tenant id (forwarded by CloudScope); navigation links carry the
- * space slug from the route instead.
- */
+/** Composes the task heading, versioned property edits and persistent execution workspace. */
 export function IssueDetailPage({ slug }: { slug: string }) {
   const { issueId, workspaceSlug } = useParams<{ issueId: string; workspaceSlug: string }>()
   const navigate = useNavigate()
@@ -39,17 +40,13 @@ export function IssueDetailPage({ slug }: { slug: string }) {
   const deleteIssue = useDeleteIssue(slug)
   const p = workspacePaths(workspaceSlug ?? slug)
 
-  if (isPending || !issue) {
+  if (isUnauthorizedError(issueQuery.error) || isForbiddenError(issueQuery.error))
     return (
-      <div className="flex h-full flex-col">
-        <PageHeader title="任务" breadcrumb={{ label: '任务', to: p.issues }} />
-        <div className="space-y-3 p-6">
-          <Skeleton className="h-6 w-2/3" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      </div>
+      <p role="alert" className="p-6">
+        任务读取失败或已不可访问，请刷新重试。
+      </p>
     )
-  }
+  if (isPending || !issue) return <TaskLoading issuesHref={p.issues} />
 
   const commit = (patch: UpdateIssueInput) => {
     if (propertiesBusy) return
@@ -57,9 +54,13 @@ export function IssueDetailPage({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title={issueNumber(issue)}
+        title={
+          <span title={issue.title}>
+            {issueNumber(issue)} · {issue.title}
+          </span>
+        }
         breadcrumb={{ label: '任务', to: p.issues }}
         actions={
           <Button
@@ -76,38 +77,38 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           </Button>
         }
       />
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 md:flex-row md:p-6">
-        <div className="mx-auto min-w-0 w-full max-w-[960px] flex-1 space-y-5">
-          <h1 className="text-xl font-semibold">{issue.title}</h1>
-          <details className="rounded-lg border p-3">
-            <summary className="cursor-pointer text-sm text-muted-foreground">任务说明</summary>
-            <ConversationMarkdown text={issue.description || '暂无描述。'} />
-          </details>
-          {updateIssue.isError && (
-            <div role="alert" className="space-y-1 text-sm text-destructive">
-              <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={propertiesBusy}
-                onClick={() => {
-                  setReloading(true)
-                  void issueQuery.refetch().then((result) => {
-                    if (!result.isError) updateIssue.reset()
-                    setReloading(false)
-                    return result
-                  })
-                }}
-              >
-                重新加载任务
-              </Button>
-            </div>
-          )}
-          <IssueWorkspace key={issue.id} tid={slug} issueId={issue.id} members={members} />
-        </div>
-        <details open className="w-full shrink-0 space-y-4 md:w-72">
-          <summary className="cursor-pointer text-sm font-medium">任务属性</summary>
+      <IssueWorkspace
+        key={issue.id}
+        tid={slug}
+        issueId={issue.id}
+        members={members}
+        heading={
+          <>
+            <TaskHeading issue={issue} />
+            {updateIssue.isError && (
+              <div role="alert" className="text-sm text-destructive">
+                <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={propertiesBusy}
+                  onClick={() => {
+                    setReloading(true)
+                    void issueQuery.refetch().then((result) => {
+                      if (!result.isError) updateIssue.reset()
+                      setReloading(false)
+                      return result
+                    })
+                  }}
+                >
+                  重新加载任务
+                </Button>
+              </div>
+            )}
+          </>
+        }
+        properties={
           <IssuePropertiesPanel
             tid={slug}
             issue={issue}
@@ -118,7 +119,72 @@ export function IssueDetailPage({ slug }: { slug: string }) {
             onCommit={commit}
             saving={propertiesBusy}
           />
-        </details>
+        }
+        details={<TaskMetadata issue={issue} members={members} tid={slug} />}
+      />
+    </div>
+  )
+}
+
+function TaskMetadata({
+  issue,
+  members,
+  tid,
+}: {
+  issue: Issue
+  members: TenantMember[]
+  tid: string
+}) {
+  return (
+    <>
+      <section className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
+        <h2 className="text-sm font-medium text-foreground">详情</h2>
+        <p>
+          创建者：
+          {members.find((member) => member.userId === issue.creatorUserId)?.displayName ?? '用户'}
+        </p>
+        <p>创建时间：{new Date(issue.createdAt).toLocaleString()}</p>
+        <p>更新时间：{new Date(issue.updatedAt).toLocaleString()}</p>
+      </section>
+      <IssueContextDetails tid={tid} issueId={issue.id} />
+    </>
+  )
+}
+
+function TaskHeading({ issue }: { issue: Issue }) {
+  const { workspaceSlug } = useParams<{ workspaceSlug: string }>()
+  const projects = useProjects(workspaceSlug ?? '')
+  const project = projects.data?.find((item) => item.id === issue.projectRef)
+  return (
+    <>
+      {project && workspaceSlug && (
+        <Link
+          className="text-xs text-muted-foreground hover:underline"
+          to={workspacePaths(workspaceSlug).projectDetail(project.id)}
+        >
+          {project.title}
+        </Link>
+      )}
+      <h1 className="truncate text-xl font-semibold" title={issue.title}>
+        {issue.title}
+      </h1>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted-foreground">任务说明</summary>
+        <div className="max-h-40 overflow-y-auto py-2">
+          <ConversationMarkdown text={issue.description || '暂无描述。'} />
+        </div>
+      </details>
+    </>
+  )
+}
+
+function TaskLoading({ issuesHref }: { issuesHref: string }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader title="任务" breadcrumb={{ label: '任务', to: issuesHref }} />
+      <div className="space-y-3 p-6">
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-24 w-full" />
       </div>
     </div>
   )

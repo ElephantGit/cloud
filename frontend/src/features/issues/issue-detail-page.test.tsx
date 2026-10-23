@@ -19,6 +19,9 @@ const statuses = [makeStatus('backlog'), makeStatus('todo'), makeStatus('done')]
 function serveDetail(issue: Issue, allIssues: Issue[] = [issue], runs: IssueRun[] = []) {
   installSignedInSession()
   server.use(
+    http.get('/api/v1/tenants/t1/issues/i1/runs/:rid/statistics', () =>
+      HttpResponse.json({ code: 'not_found' }, { status: 404 }),
+    ),
     http.get('/api/v1/me/spaces', () =>
       HttpResponse.json({
         items: [
@@ -172,6 +175,23 @@ describe('IssueDetailPage', () => {
     await user.click(screen.getByRole('button', { name: '返回最新执行' }))
     expect(await screen.findByText('Reply new')).toBeInTheDocument()
     expect(router.state.location.search).not.toContain('run=')
+  })
+
+  it('preserves the task draft and explicit recipient across views without sending', async () => {
+    serveDetail(makeIssue('i1', 'Persistent draft'))
+    const user = userEvent.setup()
+    renderIssueDetail('i1')
+    await user.type(await screen.findByLabelText('任务对话输入'), '未发送的任务草稿')
+    await user.click(screen.getByRole('tab', { name: /执行记录/ }))
+    expect(screen.getByLabelText('任务对话输入')).toHaveValue('未发送的任务草稿')
+    await user.click(screen.getByRole('tab', { name: '任务动态' }))
+    expect(screen.getByLabelText('任务对话输入')).toHaveValue('未发送的任务草稿')
+    await user.click(screen.getByRole('tab', { name: '对话' }))
+    expect(screen.getByLabelText('任务对话输入')).toHaveValue('未发送的任务草稿')
+    await user.click(screen.getByRole('button', { name: '任务详情' }))
+    expect(screen.queryByRole('complementary', { name: '任务详情侧栏' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '任务详情' }))
+    expect(screen.getByRole('complementary', { name: '任务详情侧栏' })).toBeInTheDocument()
   })
 
   it('does not silently substitute the latest run for an invalid deep link', async () => {

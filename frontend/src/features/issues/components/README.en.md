@@ -10,6 +10,9 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 
 | File | Purpose |
 | --- | --- |
+| `task-layout.tsx` | Available-width layout, independent rail and narrow-screen drawer |
+| `execution-sidebar.tsx` | Active execution, recent history and selected-run statistics |
+| `pull-request-refs.tsx` | Safe PR references with explicit add/remove |
 | `issue-card.tsx` / `issue-row.tsx` | Board card and list row |
 | `create-issue-dialog.tsx` / `issue-project-select.tsx` | Creation and detail project selection; loading or failure never clears a stored reference |
 | `issue-properties-panel.tsx` | Detail-page properties column: status, priority, assignee, parent/sub-issues, project, labels, properties, context refs |
@@ -44,3 +47,5 @@ Historical runs without a WorkflowRun reference retain their IssueRun status, ma
 Component tests use MSW; properties and Task Mode→Thread are covered by `issue-detail-page.test.tsx`. Loading, empty, refused and retry states are distinct; creation, ordinary-comment and target failures retain drafts, while scope changes clear them.
 
 Workflow tests cover double-click exclusion, rejected confirms reusing an interaction across version switches, both the default and a switched version rendering from that version's snapshot, snapshot fields/defaults/echoes, named-field hints on validation refusals, an author's same-named select making no snapshot-form request, acceptance and refusal by the selected version's own fields, pending and failed reads, and WorkflowRun status and detail links.
+
+`task-layout.tsx` owns the 1024px available-width breakpoint and independent rail. `execution-sidebar.tsx` distinguishes activeRunId from selected history. `pull-request-refs.tsx` manages references without inferring external PR state. `issue-workspace.tsx` keeps one composer mounted across views, preserving drafts and retry identity. Secondary context and configuration links are collapsed.

@@ -32,16 +32,21 @@ func (s *Store) prepareArtifactVerification(ctx context.Context, r *ControlReque
 		}
 		e := t.one("SELECT * FROM node_executions WHERE execution_id=$1 AND operation_id=$2 AND kind='deliver_scheduled_artifacts'", r.Body.S("executionId"), r.Body.S("operationId"))
 		require(e != nil, 404, "not_found")
+		require(r.Body.O("result").O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
 		// A committed result needs no external check: the replay returns the stored fact.
 		if len(e.O("result")) > 0 {
-			require(r.Body.O("result").O("node").S("nodeId") == e.S("nodeId"), 409, "result_conflict")
 			validateNodeResult(e, r.Body.O("result"))
 			return nil
 		}
 		validateNodeResult(e, r.Body.O("result"))
 		require(r.Body.N("sequence") == e.N("lastEventSequence")+1 && r.Body.S("event") != "", 409, "receipt_conflict")
-		delivery := t.one("SELECT * FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
-		require(delivery != nil && delivery.S("state") == "delivering", 409, "dispatch_conflict")
+		delivery := t.one("SELECT *, now() < deadline_at AS open FROM scheduled_run_artifact_deliveries WHERE issue_run_id=$1", e.S("operationId"))
+		require(delivery != nil, 409, "dispatch_conflict")
+		// Closed windows only take over the original event and its receipt. Return the frozen
+		// input so settlement can fence it without contacting storage or registering objects.
+		if delivery.S("state") != "delivering" || !delivery.B("open") {
+			return Object{"input": jsonText(e.O("input"))}
+		}
 		declaration, declarationErr := scheduledArtifactDeclarationOf(t, delivery.S("tenantId"), e)
 		require(declarationErr == nil, 409, "dispatch_conflict")
 		declared := Object{}
@@ -52,6 +57,9 @@ func (s *Store) prepareArtifactVerification(ctx context.Context, r *ControlReque
 	})
 	if err != nil || expected == nil {
 		return nil, err
+	}
+	if expected["declared"] == nil {
+		return &artifactVerification{input: expected.S("input")}, nil
 	}
 	if s.ObjectStore == nil {
 		return nil, &Fault{Status: 503, Code: "object_store_unavailable", Params: Object{}}

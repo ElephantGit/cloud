@@ -74,15 +74,21 @@ func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool
 // dispatched fails the node once the startup deadline passes. The run advances on the next tick
 // after any commit.
 //
-// Every lookup is scoped to the node being settled. A run has several agent sessions over its life
-// (D4 executes its agent nodes serially through one Workspace), so evidence read at run scope —
-// "the newest agent_session result for this run" — would let the second node inherit the first
-// node's result and be recorded succeeded without ever executing (invariant 5).
-func workflowAgentSessionOutcome(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, unreachableAfter time.Duration) (map[string]workflowNodeState, bool) {
+// Every lookup is scoped to the node being settled and to its current attempt. A run has several
+// agent sessions over its life (D4 executes its agent nodes serially through one Workspace), so
+// evidence read at run scope — "the newest agent_session result for this run" — would let the second
+// node inherit the first node's result and be recorded succeeded without ever executing (invariant
+// 5). The same argument applies inside one node once it retries: attempt 1's committed result stays
+// on its own execution row, and a lookup that does not name the current attempt would settle the
+// in-flight attempt 2 with it (retry decision D4). The attempt comes from the committed state, so a
+// restart, a replica change and a replay all scope to the same row.
+func workflowAgentSessionOutcome(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, unreachableAfter time.Duration) (map[string]workflowNodeState, bool) {
+	nodeID, nodeState := node.ID, states[node.ID]
+	attempt := nodeState.attemptNumber()
 	e := t.one(`SELECT result FROM node_executions
-		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID)
+		WHERE operation_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID, attempt)
 	if e != nil {
-		return commitWorkflowAgentTerminal(t, runID, version, nodeID, states, e.O("result"))
+		return commitWorkflowAgentTerminal(t, runID, version, node, states, e.O("result"))
 	}
 	// Dispatched but not yet terminal: the Node owns the session until it reports — and a session may
 	// legitimately run for hours, so elapsed time is not evidence of anything. The Node is. When the
@@ -99,7 +105,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 	// Workspace before it commits the node `running` — and the binding is never cleared, only
 	// soft-deleted, which the live-sandbox half of the judgement already covers.
 	if e := t.one(`SELECT execution_id FROM node_executions
-		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session'`, runID, nodeID); e != nil {
+		WHERE operation_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='agent_session'`, runID, nodeID, attempt); e != nil {
 		if w := t.one("SELECT id FROM workspaces WHERE workflow_run_id=$1", runID); w != nil &&
 			runWorkspaceNodeUnknown(t, runID, w.S("id"), unreachableAfter) {
 			state := states[nodeID]
@@ -130,7 +136,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 			finishWorkflowRun(t, runID, version, "failed", workflowSessionTurnDeadlineExceeded, states)
 			return states, false
 		}
-		return workflowSessionEndRequest(t, runID, version, nodeID, executionID, turnEnded, states)
+		return workflowSessionEndRequest(t, runID, version, nodeID, attempt, executionID, turnEnded, states)
 	}
 	// Never dispatched: the startup deadline applies. A node committed running with no registered
 	// execution past the never dispatched fails honestly — never recorded as succeeded (invariant 5).
@@ -161,13 +167,15 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 // never claims the command would leave the run `running` forever — the same permanent stall this
 // path exists to remove. The deadline is measured from the command's own `created_at`, so retries
 // and replicas all read the same window.
-func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
-	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND kind='end_session'", runID, nodeID)
+func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID string, attempt int64, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+	// The end request is one per (run, node, attempt): 0061 re-keys 0049's uniqueness on the attempt,
+	// so attempt 1's outstanding request is neither reused nor delivered to attempt 2's session.
+	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='end_session'", runID, nodeID, attempt)
 	if cmd == nil {
 		if !turnEnded {
 			return states, false
 		}
-		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, "end_session", Object{"reason": "idle_timeout"})
+		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, attempt, "end_session", Object{"reason": "idle_timeout"})
 	}
 	window := startupDuration(t.store.AgentEndConfirmTimeout, 5*time.Minute)
 	// The comparison runs on the database clock, the same clock `created_at` came from: a process
@@ -236,11 +244,38 @@ func workflowSessionEndReason(reason string) string {
 	}
 }
 
-// commitWorkflowAgentTerminal commits a running agent node's terminal state from the session
-// execution's result document. A failed or cancelled node finishes the run (the wave resolves
-// downstream casualties on the next pass); a succeeded node commits and reports that the run can
-// continue advancing in the same pass — the next wave executes downstream of it.
-func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, nodeID string, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
+// commitWorkflowAgentTerminal commits a running agent node's state from the session execution's
+// result document. A retryable failure becomes a committed `retrying` state and the pass stops — the
+// run stays running and the attempt is retried after its committed wait. Otherwise a failed or
+// cancelled node finishes the run (the wave resolves downstream casualties on the next pass), and a
+// succeeded node commits and reports that the run can continue advancing in the same pass — the next
+// wave executes downstream of it.
+//
+// The retry decision is made from result.reason before the reason is mapped (D2). The mapping sends
+// several unrelated reasons to `failed` — interrupted, Cloud's own deadlines, node_unavailable —
+// and treats every unknown reason as success; deriving the retry from the mapped status would both
+// retry what the ADR forbids and skip the decision for reasons that map to success.
+func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, result Object) (map[string]workflowNodeState, bool) {
+	nodeID := node.ID
+	state := states[nodeID]
+	state.Attempt = state.attemptNumber()
+	states[nodeID] = state
+	if wait, retry := workflowRetryDecision(workflowRetryPolicyOf(node.Data), state.attemptNumber(), result.S("reason")); retry {
+		state.Status = "retrying"
+		state.RetryAt = workflowRetryAt(t, wait)
+		// The attempt that failed keeps its start instant and its reason; it has no finish instant,
+		// because the run has not finished with this node — it is waiting. error/output are the failed
+		// attempt's evidence and stay readable while it waits (D3).
+		state.FinishedAt = ""
+		state.Error = result.S("reason")
+		state.Output = Object{"reason": result.S("reason")}
+		states[nodeID] = state
+		// A waiting node is not terminal: the run keeps status running with an empty error, retains
+		// its Workspace and releases no work. The state and the run row commit together under the
+		// existing version CAS, so every later pass wakes against exactly this retryAt.
+		settleWorkflowRunStates(t, runID, version, "running", "", states)
+		return states, false
+	}
 	applyWorkflowAgentTerminal(states, nodeID, result)
 	reason := workflowAgentTerminalReason(result)
 	switch states[nodeID].Status {
@@ -400,16 +435,27 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 		failWorkflowAgentNode(t, runID, version, states, node, reason)
 		return
 	}
-	states[node.ID] = workflowNodeState{Status: "running", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339()}
+	// The attempt follows the committed state: the first start is attempt 1 and the start after a
+	// committed `retrying` is the attempt it was waiting for plus one (D3). Nothing about the counter
+	// lives in process memory, so a restart between the wait and this start reads the same number.
+	// The fresh state deliberately drops the previous attempt's retryAt, error and finishedAt.
+	attempt := int64(1)
+	if prior, started := states[node.ID]; started {
+		attempt = prior.attemptNumber() + 1
+	}
+	states[node.ID] = workflowNodeState{Status: "running", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339(), Attempt: attempt}
 	if !settleWorkflowRunStates(t, runID, version, "running", "", states) {
 		return
 	}
-	enqueueExecutionWork(t, runID, "agent_session", spec, target, node.ID, time.Time{})
+	enqueueExecutionWork(t, runID, "agent_session", spec, target, node.ID, attempt, time.Time{})
 }
 
-// failWorkflowAgentNode commits one agent node failed with a named reason and finishes the run.
+// failWorkflowAgentNode commits one agent node failed with a named reason and finishes the run. It
+// keeps the attempt the state already names — the attempt whose start could not proceed — and reads
+// an absent state as the first attempt; the budget is history, not something a failure resets (D6).
 func failWorkflowAgentNode(t *transaction, runID string, version int64, states map[string]workflowNodeState, node workflowNodeView, reason string) {
-	states[node.ID] = workflowNodeState{Status: "failed", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339(), FinishedAt: nowRFC3339(), Error: reason, Output: Object{"reason": reason}}
+	prior := states[node.ID]
+	states[node.ID] = workflowNodeState{Status: "failed", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339(), FinishedAt: nowRFC3339(), Attempt: prior.attemptNumber(), Error: reason, Output: Object{"reason": reason}}
 	finishWorkflowRun(t, runID, version, "failed", reason, states)
 }
 

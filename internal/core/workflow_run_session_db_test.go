@@ -21,6 +21,24 @@ func workflowSessionGraph() Object {
 	return g
 }
 
+// workflowSessionNoRetryGraph is workflowSessionGraph with retry explicitly disabled on its agent
+// node. Tests that assert how a failed attempt settles without a committed wait seed this graph so
+// the default policy — enabled (D1) — does not turn their failure into a `retrying` node. The
+// retry-enabled settlement has its own tests in workflow_retry_db_test.go.
+func workflowSessionNoRetryGraph() Object {
+	return wfGraph(
+		[]Object{
+			wfNode("s", "start", ""),
+			wfAgentNode("a", Object{
+				"prompt": "Do the thing",
+				"retry":  Object{"enabled": false, "maxRetries": 0, "initialDelaySeconds": 0},
+			}),
+			wfNode("o", "output", ""),
+		},
+		[][3]string{{"s", "a", ""}, {"a", "o", ""}},
+	)
+}
+
 // workflowTwoAgentGraph is start -> agent a1 -> agent a2 -> output: one run with two agent nodes,
 // which D4 executes serially through the run's single Workspace.
 func workflowTwoAgentGraph() Object {
@@ -429,7 +447,10 @@ func TestWorkflowSessionDispatchIsNotRepeatable(t *testing.T) {
 // decides, not a policy — and the terminal cleanup still runs.
 func TestWorkflowSessionFailureFailsRun(t *testing.T) {
 	store := dispatcherDB(t)
-	runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+	// Retry is disabled on this graph: the test is about a failure that settles the node and run
+	// immediately. The retry-enabled outcome (a committed `retrying`, the run still running) is
+	// asserted in workflow_retry_db_test.go.
+	runID, _, _, _, _ := seedWorkflowSessionSceneGraph(t, store, workflowSessionNoRetryGraph())
 	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
 		t.Fatalf("advance 1: %v", err)
 	}

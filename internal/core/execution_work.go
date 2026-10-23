@@ -15,18 +15,20 @@ const executionWorkLiveRuns = "SELECT id FROM issue_runs WHERE deleted_at IS NUL
 // Repeating the same unregistered input returns the original item. A different input conflicts.
 func (s *Store) EnqueueExecutionWork(ctx context.Context, runID, kind string, input, target Object, availableAt time.Time) (Object, error) {
 	return s.transact(ctx, func(t *transaction) Object {
-		return enqueueExecutionWork(t, runID, kind, input, target, "", availableAt)
+		return enqueueExecutionWork(t, runID, kind, input, target, "", 0, availableAt)
 	})
 }
 
 // graphNode names the workflow graph node a WorkflowRun's session work belongs to, so the scheduler
-// can read that node's own execution back (workflowAgentSessionOutcome). IssueRun work has no graph
-// and passes "".
-func enqueueExecutionWork(t *transaction, runID, kind string, input, target Object, graphNode string, availableAt time.Time) Object {
+// can read that node's own execution back (workflowAgentSessionOutcome), and graphAttempt names the
+// node's attempt: one node has one work item per attempt, so the attempt is part of the item's
+// identity the same way the node id is (retry decision D4). IssueRun work has no graph and passes
+// "" and zero; a workflow item without a node (the public seam) is attempt 1.
+func enqueueExecutionWork(t *transaction, runID, kind string, input, target Object, graphNode string, graphAttempt int64, availableAt time.Time) Object {
 	require(validID(runID), 400, "invalid_dispatch")
 	run := t.one("SELECT * FROM issue_runs WHERE id=$1 AND deleted_at IS NULL", runID)
 	if run == nil {
-		return enqueueWorkflowExecutionWork(t, runID, kind, input, target, graphNode, availableAt)
+		return enqueueWorkflowExecutionWork(t, runID, kind, input, target, graphNode, graphAttempt, availableAt)
 	}
 	require(t.one("SELECT run_id FROM agent_run_residuals WHERE run_id=$1", runID) == nil, 409, "dispatch_conflict")
 	requireNoControlledReclamation(t, target.S("workspaceId"), "")
@@ -84,22 +86,27 @@ func enqueueExecutionWork(t *transaction, runID, kind string, input, target Obje
 // running at a time but several over its life (D4), and the scheduler reads the node's terminal
 // evidence back through this link. Repeating the same unregistered input returns the original item;
 // a different input conflicts.
-func enqueueWorkflowExecutionWork(t *transaction, runID, kind string, input, target Object, graphNode string, availableAt time.Time) Object {
+func enqueueWorkflowExecutionWork(t *transaction, runID, kind string, input, target Object, graphNode string, graphAttempt int64, availableAt time.Time) Object {
 	require(t.one("SELECT id FROM workflow_runs WHERE id=$1 AND deleted_at IS NULL", runID) != nil, 404, "not_found")
 	require(kind == "agent_session", 400, "invalid_dispatch")
 	require(input.S("kind") == kind, 400, "invalid_dispatch")
 	require(target.S("workspaceId") != "" && target.S("sandboxInstanceId") != "" && target.S("nodeId") != "", 400, "invalid_dispatch")
+	attempt := graphAttempt
+	if attempt < 1 {
+		attempt = 1
+	}
 	if existing := t.one("SELECT * FROM execution_work WHERE workflow_run_id=$1 AND execution_id IS NULL", runID); existing != nil {
-		require(existing.S("kind") == kind && existing.S("workflowNodeId") == graphNode && jsonText(existing.O("input")) == jsonText(input) && jsonText(existing.O("target")) == jsonText(target), 409, "dispatch_conflict")
+		require(existing.S("kind") == kind && existing.S("workflowNodeId") == graphNode && existing.N("workflowNodeAttempt") == attempt && jsonText(existing.O("input")) == jsonText(input) && jsonText(existing.O("target")) == jsonText(target), 409, "dispatch_conflict")
 		return existing
 	}
 	id := newID()
 	// Work released without a graph node (the public seam) stores NULL, not the empty string: the
-	// column's CHECK and the scheduler's node-scoped lookups both read "no node" as NULL.
+	// column's CHECK and the scheduler's node-scoped lookups both read "no node" as NULL. The attempt
+	// is written explicitly and never derived from the wire: it is the scheduler's own counter.
 	if availableAt.IsZero() {
-		t.exec("INSERT INTO execution_work(id,workflow_run_id,kind,input,target,workflow_node_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''))", id, runID, kind, jsonText(input), jsonText(target), graphNode)
+		t.exec("INSERT INTO execution_work(id,workflow_run_id,kind,input,target,workflow_node_id,workflow_node_attempt) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7)", id, runID, kind, jsonText(input), jsonText(target), graphNode, attempt)
 	} else {
-		t.exec("INSERT INTO execution_work(id,workflow_run_id,kind,input,target,workflow_node_id,available_at) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7)", id, runID, kind, jsonText(input), jsonText(target), graphNode, availableAt)
+		t.exec("INSERT INTO execution_work(id,workflow_run_id,kind,input,target,workflow_node_id,workflow_node_attempt,available_at) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8)", id, runID, kind, jsonText(input), jsonText(target), graphNode, attempt, availableAt)
 	}
 	t.workSignals = append(t.workSignals, runID)
 	return t.one("SELECT * FROM execution_work WHERE id=$1", id)

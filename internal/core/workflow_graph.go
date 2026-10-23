@@ -36,8 +36,8 @@ var workflowExecutableNodeKinds = map[string]bool{
 // believes a setting is in effect when no runner will ever apply it.
 //
 // They are listed rather than derived so the refusal stays a decision about *this* field, and in this
-// order so the problem list a client renders is deterministic. `executorSlot`, `roleId` and `prompt`
-// are the first phase's agent configuration and are deliberately absent here; the pre-slot
+// order so the problem list a client renders is deterministic. `executorSlot`, `roleId`, `prompt` and
+// `retry` are executed agent configuration and are deliberately absent here; the pre-slot
 // `agentConfig.executor` is absent too, because specs#98 D5 makes it a field to accept and drop
 // rather than refuse.
 var workflowUnsupportedAgentConfigFields = []string{
@@ -45,7 +45,6 @@ var workflowUnsupportedAgentConfigFields = []string{
 	"mcps",
 	"interactive",
 	"outputContract",
-	"retry",
 	"promptInactivity",
 }
 
@@ -414,16 +413,18 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 }
 
 // validateAgentConfig refuses the agent-node configuration the first phase does not execute, naming
-// both the node and the field (#67 D2). The alternative — ignoring the field — is the one outcome the
-// decision rules out: an author who set `retry` would read a publish that succeeded as "my retry
-// policy is in effect", and nothing would ever apply it.
+// both the node and the field (#67 D2), and checks the shape of the configuration it does execute.
+// The alternative — ignoring an unsupported field — is the one outcome the decision rules out: an
+// author who set `interactive` would read a publish that succeeded as "my setting is in effect", and
+// nothing would ever apply it.
 //
 // A key present with a JSON null is not a refusal, and neither is the value the editor writes when
 // nothing is enabled: an empty `skills`/`mcps` list or `interactive: false`. The decision's reason
 // for refusing these fields is that they change execution behavior, and a null changes none, exactly
 // like an empty list or a false flag; refusing them would be the same mistake in the other
 // direction, rejecting a document for a value that asks for nothing. The same reading is what
-// `validSlotHint` applies to an absent-or-null `hint`.
+// `validSlotHint` applies to an absent-or-null `hint`. `retry` is no longer refused — it is executed
+// (retry decision D1) — so it is validated for shape instead of rejected.
 func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	config := data.O("agentConfig")
@@ -433,6 +434,39 @@ func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 			continue
 		}
 		problems = append(problems, workflowGraphProblem{Code: "node_config_unsupported", NodeID: nodeID, Field: field})
+	}
+	return append(problems, validateAgentRetryConfig(nodeID, config)...)
+}
+
+// validateAgentRetryConfig checks `agentConfig.retry` against the policy shape the scheduler executes
+// (retry decision D1). Absent and null mean the default policy, so neither is a problem. A present
+// value must be an object carrying all three fields, each with its own type and range, because a
+// partially filled object would make the author execute a policy they never wrote: the missing fields
+// would silently fall back to defaults, so "I only wanted the delay" would also change the enabled
+// flag or the budget. The object's shape is validated as a unit and every invalid field is reported,
+// so one publish answers with the whole list the author has to fix.
+//
+// Unknown keys are ignored, like everywhere else in the graph document: the schema may grow fields
+// Cloud does not execute yet, and refusing them here would make publishing fail for a newer editor.
+func validateAgentRetryConfig(nodeID string, config Object) []workflowGraphProblem {
+	raw, present := config["retry"]
+	if !present || raw == nil {
+		return nil
+	}
+	retry, ok := asWorkflowObject(raw)
+	if !ok {
+		return []workflowGraphProblem{{Code: "agent_retry_not_an_object", NodeID: nodeID, Field: "agentConfig.retry"}}
+	}
+	problems := []workflowGraphProblem{}
+	if _, ok := retry["enabled"].(bool); !ok {
+		problems = append(problems, workflowGraphProblem{Code: "agent_retry_enabled_invalid", NodeID: nodeID, Field: "agentConfig.retry.enabled"})
+	}
+	if n, ok := workflowRetryInteger(retry["maxRetries"]); !ok || n < workflowRetryMinMaxRetries || n > workflowRetryMaxMaxRetries {
+		problems = append(problems, workflowGraphProblem{Code: "agent_retry_max_retries_invalid", NodeID: nodeID, Field: "agentConfig.retry.maxRetries"})
+	}
+	if n, ok := workflowRetryInteger(retry["initialDelaySeconds"]); !ok ||
+		n < workflowRetryMinInitialDelaySeconds || n > workflowRetryMaxInitialDelaySeconds {
+		problems = append(problems, workflowGraphProblem{Code: "agent_retry_initial_delay_invalid", NodeID: nodeID, Field: "agentConfig.retry.initialDelaySeconds"})
 	}
 	return problems
 }

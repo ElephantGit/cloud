@@ -186,11 +186,11 @@ func TestWorkflowPublishRefusesUnusedAgentConfiguration(t *testing.T) {
 		"name": "Configured flow", "graph": agentRunGraph("", false, nil),
 	}, "adm-cfg-create", 200).O("resource")
 
-	// The graph the editor would write for an author who configured retry and skills: both are in the
-	// canonical schema, and neither is in the first phase's executable subset.
+	// The graph the editor would write for an author who configured skills: it is in the canonical
+	// schema but not in Cloud's executable subset. Retry is no longer part of this set — it is
+	// executed (retry decision D1) and its shape has its own gate tests.
 	configured := agentRunGraph("", false, nil)
 	config := configured["nodes"].([]any)[1].(core.Object).O("data").O("agentConfig")
-	config["retry"] = core.Object{"max": 3}
 	config["skills"] = []any{"review"}
 	live := f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
 	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
@@ -200,7 +200,6 @@ func TestWorkflowPublishRefusesUnusedAgentConfiguration(t *testing.T) {
 	refused := f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-cfg-pub", 400)
 	want := []core.Object{
 		{"code": "node_config_unsupported", "nodeId": "agent-1", "field": "skills"},
-		{"code": "node_config_unsupported", "nodeId": "agent-1", "field": "retry"},
 	}
 	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
 		t.Fatalf("publish problems = %v, want %v", got, want)

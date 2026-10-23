@@ -13,6 +13,10 @@ export interface RunNodeEntry {
   displayName?: string
   startedAt?: string
   finishedAt?: string
+  /** The 1-based attempt this row describes; absent for a node that never started. */
+  attempt?: number
+  /** When the next attempt becomes due; present only while the node is retrying. */
+  retryAt?: string
   error?: string
   /** Whatever the node produced; rendered as text by the inspector. */
   output?: unknown
@@ -25,6 +29,7 @@ const NODE_STATUSES = new Set<GraphWorkflowNodeStatus>([
   'succeeded',
   'failed',
   'cancelled',
+  'retrying',
 ])
 
 /**
@@ -70,6 +75,14 @@ function readNodeEntry(value: unknown): RunNodeEntry | undefined {
   const finishedAt = readTimestamp(value['finishedAt'])
   if (finishedAt !== undefined) {
     entry.finishedAt = finishedAt
+  }
+  const attempt = value['attempt']
+  if (typeof attempt === 'number' && Number.isInteger(attempt) && attempt >= 1) {
+    entry.attempt = attempt
+  }
+  const retryAt = readTimestamp(value['retryAt'])
+  if (retryAt !== undefined) {
+    entry.retryAt = retryAt
   }
   const error = value['error']
   if (typeof error === 'string') {

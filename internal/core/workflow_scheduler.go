@@ -239,13 +239,33 @@ type workflowNodeState struct {
 	DisplayName string
 	StartedAt   string
 	FinishedAt  string
+	// Attempt is the 1-based attempt this state describes (retry decision D4). It is committed on
+	// every agent-node state — running, retrying and terminal — because the scheduler reads the
+	// budget and the evidence scope back from it after a restart, a replica change or a replay; the
+	// attempt counter is not kept anywhere else. Non-agent nodes have no attempts and leave it zero.
+	Attempt int64
+	// RetryAt is the earliest instant at which the next attempt may start (retry decision D3). Only
+	// a `retrying` node carries it, and it is the database clock's instant, so every pass judges the
+	// same wake-up. A terminal or running state has none.
+	RetryAt string
 	// Error is the node's failure reason, and only a failed node has one: a cancelled node was
 	// cancelled, not broken, and an idle or succeeded one has nothing to report. The run viewer
 	// renders it in its own Error section, which is why it is a field of the state rather than
 	// something the viewer has to dig out of Output — a node's Output is what it produced, and a
-	// failed node produced nothing.
+	// failed node produced nothing. A `retrying` node keeps the failed attempt's reason: the retry
+	// replaces a failure, it does not erase it.
 	Error  string
 	Output Object
+}
+
+// attemptNumber is the state's 1-based attempt, reading an absent attempt as the first one. Only
+// agent nodes carry attempts; a state written before attempts existed, or by a non-agent node,
+// belongs to attempt 1.
+func (s *workflowNodeState) attemptNumber() int64 {
+	if s.Attempt < 1 {
+		return 1
+	}
+	return s.Attempt
 }
 
 // object renders the state in the shape the run viewer reads (and the simulator writes). The receiver
@@ -253,6 +273,12 @@ type workflowNodeState struct {
 // caller already holds it in a range variable.
 func (s *workflowNodeState) object() Object {
 	out := Object{"status": s.Status, "displayName": s.DisplayName, "startedAt": s.StartedAt, "finishedAt": s.FinishedAt}
+	if s.Attempt >= 1 {
+		out["attempt"] = s.Attempt
+	}
+	if s.RetryAt != "" {
+		out["retryAt"] = s.RetryAt
+	}
 	if s.Error != "" {
 		out["error"] = s.Error
 	}
@@ -278,6 +304,8 @@ func workflowStatesFromJSON(raw Object) map[string]workflowNodeState {
 			DisplayName: node.S("displayName"),
 			StartedAt:   node.S("startedAt"),
 			FinishedAt:  node.S("finishedAt"),
+			Attempt:     node.N("attempt"),
+			RetryAt:     node.S("retryAt"),
 			Error:       node.S("error"),
 		}
 		if output, ok := asWorkflowObject(node["output"]); ok {
@@ -510,12 +538,52 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	// the user globals frozen in the snapshot. They are derived from the run row on every pass, so a
 	// retry, recovery or re-dispatch reads the same frozen values the run was created with.
 	ambient := workflowAmbientStates(run, run.O("graph"))
+	// A committed `retrying` node owns the run's serial agent slot (D3): until its committed due
+	// instant the pass writes nothing, and once due it starts the next attempt through the same path
+	// a fresh node takes. The branch has to sit here — after the cancel branch and before the
+	// running-session settlement — and it always returns: `retrying` is neither failed nor ready, so
+	// falling through would let the wave loop's "no failure left" rule settle the run succeeded while
+	// the node is still waiting (invariant 3's converse).
+	if nodeID, retrying := workflowRetryingAgentNode(states); retrying {
+		node, known := graph.ByNode[nodeID]
+		if !known {
+			// The state names a node the frozen graph does not contain. No session can be started for
+			// it and no wake-up can ever do anything, so the run fails with Cloud's own explanation
+			// rather than waiting forever — the treatment a snapshot with no start node gets.
+			state := states[nodeID]
+			state.Status = "failed"
+			state.RetryAt = ""
+			state.FinishedAt = nowRFC3339()
+			state.Error = "graph node missing"
+			states[nodeID] = state
+			finishWorkflowRun(t, runID, version, "failed", "graph has no retrying node", states)
+			return
+		}
+		if !workflowRetryDue(t, runID, nodeID) {
+			return
+		}
+		startWorkflowAgentSession(t, run, node, version, states)
+		return
+	}
 	// A committed running agent node settles from its session execution's terminal evidence before
 	// anything else runs: sessions serialize per run (one unregistered agent_session work item per
 	// run), and the next wave waits for the terminal commit. The pass returns after any outcome —
 	// a settled node lets the next tick execute its downstream wave.
 	if nodeID, running := workflowRunningAgentNode(states); running {
-		if _, cont := workflowAgentSessionOutcome(t, runID, version, nodeID, states, unreachableAfter); !cont {
+		node, known := graph.ByNode[nodeID]
+		if !known {
+			// Same corruption as the retrying branch: the node's session was built from this graph, so
+			// a missing entry means the snapshot cannot explain its own state. Fail honestly instead of
+			// looking for evidence that can never settle.
+			state := states[nodeID]
+			state.Status = "failed"
+			state.FinishedAt = nowRFC3339()
+			state.Error = "graph node missing"
+			states[nodeID] = state
+			finishWorkflowRun(t, runID, version, "failed", "graph has no running node", states)
+			return
+		}
+		if _, cont := workflowAgentSessionOutcome(t, runID, version, node, states, unreachableAfter); !cont {
 			return
 		}
 		// A settled session commits its terminal state and continues the pass; that commit bumped

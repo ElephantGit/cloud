@@ -106,6 +106,10 @@ func cancellableWorkflowRun(run Object) bool {
 // settles the run `cancelled` without dispatching another node, and it keeps whatever evidence the
 // run already committed:
 //
+//   - A node waiting to retry: the wait is not a session, so there is nothing to end. The node
+//     settles cancelled, the run settles cancelled and the Workspace is released — the request does
+//     not wait for the committed due instant and does not start the attempt that was waiting for it
+//     (retry decision D5, invariant 6).
 //   - No in-flight agent session: nothing to stop, so the request settles the run now. This is also
 //     the whole story of a run cancelled while `pending`: it never claims, never stamps started_at,
 //     never validates its graph and never provisions a Workspace — the unregistered work, if any,
@@ -130,21 +134,33 @@ func cancellableWorkflowRun(run Object) bool {
 // work and declares its Workspace deletion like any other terminal run (D7).
 func advanceCancelledWorkflowRun(t *transaction, run Object, version int64, states map[string]workflowNodeState, unreachableAfter time.Duration) {
 	runID := run.S("id")
+	// The retrying branch comes first: a waiting retry starts no session, so cancellation must not
+	// wait for its due instant, and the request wins even when retryAt has already passed (D5).
+	if nodeID, retrying := workflowRetryingAgentNode(states); retrying {
+		cancelWorkflowAgentNode(states, nodeID)
+		finishWorkflowRun(t, runID, version, "cancelled", "", states)
+		return
+	}
 	nodeID, running := workflowRunningAgentNode(states)
 	if !running {
 		finishWorkflowRun(t, runID, version, "cancelled", "", states)
 		return
 	}
+	// Evidence is scoped to the attempt in flight: a cancelled node may have an earlier attempt's
+	// result committed on its own execution row, and reading it here would settle the cancel with
+	// that stale outcome instead of stopping the current session (retry decision D4).
+	nodeState := states[nodeID]
+	attempt := nodeState.attemptNumber()
 	// The session's own terminal evidence is the node's state before the request is: it is what
 	// actually ran. Reading it first also ends the session cleanly, without a pointless end request.
 	if e := t.one(`SELECT result FROM node_executions
-		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID); e != nil {
+		WHERE operation_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID, attempt); e != nil {
 		applyWorkflowAgentTerminal(states, nodeID, e.O("result"))
 		finishWorkflowRun(t, runID, version, "cancelled", "", states)
 		return
 	}
 	exec := t.one(`SELECT execution_id FROM node_executions
-		WHERE operation_id=$1 AND workflow_node_id=$2 AND kind='agent_session'`, runID, nodeID)
+		WHERE operation_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='agent_session'`, runID, nodeID, attempt)
 	if exec == nil {
 		// Committed running but never dispatched: there is no session to stop, and waiting for the
 		// startup deadline would hold a run the user already asked to stop.
@@ -158,9 +174,9 @@ func advanceCancelledWorkflowRun(t *transaction, run Object, version int64, stat
 		finishWorkflowRun(t, runID, version, "cancelled", "", states)
 		return
 	}
-	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND kind='end_session'", runID, nodeID)
+	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='end_session'", runID, nodeID, attempt)
 	if cmd == nil {
-		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, "end_session", Object{"reason": "cancelled"})
+		cmd = enqueueWorkflowThreadCommand(t, runID, nodeID, attempt, "end_session", Object{"reason": "cancelled"})
 	}
 	window := startupDuration(t.store.AgentEndConfirmTimeout, 5*time.Minute)
 	if t.one(`SELECT id FROM thread_commands WHERE id=$1
@@ -180,6 +196,8 @@ func applyWorkflowAgentTerminal(states map[string]workflowNodeState, nodeID stri
 	reason := workflowAgentTerminalReason(result)
 	state := states[nodeID]
 	state.Status = workflowSessionEndReason(result.S("reason"))
+	state.Attempt = state.attemptNumber()
+	state.RetryAt = ""
 	state.FinishedAt = nowRFC3339()
 	state.Output = Object{"reason": reason}
 	if state.Status == "failed" {
@@ -206,6 +224,10 @@ func workflowAgentTerminalReason(result Object) string {
 func cancelWorkflowAgentNode(states map[string]workflowNodeState, nodeID string) {
 	state := states[nodeID]
 	state.Status = "cancelled"
+	state.Attempt = state.attemptNumber()
+	// A cancelled wait has no next attempt, so the committed due instant must not survive into the
+	// terminal state: a later pass reading it would see a cancelled node that still looks scheduled.
+	state.RetryAt = ""
 	state.FinishedAt = nowRFC3339()
 	state.Error = ""
 	state.Output = Object{"reason": "cancelled"}

@@ -240,7 +240,7 @@ func TestControlledResidualRaceNoTargetProofAndDispatchBothCommitOrders(t *testi
 				return controlledForceConfirm(tx, &ControlRequest{Action: "force_confirm", Body: Object{"epoch": 1, "version": current.N("version")}}, current)
 			}
 			producer := func(tx *transaction) Object {
-				return enqueueExecutionWork(tx, scene.run, "agent_session", Object{"kind": "agent_session"}, Object{"workspaceId": scene.workspace, "sandboxInstanceId": newID(), "nodeId": "late-producer"}, "", time.Time{})
+				return enqueueExecutionWork(tx, scene.run, "agent_session", Object{"kind": "agent_session"}, Object{"workspaceId": scene.workspace, "sandboxInstanceId": newID(), "nodeId": "late-producer"}, "", 0, time.Time{})
 			}
 			first, second := producer, proof
 			if proofFirst {
@@ -274,7 +274,7 @@ func TestControlledResidualRaceNoTargetProofAndDispatchBothCommitOrders(t *testi
 			r := seedControlledRequest(scene, "legacy-dispatch-race")
 			controlled := func(tx *transaction) Object { return manageResidualCommand(tx, &r) }
 			producer := func(tx *transaction) Object {
-				return enqueueExecutionWork(tx, scene.run, "agent_session", Object{"kind": "agent_session"}, Object{"workspaceId": scene.workspace, "sandboxInstanceId": scene.effect, "runtimeGeneration": 1, "nodeId": "legacy-node"}, "", time.Time{})
+				return enqueueExecutionWork(tx, scene.run, "agent_session", Object{"kind": "agent_session"}, Object{"workspaceId": scene.workspace, "sandboxInstanceId": scene.effect, "runtimeGeneration": 1, "nodeId": "legacy-node"}, "", 0, time.Time{})
 			}
 			first, second := producer, controlled
 			if controlledFirst {

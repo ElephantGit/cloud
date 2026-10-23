@@ -7,8 +7,9 @@ import {
 } from '@/features/workflows/runtime/types'
 
 describe('isNodeWorking', () => {
-  it('marks the executing status as the only live one', () => {
+  it('marks executing and retrying statuses as live', () => {
     expect(isNodeWorking('running')).toBe(true)
+    expect(isNodeWorking('retrying')).toBe(true)
   })
 
   it('is quiet for every awaited or settled status', () => {
@@ -25,6 +26,7 @@ describe('runStatusTone', () => {
       [
         ['pending', 'workflows.run.status.pending'],
         ['running', 'workflows.run.status.running'],
+        ['retrying', 'workflows.run.status.retrying'],
         ['succeeded', 'workflows.run.status.succeeded'],
         ['failed', 'workflows.run.status.failed'],
         ['cancelled', 'workflows.run.status.cancelled'],

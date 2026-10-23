@@ -25,22 +25,27 @@ func enqueueThreadCommand(t *transaction, runID, kind string, body Object) Objec
 	return t.one("SELECT * FROM thread_commands WHERE id=$1", id)
 }
 
-// enqueueWorkflowThreadCommand releases one session command for a WorkflowRun's graph node. It is
-// the WorkflowRun counterpart of enqueueThreadCommand: the row registers against workflow_runs
-// (0049's discriminator), and the graph node scopes the command to the session it addresses — a run
-// executes one agent node at a time but several over its life (D4). Repeating the same request
-// returns the original row; a different request for the same node conflicts.
-func enqueueWorkflowThreadCommand(t *transaction, runID, nodeID, kind string, body Object) Object {
+// enqueueWorkflowThreadCommand releases one session command for a WorkflowRun's graph node and
+// attempt. It is the WorkflowRun counterpart of enqueueThreadCommand: the row registers against
+// workflow_runs (0049's discriminator), and the node scopes the command to the session it addresses —
+// a run executes one agent node at a time but several over its life (D4). The attempt scopes it
+// further, to that node's one session per attempt (retry decision D4): attempt 1's end request must
+// never be reused for, or delivered to, attempt 2. Repeating the same request returns the original
+// row; a different request for the same node and attempt conflicts.
+func enqueueWorkflowThreadCommand(t *transaction, runID, nodeID string, attempt int64, kind string, body Object) Object {
 	require(validID(runID), 400, "invalid_command")
 	require(t.one("SELECT id FROM workflow_runs WHERE id=$1 AND deleted_at IS NULL", runID) != nil, 404, "not_found")
 	require(kind == "end_session", 400, "invalid_command")
 	validateThreadCommand(kind, body)
-	if existing := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND kind=$3", runID, nodeID, kind); existing != nil {
+	if attempt < 1 {
+		attempt = 1
+	}
+	if existing := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind=$4", runID, nodeID, attempt, kind); existing != nil {
 		require(jsonText(existing.O("body")) == jsonText(body), 409, "dispatch_conflict")
 		return existing
 	}
 	id := newID()
-	t.exec("INSERT INTO thread_commands(id,workflow_run_id,workflow_node_id,kind,body) VALUES($1,$2,$3,$4,$5)", id, runID, nodeID, kind, jsonText(body))
+	t.exec("INSERT INTO thread_commands(id,workflow_run_id,workflow_node_id,workflow_node_attempt,kind,body) VALUES($1,$2,$3,$4,$5,$6)", id, runID, nodeID, attempt, kind, jsonText(body))
 	t.commandSignals = append(t.commandSignals, runID)
 	return t.one("SELECT * FROM thread_commands WHERE id=$1", id)
 }
@@ -68,18 +73,21 @@ func claimThreadCommands(t *transaction, limit int64) Object {
 	// rather than `c.*`: row_to_json keeps both copies of a repeated column name, and which one the
 	// decoder ends up with is not something this query should depend on.
 	//
-	// A workflow command is scoped to the graph node whose session it addresses. The join therefore
-	// carries the node scope: one operation id has one live agent_session execution per graph node
-	// over the run's life (D4), and a command must never be claimable against another node's
-	// session. Ordering is by queue_sequence alone — it is the insertion order the Controller's
-	// "a skipped head blocks later commands of that run" rule relies on — because ordering by the
-	// owner column would sort every workflow command after every IssueRun command.
+	// A workflow command is scoped to the graph node and attempt whose session it addresses. The join
+	// therefore carries both: one operation id has one live agent_session execution per graph node
+	// over the run's life (D4), and one more per attempt since retries (retry decision D4), so a
+	// command must never be claimable against another node's session or another attempt's. IssueRun
+	// commands carry no node, and their executions keep the default attempt, so the node branch is
+	// where the attempt predicate belongs. Ordering is by queue_sequence alone — it is the insertion
+	// order the Controller's "a skipped head blocks later commands of that run" rule relies on —
+	// because ordering by the owner column would sort every workflow command after every IssueRun
+	// command.
 	rows := t.list(`SELECT c.id AS command_id,COALESCE(c.run_id,c.workflow_run_id) AS run_id,c.kind,c.body,
 			e.execution_id,e.node_id,e.workspace_id,s.id AS sandbox_instance_id
 		FROM thread_commands c
 		JOIN node_executions e ON e.operation_id=COALESCE(c.run_id,c.workflow_run_id)
 		 AND e.kind='agent_session' AND e.result IS NULL AND e.terminated_by_force_stop_id IS NULL
-		 AND (c.workflow_node_id IS NULL OR e.workflow_node_id=c.workflow_node_id)
+		 AND (c.workflow_node_id IS NULL OR (e.workflow_node_id=c.workflow_node_id AND e.workflow_node_attempt=c.workflow_node_attempt))
 		JOIN workspaces w ON w.id=e.workspace_id
 		JOIN sandbox_instances s ON s.workspace_id=w.id AND s.generation=w.runtime_generation AND s.terminated_at IS NULL
 		WHERE c.delivered_at IS NULL
@@ -99,10 +107,11 @@ func recordThreadCommandDelivered(t *transaction, r *ControlRequest) Object {
 	}
 	e := t.one("SELECT * FROM node_executions WHERE execution_id=$1 AND operation_id=$2 AND kind='agent_session'", execution, owner)
 	require(e != nil, 409, "dispatch_conflict")
-	// A WorkflowRun command names the graph node whose session it addresses; an execution of the
-	// same run under another node is not this command's destination.
+	// A WorkflowRun command names the graph node and attempt whose session it addresses; an execution
+	// of the same run under another node, or under the same node's other attempt, is not this
+	// command's destination (retry decision D4).
 	if node := cmd.S("workflowNodeId"); node != "" {
-		require(e.S("workflowNodeId") == node, 409, "dispatch_conflict")
+		require(e.S("workflowNodeId") == node && e.N("workflowNodeAttempt") == cmd.N("workflowNodeAttempt"), 409, "dispatch_conflict")
 	}
 	if cmd.S("deliveredExecutionId") != "" {
 		require(cmd.S("deliveredExecutionId") == execution, 409, "dispatch_conflict")

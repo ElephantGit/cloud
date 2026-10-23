@@ -443,6 +443,113 @@ func TestValidateWorkflowGraph(t *testing.T) {
 	}
 }
 
+// The publish gate validates the retry policy Cloud executes (retry decision D1). Absent and null are
+// the default policy and are admitted; a present value must be a complete object, because a partial
+// one would silently run defaults for the fields the author left out. Every invalid field is reported
+// at once, and unknown keys are ignored like everywhere else in the document, so a newer editor's
+// extra key cannot block publishing. The runtime parser is deliberately more forgiving
+// (TestWorkflowRetryPolicyOf): a frozen snapshot is never re-gated.
+func TestWorkflowPublishValidatesAgentRetry(t *testing.T) {
+	valid := func(enabled, maxRetries, delay any) Object {
+		return Object{"enabled": enabled, "maxRetries": maxRetries, "initialDelaySeconds": delay}
+	}
+	cases := []struct {
+		name   string
+		absent bool
+		retry  any
+		want   []any
+	}{
+		{name: "no retry policy", absent: true},
+		{name: "retry null", retry: nil},
+		{name: "a complete policy", retry: valid(true, 2, 10)},
+		{name: "the lower bounds", retry: valid(false, 0, 0)},
+		{name: "the upper bounds", retry: valid(true, 5, 300)},
+		{
+			name:  "a policy with an unknown key",
+			retry: Object{"enabled": true, "maxRetries": 2, "initialDelaySeconds": 10, "future": 1},
+		},
+		{
+			name:  "retry not an object",
+			retry: true,
+			want:  []any{Object{"code": "agent_retry_not_an_object", "nodeId": "a", "field": "agentConfig.retry"}},
+		},
+		{
+			name:  "retry a list",
+			retry: []any{true, 2, 10},
+			want:  []any{Object{"code": "agent_retry_not_an_object", "nodeId": "a", "field": "agentConfig.retry"}},
+		},
+		{
+			// A partial object is refused as a whole rather than filled from the defaults: "I only
+			// changed the delay" must not also change the enabled flag or the budget.
+			name:  "an empty object reports every missing field",
+			retry: Object{},
+			want: []any{
+				Object{"code": "agent_retry_enabled_invalid", "nodeId": "a", "field": "agentConfig.retry.enabled"},
+				Object{"code": "agent_retry_max_retries_invalid", "nodeId": "a", "field": "agentConfig.retry.maxRetries"},
+				Object{"code": "agent_retry_initial_delay_invalid", "nodeId": "a", "field": "agentConfig.retry.initialDelaySeconds"},
+			},
+		},
+		{
+			name:  "enabled of the wrong type",
+			retry: valid("true", 2, 10),
+			want:  []any{Object{"code": "agent_retry_enabled_invalid", "nodeId": "a", "field": "agentConfig.retry.enabled"}},
+		},
+		{
+			name:  "maxRetries below the range",
+			retry: valid(true, -1, 10),
+			want:  []any{Object{"code": "agent_retry_max_retries_invalid", "nodeId": "a", "field": "agentConfig.retry.maxRetries"}},
+		},
+		{
+			name:  "maxRetries above the range",
+			retry: valid(true, 6, 10),
+			want:  []any{Object{"code": "agent_retry_max_retries_invalid", "nodeId": "a", "field": "agentConfig.retry.maxRetries"}},
+		},
+		{
+			name:  "a fractional maxRetries",
+			retry: valid(true, 1.5, 10),
+			want:  []any{Object{"code": "agent_retry_max_retries_invalid", "nodeId": "a", "field": "agentConfig.retry.maxRetries"}},
+		},
+		{
+			name:  "initialDelaySeconds below the range",
+			retry: valid(true, 2, -1),
+			want:  []any{Object{"code": "agent_retry_initial_delay_invalid", "nodeId": "a", "field": "agentConfig.retry.initialDelaySeconds"}},
+		},
+		{
+			name:  "initialDelaySeconds above the range",
+			retry: valid(true, 2, 301),
+			want:  []any{Object{"code": "agent_retry_initial_delay_invalid", "nodeId": "a", "field": "agentConfig.retry.initialDelaySeconds"}},
+		},
+		{
+			name:  "every field invalid",
+			retry: Object{"enabled": 1, "maxRetries": "two", "initialDelaySeconds": false},
+			want: []any{
+				Object{"code": "agent_retry_enabled_invalid", "nodeId": "a", "field": "agentConfig.retry.enabled"},
+				Object{"code": "agent_retry_max_retries_invalid", "nodeId": "a", "field": "agentConfig.retry.maxRetries"},
+				Object{"code": "agent_retry_initial_delay_invalid", "nodeId": "a", "field": "agentConfig.retry.initialDelaySeconds"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			extra := Object{}
+			if !tc.absent {
+				extra["retry"] = tc.retry
+			}
+			graph := workflowGraph(
+				[]any{graphStart("s"), graphAgentConfig("a", extra)},
+				[]any{graphEdge("s", "a")}, nil,
+			)
+			got := problemObjects(validateWorkflowGraph(decodeGraph(t, graph)))
+			if tc.want == nil {
+				tc.want = []any{}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("problems = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // The publish gate refuses every condition configuration Cloud cannot evaluate the way desktop's
 // condition.rs does (circus#202 A 条件 2). Each one is a place the evaluator would otherwise answer
 // silently — a no-match, an `and`, an else branch, a whole node output, a literal where desktop

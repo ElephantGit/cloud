@@ -49,7 +49,6 @@ describe('RunStatusMark', () => {
     unmount()
   })
 
-
   it('keeps a plain dot for a live-worthy-looking but non-working status', () => {
     const { unmount } = renderWithProviders(<RunStatusMark status="pending" live />)
     expect(svgCount()).toBe(0)

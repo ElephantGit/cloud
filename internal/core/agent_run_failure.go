@@ -15,7 +15,9 @@ func appendSessionFailure(t *transaction, run Object, detail string) {
 //
 // The plugin-owned adapter codes stay distinct because ADR D2 tells an incomplete configuration, an
 // incompatible one, a refused grant and a failed preparation apart; collapsing them into
-// `agent_failed` would leave the user no way to know which one to fix.
+// `agent_failed` would leave the user no way to know which one to fix. `agent_plugin_unavailable` is
+// the same kind of user-actionable cause — the run's pinned plugin package is not installed on its
+// Workspace — and it is already a public code in the personal-agent admission table.
 func publicSessionFailureCode(detail string) string {
 	switch detail {
 	case "agent_turn_failed", "agent_stream_closed", "agent_unavailable", "agent_start_failed",
@@ -23,7 +25,7 @@ func publicSessionFailureCode(detail string) string {
 		"model_access_expired", "thread_unavailable",
 		"agent_adapter_unavailable", "agent_model_configuration_required",
 		"agent_model_configuration_invalid", "agent_model_protocol_mismatch", "model_grant_mismatch",
-		"agent_model_adapter_failed", "agent_model_adapter_not_applied":
+		"agent_model_adapter_failed", "agent_model_adapter_not_applied", "agent_plugin_unavailable":
 		return detail
 	default:
 		return "agent_failed"

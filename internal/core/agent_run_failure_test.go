@@ -13,6 +13,7 @@ func TestPublicSessionFailureCode(t *testing.T) {
 		"model_grant_mismatch":                                 "model_grant_mismatch",
 		"agent_model_adapter_failed":                           "agent_model_adapter_failed",
 		"agent_model_adapter_not_applied":                      "agent_model_adapter_not_applied",
+		"agent_plugin_unavailable":                             "agent_plugin_unavailable",
 		"":                                                     "agent_failed",
 		"401 from https://provider.example: invalid x-api-key": "agent_failed",
 		"agent_model_something_new":                            "agent_failed",

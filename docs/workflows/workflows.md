@@ -89,7 +89,8 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
 - **Agent 节点在一次真实会话里执行。** 运行第一次调度到 Agent 节点时，Cloud 在运行冻结的 Project 里创建这次运行的 Workspace（isolated，属于该运行），
   等它有连上的 Node 后，按该节点引用的槽位取出创建时冻结的模型绑定，把会话工作项交给 Controller；会话的终态就是该节点的终态。同一运行同一时刻只有一个会话，
   下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
-  缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败，都不会停在 `running` 或报告没有发生的成功。**会话已经开始、但它的 Node 再也报不出消息时**，
+  缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败；Workspace 已经就绪、但这次运行冻结的 Agent 插件没有可用实例
+  （缺失、安装失败或版本不是冻结的那个）时，节点在交给会话之前就以 `agent_plugin_unavailable` 失败，运行同样进入终态。这些情况都不会停在 `running` 或报告没有发生的成功。**会话已经开始、但它的 Node 再也报不出消息时**，
   节点以 `node_unavailable` 结算失败，运行随之进入终态：依据是 Node 的可达性，而不是会话已经跑了多久——心跳超过 `issue_runs.delivery_unreachable_after`（默认 30 分钟），
   或者沙箱连同其上的 Node 一起消失（强制停止留下的正是这个状态），都表示 Node 已经不在了。这个判断和它的窗口与 IssueRun 交付、释放路径用的是同一个
   （`runWorkspaceNodeUnknown`），两种运行不会对"Node 还在吗"给出不同答案；窗口未配置时不会退化成零长度窗口，会话保持等待而不是被立刻误判为失败。

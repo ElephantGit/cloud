@@ -82,8 +82,9 @@ func seedWorkflowSessionSceneGraph(t *testing.T, store *Store, graph Object) (ru
 }
 
 // settleSessionWorkspace completes the run Workspace's create operation the way the control plane
-// does — the operation settles, admission opens with a recorded baseline and checkout — and returns
-// the Workspace id.
+// does — the operation settles, admission opens with a recorded baseline and checkout — and leaves
+// the pinned Agent plugin installed at the version the run froze, which is the row the session
+// startup gate reads. Tests that stage a failed plugin install delete or rewrite that row.
 func settleSessionWorkspace(t *testing.T, store *Store, runID string) string {
 	t.Helper()
 	var wsID, createOp string
@@ -95,6 +96,13 @@ func settleSessionWorkspace(t *testing.T, store *Store, runID string) string {
 		runWorkspaceSettled(tx, runID, "ready")
 		tx.exec(`UPDATE workspaces SET observed_state='ready', admission_open=true, base_commit_id=$2, version=version+1 WHERE id=$1`, wsID, baseCommit)
 		tx.exec(`INSERT INTO clone_executions(execution_id,operation_id,node_id,node_operation_id,workspace_id,input,result,dispatched_epoch) VALUES($1,$2,'node-checkout','op-checkout',$3,'{"kind":"clone"}',jsonb_build_object('outcome','clone_ready','commit',$4::text),1)`, "exec-checkout-"+wsID[:8], createOp, wsID, baseCommit)
+		// The create_workspace plugin step's successful outcome. A run with no frozen version carries no
+		// pinned identity to install, and its session start reports that separately.
+		if pv := tx.one("SELECT plugin_version FROM workflow_runs WHERE id=$1", runID); pv != nil && pv.S("pluginVersion") != "" {
+			tx.exec(`INSERT INTO workspace_plugin_instances(workspace_id,tenant_id,owner_user_id,project_id,source_namespace,identifier,observed_state,observed_version)
+				SELECT id,tenant_id,owner_user_id,project_id,split_part($2,'/',1),split_part($2,'/',2),'installed',$3 FROM workspaces WHERE id=$1`,
+				wsID, opencodeAgentCLI, pv.S("pluginVersion"))
+		}
 		return Object{}
 	}); err != nil {
 		t.Fatalf("settle create: %v", err)
@@ -633,6 +641,111 @@ func TestWorkflowSessionRefusesAnUnfrozenPluginVersion(t *testing.T) {
 	}
 	if installed != "1.0.0" {
 		t.Fatalf("the space's plugin moved to %q; the case no longer proves a live read was refused", installed)
+	}
+}
+
+// A ready Workspace alone does not start the run's session: the run's frozen Agent plugin must also
+// be installed there at that version. The create_workspace plugin step opens admission even when an
+// item install failed, and installs the space's selection rather than the frozen version (circus#527),
+// so both shapes are reachable on a ready Workspace. Failing the node here keeps the run from starting
+// and only then failing on the Node's first turn; nothing is dispatched.
+func TestWorkflowSessionRefusesUnusablePinnedPlugin(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		damage func(t *testing.T, store *Store, wsID string)
+	}{
+		{"absent", func(t *testing.T, store *Store, wsID string) {
+			if _, err := store.Pool.Exec(`DELETE FROM workspace_plugin_instances WHERE workspace_id=$1`, wsID); err != nil {
+				t.Fatalf("remove plugin instance: %v", err)
+			}
+		}},
+		{"failed install", func(t *testing.T, store *Store, wsID string) {
+			if _, err := store.Pool.Exec(`UPDATE workspace_plugin_instances SET observed_state='failed', install_error='download_failed' WHERE workspace_id=$1`, wsID); err != nil {
+				t.Fatalf("fail plugin instance: %v", err)
+			}
+		}},
+		{"other version", func(t *testing.T, store *Store, wsID string) {
+			if _, err := store.Pool.Exec(`UPDATE workspace_plugin_instances SET observed_version='2.0.0' WHERE workspace_id=$1`, wsID); err != nil {
+				t.Fatalf("move plugin version: %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := dispatcherDB(t)
+			runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance to workspace create: %v", err)
+			}
+			wsID := settleSessionWorkspace(t, store, runID)
+			tc.damage(t, store, wsID)
+
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance to session start: %v", err)
+			}
+			status, runErr, states, _ := readWorkflowRun(t, store, runID)
+			if status != "failed" || runErr != "agent_plugin_unavailable" {
+				t.Fatalf("run settled %q error %q; want failed/agent_plugin_unavailable", status, runErr)
+			}
+			agent, _ := asWorkflowObject(states["a"])
+			if agent == nil || agent.S("status") != "failed" || agent.S("error") != "agent_plugin_unavailable" || agent.O("output").S("reason") != "agent_plugin_unavailable" {
+				t.Fatalf("agent state = %v; want failed/agent_plugin_unavailable", states["a"])
+			}
+			var work int
+			if err := store.Pool.QueryRow(`SELECT count(*) FROM execution_work WHERE workflow_run_id=$1`, runID).Scan(&work); err != nil {
+				t.Fatal(err)
+			}
+			if work != 0 {
+				t.Fatalf("%d session work items were released for an unusable pinned plugin", work)
+			}
+		})
+	}
+}
+
+// A session that starts and then finds the plugin unusable reports the generic `agent_failed` with
+// `detail=agent_plugin_unavailable`. A WorkflowRun has no Thread, so the node and run rows are the
+// only public place the cause can appear; `agent_plugin_unavailable` is lifted out of the detail and
+// every other detail stays out (the same bounded set IssueRun threads use).
+func TestWorkflowSessionPluginFailureReachesThePublicRow(t *testing.T) {
+	for _, tc := range []struct {
+		name, detail, want string
+	}{
+		{"plugin package", "agent_plugin_unavailable", "agent_plugin_unavailable"},
+		{"unbounded detail", "401 from https://provider.example: invalid x-api-key", "agent_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := dispatcherDB(t)
+			runID, _, _, _, _ := seedWorkflowSessionScene(t, store)
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance to workspace create: %v", err)
+			}
+			wsID := settleSessionWorkspace(t, store, runID)
+			nodeService, spec := startSessionNode(t, store, runID, wsID, "a")
+			execution := dispatchSession(t, store, runID, "a", nodeService, spec)
+
+			if _, err := store.transact(context.Background(), func(tx *transaction) Object {
+				executionResult(tx, &ControlRequest{Body: Object{
+					"operationId": runID, "executionId": execution, "sequence": int64(1), "event": "ended",
+					"result": Object{
+						"outcome": "agent_session_ended", "reason": "agent_failed",
+						"detail": tc.detail, "node": Object{"nodeId": nodeService},
+					},
+				}}, true)
+				return Object{}
+			}); err != nil {
+				t.Fatalf("report session end: %v", err)
+			}
+			if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+				t.Fatalf("advance after result: %v", err)
+			}
+			status, runErr, states, _ := readWorkflowRun(t, store, runID)
+			if status != "failed" || runErr != tc.want {
+				t.Fatalf("run settled %q error %q; want failed/%s", status, runErr, tc.want)
+			}
+			agent, _ := asWorkflowObject(states["a"])
+			if agent == nil || agent.S("status") != "failed" || agent.S("error") != tc.want || agent.O("output").S("reason") != tc.want {
+				t.Fatalf("agent state = %v; want failed/%s", states["a"], tc.want)
+			}
+		})
 	}
 }
 

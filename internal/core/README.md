@@ -28,6 +28,7 @@
 
 - `NewStore` 从注入的 GORM 获取 `*sql.DB`，装配真实 Workflow Directory/Forms；不连接、迁移或建立全局数据库。
 - `transact` 在 PostgreSQL 事务内取得 `pg_advisory_xact_lock(67420911)`，处理领域 Fault 和提交后的通知。调用方必须使用传入的事务执行钩子，不能嵌套开启 Store 事务。
+- `transactWorkflowRun` 以共享模式取全局锁，再尽力取该 run 的排他锁；取到后按关联 Issue 取 Issue 锁，保证同一 Issue 的 Timeline `seq` 写入不并发。锁顺序固定为全局 → run → Issue → Project。
 - 外部网络、Git、文件和对象存储调用必须在事务外；返回后按原身份、版本和授权重新核对。归档读取、发布源核对与凭据确认有专用入口。
 - `Object` 是边界 JSON 值；`Fault` 与 `ErrorCode` 将可预期错误和数据库失败转换为安全公开错误。领域内部的 panic 只在事务控制边界转换，不能吞掉未知 panic。
 - `Store` 的端口与策略时长由命令装配。开发协作端口见 [collab](../collab/README.md)；物理执行证据不由模拟结果代替。

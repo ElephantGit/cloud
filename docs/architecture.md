@@ -51,8 +51,8 @@ PostgreSQL                                       ▼       │
 
 ## 贯穿始终的原则
 
-1. **PostgreSQL 是唯一的权威。** 其他进程都不持有另一份业务状态。所有决定在 `internal/core` 的短事务里做出，事务用一把全局 advisory lock
-   串行（见 [权威持久化与事务模型](core/persistence.md)）。
+1. **PostgreSQL 是唯一的权威。** 其他进程都不持有另一份业务状态。所有决定在 `internal/core` 的短事务里做出，普通事务用一把全局 advisory lock
+   串行，WorkflowRun 的事务先取这把锁的共享模式、再取该 run 的排他事务锁（见 [权威持久化与事务模型](core/persistence.md)）。
 2. **事务里只做数据库工作。** HTTP、Git、对象存储、Node、Substrate 的调用都在事务之外；需要时拆成"事务 → 外部调用 → 事务"，后一个事务重新
    检查前提。
 3. **先持久化意图，再产生副作用。** 每个外部动作先在 Cloud 登记成持久的操作、effect 或执行，带稳定的幂等身份，Controller 执行后报回证据，

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -348,13 +349,75 @@ func jsonText(v any) string {
 func newID() string         { return uuid.NewString() }
 func validID(s string) bool { _, e := uuid.Parse(s); return e == nil }
 
+// Advisory-lock keys. PostgreSQL keeps the one-bigint and the two-integer key spaces apart, so the
+// control-plane key and the workflow keys can never collide even where their numbers agree. The
+// two-integer keys are listed in the order a transaction takes them (see lockWorkflowRunIssue and
+// lockProjectOperations), so the list doubles as the lock-order record:
+//
+//	67420911                    the control-plane transaction lock (int8)
+//	(67420911, key(runID))      one WorkflowRun's serial-executor lock (int4,int4)
+//	(67420913, key(issueID))    one Issue's Timeline-append lock (int4,int4)
+//	(67420912, key(projectID))  one Project's operation-declaration lock (int4,int4)
+const (
+	controlPlaneLockKey      int64 = 67420911
+	workflowRunLockClass     int32 = 67420911
+	workflowProjectLockClass int32 = 67420912
+	workflowIssueLockClass   int32 = 67420913
+)
+
 // transact serializes mutations within the single-cluster phase-one control plane.
 // The lock is transaction scoped, never spans HTTP or external work. It deliberately
 // trades write throughput for a simple, auditable lock order; reads use the same boundary.
-func (s *Store) transact(ctx context.Context, fn func(*transaction) Object) (out Object, err error) {
+func (s *Store) transact(ctx context.Context, fn func(*transaction) Object) (Object, error) {
+	out, _, err := s.transactLocked(ctx, lockControlPlaneExclusive, nil, fn)
+	return out, err
+}
+
+// transactWorkflowRun is the cross-process serial executor D1 条件② requires for one WorkflowRun.
+// It holds the control-plane lock in shared mode — excluding every ordinary control-plane writer,
+// but not another run — and inside it takes the run's exclusive transaction lock on a best-effort
+// basis. A false `ran` means another replica owns the run right now: nothing was read into a
+// decision, written, signaled or published, and the caller simply retries on its next tick.
+//
+// The lock is the transaction itself, not a lease: PostgreSQL releases it at COMMIT, ROLLBACK or
+// when a crashed replica's connection closes. There is no renewal and no expiry window, and no
+// process-local table is involved, so a replica that never saw the other one still cannot advance
+// the same run concurrently. A hash collision between two run ids only makes them share one lock
+// (extra serialization); it can never give one run two executors.
+//
+// After the run right is held, the transaction also takes the lock of the Issue the run projects
+// onto, because two different runs of one Issue may otherwise append to its Timeline concurrently.
+func (s *Store) transactWorkflowRun(ctx context.Context, runID string, fn func(*transaction) Object) (Object, bool, error) {
+	if !validID(runID) {
+		return nil, false, nil
+	}
+	return s.transactLocked(ctx, lockControlPlaneShared, func(t *transaction) bool {
+		if !t.one("SELECT pg_try_advisory_xact_lock($1,$2) AS locked", workflowRunLockClass, advisoryKey(runID)).B("locked") {
+			return false
+		}
+		lockWorkflowRunIssue(t, runID)
+		return true
+	}, fn)
+}
+
+// lockControlPlaneExclusive is the ordinary writer's boundary: one control-plane mutation at a time.
+func lockControlPlaneExclusive(t *transaction) {
+	t.exec("SELECT pg_advisory_xact_lock($1)", controlPlaneLockKey)
+}
+
+// lockControlPlaneShared is the WorkflowRun boundary: it excludes those ordinary writers, but not a
+// sibling run — two different runs may advance at the same time under their own run locks.
+func lockControlPlaneShared(t *transaction) {
+	t.exec("SELECT pg_advisory_xact_lock_shared($1)", controlPlaneLockKey)
+}
+
+// transactLocked runs fn in one transaction under the control-plane lock taken by lock. claim, when
+// non-nil, runs after that lock; returning false declines the transaction before fn, leaving `ran`
+// false and the transaction rolled back without writes or post-commit signals.
+func (s *Store) transactLocked(ctx context.Context, lock func(*transaction), claim func(*transaction) bool, fn func(*transaction) Object) (out Object, ran bool, err error) {
 	tx, e := s.Pool.BeginTx(ctx, nil)
 	if e != nil {
-		return nil, e
+		return nil, false, e
 	}
 	defer func() { _ = tx.Rollback() }()
 	defer func() {
@@ -376,8 +439,12 @@ func (s *Store) transact(ctx context.Context, fn func(*transaction) Object) (out
 	// enqueue, Thread entry and post-commit hint it produced would be collected in a set that is
 	// discarded when the control plane's own transaction commits. See businessTransaction.
 	t.ctx = context.WithValue(t.ctx, businessTransactionKey{}, t)
-	t.exec("SELECT pg_advisory_xact_lock(67420911)")
+	lock(t)
+	if claim != nil && !claim(t) {
+		return nil, false, nil
+	}
 	out = fn(t)
+	ran = true
 	if err = tx.Commit(); err == nil {
 		s.signalOperations(t.queued)
 		s.signalRuns(SignalWorkAvailable, t.workSignals)
@@ -388,7 +455,49 @@ func (s *Store) transact(ctx context.Context, fn func(*transaction) Object) (out
 			}
 		}
 	}
-	return out, err
+	return out, ran, err
+}
+
+// advisoryKey maps an identity to the int4 half of a two-integer advisory lock. FNV-1a is computed
+// here rather than with PostgreSQL's hashtext so the key does not depend on a server function whose
+// exact hash carries no stability contract. The sign is irrelevant to PostgreSQL's key space.
+func advisoryKey(id string) int32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	return int32(h.Sum32()) // #nosec G115 -- every 32-bit pattern is a valid key; the sign is meaningless.
+}
+
+// lockWorkflowRunIssue serializes a WorkflowRun transaction against other runs that project onto the
+// same Issue. Timeline positions are allocated as MAX(seq)+1 per Issue (nextTimelineSeq), so two runs
+// of one Issue that wrote concurrently could both read the same maximum — the loser's insert then
+// violates UNIQUE(issue_id, seq) and loses its whole transition. The run lock cannot order them: it
+// is per run by design. Runs without an IssueRun association have no Issue Timeline to write and
+// take no lock.
+//
+// The lookup is the same one the projection uses, and the unique constraint on
+// workflow_invocation_ref makes it at most one row. It is taken after the run lock and before fn, so
+// every path that takes both orders them consistently: control plane -> run -> Issue -> Project.
+func lockWorkflowRunIssue(t *transaction, runID string) {
+	i := t.one(`SELECT issue_id FROM issue_runs
+		WHERE workflow_invocation_ref=$1 AND executor_type='workflow' AND deleted_at IS NULL`, runID)
+	if i == nil {
+		return
+	}
+	t.exec("SELECT pg_advisory_xact_lock($1,$2)", workflowIssueLockClass, advisoryKey(i.S("issueId")))
+}
+
+// lockProjectOperations serializes the Project-level decision a WorkflowRun transaction makes when
+// it provisions or declares the deletion of a run Workspace: "this Project has at most one live
+// operation". That rule spans runs, so the per-run lock cannot express it; ordinary control-plane
+// writers are already excluded by the shared control-plane lock, and this lock orders the run
+// transactions that share a Project. Lock order is control plane -> run -> Issue -> Project
+// everywhere, so it cannot cycle: no transaction takes the Project lock while waiting for a lock it
+// does not already hold.
+func lockProjectOperations(t *transaction, projectID string) {
+	if projectID == "" {
+		return
+	}
+	t.exec("SELECT pg_advisory_xact_lock($1,$2)", workflowProjectLockClass, advisoryKey(projectID))
 }
 
 //go:embed migrations/*.sql

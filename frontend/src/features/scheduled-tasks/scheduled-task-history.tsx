@@ -32,6 +32,19 @@ const OUTCOME_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'ou
   cancelled: 'secondary',
 }
 
+const VERDICT_LABELS: Record<string, string> = {
+  pass: '通过',
+  warn: '需注意',
+  fail: '未通过',
+  blocked: '受阻',
+  idle: '无改动',
+  range_unresolved: '范围未确定',
+}
+
+/** The run's own business verdict; a run that never reported one is shown as 未报告. */
+function verdictLabel(verdict?: string | null): string {
+  return verdict ? (VERDICT_LABELS[verdict] ?? verdict) : '未报告'
+}
 function outcomeLabel(outcome: string): string {
   return OUTCOME_LABELS[outcome] ?? outcome
 }
@@ -86,7 +99,18 @@ export function ScheduledTaskHistory({
                         {entry.failureReason}
                       </span>
                     )}
-                  </div>
+                  </div>{' '}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    结论 {verdictLabel(entry.verdict)}
+                    {entry.verdictDetail ? `：${entry.verdictDetail}` : ''}
+                    {entry.runId
+                      ? ` · 产物 ${entry.artifactCount ?? 0} 项${
+                          entry.rejectedArtifactCount
+                            ? `（${entry.rejectedArtifactCount} 项被拒）`
+                            : ''
+                        }`
+                      : ''}
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     计划 {timestamp(entry.scheduledAt)} · 观察 {timestamp(entry.observedAt)} · 版本{' '}
                     {entry.taskRevision}

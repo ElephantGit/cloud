@@ -74,6 +74,9 @@ There are currently 62 SQL files.
 | [0060_node_model_adapter.sql](0060_node_model_adapter.sql) | Plugin model-adapter capability declared by a Node instance at registration |
 | [0061_scheduled_tasks.sql](0061_scheduled_tasks.sql) | Scheduled task definitions, idempotent admission ledger and deadline-cancellation facts |
 | [0062_scheduled_run_results.sql](0062_scheduled_run_results.sql) | Scheduled-run business verdict with its frozen task identity and occurrence audit reference |
+| [0063_scheduled_run_artifacts.sql](0063_scheduled_run_artifacts.sql) | Artifact delivery windows, verified objects, rejections and one unregistered work item per run and kind |
+| [0064_scheduled_artifact_execution_kind.sql](0064_scheduled_artifact_execution_kind.sql) | Artifact execution registration and one pending execution per run and kind, preserving plugin kinds |
+| [0065_scheduled_artifact_recurring_gc.sql](0065_scheduled_artifact_recurring_gc.sql) | Recurring sweeps of settled runs for late PUTs and pruned successful deliveries |
 
 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
 

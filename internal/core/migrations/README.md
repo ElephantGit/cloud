@@ -75,6 +75,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0061_scheduled_tasks.sql](0061_scheduled_tasks.sql) | 定时任务定义、幂等接纳台账与截止取消事实 |
 | [0062_scheduled_run_results.sql](0062_scheduled_run_results.sql) | 定时运行的业务 verdict、冻结的任务归属与 occurrence 审计引用 |
 | [0063_scheduled_run_artifacts.sql](0063_scheduled_run_artifacts.sql) | 定时产物的交付窗口、已核对登记、被拒清单，以及每运行每类一个未登记工作项 |
+| [0064_scheduled_artifact_execution_kind.sql](0064_scheduled_artifact_execution_kind.sql) | 产物执行登记闭集与每运行每类一个未完成执行，保留插件执行类型 |
+| [0065_scheduled_artifact_recurring_gc.sql](0065_scheduled_artifact_recurring_gc.sql) | 已结算运行持续重扫，清理迟到 PUT 与被淘汰的成功交付 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 

@@ -36,10 +36,12 @@ func enqueueExecutionWork(t *transaction, runID, kind string, input, target Obje
 		}
 		require(t.one("SELECT id FROM revisions WHERE run_id=$1", runID) == nil, 409, "delivery_already_settled")
 	}
-	require(kind == "agent_session" || kind == "deliver_revision", 400, "invalid_dispatch")
+	require(kind == "agent_session" || kind == "deliver_revision" || kind == "deliver_scheduled_artifacts", 400, "invalid_dispatch")
 	require(input.S("kind") == kind, 400, "invalid_dispatch")
 	require(target.S("workspaceId") != "" && target.S("sandboxInstanceId") != "" && target.S("nodeId") != "", 400, "invalid_dispatch")
-	if existing := t.one("SELECT * FROM execution_work WHERE run_id=$1 AND execution_id IS NULL", runID); existing != nil {
+	// One unregistered item per run *and kind*: a scheduled run holds its Revision delivery and its
+	// artifact upload at the same time, and dispatch still finds each of them by `kind`.
+	if existing := t.one("SELECT * FROM execution_work WHERE run_id=$1 AND kind=$2 AND execution_id IS NULL", runID, kind); existing != nil {
 		if kind == "deliver_revision" {
 			input = deliveryWorkInput(t, run, existing.S("id"), input)
 		}

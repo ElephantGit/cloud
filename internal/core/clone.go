@@ -91,6 +91,8 @@ func cloneCommand(t *transaction, r *ControlRequest) Object {
 		return submitted(t, r, func() Object { return recordThreadCommandDelivered(t, r) })
 	case "grant_revision_upload":
 		return revisionGrants(t, r.Body.S("executionId"), r.Body.O("checksums"))
+	case "grant_scheduled_artifact_upload":
+		return scheduledArtifactGrants(t, r.Body.S("executionId"), objectRows(r.Body["artifacts"]))
 	default:
 		reject(404, "not_found")
 	}

@@ -31,6 +31,8 @@ func inputObject(in *controlpb.ExecutionInput) (core.Object, error) {
 		return sessionObject(spec.AgentSession)
 	case *controlpb.ExecutionInput_DeliverRevision:
 		return deliveryObject(spec.DeliverRevision)
+	case *controlpb.ExecutionInput_DeliverScheduledArtifacts:
+		return scheduledArtifactsObject(spec.DeliverScheduledArtifacts)
 	default:
 		return nil, invalidInput("invalid_dispatch")
 	}
@@ -46,6 +48,8 @@ func input(o core.Object) *controlpb.ExecutionInput {
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_AgentSession{AgentSession: sessionMessage(o)}}
 	case "deliver_revision":
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_DeliverRevision{DeliverRevision: deliveryMessage(o)}}
+	case "deliver_scheduled_artifacts":
+		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_DeliverScheduledArtifacts{DeliverScheduledArtifacts: &controlpb.DeliverScheduledArtifactsSpec{SessionExecutionId: o.S("sessionExecutionId")}}}
 	default:
 		return &controlpb.ExecutionInput{Spec: &controlpb.ExecutionInput_Clone{Clone: cloneMessage(o)}}
 	}
@@ -177,6 +181,16 @@ func sessionObject(spec *controlpb.AgentSessionSpec) (core.Object, error) {
 		return nil, invalidInput("invalid_dispatch")
 	}
 	return out, nil
+}
+
+// scheduledArtifactsObject is the durable form of the artifact-upload input: it names the ended
+// session whose declaration Cloud persisted and never a location. Object keys belong to Cloud and
+// reach the Node only through an upload grant.
+func scheduledArtifactsObject(spec *controlpb.DeliverScheduledArtifactsSpec) (core.Object, error) {
+	if spec.GetSessionExecutionId() == "" {
+		return nil, invalidInput("invalid_dispatch")
+	}
+	return core.Object{"kind": "deliver_scheduled_artifacts", "sessionExecutionId": spec.GetSessionExecutionId()}, nil
 }
 
 // priorObject is the durable form of a PriorRevision. A session spec's names where the Node fetches
@@ -322,6 +336,16 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 		unchanged := outcome.RevisionUnchanged
 		out["finalCommit"], out["baseCommit"], out["revisionRef"] = unchanged.GetFinalCommit(), unchanged.GetBaseCommit(), unchanged.GetRevisionRef()
 		out["history"] = storedObject(unchanged.GetHistory())
+	case *controlpb.ExecutionResult_ScheduledArtifactsDelivered:
+		out["outcome"] = "scheduled_artifacts_delivered"
+		artifacts := outcome.ScheduledArtifactsDelivered.GetArtifacts()
+		uploaded := make([]core.Object, 0, len(artifacts))
+		for _, artifact := range artifacts {
+			uploaded = append(uploaded, storedObject(artifact))
+		}
+		out["artifacts"] = uploaded
+	case *controlpb.ExecutionResult_ScheduledArtifactsFailed:
+		out["outcome"], out["reason"] = "scheduled_artifacts_failed", shortEnum(outcome.ScheduledArtifactsFailed.GetReason().String(), "SCHEDULED_ARTIFACTS_FAILURE_REASON_")
 	case *controlpb.ExecutionResult_RevisionFailed:
 		out["outcome"], out["reason"] = "revision_failed", shortEnum(outcome.RevisionFailed.GetReason().String(), "REVISION_FAILURE_REASON_")
 	default:
@@ -390,6 +414,14 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		out.Outcome = &controlpb.ExecutionResult_RevisionUnchanged{RevisionUnchanged: &controlpb.RevisionUnchanged{FinalCommit: o.S("finalCommit"), BaseCommit: o.S("baseCommit"), RevisionRef: o.S("revisionRef"), History: storedMessage(o.O("history"))}}
 	case "revision_failed":
 		out.Outcome = &controlpb.ExecutionResult_RevisionFailed{RevisionFailed: &controlpb.RevisionFailed{Reason: controlpb.RevisionFailureReason(enum(controlpb.RevisionFailureReason_value, "REVISION_FAILURE_REASON_", o.S("reason")))}}
+	case "scheduled_artifacts_delivered":
+		delivered := &controlpb.ScheduledArtifactsDelivered{}
+		for _, artifact := range rows(o["artifacts"]) {
+			delivered.Artifacts = append(delivered.Artifacts, storedMessage(artifact))
+		}
+		out.Outcome = &controlpb.ExecutionResult_ScheduledArtifactsDelivered{ScheduledArtifactsDelivered: delivered}
+	case "scheduled_artifacts_failed":
+		out.Outcome = &controlpb.ExecutionResult_ScheduledArtifactsFailed{ScheduledArtifactsFailed: &controlpb.ScheduledArtifactsFailed{Reason: controlpb.ScheduledArtifactsFailureReason(enum(controlpb.ScheduledArtifactsFailureReason_value, "SCHEDULED_ARTIFACTS_FAILURE_REASON_", o.S("reason")))}}
 	default:
 		failed := &controlpb.CloneFailed{Reason: controlpb.CloneFailureReason(controlpb.CloneFailureReason_value[o.S("reason")])}
 		if retained, ok := o["retainedPath"].(string); ok {

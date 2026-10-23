@@ -141,6 +141,9 @@ func (s *Store) settleSessionEnded(t *transaction, runID, executionID string, en
 	if err := recordScheduledRunResult(t, runID, ended); err != nil {
 		return err
 	}
+	if err := recordScheduledArtifacts(t, runID, executionID, ended); err != nil {
+		return err
+	}
 	if ended.S("reason") == "agent_failed" {
 		appendSessionFailure(t, o, ended.S("detail"))
 	}

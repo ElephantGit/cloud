@@ -54,6 +54,15 @@ every other actual delivery execution needs its own completed verification. Ther
 delivery abandonment. `failed`, `skipped`, business timeouts, absent object storage and missing results do not imply explicit abandonment (A1).
 Entries with insufficient evidence remain open.
 
+The continuation guard in the
+[late-delivery fact takeover ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261022-late-delivery-fact-takeover.md)
+also applies to residual rescue, covering both automatic reconciliation (`reconciling` / `reclaiming` / `cleared` ledgers) and the explicit
+controlled takeover of ledgerless D8: if the same Issue already has a later-created Run (ordered by `run.enqueued` activity seq), or the
+creation-order evidence for the original Run and the Issue's other Runs is missing or ambiguous, the original delivery's late terminal is stored
+as declaration and receipt only. No Revision is registered, and the receipt is treated neither as a verified delivery nor as cleanup authority.
+Only when the order evidence is unique and no later-created Run exists is it registered under the original delivery's evidence verification rules;
+receiving a fact does not itself acquire reclamation responsibility.
+
 Authorized automatic cleanup follows existing quiesce → terminate → cleanup. A quiesce refusal leaves the original operation in `retry_wait`, retaining
 the original authority and guards for evidence collection and retry (A3). It neither restores new execution eligibility, escalates to force-stop,
 nor creates another operation.

@@ -46,6 +46,12 @@ execution、clone、work 和数据目标。迟到事实可以补充原目标，�
 当前没有可统一引用的既有“明确放弃交付”记录来源。`failed`、`skipped`、业务超时、没有对象存储或无结果都不自动等于明确放弃（A1），
 证据不足的条目继续保持未完成。
 
+[迟到交付事实接管 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-run/20261022-late-delivery-fact-takeover.md)
+的续作保护同样适用于残留救援，覆盖自动对账（`reconciling` / `reclaiming` / `cleared` 账本）和无账本 D8 的显式受控接管两类路径：
+若同一 Issue 已有后创建的 Run（按 `run.enqueued` activity seq 比较），或原 Run 与同 Issue 其他 Run 的创建顺序证据缺失或有歧义，
+原交付的迟到终态仅保存声明与回执，不登记 Revision，也不把它当作已验证交付或清理授权。只有顺序证据唯一且没有后创建 Run 时，
+才按原交付的证据核验规则登记；事实接收本身不等于取得回收责任。
+
 自动回收获授权后沿已有 quiesce → terminate → cleanup 推进。quiesce 拒绝使原 operation 留在 `retry_wait`，保留原责任及保护，稍后重新取证再试（A3）。
 它不恢复新执行资格，不升级为强停，也不重新创建 operation。
 既有 Controller 因终止未确认而请求 `blocked` 时，此系统责任也保存为可领取的 `retry_wait`；实际计划和许可仍重新检查证据。

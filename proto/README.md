@@ -12,8 +12,8 @@
 | `lease.proto` | ControllerLeaseService |
 | `executions.proto` | ExecutionService、领取/登记/恢复 |
 | `plugin_executions.proto` | 插件安装/移除输入与结果，含冻结的 Agent 声明版本与摘要关联（不含静态副本） |
-| `agent_executions.proto` | Agent 会话、Revision 输入/结果与上传授权 |
-| `agent_runs.proto` | AgentRunService、Thread 事件与命令 |
+| `agent_executions.proto` | Agent 会话（含定时运行的 verdict 与产物声明）、Revision 与定时产物的输入/结果、上传授权 |
+| `agent_runs.proto` | AgentRunService、Thread 事件与命令、产物上传授权 |
 | `operations.proto` | WorkspaceOperationService |
 | `nodes.proto` | NodeReportService、身份与能力 |
 | `runtime_control.proto` | RuntimeControlService、快照/确认/许可/强停 |

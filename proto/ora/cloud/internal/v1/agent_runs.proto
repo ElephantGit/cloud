@@ -7,8 +7,9 @@ import "ora/cloud/internal/v1/executions.proto";
 
 // What an Agent IssueRun needs beyond ExecutionService: the session execution's non-terminal
 // Thread events, Thread commands (user turns and end requests) Cloud persisted for the Node, and
-// upload grants for a delivery execution. Writes carry `submission_id` with the same replay rules as
-// ExecutionService and are fenced by the caller's lease `epoch`.
+// upload grants for a delivery execution or for the artifacts a scheduled run declared. Writes carry
+// `submission_id` with the same replay rules as ExecutionService and are fenced by the caller's lease
+// `epoch`.
 service AgentRunService {
   // Replaces a bounded ephemeral snapshot. No receipt or Node Ack is produced.
   rpc PublishThreadPreview(PublishThreadPreviewRequest) returns (PublishThreadPreviewResponse);
@@ -22,6 +23,9 @@ service AgentRunService {
   // Issues fresh upload grants for a registered delivery execution that has no result yet. Not a
   // write: nothing is recorded, and every call issues new grants.
   rpc GrantRevisionUpload(GrantRevisionUploadRequest) returns (GrantRevisionUploadResponse);
+  // Issues fresh upload grants for the declared artifacts of a registered scheduled-artifact
+  // delivery execution. Not a write: nothing is recorded, and every call issues new grants.
+  rpc GrantScheduledArtifactUpload(GrantScheduledArtifactUploadRequest) returns (GrantScheduledArtifactUploadResponse);
 }
 
 // One non-terminal event of a session execution, as the Node sent it. Thread events share the
@@ -144,5 +148,28 @@ message GrantRevisionUploadRequest {
 
 message GrantRevisionUploadResponse {
   // Exactly one grant, for the input's history_key.
+  repeated UploadGrant grants = 1;
+}
+
+// One declared artifact to upload, as the Node declared it. Cloud grants only indices it persisted
+// for this run and binds the declared size and digest into the PUT signature.
+message ScheduledArtifactUpload {
+  uint32 index = 1;
+  uint64 size = 2;
+  // Lowercase hexadecimal SHA-256.
+  string sha256 = 3;
+}
+
+message GrantScheduledArtifactUploadRequest {
+  int64 epoch = 1;
+  // A scheduled-artifact delivery execution registered through RecordDispatch.
+  string execution_id = 2;
+  // At most 64 declared artifacts. An index outside the run's persisted declaration, a size or digest
+  // that differs from it, or one already registered fails with INVALID_ARGUMENT.
+  repeated ScheduledArtifactUpload artifacts = 3;
+}
+
+message GrantScheduledArtifactUploadResponse {
+  // One grant per requested artifact, in the same order. The object key stays Cloud's choice.
   repeated UploadGrant grants = 1;
 }

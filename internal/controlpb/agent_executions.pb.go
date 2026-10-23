@@ -22,6 +22,54 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// What admitted an Agent session. Only a scheduled occurrence may report a business verdict or run
+// artifacts; a manual IssueRun leaves it unspecified.
+type AgentSessionTrigger int32
+
+const (
+	AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED AgentSessionTrigger = 0
+	AgentSessionTrigger_AGENT_SESSION_TRIGGER_SCHEDULED   AgentSessionTrigger = 1
+)
+
+// Enum value maps for AgentSessionTrigger.
+var (
+	AgentSessionTrigger_name = map[int32]string{
+		0: "AGENT_SESSION_TRIGGER_UNSPECIFIED",
+		1: "AGENT_SESSION_TRIGGER_SCHEDULED",
+	}
+	AgentSessionTrigger_value = map[string]int32{
+		"AGENT_SESSION_TRIGGER_UNSPECIFIED": 0,
+		"AGENT_SESSION_TRIGGER_SCHEDULED":   1,
+	}
+)
+
+func (x AgentSessionTrigger) Enum() *AgentSessionTrigger {
+	p := new(AgentSessionTrigger)
+	*p = x
+	return p
+}
+
+func (x AgentSessionTrigger) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AgentSessionTrigger) Descriptor() protoreflect.EnumDescriptor {
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[0].Descriptor()
+}
+
+func (AgentSessionTrigger) Type() protoreflect.EnumType {
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[0]
+}
+
+func (x AgentSessionTrigger) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AgentSessionTrigger.Descriptor instead.
+func (AgentSessionTrigger) EnumDescriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{0}
+}
+
 type AgentSessionEndReason int32
 
 const (
@@ -66,11 +114,11 @@ func (x AgentSessionEndReason) String() string {
 }
 
 func (AgentSessionEndReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[0].Descriptor()
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[1].Descriptor()
 }
 
 func (AgentSessionEndReason) Type() protoreflect.EnumType {
-	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[0]
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[1]
 }
 
 func (x AgentSessionEndReason) Number() protoreflect.EnumNumber {
@@ -79,7 +127,200 @@ func (x AgentSessionEndReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentSessionEndReason.Descriptor instead.
 func (AgentSessionEndReason) EnumDescriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{0}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{1}
+}
+
+// The frozen business verdict vocabulary Cloud shares with local scheduled runs.
+type ScheduledVerdict int32
+
+const (
+	ScheduledVerdict_SCHEDULED_VERDICT_UNSPECIFIED      ScheduledVerdict = 0
+	ScheduledVerdict_SCHEDULED_VERDICT_PASS             ScheduledVerdict = 1
+	ScheduledVerdict_SCHEDULED_VERDICT_WARN             ScheduledVerdict = 2
+	ScheduledVerdict_SCHEDULED_VERDICT_FAIL             ScheduledVerdict = 3
+	ScheduledVerdict_SCHEDULED_VERDICT_BLOCKED          ScheduledVerdict = 4
+	ScheduledVerdict_SCHEDULED_VERDICT_IDLE             ScheduledVerdict = 5
+	ScheduledVerdict_SCHEDULED_VERDICT_RANGE_UNRESOLVED ScheduledVerdict = 6
+)
+
+// Enum value maps for ScheduledVerdict.
+var (
+	ScheduledVerdict_name = map[int32]string{
+		0: "SCHEDULED_VERDICT_UNSPECIFIED",
+		1: "SCHEDULED_VERDICT_PASS",
+		2: "SCHEDULED_VERDICT_WARN",
+		3: "SCHEDULED_VERDICT_FAIL",
+		4: "SCHEDULED_VERDICT_BLOCKED",
+		5: "SCHEDULED_VERDICT_IDLE",
+		6: "SCHEDULED_VERDICT_RANGE_UNRESOLVED",
+	}
+	ScheduledVerdict_value = map[string]int32{
+		"SCHEDULED_VERDICT_UNSPECIFIED":      0,
+		"SCHEDULED_VERDICT_PASS":             1,
+		"SCHEDULED_VERDICT_WARN":             2,
+		"SCHEDULED_VERDICT_FAIL":             3,
+		"SCHEDULED_VERDICT_BLOCKED":          4,
+		"SCHEDULED_VERDICT_IDLE":             5,
+		"SCHEDULED_VERDICT_RANGE_UNRESOLVED": 6,
+	}
+)
+
+func (x ScheduledVerdict) Enum() *ScheduledVerdict {
+	p := new(ScheduledVerdict)
+	*p = x
+	return p
+}
+
+func (x ScheduledVerdict) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScheduledVerdict) Descriptor() protoreflect.EnumDescriptor {
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[2].Descriptor()
+}
+
+func (ScheduledVerdict) Type() protoreflect.EnumType {
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[2]
+}
+
+func (x ScheduledVerdict) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScheduledVerdict.Descriptor instead.
+func (ScheduledVerdict) EnumDescriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{2}
+}
+
+// The closed set of artifact types a scheduled run may declare.
+type ScheduledArtifactKind int32
+
+const (
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_UNSPECIFIED ScheduledArtifactKind = 0
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_MARKDOWN    ScheduledArtifactKind = 1
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_JSON        ScheduledArtifactKind = 2
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_TEXT        ScheduledArtifactKind = 3
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_LOG         ScheduledArtifactKind = 4
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_XML         ScheduledArtifactKind = 5
+	ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_HTML        ScheduledArtifactKind = 6
+)
+
+// Enum value maps for ScheduledArtifactKind.
+var (
+	ScheduledArtifactKind_name = map[int32]string{
+		0: "SCHEDULED_ARTIFACT_KIND_UNSPECIFIED",
+		1: "SCHEDULED_ARTIFACT_KIND_MARKDOWN",
+		2: "SCHEDULED_ARTIFACT_KIND_JSON",
+		3: "SCHEDULED_ARTIFACT_KIND_TEXT",
+		4: "SCHEDULED_ARTIFACT_KIND_LOG",
+		5: "SCHEDULED_ARTIFACT_KIND_XML",
+		6: "SCHEDULED_ARTIFACT_KIND_HTML",
+	}
+	ScheduledArtifactKind_value = map[string]int32{
+		"SCHEDULED_ARTIFACT_KIND_UNSPECIFIED": 0,
+		"SCHEDULED_ARTIFACT_KIND_MARKDOWN":    1,
+		"SCHEDULED_ARTIFACT_KIND_JSON":        2,
+		"SCHEDULED_ARTIFACT_KIND_TEXT":        3,
+		"SCHEDULED_ARTIFACT_KIND_LOG":         4,
+		"SCHEDULED_ARTIFACT_KIND_XML":         5,
+		"SCHEDULED_ARTIFACT_KIND_HTML":        6,
+	}
+)
+
+func (x ScheduledArtifactKind) Enum() *ScheduledArtifactKind {
+	p := new(ScheduledArtifactKind)
+	*p = x
+	return p
+}
+
+func (x ScheduledArtifactKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScheduledArtifactKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[3].Descriptor()
+}
+
+func (ScheduledArtifactKind) Type() protoreflect.EnumType {
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[3]
+}
+
+func (x ScheduledArtifactKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScheduledArtifactKind.Descriptor instead.
+func (ScheduledArtifactKind) EnumDescriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{3}
+}
+
+// Why one candidate was refused instead of declared. Cloud records the rejection next to the
+// artifacts that succeeded, so a refusal is visible to the reader.
+type ScheduledArtifactRejectionReason int32
+
+const (
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED      ScheduledArtifactRejectionReason = 0
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE ScheduledArtifactRejectionReason = 1
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_PATH_UNSAFE      ScheduledArtifactRejectionReason = 2
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_SYMLINK          ScheduledArtifactRejectionReason = 3
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_HARD_LINK        ScheduledArtifactRejectionReason = 4
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE        ScheduledArtifactRejectionReason = 5
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY         ScheduledArtifactRejectionReason = 6
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE  ScheduledArtifactRejectionReason = 7
+	ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED      ScheduledArtifactRejectionReason = 8
+)
+
+// Enum value maps for ScheduledArtifactRejectionReason.
+var (
+	ScheduledArtifactRejectionReason_name = map[int32]string{
+		0: "SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED",
+		1: "SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE",
+		2: "SCHEDULED_ARTIFACT_REJECTION_REASON_PATH_UNSAFE",
+		3: "SCHEDULED_ARTIFACT_REJECTION_REASON_SYMLINK",
+		4: "SCHEDULED_ARTIFACT_REJECTION_REASON_HARD_LINK",
+		5: "SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE",
+		6: "SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY",
+		7: "SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE",
+		8: "SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED",
+	}
+	ScheduledArtifactRejectionReason_value = map[string]int32{
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED":      0,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE": 1,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_PATH_UNSAFE":      2,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_SYMLINK":          3,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_HARD_LINK":        4,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE":        5,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY":         6,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE":  7,
+		"SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED":      8,
+	}
+)
+
+func (x ScheduledArtifactRejectionReason) Enum() *ScheduledArtifactRejectionReason {
+	p := new(ScheduledArtifactRejectionReason)
+	*p = x
+	return p
+}
+
+func (x ScheduledArtifactRejectionReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScheduledArtifactRejectionReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[4].Descriptor()
+}
+
+func (ScheduledArtifactRejectionReason) Type() protoreflect.EnumType {
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[4]
+}
+
+func (x ScheduledArtifactRejectionReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScheduledArtifactRejectionReason.Descriptor instead.
+func (ScheduledArtifactRejectionReason) EnumDescriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{4}
 }
 
 type RevisionFailureReason int32
@@ -136,11 +377,11 @@ func (x RevisionFailureReason) String() string {
 }
 
 func (RevisionFailureReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[1].Descriptor()
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[5].Descriptor()
 }
 
 func (RevisionFailureReason) Type() protoreflect.EnumType {
-	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[1]
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[5]
 }
 
 func (x RevisionFailureReason) Number() protoreflect.EnumNumber {
@@ -149,7 +390,66 @@ func (x RevisionFailureReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RevisionFailureReason.Descriptor instead.
 func (RevisionFailureReason) EnumDescriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{1}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{5}
+}
+
+type ScheduledArtifactsFailureReason int32
+
+const (
+	ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED ScheduledArtifactsFailureReason = 0
+	// The Node could not read the reserved directory it had declared.
+	ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_WORKSPACE_UNAVAILABLE ScheduledArtifactsFailureReason = 1
+	// An upload failed or was refused after the retries ran out.
+	ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_UPLOAD_FAILED ScheduledArtifactsFailureReason = 2
+	// The Node has no persisted declaration for the session, for example after a restart.
+	ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_DECLARATION_UNAVAILABLE ScheduledArtifactsFailureReason = 3
+	// The attempt was terminated before it reached its own verdict; a new execution may retry.
+	ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_INTERRUPTED ScheduledArtifactsFailureReason = 4
+)
+
+// Enum value maps for ScheduledArtifactsFailureReason.
+var (
+	ScheduledArtifactsFailureReason_name = map[int32]string{
+		0: "SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED",
+		1: "SCHEDULED_ARTIFACTS_FAILURE_REASON_WORKSPACE_UNAVAILABLE",
+		2: "SCHEDULED_ARTIFACTS_FAILURE_REASON_UPLOAD_FAILED",
+		3: "SCHEDULED_ARTIFACTS_FAILURE_REASON_DECLARATION_UNAVAILABLE",
+		4: "SCHEDULED_ARTIFACTS_FAILURE_REASON_INTERRUPTED",
+	}
+	ScheduledArtifactsFailureReason_value = map[string]int32{
+		"SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED":             0,
+		"SCHEDULED_ARTIFACTS_FAILURE_REASON_WORKSPACE_UNAVAILABLE":   1,
+		"SCHEDULED_ARTIFACTS_FAILURE_REASON_UPLOAD_FAILED":           2,
+		"SCHEDULED_ARTIFACTS_FAILURE_REASON_DECLARATION_UNAVAILABLE": 3,
+		"SCHEDULED_ARTIFACTS_FAILURE_REASON_INTERRUPTED":             4,
+	}
+)
+
+func (x ScheduledArtifactsFailureReason) Enum() *ScheduledArtifactsFailureReason {
+	p := new(ScheduledArtifactsFailureReason)
+	*p = x
+	return p
+}
+
+func (x ScheduledArtifactsFailureReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScheduledArtifactsFailureReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[6].Descriptor()
+}
+
+func (ScheduledArtifactsFailureReason) Type() protoreflect.EnumType {
+	return &file_ora_cloud_internal_v1_agent_executions_proto_enumTypes[6]
+}
+
+func (x ScheduledArtifactsFailureReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScheduledArtifactsFailureReason.Descriptor instead.
+func (ScheduledArtifactsFailureReason) EnumDescriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{6}
 }
 
 // Commit identity the Node exports to the Agent's process tree as GIT_AUTHOR_* and GIT_COMMITTER_*;
@@ -563,8 +863,11 @@ type AgentSessionSpec struct {
 	WorkspaceDirectory []*WorkspaceListing `protobuf:"bytes,8,rep,name=workspace_directory,json=workspaceDirectory,proto3" json:"workspace_directory,omitempty"`
 	// Exact non-secret configuration frozen at run admission; authority is acquired over mTLS.
 	AgentConfiguration *AgentModelConfiguration `protobuf:"bytes,9,opt,name=agent_configuration,json=agentConfiguration,proto3" json:"agent_configuration,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// What admitted this session. Unspecified for a manual IssueRun, which is the shape every session
+	// released before Cloud admitted scheduled occurrences already has.
+	Trigger       AgentSessionTrigger `protobuf:"varint,10,opt,name=trigger,proto3,enum=ora.cloud.internal.v1.AgentSessionTrigger" json:"trigger,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AgentSessionSpec) Reset() {
@@ -658,6 +961,13 @@ func (x *AgentSessionSpec) GetAgentConfiguration() *AgentModelConfiguration {
 		return x.AgentConfiguration
 	}
 	return nil
+}
+
+func (x *AgentSessionSpec) GetTrigger() AgentSessionTrigger {
+	if x != nil {
+		return x.Trigger
+	}
+	return AgentSessionTrigger_AGENT_SESSION_TRIGGER_UNSPECIFIED
 }
 
 // Versioned adapter identity, never a runtime token or upstream credential.
@@ -861,9 +1171,15 @@ type AgentSessionEnded struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Reason AgentSessionEndReason  `protobuf:"varint,1,opt,name=reason,proto3,enum=ora.cloud.internal.v1.AgentSessionEndReason" json:"reason,omitempty"`
 	// Bounded code such as `agent_plugin_unavailable`; never raw Agent output.
-	Detail        *string `protobuf:"bytes,2,opt,name=detail,proto3,oneof" json:"detail,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Detail *string `protobuf:"bytes,2,opt,name=detail,proto3,oneof" json:"detail,omitempty"`
+	// The business result the executor parsed out of the run's final Assistant turn. Set only for a
+	// scheduled session that ended normally: Cloud verifies the values but never parses the Thread.
+	ScheduledResult *ScheduledRunResult `protobuf:"bytes,3,opt,name=scheduled_result,json=scheduledResult,proto3" json:"scheduled_result,omitempty"`
+	// What the scheduled run declared under its reserved artifact directory, before the Workspace was
+	// released. Accepted and rejected candidates are both visible, so a refusal is never silent.
+	ArtifactManifest *ScheduledArtifactManifest `protobuf:"bytes,4,opt,name=artifact_manifest,json=artifactManifest,proto3" json:"artifact_manifest,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AgentSessionEnded) Reset() {
@@ -910,6 +1226,262 @@ func (x *AgentSessionEnded) GetDetail() string {
 	return ""
 }
 
+func (x *AgentSessionEnded) GetScheduledResult() *ScheduledRunResult {
+	if x != nil {
+		return x.ScheduledResult
+	}
+	return nil
+}
+
+func (x *AgentSessionEnded) GetArtifactManifest() *ScheduledArtifactManifest {
+	if x != nil {
+		return x.ArtifactManifest
+	}
+	return nil
+}
+
+// The business conclusion of one scheduled run, independent of the execution-layer result: a
+// completed run may report FAIL, and neither value is ever derived from the other.
+type ScheduledRunResult struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Verdict ScheduledVerdict       `protobuf:"varint,1,opt,name=verdict,proto3,enum=ora.cloud.internal.v1.ScheduledVerdict" json:"verdict,omitempty"`
+	// Free text the agent attached to its verdict, at most 2000 characters; never a second
+	// machine-readable channel.
+	VerdictDetail *string `protobuf:"bytes,2,opt,name=verdict_detail,json=verdictDetail,proto3,oneof" json:"verdict_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledRunResult) Reset() {
+	*x = ScheduledRunResult{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledRunResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledRunResult) ProtoMessage() {}
+
+func (x *ScheduledRunResult) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledRunResult.ProtoReflect.Descriptor instead.
+func (*ScheduledRunResult) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ScheduledRunResult) GetVerdict() ScheduledVerdict {
+	if x != nil {
+		return x.Verdict
+	}
+	return ScheduledVerdict_SCHEDULED_VERDICT_UNSPECIFIED
+}
+
+func (x *ScheduledRunResult) GetVerdictDetail() string {
+	if x != nil && x.VerdictDetail != nil {
+		return *x.VerdictDetail
+	}
+	return ""
+}
+
+// One artifact the run declared and Cloud grants a single object for. `index` identifies it in the
+// upload grant and registration; it is never part of an object key.
+type ScheduledArtifactItem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Index uint32                 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	// Forward-slash path relative to the reserved directory; for display only.
+	DisplayName string                `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Kind        ScheduledArtifactKind `protobuf:"varint,3,opt,name=kind,proto3,enum=ora.cloud.internal.v1.ScheduledArtifactKind" json:"kind,omitempty"`
+	SizeBytes   uint64                `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// Lowercase hexadecimal SHA-256 the executor measured while collecting the file.
+	Sha256        string `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactItem) Reset() {
+	*x = ScheduledArtifactItem{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactItem) ProtoMessage() {}
+
+func (x *ScheduledArtifactItem) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactItem.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactItem) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ScheduledArtifactItem) GetIndex() uint32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *ScheduledArtifactItem) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ScheduledArtifactItem) GetKind() ScheduledArtifactKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_UNSPECIFIED
+}
+
+func (x *ScheduledArtifactItem) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *ScheduledArtifactItem) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+type ScheduledArtifactRejection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The candidate's relative path, or the reserved directory itself when it was refused whole.
+	DisplayName   string                           `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Reason        ScheduledArtifactRejectionReason `protobuf:"varint,2,opt,name=reason,proto3,enum=ora.cloud.internal.v1.ScheduledArtifactRejectionReason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactRejection) Reset() {
+	*x = ScheduledArtifactRejection{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactRejection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactRejection) ProtoMessage() {}
+
+func (x *ScheduledArtifactRejection) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactRejection.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactRejection) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ScheduledArtifactRejection) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ScheduledArtifactRejection) GetReason() ScheduledArtifactRejectionReason {
+	if x != nil {
+		return x.Reason
+	}
+	return ScheduledArtifactRejectionReason_SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED
+}
+
+// Everything one scheduled run declared about its artifacts, in one message.
+type ScheduledArtifactManifest struct {
+	state         protoimpl.MessageState        `protogen:"open.v1"`
+	Items         []*ScheduledArtifactItem      `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Rejections    []*ScheduledArtifactRejection `protobuf:"bytes,2,rep,name=rejections,proto3" json:"rejections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactManifest) Reset() {
+	*x = ScheduledArtifactManifest{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactManifest) ProtoMessage() {}
+
+func (x *ScheduledArtifactManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactManifest.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactManifest) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ScheduledArtifactManifest) GetItems() []*ScheduledArtifactItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ScheduledArtifactManifest) GetRejections() []*ScheduledArtifactRejection {
+	if x != nil {
+		return x.Rejections
+	}
+	return nil
+}
+
 type DeliverRevisionSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The ended session whose Workspace and history are saved.
@@ -938,7 +1510,7 @@ type DeliverRevisionSpec struct {
 
 func (x *DeliverRevisionSpec) Reset() {
 	*x = DeliverRevisionSpec{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1522,7 @@ func (x *DeliverRevisionSpec) String() string {
 func (*DeliverRevisionSpec) ProtoMessage() {}
 
 func (x *DeliverRevisionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1535,7 @@ func (x *DeliverRevisionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverRevisionSpec.ProtoReflect.Descriptor instead.
 func (*DeliverRevisionSpec) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{10}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeliverRevisionSpec) GetSessionExecutionId() string {
@@ -1042,7 +1614,7 @@ type StoredObject struct {
 
 func (x *StoredObject) Reset() {
 	*x = StoredObject{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1054,7 +1626,7 @@ func (x *StoredObject) String() string {
 func (*StoredObject) ProtoMessage() {}
 
 func (x *StoredObject) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[11]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1067,7 +1639,7 @@ func (x *StoredObject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoredObject.ProtoReflect.Descriptor instead.
 func (*StoredObject) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{11}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *StoredObject) GetKey() string {
@@ -1104,7 +1676,7 @@ type RevisionDelivered struct {
 
 func (x *RevisionDelivered) Reset() {
 	*x = RevisionDelivered{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1688,7 @@ func (x *RevisionDelivered) String() string {
 func (*RevisionDelivered) ProtoMessage() {}
 
 func (x *RevisionDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[12]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1701,7 @@ func (x *RevisionDelivered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionDelivered.ProtoReflect.Descriptor instead.
 func (*RevisionDelivered) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{12}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RevisionDelivered) GetFinalCommit() string {
@@ -1175,7 +1747,7 @@ type RevisionUnchanged struct {
 
 func (x *RevisionUnchanged) Reset() {
 	*x = RevisionUnchanged{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1187,7 +1759,7 @@ func (x *RevisionUnchanged) String() string {
 func (*RevisionUnchanged) ProtoMessage() {}
 
 func (x *RevisionUnchanged) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[13]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1200,7 +1772,7 @@ func (x *RevisionUnchanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionUnchanged.ProtoReflect.Descriptor instead.
 func (*RevisionUnchanged) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{13}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RevisionUnchanged) GetFinalCommit() string {
@@ -1240,7 +1812,7 @@ type RevisionFailed struct {
 
 func (x *RevisionFailed) Reset() {
 	*x = RevisionFailed{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1252,7 +1824,7 @@ func (x *RevisionFailed) String() string {
 func (*RevisionFailed) ProtoMessage() {}
 
 func (x *RevisionFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[14]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1265,7 +1837,7 @@ func (x *RevisionFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevisionFailed.ProtoReflect.Descriptor instead.
 func (*RevisionFailed) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{14}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RevisionFailed) GetReason() RevisionFailureReason {
@@ -1273,6 +1845,144 @@ func (x *RevisionFailed) GetReason() RevisionFailureReason {
 		return x.Reason
 	}
 	return RevisionFailureReason_REVISION_FAILURE_REASON_UNSPECIFIED
+}
+
+// Uploads the artifacts one scheduled session declared. Cloud registers this work item in the same
+// transaction that persists the declaration, and freezes the run's delivery deadline there.
+type DeliverScheduledArtifactsSpec struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ended session execution whose declaration Cloud persisted and whose checkout still holds the
+	// reserved directory. Cloud chooses every object key; the Node never picks a location.
+	SessionExecutionId string `protobuf:"bytes,1,opt,name=session_execution_id,json=sessionExecutionId,proto3" json:"session_execution_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *DeliverScheduledArtifactsSpec) Reset() {
+	*x = DeliverScheduledArtifactsSpec{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeliverScheduledArtifactsSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeliverScheduledArtifactsSpec) ProtoMessage() {}
+
+func (x *DeliverScheduledArtifactsSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeliverScheduledArtifactsSpec.ProtoReflect.Descriptor instead.
+func (*DeliverScheduledArtifactsSpec) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeliverScheduledArtifactsSpec) GetSessionExecutionId() string {
+	if x != nil {
+		return x.SessionExecutionId
+	}
+	return ""
+}
+
+// Per-artifact facts the Node measured, one per declared item it uploaded. Cloud verifies each
+// against the declaration before registering it and is the only writer of the index.
+type ScheduledArtifactsDelivered struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Artifacts     []*StoredObject        `protobuf:"bytes,1,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactsDelivered) Reset() {
+	*x = ScheduledArtifactsDelivered{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactsDelivered) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactsDelivered) ProtoMessage() {}
+
+func (x *ScheduledArtifactsDelivered) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactsDelivered.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactsDelivered) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ScheduledArtifactsDelivered) GetArtifacts() []*StoredObject {
+	if x != nil {
+		return x.Artifacts
+	}
+	return nil
+}
+
+type ScheduledArtifactsFailed struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Reason        ScheduledArtifactsFailureReason `protobuf:"varint,1,opt,name=reason,proto3,enum=ora.cloud.internal.v1.ScheduledArtifactsFailureReason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledArtifactsFailed) Reset() {
+	*x = ScheduledArtifactsFailed{}
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledArtifactsFailed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledArtifactsFailed) ProtoMessage() {}
+
+func (x *ScheduledArtifactsFailed) ProtoReflect() protoreflect.Message {
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledArtifactsFailed.ProtoReflect.Descriptor instead.
+func (*ScheduledArtifactsFailed) Descriptor() ([]byte, []int) {
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ScheduledArtifactsFailed) GetReason() ScheduledArtifactsFailureReason {
+	if x != nil {
+		return x.Reason
+	}
+	return ScheduledArtifactsFailureReason_SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED
 }
 
 // A presigned single-object upload. It is a short-lived bearer credential: Cloud, the Controller
@@ -1295,7 +2005,7 @@ type UploadGrant struct {
 
 func (x *UploadGrant) Reset() {
 	*x = UploadGrant{}
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +2017,7 @@ func (x *UploadGrant) String() string {
 func (*UploadGrant) ProtoMessage() {}
 
 func (x *UploadGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[15]
+	mi := &file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +2030,7 @@ func (x *UploadGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadGrant.ProtoReflect.Descriptor instead.
 func (*UploadGrant) Descriptor() ([]byte, []int) {
-	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{15}
+	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UploadGrant) GetObjectKey() string {
@@ -1391,7 +2101,7 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\fissue_run_id\x18\x05 \x01(\tR\n" +
 	"issueRunId\x12\x1d\n" +
 	"\n" +
-	"run_status\x18\x06 \x01(\tR\trunStatus\"\xdd\x04\n" +
+	"run_status\x18\x06 \x01(\tR\trunStatus\"\xa3\x05\n" +
 	"\x10AgentSessionSpec\x12&\n" +
 	"\x0fagent_plugin_id\x18\x01 \x01(\tR\ragentPluginId\x120\n" +
 	"\x14agent_plugin_version\x18\x02 \x01(\tR\x12agentPluginVersion\x122\n" +
@@ -1401,7 +2111,9 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x0eprior_revision\x18\x06 \x01(\v2$.ora.cloud.internal.v1.PriorRevisionR\rpriorRevision\x12(\n" +
 	"\x10model_binding_id\x18\a \x01(\tR\x0emodelBindingId\x12X\n" +
 	"\x13workspace_directory\x18\b \x03(\v2'.ora.cloud.internal.v1.WorkspaceListingR\x12workspaceDirectory\x12_\n" +
-	"\x13agent_configuration\x18\t \x01(\v2..ora.cloud.internal.v1.AgentModelConfigurationR\x12agentConfiguration\"\xdb\x03\n" +
+	"\x13agent_configuration\x18\t \x01(\v2..ora.cloud.internal.v1.AgentModelConfigurationR\x12agentConfiguration\x12D\n" +
+	"\atrigger\x18\n" +
+	" \x01(\x0e2*.ora.cloud.internal.v1.AgentSessionTriggerR\atrigger\"\xdb\x03\n" +
 	"\x17AgentModelConfiguration\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12%\n" +
 	"\x0eplugin_version\x18\x02 \x01(\tR\rpluginVersion\x12\x16\n" +
@@ -1420,11 +2132,32 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12%\n" +
 	"\x0econtext_window\x18\x03 \x01(\x04R\rcontextWindow\x12\x1d\n" +
 	"\n" +
-	"max_tokens\x18\x04 \x01(\x04R\tmaxTokens\"\x81\x01\n" +
+	"max_tokens\x18\x04 \x01(\x04R\tmaxTokens\"\xb6\x02\n" +
 	"\x11AgentSessionEnded\x12D\n" +
 	"\x06reason\x18\x01 \x01(\x0e2,.ora.cloud.internal.v1.AgentSessionEndReasonR\x06reason\x12\x1b\n" +
-	"\x06detail\x18\x02 \x01(\tH\x00R\x06detail\x88\x01\x01B\t\n" +
-	"\a_detail\"\xb5\x03\n" +
+	"\x06detail\x18\x02 \x01(\tH\x00R\x06detail\x88\x01\x01\x12T\n" +
+	"\x10scheduled_result\x18\x03 \x01(\v2).ora.cloud.internal.v1.ScheduledRunResultR\x0fscheduledResult\x12]\n" +
+	"\x11artifact_manifest\x18\x04 \x01(\v20.ora.cloud.internal.v1.ScheduledArtifactManifestR\x10artifactManifestB\t\n" +
+	"\a_detail\"\x96\x01\n" +
+	"\x12ScheduledRunResult\x12A\n" +
+	"\averdict\x18\x01 \x01(\x0e2'.ora.cloud.internal.v1.ScheduledVerdictR\averdict\x12*\n" +
+	"\x0everdict_detail\x18\x02 \x01(\tH\x00R\rverdictDetail\x88\x01\x01B\x11\n" +
+	"\x0f_verdict_detail\"\xc9\x01\n" +
+	"\x15ScheduledArtifactItem\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\rR\x05index\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12@\n" +
+	"\x04kind\x18\x03 \x01(\x0e2,.ora.cloud.internal.v1.ScheduledArtifactKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x04 \x01(\x04R\tsizeBytes\x12\x16\n" +
+	"\x06sha256\x18\x05 \x01(\tR\x06sha256\"\x90\x01\n" +
+	"\x1aScheduledArtifactRejection\x12!\n" +
+	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12O\n" +
+	"\x06reason\x18\x02 \x01(\x0e27.ora.cloud.internal.v1.ScheduledArtifactRejectionReasonR\x06reason\"\xb2\x01\n" +
+	"\x19ScheduledArtifactManifest\x12B\n" +
+	"\x05items\x18\x01 \x03(\v2,.ora.cloud.internal.v1.ScheduledArtifactItemR\x05items\x12Q\n" +
+	"\n" +
+	"rejections\x18\x02 \x03(\v21.ora.cloud.internal.v1.ScheduledArtifactRejectionR\n" +
+	"rejections\"\xb5\x03\n" +
 	"\x13DeliverRevisionSpec\x120\n" +
 	"\x14session_execution_id\x18\x01 \x01(\tR\x12sessionExecutionId\x122\n" +
 	"\x15checkout_execution_id\x18\x02 \x01(\tR\x13checkoutExecutionId\x12\x1f\n" +
@@ -1456,7 +2189,13 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"\frevision_ref\x18\x03 \x01(\tR\vrevisionRef\x12=\n" +
 	"\ahistory\x18\x04 \x01(\v2#.ora.cloud.internal.v1.StoredObjectR\ahistory\"V\n" +
 	"\x0eRevisionFailed\x12D\n" +
-	"\x06reason\x18\x01 \x01(\x0e2,.ora.cloud.internal.v1.RevisionFailureReasonR\x06reason\"\x98\x02\n" +
+	"\x06reason\x18\x01 \x01(\x0e2,.ora.cloud.internal.v1.RevisionFailureReasonR\x06reason\"Q\n" +
+	"\x1dDeliverScheduledArtifactsSpec\x120\n" +
+	"\x14session_execution_id\x18\x01 \x01(\tR\x12sessionExecutionId\"`\n" +
+	"\x1bScheduledArtifactsDelivered\x12A\n" +
+	"\tartifacts\x18\x01 \x03(\v2#.ora.cloud.internal.v1.StoredObjectR\tartifacts\"j\n" +
+	"\x18ScheduledArtifactsFailed\x12N\n" +
+	"\x06reason\x18\x01 \x01(\x0e26.ora.cloud.internal.v1.ScheduledArtifactsFailureReasonR\x06reason\"\x98\x02\n" +
 	"\vUploadGrant\x12\x1d\n" +
 	"\n" +
 	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x10\n" +
@@ -1467,14 +2206,43 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x92\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*a\n" +
+	"\x13AgentSessionTrigger\x12%\n" +
+	"!AGENT_SESSION_TRIGGER_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fAGENT_SESSION_TRIGGER_SCHEDULED\x10\x01*\x92\x02\n" +
 	"\x15AgentSessionEndReason\x12(\n" +
 	"$AGENT_SESSION_END_REASON_UNSPECIFIED\x10\x00\x12'\n" +
 	"#AGENT_SESSION_END_REASON_USER_ENDED\x10\x01\x12)\n" +
 	"%AGENT_SESSION_END_REASON_IDLE_TIMEOUT\x10\x02\x12&\n" +
 	"\"AGENT_SESSION_END_REASON_CANCELLED\x10\x03\x12)\n" +
 	"%AGENT_SESSION_END_REASON_AGENT_FAILED\x10\x04\x12(\n" +
-	"$AGENT_SESSION_END_REASON_INTERRUPTED\x10\x05*\xde\x03\n" +
+	"$AGENT_SESSION_END_REASON_INTERRUPTED\x10\x05*\xec\x01\n" +
+	"\x10ScheduledVerdict\x12!\n" +
+	"\x1dSCHEDULED_VERDICT_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SCHEDULED_VERDICT_PASS\x10\x01\x12\x1a\n" +
+	"\x16SCHEDULED_VERDICT_WARN\x10\x02\x12\x1a\n" +
+	"\x16SCHEDULED_VERDICT_FAIL\x10\x03\x12\x1d\n" +
+	"\x19SCHEDULED_VERDICT_BLOCKED\x10\x04\x12\x1a\n" +
+	"\x16SCHEDULED_VERDICT_IDLE\x10\x05\x12&\n" +
+	"\"SCHEDULED_VERDICT_RANGE_UNRESOLVED\x10\x06*\x8e\x02\n" +
+	"\x15ScheduledArtifactKind\x12'\n" +
+	"#SCHEDULED_ARTIFACT_KIND_UNSPECIFIED\x10\x00\x12$\n" +
+	" SCHEDULED_ARTIFACT_KIND_MARKDOWN\x10\x01\x12 \n" +
+	"\x1cSCHEDULED_ARTIFACT_KIND_JSON\x10\x02\x12 \n" +
+	"\x1cSCHEDULED_ARTIFACT_KIND_TEXT\x10\x03\x12\x1f\n" +
+	"\x1bSCHEDULED_ARTIFACT_KIND_LOG\x10\x04\x12\x1f\n" +
+	"\x1bSCHEDULED_ARTIFACT_KIND_XML\x10\x05\x12 \n" +
+	"\x1cSCHEDULED_ARTIFACT_KIND_HTML\x10\x06*\xfd\x03\n" +
+	" ScheduledArtifactRejectionReason\x123\n" +
+	"/SCHEDULED_ARTIFACT_REJECTION_REASON_UNSPECIFIED\x10\x00\x128\n" +
+	"4SCHEDULED_ARTIFACT_REJECTION_REASON_UNSUPPORTED_TYPE\x10\x01\x123\n" +
+	"/SCHEDULED_ARTIFACT_REJECTION_REASON_PATH_UNSAFE\x10\x02\x12/\n" +
+	"+SCHEDULED_ARTIFACT_REJECTION_REASON_SYMLINK\x10\x03\x121\n" +
+	"-SCHEDULED_ARTIFACT_REJECTION_REASON_HARD_LINK\x10\x04\x121\n" +
+	"-SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_LARGE\x10\x05\x120\n" +
+	",SCHEDULED_ARTIFACT_REJECTION_REASON_TOO_MANY\x10\x06\x127\n" +
+	"3SCHEDULED_ARTIFACT_REJECTION_REASON_TOTAL_TOO_LARGE\x10\a\x123\n" +
+	"/SCHEDULED_ARTIFACT_REJECTION_REASON_READ_FAILED\x10\b*\xde\x03\n" +
 	"\x15RevisionFailureReason\x12'\n" +
 	"#REVISION_FAILURE_REASON_UNSPECIFIED\x10\x00\x12/\n" +
 	"+REVISION_FAILURE_REASON_SESSION_NOT_SETTLED\x10\x01\x120\n" +
@@ -1484,7 +2252,13 @@ const file_ora_cloud_internal_v1_agent_executions_proto_rawDesc = "" +
 	"%REVISION_FAILURE_REASON_UPLOAD_FAILED\x10\x06\x12/\n" +
 	"+REVISION_FAILURE_REASON_VERIFICATION_FAILED\x10\a\x12)\n" +
 	"%REVISION_FAILURE_REASON_PUSH_REJECTED\x10\b\x12'\n" +
-	"#REVISION_FAILURE_REASON_PUSH_FAILED\x10\t\"\x04\b\x04\x10\x04*%REVISION_FAILURE_REASON_BUNDLE_FAILEDB\xe5\x01\n" +
+	"#REVISION_FAILURE_REASON_PUSH_FAILED\x10\t\"\x04\b\x04\x10\x04*%REVISION_FAILURE_REASON_BUNDLE_FAILED*\xbd\x02\n" +
+	"\x1fScheduledArtifactsFailureReason\x122\n" +
+	".SCHEDULED_ARTIFACTS_FAILURE_REASON_UNSPECIFIED\x10\x00\x12<\n" +
+	"8SCHEDULED_ARTIFACTS_FAILURE_REASON_WORKSPACE_UNAVAILABLE\x10\x01\x124\n" +
+	"0SCHEDULED_ARTIFACTS_FAILURE_REASON_UPLOAD_FAILED\x10\x02\x12>\n" +
+	":SCHEDULED_ARTIFACTS_FAILURE_REASON_DECLARATION_UNAVAILABLE\x10\x03\x122\n" +
+	".SCHEDULED_ARTIFACTS_FAILURE_REASON_INTERRUPTED\x10\x04B\xe5\x01\n" +
 	"\x19com.ora.cloud.internal.v1B\x14AgentExecutionsProtoP\x01Z;github.com/wanglongan587/cloud/internal/controlpb;controlpb\xa2\x02\x03OCI\xaa\x02\x15Ora.Cloud.Internal.V1\xca\x02\x15Ora\\Cloud\\Internal\\V1\xe2\x02!Ora\\Cloud\\Internal\\V1\\GPBMetadata\xea\x02\x18Ora::Cloud::Internal::V1b\x06proto3"
 
 var (
@@ -1499,51 +2273,73 @@ func file_ora_cloud_internal_v1_agent_executions_proto_rawDescGZIP() []byte {
 	return file_ora_cloud_internal_v1_agent_executions_proto_rawDescData
 }
 
-var file_ora_cloud_internal_v1_agent_executions_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ora_cloud_internal_v1_agent_executions_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_ora_cloud_internal_v1_agent_executions_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_ora_cloud_internal_v1_agent_executions_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_ora_cloud_internal_v1_agent_executions_proto_goTypes = []any{
-	(AgentSessionEndReason)(0),      // 0: ora.cloud.internal.v1.AgentSessionEndReason
-	(RevisionFailureReason)(0),      // 1: ora.cloud.internal.v1.RevisionFailureReason
-	(*GitIdentity)(nil),             // 2: ora.cloud.internal.v1.GitIdentity
-	(*TextContent)(nil),             // 3: ora.cloud.internal.v1.TextContent
-	(*ContentBlock)(nil),            // 4: ora.cloud.internal.v1.ContentBlock
-	(*UserTurn)(nil),                // 5: ora.cloud.internal.v1.UserTurn
-	(*PriorRevision)(nil),           // 6: ora.cloud.internal.v1.PriorRevision
-	(*WorkspaceListing)(nil),        // 7: ora.cloud.internal.v1.WorkspaceListing
-	(*AgentSessionSpec)(nil),        // 8: ora.cloud.internal.v1.AgentSessionSpec
-	(*AgentModelConfiguration)(nil), // 9: ora.cloud.internal.v1.AgentModelConfiguration
-	(*AgentBoundModel)(nil),         // 10: ora.cloud.internal.v1.AgentBoundModel
-	(*AgentSessionEnded)(nil),       // 11: ora.cloud.internal.v1.AgentSessionEnded
-	(*DeliverRevisionSpec)(nil),     // 12: ora.cloud.internal.v1.DeliverRevisionSpec
-	(*StoredObject)(nil),            // 13: ora.cloud.internal.v1.StoredObject
-	(*RevisionDelivered)(nil),       // 14: ora.cloud.internal.v1.RevisionDelivered
-	(*RevisionUnchanged)(nil),       // 15: ora.cloud.internal.v1.RevisionUnchanged
-	(*RevisionFailed)(nil),          // 16: ora.cloud.internal.v1.RevisionFailed
-	(*UploadGrant)(nil),             // 17: ora.cloud.internal.v1.UploadGrant
-	nil,                             // 18: ora.cloud.internal.v1.UploadGrant.HeadersEntry
-	(*timestamppb.Timestamp)(nil),   // 19: google.protobuf.Timestamp
+	(AgentSessionTrigger)(0),              // 0: ora.cloud.internal.v1.AgentSessionTrigger
+	(AgentSessionEndReason)(0),            // 1: ora.cloud.internal.v1.AgentSessionEndReason
+	(ScheduledVerdict)(0),                 // 2: ora.cloud.internal.v1.ScheduledVerdict
+	(ScheduledArtifactKind)(0),            // 3: ora.cloud.internal.v1.ScheduledArtifactKind
+	(ScheduledArtifactRejectionReason)(0), // 4: ora.cloud.internal.v1.ScheduledArtifactRejectionReason
+	(RevisionFailureReason)(0),            // 5: ora.cloud.internal.v1.RevisionFailureReason
+	(ScheduledArtifactsFailureReason)(0),  // 6: ora.cloud.internal.v1.ScheduledArtifactsFailureReason
+	(*GitIdentity)(nil),                   // 7: ora.cloud.internal.v1.GitIdentity
+	(*TextContent)(nil),                   // 8: ora.cloud.internal.v1.TextContent
+	(*ContentBlock)(nil),                  // 9: ora.cloud.internal.v1.ContentBlock
+	(*UserTurn)(nil),                      // 10: ora.cloud.internal.v1.UserTurn
+	(*PriorRevision)(nil),                 // 11: ora.cloud.internal.v1.PriorRevision
+	(*WorkspaceListing)(nil),              // 12: ora.cloud.internal.v1.WorkspaceListing
+	(*AgentSessionSpec)(nil),              // 13: ora.cloud.internal.v1.AgentSessionSpec
+	(*AgentModelConfiguration)(nil),       // 14: ora.cloud.internal.v1.AgentModelConfiguration
+	(*AgentBoundModel)(nil),               // 15: ora.cloud.internal.v1.AgentBoundModel
+	(*AgentSessionEnded)(nil),             // 16: ora.cloud.internal.v1.AgentSessionEnded
+	(*ScheduledRunResult)(nil),            // 17: ora.cloud.internal.v1.ScheduledRunResult
+	(*ScheduledArtifactItem)(nil),         // 18: ora.cloud.internal.v1.ScheduledArtifactItem
+	(*ScheduledArtifactRejection)(nil),    // 19: ora.cloud.internal.v1.ScheduledArtifactRejection
+	(*ScheduledArtifactManifest)(nil),     // 20: ora.cloud.internal.v1.ScheduledArtifactManifest
+	(*DeliverRevisionSpec)(nil),           // 21: ora.cloud.internal.v1.DeliverRevisionSpec
+	(*StoredObject)(nil),                  // 22: ora.cloud.internal.v1.StoredObject
+	(*RevisionDelivered)(nil),             // 23: ora.cloud.internal.v1.RevisionDelivered
+	(*RevisionUnchanged)(nil),             // 24: ora.cloud.internal.v1.RevisionUnchanged
+	(*RevisionFailed)(nil),                // 25: ora.cloud.internal.v1.RevisionFailed
+	(*DeliverScheduledArtifactsSpec)(nil), // 26: ora.cloud.internal.v1.DeliverScheduledArtifactsSpec
+	(*ScheduledArtifactsDelivered)(nil),   // 27: ora.cloud.internal.v1.ScheduledArtifactsDelivered
+	(*ScheduledArtifactsFailed)(nil),      // 28: ora.cloud.internal.v1.ScheduledArtifactsFailed
+	(*UploadGrant)(nil),                   // 29: ora.cloud.internal.v1.UploadGrant
+	nil,                                   // 30: ora.cloud.internal.v1.UploadGrant.HeadersEntry
+	(*timestamppb.Timestamp)(nil),         // 31: google.protobuf.Timestamp
 }
 var file_ora_cloud_internal_v1_agent_executions_proto_depIdxs = []int32{
-	3,  // 0: ora.cloud.internal.v1.ContentBlock.text:type_name -> ora.cloud.internal.v1.TextContent
-	4,  // 1: ora.cloud.internal.v1.UserTurn.content:type_name -> ora.cloud.internal.v1.ContentBlock
-	2,  // 2: ora.cloud.internal.v1.AgentSessionSpec.git_identity:type_name -> ora.cloud.internal.v1.GitIdentity
-	5,  // 3: ora.cloud.internal.v1.AgentSessionSpec.initial_turn:type_name -> ora.cloud.internal.v1.UserTurn
-	6,  // 4: ora.cloud.internal.v1.AgentSessionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
-	7,  // 5: ora.cloud.internal.v1.AgentSessionSpec.workspace_directory:type_name -> ora.cloud.internal.v1.WorkspaceListing
-	9,  // 6: ora.cloud.internal.v1.AgentSessionSpec.agent_configuration:type_name -> ora.cloud.internal.v1.AgentModelConfiguration
-	10, // 7: ora.cloud.internal.v1.AgentModelConfiguration.model:type_name -> ora.cloud.internal.v1.AgentBoundModel
-	0,  // 8: ora.cloud.internal.v1.AgentSessionEnded.reason:type_name -> ora.cloud.internal.v1.AgentSessionEndReason
-	6,  // 9: ora.cloud.internal.v1.DeliverRevisionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
-	13, // 10: ora.cloud.internal.v1.RevisionDelivered.history:type_name -> ora.cloud.internal.v1.StoredObject
-	13, // 11: ora.cloud.internal.v1.RevisionUnchanged.history:type_name -> ora.cloud.internal.v1.StoredObject
-	1,  // 12: ora.cloud.internal.v1.RevisionFailed.reason:type_name -> ora.cloud.internal.v1.RevisionFailureReason
-	18, // 13: ora.cloud.internal.v1.UploadGrant.headers:type_name -> ora.cloud.internal.v1.UploadGrant.HeadersEntry
-	19, // 14: ora.cloud.internal.v1.UploadGrant.expires_at:type_name -> google.protobuf.Timestamp
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	8,  // 0: ora.cloud.internal.v1.ContentBlock.text:type_name -> ora.cloud.internal.v1.TextContent
+	9,  // 1: ora.cloud.internal.v1.UserTurn.content:type_name -> ora.cloud.internal.v1.ContentBlock
+	7,  // 2: ora.cloud.internal.v1.AgentSessionSpec.git_identity:type_name -> ora.cloud.internal.v1.GitIdentity
+	10, // 3: ora.cloud.internal.v1.AgentSessionSpec.initial_turn:type_name -> ora.cloud.internal.v1.UserTurn
+	11, // 4: ora.cloud.internal.v1.AgentSessionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
+	12, // 5: ora.cloud.internal.v1.AgentSessionSpec.workspace_directory:type_name -> ora.cloud.internal.v1.WorkspaceListing
+	14, // 6: ora.cloud.internal.v1.AgentSessionSpec.agent_configuration:type_name -> ora.cloud.internal.v1.AgentModelConfiguration
+	0,  // 7: ora.cloud.internal.v1.AgentSessionSpec.trigger:type_name -> ora.cloud.internal.v1.AgentSessionTrigger
+	15, // 8: ora.cloud.internal.v1.AgentModelConfiguration.model:type_name -> ora.cloud.internal.v1.AgentBoundModel
+	1,  // 9: ora.cloud.internal.v1.AgentSessionEnded.reason:type_name -> ora.cloud.internal.v1.AgentSessionEndReason
+	17, // 10: ora.cloud.internal.v1.AgentSessionEnded.scheduled_result:type_name -> ora.cloud.internal.v1.ScheduledRunResult
+	20, // 11: ora.cloud.internal.v1.AgentSessionEnded.artifact_manifest:type_name -> ora.cloud.internal.v1.ScheduledArtifactManifest
+	2,  // 12: ora.cloud.internal.v1.ScheduledRunResult.verdict:type_name -> ora.cloud.internal.v1.ScheduledVerdict
+	3,  // 13: ora.cloud.internal.v1.ScheduledArtifactItem.kind:type_name -> ora.cloud.internal.v1.ScheduledArtifactKind
+	4,  // 14: ora.cloud.internal.v1.ScheduledArtifactRejection.reason:type_name -> ora.cloud.internal.v1.ScheduledArtifactRejectionReason
+	18, // 15: ora.cloud.internal.v1.ScheduledArtifactManifest.items:type_name -> ora.cloud.internal.v1.ScheduledArtifactItem
+	19, // 16: ora.cloud.internal.v1.ScheduledArtifactManifest.rejections:type_name -> ora.cloud.internal.v1.ScheduledArtifactRejection
+	11, // 17: ora.cloud.internal.v1.DeliverRevisionSpec.prior_revision:type_name -> ora.cloud.internal.v1.PriorRevision
+	22, // 18: ora.cloud.internal.v1.RevisionDelivered.history:type_name -> ora.cloud.internal.v1.StoredObject
+	22, // 19: ora.cloud.internal.v1.RevisionUnchanged.history:type_name -> ora.cloud.internal.v1.StoredObject
+	5,  // 20: ora.cloud.internal.v1.RevisionFailed.reason:type_name -> ora.cloud.internal.v1.RevisionFailureReason
+	22, // 21: ora.cloud.internal.v1.ScheduledArtifactsDelivered.artifacts:type_name -> ora.cloud.internal.v1.StoredObject
+	6,  // 22: ora.cloud.internal.v1.ScheduledArtifactsFailed.reason:type_name -> ora.cloud.internal.v1.ScheduledArtifactsFailureReason
+	30, // 23: ora.cloud.internal.v1.UploadGrant.headers:type_name -> ora.cloud.internal.v1.UploadGrant.HeadersEntry
+	31, // 24: ora.cloud.internal.v1.UploadGrant.expires_at:type_name -> google.protobuf.Timestamp
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_ora_cloud_internal_v1_agent_executions_proto_init() }
@@ -1555,13 +2351,14 @@ func file_ora_cloud_internal_v1_agent_executions_proto_init() {
 		(*ContentBlock_Text)(nil),
 	}
 	file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[9].OneofWrappers = []any{}
+	file_ora_cloud_internal_v1_agent_executions_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ora_cloud_internal_v1_agent_executions_proto_rawDesc), len(file_ora_cloud_internal_v1_agent_executions_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   17,
+			NumEnums:      7,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

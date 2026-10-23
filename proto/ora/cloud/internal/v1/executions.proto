@@ -65,6 +65,7 @@ message ExecutionInput {
     RemovePluginsSpec remove_plugins = 3;
     AgentSessionSpec agent_session = 4;
     DeliverRevisionSpec deliver_revision = 5;
+    DeliverScheduledArtifactsSpec deliver_scheduled_artifacts = 6;
   }
 }
 
@@ -110,6 +111,8 @@ message ExecutionResult {
     RevisionDelivered revision_delivered = 7;
     RevisionUnchanged revision_unchanged = 8;
     RevisionFailed revision_failed = 9;
+    ScheduledArtifactsDelivered scheduled_artifacts_delivered = 10;
+    ScheduledArtifactsFailed scheduled_artifacts_failed = 11;
   }
 }
 

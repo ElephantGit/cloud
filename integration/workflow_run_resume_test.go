@@ -34,12 +34,12 @@ func workflowRunResumePath(tenant, workflow, run string) string {
 // resumeWorkflowRun issues the production resume request as the fixture's verified user.
 func (f *fixture) resumeWorkflowRun(wfid, runID, key string, body core.Object, want int, code string) core.Object {
 	f.t.Helper()
-	return f.resumeWorkflowRunAs(f.user, f.uid, f.tid, wfid, runID, key, body, want, code)
+	return f.resumeWorkflowRunAs(f.user, f.tid, wfid, runID, key, body, want, code)
 }
 
 // resumeWorkflowRunAs issues the request as a specific caller and asserts the exact status and stable
 // public code.
-func (f *fixture) resumeWorkflowRunAs(user core.Claims, uid, tenant, wfid, runID, key string, body core.Object, want int, code string) core.Object {
+func (f *fixture) resumeWorkflowRunAs(user core.Claims, tenant, wfid, runID, key string, body core.Object, want int, code string) core.Object {
 	f.t.Helper()
 	out, status, err := f.client.Call(context.Background(), "POST",
 		workflowRunResumePath(tenant, wfid, runID), "gateway",
@@ -150,9 +150,9 @@ func TestWorkflowRunResumeAuthorizesTheInitiatorOrAnAdmin(t *testing.T) {
 	// Bound to the fixture's administrator: the member is neither initiator nor admin.
 	boundByAdmin, boundByAdminRun := stageWorkflowRun(t, f, "resume-bound-admin", "failed", f.uid)
 	f.bindWorkflowModelToRun(boundByAdminRun, f.uid)
-	f.resumeWorkflowRunAs(stranger, f.uid, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-stranger", core.Object{}, 403, "membership_required")
-	f.resumeWorkflowRunAs(member, memberID, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-member-refused", core.Object{}, 403, "workflow_run_resume_forbidden")
-	f.resumeWorkflowRunAs(f.user, f.uid, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-admin", core.Object{}, 501, "workflow_run_resume_unavailable")
+	f.resumeWorkflowRunAs(stranger, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-stranger", core.Object{}, 403, "membership_required")
+	f.resumeWorkflowRunAs(member, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-member-refused", core.Object{}, 403, "workflow_run_resume_forbidden")
+	f.resumeWorkflowRunAs(f.user, f.tid, boundByAdmin, boundByAdminRun, "wf-resume-admin", core.Object{}, 501, "workflow_run_resume_unavailable")
 	// The stranger's record is keyed by the stranger's own user id, which this fixture does not read
 	// back; a key-only count in the tenant is enough to prove nothing was written.
 	if n := f.scalar(`SELECT count(*) FROM idempotency_records WHERE tenant_id=$1 AND key=$2`, f.tid, "wf-resume-stranger"); n != 0 {
@@ -165,11 +165,11 @@ func TestWorkflowRunResumeAuthorizesTheInitiatorOrAnAdmin(t *testing.T) {
 	// Bound to the member: the initiator reaches the 501.
 	boundByMember, boundByMemberRun := stageWorkflowRun(t, f, "resume-bound-member", "failed", memberID)
 	f.bindWorkflowModelToRun(boundByMemberRun, memberID)
-	f.resumeWorkflowRunAs(member, memberID, f.tid, boundByMember, boundByMemberRun, "wf-resume-initiator", core.Object{}, 501, "workflow_run_resume_unavailable")
+	f.resumeWorkflowRunAs(member, f.tid, boundByMember, boundByMemberRun, "wf-resume-initiator", core.Object{}, 501, "workflow_run_resume_unavailable")
 
 	// No binding, no run-level rule: an active member reaches the 501 too.
 	unbound, unboundRun := stageWorkflowRun(t, f, "resume-unbound", "failed", f.uid)
-	f.resumeWorkflowRunAs(member, memberID, f.tid, unbound, unboundRun, "wf-resume-unbound", core.Object{}, 501, "workflow_run_resume_unavailable")
+	f.resumeWorkflowRunAs(member, f.tid, unbound, unboundRun, "wf-resume-unbound", core.Object{}, 501, "workflow_run_resume_unavailable")
 }
 
 // Scope is the workflow routes' answer, unchanged: a run that is not this tenant's, not this
@@ -188,7 +188,7 @@ func TestWorkflowRunResumeIsNotFoundOutsideItsScope(t *testing.T) {
 		{"run id is not an id", f.tid, wfid, "not-a-uuid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f.resumeWorkflowRunAs(f.user, f.uid, tc.tenant, tc.workflow, tc.run, "wf-resume-scope-"+tc.name, core.Object{}, 404, "not_found")
+			f.resumeWorkflowRunAs(f.user, tc.tenant, tc.workflow, tc.run, "wf-resume-scope-"+tc.name, core.Object{}, 404, "not_found")
 		})
 	}
 

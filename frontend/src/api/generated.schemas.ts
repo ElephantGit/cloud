@@ -2620,7 +2620,7 @@ export type WorkflowRunDefinitionSnapshot = { [key: string]: unknown } | null;
 export type WorkflowRunInput = { [key: string]: unknown };
 
 /**
- * Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed.
+ * Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed or is retrying. An agent node can be `retrying`, which means its last attempt failed with a retryable reason and the run is waiting for the next one: `retryAt` is the database-clock instant that attempt becomes due, `error` and `output.reason` name the failed attempt's reason, `startedAt` is kept from the first attempt, `finishedAt` is absent, and the run itself stays `running`. `attempt` is the 1-based attempt the state describes, present whenever the node has started at least once, so a terminal node states which attempt ended it; a node's retry budget is `maxRetries + 1` attempts.
  */
 export type WorkflowRunNodeStates = { [key: string]: unknown };
 
@@ -2666,7 +2666,7 @@ export interface WorkflowRun {
      */
   modelBindings?: WorkflowRunModelBinding[] | null;
   name: string;
-  /** Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed. */
+  /** Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed or is retrying. An agent node can be `retrying`, which means its last attempt failed with a retryable reason and the run is waiting for the next one: `retryAt` is the database-clock instant that attempt becomes due, `error` and `output.reason` name the failed attempt's reason, `startedAt` is kept from the first attempt, `finishedAt` is absent, and the run itself stays `running`. `attempt` is the 1-based attempt the state describes, present whenever the node has started at least once, so a terminal node states which attempt ended it; a node's retry budget is `maxRetries + 1` attempts. */
   nodeStates: WorkflowRunNodeStates;
   /**
      * The agent plugin version frozen into the run at creation: the frozen identity the run's agent sessions execute with. Null only when the space declared no plugin at creation (or the run predates migration 0042); the first agent node then fails with `agent_plugin_version_unfrozen`.
@@ -4467,6 +4467,19 @@ after?: string;
 export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200 = {
   items: SessionModelAttempt[];
   nextCursor: string;
+};
+
+export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode = typeof PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode[keyof typeof PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode];
+
+
+export const PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode = {
+  keep: 'keep',
+  node_files: 'node_files',
+  checkpoint: 'checkpoint',
+} as const;
+
+export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBody = {
+  mode?: PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode;
 };
 
 export type GetApiV1TenantsTidWorkflowsWfidSnapshotsParams = {

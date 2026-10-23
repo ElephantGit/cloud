@@ -5913,7 +5913,7 @@
           },
           "nodeStates": {
             "additionalProperties": true,
-            "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed.",
+            "description": "Per-node execution state keyed by node id: status, displayName, startedAt, finishedAt, output, and error — the reason, present only when the node failed or is retrying. An agent node can be `retrying`, which means its last attempt failed with a retryable reason and the run is waiting for the next one: `retryAt` is the database-clock instant that attempt becomes due, `error` and `output.reason` name the failed attempt's reason, `startedAt` is kept from the first attempt, `finishedAt` is absent, and the run itself stays `running`. `attempt` is the 1-based attempt the state describes, present whenever the node has started at least once, so a terminal node states which attempt ended it; a node's retry budget is `maxRetries + 1` attempts.",
             "type": "object"
           },
           "pluginVersion": {
@@ -31192,6 +31192,175 @@
           }
         ],
         "summary": "GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tid}/workflows/{wfid}/runs/{rid}/resume": {
+      "post": {
+        "description": "Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. Resumes a terminal failed workflow run inside the same run identity. The route is registered against its final request contract, but no resume mode can run in this phase: every valid request answers 501 workflow_run_resume_unavailable, changes no run, node or Workspace state, and records no idempotency entry, so repeating the request returns the same refusal instead of a replay. mode selects how much Workspace state rolls back — keep (the default when omitted), node_files or checkpoint — and any other value is 400 invalid_field_value; the body carries only mode, and any other field is 400 unknown_field. Authorization is exactly the cancellation request's: the run's initiator and the tenant's administrators on a run carrying frozen executor bindings, and an active tenant member who is neither answers 403 workflow_run_resume_forbidden. A missing or mismatched tenant, workflow or run, and a soft-deleted run are all 404 not_found. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.",
+        "operationId": "post_api_v1_tenants_tid_workflows_wfid_runs_rid_resume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "wfid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Scoped to tenant and user. Same key and canonical method/path/body returns the original response before version validation; changed request is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "keep",
+                      "node_files",
+                      "checkpoint"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The request is valid but the operation is not available in this deployment (e.g. workflow_run_resume_unavailable)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "POST /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/resume",
         "tags": [
           "workflows"
         ]

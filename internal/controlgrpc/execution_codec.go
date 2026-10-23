@@ -326,6 +326,37 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 			}
 			out["scheduledResult"] = scheduled
 		}
+		// The declaration is the executor's report of what it will upload; it travels with the
+		// terminal event so Cloud can freeze the window and hand out grants. Dropping it here would
+		// lose the run's artifacts silently - the settlement would see an empty manifest and stop -
+		// so the boundary either carries it whole or refuses it.
+		if declared := ended.GetArtifactManifest(); declared != nil {
+			items := make([]core.Object, 0, len(declared.GetItems()))
+			for _, item := range declared.GetItems() {
+				if item.GetSizeBytes() > math.MaxInt64 {
+					return nil, invalidInput("invalid_result")
+				}
+				kind := shortEnum(item.GetKind().String(), "SCHEDULED_ARTIFACT_KIND_")
+				if kind == "" {
+					return nil, invalidInput("invalid_result")
+				}
+				items = append(items, core.Object{
+					// The durable object stores plain integers: N() reads float64/int64, so a uint32 or
+					// uint64 kept as-is would read back as zero and silently lose the index or size.
+					"index": int64(item.GetIndex()), "displayName": item.GetDisplayName(), "kind": kind,
+					"sizeBytes": int64(item.GetSizeBytes()), "sha256": item.GetSha256(),
+				})
+			}
+			rejections := make([]core.Object, 0, len(declared.GetRejections()))
+			for _, rejection := range declared.GetRejections() {
+				reason := shortEnum(rejection.GetReason().String(), "SCHEDULED_ARTIFACT_REJECTION_REASON_")
+				if reason == "" {
+					return nil, invalidInput("invalid_result")
+				}
+				rejections = append(rejections, core.Object{"displayName": rejection.GetDisplayName(), "reason": reason})
+			}
+			out["artifactManifest"] = core.Object{"items": items, "rejections": rejections}
+		}
 	case *controlpb.ExecutionResult_RevisionDelivered:
 		out["outcome"] = "revision_delivered"
 		delivered := outcome.RevisionDelivered
@@ -406,6 +437,25 @@ func result(o core.Object) *controlpb.ExecutionResult {
 				reported.VerdictDetail = &detail
 			}
 			ended.ScheduledResult = reported
+		}
+		// A stored declaration returns to the Controller as the same structure it reported, so a
+		// recovered session is queried with the artifacts it actually carried.
+		if declared := o.O("artifactManifest"); len(declared) > 0 {
+			manifest := &controlpb.ScheduledArtifactManifest{}
+			for _, item := range objectsOf(declared["items"]) {
+				manifest.Items = append(manifest.Items, &controlpb.ScheduledArtifactItem{
+					Index: uint32(item.N("index")), DisplayName: item.S("displayName"),
+					Kind:      controlpb.ScheduledArtifactKind(enum(controlpb.ScheduledArtifactKind_value, "SCHEDULED_ARTIFACT_KIND_", item.S("kind"))),
+					SizeBytes: uint64(item.N("sizeBytes")), Sha256: item.S("sha256"),
+				})
+			}
+			for _, rejection := range objectsOf(declared["rejections"]) {
+				manifest.Rejections = append(manifest.Rejections, &controlpb.ScheduledArtifactRejection{
+					DisplayName: rejection.S("displayName"),
+					Reason:      controlpb.ScheduledArtifactRejectionReason(enum(controlpb.ScheduledArtifactRejectionReason_value, "SCHEDULED_ARTIFACT_REJECTION_REASON_", rejection.S("reason"))),
+				})
+			}
+			ended.ArtifactManifest = manifest
 		}
 		out.Outcome = &controlpb.ExecutionResult_AgentSessionEnded{AgentSessionEnded: ended}
 	case "revision_delivered":
@@ -502,4 +552,27 @@ func boundedSchemaVersion(value int64) uint32 {
 		return 0
 	}
 	return uint32(value) // #nosec G115 -- bounded above.
+}
+
+// objectsOf decodes an array of objects out of a stored result. The value arrives either as the typed
+// slice the codec just built or as the generic form jsonb returns, so both are accepted rather than
+// making one caller reshape what the other produced.
+func objectsOf(value any) []core.Object {
+	switch rows := value.(type) {
+	case []core.Object:
+		return rows
+	case []any:
+		out := make([]core.Object, 0, len(rows))
+		for _, row := range rows {
+			switch item := row.(type) {
+			case core.Object:
+				out = append(out, item)
+			case map[string]any:
+				out = append(out, core.Object(item))
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

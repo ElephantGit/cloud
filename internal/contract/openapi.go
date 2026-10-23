@@ -262,7 +262,14 @@ func Document() map[string]any {
 		"observedAt":    timestamp(),
 		"failureReason": optional(str()),
 		"runId":         optional(uuid()),
-		"sessionId":     optional(uuid()),
+		// D6: the run's own business result, and the two counts it owns. The verdict is nullable -
+		// "not reported" is a value, not an absent field - and neither count requires reading an
+		// object: they count registered artifacts and visible refusals.
+		"verdict":               optional(str()),
+		"verdictDetail":         optional(str()),
+		"artifactCount":         optional(number()),
+		"rejectedArtifactCount": optional(number()),
+		"sessionId":             optional(uuid()),
 	}, "scheduledAt", "outcome", "taskRevision", "observedAt")
 	s["ScheduledTaskHistory"] = object(obj{"taskId": uuid(), "entries": array(ref("ScheduledTaskOccurrence"))}, "taskId", "entries")
 	s["ContextRef"] = resource("id tenantId issueId refType refId createdAt", "")

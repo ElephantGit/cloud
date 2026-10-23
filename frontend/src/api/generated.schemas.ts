@@ -2026,15 +2026,23 @@ export interface ScheduledTaskApproval {
 
 export interface ScheduledTaskOccurrence {
   /** @nullable */
+  artifactCount?: number | null;
+  /** @nullable */
   failureReason?: string | null;
   observedAt: string;
   outcome: string;
+  /** @nullable */
+  rejectedArtifactCount?: number | null;
   /** @nullable */
   runId?: string | null;
   scheduledAt: string;
   /** @nullable */
   sessionId?: string | null;
   taskRevision: number;
+  /** @nullable */
+  verdict?: string | null;
+  /** @nullable */
+  verdictDetail?: string | null;
 }
 
 export interface ScheduledTaskHistory {

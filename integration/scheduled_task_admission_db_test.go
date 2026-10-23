@@ -126,6 +126,17 @@ func TestScheduledTaskHistoryReadsEmptyAndAdmitted(t *testing.T) {
 	if _, exists := entries[0]["sessionId"]; exists {
 		t.Fatalf("history must not expose a session ID without an IssueRun fact: %v", entries[0])
 	}
+	// D6: an admitted run that has not reported yet shows a null verdict - "not reported" is a fact
+	// the reader can see - and the artifact counts are zero rather than absent.
+	if verdict, exists := entries[0]["verdict"]; !exists || verdict != nil {
+		t.Fatalf("unreported verdict = %v (present %t), want an explicit null", verdict, exists)
+	}
+	if _, exists := entries[0]["verdictDetail"]; exists {
+		t.Fatalf("a missing verdict must not carry a detail: %v", entries[0])
+	}
+	if entries[0].N("artifactCount") != 0 || entries[0].N("rejectedArtifactCount") != 0 {
+		t.Fatalf("artifact counts = %v, want zero for a run without artifacts", entries[0])
+	}
 }
 
 // TestScheduledTaskMissedRecoverySingleOccurrence (FIX-5): a long outage writes exactly one missed.

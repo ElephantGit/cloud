@@ -277,9 +277,13 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 	entries := t.list(`
 		SELECT o.scheduled_at, o.outcome, o.failure_reason, o.task_revision,
 		       o.deadline_cancelled_at, o.observed_at,
-		       r.id AS run_id, r.status AS run_status, r.failure_reason AS run_failure_reason
+		       r.id AS run_id, r.status AS run_status, r.failure_reason AS run_failure_reason,
+		       sr.verdict, sr.verdict_detail,
+		       (SELECT count(*) FROM scheduled_run_artifacts a WHERE a.issue_run_id = o.run_id) AS artifact_count,
+		       (SELECT count(*) FROM scheduled_run_artifact_rejections j WHERE j.issue_run_id = o.run_id) AS rejected_artifact_count
 		FROM scheduled_task_occurrences o
 		LEFT JOIN issue_runs r ON r.id = o.run_id
+		LEFT JOIN scheduled_run_results sr ON sr.issue_run_id = o.run_id
 		WHERE o.task_id=$1
 		ORDER BY o.scheduled_at DESC`, r.ScheduledTaskID)
 	out := make([]Object, 0, len(entries))
@@ -315,6 +319,21 @@ func scheduledTaskHistory(t *transaction, r *PublicRequest) Object {
 			if entry["runFailureReason"] != nil {
 				item["failureReason"] = entry["runFailureReason"]
 			}
+			// D6: the business verdict is the run's own row and nothing else, so a run without one
+			// reports an explicit null - "not reported" is a fact the reader must be able to see,
+			// not an absent field it might mistake for "no verdict exists".
+			if verdict := entry.S("verdict"); verdict != "" {
+				item["verdict"] = verdict
+				if detail := entry.S("verdictDetail"); detail != "" {
+					item["verdictDetail"] = detail
+				}
+			} else {
+				item["verdict"] = nil
+			}
+			// Only registered objects are counted; a refused candidate is a count of its own, and
+			// neither number requires reading an object.
+			item["artifactCount"] = entry.N("artifactCount")
+			item["rejectedArtifactCount"] = entry.N("rejectedArtifactCount")
 		}
 		out = append(out, item)
 	}

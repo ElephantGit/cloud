@@ -116,8 +116,8 @@ func workflowRunBindings(t *transaction, runID string) []any {
 //
 // The run's Project comes from the caller (D3): see resolveWorkflowRunProject for why it is stated
 // rather than inferred, and why a request that names none is refused rather than accepted. The plugin
-// version is read here rather than at session start for the same reason — see
-// resolveWorkflowRunPluginVersion — so that upgrading the space's plugin while the run is in flight
+// version and its release package are read here rather than at session start for the same reason —
+// see resolveWorkflowRunPlugin — so that upgrading the space's plugin while the run is in flight
 // cannot change what it executes.
 func createWorkflowRun(t *transaction, r *PublicRequest, uid string) Object {
 	w := workflow(t, r.TenantID, r.WorkflowID)
@@ -159,9 +159,13 @@ func insertWorkflowRun(t *transaction, tid, wid string, snapshot, input Object, 
 	require(snapshot.S("tenantId") == tid && snapshot.S("workflowId") == wid, 404, "not_found")
 	requireWorkflowRunInput(snapshot.O("graph"), input)
 	projectID = resolveWorkflowRunProject(t, tid, uid, projectID)
-	pluginVersion := resolveWorkflowRunPluginVersion(t, tid, projectID)
+	pluginVersion, pluginRelease := resolveWorkflowRunPlugin(t, tid, projectID)
+	var frozenRelease any
+	if pluginRelease != nil {
+		frozenRelease = jsonText(pluginRelease)
+	}
 	id := newID()
-	t.exec("INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id,plugin_version) VALUES($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9)", id, tid, wid, snapshot.S("id"), name, jsonText(input), uid, projectID, pluginVersion)
+	t.exec("INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,input,created_by,project_id,plugin_version,plugin_release) VALUES($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10)", id, tid, wid, snapshot.S("id"), name, jsonText(input), uid, projectID, pluginVersion, frozenRelease)
 	return t.one("SELECT * FROM workflow_runs WHERE id=$1 AND tenant_id=$2", id, tid)
 }
 
@@ -203,7 +207,7 @@ func resolveWorkflowRunProject(t *transaction, tid, uid, pid string) string {
 	return p.S("id")
 }
 
-// resolveWorkflowRunPluginVersion reads the plugin version the run will execute with, so the creation
+// resolveWorkflowRunPlugin reads the plugin identity the run will execute with, so the creation
 // transaction freezes it alongside the rest of the run's identity (D3). The plugin lives in the
 // Project's space, which is why this takes the Project the same transaction just froze: the Project is
 // what names the space to read the version from, and creation no longer admits a run without one.
@@ -213,17 +217,28 @@ func resolveWorkflowRunProject(t *transaction, tid, uid, pid string) string {
 // an install still converging freezes the version it is converging to, and a removal freezes the
 // version it is removing from — both are what the run's author asked for at the moment they asked.
 //
+// The release package is frozen only when the space's selection is that same version: it is what the
+// run Workspace's plugin step installs, and a release for any other version would execute something
+// the run was not created against. A selection that names another version — a selection converging,
+// or a catalog entry replaced under the same version — freezes no package, and the run falls back to
+// the plugin step's space-wide snapshot plus the start gate's `agent_plugin_unavailable`.
+//
 // A missing plugin freezes nothing rather than refusing the creation. The run's Workspace provisions
 // and its first agent node then fails honestly with `agent_plugin_version_unfrozen`, which is where
 // every other permanent gap in a run's identity is reported. Refusing at creation is a defensible
 // alternative — the executor-slot gate beside this does refuse — but it would turn a request the API
 // accepts today into a 400, so it stays an owner decision rather than a change made here.
-func resolveWorkflowRunPluginVersion(t *transaction, tenantID string, projectID any) any {
-	pv := t.one(`SELECT p.desired_version FROM projects pr JOIN space_plugins p ON p.space_id=pr.space_id
+func resolveWorkflowRunPlugin(t *transaction, tenantID string, projectID any) (any, Object) {
+	row := t.one(`SELECT p.desired_version,p.selected_release FROM projects pr JOIN space_plugins p ON p.space_id=pr.space_id
 		AND p.source_namespace=split_part($3,'/',1) AND p.identifier=split_part($3,'/',2)
 		WHERE pr.id=$1 AND pr.tenant_id=$2 AND pr.deleted_at IS NULL`, projectID, tenantID, opencodeAgentCLI)
-	if pv == nil || pv.S("desiredVersion") == "" {
-		return nil
+	if row == nil || row.S("desiredVersion") == "" {
+		return nil, nil
 	}
-	return pv.S("desiredVersion")
+	frozen := row.S("desiredVersion")
+	selected := row.O("selectedRelease")
+	if selected.S("version") != frozen {
+		return frozen, nil
+	}
+	return frozen, selected
 }

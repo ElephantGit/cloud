@@ -30,9 +30,9 @@ function task(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
   }
 }
 
-function serve(tasks: ScheduledTask[] = []) {
+function serve(tasks: ScheduledTask[] = [], acceptanceEnabled = false) {
   server.use(
-    http.get(LIST, () => HttpResponse.json({ tasks })),
+    http.get(LIST, () => HttpResponse.json({ tasks, acceptanceEnabled })),
     http.get(ISSUES, () =>
       HttpResponse.json({ items: [{ id: 'i1', number: 1, title: '问题一' }], nextCursor: '' }),
     ),
@@ -74,11 +74,19 @@ describe('ScheduledTasksPage', () => {
     expect(second).toHaveTextContent('已启用')
   })
 
-  it('hides creation until the end-to-end acceptance gate is opened', async () => {
+  it('hides creation while the deployed acceptance gate is closed', async () => {
     serve()
     renderPage()
     await screen.findByText('还没有定时任务')
     expect(screen.queryByRole('button', { name: '新建定时任务' })).not.toBeInTheDocument()
+  })
+
+  it('opens the existing creation form when the deployed acceptance gate is open', async () => {
+    serve([], true)
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '新建定时任务' }))
+    expect(screen.getByRole('dialog', { name: '新建定时任务' })).toBeInTheDocument()
   })
 
   it('deletes a task only after confirmation', async () => {

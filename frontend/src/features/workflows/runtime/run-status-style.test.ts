@@ -7,9 +7,8 @@ import {
 } from '@/features/workflows/runtime/types'
 
 describe('isNodeWorking', () => {
-  it('marks the two spinner-worthy statuses as live', () => {
+  it('marks the executing status as the only live one', () => {
     expect(isNodeWorking('running')).toBe(true)
-    expect(isNodeWorking('awaiting_input')).toBe(true)
   })
 
   it('is quiet for every awaited or settled status', () => {
@@ -26,7 +25,6 @@ describe('runStatusTone', () => {
       [
         ['pending', 'workflows.run.status.pending'],
         ['running', 'workflows.run.status.running'],
-        ['awaiting_input', 'workflows.run.status.awaiting_input'],
         ['succeeded', 'workflows.run.status.succeeded'],
         ['failed', 'workflows.run.status.failed'],
         ['cancelled', 'workflows.run.status.cancelled'],
@@ -78,6 +76,5 @@ describe('isTerminalRunStatus', () => {
     expect(isTerminalRunStatus('cancelled')).toBe(true)
     expect(isTerminalRunStatus('pending')).toBe(false)
     expect(isTerminalRunStatus('running')).toBe(false)
-    expect(isTerminalRunStatus('awaiting_input')).toBe(false)
   })
 })

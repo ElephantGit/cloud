@@ -12,11 +12,8 @@ import {
   useSetScheduledTaskEnabled,
   type ScheduledTask,
 } from './api'
+import { ScheduledTaskForm } from './scheduled-task-form'
 import { ScheduledTaskHistory } from './scheduled-task-history'
-
-// The backend is deliberately closed until the real end-to-end acceptance is complete. Keep the
-// Web surface closed as well so a user never sees an action that Cloud must reject.
-const scheduledTaskAcceptanceEnabled = false
 
 function ConfirmButton({
   label,
@@ -111,9 +108,11 @@ function ScheduledTaskCard({
   )
 }
 
+/** Lists a tenant's scheduled definitions and opens the create form only when Cloud enables acceptance. */
 export function ScheduledTasksPage({ slug }: { slug: string }) {
   const tasks = useScheduledTasks(slug)
   const [historyId, setHistoryId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const historyTask = historyId ? tasks.data?.tasks.find((t) => t.id === historyId) : undefined
 
   return (
@@ -125,7 +124,11 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
             到达计划时刻时在绑定 issue 上自动发起一次无人值守运行。
           </p>
         </div>
-        {scheduledTaskAcceptanceEnabled && <Button type="button">新建定时任务</Button>}
+        {tasks.data?.acceptanceEnabled && (
+          <Button type="button" onClick={() => setCreating(true)}>
+            新建定时任务
+          </Button>
+        )}
       </div>
 
       {tasks.isError && (
@@ -145,6 +148,10 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
           title={historyTask.name}
           onClose={() => setHistoryId(null)}
         />
+      )}
+
+      {creating && (
+        <ScheduledTaskForm tid={slug} task={undefined} onClose={() => setCreating(false)} />
       )}
 
       {tasks.data?.tasks.map((task) => (

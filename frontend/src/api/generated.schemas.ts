@@ -2043,6 +2043,7 @@ export interface ScheduledTaskHistory {
 }
 
 export interface ScheduledTaskList {
+  acceptanceEnabled: boolean;
   tasks: ScheduledTask[];
 }
 
@@ -2631,7 +2632,6 @@ export type WorkflowRunStatus = typeof WorkflowRunStatus[keyof typeof WorkflowRu
 export const WorkflowRunStatus = {
   pending: 'pending',
   running: 'running',
-  awaiting_input: 'awaiting_input',
   succeeded: 'succeeded',
   failed: 'failed',
   cancelled: 'cancelled',

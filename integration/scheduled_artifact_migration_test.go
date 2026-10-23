@@ -6,14 +6,17 @@ import (
 	"testing"
 )
 
-func TestMigration0064And0065ScheduledArtifactFreshUpgradeAndRepeat(t *testing.T) {
-	for _, mode := range []string{"fresh", "upgrade-from-0063", "upgrade-from-0065"} {
+func TestScheduledArtifactMigrationsFreshUpgradeAndRepeat(t *testing.T) {
+	for _, mode := range []string{"fresh", "upgrade-from-main", "before-execution-kind", "before-empty-files"} {
 		t.Run(mode, func(t *testing.T) {
 			pool, _ := testSchema(t, "test_artifact_upgrade_")
 			if mode != "fresh" {
-				next := "0064_scheduled_artifact_execution_kind.sql"
-				if mode == "upgrade-from-0065" {
-					next = "0066_scheduled_empty_artifacts.sql"
+				next := "0065_scheduled_artifact_execution_kind.sql"
+				if mode == "upgrade-from-main" {
+					next = "0063_scheduled_run_results.sql"
+				}
+				if mode == "before-empty-files" {
+					next = "0067_scheduled_empty_artifacts.sql"
 				}
 				applyMigrationsUpTo(t, pool, migrationsBefore(t, next))
 				_, err := pool.Exec(`INSERT INTO node_executions

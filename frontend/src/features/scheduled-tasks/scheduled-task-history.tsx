@@ -40,6 +40,7 @@ function timestamp(value: string): string {
   return new Date(value).toLocaleString()
 }
 
+/** Displays the read-only occurrence history for one definition without inferring a live run state. */
 export function ScheduledTaskHistory({
   tid,
   taskId,

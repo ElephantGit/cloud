@@ -3,9 +3,9 @@ import type {
   GraphWorkflowRunStatus,
 } from '@/features/workflows/runtime/types'
 
-/** Node is actively executing or blocked on human input—the only spinner-worthy states. */
+/** Node is actively executing — the only spinner-worthy state. */
 export function isNodeWorking(status: GraphWorkflowRunStatus | GraphWorkflowNodeStatus): boolean {
-  return status === 'running' || status === 'awaiting_input'
+  return status === 'running'
 }
 
 /** Shared run/node status chrome — color is never the only signal (dot + label + tone). */
@@ -22,14 +22,6 @@ export function runStatusTone(status: GraphWorkflowRunStatus | GraphWorkflowNode
         ring: 'border-sky-500/50 ring-sky-500/20',
         badge: 'border-sky-500/30 bg-sky-500/10 text-sky-800 dark:text-sky-300',
         labelKey: 'workflows.run.status.running',
-      }
-    case 'awaiting_input':
-      // Amber matches the "must handle me" tone of an open human gate.
-      return {
-        dot: 'bg-amber-500',
-        ring: 'border-amber-500/50 ring-amber-500/20',
-        badge: 'border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200',
-        labelKey: 'workflows.run.status.awaiting_input',
       }
     case 'succeeded':
       return {

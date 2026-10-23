@@ -115,7 +115,8 @@ export const workflowTranslations = {
     'workflows.inspector.field.role': '角色',
     'workflows.inspector.field.agentModel': 'Agent 模型',
     'workflows.inspector.field.interactive': '交互模式',
-    'workflows.inspector.field.interactiveHint': '开启后该节点会在执行中等待人工输入。',
+    'workflows.inspector.field.interactiveHint':
+      '首期 Cloud 不执行交互式 Agent 节点；开启后发布会拒绝该配置。',
     'workflows.inspector.field.structuredOutput': '结构化输出',
     'workflows.inspector.field.structuredOutputHint':
       '要求 Agent 按声明的 JSON 结构返回，额外输出结构化结果。',
@@ -382,7 +383,6 @@ export const workflowTranslations = {
     // Run viewer: run-level lifecycle and the read-only Overview surfaces.
     'workflows.run.status.pending': '等待中',
     'workflows.run.status.running': '运行中',
-    'workflows.run.status.awaiting_input': '等待输入',
     'workflows.run.status.succeeded': '成功',
     'workflows.run.status.failed': '失败',
     'workflows.run.status.cancelled': '已取消',
@@ -540,7 +540,7 @@ export const workflowTranslations = {
     'workflows.inspector.field.agentModel': 'Agent model',
     'workflows.inspector.field.interactive': 'Interactive',
     'workflows.inspector.field.interactiveHint':
-      'When on, this node waits for human input while the run is executing.',
+      'Cloud does not execute interactive agent nodes in phase one; publishing rejects this setting.',
     'workflows.inspector.field.structuredOutput': 'Structured output',
     'workflows.inspector.field.structuredOutputHint':
       'Require the agent to follow a declared JSON structure and emit a structured result.',
@@ -814,7 +814,6 @@ export const workflowTranslations = {
     // Run viewer: run-level lifecycle and the read-only Overview surfaces.
     'workflows.run.status.pending': 'Pending',
     'workflows.run.status.running': 'Running',
-    'workflows.run.status.awaiting_input': 'Awaiting input',
     'workflows.run.status.succeeded': 'Succeeded',
     'workflows.run.status.failed': 'Failed',
     'workflows.run.status.cancelled': 'Cancelled',

@@ -34,6 +34,10 @@
 确认里的 `snapshotId` 始终是版本游标。`launchFields` 撤下这个平台字段是另一回事，仍然有效
 （见 [Issue 协作](../collaboration/interactions.md)）。
 
+**首期不支持交互式节点。** `human` 节点和 agent 节点的 `interactive: true` 在发布时被拒绝，运行不会停在等待人工输入的状态。
+`workflow_runs.status` 的 CHECK 保留 `awaiting_input` 作为将来的保留值，但首期没有写入者：它不出现在公开 OpenAPI 的状态枚举里，
+页面也不会展示它；取消接口仍按不可取消处理，IssueRun 投影也不会因它推进。HITL 留待后续的交互式运行控制决策。
+
 ## 执行器槽位
 
 Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执行器槽位**：
@@ -88,7 +92,9 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
   出边视为 `else`；未被选中的分支上的节点标为未激活，永远不会执行。运行的图是有向无环图，没有循环和迭代。
 - **Agent 节点在一次真实会话里执行。** 运行第一次调度到 Agent 节点时，Cloud 在运行冻结的 Project 里创建这次运行的 Workspace（isolated，属于该运行），
   等它有连上的 Node 后，按该节点引用的槽位取出创建时冻结的模型绑定，把会话工作项交给 Controller；会话的终态就是该节点的终态。同一运行同一时刻只有一个会话，
-  下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
+  下一条边上的节点等它结束才开始，会话开始前的等待有上限。运行 Workspace 的 `plugin` 步骤装的是创建运行时冻结的 Agent 插件 release，不是 Space 当前的
+  选择：创建之后的在途升级不改变这次运行执行的内容；创建之后插件被移除时不补装，交给下面的启动判定以 `agent_plugin_unavailable` 失败。运行 Workspace
+  建不出来时节点以 `workspace_unavailable` 失败，会话开始时发现冻结的插件版本或槽位绑定
   缺失时以 `agent_plugin_version_unfrozen`、`workflow_executor_unconfigured` 失败；Workspace 已经就绪、但这次运行冻结的 Agent 插件没有可用实例
   （缺失、安装失败或版本不是冻结的那个）时，节点在交给会话之前就以 `agent_plugin_unavailable` 失败，运行同样进入终态。这些情况都不会停在 `running` 或报告没有发生的成功。**会话已经开始、但它的 Node 再也报不出消息时**，
   节点以 `node_unavailable` 结算失败，运行随之进入终态：依据是 Node 的可达性，而不是会话已经跑了多久——心跳超过 `issue_runs.delivery_unreachable_after`（默认 30 分钟），

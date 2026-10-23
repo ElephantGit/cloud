@@ -342,8 +342,7 @@ export interface WorkflowDefinition {
 }
 
 /** Run-level lifecycle for a project-attached graph workflow execution. */
-export type GraphWorkflowRunStatus =
-  'pending' | 'running' | 'awaiting_input' | 'succeeded' | 'failed' | 'cancelled'
+export type GraphWorkflowRunStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 /** True for a run that can no longer change: its trace is complete and final. */
 export function isTerminalRunStatus(status: GraphWorkflowRunStatus): boolean {
@@ -352,7 +351,7 @@ export function isTerminalRunStatus(status: GraphWorkflowRunStatus): boolean {
 
 /** Per-node execution status overlaid on a frozen definition snapshot. */
 export type GraphWorkflowNodeStatus =
-  'idle' | 'inactive' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'awaiting_input'
+  'idle' | 'inactive' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 /** HITL timeout policy; MVP mock always waits (`wait`) until submit. */
 export type HitlTimeoutPolicy = 'fail' | 'skip' | 'wait'

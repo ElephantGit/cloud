@@ -299,6 +299,7 @@ function isDraftInvalid(
   )
 }
 
+/** Collects one definition and its consent, then closes only after Cloud accepts the save. */
 export function ScheduledTaskForm({
   tid,
   task,

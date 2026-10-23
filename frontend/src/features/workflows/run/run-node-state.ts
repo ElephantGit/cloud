@@ -25,7 +25,6 @@ const NODE_STATUSES = new Set<GraphWorkflowNodeStatus>([
   'succeeded',
   'failed',
   'cancelled',
-  'awaiting_input',
 ])
 
 /**

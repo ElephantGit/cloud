@@ -44,7 +44,7 @@ func recordScheduledArtifacts(t *transaction, runID, executionID string, ended O
 	if err != nil {
 		return err
 	}
-	if len(declaration.Artifacts) == 0 && len(declaration.Rejections) == 0 {
+	if len(declaration.Artifacts) == 0 && len(declaration.Rejections) == 0 && declaration.OmittedRejections == 0 && !declaration.WalkTruncated {
 		return nil
 	}
 	// No object storage means no upload could ever succeed: the delivery converges as skipped in the
@@ -52,20 +52,22 @@ func recordScheduledArtifacts(t *transaction, runID, executionID string, ended O
 	state, reason := "delivering", ""
 	if t.objectStore == nil {
 		state, reason = "skipped", scheduledArtifactSkippedObjectStore
+	} else if len(declaration.Artifacts) == 0 {
+		state, reason = "failed", "no_accepted_artifacts"
 	}
 	var settledAt any
-	if state == "skipped" {
+	if state != "delivering" {
 		settledAt = time.Now()
 	}
 	// The window is fixed here and never renewed: a restart, a replay or a re-dispatch reuses the same
 	// row and therefore the same deadline.
 	t.exec(`
 		INSERT INTO scheduled_run_artifact_deliveries
-			(issue_run_id, tenant_id, task_id, occurrence_id, scheduled_at, state, deadline_at, settled_at, settled_reason)
-		VALUES($1,$2,$3,$4,$5,$6, now() + make_interval(secs => $7), $8, NULLIF($9,''))
+			(issue_run_id, tenant_id, task_id, occurrence_id, scheduled_at, state, deadline_at, settled_at, settled_reason, omitted_rejections, walk_truncated)
+		VALUES($1,$2,$3,$4,$5,$6, now() + make_interval(secs => $7), $8, NULLIF($9,''),$10,$11)
 		ON CONFLICT (issue_run_id) DO NOTHING`,
 		runID, occurrence.S("tenantId"), occurrence.S("taskId"), occurrence.S("id"), occurrence.S("scheduledAt"),
-		state, scheduledArtifactDeadline.Seconds(), settledAt, reason)
+		state, scheduledArtifactDeadline.Seconds(), settledAt, reason, declaration.OmittedRejections, declaration.WalkTruncated)
 	for _, rejection := range declaration.Rejections {
 		t.exec(`
 			INSERT INTO scheduled_run_artifact_rejections

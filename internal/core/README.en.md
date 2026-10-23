@@ -36,6 +36,11 @@ deletes objects absent from the index. Settled runs become eligible for another 
 including successful deliveries whose index retention has pruned. `artifacts_gc_at` records the last
 sweep, never permanent completion.
 
+Zero-length files may be declared, uploaded and registered; indices and names are deduplicated
+independently. The original session manifest and delivery row preserve `omitted_rejections` and
+`walk_truncated`, so a bounded refusal list never implies a complete walk. A declaration containing
+only refusals or truncation facts settles immediately without an empty upload or deadline wait.
+
 ## Store and transaction boundaries
 
 - `NewStore` obtains `*sql.DB` from injected GORM and wires the real Workflow Directory/Forms; it neither connects nor migrates nor creates a global database.

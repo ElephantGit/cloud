@@ -356,6 +356,12 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 				rejections = append(rejections, core.Object{"displayName": rejection.GetDisplayName(), "reason": reason})
 			}
 			out["artifactManifest"] = core.Object{"items": items, "rejections": rejections}
+			if declared.GetOmittedRejections() != 0 {
+				out.O("artifactManifest")["omittedRejections"] = int64(declared.GetOmittedRejections())
+			}
+			if declared.GetWalkTruncated() {
+				out.O("artifactManifest")["walkTruncated"] = true
+			}
 		}
 	case *controlpb.ExecutionResult_RevisionDelivered:
 		out["outcome"] = "revision_delivered"
@@ -441,7 +447,9 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		// A stored declaration returns to the Controller as the same structure it reported, so a
 		// recovered session is queried with the artifacts it actually carried.
 		if declared := o.O("artifactManifest"); len(declared) > 0 {
-			manifest := &controlpb.ScheduledArtifactManifest{}
+			manifest := &controlpb.ScheduledArtifactManifest{
+				OmittedRejections: boundedSchemaVersion(declared.N("omittedRejections")), WalkTruncated: declared.B("walkTruncated"),
+			}
 			for _, item := range objectsOf(declared["items"]) {
 				index, size := item.N("index"), item.N("sizeBytes")
 				if index < 0 || index > math.MaxUint32 {

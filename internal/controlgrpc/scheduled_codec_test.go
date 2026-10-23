@@ -111,6 +111,7 @@ func TestScheduledRunResultCrossesAsAStructuredValue(t *testing.T) {
 // Cloud would freeze an empty window and never ask the Node to upload anything.
 func TestScheduledArtifactManifestRoundTripsThroughTheResult(t *testing.T) {
 	declared := &controlpb.ScheduledArtifactManifest{
+		OmittedRejections: 448, WalkTruncated: true,
 		Items: []*controlpb.ScheduledArtifactItem{
 			{Index: 0, DisplayName: "reports/review.md", Kind: controlpb.ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_MARKDOWN, SizeBytes: 5, Sha256: strings.Repeat("ab", 32)},
 			{Index: 1, DisplayName: "reports/result.json", Kind: controlpb.ScheduledArtifactKind_SCHEDULED_ARTIFACT_KIND_JSON, SizeBytes: 7, Sha256: strings.Repeat("cd", 32)},

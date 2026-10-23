@@ -7,11 +7,15 @@ import (
 )
 
 func TestMigration0064And0065ScheduledArtifactFreshUpgradeAndRepeat(t *testing.T) {
-	for _, mode := range []string{"fresh", "upgrade-from-0063"} {
+	for _, mode := range []string{"fresh", "upgrade-from-0063", "upgrade-from-0065"} {
 		t.Run(mode, func(t *testing.T) {
 			pool, _ := testSchema(t, "test_artifact_upgrade_")
-			if mode == "upgrade-from-0063" {
-				applyMigrationsUpTo(t, pool, migrationsBefore(t, "0064_scheduled_artifact_execution_kind.sql"))
+			if mode != "fresh" {
+				next := "0064_scheduled_artifact_execution_kind.sql"
+				if mode == "upgrade-from-0065" {
+					next = "0066_scheduled_empty_artifacts.sql"
+				}
+				applyMigrationsUpTo(t, pool, migrationsBefore(t, next))
 				_, err := pool.Exec(`INSERT INTO node_executions
 					(execution_id,kind,operation_id,node_id,node_operation_id,input,dispatched_epoch)
 					VALUES('legacy-plugin','install_plugins',gen_random_uuid(),'node','legacy-op','{}',1)`)
@@ -21,6 +25,12 @@ func TestMigration0064And0065ScheduledArtifactFreshUpgradeAndRepeat(t *testing.T
 			must(t, store.Migrate(context.Background()))
 			must(t, store.Migrate(context.Background()))
 			must(t, store.CheckSchema(context.Background()))
+			var sizeConstraint string
+			must(t, pool.QueryRow(`SELECT pg_get_constraintdef(oid) FROM pg_constraint
+				WHERE conrelid='scheduled_run_artifacts'::regclass AND conname='scheduled_run_artifacts_size_bytes_check'`).Scan(&sizeConstraint))
+			if !strings.Contains(sizeConstraint, "size_bytes >= 0") {
+				t.Fatal("fresh and upgraded schemas must allow empty artifacts")
+			}
 			// Keep plugin executions and admit independent deliveries of the same run together.
 			_, err := pool.Exec(`INSERT INTO node_executions
 				(execution_id,kind,operation_id,node_id,node_operation_id,input,dispatched_epoch)

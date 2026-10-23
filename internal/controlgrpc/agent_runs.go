@@ -111,6 +111,7 @@ func (s *agentRunService) GrantScheduledArtifactUpload(ctx context.Context, req 
 			return nil, invalidInput("invalid_upload_checksum")
 		}
 		artifacts = append(artifacts, core.Object{
+			// #nosec G115 -- sizes above MaxInt64 were refused just above.
 			"index": int64(artifact.GetIndex()), "size": int64(artifact.GetSize()), "sha256": artifact.GetSha256(),
 		})
 	}

@@ -11,7 +11,7 @@ import (
 func TestScheduledTaskCreatorInactiveAutoDisables(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Creator inactive", 65)
-	_, err := store.Pool.Exec(`UPDATE tenant_memberships SET status='inactive' WHERE tenant_id=$1 AND user_id=$2`, s.tenantID, s.userID)
+	_, err := store.Pool.Exec(`UPDATE tenant_memberships SET status='disabled' WHERE tenant_id=$1 AND user_id=$2`, s.tenantID, s.userID)
 	must(t, err)
 
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))

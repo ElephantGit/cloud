@@ -97,6 +97,28 @@ function renderConversation(runs: IssueRun[], currentUserId = 'u1') {
 }
 
 describe('TaskConversationPanel', () => {
+  it('refreshes active ownership after release even when no messages remain waiting', async () => {
+    const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
+    mockConversation(runs, [])
+    let active = true
+    server.use(
+      http.get(CONVERSATION, () =>
+        HttpResponse.json({
+          items: [],
+          prevCursor: null,
+          nextCursor: null,
+          activeRunId: active ? 'r-live' : null,
+        }),
+      ),
+    )
+    renderConversation(runs)
+    expect(await screen.findByText('当前会话 · 空闲')).toBeInTheDocument()
+    active = false
+    await waitFor(() => expect(screen.queryByText('当前会话 · 空闲')).not.toBeInTheDocument(), {
+      timeout: 7000,
+    })
+  }, 10000)
+
   it('does not label another member as the current user in a waiting message', async () => {
     mockConversation(
       [],

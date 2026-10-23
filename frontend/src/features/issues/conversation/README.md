@@ -18,3 +18,5 @@
 依赖 `src/api` 生成客户端、`features/issues/api`、`features/issues/thread`、`features/spaces/api`、`features/conversation-content` 和 `components/ui`。只使用服务端授权后的目标名册；选择器和 `@` 菜单只在明确选择后改变接收者，普通文本中的 `@名称` 不参与路由，本地选择也不触发执行。历史选中 Run 只读；任务级发送框始终把新消息发往当前目标。结束入口只指向服务端 `activeRunId`，还须 Thread 的 `canEnd` 为真且当前用户是该会话发起者；排在后面的 Run 不能遮住当前会话的结束入口。分页按服务端 seq 合并，响应丢失后的重试保留同一个幂等键。
 
 `conversation-footer.tsx` 将当前会话结束、任务停止/恢复和输入区固定在正文之外，操作始终绑定当前执行。正文以轻量 Run 分隔连续阅读，作者来自消息或 Thread 发起者，只有当前用户显示“你”；Agent 名称显式传给消息展示。正文借用 thread 的统一 viewport，授权拒绝后隐藏旧消息。
+
+任务对话在 activeRunId 存在或有等待消息时继续刷新；运行完成后由服务端清空当前占用，不能因队列已空而留下陈旧的执行控制。

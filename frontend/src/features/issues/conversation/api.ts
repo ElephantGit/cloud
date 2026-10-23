@@ -36,8 +36,8 @@ export function useTaskConversation(tid: string, issueId: string) {
     getNextPageParam: (page) =>
       page.prevCursor !== null && page.prevCursor > 1 ? page.prevCursor : undefined,
     refetchInterval: (query) =>
-      query.state.data?.pages.some((page) =>
-        page.items.some((message) => message.state === 'waiting'),
+      query.state.data?.pages.some(
+        (page) => !!page.activeRunId || page.items.some((message) => message.state === 'waiting'),
       )
         ? 5000
         : false,

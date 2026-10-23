@@ -344,7 +344,7 @@ func resultObject(res *controlpb.ExecutionResult) (core.Object, error) {
 					// The durable object stores plain integers: N() reads float64/int64, so a uint32 or
 					// uint64 kept as-is would read back as zero and silently lose the index or size.
 					"index": int64(item.GetIndex()), "displayName": item.GetDisplayName(), "kind": kind,
-					"sizeBytes": int64(item.GetSizeBytes()), "sha256": item.GetSha256(),
+					"sizeBytes": int64(item.GetSizeBytes()), "sha256": item.GetSha256(), // #nosec G115 -- values above MaxInt64 are refused above.
 				})
 			}
 			rejections := make([]core.Object, 0, len(declared.GetRejections()))
@@ -443,10 +443,17 @@ func result(o core.Object) *controlpb.ExecutionResult {
 		if declared := o.O("artifactManifest"); len(declared) > 0 {
 			manifest := &controlpb.ScheduledArtifactManifest{}
 			for _, item := range objectsOf(declared["items"]) {
+				index, size := item.N("index"), item.N("sizeBytes")
+				if index < 0 || index > math.MaxUint32 {
+					index = 0
+				}
+				if size < 0 {
+					size = 0
+				}
 				manifest.Items = append(manifest.Items, &controlpb.ScheduledArtifactItem{
-					Index: uint32(item.N("index")), DisplayName: item.S("displayName"),
+					Index: uint32(index), DisplayName: item.S("displayName"), // #nosec G115 -- bounded above.
 					Kind:      controlpb.ScheduledArtifactKind(enum(controlpb.ScheduledArtifactKind_value, "SCHEDULED_ARTIFACT_KIND_", item.S("kind"))),
-					SizeBytes: uint64(item.N("sizeBytes")), Sha256: item.S("sha256"),
+					SizeBytes: uint64(size), Sha256: item.S("sha256"), // #nosec G115 -- nonnegative above.
 				})
 			}
 			for _, rejection := range objectsOf(declared["rejections"]) {

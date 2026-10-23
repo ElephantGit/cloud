@@ -28,18 +28,21 @@ export function useThreadPreview(ref: PreviewRef, enabled: boolean) {
     if (!enabled) return undefined
     const controller = new AbortController()
     const queryKey = ['thread-preview', tid, issueId, runId] as const
+    let attempts = 0
     const clear = () => queryClient.setQueryData(queryKey, emptyPreview())
     const receive = (data: string) => {
       if (controller.signal.aborted) return
       const next = parseThreadPreview(data)
       if (!next) return
+      // Backoff applies to consecutive failures, not to a lifetime of healthy
+      // streams that end when their Gateway credentials expire.
+      attempts = 0
       setConnection(next.available ? 'live' : 'unavailable')
       queryClient.setQueryData<ThreadPreviewSnapshot>(queryKey, (current) =>
         adoptThreadPreview(current ?? emptyPreview(), next),
       )
     }
     void (async () => {
-      let attempts = 0
       while (!controller.signal.aborted) {
         try {
           if (attempts > 0) {

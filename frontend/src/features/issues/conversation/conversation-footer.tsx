@@ -94,6 +94,7 @@ export function ConversationFooter({
           onSent={onLatest}
           readiness={current?.agentReadiness}
           settingsPath={workspaceSlug ? workspacePaths(workspaceSlug).modelConnections : undefined}
+          pluginsPath={workspaceSlug ? workspacePaths(workspaceSlug).plugins : undefined}
         />
       </div>
     </div>

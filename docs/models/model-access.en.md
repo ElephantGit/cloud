@@ -70,6 +70,8 @@ Reads return the current declaration alongside the saved configuration. A change
 
 Settings accept declared scalar fields only, and configuration requests do not carry connection credentials. Connection/model references must belong to the current user and match the declaration's protocols; Claude requires Messages. Saving configuration does not establish connectivity or deployed adapter support.
 
+Declared Agent task readiness and final run admission use the same public gap codes: disabled, deleted or inaccessible connections return `model_connection_unavailable`, a missing key returns `model_credential_required`, a withdrawn selected model returns `model_not_found`, and an unconfigured model selection returns `agent_configuration_required`. The UI directs connection, credential and model gaps to personal model connections, and an unconfigured plugin model selection to the plugin's personal configuration. Internal workflow gap reasons are not exposed directly as these public errors.
+
 ## Run bindings
 
 An Agent run of `official/ora-space.opencode` gets a run binding (`run_model_bindings`) generated **in the same

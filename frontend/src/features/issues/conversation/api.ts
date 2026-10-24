@@ -165,6 +165,17 @@ export function useStopTaskConversation(tid: string, issueId: string) {
 }
 
 const MESSAGE_FAULTS: Record<string, string> = {
+  agent_declaration_required: '这个插件版本尚未提供个人配置，请联系空间管理员升级插件。',
+  agent_declaration_invalid: '这个插件版本的配置声明不可用，请联系空间管理员。',
+  agent_configuration_required: '请在插件的“我的配置”中选择个人模型连接和模型。',
+  agent_configuration_repair_required: '插件配置要求已变化，请在“我的配置”中确认修复。',
+  agent_model_protocol_mismatch: '模型连接协议与此插件不匹配，请在“我的配置”中选择兼容连接。',
+  agent_release_conflict: '空间选用的插件版本已变化，请刷新并核对插件配置。',
+  agent_adapter_unavailable: '当前服务尚未启用此插件的模型接入能力，请联系部署管理员。',
+  agent_target_unavailable: '当前插件没有适合此运行环境的安装包，请联系空间管理员。',
+  agent_plugin_unavailable: '运行所需的插件尚未安装就绪，请检查插件安装状态。',
+  model_connection_disabled: '模型连接已停用，请更新个人设置',
+  model_not_found: '所选模型已不可用，请重新选择',
   content_too_large: '消息过长，请缩短后重试',
   invalid_target: '请选择可用的 Agent',
   issue_project_required: '请先关联项目',

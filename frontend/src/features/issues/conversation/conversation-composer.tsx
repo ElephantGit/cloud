@@ -155,6 +155,7 @@ export function ConversationComposer({
   onSent,
   readiness,
   settingsPath,
+  pluginsPath,
 }: {
   tid: string
   issueId: string
@@ -164,6 +165,7 @@ export function ConversationComposer({
   onSent: () => void
   readiness: TaskAgentReadiness[] | undefined
   settingsPath: string | undefined
+  pluginsPath?: string | undefined
 }) {
   const { mode, setMode, selected, setSelected, draft, setDraft, input } = state
   const agents = targets.filter((target) => target.type === 'agent')
@@ -225,7 +227,13 @@ export function ConversationComposer({
         sendError={submission.sendError}
         commentError={submission.commentError}
       />
-      {mode === 'agent' && <AgentReadiness readiness={recipient} settingsPath={settingsPath} />}
+      {mode === 'agent' && (
+        <AgentReadiness
+          readiness={recipient}
+          settingsPath={settingsPath}
+          pluginsPath={pluginsPath}
+        />
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={!canSubmit}>
           {buttonLabel}

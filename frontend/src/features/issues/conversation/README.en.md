@@ -20,3 +20,5 @@ Depends on generated `src/api`, `features/issues/api`, `features/issues/thread`,
 `conversation-footer.tsx` keeps current-session end, task stop/recovery and the composer outside scrolling content. Controls always target the active execution. Lightweight Run separators preserve transcript ordering; authors derive from persisted messages or Thread initiators, and only the current actor is called “you”. Agent names are supplied explicitly. The thread viewport owns scrolling and denied reads hide stale messages.
 
 Conversation reads continue polling while activeRunId exists or messages are waiting. The server clears active ownership after release; an empty queue must not leave stale execution controls visible.
+
+The composer occupies normal document flow, never overlays task history, and requires no fixed-height spacer to read the latest message.

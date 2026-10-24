@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ThreadEntry, ThreadPreviewSnapshot } from '@/api/generated.schemas'
 import { server } from '@/test/msw-server'
 import { adoptThreadPreview, emptyPreview, mergeThreadPreview, parseThreadPreview } from './preview'
@@ -109,6 +109,41 @@ describe('Thread previews', () => {
     await waitFor(() =>
       expect(client.getQueryData(['thread-preview', 't', 'i', 'r'])).toBeUndefined(),
     )
+  })
+
+  it('reconnects promptly after each healthy stream instead of compounding backoff', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let requests = 0
+      server.use(
+        http.get(URL, () => {
+          requests++
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(encode(snapshot(requests, `stream ${requests}`)))
+                controller.close()
+              },
+            }),
+            { headers: { 'Content-Type': 'text/event-stream' } },
+          )
+        }),
+      )
+      const client = new QueryClient()
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      )
+      const hook = renderHook(() => useThreadPreview(REF, true), { wrapper })
+      // Compounding backoff would wait 1s, 2s, then 4s; healthy streams keep the first delay.
+      for (let elapsed = 0; elapsed < 3000; elapsed += 100) {
+        // oxlint-disable-next-line no-await-in-loop -- each step lets the stream settle
+        await act(() => vi.advanceTimersByTimeAsync(100))
+      }
+      expect(requests).toBe(4)
+      hook.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('clears optional content and stops reconnecting when membership is refused', async () => {

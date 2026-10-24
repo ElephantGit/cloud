@@ -47,8 +47,10 @@ func TestPersonalAgentMissingModelSelectionHTTPAdmissionAndRepair(t *testing.T) 
 				uuid.NewString(), uuid.NewString(), make([]byte, 32), "fixture-key")
 			must(t, err)
 			configPath := "/api/v1/me/agent-configurations/" + space + "/official/ora-space.claude"
-			body := core.Object{"revision": 0, "selectionVersion": 1, "declarationFingerprint": compiled.Fingerprint,
-				"settings": core.Object{}, "connectionId": connection.S("id"), "modelId": "claude-model"}
+			body := core.Object{
+				"revision": 0, "selectionVersion": 1, "declarationFingerprint": compiled.Fingerprint,
+				"settings": core.Object{}, "connectionId": connection.S("id"), "modelId": "claude-model",
+			}
 			if cleared {
 				f.call("PUT", configPath, body, uuid.NewString(), 200)
 				f.call("DELETE", configPath, core.Object{"revision": 1}, uuid.NewString(), 200)

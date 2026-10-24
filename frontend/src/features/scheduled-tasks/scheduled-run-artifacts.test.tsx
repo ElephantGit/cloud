@@ -80,7 +80,9 @@ describe('ScheduledRunArtifacts', () => {
     await user.click(screen.getByRole('button', { name: '查看产物' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('产物列表加载失败')
     await user.click(screen.getByRole('button', { name: '重试' }))
-    expect(await screen.findByRole('link', { name: '下载 reports/result.html' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('link', { name: '下载 reports/result.html' }),
+    ).toBeInTheDocument()
     expect(attempts).toBe(2)
     expect(screen.getByRole('link')).toHaveAttribute('href', LIST + '/3')
   })

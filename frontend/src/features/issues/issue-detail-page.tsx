@@ -21,7 +21,7 @@ import {
 } from '@/features/issues/api'
 import { issueNumber } from '@/features/issues/present'
 import { workspacePaths } from '@/lib/paths'
-import { isUnauthorizedError, isForbiddenError } from '@/lib/api-client'
+import { faultCode, isUnauthorizedError, isForbiddenError } from '@/lib/api-client'
 import { useProjects } from '@/features/projects/api'
 import type { Issue, TenantMember } from './types'
 
@@ -40,11 +40,18 @@ export function IssueDetailPage({ slug }: { slug: string }) {
   const deleteIssue = useDeleteIssue(slug)
   const p = workspacePaths(workspaceSlug ?? slug)
 
-  if (isUnauthorizedError(issueQuery.error) || isForbiddenError(issueQuery.error))
+  const inaccessible =
+    isUnauthorizedError(issueQuery.error) ||
+    isForbiddenError(issueQuery.error) ||
+    faultCode(issueQuery.error) === 'not_found'
+  if (issueQuery.isError && (!issue || inaccessible))
     return (
-      <p role="alert" className="p-6">
-        任务读取失败或已不可访问，请刷新重试。
-      </p>
+      <TaskReadFailure
+        issuesHref={p.issues}
+        error={issueQuery.error}
+        retrying={issueQuery.isFetching}
+        retry={() => void issueQuery.refetch()}
+      />
     )
   if (isPending || !issue) return <TaskLoading issuesHref={p.issues} />
 
@@ -86,25 +93,17 @@ export function IssueDetailPage({ slug }: { slug: string }) {
           <>
             <TaskHeading issue={issue} />
             {updateIssue.isError && (
-              <div role="alert" className="text-sm text-destructive">
-                <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={propertiesBusy}
-                  onClick={() => {
-                    setReloading(true)
-                    void issueQuery.refetch().then((result) => {
-                      if (!result.isError) updateIssue.reset()
-                      setReloading(false)
-                      return result
-                    })
-                  }}
-                >
-                  重新加载任务
-                </Button>
-              </div>
+              <TaskSaveFailure
+                busy={propertiesBusy}
+                reload={() => {
+                  setReloading(true)
+                  void issueQuery.refetch().then((result) => {
+                    if (!result.isError) updateIssue.reset()
+                    setReloading(false)
+                    return result
+                  })
+                }}
+              />
             )}
           </>
         }
@@ -122,6 +121,17 @@ export function IssueDetailPage({ slug }: { slug: string }) {
         }
         details={<TaskMetadata issue={issue} members={members} tid={slug} />}
       />
+    </div>
+  )
+}
+
+function TaskSaveFailure({ busy, reload }: { busy: boolean; reload: () => void }) {
+  return (
+    <div role="alert" className="text-sm text-destructive">
+      <p>保存任务失败，请重新加载任务确认当前状态后重试。</p>
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={reload}>
+        重新加载任务
+      </Button>
     </div>
   )
 }
@@ -178,11 +188,49 @@ function TaskHeading({ issue }: { issue: Issue }) {
   )
 }
 
-function TaskLoading({ issuesHref }: { issuesHref: string }) {
+function TaskReadFailure({
+  issuesHref,
+  error,
+  retrying,
+  retry,
+}: {
+  issuesHref: string
+  error: unknown
+  retrying: boolean
+  retry: () => void
+}) {
+  if (isUnauthorizedError(error) || isForbiddenError(error))
+    return (
+      <p role="alert" className="p-6">
+        任务读取失败或已不可访问，请刷新重试。
+      </p>
+    )
+  const missing = faultCode(error) === 'not_found'
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="任务" breadcrumb={{ label: '任务', to: issuesHref }} />
       <div className="space-y-3 p-6">
+        <p role="alert">{missing ? '任务不存在或已不可访问。' : '任务暂时无法加载，请重试。'}</p>
+        <div className="flex items-center gap-3">
+          {!missing && (
+            <Button onClick={retry} disabled={retrying} variant="outline" size="sm">
+              重试加载任务
+            </Button>
+          )}
+          <Link to={issuesHref} className="text-sm underline">
+            返回任务列表
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TaskLoading({ issuesHref }: { issuesHref: string }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader title="任务" breadcrumb={{ label: '任务', to: issuesHref }} />
+      <div role="status" aria-label="正在加载任务" className="space-y-3 p-6">
         <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-24 w-full" />
       </div>

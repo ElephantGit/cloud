@@ -42,3 +42,5 @@ Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned ass
 `useWorkflowPublishedSnapshotIds` caches all published ids by tenant/workflow, following the generated list endpoint's cursors with a page limit of 100 and the caller's abort signal; it stores no graph copies. The activity form uses those ids to identify published-version options. API tests cover the second-page cursor, complete id list and tenant/workflow isolation.
 
 Issue details use a bounded workspace: heading, views, one transcript viewport and an in-flow composer. The details rail becomes a drawer based on available width; version conflicts retain the existing update path, and denied reads hide stale content.
+
+Initial reads show a skeleton only while pending. `not_found` displays an unavailable-task message with a list link; other failures offer a safe message and retry, with no duplicate retry while loading. A 401/403 still hides cached content, as does a 404 for a removed task. Transient reload failures for an already loaded task retain the existing property-save recovery flow, loaded version and original save error.

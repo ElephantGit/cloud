@@ -15,3 +15,5 @@
 | `*.test.ts(x)` | MSW 与组件场景，覆盖终态续聊、切换、失败与队列。 |
 
 依赖 `src/api` 生成客户端、`features/issues/api`、`features/issues/thread`、`features/spaces/api`、`features/conversation-content` 和 `components/ui`。只使用服务端授权后的目标名册；选择器和 `@` 菜单只在明确选择后改变接收者，普通文本中的 `@名称` 不参与路由，本地选择也不触发执行。历史选中 Run 只读；任务级发送框始终把新消息发往当前目标。结束入口只指向服务端 `activeRunId`，还须 Thread 的 `canEnd` 为真且当前用户是该会话发起者；排在后面的 Run 不能遮住当前会话的结束入口。分页按服务端 seq 合并，响应丢失后的重试保留同一个幂等键。
+
+发送框在正常文档流中占位，不悬浮覆盖任务历史；长会话滚动与最新消息阅读不依赖固定高度补白。

@@ -36,3 +36,5 @@
 - `PENDING_JOIN_PATH_KEY` 是当前标签暂存私有加入路径的键；登录往返只向 Gateway 提交无令牌的 `/join/continue`。
 
 `workspacePaths` 还负责会话列表（`sessions`）和 Agent 详情（`agentSession`）路径；`paths.test.ts` 验证它们始终位于选定工作区前缀之下。
+
+mock API 边界拒绝字符串响应（包括 worker 尚未接管时的 SPA HTML 回退），不把它缓存为领域对象；请求失败可由查询恢复。

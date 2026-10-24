@@ -70,6 +70,17 @@ function renderPage({
 }
 
 describe('GitCredentialsPage', () => {
+  it('explains that an administrator must configure the credential service', async () => {
+    renderPage()
+    server.use(
+      http.post(`/api/v1/tenants/${TEST_TENANT_ID}/git-credentials`, () =>
+        HttpResponse.json({ code: 'credential_store_unconfigured' }, { status: 503 }),
+      ),
+    )
+    await askForGrant()
+    expect(await screen.findByRole('alert')).toHaveTextContent('请联系部署管理员启用外部 Git 服务')
+    expect(screen.queryByLabelText('Git token')).not.toBeInTheDocument()
+  })
   it('reports each credential’s state, proven capabilities and Store version', async () => {
     renderPage({
       credentials: [

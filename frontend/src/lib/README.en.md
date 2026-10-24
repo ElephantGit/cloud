@@ -36,3 +36,5 @@ Third-party libraries and sibling modules in this directory only. **Never** impo
 - `PENDING_JOIN_PATH_KEY` identifies the tab-local private join path; the login round trip sends Gateway only tokenless `/join/continue`.
 
 `workspacePaths` also owns the session list (`sessions`) and Agent detail (`agentSession`) paths. `paths.test.ts` verifies both remain below the selected workspace prefix.
+
+The mock API boundary rejects string responses, including SPA HTML before the worker takes control, rather than caching them as domain objects; failed queries remain recoverable.

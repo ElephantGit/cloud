@@ -23,3 +23,5 @@ The model-request tab lazily reads a separate statistics contract, rendered by `
 Filter changes start a separate first-page cache. Date filters include the lower bound and exclude the upper bound, converting local input to UTC. Failed authorization on refresh hides old details. Cloud checks current membership for every request.
 
 `session-statistics-summary.tsx` fetches only statistics for the selected Run, without model-calls pages. It reuses metric formatting and coverage labels; failed refreshes, including revoked access, hide cached values. Unobserved usage remains unknown and costs are not estimated.
+
+The compact definition list groups each metric's name, value and coverage together. The no-observations explanation stays outside the list so assistive technology can associate descriptions with the correct metric.

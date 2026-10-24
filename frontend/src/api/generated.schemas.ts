@@ -1958,6 +1958,18 @@ export interface Sandbox {
   workspaceId: string;
 }
 
+export interface ScheduledArtifact {
+  index: number;
+  kind: string;
+  name: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export interface ScheduledArtifactList {
+  artifacts: ScheduledArtifact[];
+}
+
 export type ScheduledTaskScheduleKind = typeof ScheduledTaskScheduleKind[keyof typeof ScheduledTaskScheduleKind];
 
 
@@ -2026,15 +2038,25 @@ export interface ScheduledTaskApproval {
 
 export interface ScheduledTaskOccurrence {
   /** @nullable */
+  artifactCount?: number | null;
+  /** @nullable */
+  artifactsExpired?: boolean | null;
+  /** @nullable */
   failureReason?: string | null;
   observedAt: string;
   outcome: string;
+  /** @nullable */
+  rejectedArtifactCount?: number | null;
   /** @nullable */
   runId?: string | null;
   scheduledAt: string;
   /** @nullable */
   sessionId?: string | null;
   taskRevision: number;
+  /** @nullable */
+  verdict?: string | null;
+  /** @nullable */
+  verdictDetail?: string | null;
 }
 
 export interface ScheduledTaskHistory {
@@ -2231,6 +2253,7 @@ export const SpaceEventType = {
   issue_runthread_changed: 'issue_run.thread_changed',
   projectrepository_updated: 'project.repository_updated',
   issueconversation_changed: 'issue.conversation_changed',
+  scheduled_taskartifacts_updated: 'scheduled_task.artifacts_updated',
 } as const;
 
 export interface SpaceEvent {

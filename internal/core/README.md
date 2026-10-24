@@ -66,3 +66,7 @@ D8 按原身份显式接管，不回填账本。自动层 A1–A6、两阶段处
 `fixture_template_isolation_test.go` 验证数据、DDL、迁移记录、后续副本与并行副本隔离，并调用产品的 `CheckSchema`；迁移/升级专用测试仍走 integration 的空白/旧 schema 入口，不使用最新模板替代迁移。清理强制终止进程留下的库见[测试文档](../../docs/development/testing.md#清理遗留测试数据库)。
 
 本包镜像 integration 的小型测试 helper：integration 的 `_test.go` 代码不能作为包导入，而且 integration 已依赖 core；抽取共享包会额外引入回调 API 并改动另一套 fixture。生产代码不依赖这些全局测试状态。
+
+`scheduled_run_artifact_api.go` 在短事务中按当前成员、Issue 和 Run 检查读取范围。列表只返回登记元数据，下载在事务外通过私有端点读取并校验大小/SHA-256（上限 10 MiB），返回前再次核验权限与登记；调用者不能指定对象键。登记/淘汰同事务发出失效提示，历史中的 verdict 与数量从独立运行事实读取。
+
+产物读取将成员关系不足映射为与不存在一致的 404。历史只有在已成功/部分交付且登记索引为空时报告产物过期，不从任务历史年龄或失败状态推断。

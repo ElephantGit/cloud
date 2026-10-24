@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README.en.md)
 
+Geometry changes only preserve the reading anchor or follow the bottom. Unread detection uses `data-conversation-output`: an existing Thread's tail sequence/live preview revision changes, or a task message/Run appears after the retained tail. Older pages, delayed historical Runs and disclosure/layout changes neither create an unread notification nor clear a pending genuine one.
+
 ## Responsibility
 
 Live Threads also consume optional snapshots from `features/thread-preview`. History positions identify replacements and settled records always win. Live thoughts open and fold when settled. Connection/missing-content states are visible and updates preserve historical reading position.

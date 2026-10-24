@@ -22,3 +22,7 @@ Task conversation adds `GET/POST /issues/:iid/conversation`, explicitly addresse
 ## Contract entrypoints
 
 [OpenAPI](../../../api/openapi.json) owns fields and status codes; see [contract](../../contract/README.en.md) for generation. Cross-module semantics live in [HTTP API](../../../docs/core/http-api.en.md), [Session reads](../../../docs/agent-runs/session-reads.en.md) and [Personal model access](../../../docs/models/model-access.en.md). Gateway/model-gateway handle API Key writes; Cloud rejects credential requests before reading their body and never falls back to ordinary JSON dispatch.
+
+Scheduled-artifact lists and downloads use the session-read boundary: all query parameters are refused, successful responses use `private, no-store`, and callers select only route-bound run identities and indices.
+
+Single-artifact responses are verified raw bytes with a safely encoded attachment filename, binary media type, nosniff and private no-store; errors remain JSON Faults.

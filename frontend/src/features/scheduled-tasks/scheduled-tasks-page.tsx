@@ -145,6 +145,7 @@ export function ScheduledTasksPage({ slug }: { slug: string }) {
         <ScheduledTaskHistory
           tid={slug}
           taskId={historyTask.id}
+          issueId={historyTask.issueId}
           title={historyTask.name}
           onClose={() => setHistoryId(null)}
         />

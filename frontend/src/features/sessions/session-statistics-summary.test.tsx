@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { expect, it } from 'vitest'
@@ -70,4 +70,52 @@ it('requests one selected aggregate without fetching model-call pages and hides 
   expect(await screen.findByRole('alert')).toHaveTextContent('统计暂不可用')
   expect(screen.queryByText('0ms')).not.toBeInTheDocument()
   expect(requested).toEqual(['selected', 'selected'])
+})
+
+it('groups each metric name with its value and coverage in one definition-list group', async () => {
+  server.use(
+    http.get('/api/v1/tenants/t1/issues/i1/runs/selected/statistics', () =>
+      HttpResponse.json(statistics()),
+    ),
+  )
+  renderWithProviders(
+    <SessionStatisticsSummary
+      sessionRef={{ tid: 't1', issueId: 'i1', runId: 'selected' }}
+      detailsHref="/analysis"
+    />,
+  )
+  await screen.findByText('0ms')
+  const measuredTerms = screen
+    .getAllByRole('term')
+    .filter((term) => term.textContent !== '已记录请求')
+  for (const term of measuredTerms) {
+    const group = term.parentElement
+    if (!group) throw new Error('Metric definition group missing')
+    expect([...group.children].every((child) => ['DT', 'DD'].includes(child.tagName))).toBe(true)
+    expect(within(group).getAllByRole('definition').length).toBeGreaterThan(0)
+    expect(within(group).getByText(/次请求已知/)).toBeInTheDocument()
+  }
+  expect(screen.getByRole('link', { name: '完整时间线与统计' })).toHaveAttribute(
+    'href',
+    '/analysis',
+  )
+})
+
+it('keeps the no-observations explanation outside the metric definition list', async () => {
+  server.use(
+    http.get('/api/v1/tenants/t1/issues/i1/runs/selected/statistics', () => {
+      const data = statistics()
+      data.counts.total = 0
+      return HttpResponse.json(data)
+    }),
+  )
+  renderWithProviders(
+    <SessionStatisticsSummary
+      sessionRef={{ tid: 't1', issueId: 'i1', runId: 'selected' }}
+      detailsHref={undefined}
+    />,
+  )
+  const notice = await screen.findByText('暂无观测，不代表历史消耗为零。')
+  expect(notice.closest('dl')).toBeNull()
+  expect(screen.getAllByText('未知')).toHaveLength(2)
 })

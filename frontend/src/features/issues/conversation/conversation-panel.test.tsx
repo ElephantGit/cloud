@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
@@ -97,6 +97,42 @@ function renderConversation(runs: IssueRun[], currentUserId = 'u1') {
 }
 
 describe('TaskConversationPanel', () => {
+  it('does not report older Runs as unread but does notify about a new task message', async () => {
+    const runs = Array.from({ length: 6 }, (_, index) =>
+      run(`r-${index}`, 'a1', 'completed', `2026-10-18T01:0${index}:00Z`),
+    )
+    const messages: TaskConversationMessage[] = []
+    mockConversation(runs, messages)
+    const { queryClient } = renderConversation(runs)
+    await screen.findByText('Answer r-5')
+    const viewport = screen.getByLabelText('对话滚动区域')
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1000 },
+    })
+    fireEvent.scroll(viewport, { target: { scrollTop: 100 } })
+    await userEvent.setup().click(screen.getByRole('button', { name: '加载更早的执行记录' }))
+    await screen.findByText('Answer r-0')
+    expect(screen.queryByRole('button', { name: '有新内容 · 回到底部' })).not.toBeInTheDocument()
+    messages.push({
+      id: 'm-new',
+      seq: 1,
+      agentId: 'a1',
+      userId: 'u1',
+      body: 'New task message',
+      state: 'waiting',
+      runId: null,
+      threadSeq: null,
+      errorCode: null,
+      createdAt: '2026-10-18T02:00:00Z',
+    })
+    await act(async () =>
+      queryClient.invalidateQueries({ queryKey: ['task-conversation', 't1', 'i1'] }),
+    )
+    expect(await screen.findByRole('button', { name: '有新内容 · 回到底部' })).toBeInTheDocument()
+    expect(viewport.scrollTop).toBe(100)
+  })
+
   it('refreshes active ownership after release even when no messages remain waiting', async () => {
     const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
     mockConversation(runs, [])

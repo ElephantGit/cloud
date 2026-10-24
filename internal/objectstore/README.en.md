@@ -90,3 +90,5 @@ dependency: it supports PUT, HEAD and GET using the standard library.
   that a still-live grant cannot overwrite, and an upload through the public endpoint from the sandbox
   network. `task test:revision` (`REQUIRE_S3=1`) and cluster's `task agent:acceptance` run them, and
   the Backend CI workflow runs them against a pinned RustFS.
+
+Registered artifacts use `ReadVerified` through the private endpoint; browsers receive no storage URL. Core owns authorization, registration and the 10 MiB bound.

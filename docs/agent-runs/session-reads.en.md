@@ -108,3 +108,24 @@ added to the gateway statistics.
 
 - [Session analysis builds a read-only view from Cloud authorization records and registered archives](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261016-session-analysis-read-model.md) (approved)
 - [Model usage is recorded per gateway HTTP attempt, keeping partial observations and unknown values](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261016-recorded-http-attempt-statistics.md) (approved)
+
+## Scheduled-run verdicts and artifacts
+
+Scheduled-task history reads the run-level verdict (missing means "not reported") and registered/refused counts; completion never implies a business pass.
+`GET .../issues/:iid/runs/:rid/artifacts` returns current metadata without object keys or storage URLs.
+`GET .../issues/:iid/runs/:rid/artifacts/:aidx` authorizes current membership, Issue, Run and registration in a short transaction,
+reads privately outside the transaction, verifies registered size/SHA-256 under a 10 MiB cap, then rechecks access and registration.
+Callers select a run and index, never an object key. Missing/pruned/unverifiable objects return `404 artifact_unavailable`;
+unconfigured storage returns `503 object_store_unavailable`.
+
+The response is raw bytes with `Content-Disposition: attachment` (safely encoded display-name basename),
+`Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`.
+Browsers use a same-origin Cloud download path and receive no storage address or credential. HTML is also downloaded as an attachment.
+The UI expands metadata on demand, offers ordinary same-origin download links with fresh server authorization on each click,
+and neither shows link expiry nor renders file content inside the app.
+
+`scheduled_task.artifacts_updated` invalidates history and the corresponding index without carrying artifact facts.
+History trimming preserves run facts; independent retention governs artifacts. See the
+[verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md).
+Non-members and absent resources return the same `404 not_found`. Only cleared indexes after successful/partial delivery mark artifacts expired;
+no-output and failed-upload runs are not expired.

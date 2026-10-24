@@ -4154,7 +4154,7 @@ export const getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx = (
     tid: string,
     iid: string,
     rid: string,
-    aidx: string,
+    aidx: number,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
 
@@ -4172,7 +4172,7 @@ export const getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx = (
 export const getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryKey = (tid: string,
     iid: string,
     rid: string,
-    aidx: string,) => {
+    aidx: number,) => {
     return [
     `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`
     ] as const;
@@ -4182,7 +4182,7 @@ export const getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryKey = (tid: 
 export const getGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidxQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError = ErrorType<Error>>(tid: string,
     iid: string,
     rid: string,
-    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+    aidx: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -4208,7 +4208,7 @@ export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Await
  tid: string,
     iid: string,
     rid: string,
-    aidx: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
+    aidx: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>,
           TError,
@@ -4221,7 +4221,7 @@ export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Await
  tid: string,
     iid: string,
     rid: string,
-    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
+    aidx: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>,
           TError,
@@ -4234,7 +4234,7 @@ export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Await
  tid: string,
     iid: string,
     rid: string,
-    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+    aidx: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -4245,7 +4245,7 @@ export function useGetApiV1TenantsTidIssuesIidRunsRidArtifactsAidx<TData = Await
  tid: string,
     iid: string,
     rid: string,
-    aidx: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+    aidx: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 

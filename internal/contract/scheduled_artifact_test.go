@@ -17,6 +17,15 @@ func TestScheduledArtifactRouteResponseSchemas(t *testing.T) {
 		response := operation["responses"].(map[string]any)["200"].(map[string]any)
 		schema := response["content"].(map[string]any)[tc.media].(map[string]any)["schema"].(map[string]any)
 		if tc.schema == "" {
+			for _, param := range operation["parameters"].([]any) {
+				p := param.(map[string]any)
+				if p["name"] == "aidx" {
+					index := p["schema"].(map[string]any)
+					if index["type"] != "integer" || index["minimum"] != 0 || index["maximum"] != 63 {
+						t.Fatalf("artifact index schema = %v, want 0..63", index)
+					}
+				}
+			}
 			if schema["type"] != "string" || schema["format"] != "binary" {
 				t.Fatalf("download schema = %v, want raw bytes", schema)
 			}

@@ -19045,8 +19045,10 @@
             "name": "aidx",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "type": "string"
+              "description": "Registered artifact index within the run",
+              "maximum": 63,
+              "minimum": 0,
+              "type": "integer"
             }
           }
         ],

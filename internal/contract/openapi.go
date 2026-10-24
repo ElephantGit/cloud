@@ -608,6 +608,9 @@ func Document() map[string]any {
 // provider-scoped token that Issues never parses (Issue collaboration D7), constrained only by the grammar that keeps
 // it safe in a path segment.
 func pathParamSchema(name string) obj {
+	if name == "aidx" {
+		return obj{"type": "integer", "minimum": 0, "maximum": 63, "description": "Registered artifact index within the run"}
+	}
 	if name == "pluginNamespace" || name == "pluginIdentifier" {
 		return obj{"type": "string", "minLength": 1, "maxLength": 150}
 	}

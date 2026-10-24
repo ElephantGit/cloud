@@ -23,6 +23,8 @@
 
 ## Invariants
 
+- When an SSE client disconnects after proxy headers were committed, pass the standard `http.ErrAbortHandler` to `net/http` to abort the connection without an internal-error log or a second 500 response. Unexpected panics still retain diagnostics and a safe error response.
+
 Personal model credential routes go only to the fixed HTTPS model-gateway after the normal session,
 same-origin and signature checks. Cloud is never a fallback for a malformed credential path or an
 unavailable service. Gateway receives public trust only, not the model vault master key or TLS key.

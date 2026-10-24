@@ -28,6 +28,7 @@
 让原始 Key 落入 Cloud。Gateway 仅挂载该服务的公开 CA，不取得其加密主密钥或 TLS 私钥。
 
 - 原始 session token、attempt secret、OAuth code、provider token 与 PKCE verifier 不持久化、不写日志、不进入 Cloud。
+- 代理 SSE 在客户端断开且响应已写入时，把标准库 `http.ErrAbortHandler` 交由 `net/http` 终止连接，不当作内部错误记录或再写 500；其他 panic 仍记完整诊断并返回安全错误。
 - 外部 HTTP 调用不在数据库事务或行锁内；provider 成功但事务失败即登录失败，不推断 session 已创建。
 - 每个 attempt 最多创建一个 session；两个并发 callback 只有一个能通过 `FOR UPDATE` 后的未消费检查。
 - `Resolve` 不续期；未知、过期、吊销统一为 `ErrNotFound`/`401 unauthenticated`。

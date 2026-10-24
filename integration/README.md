@@ -17,6 +17,7 @@
 - **`workspace_operations_grpc_test.go`**：Controller 通过 `WorkspaceOperationService`／`NodeReportService` 驱动 Workspace、Node incarnation 替换以及 `OperationAvailable` 投递。
 - **`endpoints_test.go`**：针对所有公开端点和内部控制端点进行全面的路由与参数矩阵测试。
 - **`contract_test.go`**：对照实际 HTTP 响应数据结构，进行端到端 OpenAPI 契约验证。
+- **`personal_agent_admission_http_test.go`**：在全局默认模型可用时，Claude 从未配置或清除个人模型选择仍经真实 HTTP readiness、手动 Run、任务提及和任务消息入口明确拒绝；公开读取核对无残留，显式保存插件选择后恢复准入并固定配置 revision。凭据为隔离夹具的密文边界替身，不代表浏览器凭据写入或真实 Node 执行。
 - **`gateway_authorization_test.go`**：真实 Gateway 与 Cloud 链路上的租户授权：外部身份不自动获得成员关系，创建者为管理员，邀请只授予普通成员，停用后两个副本立即拒绝访问，重新登录不恢复成员权限。提供方为协议替身，不构成真实外部登录的浏览器证据。
 - **`gateway_callback_test.go`**：Cookie 仍有效而数据库 attempt 已过期时，在兑换 provider code 前拒绝 callback，不创建 session，并清除 attempt Cookie。
 - **`security_test.go`**：认证、授权与隔离测试：

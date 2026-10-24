@@ -437,13 +437,15 @@ function ConversationFeedback({
 }
 
 function useTaskDiscussion(tid: string, issueId: string, runs: IssueRun[]) {
-  const conversation = useTaskConversation(tid, issueId)
-  const timeline = useTimeline(tid, issueId)
-  const [visibleRuns, setVisibleRuns] = useState(5)
   const draft = useConversationDraft()
   const agents = runs
     .filter((run) => run.executorType === 'agent')
     .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+  const selectedAgentId =
+    draft.mode === 'agent' ? (draft.selected ?? agents.at(-1)?.executorId) : undefined
+  const conversation = useTaskConversation(tid, issueId, selectedAgentId)
+  const timeline = useTimeline(tid, issueId)
+  const [visibleRuns, setVisibleRuns] = useState(5)
   const current = conversation.data?.pages[0]
   const shown = visibleAgentRuns(agents, visibleRuns, current?.activeRunId)
   const messages = loadedTaskMessages(conversation.data?.pages)

@@ -2,12 +2,18 @@ package integration
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
+	"github.com/wanglongan587/cloud/internal/api/router"
 	"github.com/wanglongan587/cloud/internal/core"
+	"github.com/wanglongan587/cloud/internal/simulator"
 )
 
 // scheduledTaskState is the persisted scheduled-task contract relevant to management writes. It
@@ -95,6 +101,62 @@ func TestScheduledTaskManagementIsCreatorOnly(t *testing.T) {
 	must(t, err)
 	if status != 200 {
 		t.Fatalf("creator disable must succeed with 200, got %d", status)
+	}
+}
+
+// TestScheduledTaskCreationOverThePublicHTTPBoundary drives the documented create and PATCH bodies
+// through the real router, service credential and user credential. It is the regression guard for
+// the transport gate: the domain tests call Store.Public directly, so only this path proves that the
+// ScheduledTaskSchedule and ScheduledTaskApproval objects the contract and the browser send are not
+// rejected as invalid_field_type before the core sees them.
+func TestScheduledTaskCreationOverThePublicHTTPBoundary(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	credentials, err := simulator.NewCredentials()
+	must(t, err)
+	auth, err := core.NewAuthenticator("ora-cloud", credentials.Trust)
+	must(t, err)
+	server := httptest.NewServer(router.NewDevelopment(store, auth, zap.NewNop()))
+	t.Cleanup(server.Close)
+	client := &simulator.Client{
+		URL: server.URL, Credentials: credentials,
+		HTTP: &http.Client{Timeout: 10 * time.Second}, Subject: "controller-a",
+	}
+	caller := scheduledTaskCaller(t, store, s.tenantID)
+	gateway := core.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "gateway-a"}}
+	path := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
+
+	call := func(method, target, key string, body core.Object, want int) core.Object {
+		t.Helper()
+		out, status, callErr := client.Call(context.Background(), method, target, "gateway", gateway, caller, key, body)
+		must(t, callErr)
+		if status != want {
+			t.Fatalf("%s %s = %d %v, want %d", method, target, status, out, want)
+		}
+		return out
+	}
+
+	created := call("POST", path, "scheduled-create-over-http", core.Object{
+		"issueId": s.issueID, "agentId": agentID, "name": "HTTP create", "prompt": "run the acceptance",
+		"timezone": "Asia/Shanghai",
+		"schedule": core.Object{"kind": "daily", "hour": int64(3), "minute": int64(5)},
+		"approval": core.Object{"policy": "full_auto_in_cloud_workspace"}, "enabled": false,
+	}, 200)
+	taskID := created.O("resource").S("id")
+	if taskID == "" {
+		t.Fatalf("created task = %v", created)
+	}
+	if state := readScheduledTaskState(t, store, taskID); state.name != "HTTP create" || state.revision != 1 {
+		t.Fatalf("persisted task = %+v", state)
+	}
+
+	// PATCH carries the same cadence object; a create-only fix would still leave the definition
+	// uneditable through the public API.
+	patched := call("PATCH", path+"/"+taskID, "scheduled-patch-over-http", core.Object{
+		"version": int64(1), "name": "HTTP rename", "prompt": "edited",
+		"schedule": core.Object{"kind": "every_hours", "intervalHours": int64(2)}, "timezone": "UTC",
+	}, 200)
+	if patched.O("resource").N("revision") != 2 {
+		t.Fatalf("PATCH revision = %v, want 2", patched.O("resource")["revision"])
 	}
 }
 

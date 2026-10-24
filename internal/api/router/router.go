@@ -715,6 +715,56 @@ func validField(name string, value any) bool {
 	case "filter", "properties", "input", "values", "graph", "settings":
 		_, ok := value.(map[string]any)
 		return ok
+	case "schedule":
+		// The scheduled-task definition carries its cadence as the ScheduledTaskSchedule object the
+		// OpenAPI contract and the browser both send. Only the shape belongs here: the core parses
+		// the cadence and owns its bounds and defaults, so an out-of-range value must reach it and
+		// fail as the domain fault rather than being guessed at the transport boundary.
+		o, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		for k, v := range o {
+			switch k {
+			case "kind":
+				if _, ok := v.(string); !ok {
+					return false
+				}
+			case "intervalHours", "hour", "minute":
+				if v == nil {
+					continue
+				}
+				if _, ok := v.(json.Number); !ok {
+					return false
+				}
+			case "weekdays":
+				if v == nil {
+					continue
+				}
+				days, ok := v.([]any)
+				if !ok {
+					return false
+				}
+				for _, day := range days {
+					if _, ok := day.(string); !ok {
+						return false
+					}
+				}
+			default:
+				return false
+			}
+		}
+		return true
+	case "approval":
+		// The unattended-consent record is the closed ScheduledTaskApproval object: exactly the
+		// policy name, as the creation form sends it. Whether the name is one this deployment accepts
+		// is the core's decision, not the transport's.
+		o, ok := value.(map[string]any)
+		if !ok || len(o) != 1 {
+			return false
+		}
+		_, ok = o["policy"].(string)
+		return ok
 	case "targetId":
 		_, ok := value.(string)
 		return ok

@@ -18,4 +18,15 @@ describe('mock API response boundary', () => {
     const response = await mockApi.get('/workspaces/test/inbox')
     expect(response.data).toEqual([])
   })
+
+  it('accepts an empty 204 response', async () => {
+    server.use(
+      http.post(
+        '/mock-api/workspaces/:slug/inbox/mark-all-read',
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+    )
+    const response = await mockApi.post('/workspaces/test/inbox/mark-all-read')
+    expect(response.status).toBe(204)
+  })
 })

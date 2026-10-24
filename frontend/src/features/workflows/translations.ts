@@ -1,3 +1,4 @@
+import { publishErrorTranslations } from '@/features/workflows/publish-error-translations'
 import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
@@ -21,6 +22,7 @@ import type { TranslationBundle } from '@/i18n/resource-bundle'
 export const workflowTranslations = {
   'zh-CN': {
     ...historyTranslations['zh-CN'],
+    ...publishErrorTranslations['zh-CN'],
     ...launchFieldTranslations['zh-CN'],
     // Node catalog: palette labels and descriptions for every executable kind.
     'workflows.node.start.label': '开始',
@@ -118,8 +120,6 @@ export const workflowTranslations = {
     'workflows.inspector.field.interactiveHint':
       '首期 Cloud 不执行交互式 Agent 节点；开启后发布会拒绝该配置。',
     'workflows.inspector.field.structuredOutput': '结构化输出',
-    'workflows.inspector.field.structuredOutputHint':
-      '要求 Agent 按声明的 JSON 结构返回，额外输出结构化结果。',
     'workflows.inspector.field.prompt': '自定义 Prompt',
     'workflows.inspector.field.promptHint':
       '运行开始时发送给 Agent 的提示词，可插入前面节点的输出。',
@@ -447,6 +447,7 @@ export const workflowTranslations = {
   },
   'en-US': {
     ...historyTranslations['en-US'],
+    ...publishErrorTranslations['en-US'],
     ...launchFieldTranslations['en-US'],
     'workflows.node.start.label': 'Start',
     'workflows.node.start.description': 'Define workflow inputs',
@@ -545,8 +546,6 @@ export const workflowTranslations = {
     'workflows.inspector.field.interactiveHint':
       'Cloud does not execute interactive agent nodes in phase one; publishing rejects this setting.',
     'workflows.inspector.field.structuredOutput': 'Structured output',
-    'workflows.inspector.field.structuredOutputHint':
-      'Require the agent to follow a declared JSON structure and emit a structured result.',
     'workflows.inspector.field.prompt': 'Custom prompt',
     'workflows.inspector.field.promptHint':
       'The prompt sent to the agent when the run starts; can reference outputs of upstream nodes.',

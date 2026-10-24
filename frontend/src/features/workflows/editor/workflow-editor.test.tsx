@@ -958,6 +958,11 @@ describe('WorkflowEditor structured output', () => {
     fireEvent.click(nodeCard('agent-1'))
     enableStructuredOutput()
 
+    expect(
+      within(inspector()).getByText(
+        'Cloud 当前不支持结构化输出；开启后无法发布。关闭此设置可使用普通文本输出。',
+      ),
+    ).toBeInTheDocument()
     expect(within(inspector()).getByText('还没有配置任何字段')).toBeInTheDocument()
     expectSavedNode(await flushStructuredOutput(bodies), {
       id: 'agent-1',

@@ -239,6 +239,9 @@ func TestWorkflowPublishRefusesInteractiveCompletionDeclaration(t *testing.T) {
 	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
 		t.Fatalf("publish problems = %v, want %v", got, want)
 	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id=$1", draft.S("id")); n != 0 {
+		t.Fatalf("a refused completion declaration left %d snapshots", n)
+	}
 
 	// Version 4 is the envelope that introduces the declaration. Cloud refuses it even without the
 	// field, so a graph authored by a newer editor cannot pass the gate as if nothing were declared.
@@ -252,6 +255,54 @@ func TestWorkflowPublishRefusesInteractiveCompletionDeclaration(t *testing.T) {
 	want = []core.Object{{"code": "agent_schema_version_unsupported", "nodeId": "agent-1", "field": "agentConfig.schemaVersion"}}
 	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
 		t.Fatalf("publish problems = %v, want %v", got, want)
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id=$1", draft.S("id")); n != 0 {
+		t.Fatalf("a refused schema version left %d snapshots", n)
+	}
+
+	// The workflow-asset import entry freezes through the same gate: both declarations are refused
+	// there too, and neither leaves a snapshot behind.
+	completionDoc, err := json.Marshal(core.Object{
+		"name": "Completion Kit", "nodes": configured["nodes"], "edges": configured["edges"],
+	})
+	must(t, err)
+	versionDoc, err := json.Marshal(core.Object{
+		"name": "Version Kit", "nodes": versioned["nodes"], "edges": versioned["edges"],
+	})
+	must(t, err)
+	repo := workflowMarketplace(t, f.root)
+	pkg := workflowPackage(t, map[string]string{
+		"completion.json": string(completionDoc),
+		"version.json":    string(versionDoc),
+	})
+	packages := newWorkflowPackages(t, map[string][]byte{"/packages/deliverable-kit-1.0.0.orax": pkg})
+	publishWorkflowRelease(t, repo, "deliverable-kit", "1.0.0", packages.server.URL+"/packages/deliverable-kit-1.0.0.orax", pkg)
+	f.syncMarketplace(t, repo)
+	f.store.WorkflowAssets = workflowasset.NewFetcher(nil, packages.server.Client().Transport)
+	sid := f.defaultSpaceID()
+	f.installWorkflowPlugin(t, sid, "official/deliverable-kit", "")
+	must(t, f.importWorkflowAssets(t))
+	documents := assetDocuments(f.assetImport(t, sid, "official/deliverable-kit"))
+	for path, wantProblem := range map[string]core.Object{
+		"assets/workflows/completion.json": {"code": "node_config_unsupported", "nodeId": "agent-1", "field": "completion"},
+		"assets/workflows/version.json":    {"code": "agent_schema_version_unsupported", "nodeId": "agent-1", "field": "agentConfig.schemaVersion"},
+	} {
+		imported := documents[path]
+		if imported.S("outcome") != "failed" || imported.S("failureCode") != "document_not_executable_graph" {
+			t.Fatalf("%s = %v, want document_not_executable_graph", path, imported)
+		}
+		raw, _ := imported.O("failureDetail")["problems"].([]any)
+		if len(raw) != 1 {
+			t.Fatalf("%s problems = %v, want the one refused declaration", path, raw)
+		}
+		problem, _ := raw[0].(map[string]any)
+		got := core.Object(problem)
+		if got.S("code") != wantProblem.S("code") || got.S("nodeId") != wantProblem.S("nodeId") || got.S("field") != wantProblem.S("field") {
+			t.Fatalf("%s problem = %v, want %v", path, got, wantProblem)
+		}
+	}
+	if n := f.scalar("SELECT count(*) FROM workflow_snapshots WHERE workflow_id IN (SELECT id FROM workflows WHERE name IN ('Completion Kit','Version Kit'))"); n != 0 {
+		t.Fatalf("refused imported documents left %d snapshots", n)
 	}
 
 	// Version 3 without the declaration publishes: the refusal is about the declaration, not about

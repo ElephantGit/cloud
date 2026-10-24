@@ -276,6 +276,13 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			want:  []any{Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"}},
 		},
 		{
+			// Cloud never executed version 1, so a draft still on it is refused instead of being read
+			// with the current field list; that is the compatibility change the ADR records.
+			name:  "an agent node carrying schema version 1",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": 1})}, []any{graphEdge("s", "a")}, nil),
+			want:  []any{Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"}},
+		},
+		{
 			// Null asks for nothing, like the other absent-or-null configuration values in this matrix.
 			name:  "an agent node carrying a null schema version",
 			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": nil})}, []any{graphEdge("s", "a")}, nil),
@@ -449,7 +456,7 @@ func TestValidateWorkflowGraph(t *testing.T) {
 		})
 	}
 
-	// All seven at once, in the order the list declares: that order is what the editor renders, so it
+	// All six at once, in the order the list declares: that order is what the editor renders, so it
 	// must come from the list rather than from the document's map iteration.
 	everyUnusedField := Object{}
 	wantEveryField := []any{}

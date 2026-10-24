@@ -28,8 +28,8 @@ type Config struct {
 	UploadGrantTTL  time.Duration
 }
 
-// Grant is one presigned PUT. Headers must be sent unchanged; legacy uploaders also add their
-// computed checksum. The signed creation condition keeps still-live grants from replacing objects.
+// Grant is one method-bound presigned request. Headers must be sent unchanged; legacy uploaders
+// also add their computed checksum. PUT grants bind create-only semantics.
 type Grant struct {
 	URL     string
 	Method  string
@@ -37,10 +37,18 @@ type Grant struct {
 	Expires time.Time
 }
 
-// PresignPUT signs a single-object PUT that expires after the configured grant TTL.
-// The key must be the object key Cloud already fixed for this delivery attempt.
+// PresignPUT binds no checksum; the caller either uses PresignPUTChecksum or verifies the stored
+// bytes afterwards (objectstore.Verify).
 func PresignPUT(cfg *Config, key string, now time.Time) (Grant, error) {
 	return presign(cfg, key, "PUT", map[string]string{"x-amz-sdk-checksum-algorithm": "SHA256"}, now)
+}
+
+// PresignGET signs a short-lived read of one object Cloud already registered.
+//
+// The grant uses PublicEndpoint when configured, just like Node-facing uploads. Core must authorize
+// the registered key first; signing performs no I/O and grants no access to any other object.
+func PresignGET(cfg *Config, key string, now time.Time) (Grant, error) {
+	return presign(cfg, key, "GET", map[string]string{}, now)
 }
 
 // PresignPUTChecksum binds the Node-computed SHA-256 to the upload capability. S3 must validate

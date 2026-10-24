@@ -2,7 +2,10 @@ import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { SpaceEvent } from '@/api/generated.schemas'
 import { getGetApiV1MeSpacesQueryKey } from '@/api/me/me'
-import { getGetApiV1TenantsTidIssuesIidRunsRidThreadQueryKey } from '@/api/tenants/tenants'
+import {
+  getGetApiV1TenantsTidIssuesIidRunsRidThreadQueryKey,
+  getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey,
+} from '@/api/tenants/tenants'
 
 /**
  * Narrows an unknown value to a property bag; JSON.parse and network payloads
@@ -72,6 +75,31 @@ export function parseSSEFrames(buffer: string): { events: SpaceEvent[]; rest: st
   return { events, rest }
 }
 
+// The notice identifies a run, not its task. Refetch this tenant's open histories and only that
+// run's index; signed downloads are mutations and are never cached or minted by invalidation.
+function invalidateForScheduledArtifactEvent(
+  event: SpaceEvent,
+  tenantId: string,
+  queryClient: QueryClient,
+) {
+  if (!event.issueId || !event.runId) return
+  void queryClient.invalidateQueries({
+    predicate: (query) => {
+      const path = String(query.queryKey[0])
+      return (
+        path.startsWith(`/api/v1/tenants/${tenantId}/scheduled-tasks/`) && path.endsWith('/history')
+      )
+    },
+  })
+  void queryClient.invalidateQueries({
+    queryKey: getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey(
+      tenantId,
+      event.issueId,
+      event.runId,
+    ),
+  })
+}
+
 /** Invalidates exactly the queries an event type affects; never carries state. */
 function invalidateForEvent(
   event: SpaceEvent,
@@ -84,6 +112,8 @@ function invalidateForEvent(
   } else if (event.type === 'issue.conversation_changed' && event.issueId) {
     void queryClient.invalidateQueries({ queryKey: ['task-conversation', tenantId, event.issueId] })
     void queryClient.invalidateQueries({ queryKey: ['issue-runs', tenantId, event.issueId] })
+  } else if (event.type === 'scheduled_task.artifacts_updated') {
+    invalidateForScheduledArtifactEvent(event, tenantId, queryClient)
   } else if (event.type.startsWith('project.')) {
     void queryClient.invalidateQueries({
       queryKey: [`/api/v1/tenants/${tenantId}/spaces/${spaceId}/projects`],

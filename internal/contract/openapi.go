@@ -93,7 +93,7 @@ func Document() map[string]any {
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
-	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
+	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed", "scheduled_task.artifacts_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
 	// GitIdentity is the identity the caller's Agent runs commit as (identity-access git identity
 	// D1). version is 0 while isDefault is true: no identity is stated and the default applies.
 	s["GitIdentity"] = object(obj{"name": str(), "email": str(), "isDefault": boolean(), "version": number()}, "name", "email", "isDefault", "version")
@@ -255,6 +255,20 @@ func Document() map[string]any {
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
 	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
 	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")
+	s["ScheduledArtifactList"] = object(obj{"artifacts": array(ref("ScheduledArtifact"))}, "artifacts")
+	s["ScheduledArtifact"] = object(obj{
+		"index": number(), "name": str(), "kind": str(), "sizeBytes": number(), "sha256": str(),
+	}, "index", "name", "kind", "sizeBytes", "sha256")
+	s["ScheduledArtifactRead"] = object(obj{
+		"name":      str(),
+		"kind":      str(),
+		"sizeBytes": number(),
+		"sha256":    str(),
+		// The URL is a short-lived capability issued to an already authorized caller; it expires
+		// with the object-store grant TTL, so a reader must not treat it as shareable.
+		"url":       str(),
+		"expiresAt": timestamp(),
+	}, "name", "kind", "sizeBytes", "sha256", "url", "expiresAt")
 	s["ScheduledTaskOccurrence"] = object(obj{
 		"scheduledAt":   timestamp(),
 		"outcome":       str(),
@@ -262,7 +276,15 @@ func Document() map[string]any {
 		"observedAt":    timestamp(),
 		"failureReason": optional(str()),
 		"runId":         optional(uuid()),
-		"sessionId":     optional(uuid()),
+		// D6: the run's own business result, and the two counts it owns. The verdict is nullable -
+		// "not reported" is a value, not an absent field - and neither count requires reading an
+		// object: they count registered artifacts and visible refusals.
+		"verdict":               optional(str()),
+		"verdictDetail":         optional(str()),
+		"artifactCount":         optional(number()),
+		"rejectedArtifactCount": optional(number()),
+		"artifactsExpired":      optional(boolean()),
+		"sessionId":             optional(uuid()),
 	}, "scheduledAt", "outcome", "taskRevision", "observedAt")
 	s["ScheduledTaskHistory"] = object(obj{"taskId": uuid(), "entries": array(ref("ScheduledTaskOccurrence"))}, "taskId", "entries")
 	s["ContextRef"] = resource("id tenantId issueId refType refId createdAt", "")
@@ -937,6 +959,10 @@ func responseSchema(r router.Route) (schema obj, status string) {
 		}, "items", "threadState", "idleSince", "nextCursor", "prevCursor", "initiatorUserId", "model", "canAppend", "canEnd"), "200"
 	case strings.HasSuffix(r.Path, "/runs/:rid/cancel"):
 		return object(obj{"cancelRequestedAt": timestamp()}, "cancelRequestedAt"), "202"
+	case strings.HasSuffix(r.Path, "/runs/:rid/artifacts/:aidx"):
+		return ref("ScheduledArtifactRead"), "200"
+	case strings.HasSuffix(r.Path, "/runs/:rid/artifacts"):
+		return ref("ScheduledArtifactList"), "200"
 	case strings.Contains(r.Path, "/runs"):
 		if r.Method == "GET" && strings.HasSuffix(r.Path, "/runs") {
 			return object(obj{"items": array(ref("IssueRun")), "nextCursor": str()}, "items", "nextCursor"), "200"

@@ -80,3 +80,17 @@ Agent 运行时在最后的 `turnEnded` 里也可能带着 ACP 的 `token_usage`
 
 - [会话分析从 Cloud 授权记录与已登记归档建立只读视图](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261016-session-analysis-read-model.md)（approved）
 - [模型用量按网关 HTTP 尝试独立登记，保留部分观测与未知值](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261016-recorded-http-attempt-statistics.md)（approved）
+
+## 定时运行的结论与产物
+
+定时任务历史读取运行级 verdict（缺失显示「未报告」）及已登记/被拒产物数量；不会从执行成功推断业务结论。
+`GET .../issues/:iid/runs/:rid/artifacts` 列出当前登记的文件元数据，不包含下载 URL。
+`GET .../issues/:iid/runs/:rid/artifacts/:aidx` 再按当前成员、Issue 与 Run 权限检查，并在事务外签发单对象限时 GET。
+调用方只能给运行和索引，不能给对象键；未登记或被淘汰返回 `404 artifact_unavailable`，未配置存储返回 `503 object_store_unavailable`。
+签名地址采用配置的公开端点（未配置则使用默认端点），部署需使其对浏览器可达。签发的链接在存储到期前是一项独立读取能力，勿记录或分享。
+
+界面按需展开文件列表，点击时才申请链接；产物正文不在应用内渲染。`scheduled_task.artifacts_updated` 只提示重读历史与索引，
+不携带产物事实或签发授权。任务历史裁剪不删除运行级事实，产物按独立保留策略清理；详见
+[verdict 与产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
+
+产物接口对已认证但无成员权限的读取统一返回 `404 not_found`。历史明确标注已成功/部分交付后索引被清理的产物为「已过期」，从未产生产物或上传失败不算过期。

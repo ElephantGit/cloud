@@ -68,6 +68,8 @@ func (s *Store) PruneScheduledRunArtifactsOnce(ctx context.Context) error {
 			}
 			t.exec("DELETE FROM scheduled_run_artifacts WHERE issue_run_id=$1", runID)
 			t.exec("DELETE FROM scheduled_run_artifact_rejections WHERE issue_run_id=$1", runID)
+			// D6: the pruned run's index changed too, so its readers must re-read.
+			invalidateScheduledArtifacts(t, runID)
 			return Object{}
 		}); err != nil {
 			return err

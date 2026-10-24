@@ -143,6 +143,9 @@ func (s *Store) closeArtifactDelivery(t *transaction, o Object, state, reason st
 		UPDATE scheduled_run_artifact_deliveries
 		SET state=$2, settled_at=clock_timestamp(), settled_reason=NULLIF($3,'')
 		WHERE issue_run_id=$1 AND state='delivering'`, o.S("id"), state, reason)
+	// D6: the index this transaction just changed is what a reader re-reads, and the notice carries
+	// only the identity of the run - never an artifact fact, which stays in the tables.
+	invalidateScheduledArtifacts(t, o.S("id"))
 	if !deliveryOutcomeRecorded(t, o.S("id")) {
 		return nil
 	}
@@ -158,4 +161,18 @@ func rejectScheduledArtifact(t *transaction, delivery Object, runID, displayName
 		ON CONFLICT (issue_run_id, display_name) DO NOTHING`,
 		delivery.S("tenantId"), runID, delivery.S("taskId"), delivery.S("occurrenceId"), delivery.S("scheduledAt"),
 		displayName, reason)
+}
+
+// invalidateScheduledArtifacts tells the run's space that its artifact index changed. The notice
+// carries no artifact data: a reader re-reads the REST resources (D6), and nothing may treat the
+// event as a fact source.
+func invalidateScheduledArtifacts(t *transaction, runID string) {
+	o := t.one(`SELECT r.issue_id, r.tenant_id FROM issue_runs r WHERE r.id=$1`, runID)
+	space := t.one(`SELECT id FROM collab_workspaces WHERE tenant_id=$1 AND archived_at IS NULL`, o.S("tenantId"))
+	if space == nil {
+		return
+	}
+	t.events = append(t.events, SpaceEvent{
+		Type: "scheduled_task.artifacts_updated", SpaceID: space.S("id"), IssueID: o.S("issueId"), RunID: runID,
+	})
 }

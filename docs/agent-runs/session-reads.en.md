@@ -108,3 +108,16 @@ added to the gateway statistics.
 
 - [Session analysis builds a read-only view from Cloud authorization records and registered archives](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261016-session-analysis-read-model.md) (approved)
 - [Model usage is recorded per gateway HTTP attempt, keeping partial observations and unknown values](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261016-recorded-http-attempt-statistics.md) (approved)
+
+## Scheduled-run verdicts and artifacts
+
+Scheduled-task history reads the run-level verdict (missing means "not reported") and registered/refused artifact counts; execution success never implies a business verdict.
+`GET .../issues/:iid/runs/:rid/artifacts` returns current registered metadata without download URLs.
+`GET .../issues/:iid/runs/:rid/artifacts/:aidx` checks current membership, Issue and Run scope, then signs a bounded single-object GET outside the transaction.
+Callers select a run and index, never an object key. Missing/pruned registrations return `404 artifact_unavailable`; unconfigured storage returns `503 object_store_unavailable`.
+Grants prefer the configured public endpoint (otherwise the default endpoint), which deployments must make browser-reachable. Issued URLs remain independent read capabilities until storage expiry; do not log or share them.
+
+The UI expands metadata on demand and requests links only on explicit clicks; it never renders artifact content inside the app. `scheduled_task.artifacts_updated` triggers history/index refetches without carrying artifact facts or granting access. History trimming preserves run facts; independent retention governs artifacts. See the
+[verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md).
+
+Artifact reads by authenticated callers without membership return `404 not_found`. History explicitly marks artifacts as expired when their index was cleared after successful/partial delivery; no-output and failed-upload runs are not expired.

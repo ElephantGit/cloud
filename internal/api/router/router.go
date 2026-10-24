@@ -53,6 +53,11 @@ const AgentSessionsPath = "/api/v1/tenants/:tid/agent-sessions"
 // SessionHistoryPath reads only the verified archive registered for this run.
 const SessionHistoryPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/history"
 
+const (
+	scheduledArtifactsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/artifacts"
+	scheduledArtifactPath  = scheduledArtifactsPath + "/:aidx"
+)
+
 // SessionStatisticsPath aggregates all recorded model HTTP attempts for an authorized run.
 const SessionStatisticsPath = "/api/v1/tenants/:tid/issues/:iid/runs/:rid/statistics"
 
@@ -186,6 +191,8 @@ func Routes() []Route {
 		{"PATCH", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", []string{"version", "name", "prompt", "agentId", "schedule", "timezone"}},
 		{"DELETE", "/api/v1/tenants/:tid/scheduled-tasks/:stid", "", nil},
 		{"GET", "/api/v1/tenants/:tid/scheduled-tasks/:stid/history", "", nil},
+		{"GET", scheduledArtifactsPath, "", nil},
+		{"GET", scheduledArtifactPath, "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/enable", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/disable", "", nil},
 		{"POST", "/api/v1/tenants/:tid/scheduled-tasks/:stid/revoke-consent", "", nil},
@@ -471,7 +478,7 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 						return
 					}
 				}
-				req := &core.PublicRequest{Method: c.Request.Method, Path: c.Request.URL.Path, TenantID: c.Param("tid"), ProjectID: c.Param("pid"), WorkspaceID: c.Param("wid"), SpaceID: c.Param("spaceId"), OperationID: c.Param("oid"), UserID: c.Param("uid"), IssueID: c.Param("iid"), CommentID: c.Param("cid"), ConversationMessageID: c.Param("mid"), LabelID: c.Param("lid"), StatusID: c.Param("sid"), ViewID: c.Param("vid"), RunID: c.Param("rid"), ContextRefID: c.Param("crid"), InteractionID: c.Param("ixid"), WorkflowID: c.Param("wfid"), SnapshotID: c.Param("snapshotId"), FormRef: c.Param("formRef"), FormIssueID: c.Query("issueId"), ModelConnectionID: c.Param("mcid"), SlotName: c.Param("slot"), GitCredentialID: c.Param("gcid"), RepositoryOperationID: c.Param("roid"), InvitationID: c.Param("iid"), JoinLinkID: c.Param("lid"), JoinRequestID: c.Param("rid"), ScheduledTaskID: c.Param("stid"), Key: c.GetHeader("Idempotency-Key"), SessionProjectID: c.Query("projectId"), SessionStatus: c.Query("status"), SessionAgent: c.Query("agent"), SessionFrom: c.Query("from"), SessionTo: c.Query("to"), Limit: limit, After: c.Query("after"), Before: c.Query("before"), Query: c.Query("q"), GroupBy: c.Query("by"), Body: body, Identity: user, Person: person}
+				req := &core.PublicRequest{Method: c.Request.Method, Path: c.Request.URL.Path, TenantID: c.Param("tid"), ProjectID: c.Param("pid"), WorkspaceID: c.Param("wid"), SpaceID: c.Param("spaceId"), OperationID: c.Param("oid"), UserID: c.Param("uid"), IssueID: c.Param("iid"), CommentID: c.Param("cid"), ConversationMessageID: c.Param("mid"), LabelID: c.Param("lid"), StatusID: c.Param("sid"), ViewID: c.Param("vid"), RunID: c.Param("rid"), ContextRefID: c.Param("crid"), InteractionID: c.Param("ixid"), WorkflowID: c.Param("wfid"), SnapshotID: c.Param("snapshotId"), FormRef: c.Param("formRef"), FormIssueID: c.Query("issueId"), ModelConnectionID: c.Param("mcid"), SlotName: c.Param("slot"), GitCredentialID: c.Param("gcid"), RepositoryOperationID: c.Param("roid"), InvitationID: c.Param("iid"), JoinLinkID: c.Param("lid"), JoinRequestID: c.Param("rid"), ScheduledTaskID: c.Param("stid"), ArtifactIndex: c.Param("aidx"), Key: c.GetHeader("Idempotency-Key"), SessionProjectID: c.Query("projectId"), SessionStatus: c.Query("status"), SessionAgent: c.Query("agent"), SessionFrom: c.Query("from"), SessionTo: c.Query("to"), Limit: limit, After: c.Query("after"), Before: c.Query("before"), Query: c.Query("q"), GroupBy: c.Query("by"), Body: body, Identity: user, Person: person}
 				if c.Param("pluginNamespace") != "" {
 					req.AgentPluginID = c.Param("pluginNamespace") + "/" + c.Param("pluginIdentifier")
 				}
@@ -799,5 +806,6 @@ func validSessionQuery(c *gin.Context, path string) bool {
 
 func isSessionReadPath(path string) bool {
 	return path == AgentSessionsPath || path == SessionHistoryPath || path == SessionStatisticsPath || path == SessionModelCallsPath ||
-		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath
+		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath ||
+		path == scheduledArtifactsPath || path == scheduledArtifactPath
 }

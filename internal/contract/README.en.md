@@ -24,3 +24,5 @@ This package generates `TaskConversationMessage`, the task conversation's two-di
 See [cmd/openapi](../../cmd/openapi/README.en.md) for generation and [HTTP API](../../docs/core/http-api.en.md) / the [document map](../../docs/README.en.md) for cross-module semantics.
 
 Artifact list and single-file download responses have their own schemas, matched before the generic `/runs` fallback. Scheduled-artifact invalidation also belongs to the public SSE enum. `scheduled_artifact_test.go` pins both boundaries so generated clients match actual responses.
+
+Single-artifact responses are verified raw bytes with a safely encoded attachment filename, binary media type, nosniff and private no-store; errors remain JSON Faults.

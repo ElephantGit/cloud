@@ -16,7 +16,6 @@ import {
   getApiV1TenantsTidCollaborationTargets,
   getApiV1TenantsTidIssues,
   getApiV1TenantsTidIssuesIidRunsRidArtifacts,
-  getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx,
   getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey,
 } from '@/api/tenants/tenants'
 import { faultCode } from '@/lib/api-client'
@@ -195,23 +194,12 @@ export function useScheduledRunArtifacts(tid: string, issueId: string, runId: st
   })
 }
 
-/** Mints a fresh, bounded download only on demand; capabilities never enter the query cache. */
-export function useScheduledArtifactDownload(tid: string, issueId: string, runId: string) {
-  return useMutation({
-    gcTime: 0,
-    retry: false,
-    mutationFn: async (index: number) => {
-      const artifact = await getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx(
-        tid,
-        issueId,
-        runId,
-        String(index),
-      )
-      const url = new URL(artifact.url)
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('artifact_invalid')
-      }
-      return artifact
-    },
-  })
+/** Builds a same-origin attachment route; Cloud checks current access on every click. */
+export function scheduledArtifactDownloadPath(
+  tid: string,
+  issueId: string,
+  runId: string,
+  index: number,
+) {
+  return `/api/v1/tenants/${encodeURIComponent(tid)}/issues/${encodeURIComponent(issueId)}/runs/${encodeURIComponent(runId)}/artifacts/${index}`
 }

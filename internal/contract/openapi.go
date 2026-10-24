@@ -259,16 +259,6 @@ func Document() map[string]any {
 	s["ScheduledArtifact"] = object(obj{
 		"index": number(), "name": str(), "kind": str(), "sizeBytes": number(), "sha256": str(),
 	}, "index", "name", "kind", "sizeBytes", "sha256")
-	s["ScheduledArtifactRead"] = object(obj{
-		"name":      str(),
-		"kind":      str(),
-		"sizeBytes": number(),
-		"sha256":    str(),
-		// The URL is a short-lived capability issued to an already authorized caller; it expires
-		// with the object-store grant TTL, so a reader must not treat it as shareable.
-		"url":       str(),
-		"expiresAt": timestamp(),
-	}, "name", "kind", "sizeBytes", "sha256", "url", "expiresAt")
 	s["ScheduledTaskOccurrence"] = object(obj{
 		"scheduledAt":   timestamp(),
 		"outcome":       str(),
@@ -488,6 +478,19 @@ func Document() map[string]any {
 			responseDescription = errorDescription(status)
 		}
 		responses := obj{status: obj{"description": responseDescription, "content": obj{"application/json": obj{"schema": response}}}}
+		if strings.HasSuffix(r.Path, "/runs/:rid/artifacts/:aidx") {
+			headers := obj{}
+			for name, value := range map[string]string{
+				"Content-Disposition":    "attachment; filename is the safely encoded display-name basename",
+				"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store",
+			} {
+				headers[name] = obj{"description": value, "schema": str()}
+			}
+			responses[status] = obj{
+				"description": "Verified artifact bytes, at most 10 MiB; storage addresses and credentials never reach the browser", "headers": headers,
+				"content": obj{"application/octet-stream": obj{"schema": response}},
+			}
+		}
 		if r.Method == "POST" && strings.HasSuffix(r.Path, "/repository/syncs") {
 			responses["200"] = responses[status]
 		}
@@ -960,7 +963,7 @@ func responseSchema(r router.Route) (schema obj, status string) {
 	case strings.HasSuffix(r.Path, "/runs/:rid/cancel"):
 		return object(obj{"cancelRequestedAt": timestamp()}, "cancelRequestedAt"), "202"
 	case strings.HasSuffix(r.Path, "/runs/:rid/artifacts/:aidx"):
-		return ref("ScheduledArtifactRead"), "200"
+		return obj{"type": "string", "format": "binary"}, "200"
 	case strings.HasSuffix(r.Path, "/runs/:rid/artifacts"):
 		return ref("ScheduledArtifactList"), "200"
 	case strings.Contains(r.Path, "/runs"):

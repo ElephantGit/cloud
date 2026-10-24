@@ -111,13 +111,21 @@ added to the gateway statistics.
 
 ## Scheduled-run verdicts and artifacts
 
-Scheduled-task history reads the run-level verdict (missing means "not reported") and registered/refused artifact counts; execution success never implies a business verdict.
-`GET .../issues/:iid/runs/:rid/artifacts` returns current registered metadata without download URLs.
-`GET .../issues/:iid/runs/:rid/artifacts/:aidx` checks current membership, Issue and Run scope, then signs a bounded single-object GET outside the transaction.
-Callers select a run and index, never an object key. Missing/pruned registrations return `404 artifact_unavailable`; unconfigured storage returns `503 object_store_unavailable`.
-Grants prefer the configured public endpoint (otherwise the default endpoint), which deployments must make browser-reachable. Issued URLs remain independent read capabilities until storage expiry; do not log or share them.
+Scheduled-task history reads the run-level verdict (missing means "not reported") and registered/refused counts; completion never implies a business pass.
+`GET .../issues/:iid/runs/:rid/artifacts` returns current metadata without object keys or storage URLs.
+`GET .../issues/:iid/runs/:rid/artifacts/:aidx` authorizes current membership, Issue, Run and registration in a short transaction,
+reads privately outside the transaction, verifies registered size/SHA-256 under a 10 MiB cap, then rechecks access and registration.
+Callers select a run and index, never an object key. Missing/pruned/unverifiable objects return `404 artifact_unavailable`;
+unconfigured storage returns `503 object_store_unavailable`.
 
-The UI expands metadata on demand and requests links only on explicit clicks; it never renders artifact content inside the app. `scheduled_task.artifacts_updated` triggers history/index refetches without carrying artifact facts or granting access. History trimming preserves run facts; independent retention governs artifacts. See the
+The response is raw bytes with `Content-Disposition: attachment` (safely encoded display-name basename),
+`Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`.
+Browsers use a same-origin Cloud download path and receive no storage address or credential. HTML is also downloaded as an attachment.
+The UI expands metadata on demand, offers ordinary same-origin download links with fresh server authorization on each click,
+and neither shows link expiry nor renders file content inside the app.
+
+`scheduled_task.artifacts_updated` invalidates history and the corresponding index without carrying artifact facts.
+History trimming preserves run facts; independent retention governs artifacts. See the
 [verdict/artifact ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md).
-
-Artifact reads by authenticated callers without membership return `404 not_found`. History explicitly marks artifacts as expired when their index was cleared after successful/partial delivery; no-output and failed-upload runs are not expired.
+Non-members and absent resources return the same `404 not_found`. Only cleared indexes after successful/partial delivery mark artifacts expired;
+no-output and failed-upload runs are not expired.

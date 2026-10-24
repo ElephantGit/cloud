@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wanglongan587/cloud/internal/objectstore"
 )
@@ -18,32 +17,42 @@ import (
 // the persisted key is re-checked against the layout Cloud generates, so a stored value cannot turn
 // into an arbitrary object read.
 
-// SessionRunArtifact returns a short-lived download URL for one artifact of a run.
+// ScheduledArtifactDownload contains verified bytes and the registered display name for attachment delivery.
+// Transport adapters must serve Data as an attachment, never render its declared kind.
+type ScheduledArtifactDownload struct {
+	Name string
+	Data []byte
+}
+
+// SessionRunArtifact reads and verifies one artifact through Cloud's private storage endpoint.
 //
 // Visibility follows the issue: the caller must be an effective tenant member and the run must live
 // in the named issue. An artifact that was never registered - because it was refused, never
-// uploaded, or pruned by retention - is a 404 rather than an empty URL, since a reader that is told
-// "not there" can act on it while a broken link cannot.
-func (s *Store) SessionRunArtifact(ctx context.Context, r *PublicRequest) (Object, int, error) {
+// uploaded, or pruned by retention - is a 404. Access and registration are checked again after I/O
+// so revocation or pruning during the download cannot release stale bytes.
+func (s *Store) SessionRunArtifact(ctx context.Context, r *PublicRequest) (*ScheduledArtifactDownload, error) {
 	artifact, err := s.transact(ctx, func(t *transaction) Object {
 		return scheduledArtifactRegistration(t, r)
 	})
 	if err != nil {
-		return nil, 0, scheduledArtifactReadFault(err)
+		return nil, scheduledArtifactReadFault(err)
 	}
 	if s.ObjectStore == nil {
-		return nil, 0, &Fault{Status: 503, Code: "object_store_unavailable", Params: Object{}}
+		return nil, &Fault{Status: 503, Code: "object_store_unavailable", Params: Object{}}
 	}
-	grant, err := objectstore.PresignGET(s.ObjectStore, artifact.S("objectKey"), time.Now())
+	data, err := objectstore.ReadVerified(ctx, s.ObjectStore, artifact.S("objectKey"), artifact.N("sizeBytes"), artifact.S("sha256"), maxScheduledArtifactBytes)
 	if err != nil {
-		return nil, 0, &Fault{Status: 503, Code: "object_store_unavailable", Params: Object{}}
+		return nil, &Fault{Status: 404, Code: "artifact_unavailable", Params: Object{}}
 	}
-	out := Object{
-		"name": artifact.S("displayName"), "kind": artifact.S("kind"),
-		"sizeBytes": artifact.N("sizeBytes"), "sha256": artifact.S("sha256"),
-		"url": grant.URL, "expiresAt": grant.Expires.UTC(),
+	_, err = s.transact(ctx, func(t *transaction) Object {
+		current := scheduledArtifactRegistration(t, r)
+		require(jsonText(current) == jsonText(artifact), 404, "artifact_unavailable")
+		return nil
+	})
+	if err != nil {
+		return nil, scheduledArtifactReadFault(err)
 	}
-	return out, 200, nil
+	return &ScheduledArtifactDownload{Name: artifact.S("displayName"), Data: data}, nil
 }
 
 // SessionRunArtifacts lists what one run registered, without handing out any URL.

@@ -1970,15 +1970,6 @@ export interface ScheduledArtifactList {
   artifacts: ScheduledArtifact[];
 }
 
-export interface ScheduledArtifactRead {
-  expiresAt: string;
-  kind: string;
-  name: string;
-  sha256: string;
-  sizeBytes: number;
-  url: string;
-}
-
 export type ScheduledTaskScheduleKind = typeof ScheduledTaskScheduleKind[keyof typeof ScheduledTaskScheduleKind];
 
 

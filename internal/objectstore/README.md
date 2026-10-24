@@ -66,4 +66,4 @@ SHA-256**(D4 step 2)。已登记的会话归档还可通过私有端点 GET 读�
   以及沙盒网络内凭公开端点上传。它们由 `task test:revision`(`REQUIRE_S3=1`)与 cluster 的
   `task agent:acceptance` 运行,CI 的 Backend 工作流也以固定版本的 RustFS 运行它们。
 
-`PresignGET` 为已获 core 授权的登记产物签发单对象限时 GET，优先使用 `public_endpoint`，不访问对象存储；权限与登记校验由 core 持有。
+登记产物使用 `ReadVerified` 经私有端点读取，不向浏览器签发对象存储 URL；core 持有权限、登记和 10 MiB 上限。

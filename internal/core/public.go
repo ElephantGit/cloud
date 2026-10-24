@@ -54,9 +54,6 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 	if r.Method == "GET" && r.ArtifactIndex == "" && r.Path == runPath+"/artifacts" {
 		return s.SessionRunArtifacts(ctx, r)
 	}
-	if r.Method == "GET" && r.ArtifactIndex != "" && r.Path == runPath+"/artifacts/"+r.ArtifactIndex {
-		return s.SessionRunArtifact(ctx, r)
-	}
 	if r.Method == "GET" && (r.Path == runPath+"/statistics" || r.Path == runPath+"/model-calls") {
 		return s.sessionModelRead(ctx, r)
 	}

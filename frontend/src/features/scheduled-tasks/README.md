@@ -13,8 +13,8 @@
 | `scheduled-task-form.tsx` | 创建与编辑表单 |
 | `scheduled-task-history.tsx` | 运行历史对话框：每次到期点的接纳结果、verdict 与产物数量 |
 | `scheduled-tasks-page.test.tsx` | 页面行为测试 |
-| `scheduled-run-artifacts.tsx` | 按需展开已登记产物，单独申请限时下载链接 |
-| `scheduled-run-artifacts.test.tsx` | 下载授权、拒绝、重试和链接安全测试 |
+| `scheduled-run-artifacts.tsx` | 按需展开已登记产物，提供同源附件下载链接 |
+| `scheduled-run-artifacts.test.tsx` | 同源附件链接、按需列表与重试测试 |
 | `scheduled-task-history.test.tsx` | 历史呈现测试（含「未报告」） |
 
 ## 依赖
@@ -36,6 +36,6 @@
 
 创建入口只依据 Cloud 列表响应的 `acceptanceEnabled`；本模块不决定开关，服务端仍独立验证写入。
 
-产物列表不含下载能力；只有用户点击获取链接时才请求当前授权，收起列表会丢弃链接。下载地址只接受无内嵌凭据的 HTTP(S) URL，在独立页打开且不发送 referrer；不在应用内渲染产物正文。
+产物列表只含元数据；下载链接指向 Cloud 同源路径，每次点击由服务端重新鉴权并校验文件，以安全附件返回。浏览器不取得对象存储地址、凭据或有效期，不在应用内渲染产物正文。
 
 历史通过 `artifactsExpired` 明确显示已成功交付后被清理的产物，不把从未产生产物的运行标为过期。

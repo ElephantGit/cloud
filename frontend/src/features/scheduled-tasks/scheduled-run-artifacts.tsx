@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ScheduledArtifact } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
-import { scheduledTaskFailure, useScheduledArtifactDownload, useScheduledRunArtifacts } from './api'
+import { scheduledArtifactDownloadPath, useScheduledRunArtifacts } from './api'
 
 function ArtifactDownload({
   tid,
@@ -14,46 +14,20 @@ function ArtifactDownload({
   runId: string
   artifact: ScheduledArtifact
 }) {
-  const download = useScheduledArtifactDownload(tid, issueId, runId)
   return (
     <li className="space-y-1 rounded border p-2">
       <p className="break-all text-xs">
         {artifact.name} · {artifact.kind} · {artifact.sizeBytes} B
       </p>
       <p className="break-all text-xs text-muted-foreground">SHA-256 {artifact.sha256}</p>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={download.isPending}
-        onClick={() => {
-          download.reset()
-          download.mutate(artifact.index)
-        }}
+      <a
+        href={scheduledArtifactDownloadPath(tid, issueId, runId, artifact.index)}
+        download
+        referrerPolicy="no-referrer"
+        className="text-xs underline"
       >
-        {download.isPending ? '正在获取链接' : '获取下载链接'}
-      </Button>
-      {download.data && (
-        <div className="text-xs">
-          <a
-            href={download.data.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            referrerPolicy="no-referrer"
-            className="underline"
-          >
-            下载 {artifact.name}
-          </a>
-          <p className="text-muted-foreground">
-            链接有效至 {new Date(download.data.expiresAt).toLocaleString()}，失效后请重新获取。
-          </p>
-        </div>
-      )}
-      {download.isError && (
-        <p role="alert" className="text-xs text-destructive">
-          {scheduledTaskFailure(download.error)}
-        </p>
-      )}
+        下载 {artifact.name}
+      </a>
     </li>
   )
 }
@@ -99,7 +73,7 @@ function ArtifactList({ tid, issueId, runId }: { tid: string; issueId: string; r
   )
 }
 
-/** Expands one run's current index, keeping short-lived download grants separate from metadata. */
+/** Expands current registered metadata and same-origin attachment downloads without rendering files. */
 export function ScheduledRunArtifacts({
   tid,
   issueId,

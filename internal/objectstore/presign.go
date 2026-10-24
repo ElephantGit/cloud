@@ -43,14 +43,6 @@ func PresignPUT(cfg *Config, key string, now time.Time) (Grant, error) {
 	return presign(cfg, key, "PUT", map[string]string{"x-amz-sdk-checksum-algorithm": "SHA256"}, now)
 }
 
-// PresignGET signs a short-lived read of one object Cloud already registered.
-//
-// The grant uses PublicEndpoint when configured, just like Node-facing uploads. Core must authorize
-// the registered key first; signing performs no I/O and grants no access to any other object.
-func PresignGET(cfg *Config, key string, now time.Time) (Grant, error) {
-	return presign(cfg, key, "GET", map[string]string{}, now)
-}
-
 // PresignPUTChecksum binds the Node-computed SHA-256 to the upload capability. S3 must validate
 // the bytes against this signed header before recording a checksum Cloud can verify with HEAD.
 func PresignPUTChecksum(cfg *Config, key, digest string, now time.Time) (Grant, error) {

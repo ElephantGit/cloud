@@ -483,6 +483,9 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 					req.AgentPluginID = c.Param("pluginNamespace") + "/" + c.Param("pluginIdentifier")
 				}
 				switch route.Path {
+				case scheduledArtifactPath:
+					serveScheduledArtifact(c, store, req)
+					return
 				case PublishPath:
 					out, status, e = store.CreatePublish(c.Request.Context(), req)
 				case CredentialConfirmPath:

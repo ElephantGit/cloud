@@ -4356,40 +4356,6 @@
         ],
         "type": "object"
       },
-      "ScheduledArtifactRead": {
-        "additionalProperties": false,
-        "properties": {
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "sha256": {
-            "type": "string"
-          },
-          "sizeBytes": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "sizeBytes",
-          "sha256",
-          "url",
-          "expiresAt"
-        ],
-        "type": "object"
-      },
       "ScheduledTask": {
         "additionalProperties": false,
         "properties": {
@@ -19087,13 +19053,34 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScheduledArtifactRead"
+                  "format": "binary",
+                  "type": "string"
                 }
               }
             },
-            "description": "Successful command or resource response"
+            "description": "Verified artifact bytes, at most 10 MiB; storage addresses and credentials never reach the browser",
+            "headers": {
+              "Cache-Control": {
+                "description": "private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "attachment; filename is the safely encoded display-name basename",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "nosniff",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {

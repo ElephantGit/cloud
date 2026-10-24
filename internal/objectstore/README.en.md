@@ -91,4 +91,4 @@ dependency: it supports PUT, HEAD and GET using the standard library.
   network. `task test:revision` (`REQUIRE_S3=1`) and cluster's `task agent:acceptance` run them, and
   the Backend CI workflow runs them against a pinned RustFS.
 
-`PresignGET` signs a bounded single-object GET for a registered artifact already authorised by core, preferring `public_endpoint` without contacting storage. Core retains authorization and registration checks.
+Registered artifacts use `ReadVerified` through the private endpoint; browsers receive no storage URL. Core owns authorization, registration and the 10 MiB bound.

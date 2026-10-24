@@ -144,7 +144,6 @@ import type {
   PutApiV1TenantsTidIssuesIidCommentsCidBody,
   PutApiV1TenantsTidLabelsLidBody,
   ScheduledArtifactList,
-  ScheduledArtifactRead,
   SessionHistory,
   SessionModelStatistics,
   TenantCreated,
@@ -4160,8 +4159,9 @@ export const getApiV1TenantsTidIssuesIidRunsRidArtifactsAidx = (
 ) => {
 
 
-      return customInstance<ScheduledArtifactRead>(
-      {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`, method: 'GET', signal
+      return customInstance<Blob>(
+      {url: `/api/v1/tenants/${tid}/issues/${iid}/runs/${rid}/artifacts/${aidx}`, method: 'GET',
+        responseType: 'blob', signal
     },
       options);
     }

@@ -24,3 +24,5 @@
 生成命令见 [cmd/openapi](../../cmd/openapi/README.md)；跨模块语义见 [HTTP API](../../docs/core/http-api.md) 和 [文档地图](../../docs/README.md)。
 
 产物列表与单文件下载各自声明响应 schema，必须先于通用 `/runs` 分支匹配；定时产物失效事件同时进入公开 SSE 枚举。`scheduled_artifact_test.go` 固定这两处边界，防止生成客户端与实际返回不一致。
+
+单产物响应是经校验的原始字节，强制安全文件名的附件、二进制类型、nosniff 与私有禁缓存；错误仍用 JSON Fault。

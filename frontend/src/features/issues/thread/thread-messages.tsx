@@ -3,6 +3,7 @@ import type { ThreadEntry } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
 import { threadItems } from './thread-entries'
 import { ThreadRow } from './thread-row'
+import { useInlineThread } from './conversation-viewport'
 
 /**
  * The Thread's rows, oldest first. `hasOlder` shows the "加载更早" control,
@@ -17,14 +18,17 @@ export function ThreadMessages({
   onLoadOlder,
   onQuote,
   liveRevision = 0,
+  userName = '用户',
 }: {
   entries: readonly (ThreadEntry & { livePreview?: boolean })[]
   hasOlder: boolean
   loadingOlder: boolean
   onLoadOlder: () => void
   onQuote?: ((text: string) => void) | undefined
+  userName?: string
   liveRevision?: number
 }) {
+  const inline = useInlineThread()
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -33,11 +37,13 @@ export function ThreadMessages({
   const lastSeq = entries.at(-1)?.seq
   const firstSeq = entries.at(0)?.seq
   useEffect(() => {
+    if (inline) return
     if (lastSeq === undefined && liveRevision === 0) return
     if (following.current) endRef.current?.scrollIntoView({ block: 'nearest' })
     else setUnread(true)
-  }, [lastSeq, liveRevision])
+  }, [lastSeq, liveRevision, inline])
   useEffect(() => {
+    if (inline) return
     if (firstSeq === undefined) return
     const element = scrollRef.current
     const anchor = olderAnchor.current
@@ -45,12 +51,16 @@ export function ThreadMessages({
       element.scrollTop = anchor.top + element.scrollHeight - anchor.height
       olderAnchor.current = null
     }
-  }, [firstSeq])
+  }, [firstSeq, inline])
 
   return (
     <div
       ref={scrollRef}
-      className="relative max-h-[65vh] min-h-0 space-y-4 overflow-y-auto overscroll-contain p-1"
+      className={
+        inline
+          ? 'min-w-0 space-y-4'
+          : 'relative max-h-[65vh] min-h-0 space-y-4 overflow-y-auto overscroll-contain p-1'
+      }
       onScroll={(event) => {
         const element = event.currentTarget
         following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
@@ -74,12 +84,7 @@ export function ThreadMessages({
           {loadingOlder ? '加载中…' : '加载更早'}
         </Button>
       )}
-      <ol aria-label="会话消息" className="space-y-4">
-        {threadItems(entries).map((item) => (
-          <ThreadRow key={item.key} item={item} onQuote={onQuote} />
-        ))}
-      </ol>
-      {entries.length === 0 && <p className="text-sm text-muted-foreground">暂无消息</p>}
+      <MessageRows entries={entries} onQuote={onQuote} userName={userName} />
       <div ref={endRef} />
       {unread && (
         <Button
@@ -97,5 +102,33 @@ export function ThreadMessages({
         </Button>
       )}
     </div>
+  )
+}
+
+function MessageRows({
+  entries,
+  onQuote,
+  userName,
+}: {
+  entries: readonly ThreadEntry[]
+  onQuote: ((text: string) => void) | undefined
+  userName: string
+}) {
+  const times = new Map(entries.map((entry) => [entry.seq, entry.createdAt]))
+  return (
+    <>
+      <ol aria-label="会话消息" className="space-y-4">
+        {threadItems(entries).map((item) => (
+          <ThreadRow
+            key={item.key}
+            item={item}
+            onQuote={onQuote}
+            userName={userName}
+            at={times.get(item.key)}
+          />
+        ))}
+      </ol>
+      {entries.length === 0 && <p className="text-sm text-muted-foreground">暂无消息</p>}
+    </>
   )
 }

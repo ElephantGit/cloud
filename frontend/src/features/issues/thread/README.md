@@ -14,6 +14,8 @@ Issue 详情页主体的「Agent 会话」：默认读取最近一次 Agent Run�
 
 | 文件 | 说明 |
 | --- | --- |
+| `conversation-viewport.tsx` | 任务统一滚动、阅读锚点与新内容提示 |
+| `message-author.tsx` | 执行者名称、作者头像与真实时间 |
 | `thread-entries.ts` | 纯函数：选最新 agent run、按 seq 合并窗口、把 ThreadEntry 映射为显示行（合并同一 turn 的连续 agent chunk）、状态中文标签 |
 | `thread-api.ts` | TanStack Query 层：`threadQueryKey`、`useThread`（尾部首读 + 增量读 + 404 等待 + 兜底轮询）、`useLoadOlderThread`、`useSendThreadMessage`、`useEndThread`、故障文案 |
 | `thread-messages.tsx` | 展示组件：消息列表（`role=list`，名称「会话消息」）与「加载更早」按钮 |
@@ -51,3 +53,5 @@ Node 条目公开其真实 `turnId`，工具调用与更新优先按该轮次关
 ## 测试
 
 `run-preparation.test.tsx` 直接渲染各准备状态，覆盖快照等待、仓库同步失败及其错误码过滤。`thread-panel.test.tsx` 用一个具有服务端游标语义（tail / after / before）的假 Thread 后端驱动面板，覆盖尾部加载、404→出现、加载更早、发送（含 thread_closed）、结束会话以及 SSE 事件触发增量读取。404→出现依赖真实的 2.5s 轮询，单条用例约 3 秒。
+
+`conversation-viewport.tsx` 为任务内嵌 Thread 提供唯一滚动容器，观察内容大小并保持可见消息锚点；独立 Thread 仍使用原分页/跟随行为。`message-author.tsx` 展示真实作者与可用时间。内嵌消息不拥有滚动条，身份与模型信息可折叠；所有原始内容、失败及交付信息保留。浏览器几何验收补足 jsdom 无布局引擎的边界。

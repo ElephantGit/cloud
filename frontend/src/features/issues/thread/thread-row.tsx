@@ -1,3 +1,4 @@
+import { MessageAuthor, useAgentSpeaker } from './message-author'
 import { Brain, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConversationMarkdown } from '@/features/conversation-content/markdown'
@@ -71,10 +72,15 @@ function ToolStep({ tool }: { tool: SessionTool }) {
 export function ThreadRow({
   item,
   onQuote,
+  userName = '用户',
+  at,
 }: {
+  userName?: string
+  at?: string | undefined
   item: ThreadItem
   onQuote?: ((text: string) => void) | undefined
 }) {
+  const agentName = useAgentSpeaker()
   switch (item.variant) {
     case 'prompt':
       return (
@@ -89,7 +95,8 @@ export function ThreadRow({
       )
     case 'user':
       return (
-        <li className="ml-6 rounded-xl bg-muted/60 p-4 sm:ml-16">
+        <li data-message-anchor className="rounded-lg bg-muted/40 px-3 py-3">
+          <MessageAuthor name={userName} at={at} />
           <ConversationMarkdown text={item.text} />
           {item.status && <p className="mt-2 text-xs text-muted-foreground">{item.status}</p>}
           {onQuote && (
@@ -101,7 +108,8 @@ export function ThreadRow({
       )
     case 'agent':
       return (
-        <li className="min-w-0 py-2">
+        <li data-message-anchor className="min-w-0 py-2">
+          <MessageAuthor name={agentName} type="agent" at={at} />
           <ConversationMarkdown text={item.text} />
           {onQuote && (
             <Button type="button" size="xs" variant="ghost" onClick={() => onQuote(item.text)}>

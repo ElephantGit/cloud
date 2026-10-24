@@ -1,4 +1,9 @@
 import { useState } from 'react'
+import { ConversationViewport } from '@/features/issues/thread/conversation-viewport'
+import { AgentSpeaker, MessageAuthor } from '@/features/issues/thread/message-author'
+import { useThread } from '@/features/issues/thread/thread-api'
+import { isUnauthorizedError, isForbiddenError } from '@/lib/api-client'
+import { memberNameById } from '@/features/issues/present'
 import { Link } from 'react-router-dom'
 import type { TaskConversationMessage } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
@@ -20,9 +25,8 @@ import {
   useTaskConversation,
   useUpdateTaskMessage,
 } from './api'
-import { ConversationComposer } from './conversation-composer'
+import { ConversationFooter } from './conversation-footer'
 import { useConversationDraft, type ConversationQuote } from './use-conversation-draft'
-import { TaskExecutionControls } from './task-stop'
 
 type ConversationRow =
   | { kind: 'run'; at: string; id: string; run: IssueRun }
@@ -110,6 +114,7 @@ function visibleAgentRuns(
 function WaitingMessage({
   message,
   name,
+  author,
   own,
   tid,
   issueId,
@@ -117,6 +122,7 @@ function WaitingMessage({
 }: {
   message: TaskConversationMessage
   name: string
+  author: string
   own: boolean
   tid: string
   issueId: string
@@ -130,9 +136,11 @@ function WaitingMessage({
     failed: '未能启动',
   }[message.state]
   return (
-    <li className="rounded-xl border bg-card p-4">
+    <li data-message-anchor className="space-y-2 py-3">
       <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="font-medium">你 → {name}</span>
+        <span className="font-medium">
+          {author} → {name}
+        </span>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
       <div className="mt-2">
@@ -181,6 +189,23 @@ function WaitingMessage({
   )
 }
 
+function useRunAuthor(
+  { tid, issueId, run }: { tid: string; issueId: string; run: IssueRun },
+  members: TenantMember[],
+  currentUserId: string | undefined,
+) {
+  const thread = useThread(
+    { tid, issueId, runId: run.id },
+    ['completed', 'failed', 'cancelled'].includes(run.status),
+  )
+  const snapshot = thread.isError ? undefined : thread.data
+  const task = useTaskConversation(tid, issueId)
+  const message = loadedTaskMessages(task.data?.pages).find((item) => item.runId === run.id)
+  const id = message?.userId ?? (snapshot?.declared ? snapshot.initiatorUserId : undefined)
+  if (id && id === currentUserId) return '你'
+  return memberNameById(members).get(id ?? '') ?? '用户'
+}
+
 function RunConversation({
   run,
   name,
@@ -188,7 +213,6 @@ function RunConversation({
   issueId,
   members,
   workspaceSlug,
-  activeRunId,
   currentUserId,
   onQuote,
 }: {
@@ -198,13 +222,13 @@ function RunConversation({
   issueId: string
   members: TenantMember[]
   workspaceSlug: string | undefined
-  activeRunId: string | null | undefined
   currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
   const task = run.input['task']
+  const author = useRunAuthor({ tid, issueId, run }, members, currentUserId)
   return (
-    <li className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
+    <li data-message-anchor className="min-w-0 space-y-3 border-t pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           {name} · {RUN_LABELS[run.status] ?? '状态未知'}
@@ -219,8 +243,8 @@ function RunConversation({
         )}
       </div>
       {typeof task === 'string' && (
-        <div className="ml-6 rounded-xl bg-muted/60 p-3 sm:ml-10">
-          <p className="mb-1 text-xs text-muted-foreground">你 → {name}</p>
+        <div data-message-anchor className="rounded-lg bg-muted/40 p-3">
+          <MessageAuthor name={author} at={run.createdAt} />
           <ConversationMarkdown text={task} />
           <Button
             variant="ghost"
@@ -232,16 +256,18 @@ function RunConversation({
         </div>
       )}
       <RunContext input={run.input} />
-      <IssueThreadPanel
-        tid={tid}
-        issueId={issueId}
-        members={members}
-        selectedRunId={run.id}
-        readOnly
-        showEndControl={run.id === activeRunId}
-        endActorId={currentUserId}
-        onQuote={(text, agentId) => onQuote({ text, agentId })}
-      />
+      <AgentSpeaker name={name}>
+        <IssueThreadPanel
+          tid={tid}
+          issueId={issueId}
+          members={members}
+          selectedRunId={run.id}
+          readOnly
+          showEndControl={false}
+          endActorId={currentUserId}
+          onQuote={(text, agentId) => onQuote({ text, agentId })}
+        />
+      </AgentSpeaker>
     </li>
   )
 }
@@ -253,7 +279,6 @@ function ConversationRowItem({
   issueId,
   members,
   workspaceSlug,
-  activeRunId,
   currentUserId,
   onQuote,
 }: {
@@ -263,7 +288,6 @@ function ConversationRowItem({
   issueId: string
   members: TenantMember[]
   workspaceSlug: string | undefined
-  activeRunId: string | null | undefined
   currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
@@ -278,7 +302,6 @@ function ConversationRowItem({
         issueId={issueId}
         members={members}
         workspaceSlug={workspaceSlug}
-        activeRunId={activeRunId}
         currentUserId={currentUserId}
         onQuote={onQuote}
       />
@@ -286,6 +309,11 @@ function ConversationRowItem({
   if (row.kind === 'message')
     return (
       <WaitingMessage
+        author={
+          row.message.userId === currentUserId
+            ? '你'
+            : (memberNameById(members).get(row.message.userId) ?? '用户')
+        }
         message={row.message}
         name={name(row.message.agentId)}
         own={row.message.userId === currentUserId}
@@ -295,10 +323,17 @@ function ConversationRowItem({
       />
     )
   return (
-    <li className="rounded-xl border bg-card p-4">
-      <p className="mb-2 text-xs text-muted-foreground">
-        {row.comment.authorType === 'agent' ? 'Agent 回复' : '任务评论'}
-      </p>
+    <li data-message-anchor className="space-y-2 py-3">
+      <MessageAuthor
+        name={
+          row.comment.authorUserId === currentUserId
+            ? '你'
+            : (memberNameById(members).get(row.comment.authorUserId ?? '') ??
+              row.comment.authorType)
+        }
+        type={row.comment.authorType === 'agent' ? 'agent' : 'user'}
+        at={row.comment.createdAt}
+      />
       <ConversationMarkdown text={row.comment.body ?? ''} />
     </li>
   )
@@ -311,7 +346,6 @@ function ConversationRows({
   members,
   targets,
   workspaceSlug,
-  activeRunId,
   currentUserId,
   onQuote,
 }: {
@@ -321,7 +355,6 @@ function ConversationRows({
   members: TenantMember[]
   targets: CollaborationTargetSummary[]
   workspaceSlug: string | undefined
-  activeRunId: string | null | undefined
   currentUserId: string | undefined
   onQuote: (quote: ConversationQuote) => void
 }) {
@@ -336,7 +369,6 @@ function ConversationRows({
           issueId={issueId}
           members={members}
           workspaceSlug={workspaceSlug}
-          activeRunId={activeRunId}
           currentUserId={currentUserId}
           onQuote={onQuote}
         />
@@ -400,28 +432,7 @@ function ConversationFeedback({
   )
 }
 
-/** Renders one durable task discussion across Run boundaries while leaving each Thread immutable. */
-export function TaskConversationPanel({
-  tid,
-  issueId,
-  members,
-  targets,
-  runs,
-  selectedRunId,
-  workspaceSlug,
-  currentUserId,
-  onLatest,
-}: {
-  tid: string
-  issueId: string
-  members: TenantMember[]
-  targets: CollaborationTargetSummary[]
-  runs: IssueRun[]
-  selectedRunId?: string | undefined
-  workspaceSlug?: string | undefined
-  currentUserId?: string | undefined
-  onLatest: () => void
-}) {
+function useTaskDiscussion(tid: string, issueId: string, runs: IssueRun[]) {
   const conversation = useTaskConversation(tid, issueId)
   const timeline = useTimeline(tid, issueId)
   const [visibleRuns, setVisibleRuns] = useState(5)
@@ -433,11 +444,42 @@ export function TaskConversationPanel({
   const shown = visibleAgentRuns(agents, visibleRuns, current?.activeRunId)
   const messages = loadedTaskMessages(conversation.data?.pages)
   const rows = conversationRows(shown, messages, timeline.data ?? [])
+  return { conversation, draft, agents, current, shown, messages, rows, setVisibleRuns }
+}
+
+/** Renders one durable task discussion across Run boundaries while leaving each Thread immutable. */
+export function TaskConversationPanel({
+  tid,
+  issueId,
+  members,
+  targets,
+  runs,
+  selectedRunId,
+  workspaceSlug,
+  currentUserId,
+  onLatest,
+  content,
+}: {
+  tid: string
+  issueId: string
+  members: TenantMember[]
+  targets: CollaborationTargetSummary[]
+  runs: IssueRun[]
+  selectedRunId?: string | undefined
+  workspaceSlug?: string | undefined
+  currentUserId?: string | undefined
+  content?: React.ReactNode
+  onLatest: () => void
+}) {
+  const { conversation, draft, agents, current, shown, messages, rows, setVisibleRuns } =
+    useTaskDiscussion(tid, issueId, runs)
+  if (isUnauthorizedError(conversation.error) || isForbiddenError(conversation.error))
+    return <p role="alert">任务对话不可访问，请重新确认权限。</p>
   // During a rolling upgrade an older Cloud may not have the task endpoint yet. Preserve its
   // original Thread composer until the authoritative task queue becomes available.
   if (conversation.isError && faultCode(conversation.error) === 'not_found') {
     return (
-      <IssueThreadPanel
+      <LegacyConversation
         tid={tid}
         issueId={issueId}
         members={members}
@@ -446,60 +488,69 @@ export function TaskConversationPanel({
     )
   }
   return (
-    <div className="space-y-5">
-      {selectedRunId ? (
-        <IssueThreadPanel
-          tid={tid}
-          issueId={issueId}
-          members={members}
-          selectedRunId={selectedRunId}
-          readOnly
-          showEndControl={selectedRunId === current?.activeRunId}
-          endActorId={currentUserId}
-          onQuote={(text, agentId) => draft.quote({ text, agentId })}
-        />
-      ) : (
-        <>
-          <OlderHistoryControls
-            olderRuns={agents.length > shown.length}
-            loadRuns={() => setVisibleRuns((count) => count + 5)}
-            conversation={conversation}
-          />
-          <ConversationRows
-            rows={rows}
-            tid={tid}
-            issueId={issueId}
-            members={members}
-            targets={targets}
-            workspaceSlug={workspaceSlug}
-            activeRunId={current?.activeRunId}
-            currentUserId={currentUserId}
-            onQuote={draft.quote}
-          />
-          <ConversationFeedback
-            empty={rows.length === 0}
-            pending={conversation.isPending}
-            failed={conversation.isError}
-          />
-        </>
-      )}
-      <TaskExecutionControls
-        tid={tid}
-        issueId={issueId}
-        current={current}
-        runs={agents}
-        waiting={messages.some((message) => message.state === 'waiting')}
-      />
-      <ConversationComposer
+    <div className="flex h-full min-h-0 flex-col">
+      <ConversationViewport
+        key={selectedRunId ?? (content ? 'details' : 'conversation')}
+        followOutput={content === undefined}
+      >
+        {content ??
+          (selectedRunId ? (
+            <IssueThreadPanel
+              tid={tid}
+              issueId={issueId}
+              members={members}
+              selectedRunId={selectedRunId}
+              readOnly
+              showEndControl={false}
+              endActorId={currentUserId}
+              onQuote={(text, agentId) => draft.quote({ text, agentId })}
+            />
+          ) : (
+            <>
+              <OlderHistoryControls
+                olderRuns={agents.length > shown.length}
+                loadRuns={() => setVisibleRuns((count) => count + 5)}
+                conversation={conversation}
+              />
+              <ConversationRows
+                rows={rows}
+                tid={tid}
+                issueId={issueId}
+                members={members}
+                targets={targets}
+                workspaceSlug={workspaceSlug}
+                currentUserId={currentUserId}
+                onQuote={draft.quote}
+              />
+              <ConversationFeedback
+                empty={rows.length === 0}
+                pending={conversation.isPending}
+                failed={conversation.isError}
+              />
+            </>
+          ))}
+      </ConversationViewport>
+      <ConversationFooter
         tid={tid}
         issueId={issueId}
         targets={targets}
-        latestRun={agents.at(-1)}
-        state={draft}
-        onSent={onLatest}
-        readiness={current?.agentReadiness}
-        settingsPath={workspaceSlug ? workspacePaths(workspaceSlug).modelConnections : undefined}
+        runs={agents}
+        current={current}
+        draft={draft}
+        waiting={messages.some((message) => message.state === 'waiting')}
+        selectedRunId={selectedRunId}
+        currentUserId={currentUserId}
+        workspaceSlug={workspaceSlug}
+        onLatest={onLatest}
       />
+    </div>
+  )
+}
+
+function LegacyConversation(props: React.ComponentProps<typeof IssueThreadPanel>) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <IssueThreadPanel {...props} />
     </div>
   )
 }

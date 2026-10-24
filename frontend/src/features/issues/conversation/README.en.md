@@ -6,6 +6,7 @@ Task-level conversation reads, sends, pending handoffs, and Agent selection. The
 
 | File | Responsibility |
 | --- | --- |
+| `conversation-footer.tsx` | Current-execution controls and persistent input footer |
 | `api.ts` | Bidirectional task message paging, send/stop/cancel/retry/resume/explicit-discard API and safe error copy. |
 | `conversation-panel.tsx` | Combines task comments, Agent Runs and pending messages; offers authorized ending only for the session currently occupying the task. |
 | `conversation-composer.tsx` | One Agent target, explicit mention picker, Agent message/plain comment modes and handoff hint. |
@@ -15,5 +16,9 @@ Task-level conversation reads, sends, pending handoffs, and Agent selection. The
 | `*.test.ts(x)` | MSW and component scenarios for closed-session continuation, switching, failure and queueing. |
 
 Depends on generated `src/api`, `features/issues/api`, `features/issues/thread`, `features/spaces/api`, `features/conversation-content`, and `components/ui`. Only server-authorized roster targets are selectable; the selector and `@` picker change recipient only on explicit selection, while an ordinary typed `@name` has no routing effect. Changing a local selection never starts a run. Historical Run selection is read-only and the task composer always addresses the current target. The end action belongs only to the server's `activeRunId` when Thread `canEnd` is true and the current user initiated that session; a later queued Run cannot hide the active session's end action. Pages merge by server seq, and a retry after an unknown response reuses its idempotency key.
+
+`conversation-footer.tsx` keeps current-session end, task stop/recovery and the composer outside scrolling content. Controls always target the active execution. Lightweight Run separators preserve transcript ordering; authors derive from persisted messages or Thread initiators, and only the current actor is called “you”. Agent names are supplied explicitly. The thread viewport owns scrolling and denied reads hide stale messages.
+
+Conversation reads continue polling while activeRunId exists or messages are waiting. The server clears active ownership after release; an empty queue must not leave stale execution controls visible.
 
 The composer occupies normal document flow, never overlays task history, and requires no fixed-height spacer to read the latest message.

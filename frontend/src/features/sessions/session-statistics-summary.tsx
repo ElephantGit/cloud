@@ -40,30 +40,30 @@ export function SessionStatisticsSummary({
           统计暂不可用
         </p>
       )}
+      {data?.counts.total === 0 && (
+        <p className="text-xs text-muted-foreground">暂无观测，不代表历史消耗为零。</p>
+      )}
       {data && (
         <dl className="space-y-2 text-xs">
           <div className="flex justify-between">
             <dt>已记录请求</dt>
             <dd>{data.counts.total}</dd>
           </div>
-          {data.counts.total === 0 && (
-            <p className="text-muted-foreground">暂无观测，不代表历史消耗为零。</p>
-          )}
           {(['inputTokens', 'outputTokens', 'totalTokens'] as const).map((key, index) => (
-            <div key={key}>
-              <div className="flex justify-between">
-                <dt>{['输入 Token', '输出 Token', '上游总 Token'][index]}</dt>
-                <dd>{metricNumber(data.usage[key].value)}</dd>
-              </div>
-              <dd className="mt-0.5 text-muted-foreground">{coverageLabel(data.usage[key])}</dd>
+            <div key={key} className="grid grid-cols-[1fr_auto] gap-x-2">
+              <dt>{['输入 Token', '输出 Token', '上游总 Token'][index]}</dt>
+              <dd>{metricNumber(data.usage[key].value)}</dd>
+              <dd className="col-span-2 mt-0.5 text-muted-foreground">
+                {coverageLabel(data.usage[key])}
+              </dd>
             </div>
           ))}
-          <div>
-            <div className="flex justify-between">
-              <dt>平均请求时长</dt>
-              <dd>{metricDuration(data.timing.meanDurationMs.value)}</dd>
-            </div>
-            <dd className="text-muted-foreground">{coverageLabel(data.timing.meanDurationMs)}</dd>
+          <div className="grid grid-cols-[1fr_auto] gap-x-2">
+            <dt>平均请求时长</dt>
+            <dd>{metricDuration(data.timing.meanDurationMs.value)}</dd>
+            <dd className="col-span-2 text-muted-foreground">
+              {coverageLabel(data.timing.meanDurationMs)}
+            </dd>
           </div>
         </dl>
       )}

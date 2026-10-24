@@ -97,6 +97,42 @@ function renderConversation(runs: IssueRun[], currentUserId = 'u1') {
 }
 
 describe('TaskConversationPanel', () => {
+  it('refreshes the selected blocked Agent after an external repair without losing the draft', async () => {
+    mockConversation([], [])
+    let repaired = false
+    server.use(
+      http.get(CONVERSATION, () =>
+        HttpResponse.json({
+          items: [],
+          nextCursor: null,
+          prevCursor: null,
+          agentReadiness: [
+            { agentId: 'a1', requiresPersonalModel: true, errorCode: 'model_default_required' },
+            {
+              agentId: 'a2',
+              requiresPersonalModel: true,
+              errorCode: repaired ? null : 'agent_configuration_required',
+            },
+          ],
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderConversation([])
+    await user.selectOptions(screen.getByLabelText('发送给'), 'a2')
+    const input = screen.getByLabelText('任务对话输入')
+    await user.type(input, 'preserve this repaired task')
+    expect(
+      await screen.findByText('请在插件的“我的配置”中选择个人模型连接和模型。'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^发送$/ })).toBeDisabled()
+    repaired = true
+    await waitFor(() => expect(screen.getByRole('button', { name: /^发送$/ })).toBeEnabled(), {
+      timeout: 7000,
+    })
+    expect(input).toHaveValue('preserve this repaired task')
+  }, 10000)
+
   it('does not report older Runs as unread but does notify about a new task message', async () => {
     const runs = Array.from({ length: 6 }, (_, index) =>
       run(`r-${index}`, 'a1', 'completed', `2026-10-18T01:0${index}:00Z`),

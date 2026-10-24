@@ -10,7 +10,7 @@ import {
   postApiV1TenantsTidIssuesIidConversationResume,
   postApiV1TenantsTidIssuesIidConversationStop,
 } from '@/api/tenants/tenants'
-import { faultCode } from '@/lib/api-client'
+import { faultCode, isForbiddenError, isUnauthorizedError } from '@/lib/api-client'
 import { mutationHeaders, useIdempotencyKeys } from '@/features/spaces/api'
 
 const PAGE_SIZE = 200
@@ -20,8 +20,8 @@ export function taskConversationKey(tid: string, issueId: string) {
   return ['task-conversation', tid, issueId] as const
 }
 
-/** Reads the tail first and pages backwards without copying messages into component state. */
-export function useTaskConversation(tid: string, issueId: string) {
+/** Reads task history and refreshes a selected personal Agent's gap until an external repair lands. */
+export function useTaskConversation(tid: string, issueId: string, selectedAgentId?: string) {
   return useInfiniteQuery({
     queryKey: taskConversationKey(tid, issueId),
     initialPageParam: undefined as number | undefined,
@@ -35,12 +35,21 @@ export function useTaskConversation(tid: string, issueId: string) {
       ),
     getNextPageParam: (page) =>
       page.prevCursor !== null && page.prevCursor > 1 ? page.prevCursor : undefined,
-    refetchInterval: (query) =>
-      query.state.data?.pages.some(
-        (page) => !!page.activeRunId || page.items.some((message) => message.state === 'waiting'),
+    refetchInterval: (query) => {
+      if (isUnauthorizedError(query.state.error) || isForbiddenError(query.state.error))
+        return false
+      return query.state.data?.pages.some(
+        (page) =>
+          !!page.activeRunId ||
+          page.items.some((message) => message.state === 'waiting') ||
+          page.agentReadiness?.some(
+            (agent) =>
+              agent.agentId === selectedAgentId && agent.requiresPersonalModel && !!agent.errorCode,
+          ),
       )
         ? 5000
-        : false,
+        : false
+    },
   })
 }
 

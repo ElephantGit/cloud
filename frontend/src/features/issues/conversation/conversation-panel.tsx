@@ -136,7 +136,7 @@ function WaitingMessage({
     failed: '未能启动',
   }[message.state]
   return (
-    <li data-message-anchor className="space-y-2 py-3">
+    <li data-message-anchor data-conversation-output={message.id} className="space-y-2 py-3">
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           {author} → {name}
@@ -228,7 +228,11 @@ function RunConversation({
   const task = run.input['task']
   const author = useRunAuthor({ tid, issueId, run }, members, currentUserId)
   return (
-    <li data-message-anchor className="min-w-0 space-y-3 border-t pt-5">
+    <li
+      data-message-anchor
+      data-conversation-output={run.id}
+      className="min-w-0 space-y-3 border-t pt-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           {name} · {RUN_LABELS[run.status] ?? '状态未知'}
@@ -323,7 +327,7 @@ function ConversationRowItem({
       />
     )
   return (
-    <li data-message-anchor className="space-y-2 py-3">
+    <li data-message-anchor data-conversation-output={row.id} className="space-y-2 py-3">
       <MessageAuthor
         name={
           row.comment.authorUserId === currentUserId

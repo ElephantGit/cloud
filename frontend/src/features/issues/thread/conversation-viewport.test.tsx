@@ -1,11 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { ConversationViewport } from './conversation-viewport'
 
-it('follows output only at the bottom and preserves an anchored message when history is prepended', async () => {
+it('preserves an anchored message without marking prepended history as unread', async () => {
   const { rerender } = render(
     <ConversationViewport>
-      <p key="current" data-message-anchor>
+      <p key="current" data-message-anchor data-conversation-output="current">
         原来的消息
       </p>
     </ConversationViewport>,
@@ -23,24 +23,21 @@ it('follows output only at the bottom and preserves an anchored message when his
   fireEvent.scroll(viewport)
   height = 1100
   anchorTop = 120
-  rerender(
-    <ConversationViewport>
-      <p key="older" data-message-anchor>
-        更早的消息
-      </p>
-      <p key="current" data-message-anchor>
-        原来的消息
-      </p>
-    </ConversationViewport>,
-  )
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: '有新内容 · 回到底部' })).toBeInTheDocument(),
-  )
+  await act(async () => {
+    rerender(
+      <ConversationViewport>
+        <p key="older" data-message-anchor data-conversation-output="older">
+          更早的消息
+        </p>
+        <p key="current" data-message-anchor data-conversation-output="current">
+          原来的消息
+        </p>
+      </ConversationViewport>,
+    )
+  })
   // Prepending 100px keeps the original message at the same viewport position.
   expect(viewport.scrollTop).toBe(400)
-  fireEvent.click(screen.getByRole('button', { name: '有新内容 · 回到底部' }))
-  expect(viewport.scrollTop).toBe(1100)
-  expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '有新内容 · 回到底部' })).not.toBeInTheDocument()
 })
 
 it('does not auto-follow an execution list when its content changes', async () => {

@@ -56,6 +56,7 @@ export function ThreadMessages({
   return (
     <div
       ref={scrollRef}
+      data-conversation-output={lastSeq === undefined ? undefined : `${lastSeq}:${liveRevision}`}
       className={
         inline
           ? 'min-w-0 space-y-4'

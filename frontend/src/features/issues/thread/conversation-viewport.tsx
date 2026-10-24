@@ -8,6 +8,25 @@ export function useInlineThread() {
   return useContext(InlineThread)
 }
 
+function outputSnapshot(body: Element) {
+  return new Map(
+    [...body.querySelectorAll('[data-conversation-output]')].map((element) => [
+      element,
+      element.getAttribute('data-conversation-output'),
+    ]),
+  )
+}
+
+function hasNewOutput(previous: Map<Element, string | null>, current: Map<Element, string | null>) {
+  const tail = [...previous.keys()].findLast((element) => current.has(element))
+  return [...current].some(([element, revision]) => {
+    if (previous.has(element)) return previous.get(element) !== revision
+    // Historical runs mount before the retained tail, even when their Threads
+    // arrive later. Only additions after that boundary are new output.
+    return !!tail && !!(tail.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+}
+
 /** Owns task scrolling, preserving a visible message anchor while older content is inserted. */
 export function ConversationViewport({
   children,
@@ -25,6 +44,7 @@ export function ConversationViewport({
     const element = viewport.current
     const body = content.current
     if (!element || !body || !followOutput) return undefined
+    let output = outputSnapshot(body)
     function remember() {
       if (!element || !body) return
       const top = element.getBoundingClientRect().top
@@ -38,24 +58,33 @@ export function ConversationViewport({
     const onScroll = () => {
       following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
       if (following.current) setUnread(false)
+      output = outputSnapshot(body)
       remember()
     }
     const update = () => {
       // Hidden tab panels must not consume the reader's follow state.
       if (!element.clientHeight) return
+      const nextOutput = outputSnapshot(body)
       if (following.current) element.scrollTop = element.scrollHeight
       else {
         const previous = anchor.current
         if (previous?.element.isConnected)
           element.scrollTop += previous.element.getBoundingClientRect().top - previous.top
-        setUnread(true)
+        if (hasNewOutput(output, nextOutput)) setUnread(true)
       }
+      output = nextOutput
       remember()
     }
     const resize = new ResizeObserver(update)
     const mutation = new MutationObserver(update)
     resize.observe(body)
-    mutation.observe(body, { childList: true, subtree: true, characterData: true })
+    mutation.observe(body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['data-conversation-output'],
+    })
     element.addEventListener('scroll', onScroll)
     update()
     return () => {

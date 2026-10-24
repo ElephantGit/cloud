@@ -22,3 +22,5 @@ Depends on generated `src/api`, `features/issues/api`, `features/issues/thread`,
 Conversation reads continue polling while activeRunId exists or messages are waiting. The server clears active ownership after release; an empty queue must not leave stale execution controls visible.
 
 The composer occupies normal document flow, never overlays task history, and requires no fixed-height spacer to read the latest message.
+
+Task messages, comments and Runs mark output with stable identities; Threads mark their own tail sequence/live revision. The shared viewport uses these signals to distinguish older history from new output, without treating paging controls or historical disclosures as unread content.

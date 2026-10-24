@@ -49,6 +49,9 @@
 
 Settings 只接受声明中的标量字段；普通配置请求不承载连接凭据。连接和模型引用必须属于当前用户且协议与声明匹配，Claude 只接受 Messages。保存配置不证明模型可连接，也不证明部署已有 adapter。
 
+声明式 Agent 的任务就绪提示与最终运行准入使用同一组公开缺口码：连接停用、删除或不可读取为 `model_connection_unavailable`，缺 Key 为
+`model_credential_required`，所选模型已撤下为 `model_not_found`，未配置模型选择为 `agent_configuration_required`。页面将连接、凭据和模型缺口引导到个人模型连接，将未配置的插件模型选择引导到插件“我的配置”；领域内部的工作流缺口原因不直接作为这些公开错误返回。
+
 ## 运行绑定
 
 `official/ora-space.opencode` 的 Agent 运行在**创建运行的同一个事务里**生成一份运行绑定（`run_model_bindings`），固定：发起者、连接及其版本、

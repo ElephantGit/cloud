@@ -15,7 +15,6 @@ const PLUGIN_GAPS = new Set([
 
 const MODEL_GAPS = new Set([
   'model_connection_unavailable',
-  'model_connection_disabled',
   'model_credential_required',
   'model_default_required',
   'model_not_found',

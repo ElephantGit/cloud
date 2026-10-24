@@ -174,7 +174,6 @@ const MESSAGE_FAULTS: Record<string, string> = {
   agent_adapter_unavailable: '当前服务尚未启用此插件的模型接入能力，请联系部署管理员。',
   agent_target_unavailable: '当前插件没有适合此运行环境的安装包，请联系空间管理员。',
   agent_plugin_unavailable: '运行所需的插件尚未安装就绪，请检查插件安装状态。',
-  model_connection_disabled: '模型连接已停用，请更新个人设置',
   model_not_found: '所选模型已不可用，请重新选择',
   content_too_large: '消息过长，请缩短后重试',
   invalid_target: '请选择可用的 Agent',

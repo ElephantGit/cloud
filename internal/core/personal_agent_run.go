@@ -120,10 +120,20 @@ func frozenAgentPluginSnapshot(t *transaction, operation Object, plugins, meta [
 
 // safeAgentModelGap keeps admission failures actionable without exposing another user's reference.
 func safeAgentModelGap(reason string) string {
-	if reason == slotReasonDefaultMissing {
+	switch reason {
+	case "":
+		return ""
+	case slotReasonNotConfigured:
+		return "agent_configuration_required"
+	case slotReasonConnectionDown:
+		return "model_connection_unavailable"
+	case slotReasonCredentialMissing:
+		return "model_credential_required"
+	case slotReasonModelUnavailable:
+		return "model_not_found"
+	default:
 		return "model_default_required"
 	}
-	return reason
 }
 
 // agentTargetDigest freezes one exact artifact; a target-specific artifact takes precedence

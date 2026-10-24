@@ -26,23 +26,30 @@ describe('AgentReadiness', () => {
     expect(screen.queryByRole('link', { name: '配置个人模型' })).not.toBeInTheDocument()
   })
 
-  it('keeps credential failures linked to the model connections page', () => {
+  it.each([
+    ['model_connection_unavailable', '模型连接不可用，请更新个人设置'],
+    ['model_credential_required', '模型凭据缺失，请更新个人设置'],
+    ['model_not_found', '所选模型已不可用，请重新选择'],
+    ['model_default_required', '请先配置个人默认模型'],
+  ])('keeps %s linked to the model connections page', (errorCode, message) => {
     render(
       <MemoryRouter>
         <AgentReadiness
           readiness={{
             agentId: 'claude',
             requiresPersonalModel: true,
-            errorCode: 'model_credential_required',
+            errorCode,
           }}
           settingsPath="/w/space/settings/model-connections"
           pluginsPath="/w/space/plugins"
         />
       </MemoryRouter>,
     )
+    expect(screen.getByRole('alert')).toHaveTextContent(message)
     expect(screen.getByRole('link', { name: '配置个人模型' })).toHaveAttribute(
       'href',
       '/w/space/settings/model-connections',
     )
+    expect(screen.queryByRole('link', { name: '前往插件设置' })).not.toBeInTheDocument()
   })
 })

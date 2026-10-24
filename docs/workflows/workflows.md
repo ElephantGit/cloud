@@ -37,6 +37,8 @@
 **首期不支持交互式节点。** `human` 节点和 agent 节点的 `interactive: true` 在发布时被拒绝，运行不会停在等待人工输入的状态。
 `workflow_runs.status` 的 CHECK 保留 `awaiting_input` 作为将来的保留值，但首期没有写入者：它不出现在公开 OpenAPI 的状态枚举里，
 页面也不会展示它；取消接口仍按不可取消处理，IssueRun 投影也不会因它推进。HITL 留待后续的交互式运行控制决策。
+同样在发布时拒绝的还有交互式节点的产出物声明 `agentConfig.completion`（任何非 null 值），以及 `agentConfig.schemaVersion` 4：
+Cloud 只执行版本 `3`，拒绝时点名节点与字段，不静默剥离声明。
 
 ## 执行器槽位
 

@@ -21,7 +21,7 @@ import (
 // publishes a document built here, so the gate is exercised through the publish path an author uses
 // rather than by writing a snapshot row directly.
 func agentRunGraph(slot string, legacy bool, slots []any) core.Object {
-	config := core.Object{"schemaVersion": 1, "prompt": "评审"}
+	config := core.Object{"schemaVersion": 3, "prompt": "评审"}
 	if slot != "" {
 		config["executorSlot"] = slot
 	}
@@ -215,6 +215,52 @@ func TestWorkflowPublishRefusesUnusedAgentConfiguration(t *testing.T) {
 		"graph": agentRunGraph("", false, nil), "version": live.N("version"),
 	}, "", 200)
 	f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-cfg-pub-2", 200)
+}
+
+// TestWorkflowPublishRefusesInteractiveCompletionDeclaration covers the deliverable declaration
+// (circus#426): Cloud has no completion gate to apply it to, so publishing refuses the declaration
+// and the envelope version that carries it instead of freezing a graph whose check would never run.
+func TestWorkflowPublishRefusesInteractiveCompletionDeclaration(t *testing.T) {
+	f := setup(t)
+	draft := f.call("POST", f.path("/workflows"), core.Object{
+		"name": "Deliverable flow", "graph": agentRunGraph("", false, nil),
+	}, "adm-deliverable-create", 200).O("resource")
+
+	// A graph declaring expected files is refused by field name.
+	configured := agentRunGraph("", false, nil)
+	config := configured["nodes"].([]any)[1].(core.Object).O("data").O("agentConfig")
+	config["completion"] = core.Object{"files": []any{core.Object{"path": "reports/*.md"}}}
+	live := f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
+	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
+		"graph": configured, "version": live.N("version"),
+	}, "", 200)
+	refused := f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-deliverable-pub", 400)
+	want := []core.Object{{"code": "node_config_unsupported", "nodeId": "agent-1", "field": "completion"}}
+	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
+		t.Fatalf("publish problems = %v, want %v", got, want)
+	}
+
+	// Version 4 is the envelope that introduces the declaration. Cloud refuses it even without the
+	// field, so a graph authored by a newer editor cannot pass the gate as if nothing were declared.
+	versioned := agentRunGraph("", false, nil)
+	versioned["nodes"].([]any)[1].(core.Object).O("data").O("agentConfig")["schemaVersion"] = 4
+	live = f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
+	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
+		"graph": versioned, "version": live.N("version"),
+	}, "", 200)
+	refused = f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-deliverable-pub-2", 400)
+	want = []core.Object{{"code": "agent_schema_version_unsupported", "nodeId": "agent-1", "field": "agentConfig.schemaVersion"}}
+	if got := problems(t, refused); !reflect.DeepEqual(got, want) {
+		t.Fatalf("publish problems = %v, want %v", got, want)
+	}
+
+	// Version 3 without the declaration publishes: the refusal is about the declaration, not about
+	// having an agent configuration at all.
+	live = f.call("GET", f.path("/workflows/"+draft.S("id")), nil, "", 200)
+	f.call("PUT", f.path("/workflows/"+draft.S("id")), core.Object{
+		"graph": agentRunGraph("", false, nil), "version": live.N("version"),
+	}, "", 200)
+	f.call("POST", f.path("/workflows/"+draft.S("id")+"/publish"), core.Object{}, "adm-deliverable-pub-3", 200)
 }
 
 // TestWorkflowAcceptsDesktopDefaultAgentConfig covers circus#204: the desktop editor's default for an

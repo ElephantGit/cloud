@@ -30,6 +30,11 @@ var workflowExecutableNodeKinds = map[string]bool{
 	"output":    true,
 }
 
+// workflowAgentSchemaVersion is the only `agentConfig.schemaVersion` Cloud executes. Version 4
+// introduces the interactive completion declaration Cloud refuses by name; a version Cloud has
+// never executed is refused by validateAgentSchemaVersion instead of being read optimistically.
+const workflowAgentSchemaVersion = 3
+
 // workflowUnsupportedAgentConfigFields are the agent-node configuration fields the first phase does
 // not execute (#67 D2). The schema knows all of them and the editor may write them, but nothing in
 // Cloud reads them, so publishing refuses them by name instead of freezing a document whose author
@@ -39,12 +44,14 @@ var workflowExecutableNodeKinds = map[string]bool{
 // order so the problem list a client renders is deterministic. `executorSlot`, `roleId`, `prompt` and
 // `retry` are executed agent configuration and are deliberately absent here; the pre-slot
 // `agentConfig.executor` is absent too, because specs#98 D5 makes it a field to accept and drop
-// rather than refuse.
+// rather than refuse. `completion` is the interactive deliverable declaration (circus#426): Cloud has
+// no completion gate to apply it to, so any non-null value is refused.
 var workflowUnsupportedAgentConfigFields = []string{
 	"skills",
 	"mcps",
 	"interactive",
 	"outputContract",
+	"completion",
 	"promptInactivity",
 }
 
@@ -426,8 +433,8 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 // `validSlotHint` applies to an absent-or-null `hint`. `retry` is no longer refused — it is executed
 // (retry decision D1) — so it is validated for shape instead of rejected.
 func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
-	problems := []workflowGraphProblem{}
 	config := data.O("agentConfig")
+	problems := validateAgentSchemaVersion(nodeID, config)
 	for _, field := range workflowUnsupportedAgentConfigFields {
 		value, present := config[field]
 		if !present || value == nil || !agentConfigFieldEnabled(field, value) {
@@ -436,6 +443,28 @@ func validateAgentConfig(nodeID string, data Object) []workflowGraphProblem {
 		problems = append(problems, workflowGraphProblem{Code: "node_config_unsupported", NodeID: nodeID, Field: field})
 	}
 	return append(problems, validateAgentRetryConfig(nodeID, config)...)
+}
+
+// validateAgentSchemaVersion refuses an agent configuration whose schema version Cloud does not
+// execute. The version is the envelope that says which fields carry meaning: version 4 introduces
+// the interactive completion declaration, which Cloud rejects by name, and a version Cloud has
+// never seen could carry other behavior changes it cannot apply. Only version 3 is accepted; an
+// absent or null version is a document written before versions were checked, and keeps the
+// behavior it already had.
+//
+// Version 1 and 2 are refused as well: Cloud has never interpreted them, so accepting them would
+// be the same silent assumption this gate exists to prevent. The check runs before the field list
+// so a graph that is both mis-versioned and carrying an unsupported field reports the envelope
+// first.
+func validateAgentSchemaVersion(nodeID string, config Object) []workflowGraphProblem {
+	value, present := config["schemaVersion"]
+	if !present || value == nil {
+		return nil
+	}
+	if version, ok := value.(float64); ok && version == workflowAgentSchemaVersion {
+		return nil
+	}
+	return []workflowGraphProblem{{Code: "agent_schema_version_unsupported", NodeID: nodeID, Field: "agentConfig.schemaVersion"}}
 }
 
 // validateAgentRetryConfig checks `agentConfig.retry` against the policy shape the scheduler executes

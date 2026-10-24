@@ -53,7 +53,10 @@ and still works (see [Issue collaboration](../collaboration/interactions.en.md))
 agent nodes, so a run never stops waiting for human input. The `workflow_runs.status` CHECK retains `awaiting_input`
 as a reserved future value, but nothing writes it in phase one: it is absent from the public OpenAPI status enum
 and never shown by the UI; cancellation still treats it as not cancellable, and IssueRun projection does not
-advance on it. HITL is left to the later interactive-run-control decision.
+advance on it. HITL is left to the later interactive-run-control decision. Publishing also rejects the interactive
+deliverable declaration `agentConfig.completion` (any non-null value) and any `agentConfig.schemaVersion` other than
+`3` — including `4`, the legacy `1`/`2`, and non-numbers: Cloud executes only version `3`, absent or `null` keeps the
+old behavior, and the refusal names the node and field instead of silently dropping the declaration.
 
 ## Executor slots
 

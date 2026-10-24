@@ -55,7 +55,7 @@ func graphStart(id string) Object {
 // `default`; `legacy` adds the pre-slot `agentConfig.executor` field a desktop-imported graph still
 // carries.
 func graphAgent(id, slot string, legacy bool) Object {
-	config := Object{"schemaVersion": 1, "prompt": "review"}
+	config := Object{"schemaVersion": 3, "prompt": "review"}
 	if slot != "" {
 		config["executorSlot"] = slot
 	}
@@ -68,7 +68,7 @@ func graphAgent(id, slot string, legacy bool) Object {
 // graphAgentConfig builds an agent node carrying the given agentConfig keys beside the first phase's
 // own, so a case can state the configuration it is about without rebuilding the node around it.
 func graphAgentConfig(id string, extra Object) Object {
-	config := Object{"schemaVersion": 1, "prompt": "review"}
+	config := Object{"schemaVersion": 3, "prompt": "review"}
 	for key, value := range extra {
 		config[key] = value
 	}
@@ -256,6 +256,49 @@ func TestValidateWorkflowGraph(t *testing.T) {
 			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"interactive": true})},
 				[]any{graphEdge("s", "a")}, nil),
 			want: []any{Object{"code": "node_config_unsupported", "nodeId": "a", "field": "interactive"}},
+		},
+		{
+			// The only envelope version Cloud executes.
+			name:  "an agent node carrying schema version 3",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{})}, []any{graphEdge("s", "a")}, nil),
+		},
+		{
+			// Version 4 introduces the interactive completion declaration Cloud refuses. The envelope is
+			// reported first, so the author fixes the version rather than one field of it.
+			name:  "an agent node carrying schema version 4",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": 4})}, []any{graphEdge("s", "a")}, nil),
+			want:  []any{Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"}},
+		},
+		{
+			// A value Cloud cannot read as the version it executes is refused, not guessed.
+			name:  "an agent node carrying schema version as a string",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": "4"})}, []any{graphEdge("s", "a")}, nil),
+			want:  []any{Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"}},
+		},
+		{
+			// Cloud never executed version 1, so a draft still on it is refused instead of being read
+			// with the current field list; that is the compatibility change the ADR records.
+			name:  "an agent node carrying schema version 1",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": 1})}, []any{graphEdge("s", "a")}, nil),
+			want:  []any{Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"}},
+		},
+		{
+			// Null asks for nothing, like the other absent-or-null configuration values in this matrix.
+			name:  "an agent node carrying a null schema version",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{"schemaVersion": nil})}, []any{graphEdge("s", "a")}, nil),
+		},
+		{
+			// A mis-versioned document that also carries the completion declaration reports both, the
+			// envelope first and the field after it, in the order the validator appends them.
+			name: "an agent node carrying version 4 and completion",
+			graph: workflowGraph([]any{graphStart("s"), graphAgentConfig("a", Object{
+				"schemaVersion": 4,
+				"completion":    Object{"files": []any{}},
+			})}, []any{graphEdge("s", "a")}, nil),
+			want: []any{
+				Object{"code": "agent_schema_version_unsupported", "nodeId": "a", "field": "agentConfig.schemaVersion"},
+				Object{"code": "node_config_unsupported", "nodeId": "a", "field": "completion"},
+			},
 		},
 		{
 			name:  "no start node",

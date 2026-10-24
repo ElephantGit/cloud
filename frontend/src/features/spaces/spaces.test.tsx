@@ -335,6 +335,35 @@ describe('useSpaceEvents', () => {
     unmount()
   })
 
+  it('refetches scheduled histories and the named run index without invalidating other tenants or downloads', async () => {
+    server.use(
+      http.get(eventsUrl, () =>
+        eventStream([
+          'data: {"type":"scheduled_task.artifacts_updated","spaceId":"S","issueId":"I","runId":"R"}\n\n',
+        ]),
+      ),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const history = [`/api/v1/tenants/${tenantId}/scheduled-tasks/T/history`]
+    const index = [`/api/v1/tenants/${tenantId}/issues/I/runs/R/artifacts`]
+    const otherRun = [`/api/v1/tenants/${tenantId}/issues/I/runs/OTHER/artifacts`]
+    const foreign = ['/api/v1/tenants/other/scheduled-tasks/T/history']
+    const grant = [`/api/v1/tenants/${tenantId}/issues/I/runs/R/artifacts/0`]
+    const { unmount, invalidated } = renderEvents(client, [
+      history,
+      index,
+      otherRun,
+      foreign,
+      grant,
+    ])
+    await waitFor(() => expect(invalidated(index)).toBe(true))
+    expect(invalidated(history)).toBe(true)
+    expect(invalidated(otherRun)).toBe(false)
+    expect(invalidated(foreign)).toBe(false)
+    expect(invalidated(grant)).toBe(false)
+    unmount()
+  })
+
   it('does nothing without a tenant or space', async () => {
     let connections = 0
     server.use(

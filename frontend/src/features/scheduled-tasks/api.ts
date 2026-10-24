@@ -15,6 +15,8 @@ import {
 import {
   getApiV1TenantsTidCollaborationTargets,
   getApiV1TenantsTidIssues,
+  getApiV1TenantsTidIssuesIidRunsRidArtifacts,
+  getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey,
 } from '@/api/tenants/tenants'
 import { faultCode } from '@/lib/api-client'
 
@@ -165,6 +167,9 @@ export function scheduleSummary(schedule: ScheduledTaskSchedule): string {
 }
 
 const FAULT_MESSAGES: Record<string, string> = {
+  artifact_unavailable: '产物已不可用，可能已过期或被清理',
+  artifact_invalid: '产物下载地址不可用，请重试',
+  object_store_unavailable: '产物存储暂不可用，请稍后重试',
   invalid_request: '请检查名称、时间、时区与计划填写',
   not_found: '任务或绑定对象不存在',
   target_unavailable: '目标智能体或创建者资格当前不可用',
@@ -178,4 +183,23 @@ const FAULT_MESSAGES: Record<string, string> = {
 export function scheduledTaskFailure(error: unknown): string {
   const code = faultCode(error) ?? (error instanceof Error ? error.message : '')
   return FAULT_MESSAGES[code] ?? '操作失败，请稍后重试'
+}
+
+/** Reads registered metadata only; opening a list never grants object access. */
+export function useScheduledRunArtifacts(tid: string, issueId: string, runId: string) {
+  return useQuery({
+    queryKey: getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey(tid, issueId, runId),
+    queryFn: ({ signal }) =>
+      getApiV1TenantsTidIssuesIidRunsRidArtifacts(tid, issueId, runId, undefined, signal),
+  })
+}
+
+/** Builds a same-origin attachment route; Cloud checks current access on every click. */
+export function scheduledArtifactDownloadPath(
+  tid: string,
+  issueId: string,
+  runId: string,
+  index: number,
+) {
+  return `/api/v1/tenants/${encodeURIComponent(tid)}/issues/${encodeURIComponent(issueId)}/runs/${encodeURIComponent(runId)}/artifacts/${index}`
 }

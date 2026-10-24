@@ -80,3 +80,20 @@ Agent 运行时在最后的 `turnEnded` 里也可能带着 ACP 的 `token_usage`
 
 - [会话分析从 Cloud 授权记录与已登记归档建立只读视图](https://github.com/ora-space/specs/blob/main/decisions/cloud/thread/20261016-session-analysis-read-model.md)（approved）
 - [模型用量按网关 HTTP 尝试独立登记，保留部分观测与未知值](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261016-recorded-http-attempt-statistics.md)（approved）
+
+## 定时运行结论与产物
+
+定时任务历史读取运行级 verdict（缺失即「未报告」）和已登记/被拒产物计数；执行完成不等于业务通过。
+`GET .../issues/:iid/runs/:rid/artifacts` 返回当前登记元数据，不含对象键或下载 URL。
+`GET .../issues/:iid/runs/:rid/artifacts/:aidx` 在短事务内核验当前成员、Issue、Run 与登记，事务外通过私有端点
+读取对象并校验登记的大小/SHA-256（上限 10 MiB），返回前再次检查权限与登记。调用者只能给运行与序号，不能指定对象键。
+对象缺失、登记被清理或校验失败返回 `404 artifact_unavailable`；未配置对象存储返回 `503 object_store_unavailable`。
+
+成功响应为原始字节，强制 `Content-Disposition: attachment`（安全编码展示名称的 basename）、
+`Content-Type: application/octet-stream`、`X-Content-Type-Options: nosniff` 与 `Cache-Control: private, no-store`。
+浏览器只访问 Cloud 同源路径，不获得对象存储地址或凭据；HTML 也以附件下载。前端按需展开元数据，通过普通同源下载链接
+每次重新鉴权，不展示链接有效期、不在应用内渲染文件。
+
+`scheduled_task.artifacts_updated` 只触发历史/对应运行索引刷新，不携带产物事实。历史裁剪保留运行事实，产物按独立保留边界清理。
+见 [verdict/产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
+非成员与资源不存在统一返回 `404 not_found`。仅成功/部分交付后索引被清空的产物标为已过期，无产物与上传失败不标过期。

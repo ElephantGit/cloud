@@ -38,6 +38,12 @@ refuses them rather than freezing a graph whose nodes would be silently dropped.
 that Cloud does not execute are likewise refused by name, so an author never believes a setting is in effect when
 no runner will apply it.
 
+The publish dialog presents `workflow_graph_invalid` as a configuration check failure, listing the returned
+nodes, fields or slots with corrective guidance rather than asking the author to keep retrying. For example,
+Cloud does not execute structured output (`agentConfig.outputContract`, refused for any non-null value): the
+editor explains this beside the switch and the publish dialog asks the author to turn off Structured output on
+the rejected node. The draft retains its settings for the author to change; publishing never silently removes them.
+
 **Reserved field.** `snapshotId` is the run-version key the platform owns in the `@` form, and an author cannot
 declare it as a variable of their own. When a Start node's input variables or a global variable declare that name,
 publishing and workflow asset import both refuse it, naming the node or field in the problem

@@ -22,6 +22,7 @@ const FAULT_MESSAGES: Record<string, TranslationKey> = {
   required_field_missing: 'workflows.errors.requiredField',
   invalid_field_value: 'workflows.errors.invalidField',
   workflow_executor_unconfigured: 'workflows.errors.executorUnconfigured',
+  workflow_graph_invalid: 'workflows.errors.graphInvalid',
 }
 
 /**

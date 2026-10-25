@@ -18,15 +18,31 @@ type seededRun struct {
 	createdAt time.Time
 }
 
-// seedRun writes a terminal run row at a chosen instant. The run list is a read path, so the
-// acceptance below goes through real HTTP; only the history itself is arranged directly, because a
-// hundred real executions would add runtime without adding evidence about the walk.
+// seedRun writes a terminal run row at a chosen instant into the fixture tenant's workflow. The run
+// list is a read path, so the acceptance below goes through real HTTP; only the history itself is
+// arranged directly, because a hundred real executions would add runtime without adding evidence
+// about the walk.
 func seedRun(t *testing.T, f *fixture, wid, snapID string, run seededRun, name string) {
+	t.Helper()
+	seedRunFor(t, f, f.tid, wid, snapID, run, name)
+}
+
+// seedRunFor is seedRun for an explicit tenant, so a case can arrange a run the caller may reach
+// through a second tenant membership without that run belonging to the history under test.
+func seedRunFor(t *testing.T, f *fixture, tid, wid, snapID string, run seededRun, name string) {
 	t.Helper()
 	_, err := f.store.Pool.ExecContext(t.Context(),
 		`INSERT INTO workflow_runs(id,tenant_id,workflow_id,snapshot_id,name,status,created_at,updated_at,started_at,finished_at)
 		 VALUES($1,$2,$3,$4,$5,'succeeded',$6,$6,$6,$6)`,
-		run.id, f.tid, wid, snapID, name, run.createdAt)
+		run.id, tid, wid, snapID, name, run.createdAt)
+	must(t, err)
+}
+
+// purgeRun soft-deletes a seeded run the way the reclaim path does: the row and its id stay, so only
+// the query's own deleted filter can keep the id from resolving as a cursor anchor.
+func purgeRun(t *testing.T, f *fixture, runID string) {
+	t.Helper()
+	_, err := f.store.Pool.ExecContext(t.Context(), `UPDATE workflow_runs SET deleted_at=now() WHERE id=$1`, runID)
 	must(t, err)
 }
 
@@ -106,6 +122,69 @@ func TestWorkflowRunHistoryWalksNewestFirst(t *testing.T) {
 	}
 	// A cursor that is not a row id at all is refused, not silently treated as the start.
 	f.call("GET", f.path("/workflows/"+wfid+"/runs")+"?after=not-a-cursor", nil, "", 400)
+}
+
+// TestWorkflowRunHistoryOnlyAnchorsInItsOwnHistory pins which rows a cursor may resolve against.
+//
+// The cursor is an opaque run UUID, so the endpoint resolves the page boundary from that row's
+// created_at. That lookup has to stay inside the history being read: an id naming another workflow's
+// run, another tenant's run, or a purged run would otherwise position the page at that row's
+// creation instant — a creation-time side channel across tenants, and a way to page a history the
+// caller's own rows cannot describe. Each of those cursors ends the walk with an empty page, the
+// same answer an unknown cursor gets, while a cursor of this workflow still continues below itself.
+func TestWorkflowRunHistoryOnlyAnchorsInItsOwnHistory(t *testing.T) {
+	f := setup(t)
+	seedPersonalModel(t, f)
+	wfid := createWorkflow(t, f, "Scoped history", "hist-anchor-wf", nil)
+	snapID := publishWorkflow(t, f, wfid, "hist-anchor-pub").S("id")
+	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	older := seededRun{id: uuid.NewString(), createdAt: base}
+	newer := seededRun{id: uuid.NewString(), createdAt: base.Add(time.Hour)}
+	seedRun(t, f, wfid, snapID, older, "older run")
+	seedRun(t, f, wfid, snapID, newer, "newer run")
+
+	// A run of another workflow in the same tenant, at an instant strictly inside this history:
+	// resolved without a workflow filter it would anchor between the two runs above and answer the
+	// older one; scoped, it anchors nothing.
+	otherWid := createWorkflow(t, f, "Other history", "hist-anchor-wf-2", nil)
+	otherSnap := publishWorkflow(t, f, otherWid, "hist-anchor-pub-2").S("id")
+	otherRun := seededRun{id: uuid.NewString(), createdAt: base.Add(30 * time.Minute)}
+	seedRun(t, f, otherWid, otherSnap, otherRun, "other workflow run")
+
+	// A run of a workflow in a second tenant the caller administers: the membership check passes, so
+	// only the cursor's own scope can refuse it.
+	foreign := f.moreTenant()
+	foreignWid := f.call("POST", "/api/v1/tenants/"+foreign+"/workflows", core.Object{
+		"name": "Foreign history", "graph": startInputGraph(nil),
+	}, "hist-anchor-foreign-wf", 200).O("resource").S("id")
+	foreignSnap := f.call("POST", "/api/v1/tenants/"+foreign+"/workflows/"+foreignWid+"/publish", core.Object{}, "hist-anchor-foreign-pub", 200).O("resource").S("id")
+	foreignRun := seededRun{id: uuid.NewString(), createdAt: base.Add(45 * time.Minute)}
+	seedRunFor(t, f, foreign, foreignWid, foreignSnap, foreignRun, "foreign tenant run")
+
+	// A purged run of this workflow: the row keeps its id, so only the deleted filter can keep it
+	// from anchoring a history it is no longer part of.
+	purged := seededRun{id: uuid.NewString(), createdAt: base.Add(50 * time.Minute)}
+	seedRun(t, f, wfid, snapID, purged, "purged run")
+	purgeRun(t, f, purged.id)
+
+	for _, c := range []struct{ name, cursor string }{
+		{"another workflow's run", otherRun.id},
+		{"another tenant's run", foreignRun.id},
+		{"a purged run of this workflow", purged.id},
+		{"an unknown run", uuid.NewString()},
+	} {
+		got := f.call("GET", f.path("/workflows/"+wfid+"/runs")+"?after="+c.cursor, nil, "", 200)
+		if items := issueItems(got); len(items) != 0 || got.S("nextCursor") != "" {
+			t.Fatalf("%s anchored the history (%d rows): %v", c.name, len(items), got)
+		}
+	}
+
+	// The same walk still accepts a cursor of this workflow: the page continues strictly below the
+	// row it names, so scoping the anchor did not turn valid cursors into empty pages.
+	got := issueItems(f.call("GET", f.path("/workflows/"+wfid+"/runs")+"?after="+newer.id, nil, "", 200))
+	if len(got) != 1 || got[0].S("id") != older.id {
+		t.Fatalf("a cursor of this workflow returned %v; want only the older run %s", got, older.id)
+	}
 }
 
 // TestWorkflowRowsCarryTheirNewestRun proves a workflow read labels when it last ran.

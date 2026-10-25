@@ -24,7 +24,7 @@ func workflowRun(t *transaction, tid, wid, rid string) Object {
 // position, the same shape the member tenant list uses (pageByCreation).
 func workflowRunList(t *transaction, r *PublicRequest) Object {
 	w := workflow(t, r.TenantID, r.WorkflowID)
-	pageOut := pageNewestRunFirst(t, "SELECT r.* FROM workflow_runs r WHERE r.tenant_id=$1 AND r.workflow_id=$2 AND r.deleted_at IS NULL", []any{r.TenantID, r.WorkflowID}, r)
+	pageOut := pageNewestRunFirst(t, runHistoryScope{tenantID: r.TenantID, workflowID: w.S("id")}, r)
 	// window builds its items in-process as []Object (not []any), so assert that exact type.
 	raw, _ := pageOut["items"].([]Object)
 	items := make([]any, 0, len(raw))
@@ -38,19 +38,40 @@ func workflowRunList(t *transaction, r *PublicRequest) Object {
 	return Object{"items": items, "nextCursor": pageOut.S("nextCursor")}
 }
 
-// pageNewestRunFirst applies the run history's newest-first walk to q, which must select from
-// workflow_runs aliased `r`.
+// runHistoryScope is the one history a cursor may position: the walk of a single workflow inside
+// the tenant that owns it. The cursor is an opaque run UUID, so the page boundary has to be
+// resolved from the run it names; resolving that run without this scope would let an id from
+// another workflow, another tenant or a purged row move the boundary of the history being read,
+// which is a creation-time side channel out of the caller's own history.
+type runHistoryScope struct {
+	tenantID   string
+	workflowID string
+}
+
+// pageNewestRunFirst reads one page of a workflow's run history, newest first, and reports the row
+// that continues it.
 //
-// The tuple comparison is strict, so a page boundary that falls inside one created_at instant
-// neither repeats the anchor row nor skips the rows after it: the tie is decided by id on both
-// sides. A cursor that no longer resolves (a purged row, or a UUID from another workflow) compares
-// as NULL, which answers an empty page and ends the walk rather than skipping or repeating rows.
-func pageNewestRunFirst(t *transaction, q string, args []any, r *PublicRequest) Object {
+// The walk is ordered by (created_at, id) rather than by id: run ids are random UUIDs, so an
+// id-ordered page is an arbitrary window of the history. created_at is not unique (a batch of runs
+// created in one import or one test frequently shares an instant), so id breaks the tie and keeps
+// the order total.
+//
+// The public cursor stays the opaque row UUID; the anchor row's created_at is what resolves its
+// position. The tuple comparison is strict, so a page boundary that falls inside one created_at
+// instant neither repeats the anchor row nor skips the rows after it: the tie is decided by id on
+// both sides. The anchor is resolved only inside the scope being paged, so an id that names no live
+// run of this workflow compares as NULL and answers an empty page — the same answer as an unknown
+// cursor — rather than anchoring the walk outside the history it belongs to.
+func pageNewestRunFirst(t *transaction, scope runHistoryScope, r *PublicRequest) Object {
+	args := []any{scope.tenantID, scope.workflowID}
+	q := "SELECT r.* FROM workflow_runs r WHERE r.tenant_id=$1 AND r.workflow_id=$2 AND r.deleted_at IS NULL"
 	if r.After != "" {
 		require(validID(r.After), 400, "invalid_cursor")
 		args = append(args, r.After)
-		n := itoa(len(args))
-		q += " AND (r.created_at, r.id) < ((SELECT a.created_at FROM workflow_runs a WHERE a.id=$" + n + "::uuid), $" + n + "::uuid)"
+		after := itoa(len(args))
+		q += " AND (r.created_at, r.id) < ((SELECT a.created_at FROM workflow_runs a" +
+			" WHERE a.id=$" + after + "::uuid AND a.tenant_id=$1 AND a.workflow_id=$2 AND a.deleted_at IS NULL)," +
+			" $" + after + "::uuid)"
 	}
 	return window(t, q+" ORDER BY r.created_at DESC, r.id DESC", args, r)
 }

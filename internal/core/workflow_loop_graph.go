@@ -43,7 +43,7 @@ func workflowNodeContainers(nodes []any) map[string]string {
 			continue
 		}
 		if id := node.S("id"); id != "" {
-			containers[id] = node.O("data").S("containerId")
+			containers[id] = workflowContainerID(node)
 		}
 	}
 	return containers
@@ -129,7 +129,7 @@ func workflowLoopBodyContainers(nodes []any) []string {
 			continue
 		}
 		data := node.O("data")
-		if data.S("kind") == "loop" && node.S("id") != "" && data.S("containerId") == "" {
+		if data.S("kind") == "loop" && node.S("id") != "" && workflowContainerID(node) == "" {
 			out = append(out, node.S("id"))
 		}
 	}
@@ -157,7 +157,7 @@ func validateWorkflowContainers(nodes, edges []any) []workflowGraphProblem {
 			continue
 		}
 		data := node.O("data")
-		info[id] = nodeInfo{kind: data.S("kind"), container: data.S("containerId")}
+		info[id] = nodeInfo{kind: data.S("kind"), container: workflowContainerID(node)}
 		order = append(order, id)
 	}
 	// Membership rules: a body node names a loop that exists, and the kinds with their own scope or
@@ -171,6 +171,11 @@ func validateWorkflowContainers(nodes, edges []any) []workflowGraphProblem {
 			continue
 		}
 		owner, known := info[node.container]
+		if known && owner.kind == "iteration" {
+			// Iteration regions are their own contract; the loop rules must not report their
+			// members as mismatched loop containers.
+			continue
+		}
 		if !known || owner.kind != "loop" {
 			problems = append(problems, workflowGraphProblem{Code: "loop_member_container_mismatch", NodeID: id})
 			continue
@@ -490,4 +495,15 @@ func workflowObjectEntries(raw any) []Object {
 		}
 	}
 	return out
+}
+
+// workflowContainerID returns the container a node belongs to: the explicit `data.containerId` that
+// loop bodies use, or React Flow's top-level `parentId` that iteration regions persist. Graph decode
+// normalises both here so every membership decision — validation, visibility, scheduling — reads one
+// value instead of re-deriving it (iteration ADR D1).
+func workflowContainerID(node Object) string {
+	if id := node.O("data").S("containerId"); id != "" {
+		return id
+	}
+	return node.S("parentId")
 }

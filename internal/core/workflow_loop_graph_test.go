@@ -436,3 +436,20 @@ func removeEdge(edges any, source, target string) []any {
 	}
 	return out
 }
+
+// TestWorkflowContainerIDReadsBothMembershipKeys pins the iteration ADR's D1 normalization: an
+// explicit body container wins, React Flow's parentId is the fallback, and a loose node has none.
+func TestWorkflowContainerIDReadsBothMembershipKeys(t *testing.T) {
+	explicit := Object{"id": "member", "parentId": "iteration-1", "data": Object{"containerId": "loop-1"}}
+	if got := workflowContainerID(explicit); got != "loop-1" {
+		t.Fatalf("explicit containerId = %q; want loop-1", got)
+	}
+	inherited := Object{"id": "member", "parentId": "iteration-1", "data": Object{}}
+	if got := workflowContainerID(inherited); got != "iteration-1" {
+		t.Fatalf("parentId fallback = %q; want iteration-1", got)
+	}
+	loose := Object{"id": "member", "data": Object{}}
+	if got := workflowContainerID(loose); got != "" {
+		t.Fatalf("loose node container = %q; want empty", got)
+	}
+}

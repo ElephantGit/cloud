@@ -361,22 +361,23 @@ export function runPollInterval(
 }
 
 /**
- * How often the run history polls: while any listed run can still change.
+ * How often the run history polls: while any run of the loaded walk can still change.
  *
  * A failed read keeps polling for the same reason the single-run read does:
  * the failure says nothing about whether the listed runs settled, so the next
  * attempt must still happen.
  *
- * @param items - Runs of the last successful page, or `undefined` when no read has succeeded yet.
+ * The rows come from every loaded page, not from the head alone: a running run
+ * is wherever the cursor walk put it, and the newest page being settled says
+ * nothing about the older ones.
+ *
+ * @param rows - Every run of the loaded history, or `undefined` when no read has succeeded yet.
  * @param failed - Whether the last attempt failed instead of returning a page.
  * @returns The interval in milliseconds, or `false` when every listed run is settled.
  */
-export function runsPollInterval(
-  items: WorkflowRun[] | undefined,
-  failed: boolean,
-): number | false {
-  if (items === undefined) return failed ? WORKFLOW_RUN_POLL_MS : false
-  return items.some((run) => !isTerminalRunStatus(run.status)) ? WORKFLOW_RUN_POLL_MS : false
+export function runsPollInterval(rows: WorkflowRun[] | undefined, failed: boolean): number | false {
+  if (rows === undefined) return failed ? WORKFLOW_RUN_POLL_MS : false
+  return rows.some((run) => !isTerminalRunStatus(run.status)) ? WORKFLOW_RUN_POLL_MS : false
 }
 
 /**
@@ -440,8 +441,7 @@ function mergeNodeStates(
 }
 
 /**
- * Merges a run-history page into the one already held, so one run cannot read
- * differently in the list and on its detail page.
+ * Merges one history page into the copies already held for the runs it returns.
  *
  * Membership follows the incoming page: the server decides which runs exist, and
  * the page is capped, so keeping rows the server no longer returns would grow
@@ -449,16 +449,20 @@ function mergeNodeStates(
  * with the same rule the detail page uses, which is what keeps the two surfaces
  * agreeing.
  *
- * @param previous - The page already cached, if any.
+ * The copies are looked up by run id across the whole loaded walk rather than at
+ * the same page position: a run created at the head shifts every boundary below
+ * it, so a settled run can move from one page to the next between two reads.
+ * Pairing pages positionally would then compare a row against a different run,
+ * and a stale copy of the moved row could reopen the settled one.
+ *
+ * @param held - Every row already held, keyed by run id.
  * @param next - The page the latest read returned.
  * @returns The page to keep.
  */
-export function mergeRunPage(
-  previous: GetApiV1TenantsTidWorkflowsWfidRuns200 | undefined,
+function mergeRunPage(
+  held: Map<string, WorkflowRun>,
   next: GetApiV1TenantsTidWorkflowsWfidRuns200,
 ): GetApiV1TenantsTidWorkflowsWfidRuns200 {
-  if (previous === undefined) return next
-  const held = new Map(previous.items.map((run) => [run.id, run]))
   return { ...next, items: next.items.map((run) => mergeRunRead(held.get(run.id), run)) }
 }
 
@@ -512,14 +516,19 @@ function shareRunRead(previous: unknown, next: unknown): unknown {
   return replaceEqualDeep(held, mergeRunRead(held, next))
 }
 
-/** The `structuralSharing` adapter for the run history, over {@link mergeRunPage}'s rule. */
+/**
+ * The `structuralSharing` adapter for the run history, over {@link mergeRunPage}'s rule.
+ *
+ * Every loaded page is refreshed at its own cursor, so one read can move rows
+ * across page boundaries. The held copies are therefore indexed across the whole
+ * walk before the pages are merged, and pages the walk gained have no copy of
+ * their own — `mergeRunRead` answers those with the incoming rows.
+ */
 function shareRunHistory(previous: unknown, next: unknown): unknown {
   if (!isMergeableRunHistory(next)) return next
   const held = isMergeableRunHistory(previous) ? previous : undefined
-  // Every loaded page is refreshed at its own cursor, so each page is merged with the copy that
-  // held the same cursor. A page count that grew has no previous page to merge against, which
-  // `mergeRunPage` answers with the incoming rows.
-  const pages = next.pages.map((page, index) => mergeRunPage(held?.pages[index], page))
+  const heldRows = new Map(runHistoryRows(held?.pages).map((run) => [run.id, run]))
+  const pages = next.pages.map((page) => mergeRunPage(heldRows, page))
   return replaceEqualDeep(held, { ...next, pages })
 }
 
@@ -548,9 +557,11 @@ function isMergeableRunHistory(value: unknown): value is RunHistoryCache {
  * order; re-sorting here would only hide a disagreement between the two sides.
  *
  * A run's status is the one thing in the walk that still moves, so the query keeps re-reading
- * while a listed run is unsettled and stops once the page it returned is all terminal. `pages` is
- * flattened by {@link runHistoryRows}, which drops a row the server reports twice so a refetch that
- * overlaps the previous read cannot render the same run in two places.
+ * while any run of the loaded walk is unsettled and stops once the whole walk is terminal. Every
+ * loaded page is refreshed at its own cursor, so a running run stays live wherever the walk put it,
+ * not only on the newest page. `pages` is flattened by {@link runHistoryRows}, which drops a row the
+ * server reports twice so a refetch that overlaps the previous read cannot render the same run in
+ * two places.
  *
  * @param tenantId - Tenant the workflow belongs to.
  * @param workflowId - Workflow whose runs to read.
@@ -571,8 +582,15 @@ export function useWorkflowRuns(tenantId: string | undefined, workflowId: string
     initialPageParam: '',
     getNextPageParam: (page) => (page.nextCursor === '' ? undefined : page.nextCursor),
     enabled: !!tenantId && !!workflowId,
-    refetchInterval: (query) =>
-      runsPollInterval(query.state.data?.pages[0]?.items, query.state.status === 'error'),
+    refetchInterval: (query) => {
+      const pages = query.state.data?.pages
+      return runsPollInterval(
+        // No successful read yet is not the same as an empty history: a failed first read keeps
+        // polling, because another attempt is how a transient failure recovers.
+        pages === undefined ? undefined : runHistoryRows(pages),
+        query.state.status === 'error',
+      )
+    },
     structuralSharing: shareRunHistory,
   })
 }

@@ -26,6 +26,7 @@ import {
   ToolNodeFields,
   type WorkflowKindFieldsProps,
 } from '@/features/workflows/editor/workflow-kind-fields'
+import { AggregatorNodeFields } from '@/features/workflows/editor/workflow-aggregator-fields'
 import { IterationNodeFields } from '@/features/workflows/editor/workflow-iteration-fields'
 import { useWorkflowTranslator } from '@/features/workflows/editor/use-workflow-translator'
 import { workflowNodeMetadata } from '@/features/workflows/editor/node-metadata'
@@ -164,6 +165,9 @@ function NodeKindFields({
   }
   if (data.kind === 'condition') {
     return <ConditionNodeFields data={data} onChange={onChange} catalog={catalog} />
+  }
+  if (data.kind === 'aggregator') {
+    return <AggregatorNodeFields data={data} onChange={onChange} />
   }
   if (data.kind === 'tool') {
     return <ToolNodeFields data={data} onChange={onChange} />

@@ -33,6 +33,7 @@ describe('workflow node catalog', () => {
     expect(workflowPaletteNodeTypes('iteration').map((entry) => entry.kind)).toEqual([
       'agent',
       'condition',
+      'aggregator',
     ])
   })
 

@@ -9,6 +9,7 @@ export type WorkflowConfigField =
   | 'initialPrompt'
   | 'tool'
   | 'condition'
+  | 'aggregator'
   | 'approvalPrompt'
   | 'waitStrategy'
   | 'failureStrategy'
@@ -40,6 +41,7 @@ export const WORKFLOW_NODE_PALETTE: readonly WorkflowNodeKind[] = [
   'start',
   'agent',
   'condition',
+  'aggregator',
   'loop',
   'iteration',
   'output',
@@ -70,6 +72,7 @@ const NODE_TYPE_DEFINITIONS: Record<WorkflowNodeKind, WorkflowNodeTypeDefinition
   start: defineNodeType('start', ['initialPrompt'], ['workflow']),
   agent: defineNodeType('agent', ['agent'], ['workflow', 'iteration']),
   condition: defineNodeType('condition', ['condition'], ['workflow', 'iteration']),
+  aggregator: defineNodeType('aggregator', ['aggregator'], ['workflow', 'iteration']),
   tool: defineNodeType('tool', ['tool'], ['workflow']),
   junction: defineNodeType('junction', ['waitStrategy', 'failureStrategy'], ['workflow']),
   human: defineNodeType('human', ['approvalPrompt'], ['workflow']),

@@ -56,6 +56,7 @@ describe('AUTHORABLE_NODE_KINDS', () => {
       'start',
       'agent',
       'condition',
+      'aggregator',
       'loop',
       'iteration',
       'output',

@@ -2,16 +2,35 @@ package core
 
 import "strings"
 
-// workflow loads a live workflow scoped to the tenant.
+// workflow loads a live workflow scoped to the tenant, labelled with its newest run.
+//
+// The label is part of the read, not of one list: a workflow row and its detail page must agree
+// about when the workflow last ran, the same reason a run's history row and its detail page share
+// one projection. A workflow that never ran reports null instead of omitting the field, so a
+// reader never has to tell "absent" from "none".
 func workflow(t *transaction, tid, wid string) Object {
 	require(validID(wid), 404, "not_found")
 	w := t.one("SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", wid, tid)
 	require(w != nil, 404, "not_found")
+	w["latestRun"] = latestWorkflowRun(t, tid, wid)
 	return w
 }
 
+// workflowList pages the tenant's workflows and labels every row with its newest run in one extra
+// query, so showing "last run" per row does not turn the list into one request per workflow.
 func workflowList(t *transaction, r *PublicRequest) Object {
-	return page(t, "SELECT * FROM workflows WHERE tenant_id=$1 AND deleted_at IS NULL", []any{r.TenantID}, "id", r)
+	out := page(t, "SELECT * FROM workflows WHERE tenant_id=$1 AND deleted_at IS NULL", []any{r.TenantID}, "id", r)
+	// window builds its items in-process as []Object (not []any), so assert that exact type.
+	rows, _ := out["items"].([]Object)
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.S("id"))
+	}
+	latest := latestWorkflowRuns(t, r.TenantID, ids)
+	for _, row := range rows {
+		row["latestRun"] = latest[row.S("id")]
+	}
+	return out
 }
 
 // graphText renders the graph body field. A workflow created without one stores the empty document

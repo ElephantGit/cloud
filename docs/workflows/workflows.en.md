@@ -114,6 +114,15 @@ was named. A run Workspace belongs to the run that created it: `workspaces.workf
 with an IssueRun's `issue_run_id`, and the `maintenance` reserved for it in runtime control is recorded against the
 same run identity (see [Runtime control](../runtime/runtime-control.en.md)).
 
+**The run history pages by `(created_at, id)`, newest first.** `GET .../workflows/:wfid/runs` returns the newest run
+first, caps `limit` at 100, and takes the last row's WorkflowRun UUID as `after`: the server resolves that row's
+`created_at` and continues strictly below `(created_at, id)`, so several runs created in the same instant are ordered by
+`id` and paging neither repeats nor skips one. The cursor is only a row UUID and carries no timestamp; a cursor that
+resolves to no row (another workflow's, or a purged one) answers an empty page instead of restarting from the top, and a
+value that is not a UUID answers `400 invalid_cursor`. Workflow reads (list and detail) carry `latestRun`, the first run
+of that same order — `null` when the workflow has never run. It holds the status, snapshot and timestamps only; a history
+row is what carries node states and inputs.
+
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency
 key) returns the same instant. The request writes only `workflow_runs.cancel_requested_at` — never the run's status,

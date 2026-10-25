@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 // workflowRun loads a live run scoped to its workflow and tenant; a foreign, deleted
 // or missing run is 404, and the workflow gate keeps archived workflows (and with them
 // their whole run history) out of every read.
@@ -11,9 +13,18 @@ func workflowRun(t *transaction, tid, wid, rid string) Object {
 	return composeWorkflowRun(t, o)
 }
 
+// workflowRunList reads a workflow's run history newest first.
+//
+// The walk is ordered by (created_at, id) rather than by id: run ids are random UUIDs, so an
+// id-ordered page hands the reader an arbitrary window of the history — the newest run need not
+// be in it at all, and the frontend cannot repair that by sorting the page it received. created_at
+// is not unique (two runs can share an instant, and a batch of runs created in one test or one
+// import frequently does), so id breaks the tie and keeps the order total. The public cursor stays
+// the opaque row UUID the page envelope reports; the anchor row's created_at is what resolves the
+// position, the same shape the member tenant list uses (pageByCreation).
 func workflowRunList(t *transaction, r *PublicRequest) Object {
 	w := workflow(t, r.TenantID, r.WorkflowID)
-	pageOut := page(t, "SELECT * FROM workflow_runs WHERE tenant_id=$1 AND workflow_id=$2 AND deleted_at IS NULL", []any{r.TenantID, r.WorkflowID}, "id", r)
+	pageOut := pageNewestRunFirst(t, "SELECT r.* FROM workflow_runs r WHERE r.tenant_id=$1 AND r.workflow_id=$2 AND r.deleted_at IS NULL", []any{r.TenantID, r.WorkflowID}, r)
 	// window builds its items in-process as []Object (not []any), so assert that exact type.
 	raw, _ := pageOut["items"].([]Object)
 	items := make([]any, 0, len(raw))
@@ -25,6 +36,76 @@ func workflowRunList(t *transaction, r *PublicRequest) Object {
 		items = append(items, s)
 	}
 	return Object{"items": items, "nextCursor": pageOut.S("nextCursor")}
+}
+
+// pageNewestRunFirst applies the run history's newest-first walk to q, which must select from
+// workflow_runs aliased `r`.
+//
+// The tuple comparison is strict, so a page boundary that falls inside one created_at instant
+// neither repeats the anchor row nor skips the rows after it: the tie is decided by id on both
+// sides. A cursor that no longer resolves (a purged row, or a UUID from another workflow) compares
+// as NULL, which answers an empty page and ends the walk rather than skipping or repeating rows.
+func pageNewestRunFirst(t *transaction, q string, args []any, r *PublicRequest) Object {
+	if r.After != "" {
+		require(validID(r.After), 400, "invalid_cursor")
+		args = append(args, r.After)
+		n := itoa(len(args))
+		q += " AND (r.created_at, r.id) < ((SELECT a.created_at FROM workflow_runs a WHERE a.id=$" + n + "::uuid), $" + n + "::uuid)"
+	}
+	return window(t, q+" ORDER BY r.created_at DESC, r.id DESC", args, r)
+}
+
+// latestWorkflowRun is a workflow's most recent run, or nil when it has none. "Most recent" is the
+// same (created_at, id) order the run history walks, so the run a workflow row labels is exactly
+// the first row that history would show.
+func latestWorkflowRun(t *transaction, tid, wid string) any {
+	row := t.one("SELECT * FROM workflow_runs WHERE tenant_id=$1 AND workflow_id=$2 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1", tid, wid)
+	if row == nil {
+		return nil
+	}
+	return workflowLatestRunSummary(row)
+}
+
+// latestWorkflowRuns labels a page of workflows with their newest run in one query, so a list of
+// workflows costs one extra read rather than one per row. DISTINCT ON keeps the first row of each
+// workflow in the same newest-first order, so the label cannot disagree with
+// latestWorkflowRun's single-workflow answer.
+func latestWorkflowRuns(t *transaction, tid string, wids []string) map[string]any {
+	out := make(map[string]any, len(wids))
+	if len(wids) == 0 {
+		return out
+	}
+	args := []any{tid}
+	placeholders := make([]string, len(wids))
+	for i, wid := range wids {
+		args = append(args, wid)
+		placeholders[i] = "$" + itoa(len(args))
+	}
+	q := "SELECT DISTINCT ON (workflow_id) * FROM workflow_runs WHERE tenant_id=$1 AND deleted_at IS NULL" +
+		" AND workflow_id IN (" + strings.Join(placeholders, ",") + ")" +
+		" ORDER BY workflow_id, created_at DESC, id DESC"
+	for _, row := range t.list(q, args...) {
+		out[row.S("workflowId")] = workflowLatestRunSummary(row)
+	}
+	return out
+}
+
+// workflowLatestRunSummary is the compact run projection a workflow row carries: enough to label
+// when the workflow last ran, how that run ended and which version it executed, and to link to it.
+// The history list answers a different question and keeps the node states and inputs per row; a
+// workflow row must not pay for them.
+func workflowLatestRunSummary(row Object) Object {
+	// startedAt and finishedAt are nullable columns and the label shows "not yet" for them, so the
+	// raw value passes through rather than becoming an empty string that is not a date-time.
+	return Object{
+		"id":         row.S("id"),
+		"name":       row.S("name"),
+		"status":     row.S("status"),
+		"snapshotId": row.S("snapshotId"),
+		"createdAt":  row.S("createdAt"),
+		"startedAt":  row["startedAt"],
+		"finishedAt": row["finishedAt"],
+	}
 }
 
 // workflowRunSummary is the row projection shared by list and detail: the run's own fields,

@@ -82,6 +82,12 @@ Project 缺失时统一返回 `409 workflow_run_project_required`，不可用、
 `workspaces.workflow_run_id` 与 IssueRun 的 `issue_run_id` 互斥，运行时控制里为它预留的 `maintenance` 同样按运行身份记录（见
 [运行时控制](../runtime/runtime-control.md)）。
 
+**运行历史按 `(created_at, id)` 倒序分页。** `GET .../workflows/:wfid/runs` 返回最新在前，`limit` 上限 100，
+`after` 是上一页最后一行的工作流运行 UUID：服务端用它定位该行的 `created_at`，再按 `(created_at, id)` 严格小于它继续取，
+所以同一时刻的多条运行由 `id` 决胜负，翻页不重不漏。游标只是行 UUID，不含时间戳；解析不到该行的游标（例如别的工作流或
+已不存在的行）返回空页而不是从头部重来，非法 UUID 返回 `400 invalid_cursor`。工作流读取（列表与详情）带 `latestRun`，
+是这条顺序上的第一条运行，从未运行时为 `null`；它只含状态、快照与时间，运行历史行才带节点状态和输入。
+
 **取消是请求，不是状态切换。** `POST .../workflows/:wfid/runs/:rid/cancel` 在运行行上记录请求，返回 `202` 和记录的时刻；重复请求（即使换一个幂等键）
 返回同一个时刻。请求只写 `workflow_runs.cancel_requested_at`，不改动运行的状态、节点状态、会话或 Workspace——结算由调度器在下一轮完成（见下文）。
 `pending` 和 `running` 的运行接受请求；已经进入终态的运行返回 `409 run_not_cancellable`。授权按运行上冻结的模型绑定判断：带绑定的运行只有发起人和

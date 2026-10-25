@@ -22,6 +22,7 @@ import {
   HumanNodeFields,
   JunctionNodeFields,
   LoopNodeFields,
+  LoopExitNodeFields,
   SubflowNodeFields,
   ToolNodeFields,
   type WorkflowKindFieldsProps,
@@ -188,6 +189,9 @@ function NodeKindFields({
         globalVariables={globalVariables}
       />
     )
+  }
+  if (data.kind === 'loopExit') {
+    return <LoopExitNodeFields />
   }
   if (data.kind === 'subflow') {
     return <SubflowNodeFields />

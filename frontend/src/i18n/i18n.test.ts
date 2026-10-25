@@ -83,6 +83,7 @@ describe('the shipped resources', () => {
       'junction',
       'human',
       'loop',
+      'loopExit',
       'iteration',
       'subflow',
       'output',

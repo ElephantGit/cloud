@@ -12,6 +12,7 @@ export const WORKFLOW_NODE_KINDS = [
   'junction',
   'human',
   'loop',
+  'loopExit',
   'iteration',
   'subflow',
   'output',
@@ -191,6 +192,8 @@ export interface WorkflowLoopVariable {
 /** Executable bounded Loop configuration shared with the Rust snapshot decoder. */
 export interface WorkflowLoopConfig {
   maxIterations: number
+  /** What an exhausted round budget does: fail (default) or publish the final round. */
+  maxIterationsBehavior?: 'fail' | 'succeed'
   variables: WorkflowLoopVariable[]
   until: {
     logic: WorkflowConditionLogic

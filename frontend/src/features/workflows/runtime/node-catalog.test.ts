@@ -29,6 +29,10 @@ describe('workflow node catalog', () => {
     expect(supportsWorkflowNodeScope('start', 'iteration')).toBe(false)
   })
 
+  it('offers only the early-exit marker inside a loop body', () => {
+    expect(workflowPaletteNodeTypes('loop').map((entry) => entry.kind)).toEqual(['loopExit'])
+  })
+
   it('allows only the nodes a region can run in the iteration scope', () => {
     expect(workflowPaletteNodeTypes('iteration').map((entry) => entry.kind)).toEqual([
       'agent',
@@ -37,8 +41,9 @@ describe('workflow node catalog', () => {
   })
 
   it('lists the workflow palette in menu order', () => {
-    expect(workflowPaletteNodeTypes('workflow').map((entry) => entry.kind)).toEqual([
-      ...WORKFLOW_NODE_PALETTE,
-    ])
+    // The palette also carries the loop-only marker, which the workflow scope filters out.
+    expect(workflowPaletteNodeTypes('workflow').map((entry) => entry.kind)).toEqual(
+      WORKFLOW_NODE_PALETTE.filter((kind) => supportsWorkflowNodeScope(kind, 'workflow')),
+    )
   })
 })

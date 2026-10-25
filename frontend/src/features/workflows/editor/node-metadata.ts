@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Boxes,
   Braces,
+  CornerDownRight,
   GitBranch,
   GitMerge,
   Layers,
@@ -48,6 +49,11 @@ const NODE_METADATA: Record<WorkflowNodeKind, WorkflowNodeMetadata> = {
   loop: {
     kind: 'loop',
     icon: Repeat,
+    tone: 'bg-indigo-500/12 text-indigo-700 dark:text-indigo-400',
+  },
+  loopExit: {
+    kind: 'loopExit',
+    icon: CornerDownRight,
     tone: 'bg-indigo-500/12 text-indigo-700 dark:text-indigo-400',
   },
   iteration: {

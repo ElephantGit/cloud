@@ -13,6 +13,7 @@ import { ConditionNodeFields } from '@/features/workflows/editor/workflow-condit
 import {
   HumanNodeFields,
   JunctionNodeFields,
+  LoopExitNodeFields,
   LoopNodeFields,
   SubflowNodeFields,
   ToolNodeFields,
@@ -333,6 +334,7 @@ describe('LoopNodeFields', () => {
       />,
     )
 
+    expect(screen.getByLabelText('轮次耗尽时')).toHaveTextContent('失败')
     fireEvent.change(screen.getByLabelText('最大轮次'), { target: { value: '55' } })
     expect(data.loopConfig?.maxIterations).toBe(55)
 
@@ -349,8 +351,17 @@ describe('LoopNodeFields', () => {
     renderWithProviders(<LoopNodeFields data={nodeData({ kind: 'loop' })} onChange={onChange} />)
 
     expect(screen.getByLabelText('最大轮次')).toBeDisabled()
+    expect(screen.getByLabelText('轮次耗尽时')).toBeDisabled()
     expect(screen.getByLabelText('初始值')).toBeDisabled()
     expect(screen.getByText('此旧循环节点缺少可执行配置，请删除后重新添加。')).toBeInTheDocument()
+  })
+})
+
+describe('LoopExitNodeFields', () => {
+  it('explains that the marker has no configuration of its own', () => {
+    renderWithProviders(<LoopExitNodeFields />)
+
+    expect(screen.getByText(/循环体内的终端节点/)).toBeInTheDocument()
   })
 })
 

@@ -97,8 +97,9 @@ function seedNodeData(
       return { input: '' }
     case 'output':
     case 'loop':
+    case 'loopExit':
       // The Loop's own `loopConfig` is supplied by the atomic group factory, which creates
-      // its starter children at the same time.
+      // its starter children at the same time. The early-exit marker carries no data at all.
       return {}
     case 'condition':
       return {

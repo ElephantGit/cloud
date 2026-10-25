@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   createDefaultWorkflowCapabilities,
   workflowChoiceLabel,
+  type WorkflowChoice,
 } from '@/features/workflows/runtime/capabilities'
 import type {
   WorkflowGlobalVariable,
@@ -206,6 +207,41 @@ function ToolParametersField({
   )
 }
 
+/** A select whose menu text and closed-state label both come from one choice list. */
+function LocalizedChoiceSelect({
+  id,
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  options: readonly WorkflowChoice[]
+  disabled?: boolean
+  onChange: (value: string | null) => void
+}) {
+  const translate = useWorkflowTranslator()
+  return (
+    <InspectorField label={label} htmlFor={id}>
+      <Select value={value} disabled={disabled} onValueChange={onChange}>
+        <SelectTrigger id={id} className="w-full">
+          <LocalizedSelectValue options={options} value={value} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {workflowChoiceLabel(option, translate)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </InspectorField>
+  )
+}
+
 /** Edits the merge behavior of a Junction node: wait and failure strategies. */
 export function JunctionNodeFields({
   data,
@@ -214,33 +250,17 @@ export function JunctionNodeFields({
   const { t } = useTranslation()
   return (
     <>
-      <InspectorField
+      <LocalizedChoiceSelect
+        id="workflow-node-wait-strategy"
         label={t('workflows.junction.field.waitStrategy')}
-        htmlFor="workflow-node-wait-strategy"
-      >
-        <Select
-          value={data.waitStrategy ?? 'all'}
-          onValueChange={(strategy) => {
-            if (strategy === 'all' || strategy === 'any' || strategy === 'count') {
-              onChange({ ...data, waitStrategy: strategy })
-            }
-          }}
-        >
-          <SelectTrigger id="workflow-node-wait-strategy" className="w-full">
-            <LocalizedSelectValue
-              options={WORKFLOW_JUNCTION_WAIT_CHOICES}
-              value={data.waitStrategy ?? 'all'}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {WORKFLOW_JUNCTION_WAIT_CHOICES.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </InspectorField>
+        value={data.waitStrategy ?? 'all'}
+        options={WORKFLOW_JUNCTION_WAIT_CHOICES}
+        onChange={(strategy) => {
+          if (strategy === 'all' || strategy === 'any' || strategy === 'count') {
+            onChange({ ...data, waitStrategy: strategy })
+          }
+        }}
+      />
       {data.waitStrategy === 'count' && (
         <InspectorField
           label={t('workflows.junction.field.waitCount')}
@@ -266,33 +286,17 @@ export function JunctionNodeFields({
           />
         </InspectorField>
       )}
-      <InspectorField
+      <LocalizedChoiceSelect
+        id="workflow-node-failure-strategy"
         label={t('workflows.junction.field.failureStrategy')}
-        htmlFor="workflow-node-failure-strategy"
-      >
-        <Select
-          value={data.failureStrategy ?? 'fail'}
-          onValueChange={(strategy) => {
-            if (strategy === 'fail' || strategy === 'continue') {
-              onChange({ ...data, failureStrategy: strategy })
-            }
-          }}
-        >
-          <SelectTrigger id="workflow-node-failure-strategy" className="w-full">
-            <LocalizedSelectValue
-              options={WORKFLOW_JUNCTION_FAILURE_CHOICES}
-              value={data.failureStrategy ?? 'fail'}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {WORKFLOW_JUNCTION_FAILURE_CHOICES.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </InspectorField>
+        value={data.failureStrategy ?? 'fail'}
+        options={WORKFLOW_JUNCTION_FAILURE_CHOICES}
+        onChange={(strategy) => {
+          if (strategy === 'fail' || strategy === 'continue') {
+            onChange({ ...data, failureStrategy: strategy })
+          }
+        }}
+      />
     </>
   )
 }
@@ -337,20 +341,38 @@ export function HumanNodeFields({
   )
 }
 
-/** Edits a Loop container: iteration ceiling, carried initial value, and a behavior note. */
+/** Exhaustion policies of a Loop, keyed to the graph's enum names. */
+const WORKFLOW_LOOP_BEHAVIOR_CHOICES = [
+  { value: 'fail', labelKey: 'workflows.loop.behavior.fail' },
+  { value: 'succeed', labelKey: 'workflows.loop.behavior.succeed' },
+] as const satisfies readonly WorkflowChoice[]
+
+/** Edits a Loop container: budget, carried initial value, and the behavior note. */
 export function LoopNodeFields({
   data,
   onChange,
 }: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
-  const carriedVariable = loopConfig?.variables[0]
-  // A constant may have been imported as a number, boolean, or object, so the
-  // shared JSON value renderer turns it back into editable text safely.
-  const initialValue =
-    carriedVariable?.initial.kind === 'constant'
-      ? comparisonValueToText(carriedVariable.initial.value)
-      : ''
+  return (
+    <>
+      <LoopBudgetFields data={data} onChange={onChange} />
+      <LoopCarriedFields data={data} onChange={onChange} />
+      <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+        {t(
+          loopConfig === undefined
+            ? 'workflows.loop.legacyUnsupported'
+            : 'workflows.loop.defaultBehavior',
+        )}
+      </p>
+    </>
+  )
+}
+
+/** Edits the round ceiling and what an exhausted budget does. */
+function LoopBudgetFields({ data, onChange }: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
+  const { t } = useTranslation()
+  const loopConfig = data.loopConfig
   const updateMaxIterations = (value: number): void => {
     if (loopConfig === undefined) {
       return
@@ -363,22 +385,13 @@ export function LoopNodeFields({
       },
     })
   }
-  const updateInitialValue = (value: string): void => {
-    if (loopConfig === undefined || carriedVariable === undefined) {
+  const updateMaxIterationsBehavior = (value: string | null): void => {
+    if (loopConfig === undefined || (value !== 'fail' && value !== 'succeed')) {
       return
     }
     onChange({
       ...data,
-      loopConfig: {
-        ...loopConfig,
-        variables: [
-          {
-            ...carriedVariable,
-            initial: { kind: 'constant', value },
-          },
-          ...loopConfig.variables.slice(1),
-        ],
-      },
+      loopConfig: { ...loopConfig, maxIterationsBehavior: value },
     })
   }
   return (
@@ -402,25 +415,69 @@ export function LoopNodeFields({
           }}
         />
       </InspectorField>
-      <InspectorField
-        label={t('workflows.loop.field.initialValue')}
-        htmlFor="workflow-node-loop-initial-value"
-      >
-        <Input
-          id="workflow-node-loop-initial-value"
-          value={initialValue}
-          disabled={loopConfig === undefined || carriedVariable === undefined}
-          onChange={(event) => updateInitialValue(event.target.value)}
-        />
-      </InspectorField>
-      <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-        {t(
-          loopConfig === undefined
-            ? 'workflows.loop.legacyUnsupported'
-            : 'workflows.loop.defaultBehavior',
-        )}
-      </p>
+      <LocalizedChoiceSelect
+        id="workflow-node-max-iterations-behavior"
+        label={t('workflows.loop.field.maxIterationsBehavior')}
+        value={loopConfig?.maxIterationsBehavior ?? 'fail'}
+        options={WORKFLOW_LOOP_BEHAVIOR_CHOICES}
+        disabled={loopConfig === undefined}
+        onChange={updateMaxIterationsBehavior}
+      />
     </>
+  )
+}
+
+/** Edits the first carried variable's first-round constant value. */
+function LoopCarriedFields({ data, onChange }: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
+  const { t } = useTranslation()
+  const loopConfig = data.loopConfig
+  const carriedVariable = loopConfig?.variables[0]
+  // A constant may have been imported as a number, boolean, or object, so the
+  // shared JSON value renderer turns it back into editable text safely.
+  const initialValue =
+    carriedVariable?.initial.kind === 'constant'
+      ? comparisonValueToText(carriedVariable.initial.value)
+      : ''
+  const updateInitialValue = (value: string): void => {
+    if (loopConfig === undefined || carriedVariable === undefined) {
+      return
+    }
+    onChange({
+      ...data,
+      loopConfig: {
+        ...loopConfig,
+        variables: [
+          {
+            ...carriedVariable,
+            initial: { kind: 'constant', value },
+          },
+          ...loopConfig.variables.slice(1),
+        ],
+      },
+    })
+  }
+  return (
+    <InspectorField
+      label={t('workflows.loop.field.initialValue')}
+      htmlFor="workflow-node-loop-initial-value"
+    >
+      <Input
+        id="workflow-node-loop-initial-value"
+        value={initialValue}
+        disabled={loopConfig === undefined || carriedVariable === undefined}
+        onChange={(event) => updateInitialValue(event.target.value)}
+      />
+    </InspectorField>
+  )
+}
+
+/** Explains the loopExit marker: it ends the round and carries no configuration of its own. */
+export function LoopExitNodeFields() {
+  const { t } = useTranslation()
+  return (
+    <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+      {t('workflows.node.loopExit.description')}
+    </p>
   )
 }
 

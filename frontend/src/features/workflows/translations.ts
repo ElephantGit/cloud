@@ -1,6 +1,7 @@
 import { publishErrorTranslations } from '@/features/workflows/publish-error-translations'
 import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
+import { loopTranslations } from '@/features/workflows/loop-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
 
 /**
@@ -24,6 +25,7 @@ export const workflowTranslations = {
     ...historyTranslations['zh-CN'],
     ...publishErrorTranslations['zh-CN'],
     ...launchFieldTranslations['zh-CN'],
+    ...loopTranslations['zh-CN'],
     // Node catalog: palette labels and descriptions for every executable kind.
     'workflows.node.start.label': '开始',
     'workflows.node.start.description': '定义工作流输入',
@@ -37,19 +39,12 @@ export const workflowTranslations = {
     'workflows.node.junction.description': '等待多个执行分支完成',
     'workflows.node.human.label': '人工确认',
     'workflows.node.human.description': '等待人工决策后继续',
-    'workflows.node.loop.label': '循环',
-    'workflows.node.loop.description': '重复执行直到满足条件',
     'workflows.node.iteration.label': '迭代',
     'workflows.node.iteration.description': '对数组逐项执行区域内节点',
     'workflows.node.subflow.label': '子流程',
     'workflows.node.subflow.description': '封装复杂业务步骤',
     'workflows.node.output.label': '输出',
     'workflows.node.output.description': '返回最终结果',
-
-    // Loop container: the starter group a factory builds atomically.
-    'workflows.loop.roundStart': '轮次开始',
-    'workflows.loop.loopAgent': '循环 Agent',
-    'workflows.loop.promptTemplate': '改进当前值并输出新值：{{#NODE_ID.value#}}',
 
     // Palette.
     'workflows.palette.title': '节点',
@@ -204,11 +199,6 @@ export const workflowTranslations = {
     'workflows.junction.field.waitCount': '完成数量',
     'workflows.junction.field.failureStrategy': '失败策略',
     'workflows.human.field.approvalPrompt': '审批说明',
-    'workflows.loop.field.maxIterations': '最大轮次',
-    'workflows.loop.field.initialValue': '初始值',
-    'workflows.loop.defaultBehavior':
-      '每轮将 Agent 输出反馈为下一轮的 value；输出非空时结束，并导出为 result。',
-    'workflows.loop.legacyUnsupported': '此旧循环节点缺少可执行配置，请删除后重新添加。',
     'workflows.iteration.hint':
       '对迭代源数组的每个元素执行一轮区域内的节点；每轮绑定 {iter}.item 与 {iter}.index，完成后暴露 output / entries / failed_count 三个变量。',
     'workflows.iteration.field.iterator': '迭代源',
@@ -449,6 +439,7 @@ export const workflowTranslations = {
     ...historyTranslations['en-US'],
     ...publishErrorTranslations['en-US'],
     ...launchFieldTranslations['en-US'],
+    ...loopTranslations['en-US'],
     'workflows.node.start.label': 'Start',
     'workflows.node.start.description': 'Define workflow inputs',
     'workflows.node.agent.label': 'Agent',
@@ -461,20 +452,12 @@ export const workflowTranslations = {
     'workflows.node.junction.description': 'Wait for multiple branches to complete',
     'workflows.node.human.label': 'Human confirmation',
     'workflows.node.human.description': 'Pause for a human decision',
-    'workflows.node.loop.label': 'Loop',
-    'workflows.node.loop.description': 'Repeat until the exit condition is met',
     'workflows.node.iteration.label': 'Iteration',
     'workflows.node.iteration.description': 'Run the region once per array element',
     'workflows.node.subflow.label': 'Subflow',
     'workflows.node.subflow.description': 'Encapsulate a complex business step',
     'workflows.node.output.label': 'Output',
     'workflows.node.output.description': 'Return the final result',
-
-    // Loop container: the starter group a factory builds atomically.
-    'workflows.loop.roundStart': 'Round start',
-    'workflows.loop.loopAgent': 'Loop Agent',
-    'workflows.loop.promptTemplate':
-      'Improve the current value and output the new value: {{#NODE_ID.value#}}',
 
     'workflows.palette.title': 'Nodes',
     'workflows.palette.dragHint': 'Drag onto the canvas or click to add at the center',
@@ -623,12 +606,6 @@ export const workflowTranslations = {
     'workflows.junction.field.waitCount': 'Completion count',
     'workflows.junction.field.failureStrategy': 'Failure strategy',
     'workflows.human.field.approvalPrompt': 'Approval prompt',
-    'workflows.loop.field.maxIterations': 'Maximum rounds',
-    'workflows.loop.field.initialValue': 'Initial value',
-    'workflows.loop.defaultBehavior':
-      'Each Agent output feeds the next round as value; a non-empty output stops the Loop and is exported as result.',
-    'workflows.loop.legacyUnsupported':
-      'This legacy Loop lacks executable configuration. Delete it and add a new Loop.',
     'workflows.iteration.hint':
       'Runs the region once per element of the iterator array; each round binds {iter}.item and {iter}.index, and completion exposes output / entries / failed_count.',
     'workflows.iteration.field.iterator': 'Iterator source',

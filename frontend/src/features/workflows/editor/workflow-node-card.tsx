@@ -86,13 +86,15 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({
         }
       />
       <NodeParameterSummary data={data} />
-      <Handle
-        type="source"
-        position={Position.Right}
-        aria-label={t('workflows.editor.connectFrom', { name: data.title })}
-        className="workflow-port workflow-port-output !size-2.5 !border-0 !bg-transparent"
-        style={{ top: WORKFLOW_NODE_ANCHOR_Y }}
-      />
+      {data.kind !== 'loopExit' && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          aria-label={t('workflows.editor.connectFrom', { name: data.title })}
+          className="workflow-port workflow-port-output !size-2.5 !border-0 !bg-transparent"
+          style={{ top: WORKFLOW_NODE_ANCHOR_Y }}
+        />
+      )}
     </article>
   )
 })

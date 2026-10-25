@@ -152,7 +152,8 @@ export function workflowSnapshotFixture(
  * archived or foreign workflow. `installCloudSpaceHandlers` still supplies the
  * tenant and space the page resolves its scope from.
  */
-export function installWorkflowHandlers(workflows: Workflow[]): void {  const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]))
+export function installWorkflowHandlers(workflows: Workflow[]): void {
+  const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]))
   server.use(
     http.get(`/api/v1/tenants/${TEST_TENANT_ID}/workflows`, () =>
       HttpResponse.json({ items: workflows, nextCursor: '' }),

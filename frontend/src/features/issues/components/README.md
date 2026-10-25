@@ -8,21 +8,21 @@
 
 ## 文件
 
-| 文件 | 说明 |
-| --- | --- |
-| `task-layout.tsx` | 任务可用宽度测量、独立侧栏与窄屏抽屉 |
-| `execution-sidebar.tsx` | 当前执行、最近记录与所选运行统计组合 |
-| `pull-request-refs.tsx` | 安全 PR 引用展示与显式增删 |
-| `issue-card.tsx` / `issue-row.tsx` | 看板卡片与列表行 |
-| `create-issue-dialog.tsx` / `issue-project-select.tsx` | 新建任务及详情的真实项目选择；列表加载或失败不能清空已存关联 |
-| `issue-properties-panel.tsx` | 详情页属性栏：状态、优先级、负责人、父/子任务、项目、标签、属性、上下文引用 |
-| `activity-panel.tsx` | 活动栏：时间线与新建评论/目标 |
-| `issue-workspace.tsx` | 主区域对话、执行记录、任务动态页签；URL 保存历史 Run 选择，活动可定位详情，完整记录链接复用会话分析页 |
-| `target-picker.tsx` / `pending-targets.tsx` | 真实 @ 目录的加载、空、搜索与重试状态，以及待提交目标 |
-| `agent-request-failure.tsx` | 安全的任务拒绝文案，项目、目标及个人模型配置引导 |
-| `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow 表单的渲染、AI 建议、审阅与确认 |
-| `context-refs-panel.tsx` | 上下文引用的增删 |
-| `*.test.tsx` | 组件测试 |
+| 文件                                                                                                                                            | 说明                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `task-layout.tsx`                                                                                                                               | 任务可用宽度测量、独立侧栏与窄屏抽屉                                                                  |
+| `execution-sidebar.tsx`                                                                                                                         | 当前执行、最近记录与所选运行统计组合                                                                  |
+| `pull-request-refs.tsx`                                                                                                                         | 安全 PR 引用展示与显式增删                                                                            |
+| `issue-card.tsx` / `issue-row.tsx`                                                                                                              | 看板卡片与列表行                                                                                      |
+| `create-issue-dialog.tsx` / `issue-project-select.tsx`                                                                                          | 新建任务及详情的真实项目选择；列表加载或失败不能清空已存关联                                          |
+| `issue-properties-panel.tsx`                                                                                                                    | 详情页属性栏：状态、优先级、负责人、父/子任务、项目、标签、属性、上下文引用                           |
+| `activity-panel.tsx`                                                                                                                            | 活动栏：时间线与新建评论/目标                                                                         |
+| `issue-workspace.tsx`                                                                                                                           | 主区域对话、执行记录、任务动态页签；URL 保存历史 Run 选择，活动可定位详情，完整记录链接复用会话分析页 |
+| `target-picker.tsx` / `pending-targets.tsx`                                                                                                     | 真实 @ 目录的加载、空、搜索与重试状态，以及待提交目标                                                 |
+| `agent-request-failure.tsx`                                                                                                                     | 安全的任务拒绝文案，项目、目标及个人模型配置引导                                                      |
+| `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow 表单的渲染、AI 建议、审阅与确认                                                              |
+| `context-refs-panel.tsx`                                                                                                                        | 上下文引用的增删                                                                                      |
+| `*.test.tsx`                                                                                                                                    | 组件测试                                                                                              |
 
 ## 依赖与不变量
 
@@ -49,3 +49,5 @@ Workflow 确认从创建 interaction 开始锁住重复提交、返回修改与�
 Workflow 测试覆盖双击互斥、确认失败后复用 interaction（含切换版本）、默认版本与切换后的版本都按该版本快照渲染、版本字段/default/回显切换、字段校验拒绝时提示具体字段、作者同名 select 不发快照表单请求、按所选版本自身的字段通过与被拒、读取等待与失败，以及 WorkflowRun 状态和详情链接。
 
 `task-layout.tsx` 管理 1024px 可用宽度断点与独立侧栏；`execution-sidebar.tsx` 按 activeRunId 展示当前执行并链接最近历史；`pull-request-refs.tsx` 只管理已有引用，不推断外部 PR 状态。`issue-workspace.tsx` 保持同一任务输入组件跨视图挂载，草稿及重试身份不丢失。上下文与配置链接收入次级折叠区。
+
+工作流表单也由默认任务对话复用。创建评论的重试键在表单生命周期内保持稳定，interaction 按返回的确切 commentId 查找；确认响应丢失后遇到 interaction_already_confirmed 时刷新已有运行，不能新建交互重复执行。模型配置、未发布、权限和失效目标有具体提示，表单加载失败可取消。测试覆盖这些拒绝与响应丢失恢复；页面重载通过任务运行记录定位已确认执行，未确认字段草稿不持久化。

@@ -285,6 +285,59 @@ function serveOldSnapshot() {
 }
 
 describe('WorkflowInteractionComposer', () => {
+  it('replays a lost comment response with the same key and resolves an already confirmed interaction', async () => {
+    const { confirm } = serveComposer()
+    const keys: (string | null)[] = []
+    server.use(
+      http.post('/api/v1/tenants/t1/issues/i1/comments', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key'))
+        if (keys.length === 1) return HttpResponse.error()
+        return HttpResponse.json({ resource: { id: 'c1' } })
+      }),
+      http.post('/api/v1/tenants/t1/issues/i1/interactions/ix1/confirm', () =>
+        HttpResponse.json({ code: 'interaction_already_confirmed', params: {} }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    const { onConfirmed } = renderComposer()
+    await fillRequired(user)
+    await reviewAndConfirm(user)
+    await screen.findByText('确认失败，请重试。')
+    await user.click(screen.getByRole('button', { name: '确认执行' }))
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledOnce())
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBeTruthy()
+    expect(keys[1]).toBe(keys[0])
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['workflow_no_published_snapshot', '尚无已发布版本'],
+    ['workflow_executor_unconfigured', '个人模型或执行器槽位尚未配置'],
+    ['forbidden', '没有执行此工作流的权限'],
+    ['not_found', '工作流、版本或任务已不可用'],
+  ])('explains a %s refusal without discarding the form', async (code, message) => {
+    serveComposer({ descriptor: launchDescriptor })
+    const { onConfirmed } = await confirmIntoRejection(code, 409)
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(onConfirmed).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '返回修改' })).toBeEnabled()
+  })
+
+  it('lets the user leave a forbidden form without creating an interaction', async () => {
+    const { comment, confirm } = serveComposer()
+    server.use(
+      http.get('/api/v1/tenants/t1/collaboration/forms/security-review', () =>
+        HttpResponse.json({ code: 'forbidden', params: {} }, { status: 403 }),
+      ),
+    )
+    const { onRemove } = renderComposer()
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有执行此工作流的权限')
+    await userEvent.setup().click(screen.getByRole('button', { name: '取消' }))
+    expect(onRemove).toHaveBeenCalledOnce()
+    expect(comment).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+  })
   it('renders exactly the fields the descriptor declares', async () => {
     serveComposer()
     renderComposer()
@@ -671,7 +724,7 @@ describe('WorkflowInteractionComposer', () => {
     } finally {
       release()
     }
-    expect(await screen.findByText(/当前部署无法加载/)).toBeInTheDocument()
+    expect(await screen.findByText(/无法加载工作流表单/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '审阅' })).not.toBeInTheDocument()
     const read = serveOldSnapshot()
     await user.click(screen.getByRole('button', { name: '重试加载表单' }))

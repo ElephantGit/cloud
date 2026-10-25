@@ -1,7 +1,9 @@
 import { publishErrorTranslations } from '@/features/workflows/publish-error-translations'
 import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
+import { aggregatorTranslations } from '@/features/workflows/aggregator-translations'
 import { loopTranslations } from '@/features/workflows/loop-translations'
+import { nodeTranslations } from '@/features/workflows/node-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
 
 /**
@@ -25,26 +27,9 @@ export const workflowTranslations = {
     ...historyTranslations['zh-CN'],
     ...publishErrorTranslations['zh-CN'],
     ...launchFieldTranslations['zh-CN'],
+    ...aggregatorTranslations['zh-CN'],
     ...loopTranslations['zh-CN'],
-    // Node catalog: palette labels and descriptions for every executable kind.
-    'workflows.node.start.label': '开始',
-    'workflows.node.start.description': '定义工作流输入',
-    'workflows.node.agent.label': 'Agent',
-    'workflows.node.agent.description': '交给模型自主执行',
-    'workflows.node.condition.label': '条件分支',
-    'workflows.node.condition.description': '根据规则选择路径',
-    'workflows.node.tool.label': '工具',
-    'workflows.node.tool.description': '调用终端或插件',
-    'workflows.node.junction.label': '汇合',
-    'workflows.node.junction.description': '等待多个执行分支完成',
-    'workflows.node.human.label': '人工确认',
-    'workflows.node.human.description': '等待人工决策后继续',
-    'workflows.node.iteration.label': '迭代',
-    'workflows.node.iteration.description': '对数组逐项执行区域内节点',
-    'workflows.node.subflow.label': '子流程',
-    'workflows.node.subflow.description': '封装复杂业务步骤',
-    'workflows.node.output.label': '输出',
-    'workflows.node.output.description': '返回最终结果',
+    ...nodeTranslations['zh-CN'],
 
     // Palette.
     'workflows.palette.title': '节点',
@@ -439,25 +424,9 @@ export const workflowTranslations = {
     ...historyTranslations['en-US'],
     ...publishErrorTranslations['en-US'],
     ...launchFieldTranslations['en-US'],
+    ...aggregatorTranslations['en-US'],
     ...loopTranslations['en-US'],
-    'workflows.node.start.label': 'Start',
-    'workflows.node.start.description': 'Define workflow inputs',
-    'workflows.node.agent.label': 'Agent',
-    'workflows.node.agent.description': 'Delegate autonomous work to a model',
-    'workflows.node.condition.label': 'Condition',
-    'workflows.node.condition.description': 'Route execution based on rules',
-    'workflows.node.tool.label': 'Tool',
-    'workflows.node.tool.description': 'Call a terminal or plugin',
-    'workflows.node.junction.label': 'Merge',
-    'workflows.node.junction.description': 'Wait for multiple branches to complete',
-    'workflows.node.human.label': 'Human confirmation',
-    'workflows.node.human.description': 'Pause for a human decision',
-    'workflows.node.iteration.label': 'Iteration',
-    'workflows.node.iteration.description': 'Run the region once per array element',
-    'workflows.node.subflow.label': 'Subflow',
-    'workflows.node.subflow.description': 'Encapsulate a complex business step',
-    'workflows.node.output.label': 'Output',
-    'workflows.node.output.description': 'Return the final result',
+    ...nodeTranslations['en-US'],
 
     'workflows.palette.title': 'Nodes',
     'workflows.palette.dragHint': 'Drag onto the canvas or click to add at the center',

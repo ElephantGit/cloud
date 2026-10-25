@@ -21,19 +21,19 @@ import (
 // into the save path is the mistake this file exists to prevent.
 
 // workflowExecutableNodeKinds is the subset of the editor's node kinds Cloud executes. It started as
-// the root decision's phase-1 set (#67 结论 4: start, agent, condition, output) and grows one decision
-// at a time; `loop` and `loopExit` joined it with
-// specs decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md. Everything else stays
-// editable and saveable, but publishing refuses it rather than freezing a graph whose nodes would be
-// dropped.
+// the root decision's phase-1 set (#67 结论 4: start, agent, condition, output) and grows one
+// decision at a time: `loop` and `loopExit` joined it with
+// specs decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md, and `aggregator` with the
+// variable-aggregator decision. Everything else stays editable and saveable, but publishing refuses
+// it rather than freezing a graph whose nodes would be dropped.
 var workflowExecutableNodeKinds = map[string]bool{
-	"start":     true,
-	"agent":     true,
-	"condition": true,
-	"output":    true,
-	"loop":      true,
-	"loopExit":  true,
-}
+	"start":      true,
+	"agent":      true,
+	"condition":  true,
+	"aggregator": true,
+	"output":     true,
+	"loop":       true,
+	"loopExit":   true,}
 
 // workflowAgentSchemaVersion is the only `agentConfig.schemaVersion` Cloud executes. Version 4
 // introduces the interactive completion declaration Cloud refuses by name; a version Cloud has
@@ -434,6 +434,8 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
 			problems = append(problems, validateConditionConfig(id, o.O("data"), visibleRoots)...)
+		case kind == "aggregator":
+			problems = append(problems, validateAggregatorConfig(id, o.O("data"), visibleRoots)...)
 		case kind == "loop" && containers[id] == "":
 			// The loop's own initial values resolve in the outer scope, while feedback, until and
 			// outputs resolve against a round pool; validateLoopConfig derives both from the flat
@@ -636,6 +638,9 @@ func workflowDeclaredRoots(nodes []any, globals []Object) map[string]map[string]
 				set["structured_output"] = true
 			}
 		case "output":
+			set["output"] = true
+		case "aggregator":
+			// The aggregator publishes exactly one root: the value of the first assigned candidate.
 			set["output"] = true
 		case "loop":
 			// A loop exposes two root groups under the same writer: its carried variables (visible

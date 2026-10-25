@@ -79,6 +79,7 @@ describe('the shipped resources', () => {
       'start',
       'agent',
       'condition',
+      'aggregator',
       'tool',
       'junction',
       'human',

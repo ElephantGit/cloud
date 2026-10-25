@@ -8,6 +8,7 @@ export const WORKFLOW_NODE_KINDS = [
   'start',
   'agent',
   'condition',
+  'aggregator',
   'tool',
   'junction',
   'human',
@@ -174,6 +175,11 @@ export interface WorkflowConditionCase {
   conditions: WorkflowConditionComparison[]
 }
 
+/** Ordered root selectors of an Aggregator node; the first assigned candidate is passed through. */
+export interface WorkflowAggregatorConfig {
+  variables: string[][]
+}
+
 /** One named result an Output node exposes, resolved from the run variable pool at completion. */
 export interface WorkflowOutputBinding {
   name: string
@@ -270,6 +276,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   condition?: string
   agentConfig?: WorkflowAgentConfig
   conditionBranches?: WorkflowConditionBranch[]
+  /** Aggregator node: ordered root selectors (backend data.aggregatorConfig). */
+  aggregatorConfig?: WorkflowAggregatorConfig
   /** Legacy executable cases retained so existing saved graphs remain readable. */
   conditionCases?: WorkflowConditionCase[]
   /** Executable cases for Condition nodes, matching the backend `data.cases` wire format. */

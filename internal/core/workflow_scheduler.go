@@ -258,6 +258,10 @@ type workflowNodeState struct {
 	// replaces a failure, it does not erase it.
 	Error  string
 	Output Object
+	// Loop is the round progress of a loop node and nil for every other kind. The active round's
+	// member states stay in the run's flat node_states map (so the session, retry and viewer paths see
+	// one shape); completed rounds are archived here for audit and recovery.
+	Loop *workflowLoopRunState
 }
 
 // attemptNumber is the state's 1-based attempt, reading an absent attempt as the first one. Only
@@ -287,6 +291,9 @@ func (s *workflowNodeState) object() Object {
 	if s.Output != nil {
 		out["output"] = s.Output
 	}
+	if s.Loop != nil {
+		out["loop"] = s.Loop.object()
+	}
 	return out
 }
 
@@ -312,6 +319,9 @@ func workflowStatesFromJSON(raw Object) map[string]workflowNodeState {
 		}
 		if output, ok := asWorkflowObject(node["output"]); ok {
 			state.Output = output
+		}
+		if loop, ok := asWorkflowObject(node["loop"]); ok {
+			state.Loop = workflowLoopRunStateFromJSON(loop)
 		}
 		out[id] = state
 	}
@@ -370,6 +380,18 @@ func (p *workflowProjection) readyNode() (workflowNodeView, bool) {
 		}
 	}
 	return workflowNodeView{}, false
+}
+
+// hasPending reports whether the projection left a node unresolved because an upstream edge is still
+// pending. A scope whose nodes are all resolved and none ready has drained: for a loop body that is
+// the moment the round is judged complete.
+func (p *workflowProjection) hasPending() bool {
+	for _, node := range p.graph.Nodes {
+		if _, ok := p.projected[node.ID]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hasFailure reports whether any committed node failed.
@@ -593,8 +615,9 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 		// would make the pass's final settle a silent no-op and leave the run in `running`.
 		version = workflowRunVersion(t, runID, version)
 	}
+	outer := workflowOuterGraph(graph)
 	for {
-		projection := projectWorkflowNodes(graph, states)
+		projection := projectWorkflowNodes(outer, states)
 		// A failed node decides the run. Dispatching another ready node in the same wave would do
 		// real work for a run that is already terminal — for an agent that means provisioning a
 		// Workspace and waiting on a session — only to settle failed after the session ends. Stopping
@@ -602,6 +625,14 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 		// state, which is what "never executed" should look like.
 		if projection.hasFailure() {
 			break
+		}
+		if loopNode, running := runningWorkflowLoop(outer, states); running {
+			// A running loop is not "ready" in the projection (its state is committed), so the wave
+			// drives it explicitly. A started body session ends the pass; other progress continues.
+			if !advanceWorkflowLoop(t, run, loopNode, version, states, ambient, graph) {
+				return
+			}
+			continue
 		}
 		node, ready := projection.readyNode()
 		if !ready {
@@ -615,6 +646,15 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			startWorkflowAgentSession(t, run, node, version, states)
 			return
 		}
+		if node.Kind == "loop" {
+			// Drive the container one step. A loop starts its body agent through the same session
+			// path, so a started session ends the pass; otherwise the loop's state is updated in
+			// this pass and the outer wave continues.
+			if !advanceWorkflowLoop(t, run, node, version, states, ambient, graph) {
+				return
+			}
+			continue
+		}
 		states[node.ID] = executeWorkflowNode(node, run.O("input"), states, ambient)
 	}
 	// The wave stopped with no executable node left. Persist the projection's inactive nodes —
@@ -622,9 +662,9 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	// tells the viewer the full story (a missing state renders as idle, which would understate a
 	// branch the run already resolved). Then settle: failed when any committed node failed,
 	// succeeded otherwise; the failure check reads committed state, never the pass's own reasoning.
-	states = workflowInactiveStates(graph, states)
-	if projectWorkflowNodes(graph, states).hasFailure() {
-		finishWorkflowRun(t, runID, version, "failed", workflowRunFailureReason(graph, states), states)
+	states = workflowInactiveStates(outer, states)
+	if projectWorkflowNodes(outer, states).hasFailure() {
+		finishWorkflowRun(t, runID, version, "failed", workflowRunFailureReason(outer, states), states)
 		return
 	}
 	if workflowAnyCancelled(states) {
@@ -733,6 +773,10 @@ func executeWorkflowNode(node workflowNodeView, input Object, states, ambient ma
 		}
 		state.Output = Object{"selectedBranch": branch}
 	case "output":
+		state.Output = Object{}
+	case "loopExit":
+		// The early-exit marker carries no configuration and produces nothing; the container engine
+		// reads its success to skip feedback and publish the round's outputs.
 		state.Output = Object{}
 	default:
 		// Unreachable: the ready pass only yields executable kinds, and the agent case returned

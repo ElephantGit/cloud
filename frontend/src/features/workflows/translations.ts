@@ -4,6 +4,7 @@ import { launchFieldTranslations } from '@/features/workflows/launch-field-trans
 import { aggregatorTranslations } from '@/features/workflows/aggregator-translations'
 import { loopTranslations } from '@/features/workflows/loop-translations'
 import { nodeTranslations } from '@/features/workflows/node-translations'
+import { operatorTranslations } from '@/features/workflows/operator-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
 
 /**
@@ -30,6 +31,7 @@ export const workflowTranslations = {
     ...aggregatorTranslations['zh-CN'],
     ...loopTranslations['zh-CN'],
     ...nodeTranslations['zh-CN'],
+    ...operatorTranslations['zh-CN'],
 
     // Palette.
     'workflows.palette.title': '节点',
@@ -126,14 +128,6 @@ export const workflowTranslations = {
     'workflows.role.documentation-agent': '文档',
 
     // Condition operators, referenced by the capability catalog.
-    'workflows.operator.equals': '等于',
-    'workflows.operator.not-equals': '不等于',
-    'workflows.operator.contains': '包含',
-    'workflows.operator.not-contains': '不包含',
-    'workflows.operator.greater-than': '大于',
-    'workflows.operator.less-than': '小于',
-    'workflows.operator.empty': '为空',
-    'workflows.operator.not-empty': '不为空',
 
     // Tool operations, referenced by the capability catalog.
     'workflows.operation.run-command': '执行命令',
@@ -427,6 +421,7 @@ export const workflowTranslations = {
     ...aggregatorTranslations['en-US'],
     ...loopTranslations['en-US'],
     ...nodeTranslations['en-US'],
+    ...operatorTranslations['en-US'],
 
     'workflows.palette.title': 'Nodes',
     'workflows.palette.dragHint': 'Drag onto the canvas or click to add at the center',
@@ -520,15 +515,6 @@ export const workflowTranslations = {
     'workflows.role.tester': 'Tester',
     'workflows.role.debugger': 'Debugger',
     'workflows.role.documentation-agent': 'Documentation agent',
-
-    'workflows.operator.equals': 'equals',
-    'workflows.operator.not-equals': 'does not equal',
-    'workflows.operator.contains': 'contains',
-    'workflows.operator.not-contains': 'does not contain',
-    'workflows.operator.greater-than': 'is greater than',
-    'workflows.operator.less-than': 'is less than',
-    'workflows.operator.empty': 'is empty',
-    'workflows.operator.not-empty': 'is not empty',
 
     'workflows.operation.run-command': 'Run command',
     'workflows.operation.read-file': 'Read file',

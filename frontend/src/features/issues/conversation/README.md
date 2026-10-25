@@ -4,16 +4,16 @@
 
 任务级对话读取、发送、待交接消息及 Agent 选择界面。当前会话发起者可从任务页确认正常结束；「停止当前执行」仍是取消并暂停队列。一次 Run 的 Thread 内容仍由 `issues/thread` 提供；本模块不拥有执行状态或 Node 连接。
 
-| 文件 | 职责 |
-| --- | --- |
-| `conversation-footer.tsx` | 绑定当前执行的结束、停止、恢复与常驻输入区 |
-| `api.ts` | 任务消息双向分页、发送、停止、取消/重试、恢复/放弃未交付成果 API 与安全错误文案。 |
-| `conversation-panel.tsx` | 聚合任务评论、Agent Run 与待交接消息；只对当前占用任务的会话展示授权的结束入口。 |
-| `conversation-composer.tsx` | 单一 Agent 目标选择、显式提及菜单、Agent 消息/仅评论模式及交接提示。 |
-| `use-conversation-draft.ts` | 一份任务草稿及历史引用，切换 Agent 只改变输入目标。 |
-| `task-stop.tsx` / `task-recovery.tsx` | 当前执行停止、持久暂停和保存/放弃后的明确恢复，独立于历史浏览。 |
-| `agent-readiness.tsx` / `use-composer-submit.ts` | 发送前展示当前用户模型/项目配置缺口，统一发送资格并保留失败草稿。 |
-| `*.test.ts(x)` | MSW 与组件场景，覆盖终态续聊、切换、失败与队列。 |
+| 文件                                             | 职责                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `conversation-footer.tsx`                        | 绑定当前执行的结束、停止、恢复与常驻输入区                                        |
+| `api.ts`                                         | 任务消息双向分页、发送、停止、取消/重试、恢复/放弃未交付成果 API 与安全错误文案。 |
+| `conversation-panel.tsx`                         | 聚合任务评论、Agent Run 与待交接消息；只对当前占用任务的会话展示授权的结束入口。  |
+| `conversation-composer.tsx`                      | 单一 Agent 目标选择、显式提及菜单、Agent 消息/仅评论模式及交接提示。              |
+| `use-conversation-draft.ts`                      | 一份任务草稿及历史引用，切换 Agent 只改变输入目标。                               |
+| `task-stop.tsx` / `task-recovery.tsx`            | 当前执行停止、持久暂停和保存/放弃后的明确恢复，独立于历史浏览。                   |
+| `agent-readiness.tsx` / `use-composer-submit.ts` | 发送前展示当前用户模型/项目配置缺口，统一发送资格并保留失败草稿。                 |
+| `*.test.ts(x)`                                   | MSW 与组件场景，覆盖终态续聊、切换、失败与队列。                                  |
 
 依赖 `src/api` 生成客户端、`features/issues/api`、`features/issues/thread`、`features/spaces/api`、`features/conversation-content` 和 `components/ui`。只使用服务端授权后的目标名册；选择器和 `@` 菜单只在明确选择后改变接收者，普通文本中的 `@名称` 不参与路由，本地选择也不触发执行。历史选中 Run 只读；任务级发送框始终把新消息发往当前目标。结束入口只指向服务端 `activeRunId`，还须 Thread 的 `canEnd` 为真且当前用户是该会话发起者；排在后面的 Run 不能遮住当前会话的结束入口。分页按服务端 seq 合并，响应丢失后的重试保留同一个幂等键。
 
@@ -30,3 +30,5 @@
 连接不可用、缺 Key 和所选模型已撤下分别消费服务端的 `model_connection_unavailable`、`model_credential_required`、`model_not_found`；不将工作流解析器的内部原因码当作任务对话协议。未配置插件模型选择使用 `agent_configuration_required` 并保留插件设置入口。
 
 任务消息、评论和 Run 用稳定标识标记对话输出，Thread 自行标记尾部序号/实时版本；统一 viewport 据此区分历史前插与真正新增的输出，翻页按钮和历史展开不会误报新内容。
+
+默认对话的发送给和 @ 菜单区分 Agent 与工作流。工作流选择只打开 workflows 的既有版本表单，审阅后 Confirm 才创建运行；取消保留 Agent 草稿和重试身份。conversation-workflow.tsx 组合既有表单，workflow-run-card.tsx 读取同一 IssueRun 关联的 WorkflowRun 状态、冻结版本和详情链接；历史选择不读 Agent Thread。所有类型共用展示顺序，Agent 发送/停止/交接控制仍只取 Agent 运行，不建立混合队列或成果交接。依赖增加 features/issues/components/workflow-interaction-composer 与 features/workflows/api。conversation-workflow.test.tsx 覆盖选择无写入、取消、Confirm 以及工作流历史身份。

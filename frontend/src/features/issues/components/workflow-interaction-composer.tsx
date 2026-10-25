@@ -348,17 +348,13 @@ function useWorkflowSubmission({
   onConfirmed: () => void
 }) {
   const interactionId = useRef<string | null>(null)
+  const [identity] = useState(() => ({ key: crypto.randomUUID(), body: `@${target.displayName}` }))
   const locked = useRef(false)
   const confirm = useConfirmWorkflow(slug, issueId)
   const submission = useMutation({
     mutationFn: async (input: { values: FormValues; contextRefs?: ContextRefRef[] }) => {
       if (!interactionId.current) {
-        const interaction = await openWorkflowInteraction(
-          slug,
-          issueId,
-          target.id,
-          `@${target.displayName}`,
-        )
+        const interaction = await openWorkflowInteraction(slug, issueId, target.id, identity)
         interactionId.current = interaction.id
       }
       return confirm.mutateAsync({ interactionId: interactionId.current, ...input })
@@ -390,6 +386,16 @@ function useWorkflowSubmission({
 function confirmErrorMessage(error: unknown, descriptor: FormDescriptor): string {
   const code = faultCode(error)
   const key = faultParam(error, 'field')
+  const failures: Record<string, string> = {
+    workflow_no_published_snapshot: '该工作流尚无已发布版本，请先发布后再执行。',
+    workflow_executor_unconfigured: '个人模型或执行器槽位尚未配置，请在个人设置中补齐后重试。',
+    workflow_version_reserved_field: '该发布版本包含不兼容字段，请选择其他版本。',
+    workflow_run_project_required: '请先为任务关联项目。',
+    forbidden: '你没有执行此工作流的权限。',
+    unauthorized: '登录已失效，请重新登录。',
+    not_found: '工作流、版本或任务已不可用，请重新选择。',
+  }
+  if (code && failures[code]) return failures[code]
   if (!code || !key) return '确认失败，请重试。'
   const label = descriptor.fields.find((field) => field.key === key)?.label ?? key
   if (code === 'required_field_missing') return `请填写必填项：${label}`
@@ -421,7 +427,7 @@ function defaultSnapshotId(field: FormField | undefined): string | undefined {
 }
 
 /** Why the form cannot be drawn yet: the reads are still in flight, or one of them failed. */
-type FormBlocker = { kind: 'loading' } | { kind: 'failed'; retry: () => void }
+type FormBlocker = { kind: 'loading' } | { kind: 'failed'; error: unknown; retry: () => void }
 
 /** What the composer renders: a blocker, or the form itself. */
 type ChosenVersionForm =
@@ -439,6 +445,7 @@ type ChosenVersionForm =
 interface FormRead {
   isPending: boolean
   isError: boolean
+  error: unknown
   refetch: () => void
 }
 
@@ -448,7 +455,7 @@ interface FormRead {
  */
 function formBlocker(reads: FormRead[]): FormBlocker | undefined {
   const failed = reads.find((read) => read.isError)
-  if (failed) return { kind: 'failed', retry: () => failed.refetch() }
+  if (failed) return { kind: 'failed', error: failed.error, retry: () => failed.refetch() }
   return reads.some((read) => read.isPending) ? { kind: 'loading' } : undefined
 }
 
@@ -517,11 +524,14 @@ export function WorkflowInteractionComposer({
   if (form.kind === 'failed') {
     return (
       <div className="space-y-2">
-        <p className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
-          当前部署无法加载该 Workflow 的表单（form descriptor 不可用）。
+        <p role="alert" className="rounded-md border px-2 py-1.5 text-sm text-muted-foreground">
+          无法加载工作流表单。{confirmErrorMessage(form.error, { fields: [], formRef: '' })}
         </p>
         <Button variant="outline" size="sm" onClick={form.retry}>
           重试加载表单
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+          取消
         </Button>
       </div>
     )

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { server } from '@/test/msw-server'
 import type { FormDescriptor, Issue } from './types'
 import {
+  openWorkflowInteraction,
   useCreateIssue,
   useFormDescriptor,
   useIssues,
@@ -14,6 +15,43 @@ import {
   useWorkflowPublishedSnapshotIds,
   useWorkflowSnapshotForm,
 } from './api'
+
+describe('workflow interaction ownership', () => {
+  it('finds the exact comment across pages instead of confirming a newer request for the same target', async () => {
+    const pages: (string | null)[] = []
+    server.use(
+      http.post('/api/v1/tenants/t1/issues/i1/comments', async ({ request }) => {
+        expect(request.headers.get('Idempotency-Key')).toBe('stable-request')
+        expect(await request.json()).toEqual({
+          body: '@Check',
+          targets: [{ type: 'workflow', id: 'wf1' }],
+        })
+        return HttpResponse.json({ resource: { id: 'mine' } })
+      }),
+      http.get('/api/v1/tenants/t1/issues/i1/interactions', ({ request }) => {
+        const params = new URL(request.url).searchParams
+        expect(params.get('limit')).toBe('100')
+        const after = params.get('after')
+        pages.push(after)
+        const common = { mode: 'form', targetType: 'workflow', targetId: 'wf1', runId: null }
+        return HttpResponse.json(
+          after
+            ? { items: [{ ...common, id: 'exact', commentId: 'mine' }], nextCursor: '' }
+            : {
+                items: [{ ...common, id: 'other', commentId: 'someone-else' }],
+                nextCursor: 'page2',
+              },
+        )
+      }),
+    )
+    const result = await openWorkflowInteraction('t1', 'i1', 'wf1', {
+      body: '@Check',
+      key: 'stable-request',
+    })
+    expect(result.id).toBe('exact')
+    expect(pages).toEqual([null, 'page2'])
+  })
+})
 
 function wrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {

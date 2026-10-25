@@ -8,14 +8,14 @@ The tenant's issue board, list and detail pages, plus the Cloud Issue data layer
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| `api.ts` | Query hooks for issues, statuses, members, comments, runs, timeline, interactions and context refs; `useRuns` refreshes every 5 s while an agent run is unsettled (run settlement publishes no space event) |
-| `types.ts` | Issue domain types mirroring the backend contract; preparation uses generated `RunPreparation` without duplicating its contract |
-| `present.ts` | Pure display helpers: number, assignee, status columns |
-| `issues-page.tsx` / `issues-board.tsx` / `issues-list.tsx` | The issues page, the board (drag → `move` anchors) and the list |
-| `issue-detail-page.tsx` | Wide conversation area, Markdown description and collapsible properties; versioned Project updates with recovery reload, composing conversation/execution/activity navigation |
-| `*.test.ts(x)` | Page and hook tests |
+| File                                                       | Purpose                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.ts`                                                   | Query hooks for issues, statuses, members, comments, runs, timeline, interactions and context refs; `useRuns` refreshes every 5 s while an agent run is unsettled (run settlement publishes no space event) |
+| `types.ts`                                                 | Issue domain types mirroring the backend contract; preparation uses generated `RunPreparation` without duplicating its contract                                                                             |
+| `present.ts`                                               | Pure display helpers: number, assignee, status columns                                                                                                                                                      |
+| `issues-page.tsx` / `issues-board.tsx` / `issues-list.tsx` | The issues page, the board (drag → `move` anchors) and the list                                                                                                                                             |
+| `issue-detail-page.tsx`                                    | Wide conversation area, Markdown description and collapsible properties; versioned Project updates with recovery reload, composing conversation/execution/activity navigation                               |
+| `*.test.ts(x)`                                             | Page and hook tests                                                                                                                                                                                         |
 
 Subdirectories: `components/` (page sub-components), `thread/` (one Agent session), `conversation/` (task-level continuing conversation and composer).
 
@@ -44,3 +44,5 @@ Detail tests use SessionProvider and CurrentSpaceProvider to cover versioned ass
 Issue details use a bounded workspace: heading, views, one transcript viewport and an in-flow composer. The details rail becomes a drawer based on available width; version conflicts retain the existing update path, and denied reads hide stale content.
 
 Initial reads show a skeleton only while pending. `not_found` displays an unavailable-task message with a list link; other failures offer a safe message and retry, with no duplicate retry while loading. A 401/403 still hides cached content, as does a 404 for a removed task. Transient reload failures for an already loaded task retain the existing property-save recovery flow, loaded version and original save error.
+
+Opening a workflow interaction paginates to the exact commentId returned by comment creation, never the latest record for the target. The form supplies a stable comment retry key. Confirm treats interaction_already_confirmed as existing execution and refreshes interactions, runs and timeline without recreating it. API tests cover concurrent same-target records across pages.

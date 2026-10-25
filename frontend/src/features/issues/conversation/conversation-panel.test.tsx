@@ -527,7 +527,9 @@ describe('TaskConversationPanel', () => {
     await user.type(editor, 'Please ask @Claude')
     expect(screen.getByLabelText('发送给')).toHaveValue('a1')
     await user.click(
-      within(screen.getByLabelText('选择提及的 Agent')).getByRole('button', { name: 'Claude' }),
+      within(screen.getByLabelText('选择提及的目标')).getByRole('button', {
+        name: 'Claude · Agent',
+      }),
     )
     expect(screen.getByLabelText('发送给')).toHaveValue('a2')
     expect(editor).toHaveValue('Please ask')

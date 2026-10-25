@@ -8,21 +8,21 @@ Sub-components of the issue board and detail page: cards and rows, the create di
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| `task-layout.tsx` | Available-width layout, independent rail and narrow-screen drawer |
-| `execution-sidebar.tsx` | Active execution, recent history and selected-run statistics |
-| `pull-request-refs.tsx` | Safe PR references with explicit add/remove |
-| `issue-card.tsx` / `issue-row.tsx` | Board card and list row |
-| `create-issue-dialog.tsx` / `issue-project-select.tsx` | Creation and detail project selection; loading or failure never clears a stored reference |
-| `issue-properties-panel.tsx` | Detail-page properties column: status, priority, assignee, parent/sub-issues, project, labels, properties, context refs |
-| `activity-panel.tsx` | Activity column: timeline and new comments/targets |
-| `issue-workspace.tsx` | Main conversation, execution history and activity tabs; URL-persisted historical Run selection and links to the existing full session inspector |
-| `target-picker.tsx` / `pending-targets.tsx` | Loading, empty, search and retry states of the real @ directory, plus pending targets |
-| `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow form rendering, AI suggestions, review and confirm |
-| `context-refs-panel.tsx` | Adding and removing context refs |
-| `agent-request-failure.tsx` | Safe task-refusal messages with project, target and personal-model guidance |
-| `*.test.tsx` | Component tests, including refused tasks retaining their draft and actionable settings links |
+| File                                                                                                                                            | Purpose                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task-layout.tsx`                                                                                                                               | Available-width layout, independent rail and narrow-screen drawer                                                                               |
+| `execution-sidebar.tsx`                                                                                                                         | Active execution, recent history and selected-run statistics                                                                                    |
+| `pull-request-refs.tsx`                                                                                                                         | Safe PR references with explicit add/remove                                                                                                     |
+| `issue-card.tsx` / `issue-row.tsx`                                                                                                              | Board card and list row                                                                                                                         |
+| `create-issue-dialog.tsx` / `issue-project-select.tsx`                                                                                          | Creation and detail project selection; loading or failure never clears a stored reference                                                       |
+| `issue-properties-panel.tsx`                                                                                                                    | Detail-page properties column: status, priority, assignee, parent/sub-issues, project, labels, properties, context refs                         |
+| `activity-panel.tsx`                                                                                                                            | Activity column: timeline and new comments/targets                                                                                              |
+| `issue-workspace.tsx`                                                                                                                           | Main conversation, execution history and activity tabs; URL-persisted historical Run selection and links to the existing full session inspector |
+| `target-picker.tsx` / `pending-targets.tsx`                                                                                                     | Loading, empty, search and retry states of the real @ directory, plus pending targets                                                           |
+| `workflow-interaction-composer.tsx` / `dynamic-form-renderer.tsx` / `form-field-renderer.tsx` / `assist-suggestions.tsx` / `confirm-review.tsx` | Workflow form rendering, AI suggestions, review and confirm                                                                                     |
+| `context-refs-panel.tsx`                                                                                                                        | Adding and removing context refs                                                                                                                |
+| `agent-request-failure.tsx`                                                                                                                     | Safe task-refusal messages with project, target and personal-model guidance                                                                     |
+| `*.test.tsx`                                                                                                                                    | Component tests, including refused tasks retaining their draft and actionable settings links                                                    |
 
 ## Dependencies and invariants
 
@@ -49,3 +49,5 @@ Component tests use MSW; properties and Task Mode→Thread are covered by `issue
 Workflow tests cover double-click exclusion, rejected confirms reusing an interaction across version switches, both the default and a switched version rendering from that version's snapshot, snapshot fields/defaults/echoes, named-field hints on validation refusals, an author's same-named select making no snapshot-form request, acceptance and refusal by the selected version's own fields, pending and failed reads, and WorkflowRun status and detail links.
 
 `task-layout.tsx` owns the 1024px available-width breakpoint and independent rail. `execution-sidebar.tsx` distinguishes activeRunId from selected history. `pull-request-refs.tsx` manages references without inferring external PR state. `issue-workspace.tsx` keeps one composer mounted across views, preserving drafts and retry identity. Secondary context and configuration links are collapsed.
+
+The default task conversation also uses the workflow form. Comment retries retain one key for the mounted form and resolve the interaction by the returned commentId. An interaction_already_confirmed response refreshes the existing runs instead of opening another interaction. Model configuration, unpublished workflows, authorization and unavailable targets have actionable hints; a failed form read can be cancelled. Tests cover refusals and lost responses. Reloading locates confirmed execution through task run records; unconfirmed field drafts are not persisted.

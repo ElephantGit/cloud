@@ -14,10 +14,10 @@ import {
   HumanNodeFields,
   JunctionNodeFields,
   LoopExitNodeFields,
-  LoopNodeFields,
   SubflowNodeFields,
   ToolNodeFields,
 } from '@/features/workflows/editor/workflow-kind-fields'
+import { LoopNodeFields } from '@/features/workflows/editor/workflow-loop-fields'
 import { IterationNodeFields } from '@/features/workflows/editor/workflow-iteration-fields'
 import type { WorkflowCanvasNode } from '@/features/workflows/editor/canvas-types'
 import { renderWithProviders } from '@/test/render'
@@ -384,6 +384,25 @@ describe('LoopNodeFields', () => {
       name: 'result',
       variableSelector: ['writer', 'output'],
     })
+  })
+
+  it('adds a round-end rule and records its selector, operator and value', () => {
+    const { data, rerenderPanel } = setUpLoopPanel()
+    fireEvent.click(screen.getByRole('button', { name: '添加条件' }))
+    expect(data.loopConfig?.until.conditions).toHaveLength(1)
+
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('变量 1'), { target: { value: 'writer.output' } })
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('值 1'), { target: { value: 'done' } })
+    expect(data.loopConfig?.until.conditions[0]).toEqual({
+      variableSelector: ['writer', 'output'],
+      operator: 'equals',
+      value: 'done',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '删除条件 1' }))
+    expect(data.loopConfig?.until.conditions).toHaveLength(0)
   })
 
   it('hides the config inputs for a legacy loop without executable config', () => {

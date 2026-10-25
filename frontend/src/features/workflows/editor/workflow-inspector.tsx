@@ -21,12 +21,12 @@ import { ConditionNodeFields } from '@/features/workflows/editor/workflow-condit
 import {
   HumanNodeFields,
   JunctionNodeFields,
-  LoopNodeFields,
   LoopExitNodeFields,
   SubflowNodeFields,
   ToolNodeFields,
   type WorkflowKindFieldsProps,
 } from '@/features/workflows/editor/workflow-kind-fields'
+import { LoopNodeFields } from '@/features/workflows/editor/workflow-loop-fields'
 import { IterationNodeFields } from '@/features/workflows/editor/workflow-iteration-fields'
 import { useWorkflowTranslator } from '@/features/workflows/editor/use-workflow-translator'
 import { workflowNodeMetadata } from '@/features/workflows/editor/node-metadata'

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { InspectorField } from '@/features/workflows/editor/workflow-inspector-fields'
@@ -32,6 +32,17 @@ export function AggregatorNodeFields({ data, onChange }: AggregatorFieldsProps) 
   const update = (variables: string[][]): void => {
     onChange({ ...data, aggregatorConfig: { variables } })
   }
+  // Order is the published priority, so moving a candidate is a first-class edit rather than a
+  // re-sort the panel could infer.
+  const move = (from: number, to: number): void => {
+    const next = [...config.variables]
+    const moved = next.splice(from, 1)[0]
+    if (moved === undefined) {
+      return
+    }
+    next.splice(to, 0, moved)
+    update(next)
+  }
   return (
     <InspectorField
       label={t('workflows.aggregator.field.variables')}
@@ -54,6 +65,26 @@ export function AggregatorNodeFields({ data, onChange }: AggregatorFieldsProps) 
                 )
               }
             />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`${t('workflows.aggregator.moveCandidateUp')} ${index + 1}`}
+              disabled={index === 0}
+              onClick={() => move(index, index - 1)}
+            >
+              <ArrowUp />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`${t('workflows.aggregator.moveCandidateDown')} ${index + 1}`}
+              disabled={index === config.variables.length - 1}
+              onClick={() => move(index, index + 1)}
+            >
+              <ArrowDown />
+            </Button>
             <Button
               type="button"
               variant="ghost"

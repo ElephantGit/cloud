@@ -13,6 +13,8 @@ export const aggregatorTranslations = {
     'workflows.aggregator.field.candidate': '候选',
     'workflows.aggregator.addCandidate': '添加候选',
     'workflows.aggregator.removeCandidate': '删除候选',
+    'workflows.aggregator.moveCandidateUp': '上移候选',
+    'workflows.aggregator.moveCandidateDown': '下移候选',
     'workflows.aggregator.selectorPlaceholder': '节点.变量，例如 writer.output',
   },
   'en-US': {
@@ -22,6 +24,8 @@ export const aggregatorTranslations = {
     'workflows.aggregator.field.candidate': 'Candidate',
     'workflows.aggregator.addCandidate': 'Add candidate',
     'workflows.aggregator.removeCandidate': 'Remove candidate',
+    'workflows.aggregator.moveCandidateUp': 'Move candidate up',
+    'workflows.aggregator.moveCandidateDown': 'Move candidate down',
     'workflows.aggregator.selectorPlaceholder': 'node.variable, for example writer.output',
   },
 }

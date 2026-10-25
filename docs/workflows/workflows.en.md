@@ -119,9 +119,10 @@ first, caps `limit` at 100, and takes the last row's WorkflowRun UUID as `after`
 `created_at` and continues strictly below `(created_at, id)`, so several runs created in the same instant are ordered by
 `id` and paging neither repeats nor skips one. The cursor is only a row UUID and carries no timestamp; a cursor that
 resolves to no row (another workflow's, or a purged one) answers an empty page instead of restarting from the top, and a
-value that is not a UUID answers `400 invalid_cursor`. Workflow reads (list and detail) carry `latestRun`, the first run
+value that is not a UUID answers `400 invalid_cursor`. Every workflow **list** row carries `latestRun`, the first run
 of that same order — `null` when the workflow has never run. It holds the status, snapshot and timestamps only; a history
-row is what carries node states and inputs.
+row is what carries node states and inputs. The detail read carries no such field: a run starting must not rewrite every
+read of the workflow resource, so a reader that wants the label asks the list or the history.
 
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency

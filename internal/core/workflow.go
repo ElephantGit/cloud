@@ -2,17 +2,16 @@ package core
 
 import "strings"
 
-// workflow loads a live workflow scoped to the tenant, labelled with its newest run.
+// workflow loads a live workflow scoped to the tenant.
 //
-// The label is part of the read, not of one list: a workflow row and its detail page must agree
-// about when the workflow last ran, the same reason a run's history row and its detail page share
-// one projection. A workflow that never ran reports null instead of omitting the field, so a
-// reader never has to tell "absent" from "none".
+// It deliberately projects only the row: the newest run a workflow has is part of listing workflows,
+// not of the resource, because "when it last ran" changes while the document does not — a run
+// starting would otherwise rewrite every read of a workflow, including the ones that only gate a
+// write. Readers that need the label ask the list, or read the run history.
 func workflow(t *transaction, tid, wid string) Object {
 	require(validID(wid), 404, "not_found")
 	w := t.one("SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL", wid, tid)
 	require(w != nil, 404, "not_found")
-	w["latestRun"] = latestWorkflowRun(t, tid, wid)
 	return w
 }
 

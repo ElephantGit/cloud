@@ -138,23 +138,24 @@ func TestWorkflowRowsCarryTheirNewestRun(t *testing.T) {
 	if got := core.Object(latest); got.S("id") != newer.id || got.S("status") != "succeeded" || got.S("snapshotId") != snapID {
 		t.Fatalf("latestRun = %v; want the newer run %s", got, newer.id)
 	}
-	// The detail read agrees with the list row: two surfaces must not disagree about the same run.
-	detail := f.call("GET", f.path("/workflows/"+wfid), nil, "", 200)
-	detailLatest, ok := detail["latestRun"].(map[string]any)
-	require(t, ok, "the detail read must carry the same label")
-	if got := core.Object(detailLatest); got.S("id") != newer.id {
-		t.Fatalf("detail latestRun = %v; want %s", got, newer.id)
+	// The label belongs to the list, not to the resource: a run starting must not rewrite every read
+	// of a workflow, so the detail read keeps projecting the row alone.
+	if detail := f.call("GET", f.path("/workflows/"+wfid), nil, "", 200); detail["latestRun"] != nil {
+		t.Fatalf("the detail read must not carry latestRun, got %v", detail["latestRun"])
 	}
-	// Never having run is null rather than an absent field or a made-up run.
-	if _, ok := never["latestRun"]; !ok {
+	// Never having run is null on the list row rather than an absent field or a made-up run.
+	empty, ok := byName["Never ran"]
+	require(t, ok, "the list must contain the workflow that never ran")
+	if _, ok := empty["latestRun"]; !ok {
 		t.Fatal("a workflow that never ran must still carry latestRun, as null")
 	}
-	if never["latestRun"] != nil {
-		t.Fatalf("a workflow that never ran reports %v; want null", never["latestRun"])
+	if empty["latestRun"] != nil {
+		t.Fatalf("a workflow that never ran reports %v; want null", empty["latestRun"])
 	}
-	// The label is part of every read of the resource, including the create response.
-	if created := byName["Never ran"]; created["latestRun"] != nil {
-		t.Fatalf("a freshly created workflow reports %v; want null", created["latestRun"])
+	// The create response is the resource, so it carries no label at all — the same split the detail
+	// read above pins.
+	if never["latestRun"] != nil {
+		t.Fatalf("a create response must not carry latestRun, got %v", never["latestRun"])
 	}
 }
 

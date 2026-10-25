@@ -128,13 +128,14 @@ func Document() map[string]any {
 	s["Workflow"] = resource("id tenantId name description graph version createdAt updatedAt deletedAt", "deletedAt")
 	workflowProps := properties(s, "Workflow")
 	workflowProps["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The authored graph document: nodes, edges, viewport, editor annotations and global variables. Stored and returned whole; the editor is its only reader."}
-	// The newest run belongs to the workflow row so a list can say when it last ran without a
-	// request per row. It is an inline nullable object rather than a $ref: OpenAPI 3.0 ignores
-	// every sibling of $ref, so a referenced schema could not also be nullable. Null means the
-	// workflow has never run, which is different from a run still pending.
+	// The newest run belongs to a workflow *list* row, so a member can say when a workflow last ran
+	// without a request per row. It is an inline nullable object rather than a $ref: OpenAPI 3.0
+	// ignores every sibling of $ref, so a referenced schema could not also be nullable. Null means
+	// the workflow has never run, which is different from a run still pending. The detail read does
+	// not carry it — a run starting must not rewrite every read of the workflow resource.
 	workflowProps["latestRun"] = optional(obj{
 		"type": "object", "additionalProperties": false,
-		"description": "The workflow's most recent run (the order the run history walks), or null when it has never run.",
+		"description": "List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.",
 		"properties": obj{
 			"id":         uuid(),
 			"name":       str(),

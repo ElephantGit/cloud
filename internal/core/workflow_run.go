@@ -55,21 +55,10 @@ func pageNewestRunFirst(t *transaction, q string, args []any, r *PublicRequest) 
 	return window(t, q+" ORDER BY r.created_at DESC, r.id DESC", args, r)
 }
 
-// latestWorkflowRun is a workflow's most recent run, or nil when it has none. "Most recent" is the
-// same (created_at, id) order the run history walks, so the run a workflow row labels is exactly
-// the first row that history would show.
-func latestWorkflowRun(t *transaction, tid, wid string) any {
-	row := t.one("SELECT * FROM workflow_runs WHERE tenant_id=$1 AND workflow_id=$2 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1", tid, wid)
-	if row == nil {
-		return nil
-	}
-	return workflowLatestRunSummary(row)
-}
-
 // latestWorkflowRuns labels a page of workflows with their newest run in one query, so a list of
 // workflows costs one extra read rather than one per row. DISTINCT ON keeps the first row of each
-// workflow in the same newest-first order, so the label cannot disagree with
-// latestWorkflowRun's single-workflow answer.
+// workflow in the same (created_at, id) order the run history walks, so the label a row shows is the
+// run that history would show first.
 func latestWorkflowRuns(t *transaction, tid string, wids []string) map[string]any {
 	out := make(map[string]any, len(wids))
 	if len(wids) == 0 {

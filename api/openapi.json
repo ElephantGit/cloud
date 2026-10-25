@@ -5775,7 +5775,7 @@
           },
           "latestRun": {
             "additionalProperties": false,
-            "description": "The workflow's most recent run (the order the run history walks), or null when it has never run.",
+            "description": "List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.",
             "nullable": true,
             "properties": {
               "createdAt": {

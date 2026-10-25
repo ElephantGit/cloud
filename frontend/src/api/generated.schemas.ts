@@ -2569,7 +2569,7 @@ export const WorkflowLatestRunStatus = {
 } as const;
 
 /**
- * The workflow's most recent run (the order the run history walks), or null when it has never run.
+ * List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.
  * @nullable
  */
 export type WorkflowLatestRun = {
@@ -2593,7 +2593,7 @@ export interface Workflow {
   graph: WorkflowGraph;
   id: string;
   /**
-     * The workflow's most recent run (the order the run history walks), or null when it has never run.
+     * List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.
      * @nullable
      */
   latestRun?: WorkflowLatestRun;

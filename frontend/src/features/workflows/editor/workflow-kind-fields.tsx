@@ -17,7 +17,9 @@ import {
 } from '@/features/workflows/runtime/capabilities'
 import type {
   WorkflowGlobalVariable,
+  WorkflowLoopVariable,
   WorkflowNodeData,
+  WorkflowOutputBinding,
   WorkflowToolParameter,
 } from '@/features/workflows/runtime/types'
 import type { TranslationKey } from '@/i18n/i18n-instance'
@@ -27,7 +29,11 @@ import type { WorkflowCanvasNode } from '@/features/workflows/editor/canvas-type
 import type { WorkflowDecoratedVariable } from '@/features/workflows/runtime/variable-catalog'
 import {
   LocalizedSelectValue,
+  WorkflowVariableTypeMenu,
   comparisonValueToText,
+  parseComparisonValue,
+  selectorToText,
+  textToSelector,
 } from '@/features/workflows/editor/workflow-variable-select'
 
 /**
@@ -357,7 +363,8 @@ export function LoopNodeFields({
   return (
     <>
       <LoopBudgetFields data={data} onChange={onChange} />
-      <LoopCarriedFields data={data} onChange={onChange} />
+      <LoopVariablesFields data={data} onChange={onChange} />
+      <LoopOutputsFields data={data} onChange={onChange} />
       <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
         {t(
           loopConfig === undefined
@@ -427,46 +434,254 @@ function LoopBudgetFields({ data, onChange }: Pick<WorkflowKindFieldsProps, 'dat
   )
 }
 
-/** Edits the first carried variable's first-round constant value. */
-function LoopCarriedFields({ data, onChange }: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
+/** Parses a typed constant: text stays text for string types, otherwise it is JSON-read. */
+function loopConstantValue(text: string, valueType: string): unknown {
+  return valueType === 'string' || valueType === 'secret' ? text : parseComparisonValue(text)
+}
+
+/** Builds the empty carried variable a new row starts from. */
+function blankLoopVariable(): WorkflowLoopVariable {
+  return { name: '', valueType: 'string', initial: { kind: 'constant', value: '' }, feedback: [] }
+}
+
+/** Edits every carried variable: its name, type, first-round value and feedback selector. */
+function LoopVariablesFields({
+  data,
+  onChange,
+}: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
-  const carriedVariable = loopConfig?.variables[0]
-  // A constant may have been imported as a number, boolean, or object, so the
-  // shared JSON value renderer turns it back into editable text safely.
-  const initialValue =
-    carriedVariable?.initial.kind === 'constant'
-      ? comparisonValueToText(carriedVariable.initial.value)
-      : ''
-  const updateInitialValue = (value: string): void => {
-    if (loopConfig === undefined || carriedVariable === undefined) {
-      return
-    }
-    onChange({
-      ...data,
-      loopConfig: {
-        ...loopConfig,
-        variables: [
-          {
-            ...carriedVariable,
-            initial: { kind: 'constant', value },
-          },
-          ...loopConfig.variables.slice(1),
-        ],
-      },
-    })
+  if (loopConfig === undefined) {
+    return null
+  }
+  const update = (variables: WorkflowLoopVariable[]): void => {
+    onChange({ ...data, loopConfig: { ...loopConfig, variables } })
   }
   return (
-    <InspectorField
-      label={t('workflows.loop.field.initialValue')}
-      htmlFor="workflow-node-loop-initial-value"
-    >
+    <InspectorField label={t('workflows.loop.field.variables')} htmlFor="workflow-loop-variables">
+      <div className="space-y-2" id="workflow-loop-variables">
+        {/* oxlint-disable react/no-array-index-key -- a carried variable has no stable id; its name is the editable identity, so a content key collides on a blank new row. */}
+        {loopConfig.variables.map((variable, index) => (
+          <LoopVariableRow
+            key={`loop-variable-${index}`}
+            index={index}
+            variable={variable}
+            onChange={(next) =>
+              update(loopConfig.variables.map((current, i) => (i === index ? next : current)))
+            }
+            onRemove={() => update(loopConfig.variables.filter((_, i) => i !== index))}
+          />
+        ))}
+        {/* oxlint-enable react/no-array-index-key */}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => update([...loopConfig.variables, blankLoopVariable()])}
+      >
+        <Plus />
+        {t('workflows.loop.addVariable')}
+      </Button>
+    </InspectorField>
+  )
+}
+
+/** One carried variable's fields; the index only labels the controls for assistive technology. */
+function LoopVariableRow({
+  index,
+  variable,
+  onChange,
+  onRemove,
+}: {
+  index: number
+  variable: WorkflowLoopVariable
+  onChange: (variable: WorkflowLoopVariable) => void
+  onRemove: () => void
+}) {
+  const { t } = useTranslation()
+  const label = (key: TranslationKey): string => `${t(key)} ${index + 1}`
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-2">
+      <div className="flex items-center gap-2">
+        <Input
+          aria-label={label('workflows.loop.field.variableName')}
+          value={variable.name}
+          onChange={(event) => onChange({ ...variable, name: event.target.value })}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label('workflows.loop.removeVariable')}
+          onClick={onRemove}
+        >
+          <Trash2 />
+        </Button>
+      </div>
+      <div className="flex gap-2">
+        <Select
+          value={variable.valueType}
+          onValueChange={(valueType) => {
+            if (valueType !== null) {
+              onChange({ ...variable, valueType })
+            }
+          }}
+        >
+          <SelectTrigger
+            aria-label={label('workflows.loop.field.variableType')}
+            className="h-8 w-full"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <WorkflowVariableTypeMenu />
+        </Select>
+        <Select
+          value={variable.initial.kind}
+          onValueChange={(kind) => {
+            if (kind === 'constant') {
+              onChange({ ...variable, initial: { kind: 'constant', value: '' } })
+            } else if (kind === 'variable') {
+              onChange({ ...variable, initial: { kind: 'variable', selector: [] } })
+            }
+          }}
+        >
+          <SelectTrigger
+            aria-label={label('workflows.loop.field.variableInitialKind')}
+            className="h-8 w-full"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="constant">{t('workflows.loop.initialKind.constant')}</SelectItem>
+            <SelectItem value="variable">{t('workflows.loop.initialKind.variable')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <LoopInitialValueInput index={index} variable={variable} onChange={onChange} />
       <Input
-        id="workflow-node-loop-initial-value"
-        value={initialValue}
-        disabled={loopConfig === undefined || carriedVariable === undefined}
-        onChange={(event) => updateInitialValue(event.target.value)}
+        aria-label={label('workflows.loop.field.variableFeedback')}
+        placeholder={t('workflows.loop.selectorPlaceholder')}
+        value={selectorToText(variable.feedback)}
+        onChange={(event) =>
+          onChange({ ...variable, feedback: textToSelector(event.target.value) })
+        }
       />
+    </div>
+  )
+}
+
+/**
+ * The first-round value: a typed constant, or a reference resolved once before the loop starts.
+ * Switching kinds replaces the value, because a constant and a selector cannot be converted into
+ * each other without guessing what the author meant.
+ */
+function LoopInitialValueInput({
+  index,
+  variable,
+  onChange,
+}: {
+  index: number
+  variable: WorkflowLoopVariable
+  onChange: (variable: WorkflowLoopVariable) => void
+}) {
+  const { t } = useTranslation()
+  const label = `${t('workflows.loop.field.variableInitial')} ${index + 1}`
+  if (variable.initial.kind === 'constant') {
+    return (
+      <Input
+        aria-label={label}
+        value={comparisonValueToText(variable.initial.value)}
+        onChange={(event) =>
+          onChange({
+            ...variable,
+            initial: {
+              kind: 'constant',
+              value: loopConstantValue(event.target.value, variable.valueType),
+            },
+          })
+        }
+      />
+    )
+  }
+  return (
+    <Input
+      aria-label={label}
+      placeholder={t('workflows.loop.selectorPlaceholder')}
+      value={selectorToText(variable.initial.selector)}
+      onChange={(event) =>
+        onChange({
+          ...variable,
+          initial: { kind: 'variable', selector: textToSelector(event.target.value) },
+        })
+      }
+    />
+  )
+}
+
+/** Edits the named results the loop publishes when it succeeds. */
+function LoopOutputsFields({ data, onChange }: Pick<WorkflowKindFieldsProps, 'data' | 'onChange'>) {
+  const { t } = useTranslation()
+  const loopConfig = data.loopConfig
+  if (loopConfig === undefined) {
+    return null
+  }
+  const update = (outputs: WorkflowOutputBinding[]): void => {
+    onChange({ ...data, loopConfig: { ...loopConfig, outputs } })
+  }
+  return (
+    <InspectorField label={t('workflows.loop.field.outputs')} htmlFor="workflow-loop-outputs">
+      <div className="space-y-2" id="workflow-loop-outputs">
+        {/* oxlint-disable react/no-array-index-key -- a named output has no stable id; its name is the editable identity, so a content key collides on a blank new row. */}
+        {loopConfig.outputs.map((output, index) => (
+          // oxlint-disable-next-line react/no-array-index-key -- a named output has no stable id; its name is the editable identity, so a content key collides on a blank new row.
+          <div key={`loop-output-${index}`} className="flex items-center gap-2">
+            <Input
+              aria-label={`${t('workflows.loop.field.outputName')} ${index + 1}`}
+              value={output.name}
+              onChange={(event) =>
+                update(
+                  loopConfig.outputs.map((current, i) =>
+                    i === index ? { ...current, name: event.target.value } : current,
+                  ),
+                )
+              }
+            />
+            <Input
+              aria-label={`${t('workflows.loop.field.outputSelector')} ${index + 1}`}
+              placeholder={t('workflows.loop.selectorPlaceholder')}
+              value={selectorToText(output.variableSelector)}
+              onChange={(event) =>
+                update(
+                  loopConfig.outputs.map((current, i) =>
+                    i === index
+                      ? { ...current, variableSelector: textToSelector(event.target.value) }
+                      : current,
+                  ),
+                )
+              }
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`${t('workflows.loop.removeOutput')} ${index + 1}`}
+              onClick={() => update(loopConfig.outputs.filter((_, i) => i !== index))}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => update([...loopConfig.outputs, { name: '', variableSelector: [] }])}
+      >
+        <Plus />
+        {t('workflows.loop.addOutput')}
+      </Button>
     </InspectorField>
   )
 }

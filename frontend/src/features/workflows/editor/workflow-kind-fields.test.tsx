@@ -325,7 +325,8 @@ describe('LoopNodeFields', () => {
     outputs: [],
   }
 
-  it('clamps the iteration ceiling and writes the carried initial value', () => {
+  /** Renders the panel with the shared config; `rerenderPanel` rebinds it to the captured node. */
+  function setUpLoopPanel() {
     const { data, onChange } = captureOnChange()
     const view = renderWithProviders(
       <LoopNodeFields
@@ -333,16 +334,55 @@ describe('LoopNodeFields', () => {
         onChange={onChange}
       />,
     )
+    const rerenderPanel = (): void => {
+      view.rerender(<LoopNodeFields data={data} onChange={onChange} />)
+    }
+    return { data, rerenderPanel }
+  }
+
+  it('clamps the round ceiling and writes a variable first-round value', () => {
+    const { data, rerenderPanel } = setUpLoopPanel()
 
     expect(screen.getByLabelText('轮次耗尽时')).toHaveTextContent('失败')
     fireEvent.change(screen.getByLabelText('最大轮次'), { target: { value: '55' } })
     expect(data.loopConfig?.maxIterations).toBe(55)
 
-    view.rerender(<LoopNodeFields data={data} onChange={onChange} />)
-    fireEvent.change(screen.getByLabelText('初始值'), { target: { value: 'ready' } })
-    expect(data.loopConfig?.variables[0]?.initial).toEqual({
-      kind: 'constant',
-      value: 'ready',
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('初值 1'), { target: { value: 'ready' } })
+    expect(data.loopConfig?.variables[0]?.initial).toEqual({ kind: 'constant', value: 'ready' })
+  })
+
+  it('adds a carried variable and records its feedback selector', () => {
+    const { data, rerenderPanel } = setUpLoopPanel()
+    fireEvent.click(screen.getByRole('button', { name: '添加变量' }))
+    expect(data.loopConfig?.variables).toHaveLength(2)
+
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('变量名 2'), { target: { value: 'draft' } })
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('反馈 2'), { target: { value: 'writer.output' } })
+    expect(data.loopConfig?.variables[1]).toMatchObject({
+      name: 'draft',
+      feedback: ['writer', 'output'],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '删除变量 1' }))
+    expect(data.loopConfig?.variables).toHaveLength(1)
+    expect(data.loopConfig?.variables[0]?.name).toBe('draft')
+  })
+
+  it('adds a named output with its selector', () => {
+    const { data, rerenderPanel } = setUpLoopPanel()
+    fireEvent.click(screen.getByRole('button', { name: '添加输出' }))
+    expect(data.loopConfig?.outputs).toHaveLength(1)
+
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('输出名 1'), { target: { value: 'result' } })
+    rerenderPanel()
+    fireEvent.change(screen.getByLabelText('取值 1'), { target: { value: 'writer.output' } })
+    expect(data.loopConfig?.outputs[0]).toEqual({
+      name: 'result',
+      variableSelector: ['writer', 'output'],
     })
   })
 
@@ -352,7 +392,7 @@ describe('LoopNodeFields', () => {
 
     expect(screen.getByLabelText('最大轮次')).toBeDisabled()
     expect(screen.getByLabelText('轮次耗尽时')).toBeDisabled()
-    expect(screen.getByLabelText('初始值')).toBeDisabled()
+    expect(screen.queryByLabelText('变量名 1')).not.toBeInTheDocument()
     expect(screen.getByText('此旧循环节点缺少可执行配置，请删除后重新添加。')).toBeInTheDocument()
   })
 })

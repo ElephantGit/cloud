@@ -6,16 +6,23 @@ import { useComposerSubmit } from './use-composer-submit'
 import type { useConversationDraft } from './use-conversation-draft'
 import type { TaskAgentReadiness } from '@/api/generated.schemas'
 import { AgentReadiness } from './agent-readiness'
+import { useState } from 'react'
+import { ConversationWorkflow } from './conversation-workflow'
 
-function AgentRecipient({
-  agents,
+// Catalog identities are type + id; a workflow must not alias an Agent with the same opaque id.
+function recipientKey(target: CollaborationTargetSummary) {
+  return target.type === 'workflow' ? `workflow:${target.id}` : target.id
+}
+
+function TaskRecipient({
+  targets,
   agentId,
   busy,
   mode,
   select,
   toggle,
 }: {
-  agents: CollaborationTargetSummary[]
+  targets: CollaborationTargetSummary[]
   agentId: string
   busy: boolean
   mode: 'agent' | 'comment'
@@ -29,15 +36,17 @@ function AgentRecipient({
       </label>
       <select
         id="task-conversation-agent"
-        value={agents.some((agent) => agent.id === agentId) ? agentId : ''}
+        value={
+          targets.some((target) => target.type === 'agent' && target.id === agentId) ? agentId : ''
+        }
         disabled={mode === 'comment' || busy}
         onChange={(event) => select(event.target.value)}
         className="h-9 min-w-36 rounded-md border bg-background px-2"
       >
-        <option value="">选择 Agent</option>
-        {agents.map((target) => (
-          <option key={target.id} value={target.id}>
-            {target.displayName}
+        <option value="">选择 Agent 或工作流</option>
+        {targets.map((target) => (
+          <option key={`${target.type}:${target.id}`} value={recipientKey(target)}>
+            {target.displayName} · {target.type === 'workflow' ? '工作流' : 'Agent'}
           </option>
         ))}
       </select>
@@ -114,49 +123,38 @@ function mentionAtEnd(draft: string): { start: number; query: string } | null {
 }
 
 function MentionPicker({
-  agents,
+  targets,
   draft,
   choose,
 }: {
-  agents: CollaborationTargetSummary[]
+  targets: CollaborationTargetSummary[]
   draft: string
   choose: (agentId: string, start: number) => void
 }) {
   const mention = mentionAtEnd(draft)
   if (!mention) return null
-  const matches = agents.filter((target) =>
+  const matches = targets.filter((target) =>
     target.displayName.toLocaleLowerCase().includes(mention.query.toLocaleLowerCase()),
   )
   if (!matches.length) return null
   return (
-    <div aria-label="选择提及的 Agent" className="flex flex-wrap gap-1 rounded-md border p-2">
+    <div aria-label="选择提及的目标" className="flex flex-wrap gap-1 rounded-md border p-2">
       {matches.map((target) => (
         <Button
-          key={target.id}
+          key={`${target.type}:${target.id}`}
           type="button"
           size="xs"
           variant="ghost"
-          onClick={() => choose(target.id, mention.start)}
+          onClick={() => choose(recipientKey(target), mention.start)}
         >
-          {target.displayName}
+          {target.displayName} · {target.type === 'workflow' ? '工作流' : 'Agent'}
         </Button>
       ))}
     </div>
   )
 }
 
-/** One task composer for Agent turns and notes, with an explicit recipient and handoff state. */
-export function ConversationComposer({
-  tid,
-  issueId,
-  targets,
-  latestRun,
-  state,
-  onSent,
-  readiness,
-  settingsPath,
-  pluginsPath,
-}: {
+type ComposerProps = {
   tid: string
   issueId: string
   targets: CollaborationTargetSummary[]
@@ -166,8 +164,60 @@ export function ConversationComposer({
   readiness: TaskAgentReadiness[] | undefined
   settingsPath: string | undefined
   pluginsPath?: string | undefined
-}) {
+}
+
+/** Routes explicit selection to Agent messages or Workflow review while retaining the task draft. */
+export function ConversationComposer(props: ComposerProps) {
+  const [workflow, setWorkflow] = useState<{ tid: string; issueId: string; targetId: string }>()
+  const workflowId =
+    workflow?.tid === props.tid && workflow.issueId === props.issueId
+      ? workflow.targetId
+      : undefined
+  return (
+    <>
+      <div hidden={!!workflowId}>
+        <AgentConversationComposer
+          {...props}
+          onWorkflow={(targetId) =>
+            setWorkflow({ tid: props.tid, issueId: props.issueId, targetId })
+          }
+        />
+      </div>
+      {workflowId && (
+        <ConversationWorkflow
+          key={`${props.tid}:${props.issueId}:${workflowId}`}
+          tid={props.tid}
+          issueId={props.issueId}
+          target={props.targets.find(
+            (target) => target.type === 'workflow' && target.id === workflowId,
+          )}
+          onRemove={() => setWorkflow(undefined)}
+          onConfirmed={() => {
+            setWorkflow(undefined)
+            props.onSent()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function AgentConversationComposer({
+  tid,
+  issueId,
+  targets,
+  latestRun,
+  state,
+  onSent,
+  readiness,
+  settingsPath,
+  pluginsPath,
+  onWorkflow,
+}: ComposerProps & { onWorkflow: (id: string) => void }) {
   const { mode, setMode, selected, setSelected, draft, setDraft, input } = state
+  const recipients = targets.filter(
+    (target) => target.type === 'agent' || target.type === 'workflow',
+  )
   const agents = targets.filter((target) => target.type === 'agent')
   const agentId = selected ?? latestRun?.executorId ?? ''
   const agent = agents.find((target) => target.id === agentId)
@@ -185,18 +235,24 @@ export function ConversationComposer({
   })
   const { busy, canSubmit, submit } = submission
 
+  function choose(targetId: string) {
+    const target = recipients.find((candidate) => recipientKey(candidate) === targetId)
+    if (target?.type === 'workflow') onWorkflow(target.id)
+    else setSelected(targetId)
+  }
+
   let buttonLabel = '发送'
   if (busy) buttonLabel = '发送中…'
   else if (mode === 'comment') buttonLabel = '发表评论'
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <AgentRecipient
-        agents={agents}
+      <TaskRecipient
+        targets={recipients}
         agentId={agentId}
         busy={busy}
         mode={mode}
-        select={setSelected}
+        select={choose}
         toggle={() => setMode((current) => (current === 'agent' ? 'comment' : 'agent'))}
       />
       <Textarea
@@ -211,10 +267,10 @@ export function ConversationComposer({
       />
       {mode === 'agent' && (
         <MentionPicker
-          agents={agents}
+          targets={recipients}
           draft={draft}
           choose={(targetId, start) => {
-            setSelected(targetId)
+            choose(targetId)
             setDraft(draft.slice(0, start).trimEnd())
             input.current?.focus()
           }}

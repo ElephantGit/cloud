@@ -27,6 +27,7 @@ import {
 } from './api'
 import { ConversationFooter } from './conversation-footer'
 import { useConversationDraft, type ConversationQuote } from './use-conversation-draft'
+import { WorkflowRunCard } from './workflow-run-card'
 
 type ConversationRow =
   | { kind: 'run'; at: string; id: string; run: IssueRun }
@@ -297,6 +298,12 @@ function ConversationRowItem({
 }) {
   const name = (id: string) =>
     targets.find((target) => target.type === 'agent' && target.id === id)?.displayName ?? 'Agent'
+  if (row.kind === 'run' && row.run.executorType === 'workflow')
+    return (
+      <li data-message-anchor>
+        <WorkflowRunCard tid={tid} issueId={issueId} run={row.run} workspaceSlug={workspaceSlug} />
+      </li>
+    )
   if (row.kind === 'run')
     return (
       <RunConversation
@@ -424,7 +431,7 @@ function ConversationFeedback({
     <>
       {empty && !pending && (
         <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          还没有对话。选择 Agent 并发送第一条任务消息。
+          还没有对话。选择 Agent 发送消息，或选择工作流配置并确认执行。
         </p>
       )}
       {failed && (
@@ -443,14 +450,66 @@ function useTaskDiscussion(tid: string, issueId: string, runs: IssueRun[]) {
     .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   const selectedAgentId =
     draft.mode === 'agent' ? (draft.selected ?? agents.at(-1)?.executorId) : undefined
+  const executions = runs
+    .filter((run) => run.executorType === 'agent' || run.executorType === 'workflow')
+    .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   const conversation = useTaskConversation(tid, issueId, selectedAgentId)
   const timeline = useTimeline(tid, issueId)
   const [visibleRuns, setVisibleRuns] = useState(5)
   const current = conversation.data?.pages[0]
-  const shown = visibleAgentRuns(agents, visibleRuns, current?.activeRunId)
+  const shown = visibleAgentRuns(executions, visibleRuns, current?.activeRunId)
   const messages = loadedTaskMessages(conversation.data?.pages)
   const rows = conversationRows(shown, messages, timeline.data ?? [])
-  return { conversation, draft, agents, current, shown, messages, rows, setVisibleRuns }
+  return { conversation, draft, agents, executions, current, shown, messages, rows, setVisibleRuns }
+}
+
+function HistoricalExecution(props: {
+  tid: string
+  issueId: string
+  members: TenantMember[]
+  runs: IssueRun[]
+  selectedRunId: string
+  workspaceSlug: string | undefined
+  currentUserId: string | undefined
+  onQuote: (quote: ConversationQuote) => void
+}) {
+  const run = props.runs.find((candidate) => candidate.id === props.selectedRunId)
+  if (!run) return <p role="alert">该执行记录不存在或已不可访问。</p>
+  if (run.executorType === 'workflow')
+    return (
+      <WorkflowRunCard
+        tid={props.tid}
+        issueId={props.issueId}
+        run={run}
+        workspaceSlug={props.workspaceSlug}
+      />
+    )
+  if (run.executorType !== 'agent') return <p>请从执行记录查看此类型的运行。</p>
+  return (
+    <IssueThreadPanel
+      tid={props.tid}
+      issueId={props.issueId}
+      members={props.members}
+      selectedRunId={run.id}
+      readOnly
+      showEndControl={false}
+      endActorId={props.currentUserId}
+      onQuote={(text, agentId) => props.onQuote({ text, agentId })}
+    />
+  )
+}
+
+type TaskConversationPanelProps = {
+  tid: string
+  issueId: string
+  members: TenantMember[]
+  targets: CollaborationTargetSummary[]
+  runs: IssueRun[]
+  selectedRunId?: string | undefined
+  workspaceSlug?: string | undefined
+  currentUserId?: string | undefined
+  content?: React.ReactNode
+  onLatest: () => void
 }
 
 /** Renders one durable task discussion across Run boundaries while leaving each Thread immutable. */
@@ -465,20 +524,18 @@ export function TaskConversationPanel({
   currentUserId,
   onLatest,
   content,
-}: {
-  tid: string
-  issueId: string
-  members: TenantMember[]
-  targets: CollaborationTargetSummary[]
-  runs: IssueRun[]
-  selectedRunId?: string | undefined
-  workspaceSlug?: string | undefined
-  currentUserId?: string | undefined
-  content?: React.ReactNode
-  onLatest: () => void
-}) {
-  const { conversation, draft, agents, current, shown, messages, rows, setVisibleRuns } =
-    useTaskDiscussion(tid, issueId, runs)
+}: TaskConversationPanelProps) {
+  const {
+    conversation,
+    draft,
+    agents,
+    executions,
+    current,
+    shown,
+    messages,
+    rows,
+    setVisibleRuns,
+  } = useTaskDiscussion(tid, issueId, runs)
   if (isUnauthorizedError(conversation.error) || isForbiddenError(conversation.error))
     return <p role="alert">任务对话不可访问，请重新确认权限。</p>
   // During a rolling upgrade an older Cloud may not have the task endpoint yet. Preserve its
@@ -501,20 +558,20 @@ export function TaskConversationPanel({
       >
         {content ??
           (selectedRunId ? (
-            <IssueThreadPanel
+            <HistoricalExecution
               tid={tid}
               issueId={issueId}
               members={members}
               selectedRunId={selectedRunId}
-              readOnly
-              showEndControl={false}
-              endActorId={currentUserId}
-              onQuote={(text, agentId) => draft.quote({ text, agentId })}
+              runs={runs}
+              workspaceSlug={workspaceSlug}
+              currentUserId={currentUserId}
+              onQuote={draft.quote}
             />
           ) : (
             <>
               <OlderHistoryControls
-                olderRuns={agents.length > shown.length}
+                olderRuns={executions.length > shown.length}
                 loadRuns={() => setVisibleRuns((count) => count + 5)}
                 conversation={conversation}
               />

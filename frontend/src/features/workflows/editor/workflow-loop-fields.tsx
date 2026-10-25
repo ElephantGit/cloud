@@ -15,6 +15,7 @@ import {
 } from '@/features/workflows/runtime/capabilities'
 import type {
   WorkflowConditionComparison,
+  WorkflowGlobalVariable,
   WorkflowLoopConfig,
   WorkflowLoopVariable,
   WorkflowNodeData,
@@ -27,17 +28,34 @@ import {
   WorkflowChoiceSelect,
 } from '@/features/workflows/editor/workflow-choice-select'
 import {
+  WorkflowCatalogSelector,
   WorkflowVariableTypeMenu,
   comparisonValueToText,
   parseComparisonValue,
   selectorToText,
   textToSelector,
 } from '@/features/workflows/editor/workflow-variable-select'
+import type {
+  WorkflowCanvasEdge,
+  WorkflowCanvasNode,
+} from '@/features/workflows/editor/canvas-types'
+import type { WorkflowDecoratedVariable } from '@/features/workflows/runtime/variable-catalog'
+import {
+  decorateWorkflowVariableCatalog,
+  deriveWorkflowVariableCatalog,
+  normalizeWorkflowGlobalVariables,
+} from '@/features/workflows/runtime/variable-catalog'
 
-/** Props every Loop panel component takes: the node data and the writer for the whole node. */
+/** Everything the Loop panels read: the node, its writer and the graph the catalog derives from. */
 interface LoopFieldsProps {
   data: WorkflowNodeData
   onChange: (data: WorkflowNodeData) => void
+  /** The loop node's id, which owns carried variables and collects member roots. */
+  nodeId: string
+  /** Whole-graph nodes and edges; the selector catalog derives from them. */
+  graphNodes: readonly WorkflowCanvasNode[]
+  edges: readonly WorkflowCanvasEdge[]
+  globalVariables: readonly WorkflowGlobalVariable[]
 }
 /** Exhaustion policies of a Loop, keyed to the graph's enum names. */
 const WORKFLOW_LOOP_BEHAVIOR_CHOICES = [
@@ -49,16 +67,33 @@ const WORKFLOW_LOOP_BEHAVIOR_CHOICES = [
 export function LoopNodeFields({
   data,
   onChange,
+  nodeId,
+  graphNodes,
+  edges,
+  globalVariables,
   onAddExit,
 }: LoopFieldsProps & { onAddExit?: () => void }) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
+  const choices = resolveLoopChoices(graphNodes, edges, {
+    loopId: nodeId,
+    globalVariables,
+    ...(loopConfig === undefined ? {} : { config: loopConfig }),
+  })
   return (
     <>
       <LoopBudgetFields data={data} onChange={onChange} />
       <LoopVariablesFields data={data} onChange={onChange} />
       <LoopUntilFields data={data} onChange={onChange} />
-      <LoopOutputsFields data={data} onChange={onChange} />
+      <LoopOutputsFields
+        data={data}
+        onChange={onChange}
+        nodeId={nodeId}
+        graphNodes={graphNodes}
+        edges={edges}
+        globalVariables={globalVariables}
+        choices={choices}
+      />
       {onAddExit === undefined ? null : (
         <Button type="button" variant="outline" size="sm" onClick={onAddExit}>
           <Plus />
@@ -77,7 +112,7 @@ export function LoopNodeFields({
 }
 
 /** Edits the round ceiling and what an exhausted budget does. */
-function LoopBudgetFields({ data, onChange }: LoopFieldsProps) {
+function LoopBudgetFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onChange'>) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   const updateMaxIterations = (value: number): void => {
@@ -145,7 +180,7 @@ function blankLoopVariable(): WorkflowLoopVariable {
 }
 
 /** Edits every carried variable: its name, type, first-round value and feedback selector. */
-function LoopVariablesFields({ data, onChange }: LoopFieldsProps) {
+function LoopVariablesFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onChange'>) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   if (loopConfig === undefined) {
@@ -326,7 +361,7 @@ const LOOP_UNTIL_LOGIC_CHOICES = [
 const LOOP_OPERATORS_WITHOUT_VALUE = new Set(['exists', 'not_exists', 'empty', 'not_empty'])
 
 /** Edits the round-end condition: how rules combine and the rules themselves. */
-function LoopUntilFields({ data, onChange }: LoopFieldsProps) {
+function LoopUntilFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onChange'>) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   if (loopConfig === undefined) {
@@ -453,7 +488,11 @@ function LoopUntilRow({
 }
 
 /** Edits the named results the loop publishes when it succeeds. */
-function LoopOutputsFields({ data, onChange }: LoopFieldsProps) {
+function LoopOutputsFields({
+  data,
+  onChange,
+  choices,
+}: LoopFieldsProps & { choices: readonly WorkflowDecoratedVariable[] }) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   if (loopConfig === undefined) {
@@ -480,16 +519,17 @@ function LoopOutputsFields({ data, onChange }: LoopFieldsProps) {
                 )
               }
             />
-            <Input
-              aria-label={`${t('workflows.loop.field.outputSelector')} ${index + 1}`}
+            <WorkflowCatalogSelector
+              htmlId={`workflow-loop-output-selector-${index}`}
+              value={output.variableSelector}
               placeholder={t('workflows.loop.selectorPlaceholder')}
-              value={selectorToText(output.variableSelector)}
-              onChange={(event) =>
+              choices={choices}
+              catalog={choices}
+              ariaLabel={`${t('workflows.loop.field.outputSelector')} ${index + 1}`}
+              onPick={(picked) =>
                 update(
                   loopConfig.outputs.map((current, i) =>
-                    i === index
-                      ? { ...current, variableSelector: textToSelector(event.target.value) }
-                      : current,
+                    i === index ? { ...current, variableSelector: picked } : current,
                   ),
                 )
               }
@@ -517,4 +557,51 @@ function LoopOutputsFields({ data, onChange }: LoopFieldsProps) {
       </Button>
     </InspectorField>
   )
+}
+
+/** Every root a loop may read: outer ancestors, region member roots and the carried variables. */
+function resolveLoopChoices(
+  graphNodes: readonly WorkflowCanvasNode[],
+  edges: readonly WorkflowCanvasEdge[],
+  scope: {
+    loopId: string
+    globalVariables: readonly WorkflowGlobalVariable[]
+    config?: WorkflowLoopConfig
+  },
+): WorkflowDecoratedVariable[] {
+  const { loopId, globalVariables, config } = scope
+  const normalized = normalizeWorkflowGlobalVariables(globalVariables)
+  const visible = decorateWorkflowVariableCatalog(
+    deriveWorkflowVariableCatalog(graphNodes, edges, loopId, normalized),
+    graphNodes,
+    normalized,
+  )
+  const everything = decorateWorkflowVariableCatalog(
+    deriveWorkflowVariableCatalog(graphNodes, [], undefined, normalized),
+    graphNodes,
+    normalized,
+  )
+  const memberIDs = new Set(
+    graphNodes.filter((node) => node.data.containerId === loopId).map((node) => node.id),
+  )
+  const members = everything.filter((entry) => memberIDs.has(entry.sourceNodeId))
+  const carried: WorkflowDecoratedVariable[] = (config?.variables ?? [])
+    .filter((variable) => variable.name.trim() !== '')
+    .map((variable) => ({
+      selector: [loopId, variable.name],
+      sourceNodeId: loopId,
+      variableName: variable.name,
+      valueType: variable.valueType,
+      scope: 'node',
+      sourceNodeTitle: 'Loop',
+    }))
+  const seen = new Set<string>()
+  return [...visible, ...members, ...carried].filter((entry) => {
+    const key = entry.selector.join('.')
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
 }

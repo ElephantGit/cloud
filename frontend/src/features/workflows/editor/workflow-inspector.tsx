@@ -147,6 +147,7 @@ function WorkflowNodeInspector({
           onChange={onUpdate}
           catalog={catalog}
           graphNodes={nodes}
+          edges={edges}
           globalVariables={globalVariables}
           {...(onAddLoopExit === undefined ? {} : { onAddLoopExit })}
         />
@@ -162,9 +163,13 @@ function NodeKindFields({
   onChange,
   catalog,
   graphNodes,
+  edges,
   globalVariables,
   onAddLoopExit,
-}: WorkflowKindFieldsProps & { onAddLoopExit?: (loopId: string) => void }) {
+}: WorkflowKindFieldsProps & {
+  edges: readonly WorkflowCanvasEdge[]
+  onAddLoopExit?: (loopId: string) => void
+}) {
   if (data.kind === 'start') {
     return <StartNodeFields data={data} onChange={onChange} />
   }
@@ -191,6 +196,10 @@ function NodeKindFields({
       <LoopNodeFields
         data={data}
         onChange={onChange}
+        nodeId={nodeId}
+        graphNodes={graphNodes}
+        edges={edges}
+        globalVariables={globalVariables}
         {...(onAddLoopExit === undefined ? {} : { onAddExit: () => onAddLoopExit(nodeId) })}
       />
     )

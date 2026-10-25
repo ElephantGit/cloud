@@ -1,4 +1,5 @@
 import { fireEvent, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { createDefaultWorkflowCapabilities } from '@/features/workflows/runtime/capabilities'
 import type {
@@ -311,6 +312,13 @@ describe('HumanNodeFields', () => {
 })
 
 describe('LoopNodeFields', () => {
+  /** The graph props the Loop panels need; the selector catalog derives from them. */
+  const LOOP_PROPS = {
+    nodeId: 'loop-1',
+    graphNodes: [],
+    edges: [],
+    globalVariables: [],
+  } as const
   const LOOP_CONFIG: WorkflowLoopConfig = {
     maxIterations: 3,
     variables: [
@@ -330,12 +338,13 @@ describe('LoopNodeFields', () => {
     const { data, onChange } = captureOnChange()
     const view = renderWithProviders(
       <LoopNodeFields
+        {...LOOP_PROPS}
         data={nodeData({ kind: 'loop', loopConfig: LOOP_CONFIG })}
         onChange={onChange}
       />,
     )
     const rerenderPanel = (): void => {
-      view.rerender(<LoopNodeFields data={data} onChange={onChange} />)
+      view.rerender(<LoopNodeFields {...LOOP_PROPS} data={data} onChange={onChange} />)
     }
     return { data, rerenderPanel }
   }
@@ -371,7 +380,8 @@ describe('LoopNodeFields', () => {
     expect(data.loopConfig?.variables[0]?.name).toBe('draft')
   })
 
-  it('adds a named output with its selector', () => {
+  it('adds a named output and picks its selector from the catalog', async () => {
+    const user = userEvent.setup()
     const { data, rerenderPanel } = setUpLoopPanel()
     fireEvent.click(screen.getByRole('button', { name: '添加输出' }))
     expect(data.loopConfig?.outputs).toHaveLength(1)
@@ -379,10 +389,11 @@ describe('LoopNodeFields', () => {
     rerenderPanel()
     fireEvent.change(screen.getByLabelText('输出名 1'), { target: { value: 'result' } })
     rerenderPanel()
-    fireEvent.change(screen.getByLabelText('取值 1'), { target: { value: 'writer.output' } })
+    await user.click(screen.getByLabelText('取值 1'))
+    await user.click(await screen.findByRole('option', { name: /value/ }))
     expect(data.loopConfig?.outputs[0]).toEqual({
       name: 'result',
-      variableSelector: ['writer', 'output'],
+      variableSelector: ['loop-1', 'value'],
     })
   })
 
@@ -407,7 +418,9 @@ describe('LoopNodeFields', () => {
 
   it('hides the config inputs for a legacy loop without executable config', () => {
     const onChange = vi.fn<(data: WorkflowNodeData) => void>()
-    renderWithProviders(<LoopNodeFields data={nodeData({ kind: 'loop' })} onChange={onChange} />)
+    renderWithProviders(
+      <LoopNodeFields {...LOOP_PROPS} data={nodeData({ kind: 'loop' })} onChange={onChange} />,
+    )
 
     expect(screen.getByLabelText('最大轮次')).toBeDisabled()
     expect(screen.getByLabelText('轮次耗尽时')).toBeDisabled()

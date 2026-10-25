@@ -175,7 +175,7 @@ function NodeKindFields({
     return <ConditionNodeFields data={data} onChange={onChange} catalog={catalog} />
   }
   if (data.kind === 'aggregator') {
-    return <AggregatorNodeFields data={data} onChange={onChange} />
+    return <AggregatorNodeFields data={data} onChange={onChange} catalog={catalog} />
   }
   if (data.kind === 'tool') {
     return <ToolNodeFields data={data} onChange={onChange} />

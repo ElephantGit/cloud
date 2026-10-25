@@ -1,18 +1,17 @@
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { InspectorField } from '@/features/workflows/editor/workflow-inspector-fields'
-import {
-  selectorToText,
-  textToSelector,
-} from '@/features/workflows/editor/workflow-variable-select'
+import { WorkflowCatalogSelector } from '@/features/workflows/editor/workflow-variable-select'
 import type { WorkflowNodeData } from '@/features/workflows/runtime/types'
+import type { WorkflowDecoratedVariable } from '@/features/workflows/runtime/variable-catalog'
 
 /** Props every Aggregator panel component takes: the node data and the writer for the whole node. */
 export interface AggregatorFieldsProps {
   data: WorkflowNodeData
   onChange: (data: WorkflowNodeData) => void
+  /** Every root reachable from this node, offered as candidates. */
+  catalog: readonly WorkflowDecoratedVariable[]
 }
 
 /**
@@ -23,7 +22,7 @@ export interface AggregatorFieldsProps {
  * `node.root` text until the shared picker replaces it; the publish gate refuses an undeclared or
  * nested selector, so a typo is caught before the graph runs.
  */
-export function AggregatorNodeFields({ data, onChange }: AggregatorFieldsProps) {
+export function AggregatorNodeFields({ data, onChange, catalog }: AggregatorFieldsProps) {
   const { t } = useTranslation()
   const config = data.aggregatorConfig
   if (config === undefined) {
@@ -53,16 +52,15 @@ export function AggregatorNodeFields({ data, onChange }: AggregatorFieldsProps) 
         {config.variables.map((selector, index) => (
           <div key={`aggregator-candidate-${index}`} className="flex items-center gap-2">
             <span className="w-4 shrink-0 text-[11px] text-muted-foreground">{index + 1}</span>
-            <Input
-              aria-label={`${t('workflows.aggregator.field.candidate')} ${index + 1}`}
+            <WorkflowCatalogSelector
+              htmlId={`workflow-aggregator-candidate-${index}`}
+              value={selector}
               placeholder={t('workflows.aggregator.selectorPlaceholder')}
-              value={selectorToText(selector)}
-              onChange={(event) =>
-                update(
-                  config.variables.map((current, i) =>
-                    i === index ? textToSelector(event.target.value) : current,
-                  ),
-                )
+              choices={catalog}
+              catalog={catalog}
+              ariaLabel={`${t('workflows.aggregator.field.candidate')} ${index + 1}`}
+              onPick={(picked) =>
+                update(config.variables.map((current, i) => (i === index ? picked : current)))
               }
             />
             <Button

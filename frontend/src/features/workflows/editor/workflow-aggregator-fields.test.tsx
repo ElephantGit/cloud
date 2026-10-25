@@ -1,8 +1,22 @@
 import { fireEvent, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { WorkflowNodeData } from '@/features/workflows/runtime/types'
+import type { WorkflowDecoratedVariable } from '@/features/workflows/runtime/variable-catalog'
 import { AggregatorNodeFields } from '@/features/workflows/editor/workflow-aggregator-fields'
 import { renderWithProviders } from '@/test/render'
+
+/** The only upstream root the picker offers: the workflow's Start input. */
+const CATALOG: readonly WorkflowDecoratedVariable[] = [
+  {
+    selector: ['start-1', 'input'],
+    sourceNodeId: 'start-1',
+    variableName: 'input',
+    valueType: 'string',
+    scope: 'node',
+    sourceNodeTitle: '开始 1',
+  },
+]
 
 /** The node the panel edits; candidates are the only thing it reads. */
 function aggregatorData(variables: string[][]): WorkflowNodeData {
@@ -26,21 +40,25 @@ function renderPanel(variables: string[][]) {
     published.data = next
   }
   const view = renderWithProviders(
-    <AggregatorNodeFields data={published.data} onChange={onChange} />,
+    <AggregatorNodeFields data={published.data} onChange={onChange} catalog={CATALOG} />,
   )
   return { published, onChange, view }
 }
 
 describe('AggregatorNodeFields', () => {
-  it('adds a candidate and writes its root selector', () => {
+  it('adds a candidate and picks its root from the catalog', async () => {
+    const user = userEvent.setup()
     const { published, onChange, view } = renderPanel([])
 
     fireEvent.click(screen.getByRole('button', { name: '添加候选' }))
     expect(published.data.aggregatorConfig?.variables).toEqual([[]])
 
-    view.rerender(<AggregatorNodeFields data={published.data} onChange={onChange} />)
-    fireEvent.change(screen.getByLabelText('候选 1'), { target: { value: 'writer.output' } })
-    expect(published.data.aggregatorConfig?.variables).toEqual([['writer', 'output']])
+    view.rerender(
+      <AggregatorNodeFields data={published.data} onChange={onChange} catalog={CATALOG} />,
+    )
+    await user.click(screen.getByLabelText('候选 1'))
+    await user.click(await screen.findByRole('option', { name: /input/ }))
+    expect(published.data.aggregatorConfig?.variables).toEqual([['start-1', 'input']])
   })
 
   it('moves a candidate up to change the published priority', () => {

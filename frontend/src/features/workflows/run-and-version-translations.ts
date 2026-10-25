@@ -46,6 +46,10 @@ export const runAndVersionTranslations = {
     'workflows.runs.endOfHistory': '已经到最早的一次运行。',
     'workflows.runs.open': '打开运行 {{name}}',
     'workflows.runs.version': '版本 {{id}}',
+    'workflows.runs.started': '开始 {{time}}',
+    'workflows.runs.finished': '结束 {{time}}',
+    'workflows.runs.notStarted': '未开始（创建于 {{time}}）',
+    'workflows.runs.notFinished': '尚未结束',
   },
   'en-US': {
     'workflows.version.publish': 'Publish',
@@ -85,5 +89,9 @@ export const runAndVersionTranslations = {
     'workflows.runs.endOfHistory': 'This is the first run.',
     'workflows.runs.open': 'Open run {{name}}',
     'workflows.runs.version': 'Version {{id}}',
+    'workflows.runs.started': 'Started {{time}}',
+    'workflows.runs.finished': 'Finished {{time}}',
+    'workflows.runs.notStarted': 'Not started (created {{time}})',
+    'workflows.runs.notFinished': 'Not finished yet',
   },
 }

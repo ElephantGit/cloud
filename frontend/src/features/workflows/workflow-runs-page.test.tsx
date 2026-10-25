@@ -1,8 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WorkflowRun } from '@/api/generated.schemas'
-import { WORKFLOW_RUN_PAGE_SIZE } from '@/features/workflows/api'
+import { WORKFLOW_RUN_PAGE_SIZE, WORKFLOW_RUN_POLL_MS } from '@/features/workflows/api'
 import { WorkflowRunsPage } from '@/features/workflows/workflow-runs-page'
 import {
   installCloudSpaceHandlers,
@@ -64,6 +64,27 @@ function installHistory(total: number, onCursor?: (after: string) => void): void
   )
 }
 
+/**
+ * Serves a two-row head page and answers every later page with `code` at `status`.
+ *
+ * The two footer failures differ only in what the later page refused with, so the shape of the read
+ * stays in one place: a test says how the walk fails, not how the walk is built.
+ */
+function installHeadThenRefusal(status: number, code: string): void {
+  server.use(
+    http.get(RUNS_URL, ({ request }) => {
+      const after = new URL(request.url).searchParams.get('after') ?? ''
+      if (after === '') {
+        return HttpResponse.json({
+          items: [runFixture(1), runFixture(2)],
+          nextCursor: 'run-002',
+        })
+      }
+      return HttpResponse.json({ code }, { status })
+    }),
+  )
+}
+
 /** Mounts the runs tab behind a real route match, so the workspace slug comes from the URL. */
 function renderRunsPage() {
   installCloudSpaceHandlers('admin')
@@ -97,6 +118,10 @@ async function loadEveryPage(total: number): Promise<void> {
 }
 
 describe('WorkflowRunsPage', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('lists the newest run first and links into its detail page', async () => {
     installHistory(3)
     renderRunsPage()
@@ -166,18 +191,7 @@ describe('WorkflowRunsPage', () => {
   it('keeps the rows it already loaded when a later page fails', async () => {
     // The head answers with two rows and a cursor; every later page fails. The loaded history
     // must survive, and the failure has to read as a failed read rather than as the end of it.
-    server.use(
-      http.get(RUNS_URL, ({ request }) => {
-        const after = new URL(request.url).searchParams.get('after') ?? ''
-        if (after === '') {
-          return HttpResponse.json({
-            items: [runFixture(1), runFixture(2)],
-            nextCursor: 'run-002',
-          })
-        }
-        return HttpResponse.json({ code: 'internal' }, { status: 500 })
-      }),
-    )
+    installHeadThenRefusal(500, 'internal')
     renderRunsPage()
     await screen.findByText('第 1 次运行')
 
@@ -188,5 +202,75 @@ describe('WorkflowRunsPage', () => {
     expect(screen.getByText('第 2 次运行')).toBeInTheDocument()
     // The control that failed is still there, so the retry is the same button.
     expect(screen.getByRole('button', { name: '加载更早的运行' })).toBeInTheDocument()
+  })
+
+  it('reports a permission loss on a later page as a permission state, not a paging error', async () => {
+    // Losing the role mid-walk is not a transient read failure: the rest of the history is now
+    // refused, and telling the member it "could not be loaded" would invite a pointless retry.
+    installHeadThenRefusal(403, 'forbidden')
+    renderRunsPage()
+    await screen.findByText('第 1 次运行')
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更早的运行' }))
+
+    expect(await screen.findByText('没有查看运行记录的权限')).toBeInTheDocument()
+    expect(screen.queryByText('更早的运行读取失败。')).not.toBeInTheDocument()
+    // The rows already read stay: they are still this member's history.
+    expect(screen.getByText('第 1 次运行')).toBeInTheDocument()
+    expect(screen.getByText('第 2 次运行')).toBeInTheDocument()
+  })
+
+  it('offers a retry when a refresh fails after the walk reached its end', async () => {
+    // One page ends the walk, so there is no "load older" control to double as the retry. A failed
+    // refresh must still be reported and retryable; calling it the end of the history would say
+    // "this list is complete" about a list the page just failed to read.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let reads = 0
+    server.use(
+      http.get(RUNS_URL, () => {
+        reads += 1
+        if (reads === 1) {
+          return HttpResponse.json({
+            items: [runFixture(1, { status: 'running', finishedAt: null })],
+            nextCursor: '',
+          })
+        }
+        return HttpResponse.json({ code: 'internal' }, { status: 500 })
+      }),
+    )
+    renderRunsPage()
+    await screen.findByText('第 1 次运行')
+
+    // The running row keeps the history polling, and the next read fails.
+    await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))
+
+    expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.queryByText('已经到最早的一次运行。')).not.toBeInTheDocument()
+    expect(screen.getByText('第 1 次运行')).toBeInTheDocument()
+  })
+
+  it('shows when each run started and finished, and marks one that has not started', async () => {
+    server.use(
+      http.get(RUNS_URL, () =>
+        HttpResponse.json({
+          items: [
+            runFixture(1),
+            runFixture(2, { status: 'pending', startedAt: null, finishedAt: null }),
+          ],
+          nextCursor: '',
+        }),
+      ),
+    )
+    renderRunsPage()
+    await screen.findByText('第 1 次运行')
+
+    // A finished run names both ends of its span; the instant it was created is not the answer to
+    // "how long did this take", so the row carries the start and the finish.
+    expect(screen.getAllByText(/^开始 /)).toHaveLength(1)
+    expect(screen.getAllByText(/^结束 /)).toHaveLength(1)
+    // A run that has not been picked up yet is stated as such, with its creation time, rather than
+    // looking like one that started at that instant.
+    expect(screen.getByText(/^未开始（创建于 .*）$/)).toBeInTheDocument()
+    expect(screen.queryByText('尚未结束')).not.toBeInTheDocument()
   })
 })

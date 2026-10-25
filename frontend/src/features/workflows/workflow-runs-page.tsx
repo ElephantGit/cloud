@@ -112,13 +112,37 @@ function RunHistoryBody({
 /**
  * The paging footer: the next page, its failure, or the note that the walk ended.
  *
- * The failure reads here rather than on a fault page, and the same button is the retry. It is also
- * the only place a failed read is reported once rows exist, because the query's error state cannot
- * tell a failed *first* read from a failed next page — both leave the query in `error`.
+ * The failure reads here rather than on a fault page, because the rows already loaded stay: a
+ * history is not less readable because its next page failed. A failed read is reported whether or
+ * not a next page exists — once the walk reached its end, a failure is a failed *refresh* of rows
+ * that are already on screen, and it still needs a retry, so it must not be reported as the end of
+ * the history.
+ *
+ * A 403 keeps its own meaning in both cases: the caller cannot read the rest of the history, and a
+ * retry cannot change that, so it reads as the permission state rather than as a loading failure.
  */
 function HistoryFooter({ history }: { history: HistoryQuery }) {
   const { t } = useTranslation()
+  const failed = history.isError
+  const forbidden = failed && isForbiddenError(history.error)
 
+  if (failed && forbidden) {
+    return (
+      <div className="pt-2">
+        <HistoryFault forbidden />
+      </div>
+    )
+  }
+  if (failed && !history.hasNextPage) {
+    return (
+      <div className="pt-2">
+        <HistoryFault
+          forbidden={false}
+          onRetry={() => void history.refetch().catch(() => undefined)}
+        />
+      </div>
+    )
+  }
   if (!history.hasNextPage) {
     return <p className="pt-2 text-xs text-muted-foreground">{t('workflows.runs.endOfHistory')}</p>
   }
@@ -134,15 +158,27 @@ function HistoryFooter({ history }: { history: HistoryQuery }) {
           ? t('workflows.runs.loadingMore')
           : t('workflows.runs.loadMore')}
       </Button>
-      {history.isError && (
-        <p className="text-xs text-destructive">{t('workflows.runs.loadMoreFailed')}</p>
-      )}
+      {failed && <p className="text-xs text-destructive">{t('workflows.runs.loadMoreFailed')}</p>}
     </div>
   )
 }
 
-/** A failed history read: a permission problem reads differently from a retryable failure. */
-function HistoryFault({ forbidden, onRetry }: { forbidden: boolean; onRetry: () => void }) {
+/**
+ * A failed history read: a permission problem reads differently from a retryable failure.
+ *
+ * The retry is only offered for a failure a retry can fix — a refused read stays refused until the
+ * member's role changes, and a button that cannot work is worse than no button.
+ *
+ * @param props.forbidden - Whether the read was refused as unpermitted.
+ * @param props.onRetry - Repeats the failed read; required when `forbidden` is false.
+ */
+function HistoryFault({
+  forbidden,
+  onRetry,
+}: {
+  forbidden: boolean
+  onRetry?: (() => void) | undefined
+}) {
   const { t } = useTranslation()
   if (forbidden) {
     return (
@@ -158,9 +194,11 @@ function HistoryFault({ forbidden, onRetry }: { forbidden: boolean; onRetry: () 
     <div className="rounded-lg border border-dashed p-8 text-center">
       <p className="text-sm font-medium">{t('workflows.runs.failedTitle')}</p>
       <p className="mt-1 text-xs text-muted-foreground">{t('workflows.runs.failedDescription')}</p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-        {t('workflows.runs.retry')}
-      </Button>
+      {onRetry !== undefined && (
+        <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+          {t('workflows.runs.retry')}
+        </Button>
+      )}
     </div>
   )
 }

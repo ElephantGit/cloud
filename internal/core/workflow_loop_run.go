@@ -574,6 +574,20 @@ func workflowLoopExitSucceeded(body workflowGraphView, states map[string]workflo
 	return false
 }
 
+// cancelWorkflowLoops marks every in-flight loop cancelled when the run itself is being cancelled.
+// A cancelled run is terminal, so a loop left `running` would misreport a container that will never
+// advance; the loop state keeps its rounds as the audit trail of what did run.
+func cancelWorkflowLoops(states map[string]workflowNodeState) {
+	for id, state := range states {
+		if state.Status != "running" || state.Loop == nil {
+			continue
+		}
+		state.Status = "cancelled"
+		state.FinishedAt = nowRFC3339()
+		states[id] = state
+	}
+}
+
 // failWorkflowLoop commits one loop failure: the node's stable reason, a readable detail, and the
 // round archive as it stood. The run settles failed from this committed state, never from the pass.
 func failWorkflowLoop(states map[string]workflowNodeState, node workflowNodeView, reason, detail string) {

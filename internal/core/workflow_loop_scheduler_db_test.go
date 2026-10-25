@@ -162,6 +162,48 @@ func TestWorkflowAdvanceLoopFailsWhenFeedbackIsUnset(t *testing.T) {
 	}
 }
 
+// TestWorkflowAdvanceCancelsARunningLoop pins the cancellation reaction: a run cancelled while its
+// loop is mid-flight settles `cancelled`, and the loop node is cancelled with it instead of staying
+// `running` in a terminal run.
+func TestWorkflowAdvanceCancelsARunningLoop(t *testing.T) {
+	store := dispatcherDB(t)
+	config := Object{
+		"maxIterations": 3,
+		"variables":     []any{},
+		"until":         Object{"logic": "and", "conditions": []any{}},
+		"outputs":       []any{},
+	}
+	runID := seedWorkflowRunScene(t, store, loopSceneGraph(config,
+		[]Object{loopBodyStart("entry")},
+		[][3]string{},
+	))
+	commitWorkflowRunMidpoint(t, store, runID, Object{
+		"s": Object{"status": "succeeded", "output": Object{"input": ""}},
+		"l": Object{"status": "running", "startedAt": nowRFC3339(), "loop": Object{
+			"round":         1,
+			"maxIterations": 3,
+			"carried":       Object{},
+			"completed":     []any{},
+		}},
+	})
+	if _, err := store.Pool.Exec(`UPDATE workflow_runs SET cancel_requested_at=now() WHERE id=$1`, runID); err != nil {
+		t.Fatalf("request cancellation: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	status, runErr, states, _ := readWorkflowRun(t, store, runID)
+	if status != "cancelled" || runErr != "" {
+		t.Fatalf("run settled %q error %q; want cancelled", status, runErr)
+	}
+	if got := wfNodeStatus(t, states, "l"); got != "cancelled" {
+		t.Fatalf("loop node status = %q; want cancelled", got)
+	}
+	if _, ran := states["o"]; ran {
+		t.Fatalf("a node downstream of the cancelled loop committed: %v", states)
+	}
+}
+
 // TestWorkflowAdvanceLoopExitsEarly pins loopExit: the marker ends the round before feedback, and the
 // loop publishes the outputs resolved from the round that produced it.
 func TestWorkflowAdvanceLoopExitsEarly(t *testing.T) {

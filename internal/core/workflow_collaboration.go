@@ -914,8 +914,10 @@ func startInputField(variable Object) (FormField, bool) {
 		field.Options = options
 	case "file-list", "json":
 		// Issues has no upload or structured-value control. A textarea collects the reference or the
-		// document as text, which is what the workflow receives either way.
+		// document as text, which is what the workflow receives either way. A direct run still accepts
+		// the structured value itself, which is what an iteration source needs.
 		field.Type = fieldTextarea
+		field.jsonField = inputFieldType(variable) == "json"
 	default:
 		// text-input, file, and every control Cloud has no counterpart for degrade to a single line.
 		field.Type = fieldText

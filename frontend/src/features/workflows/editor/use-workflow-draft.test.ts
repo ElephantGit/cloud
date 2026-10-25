@@ -83,6 +83,28 @@ function requireNode(nodes: WorkflowCanvasNode[], id: string): WorkflowCanvasNod
 }
 
 describe('useWorkflowDraft', () => {
+  it('adds a Loop as one atomic group with its starter body', () => {
+    // A bare Loop saves but never publishes: the body needs a Start. The palette entry therefore
+    // emits the container, its Start, its starter Agent and the internal edge together.
+    const { result } = setup(fixtureWithGraph([outputNode()]))
+
+    act(() => {
+      result.current.addNode('loop', { x: 0, y: 0 })
+    })
+
+    expect(
+      result.current.nodes.map((node) => [node.id, node.data.kind, node.data.containerId]),
+    ).toEqual([
+      ['output-1', 'output', undefined],
+      ['loop-1', 'loop', undefined],
+      ['loop-1-start', 'start', 'loop-1'],
+      ['loop-1-agent', 'agent', 'loop-1'],
+    ])
+    expect(result.current.edges.map((edge) => [edge.source, edge.target])).toEqual([
+      ['loop-1-start', 'loop-1-agent'],
+    ])
+  })
+
   it('adds a member through the entry seam, widening the frame and wiring the entry edge', () => {
     const { result } = setup(draftFixture())
 

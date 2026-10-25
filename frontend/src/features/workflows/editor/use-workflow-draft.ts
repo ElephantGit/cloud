@@ -25,6 +25,7 @@ import {
   type WorkflowIterationInsertion,
 } from '@/features/workflows/runtime/iteration-graph'
 import {
+  createWorkflowLoopGroup,
   createWorkflowNode,
   nextWorkflowNodeSequence,
   type WorkflowNodeTranslator,
@@ -300,6 +301,16 @@ function appendNode(
     kind,
     current.nodes.map((node) => node.id),
   )
+  if (kind === 'loop') {
+    // A Loop without a body is a saveable but unrunnable container; the factory emits the body
+    // start, a starter agent and the round contract together so the palette entry is executable.
+    const group = createWorkflowLoopGroup({ kind, sequence, position, translate })
+    return {
+      ...current,
+      nodes: [...current.nodes, ...group.nodes],
+      edges: [...current.edges, ...group.edges],
+    }
+  }
   const node = createWorkflowNode({ kind, sequence, position, translate })
   return { ...current, nodes: [...current.nodes, node] }
 }

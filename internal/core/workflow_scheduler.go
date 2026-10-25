@@ -299,6 +299,9 @@ func (s *workflowNodeState) object() Object {
 	if s.Loop != nil {
 		out["loop"] = s.Loop.object()
 	}
+	if s.Iteration != nil {
+		out["iteration"] = s.Iteration.object()
+	}
 	return out
 }
 
@@ -328,6 +331,9 @@ func workflowStatesFromJSON(raw Object) map[string]workflowNodeState {
 		if loop, ok := asWorkflowObject(node["loop"]); ok {
 			state.Loop = workflowLoopRunStateFromJSON(loop)
 		}
+		if iteration, ok := asWorkflowObject(node["iteration"]); ok {
+			state.Iteration = workflowIterationRunStateFromJSON(iteration)
+		}
 		out[id] = state
 	}
 	return out
@@ -352,7 +358,8 @@ func projectWorkflowNodes(graph workflowGraphView, committed map[string]workflow
 		committed: committed,
 		projected: map[string]string{},
 	}
-	for id, state := range committed {
+	for id := range committed {
+		state := committed[id]
 		p.projected[id] = state.Status
 	}
 	for {
@@ -744,7 +751,8 @@ func settleWorkflowRunStates(t *transaction, runID string, version int64, status
 			version=version+1, updated_at=now()
 			WHERE id=$1 AND version=$4 AND deleted_at IS NULL`, runID, status, runErr, version, terminal)
 	} else {
-		for id, state := range states {
+		for id := range states {
+			state := states[id]
 			encoded[id] = state.object()
 		}
 		applied = t.execRows(`UPDATE workflow_runs SET node_states=$2, status=$3, error=$4,
@@ -898,10 +906,11 @@ func workflowConditionStates(states, ambient map[string]workflowNodeState) map[s
 		return states
 	}
 	out := make(map[string]workflowNodeState, len(states)+len(ambient))
-	for id, state := range ambient {
-		out[id] = state
+	for id := range ambient {
+		out[id] = ambient[id]
 	}
-	for id, state := range states {
+	for id := range states {
+		state := states[id]
 		if existing, ok := out[id]; ok {
 			existing.Output = mergeWorkflowOutput(existing.Output, state.Output)
 			out[id] = existing

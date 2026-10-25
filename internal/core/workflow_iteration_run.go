@@ -167,7 +167,7 @@ func advanceWorkflowIteration(
 		}
 		states[node.ID] = state
 		if len(items) == 0 {
-			finishWorkflowIteration(states, node, state)
+			finishWorkflowIteration(states, node, &state)
 			return true
 		}
 		return true
@@ -177,7 +177,7 @@ func advanceWorkflowIteration(
 	}
 	iteration := state.Iteration
 	if iteration.Round >= len(iteration.Items) {
-		finishWorkflowIteration(states, node, state)
+		finishWorkflowIteration(states, node, &state)
 		return true
 	}
 	item := iteration.Items[iteration.Round]
@@ -250,7 +250,7 @@ func settleWorkflowIterationRound(
 	iteration.Round++
 	states[node.ID] = state
 	if iteration.Round >= len(iteration.Items) {
-		finishWorkflowIteration(states, node, state)
+		finishWorkflowIteration(states, node, &state)
 	}
 }
 
@@ -269,7 +269,7 @@ func archiveWorkflowIterationRound(iteration *workflowIterationRunState, body wo
 }
 
 // finishWorkflowIteration publishes the exposed variables and settles the node succeeded.
-func finishWorkflowIteration(states map[string]workflowNodeState, node workflowNodeView, state workflowNodeState) {
+func finishWorkflowIteration(states map[string]workflowNodeState, node workflowNodeView, state *workflowNodeState) {
 	iteration := state.Iteration
 	state.Status = "succeeded"
 	state.FinishedAt = nowRFC3339()
@@ -278,7 +278,7 @@ func finishWorkflowIteration(states map[string]workflowNodeState, node workflowN
 		"entries":      iteration.Ledger,
 		"failed_count": iteration.Failed,
 	}
-	states[node.ID] = state
+	states[node.ID] = *state
 }
 
 // failWorkflowIteration settles the node and the run as failed with a stable reason.
@@ -294,7 +294,8 @@ func failWorkflowIteration(states map[string]workflowNodeState, node workflowNod
 
 // cancelWorkflowIterations marks every running iteration cancelled when the run is cancelled.
 func cancelWorkflowIterations(states map[string]workflowNodeState) {
-	for id, state := range states {
+	for id := range states {
+		state := states[id]
 		if state.Status != "running" || state.Iteration == nil {
 			continue
 		}

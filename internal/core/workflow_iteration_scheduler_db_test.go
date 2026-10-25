@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Iteration's scheduler behaviour over PostgreSQL: one round per item in order, the ledger projection,
+// Iteration's scheduler behavior over PostgreSQL: one round per item in order, the ledger projection,
 // the fixed exposed trio, both error strategies, the empty array and the over-limit refusal.
 
 // iterationRunGraph builds start → iteration → output. The region holds one aggregator member, so the
@@ -62,9 +62,6 @@ func TestWorkflowAdvanceIterationCollectsEveryRound(t *testing.T) {
 	first, _ := asWorkflowObject(entries[0])
 	if first.S("item") != "a" || first.S("status") != "succeeded" {
 		t.Fatalf("first entry = %v; want item a succeeded", entries[0])
-	}
-	if output.S("failed_count") != "" {
-		// failed_count is a number, not a string; the helper above only type-checks strings.
 	}
 	if failed, ok := workflowNumberOf(output["failed_count"]); !ok || failed != 0 {
 		t.Fatalf("failed_count = %v; want 0", output["failed_count"])

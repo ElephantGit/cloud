@@ -289,7 +289,7 @@ func advanceWorkflowLoop(
 	}
 	state, committed := states[node.ID]
 	if !committed {
-		carried, err := initializeWorkflowLoopCarried(config, graph, node.ID, states, ambient)
+		carried, err := initializeWorkflowLoopCarried(&config, graph, node.ID, states, ambient)
 		if err != nil {
 			failWorkflowLoop(states, node, "loop_initial_invalid", err.Error())
 			return true
@@ -341,41 +341,41 @@ func advanceWorkflowLoop(
 	// the published outputs come from the round the exit produced.
 	roundStates := workflowLoopReadStates(graph, node.ID, states, ambient)
 	if workflowLoopExitSucceeded(body, states) {
-		outputs, err := resolveWorkflowLoopOutputs(config, roundStates)
+		outputs, err := resolveWorkflowLoopOutputs(&config, roundStates)
 		if err != nil {
 			failWorkflowLoop(states, node, "loop_exit_output_unset", err.Error())
 			return true
 		}
-		finishWorkflowLoop(states, node, state, body, "loop_exit", outputs)
+		finishWorkflowLoop(states, node, &state, body, "loop_exit", outputs)
 		return true
 	}
-	feedback, err := resolveWorkflowLoopFeedback(config, roundStates)
+	feedback, err := resolveWorkflowLoopFeedback(&config, roundStates)
 	if err != nil {
 		failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 		return true
 	}
-	satisfied, err := workflowLoopUntilSatisfied(config, roundStates)
+	satisfied, err := workflowLoopUntilSatisfied(&config, roundStates)
 	if err != nil {
 		failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 		return true
 	}
 	if satisfied {
-		outputs, err := resolveWorkflowLoopOutputs(config, roundStates)
+		outputs, err := resolveWorkflowLoopOutputs(&config, roundStates)
 		if err != nil {
 			failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 			return true
 		}
-		finishWorkflowLoop(states, node, state, body, "condition_satisfied", outputs)
+		finishWorkflowLoop(states, node, &state, body, "condition_satisfied", outputs)
 		return true
 	}
 	if state.Loop.Round >= config.MaxIterations {
 		if config.Behavior == "succeed" {
-			outputs, err := resolveWorkflowLoopOutputs(config, roundStates)
+			outputs, err := resolveWorkflowLoopOutputs(&config, roundStates)
 			if err != nil {
 				failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 				return true
 			}
-			finishWorkflowLoop(states, node, state, body, "max_iterations", outputs)
+			finishWorkflowLoop(states, node, &state, body, "max_iterations", outputs)
 			return true
 		}
 		// The round that exhausted the budget is a finished round: archive it before failing so the
@@ -396,7 +396,7 @@ func advanceWorkflowLoop(
 // constant is normalized against its declared type and a selector is read from the loop's outer
 // scope. A missing or mistyped value fails the loop instead of starting it with a hole.
 func initializeWorkflowLoopCarried(
-	config workflowLoopConfig,
+	config *workflowLoopConfig,
 	graph workflowGraphView,
 	loopID string,
 	states map[string]workflowNodeState,
@@ -404,7 +404,8 @@ func initializeWorkflowLoopCarried(
 ) (map[string]any, error) {
 	outer := workflowLoopOuterStates(graph, loopID, states, ambient)
 	carried := map[string]any{}
-	for _, variable := range config.Variables {
+	for i := range config.Variables {
+		variable := &config.Variables[i]
 		value := variable.InitialValue
 		if variable.InitialKind == "variable" {
 			resolved, present, err := resolveWorkflowSelector(variable.InitialSelector, outer)
@@ -421,9 +422,10 @@ func initializeWorkflowLoopCarried(
 // resolveWorkflowLoopFeedback reads every feedback selector from the completed round in one snapshot
 // and normalizes it against the declared type. All variables are read before any is assigned, so two
 // variables that swap values receive each other's value.
-func resolveWorkflowLoopFeedback(config workflowLoopConfig, roundStates map[string]workflowNodeState) (map[string]any, error) {
+func resolveWorkflowLoopFeedback(config *workflowLoopConfig, roundStates map[string]workflowNodeState) (map[string]any, error) {
 	carried := map[string]any{}
-	for _, variable := range config.Variables {
+	for i := range config.Variables {
+		variable := &config.Variables[i]
 		value, present, err := resolveWorkflowSelector(variable.Feedback, roundStates)
 		if err != nil || !present {
 			return nil, fmt.Errorf("feedback selector %s has no value", variable.Feedback.qualified())
@@ -439,7 +441,7 @@ func resolveWorkflowLoopFeedback(config workflowLoopConfig, roundStates map[stri
 
 // workflowLoopUntilSatisfied evaluates the round-end condition over the completed round. An until with
 // no rules never matches, which is desktop's reading: only a case with conditions can select.
-func workflowLoopUntilSatisfied(config workflowLoopConfig, roundStates map[string]workflowNodeState) (bool, error) {
+func workflowLoopUntilSatisfied(config *workflowLoopConfig, roundStates map[string]workflowNodeState) (bool, error) {
 	until := workflowNodeView{
 		ID:   "until",
 		Kind: "condition",
@@ -453,7 +455,7 @@ func workflowLoopUntilSatisfied(config workflowLoopConfig, roundStates map[strin
 }
 
 // resolveWorkflowLoopOutputs reads every named output from the round that produced it.
-func resolveWorkflowLoopOutputs(config workflowLoopConfig, roundStates map[string]workflowNodeState) (Object, error) {
+func resolveWorkflowLoopOutputs(config *workflowLoopConfig, roundStates map[string]workflowNodeState) (Object, error) {
 	outputs := Object{}
 	for _, output := range config.Outputs {
 		value, present, err := resolveWorkflowSelector(output.Selector, roundStates)
@@ -503,8 +505,8 @@ func workflowLoopOuterStates(
 	ambient map[string]workflowNodeState,
 ) map[string]workflowNodeState {
 	outer := map[string]workflowNodeState{}
-	for id, state := range ambient {
-		outer[id] = state
+	for id := range ambient {
+		outer[id] = ambient[id]
 	}
 	for id := range workflowAncestorIDs(graph, loopID) {
 		if state, ok := states[id]; ok {
@@ -537,7 +539,7 @@ func workflowAncestorIDs(graph workflowGraphView, nodeID string) map[string]bool
 }
 
 // workflowBodyFailure names the first failed body member in document order with its committed reason.
-func workflowBodyFailure(body workflowGraphView, states map[string]workflowNodeState) (string, string) {
+func workflowBodyFailure(body workflowGraphView, states map[string]workflowNodeState) (reason, detail string) {
 	for _, member := range body.Nodes {
 		state := states[member.ID]
 		if state.Status != "failed" {
@@ -578,7 +580,8 @@ func workflowLoopExitSucceeded(body workflowGraphView, states map[string]workflo
 // A cancelled run is terminal, so a loop left `running` would misreport a container that will never
 // advance; the loop state keeps its rounds as the audit trail of what did run.
 func cancelWorkflowLoops(states map[string]workflowNodeState) {
-	for id, state := range states {
+	for id := range states {
+		state := states[id]
 		if state.Status != "running" || state.Loop == nil {
 			continue
 		}
@@ -611,7 +614,7 @@ func failWorkflowLoop(states map[string]workflowNodeState, node workflowNodeView
 func finishWorkflowLoop(
 	states map[string]workflowNodeState,
 	node workflowNodeView,
-	state workflowNodeState,
+	state *workflowNodeState,
 	body workflowGraphView,
 	reason string,
 	outputs Object,
@@ -624,7 +627,7 @@ func finishWorkflowLoop(
 	state.FinishedAt = nowRFC3339()
 	state.Error = ""
 	state.Output = outputs
-	states[node.ID] = state
+	states[node.ID] = *state
 }
 
 // archiveWorkflowLoopRound records the active round's member states as one durable entry. When the

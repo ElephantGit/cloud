@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The aggregator's scheduler behaviour over PostgreSQL: the first assigned root is passed through as
+// The aggregator's scheduler behavior over PostgreSQL: the first assigned root is passed through as
 // `{aggregator}.output`, presence is key existence (a null counts), and an empty candidate set is the
 // stable no-match failure.
 

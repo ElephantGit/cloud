@@ -95,7 +95,7 @@ func (e errString) Error() string { return string(e) }
 // containers all count as assigned — desktop's V1 contract, not a truthiness test. Unassigned
 // candidates are skipped; an empty result is reported as not assigned so the caller can fail with
 // the stable no-match reason.
-func evaluateWorkflowAggregator(node workflowNodeView, states map[string]workflowNodeState) (any, bool, error) {
+func evaluateWorkflowAggregator(node workflowNodeView, states map[string]workflowNodeState) (value any, assigned bool, err error) {
 	selectors, err := parseAggregatorSelectors(node.Data)
 	if err != nil {
 		return nil, false, err

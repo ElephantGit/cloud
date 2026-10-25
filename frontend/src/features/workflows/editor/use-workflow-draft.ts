@@ -350,13 +350,13 @@ function appendLoopExitNode(
 function appendConnection(current: DraftState, connection: Connection): DraftState {
   const sourceNode = current.nodes.find((node) => node.id === connection.source)
   const sourceHandle =
-    connection.sourceHandle ?? (sourceNode?.data.kind === 'condition' ? 'else' : null)
+    connection.sourceHandle || (sourceNode?.data.kind === 'condition' ? 'else' : null)
   const candidate = { ...connection, sourceHandle }
   // An older unlabeled Condition edge means ELSE. Canonicalize that source's existing edges so
   // reconnecting its explicit ELSE port cannot create a second edge for the same branch.
   const edges = current.edges.map((edge) =>
     sourceNode?.data.kind === 'condition' && edge.source === connection.source
-      ? { ...edge, sourceHandle: edge.sourceHandle ?? 'else' }
+      ? { ...edge, sourceHandle: edge.sourceHandle || 'else' }
       : edge,
   )
   if (!isValidWorkflowConnection(candidate, edges)) {

@@ -38,15 +38,16 @@ export function isValidWorkflowConnection(
     (edge) =>
       edge.source === source &&
       edge.target === target &&
-      (edge.sourceHandle ?? null) === (candidate.sourceHandle ?? null) &&
-      (edge.targetHandle ?? null) === (candidate.targetHandle ?? null),
+      (edge.sourceHandle || null) === (candidate.sourceHandle || null) &&
+      (edge.targetHandle || null) === (candidate.targetHandle || null),
   )
 }
 
 /**
  * Builds the id of the edge between two nodes.
  *
- * Deriving it from the endpoints rather than from a counter keeps the id stable
+ * Including the port pair keeps sibling branches distinct. Deriving the id from these identities
+ * rather than from a counter keeps it stable
  * across a reload, so an edge is never duplicated by re-adding the same
  * connection.
  *
@@ -60,8 +61,10 @@ export function workflowEdgeId(
   handles: WorkflowConnectionHandles = {},
 ): string {
   const base = `e-${source}-${target}`
-  if (handles.sourceHandle == null && handles.targetHandle == null) {
+  const sourceHandle = handles.sourceHandle || null
+  const targetHandle = handles.targetHandle || null
+  if (sourceHandle === null && targetHandle === null) {
     return base
   }
-  return `${base}-${encodeURIComponent(JSON.stringify([handles.sourceHandle ?? null, handles.targetHandle ?? null]))}`
+  return `${base}-${encodeURIComponent(JSON.stringify([sourceHandle, targetHandle]))}`
 }

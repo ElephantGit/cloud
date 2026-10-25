@@ -56,6 +56,16 @@ describe('isValidWorkflowConnection', () => {
 })
 
 describe('workflowEdgeId', () => {
+  it('normalizes an empty legacy port to the omitted port identity', () => {
+    expect(workflowEdgeId('a', 'b', { sourceHandle: '', targetHandle: '' })).toBe(
+      workflowEdgeId('a', 'b'),
+    )
+    expect(
+      isValidWorkflowConnection({ source: 'a', target: 'b' }, [
+        { source: 'a', target: 'b', sourceHandle: '', targetHandle: '' },
+      ]),
+    ).toBe(false)
+  })
   it('derives the id from the endpoints, so a reload cannot duplicate it', () => {
     expect(workflowEdgeId('agent-1', 'output-1')).toBe('e-agent-1-output-1')
   })

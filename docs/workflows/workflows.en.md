@@ -64,12 +64,19 @@ deliverable declaration `agentConfig.completion` (any non-null value) and any `a
 `3` — including `4`, the legacy `1`/`2`, and non-numbers: Cloud executes only version `3`, absent or `null` keeps the
 old behavior, and the refusal names the node and field instead of silently dropping the declaration.
 
-## Condition branches
+## Condition branches and named outputs
 
 Condition cards expose a port for each case and the implicit ELSE branch. Connections persist the
 case id in `sourceHandle`. Different branches may join the same node; duplicate endpoint-and-port
 pairs are rejected. Deleting a case removes its connections, and undo restores both. Legacy
 unlabeled condition connections retain ELSE semantics; case ordering never renumbers existing edges.
+
+The Output inspector adds, names and removes `data.outputs` bindings, with sources selected from
+the consumer's visible variable catalog. Execution resolves all bindings against one committed
+snapshot and stores the named result on the output node. No bindings retain an empty object.
+Explicit null, false, zero and empty strings remain assigned values. An unassigned binding or an
+invalid path fails the node without publishing partial results. Publication rejects malformed
+bindings, empty or duplicate names, invalid selectors and undeclared roots, with node/field locations.
 
 ## Executor slots
 

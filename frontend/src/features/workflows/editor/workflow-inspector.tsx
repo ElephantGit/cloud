@@ -18,6 +18,7 @@ import {
   UnconfigurableNotice,
 } from '@/features/workflows/editor/workflow-inspector-fields'
 import { ConditionNodeFields } from '@/features/workflows/editor/workflow-condition-fields'
+import { OutputNodeFields } from '@/features/workflows/editor/workflow-output-fields'
 import {
   HumanNodeFields,
   JunctionNodeFields,
@@ -223,9 +224,7 @@ function NodeKindFields({
     return <SubflowNodeFields />
   }
   if (data.kind === 'output') {
-    // An Output node is fully described by its inbound edges until named result
-    // bindings arrive with the structured-output editor.
-    return null
+    return <OutputNodeFields data={data} onChange={onChange} catalog={catalog} />
   }
   return <UnconfigurableNotice />
 }

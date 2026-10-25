@@ -448,6 +448,8 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
 			problems = append(problems, validateConditionConfig(id, o.O("data"), visibleRoots)...)
+		case kind == "output":
+			problems = append(problems, validateWorkflowOutputConfig(id, o.O("data"), visibleRoots)...)
 		case kind == "aggregator":
 			problems = append(problems, validateAggregatorConfig(id, o.O("data"), visibleRoots)...)
 		case kind == "loop" && containers[id] == "":

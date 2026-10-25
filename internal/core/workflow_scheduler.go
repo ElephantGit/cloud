@@ -776,8 +776,8 @@ func workflowRunVersion(t *transaction, runID string, fallback int64) int64 {
 // the variable roots desktop's Start node exposes; condition evaluates its cases against prior node
 // outputs overlaid with the run's ambient variables (sys.* and frozen user globals) and commits the
 // selected branch (first match wins, else when nothing matched, and a failure when a rule cannot be
-// evaluated); output is a terminal marker whose produce stays in the node state for the run viewer
-// (D7: 成果交付延后).
+// evaluated); output resolves explicit named bindings into its committed result. No bindings retain
+// an empty result; an unassigned binding fails instead of silently emitting a partial object.
 func executeWorkflowNode(node workflowNodeView, input Object, states, ambient map[string]workflowNodeState) workflowNodeState {
 	now := nowRFC3339()
 	state := workflowNodeState{
@@ -802,7 +802,14 @@ func executeWorkflowNode(node workflowNodeView, input Object, states, ambient ma
 		}
 		state.Output = Object{"selectedBranch": branch}
 	case "output":
-		state.Output = Object{}
+		output, failure := evaluateWorkflowOutput(node, workflowConditionStates(states, ambient))
+		if failure != nil {
+			state.Status = "failed"
+			state.Error = failure.Error()
+			state.Output = Object{"reason": failure.Reason}
+			return state
+		}
+		state.Output = output
 	case "aggregator":
 		value, assigned, err := evaluateWorkflowAggregator(node, workflowConditionStates(states, ambient))
 		if err != nil {

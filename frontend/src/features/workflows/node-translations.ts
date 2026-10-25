@@ -9,6 +9,15 @@
 export const nodeTranslations = {
   'zh-CN': {
     'workflows.condition.connectFromBranch': '从{{name}}的 {{branch}} 分支连接',
+    'workflows.output.bindings': '输出绑定',
+    'workflows.output.description':
+      '为最终结果命名，并选择要返回的上游变量。未添加绑定时返回空结果。',
+    'workflows.output.name': '输出名称',
+    'workflows.output.namePlaceholder': '例如 summary',
+    'workflows.output.source': '输出来源',
+    'workflows.output.sourcePlaceholder': '选择变量',
+    'workflows.output.add': '添加输出',
+    'workflows.output.remove': '删除输出',
     // Node catalog: palette labels and descriptions for every executable kind.
     'workflows.node.start.label': '开始',
     'workflows.node.start.description': '定义工作流输入',
@@ -33,6 +42,15 @@ export const nodeTranslations = {
   },
   'en-US': {
     'workflows.condition.connectFromBranch': 'Connect from {{branch}} of {{name}}',
+    'workflows.output.bindings': 'Output bindings',
+    'workflows.output.description':
+      'Name each result and choose the upstream variable to return. No bindings produce an empty result.',
+    'workflows.output.name': 'Output name',
+    'workflows.output.namePlaceholder': 'For example, summary',
+    'workflows.output.source': 'Output source',
+    'workflows.output.sourcePlaceholder': 'Choose a variable',
+    'workflows.output.add': 'Add output',
+    'workflows.output.remove': 'Remove output',
     'workflows.node.start.label': 'Start',
     'workflows.node.start.description': 'Define workflow inputs',
     'workflows.node.agent.label': 'Agent',

@@ -175,3 +175,37 @@ func TestWorkflowAdvanceIterationRefusesAnOverLimitArray(t *testing.T) {
 		t.Fatalf("iteration state = %v; want failed", states["it"])
 	}
 }
+
+// TestWorkflowAdvanceCancelsARunningIteration pins the cancellation reaction: a run cancelled while
+// its iteration is mid-flight settles `cancelled`, and the node is cancelled with it instead of
+// staying `running` in a terminal run.
+func TestWorkflowAdvanceCancelsARunningIteration(t *testing.T) {
+	store := dispatcherDB(t)
+	runID := seedWorkflowRunScene(t, store, iterationRunGraph("fail", 10, []any{"s", "items"}))
+	commitWorkflowRunMidpoint(t, store, runID, Object{
+		"s": Object{"status": "succeeded", "output": Object{"items": []any{"a"}}},
+		"it": Object{"status": "running", "startedAt": nowRFC3339(), "iteration": Object{
+			"round":       0,
+			"items":       []any{"a"},
+			"ledger":      []any{},
+			"output":      []any{},
+			"failedCount": 0,
+			"strategy":    "fail",
+			"completed":   []any{},
+		}},
+	})
+	if _, err := store.Pool.Exec(`UPDATE workflow_runs SET cancel_requested_at=now() WHERE id=$1`, runID); err != nil {
+		t.Fatalf("request cancellation: %v", err)
+	}
+	if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	status, _, states, _ := readWorkflowRun(t, store, runID)
+	if status != "cancelled" {
+		t.Fatalf("run settled %q; want cancelled", status)
+	}
+	iteration, _ := asWorkflowObject(states["it"])
+	if iteration.S("status") != "cancelled" {
+		t.Fatalf("iteration state = %v; want cancelled", states["it"])
+	}
+}

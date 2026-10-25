@@ -97,9 +97,7 @@ export function WorkflowEditor({ tenantId, workflow, onImported }: WorkflowEdito
           <WorkflowVersionTools
             tenantId={tenantId}
             workflowId={workflow.id}
-            committedVersion={state.committedVersion}
             flushDraft={state.flushDraft}
-            onRestored={state.resetDraft}
           />
         }
         transferTools={

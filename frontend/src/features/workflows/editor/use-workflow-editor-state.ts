@@ -102,8 +102,6 @@ export interface WorkflowEditorState extends WorkflowEditorHandlers {
   flushDraft: () => Promise<boolean>
   /** The document version the server last confirmed; its value guards a restore. */
   committedVersion: number
-  /** Replaces the draft with a fresh workflow, e.g. after a version restore. */
-  resetDraft: (workflow: CloudWorkflow) => void
   /** Serializes the live draft, unsaved edits included, into the graph document. */
   draftGraph: () => Record<string, unknown>
   /** Replaces the workflow-wide declarations as one history step. */
@@ -158,7 +156,7 @@ export function useWorkflowEditorState(
     }
   }, [saveGraph, snapshot, workflow.id, workflow.name])
 
-  const { status, markDirty, flush, cancel } = useWorkflowDraftAutosave({ enabled: true, save })
+  const { status, markDirty, flush } = useWorkflowDraftAutosave({ enabled: true, save })
   // A history restore writes the chosen snapshot over the draft and keeps the
   // restored content eligible for autosave, exactly like the edit it replaces.
   const history = useWorkflowHistory(
@@ -190,18 +188,6 @@ export function useWorkflowEditorState(
   // edits included, so what the download previews is what the file will hold.
   const draftGraph = useCallback(() => snapshot(viewportRef.current), [snapshot])
 
-  // An external replace (a version restore) reseeds the draft and adopts the new
-  // version as the guard for later writes and a later restore.
-  const resetDraft = useCallback(
-    (next: CloudWorkflow) => {
-      draft.reset(next)
-      versionRef.current = next.version
-      setCommittedVersion(next.version)
-      cancel()
-    },
-    [cancel, draft],
-  )
-
   return {
     ...useWorkflowDraftHandlers(draft, markDirty, history, t),
     ...globalVariablesSaver,
@@ -217,7 +203,6 @@ export function useWorkflowEditorState(
     saveNow,
     flushDraft: flush,
     committedVersion,
-    resetDraft,
     draftGraph,
     onViewportChange,
     history: workflowHistoryControls(draft, history),

@@ -94,12 +94,6 @@ export interface WorkflowDraft {
   /** Re-arranges the graph into execution order. */
   organize: () => void
   /**
-   * Replaces the whole draft with a fresh workflow's graph, an external replace
-   * such as a version restore rather than an edit. The restored graph becomes
-   * the new base, so nothing left over from the discarded draft persists.
-   */
-  reset: (workflow: CloudWorkflow) => void
-  /**
    * Snapshots the current authored content for a history step. The viewport is
    * left out, and React Flow's measurement and interface state is stripped, so
    * a selection that makes no content difference cannot become a history step.
@@ -198,12 +192,6 @@ export function useWorkflowDraft(
     })
   }
 
-  // Reseeds the whole draft for an external replace; the seed closure reads
-  // only from `next`, so the reset carries no stale session state with it.
-  const reset = (next: CloudWorkflow): void => {
-    replaceState(seedDraft(next))
-  }
-
   const captureContent = useCallback(
     (): WorkflowHistorySnapshot => captureWorkflowHistorySnapshot(stateRef.current),
     [],
@@ -244,7 +232,6 @@ export function useWorkflowDraft(
     replaceGlobalVariables,
     replaceLaunchFields,
     organize,
-    reset,
     captureContent,
     restoreContent,
     snapshot,

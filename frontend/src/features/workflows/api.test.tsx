@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -8,6 +8,7 @@ import {
   WORKFLOW_RUN_POLL_MS,
   mergeRunPage,
   mergeRunRead,
+  runHistoryRows,
   runPollInterval,
   runsPollInterval,
   useWorkflowRun,
@@ -77,9 +78,17 @@ function cachedRun(queryClient: QueryClient): WorkflowRun | undefined {
   return queryClient.getQueryState<WorkflowRun>([RUN_URL])?.data
 }
 
-/** The cached history page, as {@link cachedRun} reads the cached run. */
-function cachedPage(queryClient: QueryClient): GetApiV1TenantsTidWorkflowsWfidRuns200 | undefined {
-  return queryClient.getQueryState<GetApiV1TenantsTidWorkflowsWfidRuns200>([RUNS_URL])?.data
+/** The cached history walk, as {@link cachedRun} reads the cached run. */
+function cachedHistory(
+  queryClient: QueryClient,
+): InfiniteData<GetApiV1TenantsTidWorkflowsWfidRuns200> | undefined {
+  return queryClient.getQueryState<InfiniteData<GetApiV1TenantsTidWorkflowsWfidRuns200>>([RUNS_URL])
+    ?.data
+}
+
+/** The first (newest) row of the cached history. */
+function cachedFirstRow(queryClient: QueryClient): WorkflowRun | undefined {
+  return cachedHistory(queryClient)?.pages[0]?.items[0]
 }
 
 /** Mounts a hook under the query client, with no other provider it does not need. */
@@ -362,15 +371,64 @@ describe('useWorkflowRuns', () => {
       wrapper: wrapperFor(newQueryClient()),
     })
 
-    await settleUntil(() => expect(result.current.data?.[0]?.status).toBe('running'))
+    await settleUntil(() => expect(result.current.data?.pages[0]?.items[0]?.status).toBe('running'))
 
     await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))
 
-    await settleUntil(() => expect(result.current.data?.[0]?.status).toBe('succeeded'))
+    await settleUntil(() =>
+      expect(result.current.data?.pages[0]?.items[0]?.status).toBe('succeeded'),
+    )
     expect(reads).toBe(2)
 
     await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS * 3))
     expect(reads).toBe(2)
+  })
+
+  it('walks the history by cursor instead of stopping at the first page', async () => {
+    const requested: string[] = []
+    server.use(
+      http.get(RUNS_URL, ({ request }) => {
+        const after = new URL(request.url).searchParams.get('after') ?? ''
+        requested.push(after)
+        return HttpResponse.json(
+          after === ''
+            ? {
+                items: [runFixture({ id: 'run-1', name: '第一页' })],
+                nextCursor: 'run-1',
+              }
+            : {
+                items: [runFixture({ id: 'run-2', name: '第二页' })],
+                nextCursor: '',
+              },
+        )
+      }),
+    )
+    const { result } = renderHook(() => useWorkflowRuns(TEST_TENANT_ID, WORKFLOW_ID), {
+      wrapper: wrapperFor(newQueryClient()),
+    })
+
+    await settleUntil(() => expect(result.current.hasNextPage).toBe(true))
+    await act(async () => {
+      await result.current.fetchNextPage()
+    })
+
+    // The second request carries the cursor the first page reported, and the walk ends when the
+    // server stops offering one — that is what makes every run reachable, not just the first page.
+    expect(requested).toEqual(['', 'run-1'])
+    await settleUntil(() => expect(result.current.hasNextPage).toBe(false))
+    expect(result.current.data?.pages).toHaveLength(2)
+  })
+
+  it('flattens loaded pages newest first without repeating a run', () => {
+    const run = runFixture({ id: 'run-1' })
+    const rows = runHistoryRows([
+      { items: [run, runFixture({ id: 'run-2' })], nextCursor: 'run-2' },
+      // A refetch answered from a page that overlaps the previous one must not render twice.
+      { items: [runFixture({ id: 'run-2' }), runFixture({ id: 'run-3' })], nextCursor: '' },
+    ])
+
+    expect(rows.map((row) => row.id)).toEqual(['run-1', 'run-2', 'run-3'])
+    expect(runHistoryRows(undefined)).toEqual([])
   })
 
   it('keeps a settled history row from flipping back on a stale page', async () => {
@@ -386,7 +444,7 @@ describe('useWorkflowRuns', () => {
     const { result } = renderHook(() => useWorkflowRuns(TEST_TENANT_ID, WORKFLOW_ID), {
       wrapper: wrapperFor(queryClient),
     })
-    const firstRow = () => cachedPage(queryClient)?.items[0]
+    const firstRow = () => cachedFirstRow(queryClient)
 
     await settleUntil(() => expect(firstRow()?.status).toBe('running'))
     await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))

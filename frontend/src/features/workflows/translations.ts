@@ -1,6 +1,7 @@
 import { publishErrorTranslations } from '@/features/workflows/publish-error-translations'
 import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
+import { runAndVersionTranslations } from '@/features/workflows/run-and-version-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
 
 /**
@@ -21,6 +22,7 @@ import type { TranslationBundle } from '@/i18n/resource-bundle'
  */
 export const workflowTranslations = {
   'zh-CN': {
+    ...runAndVersionTranslations['zh-CN'],
     ...historyTranslations['zh-CN'],
     ...publishErrorTranslations['zh-CN'],
     ...launchFieldTranslations['zh-CN'],
@@ -73,6 +75,10 @@ export const workflowTranslations = {
     'workflows.list.open': '打开{{name}}',
     'workflows.list.nodeCount': '{{count}} 个节点',
     'workflows.list.updatedAt': '更新于 {{time}}',
+    'workflows.list.neverRan': '从未运行',
+    'workflows.list.latestRunAt': '{{time}} 运行',
+    'workflows.list.openLatestRun': '打开{{name}}最近一次运行',
+    'workflows.list.runsHint': '不进入编辑器，直接查看这个工作流的运行记录',
     'workflows.list.deleteNamed': '删除{{name}}',
     'workflows.list.deleteTitle': '删除“{{name}}”？',
     'workflows.list.deleteDescription': '该工作流将从列表中移除，其名称可以被重新使用。',
@@ -281,23 +287,6 @@ export const workflowTranslations = {
     'workflows.transfer.confirmExport': '导出',
 
     // Version history and publishing.
-    'workflows.version.publish': '发布',
-    'workflows.version.publishHint': '把当前画布冻结为一个不可变版本',
-    'workflows.version.history': '版本历史',
-    'workflows.version.historyHint': '查看已发布的版本并回滚',
-    'workflows.version.publishTitle': '发布版本',
-    'workflows.version.publishDescription':
-      '发布会把当前文档冻结为一个不可变版本；之后可以随时回滚到这里。',
-    'workflows.version.versionName': '版本名称（可选）',
-    'workflows.version.versionPlaceholder': '例如：v1.0 发布说明',
-    'workflows.version.publishedAt': '发布于 {{time}}',
-    'workflows.version.historyEmpty': '还没有已发布的版本。发布一个以随时回滚。',
-    'workflows.version.historySearch': '搜索版本名称或编号',
-    'workflows.version.restore': '回滚',
-    'workflows.version.restoreTitle': '回滚到版本 {{version}}？',
-    'workflows.version.restoreDescription':
-      '回滚会用该版本冻结的图替换当前画布，未保存的修改会丢失。',
-    'workflows.version.rollbackNamed': '回滚到版本 {{version}}',
 
     // Workflow-wide variable declarations edited from the variables dialog.
     'workflows.globalVariables.title': '全局变量',
@@ -404,8 +393,8 @@ export const workflowTranslations = {
     'workflows.run.start': '开始运行',
     'workflows.run.noInput': '这个版本没有需要填写的输入。',
     'workflows.run.missingRequired': '还需要填写：{{fields}}',
-    'workflows.run.history': '运行历史',
-    'workflows.run.historyHint': '查看这个工作流的运行历史',
+    'workflows.run.history': '运行记录',
+    'workflows.run.historyHint': '查看这个工作流的历次运行记录',
     'workflows.run.historyEmpty': '还没有运行记录。',
     'workflows.run.openRun': '打开运行 {{name}}',
     'workflows.run.startedAt': '{{time}} 开始',
@@ -446,6 +435,7 @@ export const workflowTranslations = {
     'workflows.errors.unknown': '操作失败，请稍后重试。',
   },
   'en-US': {
+    ...runAndVersionTranslations['en-US'],
     ...historyTranslations['en-US'],
     ...publishErrorTranslations['en-US'],
     ...launchFieldTranslations['en-US'],
@@ -497,6 +487,10 @@ export const workflowTranslations = {
     'workflows.list.open': 'Open {{name}}',
     'workflows.list.nodeCount': '{{count}} nodes',
     'workflows.list.updatedAt': 'Updated {{time}}',
+    'workflows.list.neverRan': 'Never run',
+    'workflows.list.latestRunAt': 'Ran {{time}}',
+    'workflows.list.openLatestRun': 'Open the latest run of {{name}}',
+    'workflows.list.runsHint': 'See this workflow’s runs without opening the editor',
     'workflows.list.deleteNamed': 'Delete {{name}}',
     'workflows.list.deleteTitle': 'Delete “{{name}}”?',
     'workflows.list.deleteDescription':
@@ -712,23 +706,6 @@ export const workflowTranslations = {
     'workflows.transfer.confirmExport': 'Export',
 
     // Version history and publishing.
-    'workflows.version.publish': 'Publish',
-    'workflows.version.publishHint': 'Freeze the current canvas as an immutable version',
-    'workflows.version.history': 'Version history',
-    'workflows.version.historyHint': 'View published versions and roll back',
-    'workflows.version.publishTitle': 'Publish version',
-    'workflows.version.publishDescription':
-      'Publishing freezes the current document as an immutable version you can roll back to at any time.',
-    'workflows.version.versionName': 'Version name (optional)',
-    'workflows.version.versionPlaceholder': 'e.g. v1.0 release notes',
-    'workflows.version.publishedAt': 'Published {{time}}',
-    'workflows.version.historyEmpty': 'No published versions yet. Publish one to enable rollbacks.',
-    'workflows.version.historySearch': 'Search version name or number',
-    'workflows.version.restore': 'Roll back',
-    'workflows.version.restoreTitle': 'Roll back to version {{version}}?',
-    'workflows.version.restoreDescription':
-      'Rolling back replaces the current canvas with the graph frozen in that version; unsaved changes are lost.',
-    'workflows.version.rollbackNamed': 'Roll back to version {{version}}',
 
     'workflows.globalVariables.title': 'Global variables',
     'workflows.globalVariables.description':
@@ -840,8 +817,8 @@ export const workflowTranslations = {
     'workflows.run.start': 'Start run',
     'workflows.run.noInput': 'This version asks for no input.',
     'workflows.run.missingRequired': 'Still needed: {{fields}}',
-    'workflows.run.history': 'Run history',
-    'workflows.run.historyHint': 'Browse this workflow’s run history',
+    'workflows.run.history': 'Runs',
+    'workflows.run.historyHint': 'Browse every run of this workflow',
     'workflows.run.historyEmpty': 'No runs yet.',
     'workflows.run.openRun': 'Open run {{name}}',
     'workflows.run.startedAt': 'Started {{time}}',

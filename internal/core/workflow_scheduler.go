@@ -157,7 +157,9 @@ func readWorkflowGraph(graph Object) workflowGraphView {
 		view := workflowNodeView{ID: id, Kind: o.O("data").S("kind"), Data: o.O("data")}
 		out.Nodes = append(out.Nodes, view)
 		out.ByNode[id] = view
-		if view.Kind == "start" && out.Start == "" {
+		// A loop body carries its own start. The run's entry point is the outer start only; picking a
+		// body start here would make the projection root inside the container and never run the loop.
+		if view.Kind == "start" && view.Data.S("containerId") == "" && out.Start == "" {
 			out.Start = id
 		}
 	}

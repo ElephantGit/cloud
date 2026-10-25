@@ -1,6 +1,13 @@
 import { Variable as VariableIcon } from 'lucide-react'
-import { SelectGroup, SelectItem, SelectLabel, SelectValue } from '@/components/ui/select'
+import {
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectValue,
+} from '@/components/ui/select'
 import { workflowChoiceLabel, type WorkflowChoice } from '@/features/workflows/runtime/capabilities'
+import { WORKFLOW_VARIABLE_VALUE_TYPES } from '@/features/workflows/runtime/types'
 import type {
   WorkflowDecoratedVariable,
   WorkflowVariableCatalogEntry,
@@ -238,6 +245,19 @@ export function parseComparisonValue(text: string): unknown {
     return Number(trimmed)
   }
   return text
+}
+
+/** The type menu every workflow variable declaration shares: globals and Loop carried values. */
+export function WorkflowVariableTypeMenu() {
+  return (
+    <SelectContent>
+      {WORKFLOW_VARIABLE_VALUE_TYPES.map((valueType) => (
+        <SelectItem key={valueType} value={valueType}>
+          {valueType}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  )
 }
 
 /** Renders a comparison value back into its editable text form. */

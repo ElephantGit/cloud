@@ -494,7 +494,7 @@ func TestWorkflowAdvanceIgnoresARepublishedVersion(t *testing.T) {
 func TestWorkflowAdvanceFailsAnUnsupportedNodeKind(t *testing.T) {
 	store := dispatcherDB(t)
 	runID := seedWorkflowRunScene(t, store, wfGraph(
-		[]Object{wfNode("s", "start", ""), wfNode("l", "iteration", "iterate"), wfNode("o", "output", "")},
+		[]Object{wfNode("s", "start", ""), wfNode("l", "subflow", "subflow"), wfNode("o", "output", "")},
 		[][3]string{{"s", "l", ""}, {"l", "o", ""}},
 	))
 

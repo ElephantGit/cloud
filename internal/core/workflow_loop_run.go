@@ -215,7 +215,7 @@ func parseWorkflowLoopVariable(raw any) (workflowLoopVariableConfig, error) {
 func workflowOuterGraph(graph workflowGraphView) workflowGraphView {
 	out := workflowGraphView{ByNode: map[string]workflowNodeView{}, Start: graph.Start}
 	for _, node := range graph.Nodes {
-		if node.Data.S("containerId") != "" {
+		if node.Container != "" {
 			continue
 		}
 		out.Nodes = append(out.Nodes, node)
@@ -238,7 +238,7 @@ func workflowOuterGraph(graph workflowGraphView) workflowGraphView {
 func workflowBodyGraph(graph workflowGraphView, loopID string) workflowGraphView {
 	out := workflowGraphView{ByNode: map[string]workflowNodeView{}}
 	for _, node := range graph.Nodes {
-		if node.Data.S("containerId") != loopID {
+		if node.Container != loopID {
 			continue
 		}
 		out.Nodes = append(out.Nodes, node)
@@ -476,7 +476,7 @@ func workflowLoopReadStates(
 ) map[string]workflowNodeState {
 	round := workflowLoopOuterStates(graph, loopID, states, ambient)
 	for _, node := range graph.Nodes {
-		if node.Data.S("containerId") != loopID {
+		if node.Container != loopID {
 			continue
 		}
 		if state, ok := states[node.ID]; ok {

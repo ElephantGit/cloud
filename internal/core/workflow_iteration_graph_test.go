@@ -173,3 +173,28 @@ func TestWorkflowPublishValidatesIterationConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestWorkflowPublishAcceptsAnIterationRegion pins the end-to-end gate: a start feeding an iteration
+// whose single aggregator member collects from the start passes every rule at once.
+func TestWorkflowPublishAcceptsAnIterationRegion(t *testing.T) {
+	graph := Object{
+		"nodes": []any{
+			Object{"id": "s", "data": Object{"kind": "start", "title": "开始", "inputVariables": []any{Object{"name": "items", "valueType": "array"}}}},
+			Object{"id": "it", "data": Object{"kind": "iteration", "title": "迭代", "iterationConfig": Object{
+				"iteratorSelector": []any{"s", "items"},
+				"collectSelector":  []any{"agg", "output"},
+				"errorStrategy":    "continue",
+				"maxIterations":    float64(50),
+			}}},
+			Object{"id": "agg", "parentId": "it", "data": Object{"kind": "aggregator", "title": "聚合", "aggregatorConfig": Object{"variables": []any{[]any{"s", "items"}}}}},
+			Object{"id": "o", "data": Object{"kind": "output"}},
+		},
+		"edges": []any{
+			Object{"source": "s", "target": "it"},
+			Object{"source": "it", "target": "o"},
+		},
+	}
+	if problems := validateWorkflowGraph(decodeGraph(t, graph)); len(problems) != 0 {
+		t.Fatalf("a well-formed iteration region must publish, got %v", problems)
+	}
+}

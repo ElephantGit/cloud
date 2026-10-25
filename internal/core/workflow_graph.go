@@ -31,9 +31,11 @@ var workflowExecutableNodeKinds = map[string]bool{
 	"agent":      true,
 	"condition":  true,
 	"aggregator": true,
+	"iteration":  true,
 	"output":     true,
 	"loop":       true,
-	"loopExit":   true,}
+	"loopExit":   true,
+}
 
 // workflowAgentSchemaVersion is the only `agentConfig.schemaVersion` Cloud executes. Version 4
 // introduces the interactive completion declaration Cloud refuses by name; a version Cloud has
@@ -396,6 +398,13 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 	seen := map[string]bool{}
 	declaredRoots := workflowDeclaredRoots(nodes, globals)
 	containers := workflowNodeContainers(nodes)
+	iterations := map[string]bool{}
+	for _, raw := range nodes {
+		node, ok := asWorkflowObject(raw)
+		if ok && node.O("data").S("kind") == "iteration" {
+			iterations[node.S("id")] = true
+		}
+	}
 	loops := workflowLoopRootsByName(nodes)
 	starts := 0
 	for _, raw := range nodes {
@@ -417,6 +426,11 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 		seen[id] = true
 		kind := o.O("data").S("kind")
 		visibleRoots := workflowVisibleRoots(declaredRoots, loops, containers[id])
+		if iterations[containers[id]] {
+			// A region's members read the current round's item and index, which exist only inside
+			// that region and only while it runs.
+			visibleRoots[containers[id]] = map[string]bool{"item": true, "index": true}
+		}
 		switch {
 		case kind == "":
 			problems = append(problems, workflowGraphProblem{Code: "node_kind_missing", NodeID: id})

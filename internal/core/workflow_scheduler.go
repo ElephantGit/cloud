@@ -123,6 +123,9 @@ type workflowNodeView struct {
 	ID   string
 	Kind string
 	Data Object
+	// Container is the normalized region membership (data.containerId, else parentId). Decode
+	// computes it once so every scheduler helper reads the same value.
+	Container string
 }
 
 // workflowGraphView is the frozen graph reduced to the shapes the scheduler reads.
@@ -154,7 +157,7 @@ func readWorkflowGraph(graph Object) workflowGraphView {
 		if _, seen := out.ByNode[id]; seen {
 			continue
 		}
-		view := workflowNodeView{ID: id, Kind: o.O("data").S("kind"), Data: o.O("data")}
+		view := workflowNodeView{ID: id, Kind: o.O("data").S("kind"), Data: o.O("data"), Container: workflowContainerID(o)}
 		out.Nodes = append(out.Nodes, view)
 		out.ByNode[id] = view
 		// A loop body carries its own start. The run's entry point is the outer start only; picking a
@@ -262,6 +265,8 @@ type workflowNodeState struct {
 	// member states stay in the run's flat node_states map (so the session, retry and viewer paths see
 	// one shape); completed rounds are archived here for audit and recovery.
 	Loop *workflowLoopRunState
+	// Iteration is the round progress and ledger of an iteration node, nil for every other kind.
+	Iteration *workflowIterationRunState
 }
 
 // attemptNumber is the state's 1-based attempt, reading an absent attempt as the first one. Only
@@ -396,8 +401,12 @@ func (p *workflowProjection) hasPending() bool {
 
 // hasFailure reports whether any committed node failed.
 func (p *workflowProjection) hasFailure() bool {
-	for _, state := range p.committed {
-		if state.Status == "failed" {
+	// Only nodes of this projection can decide it. A body member's failure belongs to its container:
+	// the container engine either absorbs it (iteration `continue`) or fails itself, and only the
+	// container's own state may stop the outer wave. Reading the whole committed map here let an
+	// absorbed failure escape its region and fail the run.
+	for _, node := range p.graph.Nodes {
+		if state, ok := p.committed[node.ID]; ok && state.Status == "failed" {
 			return true
 		}
 	}
@@ -411,7 +420,11 @@ func (p *workflowProjection) hasFailure() bool {
 func (p *workflowProjection) nodeState(nodeID string) (string, bool) {
 	incoming := p.incomingEdges(nodeID)
 	if len(incoming) == 0 {
-		if nodeID == p.graph.Start {
+		// A graph without a declared start begins at every entry node. Iteration regions have no
+		// start member: their entries are the members with no predecessor inside the region, and
+		// this rule is what lets a round begin there. An outer graph always declares exactly one
+		// start (the gate requires it), so its stray roots stay inactive.
+		if nodeID == p.graph.Start || p.graph.Start == "" {
 			return "ready", true
 		}
 		return "inactive", true
@@ -634,6 +647,14 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			}
 			continue
 		}
+		if iterationNode, running := runningWorkflowIteration(outer, states); running {
+			// The iteration drives one region step per pass: a started body session ends the pass,
+			// otherwise the round advances and the outer wave continues.
+			if !advanceWorkflowIteration(t, run, iterationNode, version, states, ambient, graph) {
+				return
+			}
+			continue
+		}
 		node, ready := projection.readyNode()
 		if !ready {
 			break
@@ -651,6 +672,14 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 			// path, so a started session ends the pass; otherwise the loop's state is updated in
 			// this pass and the outer wave continues.
 			if !advanceWorkflowLoop(t, run, node, version, states, ambient, graph) {
+				return
+			}
+			continue
+		}
+		if node.Kind == "iteration" {
+			// Same handshake as the loop: one region step per pass, and a started body session
+			// ends it so the next tick settles the session.
+			if !advanceWorkflowIteration(t, run, node, version, states, ambient, graph) {
 				return
 			}
 			continue

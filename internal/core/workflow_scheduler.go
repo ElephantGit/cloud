@@ -732,6 +732,23 @@ func executeWorkflowNode(node workflowNodeView, input Object, states, ambient ma
 		state.Output = Object{"selectedBranch": branch}
 	case "output":
 		state.Output = Object{}
+	case "aggregator":
+		value, assigned, err := evaluateWorkflowAggregator(node, workflowConditionStates(states, ambient))
+		if err != nil {
+			state.Status = "failed"
+			state.Error = err.Error()
+			state.Output = Object{"reason": "aggregator_invalid_config"}
+			return state
+		}
+		if !assigned {
+			// Every candidate was declared but none was produced: the stable desktop failure, not an
+			// empty output. Publishing nothing would make a branch merge silently disappear.
+			state.Status = "failed"
+			state.Error = "variable aggregator found no assigned candidate"
+			state.Output = Object{"reason": "aggregator_no_match"}
+			return state
+		}
+		state.Output = Object{"output": value}
 	default:
 		// Unreachable: the ready pass only yields executable kinds, and the agent case returned
 		// earlier. A future kind that reaches here must not be recorded as success.

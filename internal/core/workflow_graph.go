@@ -21,13 +21,15 @@ import (
 // into the save path is the mistake this file exists to prevent.
 
 // workflowExecutableNodeKinds is the subset of the editor's node kinds Cloud executes in its first
-// phase (#67 结论 4): start, agent, condition and output. Everything else stays editable and
-// saveable, but publishing refuses it rather than freezing a graph whose nodes would be dropped.
+// phase (#67 结论 4): start, agent, condition and output; `aggregator` joined it with the
+// variable-aggregator slice. Everything else stays editable and saveable, but publishing refuses it
+// rather than freezing a graph whose nodes would be dropped.
 var workflowExecutableNodeKinds = map[string]bool{
-	"start":     true,
-	"agent":     true,
-	"condition": true,
-	"output":    true,
+	"start":      true,
+	"agent":      true,
+	"condition":  true,
+	"aggregator": true,
+	"output":     true,
 }
 
 // workflowAgentSchemaVersion is the only `agentConfig.schemaVersion` Cloud executes. Version 4
@@ -411,6 +413,8 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
 			problems = append(problems, validateConditionConfig(id, o.O("data"), declaredRoots)...)
+		case kind == "aggregator":
+			problems = append(problems, validateAggregatorConfig(id, o.O("data"), declaredRoots)...)
 		}
 	}
 	if starts != 1 {
@@ -608,6 +612,9 @@ func workflowDeclaredRoots(nodes []any, globals []Object) map[string]map[string]
 				set["structured_output"] = true
 			}
 		case "output":
+			set["output"] = true
+		case "aggregator":
+			// The aggregator publishes exactly one root: the value of the first assigned candidate.
 			set["output"] = true
 		}
 		roots[id] = set

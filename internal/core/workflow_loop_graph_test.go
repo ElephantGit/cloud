@@ -84,6 +84,57 @@ func TestWorkflowPublishAcceptsAWellFormedLoop(t *testing.T) {
 	}
 }
 
+// TestWorkflowPublishAcceptsTheEditorStarterGroup pins the contract between the palette and the gate:
+// the exact shape `createWorkflowLoopGroup` emits — including the default agent contract the editor
+// starts from — must publish without a single change. A drift here would make every Loop added from
+// the palette unpublishable while the editor still looked fine.
+func TestWorkflowPublishAcceptsTheEditorStarterGroup(t *testing.T) {
+	agent := Object{
+		"id": "loop-1-agent",
+		"data": Object{
+			"kind":        "agent",
+			"title":       "循环 Agent 1",
+			"containerId": "loop-1",
+			"agentConfig": Object{
+				"schemaVersion": 3,
+				"executor":      Object{"agentCli": "claude-code", "modelId": "claude-sonnet-4-5"},
+				"roleId":        "member",
+				"skills":        []any{},
+				"mcps":          []any{},
+				"prompt":        "改进当前值并输出新值：{{#loop-1.value#}}",
+			},
+		},
+	}
+	graph := Object{
+		"nodes": []any{
+			Object{"id": "start-1", "data": Object{"kind": "start", "title": "开始", "inputVariables": []any{}}},
+			Object{"id": "loop-1", "data": Object{"kind": "loop", "title": "循环 1", "loopConfig": Object{
+				"maxIterations": 3,
+				"variables": []any{Object{
+					"name": "value", "valueType": "string",
+					"initial":  Object{"kind": "constant", "value": ""},
+					"feedback": []any{"loop-1-agent", "output"},
+				}},
+				"until": Object{"logic": "and", "conditions": []any{
+					Object{"variableSelector": []any{"loop-1-agent", "output"}, "operator": "not_empty"},
+				}},
+				"outputs": []any{Object{"name": "result", "variableSelector": []any{"loop-1-agent", "output"}}},
+			}}},
+			Object{"id": "loop-1-start", "data": Object{"kind": "start", "title": "轮次开始", "containerId": "loop-1", "inputVariables": []any{}}},
+			agent,
+			Object{"id": "output-1", "data": Object{"kind": "output", "title": "输出"}},
+		},
+		"edges": []any{
+			Object{"source": "start-1", "target": "loop-1"},
+			Object{"source": "loop-1", "target": "output-1"},
+			Object{"source": "loop-1-start", "target": "loop-1-agent"},
+		},
+	}
+	if got := loopProblemStrings(t, graph); len(got) != 0 {
+		t.Fatalf("the palette's starter group must publish, got problems %v", got)
+	}
+}
+
 // TestWorkflowPublishRefusesInvalidLoopContainers is the structural matrix: membership, body start,
 // nested composites, body output, cross-scope edges, loopExit terminality and reachability.
 func TestWorkflowPublishRefusesInvalidLoopContainers(t *testing.T) {

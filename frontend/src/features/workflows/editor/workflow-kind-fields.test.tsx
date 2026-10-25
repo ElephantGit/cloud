@@ -361,7 +361,8 @@ describe('LoopNodeFields', () => {
     expect(data.loopConfig?.variables[0]?.initial).toEqual({ kind: 'constant', value: 'ready' })
   })
 
-  it('adds a carried variable and records its feedback selector', () => {
+  it('adds a carried variable and records its feedback selector', async () => {
+    const user = userEvent.setup()
     const { data, rerenderPanel } = setUpLoopPanel()
     fireEvent.click(screen.getByRole('button', { name: '添加变量' }))
     expect(data.loopConfig?.variables).toHaveLength(2)
@@ -369,10 +370,11 @@ describe('LoopNodeFields', () => {
     rerenderPanel()
     fireEvent.change(screen.getByLabelText('变量名 2'), { target: { value: 'draft' } })
     rerenderPanel()
-    fireEvent.change(screen.getByLabelText('反馈 2'), { target: { value: 'writer.output' } })
+    await user.click(screen.getByLabelText('反馈 2'))
+    await user.click(await screen.findByRole('option', { name: /value/ }))
     expect(data.loopConfig?.variables[1]).toMatchObject({
       name: 'draft',
-      feedback: ['writer', 'output'],
+      feedback: ['loop-1', 'value'],
     })
 
     fireEvent.click(screen.getByRole('button', { name: '删除变量 1' }))
@@ -397,17 +399,19 @@ describe('LoopNodeFields', () => {
     })
   })
 
-  it('adds a round-end rule and records its selector, operator and value', () => {
+  it('adds a round-end rule and records its selector, operator and value', async () => {
+    const user = userEvent.setup()
     const { data, rerenderPanel } = setUpLoopPanel()
     fireEvent.click(screen.getByRole('button', { name: '添加条件' }))
     expect(data.loopConfig?.until.conditions).toHaveLength(1)
 
     rerenderPanel()
-    fireEvent.change(screen.getByLabelText('变量 1'), { target: { value: 'writer.output' } })
+    await user.click(screen.getByLabelText('变量 1'))
+    await user.click(await screen.findByRole('option', { name: /value/ }))
     rerenderPanel()
     fireEvent.change(screen.getByLabelText('值 1'), { target: { value: 'done' } })
     expect(data.loopConfig?.until.conditions[0]).toEqual({
-      variableSelector: ['writer', 'output'],
+      variableSelector: ['loop-1', 'value'],
       operator: 'equals',
       value: 'done',
     })

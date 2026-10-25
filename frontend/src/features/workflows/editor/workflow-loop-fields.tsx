@@ -32,8 +32,6 @@ import {
   WorkflowVariableTypeMenu,
   comparisonValueToText,
   parseComparisonValue,
-  selectorToText,
-  textToSelector,
 } from '@/features/workflows/editor/workflow-variable-select'
 import type {
   WorkflowCanvasEdge,
@@ -83,8 +81,8 @@ export function LoopNodeFields({
   return (
     <>
       <LoopBudgetFields data={data} onChange={onChange} />
-      <LoopVariablesFields data={data} onChange={onChange} />
-      <LoopUntilFields data={data} onChange={onChange} />
+      <LoopVariablesFields data={data} onChange={onChange} choices={choices} />
+      <LoopUntilFields data={data} onChange={onChange} choices={choices} />
       <LoopOutputsFields
         data={data}
         onChange={onChange}
@@ -180,7 +178,13 @@ function blankLoopVariable(): WorkflowLoopVariable {
 }
 
 /** Edits every carried variable: its name, type, first-round value and feedback selector. */
-function LoopVariablesFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onChange'>) {
+function LoopVariablesFields({
+  data,
+  onChange,
+  choices,
+}: Pick<LoopFieldsProps, 'data' | 'onChange'> & {
+  choices: readonly WorkflowDecoratedVariable[]
+}) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   if (loopConfig === undefined) {
@@ -198,6 +202,7 @@ function LoopVariablesFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 
             key={`loop-variable-${index}`}
             index={index}
             variable={variable}
+            choices={choices}
             onChange={(next) =>
               update(loopConfig.variables.map((current, i) => (i === index ? next : current)))
             }
@@ -223,11 +228,13 @@ function LoopVariablesFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 
 function LoopVariableRow({
   index,
   variable,
+  choices,
   onChange,
   onRemove,
 }: {
   index: number
   variable: WorkflowLoopVariable
+  choices: readonly WorkflowDecoratedVariable[]
   onChange: (variable: WorkflowLoopVariable) => void
   onRemove: () => void
 }) {
@@ -290,14 +297,20 @@ function LoopVariableRow({
           </SelectContent>
         </Select>
       </div>
-      <LoopInitialValueInput index={index} variable={variable} onChange={onChange} />
-      <Input
-        aria-label={label('workflows.loop.field.variableFeedback')}
+      <LoopInitialValueInput
+        index={index}
+        variable={variable}
+        choices={choices}
+        onChange={onChange}
+      />
+      <WorkflowCatalogSelector
+        htmlId={`workflow-loop-variable-feedback-`}
+        value={variable.feedback}
         placeholder={t('workflows.loop.selectorPlaceholder')}
-        value={selectorToText(variable.feedback)}
-        onChange={(event) =>
-          onChange({ ...variable, feedback: textToSelector(event.target.value) })
-        }
+        choices={choices}
+        catalog={choices}
+        ariaLabel={label('workflows.loop.field.variableFeedback')}
+        onPick={(picked) => onChange({ ...variable, feedback: picked })}
       />
     </div>
   )
@@ -311,10 +324,12 @@ function LoopVariableRow({
 function LoopInitialValueInput({
   index,
   variable,
+  choices,
   onChange,
 }: {
   index: number
   variable: WorkflowLoopVariable
+  choices: readonly WorkflowDecoratedVariable[]
   onChange: (variable: WorkflowLoopVariable) => void
 }) {
   const { t } = useTranslation()
@@ -337,15 +352,15 @@ function LoopInitialValueInput({
     )
   }
   return (
-    <Input
-      aria-label={label}
+    <WorkflowCatalogSelector
+      htmlId={`workflow-loop-variable-initial-`}
+      value={variable.initial.selector}
       placeholder={t('workflows.loop.selectorPlaceholder')}
-      value={selectorToText(variable.initial.selector)}
-      onChange={(event) =>
-        onChange({
-          ...variable,
-          initial: { kind: 'variable', selector: textToSelector(event.target.value) },
-        })
+      choices={choices}
+      catalog={choices}
+      ariaLabel={label}
+      onPick={(picked) =>
+        onChange({ ...variable, initial: { kind: 'variable', selector: picked } })
       }
     />
   )
@@ -361,7 +376,13 @@ const LOOP_UNTIL_LOGIC_CHOICES = [
 const LOOP_OPERATORS_WITHOUT_VALUE = new Set(['exists', 'not_exists', 'empty', 'not_empty'])
 
 /** Edits the round-end condition: how rules combine and the rules themselves. */
-function LoopUntilFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onChange'>) {
+function LoopUntilFields({
+  data,
+  onChange,
+  choices,
+}: Pick<LoopFieldsProps, 'data' | 'onChange'> & {
+  choices: readonly WorkflowDecoratedVariable[]
+}) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   if (loopConfig === undefined) {
@@ -392,6 +413,7 @@ function LoopUntilFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onC
             key={`loop-until-${index}`}
             index={index}
             condition={condition}
+            choices={choices}
             onChange={(next) =>
               update({
                 ...until,
@@ -430,11 +452,13 @@ function LoopUntilFields({ data, onChange }: Pick<LoopFieldsProps, 'data' | 'onC
 function LoopUntilRow({
   index,
   condition,
+  choices,
   onChange,
   onRemove,
 }: {
   index: number
   condition: WorkflowConditionComparison
+  choices: readonly WorkflowDecoratedVariable[]
   onChange: (condition: WorkflowConditionComparison) => void
   onRemove: () => void
 }) {
@@ -454,13 +478,14 @@ function LoopUntilRow({
           <Trash2 />
         </Button>
       </div>
-      <Input
-        aria-label={t('workflows.condition.field.variable', { index: index + 1 })}
+      <WorkflowCatalogSelector
+        htmlId={`workflow-loop-until-variable-`}
+        value={condition.variableSelector}
         placeholder={t('workflows.loop.selectorPlaceholder')}
-        value={selectorToText(condition.variableSelector)}
-        onChange={(event) =>
-          onChange({ ...condition, variableSelector: textToSelector(event.target.value) })
-        }
+        choices={choices}
+        catalog={choices}
+        ariaLabel={t('workflows.condition.field.variable', { index: index + 1 })}
+        onPick={(picked) => onChange({ ...condition, variableSelector: picked })}
       />
       <WorkflowChoiceSelect
         id={`workflow-loop-until-operator-${index}`}

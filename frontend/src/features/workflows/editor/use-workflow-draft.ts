@@ -8,6 +8,7 @@ import {
   type XYPosition,
 } from '@xyflow/react'
 import type { Workflow as CloudWorkflow } from '@/api/generated.schemas'
+import { resolveConditionCases } from '@/features/workflows/runtime/condition-cases'
 import {
   parseWorkflowGraphValue,
   serializeWorkflowGraphValue,
@@ -347,15 +348,33 @@ function appendLoopExitNode(
 
 /** Adds an edge, unless the gesture would create a self-loop or a duplicate. */
 function appendConnection(current: DraftState, connection: Connection): DraftState {
-  if (!isValidWorkflowConnection(connection, current.edges)) {
+  const sourceNode = current.nodes.find((node) => node.id === connection.source)
+  const sourceHandle =
+    connection.sourceHandle ?? (sourceNode?.data.kind === 'condition' ? 'else' : null)
+  const candidate = { ...connection, sourceHandle }
+  // An older unlabeled Condition edge means ELSE. Canonicalize that source's existing edges so
+  // reconnecting its explicit ELSE port cannot create a second edge for the same branch.
+  const edges = current.edges.map((edge) =>
+    sourceNode?.data.kind === 'condition' && edge.source === connection.source
+      ? { ...edge, sourceHandle: edge.sourceHandle ?? 'else' }
+      : edge,
+  )
+  if (!isValidWorkflowConnection(candidate, edges)) {
     return current
   }
-  const { source, target } = connection
+  const { source, target, targetHandle } = candidate
   return {
     ...current,
     edges: [
-      ...current.edges,
-      { id: workflowEdgeId(source, target), source, target, type: WORKFLOW_FLOW_EDGE_TYPE },
+      ...edges,
+      {
+        id: workflowEdgeId(source, target, candidate),
+        source,
+        target,
+        ...(sourceHandle === null ? {} : { sourceHandle }),
+        ...(targetHandle === null ? {} : { targetHandle }),
+        type: WORKFLOW_FLOW_EDGE_TYPE,
+      },
     ],
   }
 }
@@ -399,9 +418,22 @@ function toggleCollapsed(current: DraftState, iterationId: string): DraftState {
 
 /** Replaces one node's data with an edited copy. */
 function setNodeData(current: DraftState, nodeId: string, data: WorkflowNodeData): DraftState {
+  const previous = current.nodes.find((node) => node.id === nodeId)
+  const removedBranches = new Set<string>()
+  if (previous?.data.kind === 'condition' && data.kind === 'condition') {
+    const remaining = new Set(resolveConditionCases(data).map((branch) => branch.id))
+    for (const branch of resolveConditionCases(previous.data)) {
+      if (!remaining.has(branch.id)) {
+        removedBranches.add(branch.id)
+      }
+    }
+  }
   return {
     ...current,
     nodes: current.nodes.map((node) => (node.id === nodeId ? { ...node, data } : node)),
+    edges: current.edges.filter(
+      (edge) => edge.source !== nodeId || !removedBranches.has(edge.sourceHandle ?? 'else'),
+    ),
   }
 }
 

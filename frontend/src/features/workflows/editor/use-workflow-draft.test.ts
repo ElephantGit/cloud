@@ -83,6 +83,85 @@ function requireNode(nodes: WorkflowCanvasNode[], id: string): WorkflowCanvasNod
 }
 
 describe('useWorkflowDraft', () => {
+  it('persists distinct IF, ELIF and ELSE connections to one target across reloads', () => {
+    const condition: WorkflowCanvasNode = {
+      id: 'condition-1',
+      type: 'workflow',
+      position: { x: 0, y: 0 },
+      data: {
+        kind: 'condition',
+        title: '条件',
+        description: '',
+        cases: [
+          { id: 'case-1', conditions: [] },
+          { id: 'case-2', conditions: [] },
+        ],
+      },
+    }
+    const { result } = setup(fixtureWithGraph([condition, outputNode()]))
+    for (const sourceHandle of ['case-1', 'case-2', 'else', 'case-1']) {
+      act(() =>
+        result.current.connect({
+          source: 'condition-1',
+          target: 'output-1',
+          sourceHandle,
+          targetHandle: null,
+        }),
+      )
+    }
+    const before = result.current.edges
+    expect(before.map((edge) => edge.sourceHandle)).toEqual(['case-1', 'case-2', 'else'])
+    expect(new Set(before.map((edge) => edge.id)).size).toBe(3)
+    const saved = workflowFixture({ graph: result.current.snapshot({ x: 0, y: 0, zoom: 1 }) })
+    const reloaded = setup(saved)
+    expect(reloaded.result.current.edges).toEqual(before)
+    const history = result.current.captureContent()
+    act(() =>
+      result.current.updateNodeData('condition-1', {
+        ...condition.data,
+        cases: [{ id: 'case-1', conditions: [] }],
+      }),
+    )
+    expect(result.current.edges.map((edge) => edge.sourceHandle)).toEqual(['case-1', 'else'])
+    act(() => result.current.restoreContent(history))
+    expect(result.current.captureContent()).toEqual(history)
+  })
+
+  it('treats a legacy unlabeled Condition connection as ELSE when reconnecting', () => {
+    const condition: WorkflowCanvasNode = {
+      id: 'condition-1',
+      type: 'workflow',
+      position: { x: 0, y: 0 },
+      data: { kind: 'condition', title: '条件', description: '' },
+    }
+    const { result } = setup(
+      workflowFixture({
+        graph: {
+          nodes: [condition, outputNode()],
+          edges: [{ id: 'old', source: condition.id, target: 'output-1' }],
+        },
+      }),
+    )
+    act(() =>
+      result.current.connect({
+        source: condition.id,
+        target: 'output-1',
+        sourceHandle: 'else',
+        targetHandle: null,
+      }),
+    )
+    expect(result.current.edges).toHaveLength(1)
+    act(() =>
+      result.current.connect({
+        source: condition.id,
+        target: 'output-1',
+        sourceHandle: 'case-1',
+        targetHandle: null,
+      }),
+    )
+    expect(result.current.edges.map((edge) => edge.sourceHandle)).toEqual(['else', 'case-1'])
+  })
+
   it('adds a Loop as one atomic group with its starter body', () => {
     // A bare Loop saves but never publishes: the body needs a Start. The palette entry therefore
     // emits the container, its Start, its starter Agent and the internal edge together.

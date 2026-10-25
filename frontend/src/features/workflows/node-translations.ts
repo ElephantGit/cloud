@@ -8,6 +8,7 @@
  */
 export const nodeTranslations = {
   'zh-CN': {
+    'workflows.condition.connectFromBranch': '从{{name}}的 {{branch}} 分支连接',
     // Node catalog: palette labels and descriptions for every executable kind.
     'workflows.node.start.label': '开始',
     'workflows.node.start.description': '定义工作流输入',
@@ -31,6 +32,7 @@ export const nodeTranslations = {
     'workflows.node.output.description': '返回最终结果',
   },
   'en-US': {
+    'workflows.condition.connectFromBranch': 'Connect from {{branch}} of {{name}}',
     'workflows.node.start.label': 'Start',
     'workflows.node.start.description': 'Define workflow inputs',
     'workflows.node.agent.label': 'Agent',

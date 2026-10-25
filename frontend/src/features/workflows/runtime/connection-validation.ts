@@ -1,7 +1,13 @@
 import type { WorkflowLayoutEdge } from '@/features/workflows/runtime/layout'
 
+/** Port identities distinguish parallel branch edges between the same nodes. */
+interface WorkflowConnectionHandles {
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
 /** The endpoint pair a candidate connection would create. */
-export interface WorkflowConnectionCandidate {
+export interface WorkflowConnectionCandidate extends WorkflowConnectionHandles {
   source: string | null
   target: string | null
 }
@@ -22,13 +28,19 @@ export interface WorkflowConnectionCandidate {
  */
 export function isValidWorkflowConnection(
   candidate: WorkflowConnectionCandidate,
-  edges: readonly WorkflowLayoutEdge[],
+  edges: readonly (WorkflowLayoutEdge & WorkflowConnectionHandles)[],
 ): boolean {
   const { source, target } = candidate
   if (source === null || target === null || source === target) {
     return false
   }
-  return !edges.some((edge) => edge.source === source && edge.target === target)
+  return !edges.some(
+    (edge) =>
+      edge.source === source &&
+      edge.target === target &&
+      (edge.sourceHandle ?? null) === (candidate.sourceHandle ?? null) &&
+      (edge.targetHandle ?? null) === (candidate.targetHandle ?? null),
+  )
 }
 
 /**
@@ -42,6 +54,14 @@ export function isValidWorkflowConnection(
  * @param target - Target node id.
  * @returns The edge id.
  */
-export function workflowEdgeId(source: string, target: string): string {
-  return `e-${source}-${target}`
+export function workflowEdgeId(
+  source: string,
+  target: string,
+  handles: WorkflowConnectionHandles = {},
+): string {
+  const base = `e-${source}-${target}`
+  if (handles.sourceHandle == null && handles.targetHandle == null) {
+    return base
+  }
+  return `${base}-${encodeURIComponent(JSON.stringify([handles.sourceHandle ?? null, handles.targetHandle ?? null]))}`
 }

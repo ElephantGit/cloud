@@ -37,6 +37,22 @@ describe('isValidWorkflowConnection', () => {
 
     expect(isValidWorkflowConnection({ source: 'a', target: 'b' }, edges)).toBe(true)
   })
+
+  it('allows separate condition branches to join the same target, but rejects the same port twice', () => {
+    const edges = [{ source: 'condition', target: 'join', sourceHandle: 'case-1' }]
+    expect(
+      isValidWorkflowConnection(
+        { source: 'condition', target: 'join', sourceHandle: 'else' },
+        edges,
+      ),
+    ).toBe(true)
+    expect(
+      isValidWorkflowConnection(
+        { source: 'condition', target: 'join', sourceHandle: 'case-1' },
+        edges,
+      ),
+    ).toBe(false)
+  })
 })
 
 describe('workflowEdgeId', () => {
@@ -46,5 +62,15 @@ describe('workflowEdgeId', () => {
 
   it('distinguishes the two directions between the same pair', () => {
     expect(workflowEdgeId('a', 'b')).not.toBe(workflowEdgeId('b', 'a'))
+  })
+
+  it('gives parallel branch connections distinct ids that survive serialization', () => {
+    const first = workflowEdgeId('condition', 'join', { sourceHandle: 'case-1' })
+    const otherwise = workflowEdgeId('condition', 'join', { sourceHandle: 'else' })
+    expect(first).not.toBe(otherwise)
+    expect(first).toBe(workflowEdgeId('condition', 'join', { sourceHandle: 'case-1' }))
+    expect(workflowEdgeId('condition', 'join', { sourceHandle: 'a/b' })).not.toBe(
+      workflowEdgeId('condition', 'join', { sourceHandle: 'a%2Fb' }),
+    )
   })
 })

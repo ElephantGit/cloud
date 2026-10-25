@@ -64,6 +64,13 @@ deliverable declaration `agentConfig.completion` (any non-null value) and any `a
 `3` — including `4`, the legacy `1`/`2`, and non-numbers: Cloud executes only version `3`, absent or `null` keeps the
 old behavior, and the refusal names the node and field instead of silently dropping the declaration.
 
+## Condition branches
+
+Condition cards expose a port for each case and the implicit ELSE branch. Connections persist the
+case id in `sourceHandle`. Different branches may join the same node; duplicate endpoint-and-port
+pairs are rejected. Deleting a case removes its connections, and undo restores both. Legacy
+unlabeled condition connections retain ELSE semantics; case ordering never renumbers existing edges.
+
 ## Executor slots
 
 Agent nodes do not hard-code an Agent CLI or model ID in the graph; they reference an **executor slot**:

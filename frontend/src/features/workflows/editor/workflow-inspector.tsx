@@ -42,6 +42,8 @@ export interface WorkflowInspectorProps {
   node: WorkflowCanvasNode | null
   /** Replaces the selected node's data with an edited copy. */
   onUpdate: (data: WorkflowNodeData) => void
+  /** Adds a loopExit into the selected loop's body. */
+  onAddLoopExit?: (loopId: string) => void
   /** Collapses the panel. */
   onClose: () => void
   /** Whole-graph nodes, from which the selectable variable catalog is derived. */
@@ -64,6 +66,7 @@ export interface WorkflowInspectorProps {
 export function WorkflowInspector({
   node,
   onUpdate,
+  onAddLoopExit,
   onClose,
   nodes,
   edges,
@@ -76,6 +79,7 @@ export function WorkflowInspector({
     <WorkflowNodeInspector
       node={node}
       onUpdate={onUpdate}
+      {...(onAddLoopExit === undefined ? {} : { onAddLoopExit })}
       onClose={onClose}
       nodes={nodes}
       edges={edges}
@@ -112,6 +116,7 @@ function WorkflowInspectorEmpty() {
 function WorkflowNodeInspector({
   node,
   onUpdate,
+  onAddLoopExit,
   onClose,
   nodes,
   edges,
@@ -143,6 +148,7 @@ function WorkflowNodeInspector({
           catalog={catalog}
           graphNodes={nodes}
           globalVariables={globalVariables}
+          {...(onAddLoopExit === undefined ? {} : { onAddLoopExit })}
         />
       </div>
     </aside>
@@ -157,7 +163,8 @@ function NodeKindFields({
   catalog,
   graphNodes,
   globalVariables,
-}: WorkflowKindFieldsProps) {
+  onAddLoopExit,
+}: WorkflowKindFieldsProps & { onAddLoopExit?: (loopId: string) => void }) {
   if (data.kind === 'start') {
     return <StartNodeFields data={data} onChange={onChange} />
   }
@@ -180,7 +187,13 @@ function NodeKindFields({
     return <HumanNodeFields data={data} onChange={onChange} />
   }
   if (data.kind === 'loop') {
-    return <LoopNodeFields data={data} onChange={onChange} />
+    return (
+      <LoopNodeFields
+        data={data}
+        onChange={onChange}
+        {...(onAddLoopExit === undefined ? {} : { onAddExit: () => onAddLoopExit(nodeId) })}
+      />
+    )
   }
   if (data.kind === 'iteration') {
     return (

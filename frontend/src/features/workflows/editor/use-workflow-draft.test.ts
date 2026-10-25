@@ -105,6 +105,26 @@ describe('useWorkflowDraft', () => {
     ])
   })
 
+  it('adds a loopExit into the selected loop body and ignores an unknown loop', () => {
+    const { result } = setup(fixtureWithGraph([outputNode()]))
+
+    act(() => {
+      result.current.addNode('loop', { x: 0, y: 0 })
+    })
+    act(() => {
+      result.current.addLoopExit('loop-1')
+    })
+
+    const exit = result.current.nodes.find((node) => node.data.kind === 'loopExit')
+    expect(exit?.data.containerId).toBe('loop-1')
+    expect(exit?.position).toEqual({ x: 320, y: 0 })
+
+    act(() => {
+      result.current.addLoopExit('missing-loop')
+    })
+    expect(result.current.nodes.filter((node) => node.data.kind === 'loopExit')).toHaveLength(1)
+  })
+
   it('adds a member through the entry seam, widening the frame and wiring the entry edge', () => {
     const { result } = setup(draftFixture())
 

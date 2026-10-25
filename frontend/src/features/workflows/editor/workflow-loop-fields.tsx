@@ -46,7 +46,11 @@ const WORKFLOW_LOOP_BEHAVIOR_CHOICES = [
 ] as const satisfies readonly WorkflowChoice[]
 
 /** Edits a Loop container: budget, carried initial value, and the behavior note. */
-export function LoopNodeFields({ data, onChange }: LoopFieldsProps) {
+export function LoopNodeFields({
+  data,
+  onChange,
+  onAddExit,
+}: LoopFieldsProps & { onAddExit?: () => void }) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
   return (
@@ -55,6 +59,12 @@ export function LoopNodeFields({ data, onChange }: LoopFieldsProps) {
       <LoopVariablesFields data={data} onChange={onChange} />
       <LoopUntilFields data={data} onChange={onChange} />
       <LoopOutputsFields data={data} onChange={onChange} />
+      {onAddExit === undefined ? null : (
+        <Button type="button" variant="outline" size="sm" onClick={onAddExit}>
+          <Plus />
+          {t('workflows.loop.addExitNode')}
+        </Button>
+      )}
       <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
         {t(
           loopConfig === undefined

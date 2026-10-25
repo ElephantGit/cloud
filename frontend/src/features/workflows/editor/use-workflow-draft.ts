@@ -78,6 +78,8 @@ export interface WorkflowDraft {
   applyEdgeChanges: (changes: EdgeChange<WorkflowCanvasEdge>[]) => void
   /** Appends a new node of `kind`, with the next free ordinal for that kind. */
   addNode: (kind: WorkflowNodeKind, position: XYPosition) => void
+  /** Adds a loopExit into the given loop's body. */
+  addLoopExit: (loopId: string) => void
   /** Adds one region member through an iteration insertion seam. */
   addIterationMember: (insertion: WorkflowIterationInsertion, kind: WorkflowNodeKind) => void
   /** Folds or unfolds one iteration frame; members stay in the graph. */
@@ -137,16 +139,14 @@ export interface WorkflowDraft {
  * @param translate - Resolves the label and description a new node starts with.
  * @returns The draft state and its change handlers.
  */
+// oxlint-disable-next-line max-lines-per-function -- the draft's whole mutation surface; splitting it would thread its state mirror through a second hook.
 export function useWorkflowDraft(
   workflow: CloudWorkflow,
   translate: WorkflowNodeTranslator,
 ): WorkflowDraft {
   const [state, setState] = useState<DraftState>(() => seedDraft(workflow))
-  // A synchronous mirror of `state`: history wraps any mutator as
-  // capture-before, mutate, capture-after, and React cannot run a functional
-  // update early enough for the after-capture to see it.
+  // History captures after the mutator, so the mirror must update synchronously.
   const stateRef = useRef<DraftState>(state)
-
   /** Commits a new draft state, keeping the sync mirror and the render in step. */
   const replaceState = useCallback((next: DraftState): void => {
     stateRef.current = next
@@ -164,6 +164,9 @@ export function useWorkflowDraft(
   }
   const addNode = (kind: WorkflowNodeKind, position: XYPosition): void => {
     replaceState(appendNode(stateRef.current, kind, position, translate))
+  }
+  const addLoopExit = (loopId: string): void => {
+    replaceState(appendLoopExitNode(stateRef.current, loopId, translate))
   }
   const connect = (connection: Connection): void => {
     replaceState(appendConnection(stateRef.current, connection))
@@ -237,6 +240,7 @@ export function useWorkflowDraft(
     applyNodeChanges: applyNodeEdits,
     applyEdgeChanges: applyEdgeEdits,
     addNode,
+    addLoopExit,
     addIterationMember,
     toggleIterationCollapsed,
     applyCorrection,
@@ -313,6 +317,32 @@ function appendNode(
   }
   const node = createWorkflowNode({ kind, sequence, position, translate })
   return { ...current, nodes: [...current.nodes, node] }
+}
+
+/** Appends one loopExit into `loopId`'s body, offset from the loop it belongs to. */
+function appendLoopExitNode(
+  current: DraftState,
+  loopId: string,
+  translate: WorkflowNodeTranslator,
+): DraftState {
+  const loop = current.nodes.find((node) => node.id === loopId && node.data.kind === 'loop')
+  if (loop === undefined) {
+    return current
+  }
+  const sequence = nextWorkflowNodeSequence(
+    'loopExit',
+    current.nodes.map((node) => node.id),
+  )
+  const node = createWorkflowNode({
+    kind: 'loopExit',
+    sequence,
+    position: { x: loop.position.x + 320, y: loop.position.y },
+    translate,
+  })
+  return {
+    ...current,
+    nodes: [...current.nodes, { ...node, data: { ...node.data, containerId: loopId } }],
+  }
 }
 
 /** Adds an edge, unless the gesture would create a self-loop or a duplicate. */

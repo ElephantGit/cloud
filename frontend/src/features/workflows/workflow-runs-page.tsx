@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkflow, useWorkflowRuns, runHistoryRows } from '@/features/workflows/api'
 import { RunHistoryRow } from '@/features/workflows/run/run-history-row'
 import { WorkflowDetailShell } from '@/features/workflows/workflow-detail-shell'
-import { isForbiddenError } from '@/lib/api-client'
+import { faultCode, isForbiddenError } from '@/lib/api-client'
 import { workspacePaths } from '@/lib/paths'
 
 /**
@@ -38,9 +38,10 @@ export function WorkflowRunsPage({ slug }: { slug: string }) {
       ) : (
         <div className="flex-1 overflow-y-auto p-4">
           {workflow.data === undefined ? (
-            // A workflow that is gone keeps its history with it: the read is 404 by contract, so the
-            // page reports the workflow rather than an unreadable list of runs.
-            <p className="text-sm text-muted-foreground">{t('workflows.detail.notFound')}</p>
+            <WorkflowReadFault
+              error={workflow.error}
+              onRetry={() => void workflow.refetch().catch(() => undefined)}
+            />
           ) : (
             <RunHistoryBody
               history={history}
@@ -52,6 +53,15 @@ export function WorkflowRunsPage({ slug }: { slug: string }) {
       )}
     </WorkflowDetailShell>
   )
+}
+
+/** Missing data alone does not mean missing workflow: only the public not_found fault does. */
+function WorkflowReadFault({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const { t } = useTranslation()
+  if (faultCode(error) === 'not_found') {
+    return <p className="text-sm text-muted-foreground">{t('workflows.detail.notFound')}</p>
+  }
+  return <HistoryFault forbidden={isForbiddenError(error)} onRetry={onRetry} />
 }
 
 /** What the history query can be, resolved into one of the states a member can act on. */

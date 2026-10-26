@@ -124,6 +124,11 @@ of that same order — `null` when the workflow has never run. It holds the stat
 row is what carries node states and inputs. The detail read carries no such field: a run starting must not rewrite every
 read of the workflow resource, so a reader that wants the label asks the list or the history.
 
+The run-history page distinguishes loading, no runs, a retryable read failure, and missing permission. On initial entry,
+workflow detail and run history are independent reads: a detail `403` also shows missing permission, retrying a transient
+detail failure reads the detail again, and only `not_found` says the workflow is missing. A later paging or refresh
+failure keeps the loaded history. Viewing history and retrying a read never create a run.
+
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency
 key) returns the same instant. The request writes only `workflow_runs.cancel_requested_at` — never the run's status,

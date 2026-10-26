@@ -15,6 +15,7 @@ import { renderAtRoute } from '@/test/render'
 
 const WORKFLOW_ID = '44444444-4444-4444-4444-444444444444'
 const WORKSPACE_SLUG = 'cloud-dev'
+const WORKFLOW_URL = `/api/v1/tenants/${TEST_TENANT_ID}/workflows/${WORKFLOW_ID}`
 const RUNS_URL = `/api/v1/tenants/${TEST_TENANT_ID}/workflows/${WORKFLOW_ID}/runs`
 const RUNS_PATH = `/w/${WORKSPACE_SLUG}/workflows/${WORKFLOW_ID}/runs`
 
@@ -86,9 +87,10 @@ function installHeadThenRefusal(status: number, code: string): void {
 }
 
 /** Mounts the runs tab behind a real route match, so the workspace slug comes from the URL. */
-function renderRunsPage() {
+function renderRunsPage(configureReads?: () => void) {
   installCloudSpaceHandlers('admin')
   installWorkflowHandlers([workflowFixture({ id: WORKFLOW_ID })])
+  configureReads?.()
   return renderAtRoute(
     '/w/:workspaceSlug/workflows/:workflowId/runs',
     <WorkflowRunsPage slug={TEST_TENANT_ID} />,
@@ -118,6 +120,58 @@ async function loadEveryPage(total: number): Promise<void> {
 }
 
 describe('WorkflowRunsPage', () => {
+  it('reports denied workflow and history reads as forbidden, not missing', async () => {
+    renderRunsPage(() =>
+      server.use(
+        http.get(WORKFLOW_URL, () => HttpResponse.json({ code: 'forbidden' }, { status: 403 })),
+        http.get(RUNS_URL, () => HttpResponse.json({ code: 'forbidden' }, { status: 403 })),
+      ),
+    )
+
+    expect(await screen.findByText('没有查看运行记录的权限')).toBeInTheDocument()
+    expect(screen.queryByText('未找到该工作流。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
+  })
+
+  it('retries a failed workflow read and restores the history without starting a run', async () => {
+    let detailReads = 0
+    const historyReads: string[] = []
+    installHistory(1, (cursor) => historyReads.push(cursor))
+    renderRunsPage(() =>
+      server.use(
+        http.get(WORKFLOW_URL, () => {
+          detailReads += 1
+          return detailReads === 1
+            ? HttpResponse.json({ code: 'internal' }, { status: 500 })
+            : HttpResponse.json(workflowFixture({ id: WORKFLOW_ID }))
+        }),
+      ),
+    )
+
+    expect(await screen.findByText('运行记录读取失败')).toBeInTheDocument()
+    expect(screen.queryByText('未找到该工作流。')).not.toBeInTheDocument()
+    await waitFor(() => expect(historyReads).toEqual(['']))
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
+    expect(await screen.findByText('第 1 次运行')).toBeInTheDocument()
+    expect(detailReads).toBe(2)
+    expect(historyReads).toEqual([''])
+    expect(screen.queryByText('运行记录读取失败')).not.toBeInTheDocument()
+  })
+
+  it('reports a genuinely missing workflow without offering a read retry', async () => {
+    installHistory(0)
+    renderRunsPage(() =>
+      server.use(
+        http.get(WORKFLOW_URL, () => HttpResponse.json({ code: 'not_found' }, { status: 404 })),
+      ),
+    )
+
+    expect(await screen.findByText('未找到该工作流。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
+    expect(screen.queryByText('运行记录读取失败')).not.toBeInTheDocument()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })

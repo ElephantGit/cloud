@@ -21,9 +21,10 @@ func drainWorkflowTimedOutSession(t *transaction, runID string, version int64, n
 	if t.one(`SELECT id FROM thread_commands WHERE id=$1
 		AND created_at<=clock_timestamp()-make_interval(secs=>$2)`, cmd.S("id"), window.Seconds()) != nil {
 		state.Status, state.FinishedAt = "failed", nowRFC3339()
-		state.Output = Object{"reason": workflowSessionTurnDeadlineExceeded}
+		state.Error = "session_end_deadline_exceeded"
+		state.Output = Object{"reason": "session_end_deadline_exceeded"}
 		states[node.ID] = state
-		finishWorkflowUndrainedSession(t, runID, version, node, states, workflowSessionTurnDeadlineExceeded)
+		finishWorkflowUndrainedSession(t, runID, version, node, states, "session_end_deadline_exceeded")
 	}
 	return states, false
 }
@@ -47,5 +48,6 @@ func finishWorkflowUndrainedSession(t *transaction, runID string, version int64,
 		archiveWorkflowLoopRound(state.Loop, body, states, true)
 		failWorkflowLoop(states, container, reason, reason)
 	}
-	finishWorkflowRun(t, runID, version, "failed", reason, states)
+	// D4 distinguishes the stable node code from the human-readable run error.
+	finishWorkflowRun(t, runID, version, "failed", "session end deadline exceeded", states)
 }

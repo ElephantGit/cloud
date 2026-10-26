@@ -19,8 +19,8 @@ interface WorkflowTabLink {
  * The tabs are real routes rather than local state, so each one has a URL a member can share,
  * bookmark or reach from a run's breadcrumb — the discoverability this page exists to provide.
  * They also keep the three surfaces apart by construction: the editor is unmounted while a member
- * browses runs, so no draft state leaks into a history read, and the editor's autosave has already
- * written the draft by the time it unmounts.
+ * browses runs, so no draft state leaks into a history read. The editor guards navigation until
+ * any outstanding autosave completes, including navigation through these tabs.
  *
  * The current tab is decided by the router, not by a prop: one source for the highlight keeps the
  * header from disagreeing with the address bar after a navigation.

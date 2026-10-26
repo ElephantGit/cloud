@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Save } from 'lucide-react'
+import { useBlocker } from 'react-router-dom'
 import type { Workflow as CloudWorkflow } from '@/api/generated.schemas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,6 +52,8 @@ export interface WorkflowEditorProps {
   workflow: CloudWorkflow
   /** Receives the created workflow after an import; the page navigates to it. */
   onImported?: (workflowId: string) => void
+  /** Enable route-exit protection when this editor is mounted by the application page. */
+  guardNavigation?: boolean
 }
 
 /**
@@ -62,7 +65,8 @@ export interface WorkflowEditorProps {
  *
  * @param props - The tenant to write to and the workflow to open.
  */
-export function WorkflowEditor({ tenantId, workflow, onImported }: WorkflowEditorProps) {
+export function WorkflowEditor(props: WorkflowEditorProps) {
+  const { tenantId, workflow, onImported, guardNavigation } = props
   const state = useWorkflowEditorState(tenantId, workflow)
   const inspectorRef = useRef<ResizablePanelHandle | null>(null)
   const iterationDeletion = useIterationDeletionConfirmation()
@@ -71,6 +75,9 @@ export function WorkflowEditor({ tenantId, workflow, onImported }: WorkflowEdito
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {guardNavigation && (
+        <DraftNavigationGuard status={state.status} flushDraft={state.flushDraft} />
+      )}
       <EditorToolbar
         nodeCount={state.nodes.length}
         edgeCount={state.edges.length}
@@ -157,6 +164,36 @@ export function WorkflowEditor({ tenantId, workflow, onImported }: WorkflowEdito
       )}
     </div>
   )
+}
+
+/** Keeps the page editor mounted until its draft reaches the query cache or a failed save is shown. */
+function DraftNavigationGuard({
+  status,
+  flushDraft,
+}: {
+  status: WorkflowDraftSaveStatus
+  flushDraft: () => Promise<boolean>
+}) {
+  const blocker = useBlocker(status !== 'clean')
+  const settlingNavigation = useRef(false)
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked' || settlingNavigation.current) return
+    settlingNavigation.current = true
+    // Every in-app exit, including tab and toolbar links, waits for the same flush.
+    void (async () => {
+      try {
+        if (await flushDraft()) blocker.proceed()
+        else blocker.reset()
+      } catch {
+        blocker.reset()
+      } finally {
+        settlingNavigation.current = false
+      }
+    })()
+  }, [blocker, flushDraft])
+
+  return null
 }
 
 /**

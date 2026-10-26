@@ -49,6 +49,7 @@ export function WorkflowEditorPage({ slug }: { slug: string }) {
         key={workflow.data.id}
         tenantId={slug}
         workflow={workflow.data}
+        guardNavigation
         onImported={(importedId) => navigate(paths.workflowDetail(importedId))}
       />
     </WorkflowDetailShell>

@@ -37,8 +37,10 @@ func TestWorkflowHistoricalOutputStrictBindings(t *testing.T) {
 				}
 				graph := wfGraph([]Object{wfNode("s", "start", ""), output}, [][3]string{{"s", "out", ""}})
 				runID := seedWorkflowRunSceneWithInput(t, store, graph, Object{"input": "committed answer"})
-				prior := Object{"s": Object{"status": "succeeded", "displayName": "", "output": Object{"input": "committed answer"},
-					"startedAt": "2026-01-01T00:00:00Z", "finishedAt": "2026-01-01T00:00:01Z"}}
+				prior := Object{"s": Object{
+					"status": "succeeded", "displayName": "", "output": Object{"input": "committed answer"},
+					"startedAt": "2026-01-01T00:00:00Z", "finishedAt": "2026-01-01T00:00:01Z",
+				}}
 				if recovered {
 					// A different input proves recovery consumes the saved predecessor, not a replay.
 					if _, err := store.Pool.Exec(`UPDATE workflow_runs SET status='running', started_at=now(),

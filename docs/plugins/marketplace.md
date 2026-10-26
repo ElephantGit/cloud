@@ -26,8 +26,8 @@ Cloud server 自己维护目录（`internal/pluginmarket`），启动时同步�
 - 扫描 `registry/**/orax.toml`，按与 desktop 相同的规则校验每份清单（大小、resolver 版本、kind、标识符语法、文本策略、SHA-256 格式、下载
   地址与 targets 的互斥关系等）。损坏的条目单独跳过；同一个 Plugin ID 出现多次时按路径顺序取第一个；`marketplace_visible=false` 的条目不进
   目录。
-- `kind = agent` 的清单可以声明 `[agent_configuration]` 发布关联：同步在受控 checkout 的条目目录内读取静态声明副本并校验——必须是普通文件
-  （不能是符号链接）、有界、UTF-8，SHA-256 与关联声明一致，能通过声明编译且 schema 版本一致。有效的关联连同逐字节副本进入目录快照；无效的
+- `kind = agent` 的清单可以声明 `[agent_configuration]` 发布关联：同步在受控 checkout 的条目目录内读取静态声明副本并校验——路径上任何一段都不能是符号链接，
+  最终是普通文件、有界、UTF-8，SHA-256 与关联声明一致，能通过声明编译且 schema 版本一致。有效的关联连同逐字节副本进入目录快照；无效的
   把有界原因记在条目上，不产生可消费的声明，也不影响包本身可安装（见 [Agent 声明的快照与冻结](#agent-声明的快照与冻结)）。
 - 一次成功的同步在单个事务里整源替换目录，读取方看不到中间状态；失败时保留上一版快照，只在源上记录失败原因，下一轮重试。
 - **读取目录从不出网**：`GET .../spaces/:spaceId/plugins/catalog` 只读这张表，返回全量目录和 `syncedAt`，过滤和搜索在前端完成。

@@ -34,8 +34,8 @@ The Cloud server maintains the catalog itself (`internal/pluginmarket`): it sync
   targets, and so on). Broken entries are skipped one by one; when a Plugin ID appears several times the first in
   path order wins; entries with `marketplace_visible=false` stay out of the catalog.
 - A `kind = agent` listing may declare an `[agent_configuration]` publication association: the sync reads the
-  static declaration copy inside the entry directory of the controlled checkout and validates it — a regular
-  file (never a symlink), bounded, UTF-8, with a SHA-256 matching the association, compiling cleanly at the
+  static declaration copy inside the entry directory of the controlled checkout and validates it — no segment
+  of its path may be a symlink, and it must be a regular file, bounded, UTF-8, with a SHA-256 matching the association, compiling cleanly at the
   association's schema version. A valid association enters the catalog snapshot together with its byte-exact
   copy; an invalid one records a bounded reason on the entry, produces no consumable declaration, and does not
   make the package uninstallable (see [Agent declaration snapshots and freezing](#agent-declaration-snapshots-and-freezing)).

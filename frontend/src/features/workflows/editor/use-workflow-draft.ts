@@ -362,7 +362,7 @@ function appendConnection(current: DraftState, connection: Connection): DraftSta
       ? { ...edge, sourceHandle: edge.sourceHandle || 'else' }
       : edge,
   )
-  if (!isValidWorkflowConnection(candidate, edges)) {
+  if (!isValidWorkflowConnection(candidate, { nodes: current.nodes, edges })) {
     return current
   }
   const { source, target, targetHandle } = candidate

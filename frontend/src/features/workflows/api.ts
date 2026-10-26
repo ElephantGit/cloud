@@ -519,10 +519,10 @@ function shareRunRead(previous: unknown, next: unknown): unknown {
 /**
  * The `structuralSharing` adapter for the run history, over {@link mergeRunPage}'s rule.
  *
- * Every loaded page is refreshed at its own cursor, so one read can move rows
- * across page boundaries. The held copies are therefore indexed across the whole
- * walk before the pages are merged, and pages the walk gained have no copy of
- * their own — `mergeRunRead` answers those with the incoming rows.
+ * A refresh derives each later page's cursor from the newly read previous page, so a new run can
+ * move an existing row across page boundaries. The held copies are therefore indexed across the
+ * whole walk before the pages are merged, and pages the walk gained have no copy of their own —
+ * `mergeRunRead` answers those with the incoming rows.
  */
 function shareRunHistory(previous: unknown, next: unknown): unknown {
   if (!isMergeableRunHistory(next)) return next
@@ -558,10 +558,9 @@ function isMergeableRunHistory(value: unknown): value is RunHistoryCache {
  *
  * A run's status is the one thing in the walk that still moves, so the query keeps re-reading
  * while any run of the loaded walk is unsettled and stops once the whole walk is terminal. Every
- * loaded page is refreshed at its own cursor, so a running run stays live wherever the walk put it,
- * not only on the newest page. `pages` is flattened by {@link runHistoryRows}, which drops a row the
- * server reports twice so a refetch that overlaps the previous read cannot render the same run in
- * two places.
+ * loaded page is refreshed in order, deriving each later cursor from the newly read previous page,
+ * so a running run stays live wherever the walk put it, not only on the newest page. `pages` is
+ * flattened by {@link runHistoryRows}, which keeps a stale cached overlap from rendering twice.
  *
  * @param tenantId - Tenant the workflow belongs to.
  * @param workflowId - Workflow whose runs to read.

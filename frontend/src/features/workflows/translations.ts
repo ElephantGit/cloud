@@ -255,8 +255,6 @@ export const workflowTranslations = {
       '文件只引用节点与变量本身，不包含凭据、模型绑定或环境特定信息。',
     'workflows.transfer.confirmExport': '导出',
 
-    // Version history and publishing.
-
     // Workflow-wide variable declarations edited from the variables dialog.
     'workflows.globalVariables.title': '全局变量',
     'workflows.globalVariables.description':
@@ -636,8 +634,6 @@ export const workflowTranslations = {
     'workflows.transfer.referenceOnlyNotice':
       'The file references only nodes and variables themselves, never credentials, model bindings, or environment-specific details.',
     'workflows.transfer.confirmExport': 'Export',
-
-    // Version history and publishing.
 
     'workflows.globalVariables.title': 'Global variables',
     'workflows.globalVariables.description':

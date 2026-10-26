@@ -182,6 +182,18 @@ describe('loopExitInsertion', () => {
     expect(loopExitInsertion(graph, 'loop-1')?.sourceId).toBe('loop-1-agent')
   })
 
+  it('never appends after the body start, which would end every round before any work', () => {
+    const graph: WorkflowIterationGraph = {
+      nodes: [
+        node('loop-1', 'loop', { x: 0, y: 0 }),
+        node('entry', 'start', { x: 40, y: 145 }, 'loop-1'),
+        node('branch', 'condition', { x: 350, y: 145 }, 'loop-1'),
+      ],
+      edges: [],
+    }
+    expect(loopExitInsertion(graph, 'loop-1')).toBeNull()
+  })
+
   it('returns null for a loop with no body', () => {
     expect(loopExitInsertion(loopGraph(), 'outer')).toBeNull()
   })

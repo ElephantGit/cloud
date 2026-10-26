@@ -5,12 +5,12 @@ package core
 func workflowPredecessorStates(graph workflowGraphView, node workflowNodeView, pool map[string]workflowNodeState) map[string]workflowNodeState {
 	ancestors := workflowAncestorIDs(graph, node.ID)
 	out := map[string]workflowNodeState{}
-	for id, state := range pool {
+	for id := range pool {
 		producer, known := graph.ByNode[id]
 		if known && producer.Container == node.Container && !ancestors[id] {
 			continue
 		}
-		out[id] = state
+		out[id] = pool[id]
 	}
 	return out
 }

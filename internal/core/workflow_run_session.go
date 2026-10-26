@@ -61,7 +61,7 @@ func settleWorkflowSessionEnded(t *transaction, runID, executionID string, ended
 func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool) {
 	for id := range states {
 		state := states[id]
-		if state.Status == "running" {
+		if state.Status == "running" && state.Loop == nil && state.Iteration == nil {
 			return id, true
 		}
 	}
@@ -264,7 +264,8 @@ func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, no
 	state := states[nodeID]
 	state.Attempt = state.attemptNumber()
 	states[nodeID] = state
-	if wait, retry := workflowRetryDecision(workflowRetryPolicyOf(node.Data), state.attemptNumber(), result.S("reason")); retry {
+	roundAttempt := state.attemptNumber() - workflowArchivedAgentAttempt(states, node)
+	if wait, retry := workflowRetryDecision(workflowRetryPolicyOf(node.Data), roundAttempt, result.S("reason")); retry {
 		state.Status = "retrying"
 		state.RetryAt = workflowRetryAt(t, wait)
 		// The attempt that failed keeps its start instant and its reason; it has no finish instant,
@@ -281,6 +282,11 @@ func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, no
 		return states, false
 	}
 	applyWorkflowAgentTerminal(states, nodeID, result)
+	if node.Container != "" && states[nodeID].Status != "cancelled" {
+		// The container owns body failure policy and ledger settlement. Capacity failures at this
+		// commit still stop the run immediately and cannot be absorbed by iteration continue.
+		return states, settleWorkflowRunStates(t, runID, version, "running", "", states)
+	}
 	reason := workflowAgentTerminalReason(result)
 	switch states[nodeID].Status {
 	case "failed":
@@ -447,7 +453,7 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 	// committed `retrying` is the attempt it was waiting for plus one (D3). Nothing about the counter
 	// lives in process memory, so a restart between the wait and this start reads the same number.
 	// The fresh state deliberately drops the previous attempt's retryAt, error and finishedAt.
-	attempt := int64(1)
+	attempt := workflowArchivedAgentAttempt(states, node) + 1
 	if prior, started := states[node.ID]; started {
 		attempt = prior.attemptNumber() + 1
 	}

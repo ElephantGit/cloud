@@ -1,8 +1,11 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 )
+
+var errWorkflowLoopType = errors.New("loop_variable_type_mismatch")
 
 // The loop round engine. A loop is a container node whose body is a separate DAG (specs
 // decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md). The active round's member
@@ -291,7 +294,11 @@ func advanceWorkflowLoop(
 	if !committed {
 		carried, err := initializeWorkflowLoopCarried(&config, graph, node.ID, states, ambient)
 		if err != nil {
-			failWorkflowLoop(states, node, "loop_initial_invalid", err.Error())
+			reason := "loop_value_unset"
+			if errors.Is(err, errWorkflowLoopType) {
+				reason = "loop_variable_type_mismatch"
+			}
+			failWorkflowLoop(states, node, reason, err.Error())
 			return true
 		}
 		state = workflowNodeState{
@@ -326,7 +333,7 @@ func advanceWorkflowLoop(
 			return false
 		}
 		readStates := workflowLoopReadStates(graph, node.ID, states, ambient)
-		states[ready.ID] = executeWorkflowNode(ready, run.O("input"), readStates, ambient)
+		states[ready.ID] = executeWorkflowNode(ready, run.O("input"), workflowPredecessorStates(graph, ready, readStates), ambient)
 		return true
 	}
 	if projection.hasPending() {
@@ -351,7 +358,11 @@ func advanceWorkflowLoop(
 	}
 	feedback, err := resolveWorkflowLoopFeedback(&config, roundStates)
 	if err != nil {
-		failWorkflowLoop(states, node, "loop_value_unset", err.Error())
+		reason := "loop_value_unset"
+		if errors.Is(err, errWorkflowLoopType) {
+			reason = "loop_variable_type_mismatch"
+		}
+		failWorkflowLoop(states, node, reason, err.Error())
 		return true
 	}
 	satisfied, err := workflowLoopUntilSatisfied(&config, roundStates)
@@ -412,7 +423,11 @@ func initializeWorkflowLoopCarried(
 			if err != nil || !present {
 				return nil, fmt.Errorf("initial value of %s is not available", variable.Name)
 			}
-			value, _ = normalizeWorkflowValue(resolved, variable.ValueType)
+			normalized, ok := normalizeWorkflowValue(resolved, variable.ValueType)
+			if !ok {
+				return nil, fmt.Errorf("%w: initial value of %s", errWorkflowLoopType, variable.Name)
+			}
+			value = normalized
 		}
 		carried[variable.Name] = value
 	}
@@ -432,7 +447,7 @@ func resolveWorkflowLoopFeedback(config *workflowLoopConfig, roundStates map[str
 		}
 		normalized, ok := normalizeWorkflowValue(value, variable.ValueType)
 		if !ok {
-			return nil, fmt.Errorf("feedback selector %s does not match %s", variable.Feedback.qualified(), variable.ValueType)
+			return nil, fmt.Errorf("%w: feedback selector %s does not match %s", errWorkflowLoopType, variable.Feedback.qualified(), variable.ValueType)
 		}
 		carried[variable.Name] = normalized
 	}
@@ -528,6 +543,10 @@ func workflowAncestorIDs(graph workflowGraphView, nodeID string) map[string]bool
 				continue
 			}
 			source := edge.S("source")
+			producer, known := graph.ByNode[source]
+			if !known || producer.Container != graph.ByNode[nodeID].Container {
+				continue
+			}
 			if source == nodeID || ancestors[source] {
 				continue
 			}
@@ -634,6 +653,7 @@ func finishWorkflowLoop(
 // loop continues, the members are removed from the flat map so the next round starts from nothing;
 // when the loop finishes they stay, because they are the round the viewer should see.
 func archiveWorkflowLoopRound(loop *workflowLoopRunState, body workflowGraphView, states map[string]workflowNodeState, keep bool) {
+	workflowInactiveStates(body, states)
 	archived := Object{}
 	for _, member := range body.Nodes {
 		state, ok := states[member.ID]

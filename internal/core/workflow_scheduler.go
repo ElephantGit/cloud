@@ -162,7 +162,7 @@ func readWorkflowGraph(graph Object) workflowGraphView {
 		out.ByNode[id] = view
 		// A loop body carries its own start. The run's entry point is the outer start only; picking a
 		// body start here would make the projection root inside the container and never run the loop.
-		if view.Kind == "start" && view.Data.S("containerId") == "" && out.Start == "" {
+		if view.Kind == "start" && view.Container == "" && out.Start == "" {
 			out.Start = id
 		}
 	}
@@ -578,6 +578,17 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 		return
 	}
 	states := workflowStatesFromJSON(run.O("nodeStates"))
+	for _, node := range graph.Nodes {
+		if node.Kind != "iteration" || states[node.ID].Status != "running" {
+			continue
+		}
+		config, err := parseWorkflowIterationConfig(node.Data)
+		if err != nil || !validWorkflowIterationProgress(states[node.ID].Iteration, &config, graph, node.ID) {
+			failWorkflowIteration(states, node, "iteration_invalid_round", "invalid persisted iteration progress")
+			finishWorkflowRun(t, runID, version, "failed", "iteration_invalid_round", states)
+			return
+		}
+	}
 	// The ambient variables a condition reads but no node commits: the runtime-owned sys.* pair and
 	// the user globals frozen in the snapshot. They are derived from the run row on every pass, so a
 	// retry, recovery or re-dispatch reads the same frozen values the run was created with.
@@ -637,6 +648,13 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	}
 	outer := workflowOuterGraph(graph)
 	for {
+		if over := workflowStateBudget(graph, states); over != nil {
+			if !rejectWorkflowStateOverflow(t, runID, version, states, over) {
+				return
+			}
+			finishWorkflowRun(t, runID, version, "failed", over.reason, states)
+			return
+		}
 		projection := projectWorkflowNodes(outer, states)
 		// A failed node decides the run. Dispatching another ready node in the same wave would do
 		// real work for a run that is already terminal — for an agent that means provisioning a
@@ -740,6 +758,16 @@ func workflowInactiveStates(graph workflowGraphView, states map[string]workflowN
 // the run actually stopped. started_at is not this function's business: it is set once, where the
 // run first leaves `pending`.
 func settleWorkflowRunStates(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) bool {
+	budgetFailed := false
+	if states != nil {
+		snapshot := t.one(`SELECT s.graph FROM workflow_runs r JOIN workflow_snapshots s ON s.id=r.snapshot_id WHERE r.id=$1`, runID)
+		if over := workflowStateBudget(readWorkflowGraph(snapshot.O("graph")), states); over != nil {
+			if !rejectWorkflowStateOverflow(t, runID, version, states, over) {
+				return false
+			}
+			status, runErr, budgetFailed = "failed", over.reason, true
+		}
+	}
 	// The statuses a run never leaves. `pending`, `running` and `awaiting_input` are the others the
 	// column admits, and all three are states a run is still in.
 	terminal := status == "succeeded" || status == "failed" || status == "cancelled"
@@ -766,6 +794,10 @@ func settleWorkflowRunStates(t *transaction, runID string, version int64, status
 	run := t.one(`SELECT r.tenant_id,s.graph FROM workflow_runs r
 		JOIN workflow_snapshots s ON s.id=r.snapshot_id WHERE r.id=$1`, runID)
 	projectWorkflowRunToIssueRun(t, run.S("tenantId"), runID, workflowIssueOutputSummary(run.O("graph"), encoded, runErr))
+	if budgetFailed {
+		finishWorkflowRunCleanup(t, runID)
+		return false
+	}
 	return true
 }
 

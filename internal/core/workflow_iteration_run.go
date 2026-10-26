@@ -28,6 +28,7 @@ type workflowIterationRunState struct {
 	Failed    int
 	Strategy  string
 	Completed []any
+	invalid   bool
 }
 
 // object is the wire shape of the iteration progress: `round`, `items`, `ledger`, `output`,
@@ -74,8 +75,8 @@ func parseWorkflowIterationConfig(data Object) (workflowIterationConfig, error) 
 	ceiling := 50
 	if value, present := raw["maxIterations"]; present && value != nil {
 		number, ok := workflowNumberOf(value)
-		if !ok || number < 1 || number != float64(int64(number)) {
-			return workflowIterationConfig{}, errString("iteration maxIterations must be a whole number of at least 1")
+		if !ok || !workflowIterationCeilingValid(value) {
+			return workflowIterationConfig{}, errString("iteration maxIterations must be a whole number between 1 and 100")
 		}
 		ceiling = int(number)
 	}
@@ -110,7 +111,7 @@ func workflowIterationReadStates(
 func runningWorkflowIteration(graph workflowGraphView, states map[string]workflowNodeState) (workflowNodeView, bool) {
 	for _, node := range graph.Nodes {
 		state, ok := states[node.ID]
-		if !ok || node.Kind != "iteration" || state.Status != "running" || state.Iteration == nil {
+		if !ok || node.Kind != "iteration" || state.Status != "running" {
 			continue
 		}
 		return node, true
@@ -172,12 +173,12 @@ func advanceWorkflowIteration(
 		}
 		return true
 	}
-	if state.Iteration == nil || state.Status != "running" {
+	if state.Status != "running" {
 		return true
 	}
 	iteration := state.Iteration
-	if iteration.Round >= len(iteration.Items) {
-		finishWorkflowIteration(states, node, &state)
+	if !validWorkflowIterationProgress(iteration, &config, graph, node.ID) {
+		failWorkflowIteration(states, node, "iteration_invalid_round", "iteration progress is inconsistent with its frozen configuration")
 		return true
 	}
 	item := iteration.Items[iteration.Round]
@@ -189,11 +190,10 @@ func advanceWorkflowIteration(
 	projection := projectWorkflowNodes(body, states)
 	if projection.hasFailure() {
 		reason, detail := workflowBodyFailure(body, states)
-		if iteration.Strategy == "continue" {
-			settleWorkflowIterationRound(states, node, item, false, nil, reason+": "+detail, graph)
-			return true
+		settleWorkflowIterationRound(states, node, item, false, nil, reason+": "+detail, graph)
+		if iteration.Strategy == "fail" {
+			failWorkflowIteration(states, node, reason, detail)
 		}
-		failWorkflowIteration(states, node, reason, detail)
 		return true
 	}
 	if ready, ok := projection.readyNode(); ok {
@@ -202,7 +202,7 @@ func advanceWorkflowIteration(
 			return false
 		}
 		readStates := workflowIterationReadStates(graph, node.ID, states, ambient, item, iteration.Round)
-		states[ready.ID] = executeWorkflowNode(ready, run.O("input"), readStates, ambient)
+		states[ready.ID] = executeWorkflowNode(ready, run.O("input"), workflowPredecessorStates(graph, ready, readStates), ambient)
 		return true
 	}
 	if projection.hasPending() || workflowBodyInFlight(body, states) {
@@ -210,15 +210,14 @@ func advanceWorkflowIteration(
 	}
 	readStates := workflowIterationReadStates(graph, node.ID, states, ambient, item, iteration.Round)
 	collected, present, err := resolveWorkflowSelector(config.Collect, readStates)
-	if err != nil || !present {
+	if err != nil || !present || states[config.Collect.nodeID].Status != "succeeded" {
 		// A collect target that did not run makes the round a failure; `continue` can absorb it, while
 		// `fail` ends the node. Either way the ledger keeps the reason instead of dropping the round.
-		if iteration.Strategy == "continue" {
-			settleWorkflowIterationRound(states, node, item, false, nil, "collect target did not run this round", graph)
-			return true
+		settleWorkflowIterationRound(states, node, item, false, nil, "collect target did not run this round", graph)
+		if iteration.Strategy == "fail" {
+			failWorkflowIteration(states, node, "iteration_collect_unset",
+				fmt.Sprintf("collect target %s did not run this round", config.Collect.qualified()))
 		}
-		failWorkflowIteration(states, node, "iteration_collect_unset",
-			fmt.Sprintf("collect target %s did not run this round", config.Collect.qualified()))
 		return true
 	}
 	settleWorkflowIterationRound(states, node, item, true, collected, "", graph)
@@ -246,23 +245,29 @@ func settleWorkflowIterationRound(
 		iteration.Failed++
 	}
 	iteration.Ledger = append(iteration.Ledger, entry)
+	workflowInactiveStates(workflowBodyGraph(graph, node.ID), states)
 	archiveWorkflowIterationRound(iteration, workflowBodyGraph(graph, node.ID), states)
-	iteration.Round++
 	states[node.ID] = state
-	if iteration.Round >= len(iteration.Items) {
-		finishWorkflowIteration(states, node, &state)
+	if !succeeded && iteration.Strategy == "fail" {
+		return
 	}
+	if iteration.Round+1 == len(iteration.Items) {
+		finishWorkflowIteration(states, node, &state)
+		return
+	}
+	for _, member := range workflowBodyGraph(graph, node.ID).Nodes {
+		delete(states, member.ID)
+	}
+	iteration.Round++
 }
 
-// archiveWorkflowIterationRound snapshots the round's member states into `completed` and removes them
-// from the flat map so the next round starts from nothing. The last round is archived too: `output`
-// and `entries` are the projection the viewer and downstream nodes read.
+// archiveWorkflowIterationRound retains the active projection. Only the next-round transition
+// clears members, so terminal details and the archived last round describe the same execution.
 func archiveWorkflowIterationRound(iteration *workflowIterationRunState, body workflowGraphView, states map[string]workflowNodeState) {
 	archived := Object{}
 	for _, member := range body.Nodes {
 		if state, ok := states[member.ID]; ok {
 			archived[member.ID] = state.object()
-			delete(states, member.ID)
 		}
 	}
 	iteration.Completed = append(iteration.Completed, Object{"index": iteration.Round, "states": archived})
@@ -305,8 +310,8 @@ func cancelWorkflowIterations(states map[string]workflowNodeState) {
 	}
 }
 
-// workflowIterationRunStateFromJSON rebuilds the persisted progress. A snapshot with a malformed
-// shape yields nil so the node restarts from the gate's document instead of panicking.
+// workflowIterationRunStateFromJSON retains malformed progress as invalid. Recovery fails it
+// explicitly instead of treating a damaged document as a new iteration.
 func workflowIterationRunStateFromJSON(raw Object) *workflowIterationRunState {
 	if raw == nil {
 		return nil
@@ -315,12 +320,12 @@ func workflowIterationRunStateFromJSON(raw Object) *workflowIterationRunState {
 	ledger, _ := raw["ledger"].([]any)
 	output, _ := raw["output"].([]any)
 	completed, _ := raw["completed"].([]any)
-	round := 0
-	if number, ok := workflowNumberOf(raw["round"]); ok {
+	round := -1
+	if number, ok := workflowNumberOf(raw["round"]); ok && number >= 0 && number <= 100 && number == float64(int(number)) {
 		round = int(number)
 	}
-	failed := 0
-	if number, ok := workflowNumberOf(raw["failedCount"]); ok {
+	failed := -1
+	if number, ok := workflowNumberOf(raw["failedCount"]); ok && number >= 0 && number <= 100 && number == float64(int(number)) {
 		failed = int(number)
 	}
 	return &workflowIterationRunState{
@@ -331,5 +336,6 @@ func workflowIterationRunStateFromJSON(raw Object) *workflowIterationRunState {
 		Failed:    failed,
 		Strategy:  raw.S("strategy"),
 		Completed: completed,
+		invalid:   items == nil || ledger == nil || output == nil || completed == nil || round < 0 || failed < 0,
 	}
 }

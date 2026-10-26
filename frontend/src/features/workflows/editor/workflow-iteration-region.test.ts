@@ -185,6 +185,17 @@ describe('workflowPointInsideIterationFrame', () => {
     expect(inside).toBe(true)
   })
 
+  it('counts the measured Loop box, which can exceed its authored size, as inside', () => {
+    // A new Loop is authored 620×300 but draws taller to hold its starter agent.
+    const loop = { ...node('loop-1', 'loop'), initialWidth: 620, initialHeight: 300 }
+    const measured = { ...loop, measured: { width: 628, height: 363 } }
+    const belowAuthoredEdge = { x: 100, y: 340 }
+
+    expect(workflowPointInsideIterationFrame([loop], belowAuthoredEdge)).toBe(false)
+    expect(workflowPointInsideIterationFrame([measured], belowAuthoredEdge)).toBe(true)
+    expect(workflowPointInsideIterationFrame([measured], { x: 100, y: 370 })).toBe(false)
+  })
+
   it('ignores non-frame nodes even when they carry coordinates', () => {
     const card = node('agent-1', 'agent', { position: { x: 0, y: 0 } })
     expect(workflowPointInsideIterationFrame([card], { x: 10, y: 10 })).toBe(false)

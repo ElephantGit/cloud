@@ -24,7 +24,9 @@ export type RunRoundOutcome =
   /** The final Loop round, by how the Loop finished. */
   | 'conditionMet'
   | 'loopExit'
-  /** The Loop used its last round on `succeed`; whether `until` also matched is not recorded. */
+  /** The Loop ran out of rounds under `succeed`, as its recorded success reason says. */
+  | 'limitReached'
+  /** The Loop used its last round on `succeed` and recorded no reason: `until` may also have matched. */
   | 'completed'
   /** An Iteration item that collected a value. */
   | 'succeeded'
@@ -197,7 +199,12 @@ function readLoopContainer(value: unknown, context: ContainerContext): RunContai
   appendActiveRound(rounds, round, context)
   const last = rounds.at(-1)
   if (last !== undefined) {
-    last.outcome = finalLoopOutcome(last, { context, round, maxIterations })
+    last.outcome = finalLoopOutcome(last, {
+      context,
+      round,
+      maxIterations,
+      recorded: RECORDED_LOOP_OUTCOMES.get(String(value['reason'])),
+    })
   }
   return {
     ...containerBase(context, 'loop'),
@@ -293,20 +300,40 @@ function activeOutcome(status: RunNodeEntry['status']): RunRoundOutcome {
 }
 
 /**
+ * Success reasons a Loop may record in its round document (loop ADR D3 / D4), by outcome.
+ *
+ * The approved D1 shape does not carry one yet; when the backend records it, it wins over the
+ * inference below, and an unknown value is ignored rather than guessed at.
+ */
+const RECORDED_LOOP_OUTCOMES: ReadonlyMap<string, RunRoundOutcome> = new Map([
+  ['condition_satisfied', 'conditionMet'],
+  ['max_iterations', 'limitReached'],
+  ['loop_exit', 'loopExit'],
+])
+
+/**
  * Names how a Loop's last round ended.
  *
- * A successful Loop does not persist why it finished, so only what the committed state proves
+ * A recorded success reason is used as is. Without one, only what the committed state proves
  * is said: a succeeded loopExit is an early exit; finishing before the ceiling, or at the
  * ceiling under `fail` (which would have failed instead), means `until` matched; at the ceiling
  * under `succeed` the two cannot be told apart.
  */
 function finalLoopOutcome(
   last: RunRound,
-  facts: { context: ContainerContext; round: number; maxIterations: number },
+  facts: {
+    context: ContainerContext
+    round: number
+    maxIterations: number
+    recorded: RunRoundOutcome | undefined
+  },
 ): RunRoundOutcome {
   const status = facts.context.entry.status
   if (status !== 'succeeded') {
     return last.source === 'active' ? last.outcome : activeOutcome(status)
+  }
+  if (facts.recorded !== undefined) {
+    return facts.recorded
   }
   const exited = Object.entries(last.states).some(
     ([id, state]) => state.status === 'succeeded' && facts.context.kinds.get(id) === 'loopExit',

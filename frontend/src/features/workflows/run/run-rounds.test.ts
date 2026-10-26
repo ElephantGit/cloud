@@ -156,6 +156,35 @@ describe('parseRunContainers for a Loop', () => {
     },
   )
 
+  /** The outcome of a loop that succeeded on its last round under `succeed`, with a recorded reason. */
+  function outcomeAtCeiling(reason: string): string | undefined {
+    const raw = {
+      'loop-1': {
+        status: 'succeeded',
+        loop: {
+          round: 2,
+          maxIterations: 2,
+          reason,
+          carried: {},
+          completed: [loopRound(1, { entry: OK }), loopRound(2, { entry: OK })],
+        },
+      },
+    }
+    return parseRunContainers(raw, loopSnapshot(2, 'succeed'))['loop-1']?.rounds.at(-1)?.outcome
+  }
+
+  it.each([
+    ['max_iterations', 'limitReached'],
+    ['condition_satisfied', 'conditionMet'],
+    ['loop_exit', 'loopExit'],
+  ] as const)('uses a recorded success reason %s over the inference', (reason, outcome) => {
+    expect(outcomeAtCeiling(reason)).toBe(outcome)
+  })
+
+  it('ignores an unknown recorded reason and falls back to the inference', () => {
+    expect(outcomeAtCeiling('something_new')).toBe('completed')
+  })
+
   it('keeps archived rounds and the stable reason when the loop is cancelled mid-round', () => {
     const raw = {
       'loop-1': {

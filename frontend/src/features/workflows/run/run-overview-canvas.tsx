@@ -91,6 +91,7 @@ export function RunOverviewCanvas({
       <ReactFlowProvider>
         <RunOverviewStatesProvider states={nodeStates}>
           <WorkflowIterationActionsProvider
+            graph={graph}
             readOnly
             onInsert={() => {}}
             onToggleCollapsed={() => {}}

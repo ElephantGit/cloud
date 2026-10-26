@@ -138,7 +138,12 @@ export function IterationNodeFrame({ id, data, selected, deletable }: IterationN
             </span>
           )}
           <IterationStartSeam id={id} title={data.title} />
-          {!iterationActions.readOnly && <IterationFrameResize />}
+          {!iterationActions.readOnly && (
+            <ContainerFrameResize
+              minWidth={WORKFLOW_ITERATION_NODE_WIDTH}
+              minHeight={WORKFLOW_ITERATION_NODE_HEIGHT}
+            />
+          )}
         </>
       )}
     </div>
@@ -269,14 +274,26 @@ function IterationStartSeam({ id, title }: { id: string; title: string }) {
   )
 }
 
-/** The Dify-style corner resize affordance with a forgiving hit zone. */
-function IterationFrameResize() {
+/**
+ * The Dify-style corner resize affordance with a forgiving hit zone, shared by every container
+ * frame. The gesture's `resizing` dimension changes are what the draft mirrors onto the
+ * authored `initialWidth` / `initialHeight`.
+ *
+ * @param props.minWidth - Smallest box the gesture may leave; the container's default size.
+ */
+export function ContainerFrameResize({
+  minWidth,
+  minHeight,
+}: {
+  minWidth: number
+  minHeight: number
+}) {
   return (
     <NodeResizeControl
       variant={ResizeControlVariant.Handle}
       position="bottom-right"
-      minWidth={WORKFLOW_ITERATION_NODE_WIDTH}
-      minHeight={WORKFLOW_ITERATION_NODE_HEIGHT}
+      minWidth={minWidth}
+      minHeight={minHeight}
       className="group/iteration-resize"
       style={{
         left: 'auto',
@@ -300,7 +317,7 @@ function IterationFrameResize() {
         viewBox="0 0 16 16"
         fill="none"
         className={cn(
-          'absolute right-px bottom-px text-foreground opacity-0 transition-opacity duration-150 group-hover/iteration-frame:opacity-100 group-hover/iteration-resize:opacity-100',
+          'absolute right-px bottom-px text-foreground opacity-0 transition-opacity duration-150 group-hover/iteration-frame:opacity-100 group-hover/loop-frame:opacity-100 group-hover/iteration-resize:opacity-100',
         )}
       >
         <path

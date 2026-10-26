@@ -381,3 +381,46 @@ func TestReadDeclarationCopyStaysInsideTheEntryWithoutTheGrammar(t *testing.T) {
 		t.Fatalf("an escaping path must read nothing and name no path: source=%q issue=%q", source, issue)
 	}
 }
+
+func TestScanResolvesNestedDeclarationCopies(t *testing.T) {
+	root := t.TempDir()
+	entryDir := writeDeclaredListing(t, root, "nested", 2, declarationDigestOf(t, declarationFor), "nested/dir/agent-configuration.json")
+	writeFileAt(t, filepath.Join(entryDir, "nested", "dir", "agent-configuration.json"), []byte(declarationFor))
+	entry := scanOnlyEntry(t, root)
+	if entry.AgentConfigurationIssue != "" || entry.AgentConfiguration == nil {
+		t.Fatalf("a nested regular copy must resolve: issue=%q", entry.AgentConfigurationIssue)
+	}
+	if entry.AgentConfiguration.Declaration != declarationFor || entry.AgentConfiguration.CopyPath != "nested/dir/agent-configuration.json" {
+		t.Fatalf("nested copy must keep its exact bytes and declared path: %+v", entry.AgentConfiguration)
+	}
+}
+
+func TestScanRecordsBoundedIssuesForMalformedCopyBytes(t *testing.T) {
+	oversized := []byte(strings.Repeat(" ", maxAgentDeclarationBytes+1))
+	notUTF8 := []byte("{\"schemaVersion\":2,\xff}")
+	cases := []struct {
+		name          string
+		content       []byte
+		schemaVersion int
+		issue         string
+	}{
+		{"exceeds-the-byte-bound", oversized, 2, fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes)},
+		{"not-utf-8", notUTF8, 2, "copy is not valid UTF-8"},
+		{"schema-version-disagrees", []byte(declarationFor), 3, "copy declares schema version 2 but the association declares 3"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			sum := sha256.Sum256(testCase.content)
+			entryDir := writeDeclaredListing(t, root, "malformed", testCase.schemaVersion, hex.EncodeToString(sum[:]), "agent-configuration.json")
+			writeCopy(t, entryDir, "agent-configuration.json", testCase.content)
+			entry := scanOnlyEntry(t, root)
+			if entry.AgentConfiguration != nil {
+				t.Fatalf("no consumable declaration may survive: %+v", entry.AgentConfiguration)
+			}
+			if entry.AgentConfigurationIssue != testCase.issue {
+				t.Fatalf("issue = %q, want %q", entry.AgentConfigurationIssue, testCase.issue)
+			}
+		})
+	}
+}

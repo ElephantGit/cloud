@@ -190,10 +190,14 @@ loop 的 feedback、until、outputs 在轮末读取本 body 完成快照。itera
 复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
 iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
 完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。
+预留只在本次提交新增失败/取消节点或运行进入失败/取消终态时开放；历史失败成员不会扩大普通写入额度。
 超限丢弃整个候选状态、保留上一次已提交的账本与成员，记录 `iteration_state_size_exceeded`、
 `loop_state_size_exceeded` 或 `workflow_state_size_exceeded`，不会被 `continue` 吸收。
 iteration 两种策略都会保存失败轮账本，终态保留最后启动的轮号与成员投影；恢复时不一致的轮次文档以
 `iteration_invalid_round` 失败，不重置或重跑历史轮。body agent 的执行 attempt 跨轮保持唯一，重试预算仍按当前轮计算。
+body Agent 回合超时后先保留当前 attempt 为 running，提交超时原因并发出 `end_session{cancelled}`。
+收到该 attempt 的会话终止结果后才按失败轮结算，iteration 的 continue 策略可以进入下一轮；迟到结果不改写超时原因。
+结束确认窗口耗尽仍无终止证据时，保留失败轮账本与归档，结束运行并释放 Workspace，不在旧会话可能仍存活时启动下一轮。
 
 ## 相关决策
 

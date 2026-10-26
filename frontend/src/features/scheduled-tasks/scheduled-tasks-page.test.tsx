@@ -216,4 +216,38 @@ describe('ScheduledTasksPage', () => {
       expect(approval).toEqual({ approval: { policy: 'full_auto_in_cloud_workspace' } }),
     )
   })
+
+  it('clears a stale consent box after enable and revoke so re-consent is explicit', async () => {
+    let current: ScheduledTask = task({
+      enabled: false,
+      unattendedPolicy: 'full_auto_in_cloud_workspace',
+    })
+    server.use(
+      http.get(LIST, () => HttpResponse.json({ tasks: [current], acceptanceEnabled: false })),
+      http.post(`${LIST}/st1/enable`, () => {
+        current = task({ enabled: true, unattendedPolicy: 'full_auto_in_cloud_workspace' })
+        return HttpResponse.json({ resource: current })
+      }),
+      http.post(`${LIST}/st1/revoke-consent`, () => {
+        current = task({ enabled: false })
+        return HttpResponse.json({ resource: current })
+      }),
+    )
+    const userEventSetup = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('article', { name: '每日同步' })
+    await userEventSetup.click(screen.getByLabelText('同意无人值守授权'))
+    await userEventSetup.click(screen.getByRole('button', { name: '重新同意并启用' }))
+    await waitFor(() => expect(screen.getByRole('switch')).toBeChecked())
+
+    await userEventSetup.click(screen.getByRole('button', { name: '撤销授权' }))
+    await userEventSetup.click(screen.getByRole('button', { name: '确认撤销授权' }))
+    const fresh = await screen.findByLabelText('同意无人值守授权')
+    expect(fresh).not.toBeChecked()
+    expect(screen.getByRole('button', { name: '重新同意并启用' })).toBeDisabled()
+
+    await userEventSetup.click(fresh)
+    expect(screen.getByRole('button', { name: '重新同意并启用' })).toBeEnabled()
+  })
 })

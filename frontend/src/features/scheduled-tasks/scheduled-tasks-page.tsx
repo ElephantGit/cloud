@@ -78,7 +78,7 @@ function ScheduledTaskCard({
             checked
             disabled={toggle.isPending}
             onCheckedChange={(next) => {
-              if (!next) toggle.mutate({ enabled: false })
+              if (!next) toggle.mutate({ enabled: false }, { onSuccess: () => setConsented(false) })
             }}
           />
         </div>
@@ -89,7 +89,12 @@ function ScheduledTaskCard({
             type="button"
             size="sm"
             disabled={toggle.isPending || !consented}
-            onClick={() => toggle.mutate({ enabled: true, consented: true })}
+            onClick={() =>
+              toggle.mutate(
+                { enabled: true, consented: true },
+                { onSuccess: () => setConsented(false) },
+              )
+            }
           >
             重新同意并启用
           </Button>
@@ -104,7 +109,7 @@ function ScheduledTaskCard({
             label="撤销授权"
             confirmLabel="确认撤销授权"
             pending={revoke.isPending}
-            onConfirm={() => revoke.mutate(task.id)}
+            onConfirm={() => revoke.mutate(task.id, { onSuccess: () => setConsented(false) })}
           />
         )}
         <ConfirmButton

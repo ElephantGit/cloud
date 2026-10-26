@@ -366,4 +366,20 @@ describe('WorkflowRunsPage', () => {
     expect(screen.getByText(/^未开始（创建于 .*）$/)).toBeInTheDocument()
     expect(screen.queryByText('尚未结束')).not.toBeInTheDocument()
   })
+
+  it('shows the finish time when a run was cancelled before it started', async () => {
+    server.use(
+      http.get(RUNS_URL, () =>
+        HttpResponse.json({
+          items: [runFixture(1, { status: 'cancelled', startedAt: null })],
+          nextCursor: '',
+        }),
+      ),
+    )
+    renderRunsPage()
+
+    await screen.findByText('第 1 次运行')
+    expect(screen.getByText(/^未开始（创建于 /)).toBeInTheDocument()
+    expect(screen.getByText(/^结束 /)).toBeInTheDocument()
+  })
 })

@@ -40,7 +40,7 @@ export function RunHistoryRow({ run, href }: { run: WorkflowRun; href: string })
             ? t('workflows.runs.notStarted', { time: formatRunInstant(run.createdAt) })
             : t('workflows.runs.started', { time: formatRunInstant(startedAt) })}
         </span>
-        {startedAt !== '' && (
+        {(startedAt !== '' || finishedAt !== '') && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {finishedAt === ''
               ? t('workflows.runs.notFinished')

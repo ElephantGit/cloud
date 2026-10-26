@@ -23,6 +23,8 @@ and importing workflows from plugins.
   checks nothing about completeness: a half-written draft is a legitimate document. Only **publishing** judges
   whether a graph can execute, returning problems together with the node or slot at fault so the editor can mark
   them. A frozen published version is a graph Cloud has agreed to execute.
+  Switching tabs or leaving through an editor toolbar link waits for an outstanding draft save; a failed save keeps
+  the editor open rather than rebuilding its canvas from an older cache entry on return.
 - **Versions are immutable.** Published versions (`workflow_snapshots`) are stored under a per-workflow increasing
   version number and are never modified or soft-deleted, so the graph a run rendered never drifts with the document.
   Publishing locks the workflow row, so two concurrent publishes never get the same version number. A snapshot's
@@ -127,7 +129,9 @@ read of the workflow resource, so a reader that wants the label asks the list or
 The run-history page distinguishes loading, no runs, a retryable read failure, and missing permission. On initial entry,
 workflow detail and run history are independent reads: a detail `403` also shows missing permission, retrying a transient
 detail failure reads the detail again, and only `not_found` says the workflow is missing. A later paging or refresh
-failure keeps the loaded history. Viewing history and retrying a read never create a run.
+failure keeps the loaded history, and retry repeats the read that failed. History rows show start and finish
+independently: a run cancelled before starting has no start time but still shows its finish time. Viewing history and
+retrying a read never create a run.
 
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency

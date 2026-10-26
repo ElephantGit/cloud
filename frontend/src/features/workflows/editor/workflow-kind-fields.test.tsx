@@ -405,6 +405,13 @@ describe('LoopNodeFields', () => {
     expect(screen.getByText(/请点那个分支端口的 \+ 添加/)).toBeInTheDocument()
   })
 
+  it('asks for a first step when the body has nothing an exit could follow', () => {
+    const { button } = renderWithBody([bodyNode('entry', 'start', 40)])
+
+    expect(button).toBeDisabled()
+    expect(screen.getByText('先在循环体里添加一个步骤，早退会接在它后面。')).toBeInTheDocument()
+  })
+
   it('clamps the round ceiling and writes a variable first-round value', () => {
     const { data, rerenderPanel } = setUpLoopPanel()
 

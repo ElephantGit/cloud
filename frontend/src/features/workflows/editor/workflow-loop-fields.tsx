@@ -136,6 +136,11 @@ function LoopExitAction({
   const { t } = useTranslation()
   const available =
     loopExitInsertion({ nodes: [...graphNodes], edges: [...edges] }, nodeId) !== null
+  // With a Condition in the body the exit belongs on one of its branches; without one there is
+  // simply no step yet to end the round after.
+  const hasBranch = graphNodes.some(
+    (node) => node.data.kind === 'condition' && (node.data.containerId ?? node.parentId) === nodeId,
+  )
   return (
     <div className="space-y-1.5">
       <Button type="button" variant="outline" size="sm" disabled={!available} onClick={onAddExit}>
@@ -144,7 +149,7 @@ function LoopExitAction({
       </Button>
       {!available && (
         <p className="text-[11px] leading-5 text-muted-foreground">
-          {t('workflows.loop.addExitFromBranch')}
+          {t(hasBranch ? 'workflows.loop.addExitFromBranch' : 'workflows.loop.addExitNeedsStep')}
         </p>
       )}
     </div>

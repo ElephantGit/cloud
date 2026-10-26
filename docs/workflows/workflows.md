@@ -23,7 +23,7 @@
 - **恢复**把当前文档换成某个版本的图，并像其他编辑一样推进文档版本；它不改动任何已发布版本。
 - 工作流名称在租户内未归档的工作流中唯一（`409 workflow_conflict`）。归档是软删除，归档的工作流连同它的全部版本和运行历史一起从读取中隐藏。
 
-**Cloud 能执行的子集。** 发布时只接受 Cloud 当前能执行的节点类型：`start`、`agent`、`condition`、`output`。编辑器里的其他节点类型仍然可以编辑
+**Cloud 能执行的子集。** 发布时接受 `start`、`agent`、`condition`、`output`、`junction`、`aggregator`、`loop`、`loopExit`、`iteration`。编辑器里的其他节点类型仍然可以编辑
 和保存，但发布会拒绝，而不是冻结一个节点会被静默丢掉的图。Agent 节点里 Cloud 不执行的配置字段同样按字段名拒绝，避免作者以为某个设置生效、
 实际却没有运行方会应用它。
 
@@ -176,7 +176,22 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 
 导入之后的工作流就是普通的租户工作流，资产的生命周期（插件升级或移除）不会改写已经导入的文档或已发布版本。
 
+## 复合运行的作用域与容量
+
+复合节点的发布门禁按有效容器隔离前驱：非空 `data.containerId` 优先，否则读取 `parentId`。
+body 只能读取本区域前驱、容器的外层祖先、globals / sys 与本轮 carried 或 item / index；
+loop 的 feedback、until、outputs 在轮末读取本 body 完成快照。iteration 最多 100 项。
+
+复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
+iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
+完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。
+超限丢弃整个候选状态、保留上一次已提交的账本与成员，记录 `iteration_state_size_exceeded`、
+`loop_state_size_exceeded` 或 `workflow_state_size_exceeded`，不会被 `continue` 吸收。
+iteration 两种策略都会保存失败轮账本，终态保留最后启动的轮号与成员投影；恢复时不一致的轮次文档以
+`iteration_invalid_round` 失败，不重置或重跑历史轮。body agent 的执行 attempt 跨轮保持唯一，重试预算仍按当前轮计算。
+
 ## 相关决策
+
 
 - [工作流由 Cloud 侧调度器执行：WorkflowRun 是执行聚合](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
 - [工作流 agent 节点按执行器槽位引用执行器，图里不再存 agent CLI 与模型 ID](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md)（approved）

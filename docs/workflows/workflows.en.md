@@ -32,7 +32,7 @@ and importing workflows from plugins.
 - Workflow names are unique among a tenant's unarchived workflows (`409 workflow_conflict`). Archiving is a soft
   delete, and an archived workflow is hidden from reads together with all its versions and run history.
 
-**The subset Cloud can execute.** Publishing accepts only the node kinds Cloud can currently execute: `start`,
+**The subset Cloud can execute.** Publishing accepts `junction`, `aggregator`, `loop`, `loopExit`, `iteration`, `start`,
 `agent`, `condition` and `output`. Other node kinds in the editor can still be edited and saved, but publishing
 refuses them rather than freezing a graph whose nodes would be silently dropped. Agent node configuration fields
 that Cloud does not execute are likewise refused by name, so an author never believes a setting is in effect when
@@ -270,7 +270,26 @@ workflow of the tenant, creating its first published version at the same time:
 Once imported, a workflow is an ordinary tenant workflow; the asset's lifecycle (plugin upgrade or removal) never
 rewrites imported documents or published versions.
 
+## Composite scopes and capacity
+
+Publication resolves effective membership from non-empty `data.containerId`, falling back to `parentId`.
+Body consumers read only region predecessors, the container's outer ancestors, globals / sys and current
+carried or item / index inputs. Loop feedback, until and outputs read the completed body snapshot.
+Iteration accepts at most 100 items.
+
+Every composite state commit measures compact UTF-8 JSON, including every duplicated value.
+Iteration inputs, collect values and member archives, and loop carried-plus-member archives and final
+outputs, each have a 1 MiB limit. Complete `node_states` have an 8 MiB limit, with 64 KiB reserved for
+bounded failure records. Overflow discards the entire candidate and retains the last committed ledger
+and members, reporting `iteration_state_size_exceeded`, `loop_state_size_exceeded` or
+`workflow_state_size_exceeded`; `continue` cannot absorb these failures.
+Both iteration strategies record failed rounds. Terminal states retain the last started round and its
+member projection. Inconsistent persisted progress fails as `iteration_invalid_round` without resetting
+or replaying earlier rounds. Body agent execution attempts stay unique across rounds while retry budgets
+count attempts within the current round.
+
 ## Related decisions
+
 
 - [Workflows are executed by a Cloud-side scheduler: WorkflowRun is the execution aggregate](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
 - [Workflow agent nodes reference executors by executor slot; graphs no longer store Agent CLIs or model IDs](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md) (approved)

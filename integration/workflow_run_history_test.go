@@ -201,9 +201,9 @@ func TestWorkflowRowsCarryTheirNewestRun(t *testing.T) {
 
 	older := seededRun{id: uuid.NewString(), createdAt: time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)}
 	newer := seededRun{id: uuid.NewString(), createdAt: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}
-	// Written newer first so a "first row wins" implementation would answer with the older one.
-	seedRun(t, f, wfid, snapID, older, "older run")
+	// Written newer first so a "last inserted wins" implementation would answer with the older one.
 	seedRun(t, f, wfid, snapID, newer, "newer run")
+	seedRun(t, f, wfid, snapID, older, "older run")
 
 	rows := issueItems(f.call("GET", f.path("/workflows")+"?limit=100", nil, "", 200))
 	byName := map[string]core.Object{}

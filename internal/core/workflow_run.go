@@ -77,23 +77,25 @@ func pageNewestRunFirst(t *transaction, scope runHistoryScope, r *PublicRequest)
 }
 
 // latestWorkflowRuns labels a page of workflows with their newest run in one query, so a list of
-// workflows costs one extra read rather than one per row. DISTINCT ON keeps the first row of each
-// workflow in the same (created_at, id) order the run history walks, so the label a row shows is the
-// run that history would show first.
+// workflows costs one extra read rather than one per row. Each lateral lookup takes one row from
+// workflow_run_list in the same (created_at, id) order the run history walks, without sorting or
+// materializing every run of the page's workflows (including their large JSON fields).
 func latestWorkflowRuns(t *transaction, tid string, wids []string) map[string]any {
 	out := make(map[string]any, len(wids))
 	if len(wids) == 0 {
 		return out
 	}
 	args := []any{tid}
-	placeholders := make([]string, len(wids))
+	values := make([]string, len(wids))
 	for i, wid := range wids {
 		args = append(args, wid)
-		placeholders[i] = "$" + itoa(len(args))
+		values[i] = "($" + itoa(len(args)) + "::uuid)"
 	}
-	q := "SELECT DISTINCT ON (workflow_id) * FROM workflow_runs WHERE tenant_id=$1 AND deleted_at IS NULL" +
-		" AND workflow_id IN (" + strings.Join(placeholders, ",") + ")" +
-		" ORDER BY workflow_id, created_at DESC, id DESC"
+	q := "SELECT w.id AS workflow_id, r.id, r.name, r.status, r.snapshot_id," +
+		" r.created_at, r.started_at, r.finished_at FROM (VALUES " + strings.Join(values, ",") + ") AS w(id)" +
+		" JOIN LATERAL (SELECT id, name, status, snapshot_id, created_at, started_at, finished_at" +
+		" FROM workflow_runs WHERE workflow_id=w.id AND tenant_id=$1 AND deleted_at IS NULL" +
+		" ORDER BY created_at DESC, id DESC LIMIT 1) AS r ON true"
 	for _, row := range t.list(q, args...) {
 		out[row.S("workflowId")] = workflowLatestRunSummary(row)
 	}

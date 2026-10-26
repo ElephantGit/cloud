@@ -54,6 +54,8 @@ Task handoff barriers and pauses also disable appending to an old Thread. Direct
 
 ## Testing
 
+Plugin preparation failures preserve the server's `agent_plugin_unavailable` classification and ask the user to check installation before sending again. Unknown errors still use a fixed message; downloader and provider diagnostics are never displayed.
+
 `run-preparation.test.tsx` renders each preparation state directly, covering the snapshot wait, the failed repository sync and the filtering of its error code. `thread-panel.test.tsx` drives the panel against a fake Thread backend with the server's cursor semantics (tail / after / before): tail load, 404 → appears, load older, send (including thread_closed), end session, and an SSE event triggering an incremental read. The 404 → appears case relies on the real 2.5s poll and takes about 3 seconds.
 
 `conversation-viewport.tsx` supplies a single task viewport, observes content size and preserves a visible-message anchor. Standalone Threads retain their paging/follow behavior. `message-author.tsx` renders real identities and available timestamps. Embedded messages do not own scrollbars; identity/model metadata is collapsible, while failures, delivery and raw content remain accessible. Browser geometry checks supplement jsdom, which has no layout engine.

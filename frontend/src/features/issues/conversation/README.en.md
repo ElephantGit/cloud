@@ -21,6 +21,8 @@ Depends on generated `src/api`, `features/issues/api`, `features/issues/thread`,
 
 Conversation reads continue polling while activeRunId exists or messages are waiting. The server clears active ownership after release; an empty queue must not leave stale execution controls visible.
 
+A failed or cancelled preparation may have no delivery result. It keeps the failure pause and exposes the same explicit discard-and-continue action. The server requires confirmed release, the initiator's or an administrator's authority, and explicit acknowledgement; it never silently advances the queue or rewrites the failed run as successful.
+
 A configuration gap for the currently selected personal Agent also refreshes readiness every five seconds, even before a Run or queued message exists. Repairing it in another window restores sending while preserving the draft. Once repaired, in comment-only mode, or after choosing another Agent, the old gap no longer drives polling. Authorization refusals stop polling, and the server still rechecks every send.
 
 The composer occupies normal document flow, never overlays task history, and requires no fixed-height spacer to read the latest message.

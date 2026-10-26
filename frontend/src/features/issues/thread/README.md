@@ -54,6 +54,8 @@ Node 条目公开其真实 `turnId`，工具调用与更新优先按该轮次关
 
 ## 测试
 
+插件准备失败时保留服务端的 `agent_plugin_unavailable` 分类，提示检查插件安装状态后重新发送；未知错误仍退回固定文案，不展示下载器或供应商原始诊断。
+
 `run-preparation.test.tsx` 直接渲染各准备状态，覆盖快照等待、仓库同步失败及其错误码过滤。`thread-panel.test.tsx` 用一个具有服务端游标语义（tail / after / before）的假 Thread 后端驱动面板，覆盖尾部加载、404→出现、加载更早、发送（含 thread_closed）、结束会话以及 SSE 事件触发增量读取。404→出现依赖真实的 2.5s 轮询，单条用例约 3 秒。
 
 `conversation-viewport.tsx` 为任务内嵌 Thread 提供唯一滚动容器，观察内容大小并保持可见消息锚点；独立 Thread 仍使用原分页/跟随行为。`message-author.tsx` 展示真实作者与可用时间。内嵌消息不拥有滚动条，身份与模型信息可折叠；所有原始内容、失败及交付信息保留。浏览器几何验收补足 jsdom 无布局引擎的边界。

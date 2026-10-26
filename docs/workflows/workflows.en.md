@@ -78,6 +78,16 @@ Explicit null, false, zero and empty strings remain assigned values. An unassign
 invalid path fails the node without publishing partial results. Publication rejects malformed
 bindings, empty or duplicate names, invalid selectors and undeclared roots, with node/field locations.
 
+**Upgrade compatibility:** strict bindings apply to every published snapshot, including new runs
+from old snapshots and in-flight runs started before the upgrade and recovered afterward. There is
+no execution-semantics version and historical snapshots are not rewritten. The former behavior of
+always returning an empty object is not preserved: assigned bindings now produce named outputs,
+missing values fail with `output_value_unset`, and invalid paths fail with `output_invalid_path`.
+Old snapshots and recovered runs can therefore produce new failures or additional named outputs
+after upgrading. No bindings still produce an empty object, and committed terminal results are not
+recomputed. Publication admission cannot retroactively protect old snapshots; inspect their Output
+bindings before upgrading.
+
 ## Executor slots
 
 Agent nodes do not hard-code an Agent CLI or model ID in the graph; they reference an **executor slot**:

@@ -140,7 +140,8 @@ func workflowRetryDecision(policy workflowRetryPolicy, failedAttempt int64, reas
 // most one: a waiting attempt keeps the run's serial agent slot (D3), so no other agent node of the
 // same run can be waiting at the same time.
 func workflowRetryingAgentNode(states map[string]workflowNodeState) (string, bool) {
-	for id, state := range states {
+	for id := range states {
+		state := states[id]
 		if state.Status == "retrying" {
 			return id, true
 		}

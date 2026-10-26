@@ -26,6 +26,7 @@ func TestRequireWorkflowRunInput(t *testing.T) {
 			"name": "scope", "fieldType": "select", "valueType": "string",
 			"options": []any{"changed", "full"},
 		},
+		Object{"name": "items", "valueType": "array"},
 	})
 
 	cases := []struct {
@@ -67,6 +68,16 @@ func TestRequireWorkflowRunInput(t *testing.T) {
 			name:  "a value outside a select's options",
 			input: Object{"topic": "auth", "scope": "everything"},
 			want:  &Fault{Code: "invalid_field_value", Status: 400, Params: Object{"field": "scope"}},
+		},
+		{
+			// An iteration source is a structured value: a direct run carries the array itself, not
+			// only its JSON text.
+			name:  "an array for a structured variable",
+			input: Object{"topic": "auth", "items": []any{"a", "b"}},
+		},
+		{
+			name:  "a JSON document for a structured variable",
+			input: Object{"topic": "auth", "items": Object{"a": 1}},
 		},
 		{
 			// `input` is the reserved kickoff selector rather than a declared variable. Desktop

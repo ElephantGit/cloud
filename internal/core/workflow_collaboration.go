@@ -821,9 +821,14 @@ func foldLegacyVersionAnswer(graph, values Object) {
 	}
 }
 
-// workflowStartNode returns the `data` of the graph's first Start node. The graph is a document the API
-// never interprets, so its shape is read defensively: anything unexpected contributes nothing rather
-// than failing the request. The first Start node wins, matching the editor, which allows at most one.
+// workflowStartNode returns the `data` of the graph's first outer Start node. The graph is a document
+// the API never interprets, so its shape is read defensively: anything unexpected contributes nothing
+// rather than failing the request. The first outer Start node wins, matching the editor, which allows
+// at most one.
+//
+// A loop body carries its own Start node, and that node is not the run's entry point: its variables
+// never enter the @ form and its prompt is never the kickoff. Skipping container members here is what
+// keeps the launcher fields reading only the document's outer start.
 //
 // Reading the prompt and the variables through this one lookup is what keeps them from ever coming
 // from two different nodes in a graph that somehow carries more than one.
@@ -835,7 +840,7 @@ func workflowStartNode(graph Object) Object {
 			continue
 		}
 		data, ok := node["data"].(map[string]any)
-		if !ok || data["kind"] != "start" {
+		if !ok || data["kind"] != "start" || Object(data).S("containerId") != "" {
 			continue
 		}
 		return Object(data)
@@ -909,8 +914,10 @@ func startInputField(variable Object) (FormField, bool) {
 		field.Options = options
 	case "file-list", "json":
 		// Issues has no upload or structured-value control. A textarea collects the reference or the
-		// document as text, which is what the workflow receives either way.
+		// document as text, which is what the workflow receives either way. A direct run still accepts
+		// the structured value itself, which is what an iteration source needs.
 		field.Type = fieldTextarea
+		field.jsonField = inputFieldType(variable) == "json"
 	default:
 		// text-input, file, and every control Cloud has no counterpart for degrade to a single line.
 		field.Type = fieldText

@@ -59,7 +59,8 @@ func settleWorkflowSessionEnded(t *transaction, runID, executionID string, ended
 
 // workflowRunningAgentNode returns the id of the node committed `running`, if any.
 func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool) {
-	for id, state := range states {
+	for id := range states {
+		state := states[id]
 		if state.Status == "running" {
 			return id, true
 		}
@@ -300,6 +301,10 @@ func commitWorkflowAgentTerminal(t *transaction, runID string, version int64, no
 // Declaring delete on a busy Project returns busy — a later pass re-declares, so a terminal run
 // is never left with a live Workspace forever.
 func finishWorkflowRun(t *transaction, runID string, version int64, status, runErr string, states map[string]workflowNodeState) {
+	if status == "cancelled" {
+		cancelWorkflowLoops(states)
+		cancelWorkflowIterations(states)
+	}
 	if settleWorkflowRunStates(t, runID, version, status, runErr, states) {
 		finishWorkflowRunCleanup(t, runID)
 	}
@@ -487,7 +492,8 @@ func workflowPinnedPluginGap(t *transaction, run, w Object) string {
 
 // workflowAnyCancelled reports whether any committed node was cancelled.
 func workflowAnyCancelled(states map[string]workflowNodeState) bool {
-	for _, state := range states {
+	for id := range states {
+		state := states[id]
 		if state.Status == "cancelled" {
 			return true
 		}

@@ -20,14 +20,21 @@ import (
 // the whole point of the draft/published distinction, and moving an install or completeness check
 // into the save path is the mistake this file exists to prevent.
 
-// workflowExecutableNodeKinds is the subset of the editor's node kinds Cloud executes in its first
-// phase (#67 结论 4): start, agent, condition and output. Everything else stays editable and
-// saveable, but publishing refuses it rather than freezing a graph whose nodes would be dropped.
+// workflowExecutableNodeKinds is the subset of the editor's node kinds Cloud executes. It started as
+// the root decision's phase-1 set (#67 结论 4: start, agent, condition, output) and grows one
+// decision at a time: `loop` and `loopExit` joined it with
+// specs decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md, and `aggregator` with the
+// variable-aggregator decision. Everything else stays editable and saveable, but publishing refuses
+// it rather than freezing a graph whose nodes would be dropped.
 var workflowExecutableNodeKinds = map[string]bool{
-	"start":     true,
-	"agent":     true,
-	"condition": true,
-	"output":    true,
+	"start":      true,
+	"agent":      true,
+	"condition":  true,
+	"aggregator": true,
+	"iteration":  true,
+	"output":     true,
+	"loop":       true,
+	"loopExit":   true,
 }
 
 // workflowAgentSchemaVersion is the only `agentConfig.schemaVersion` Cloud executes. Version 4
@@ -277,9 +284,14 @@ func validateWorkflowGraph(graph Object) []workflowGraphProblem {
 		problems = append(problems, workflowGraphProblem{Code: "edges_not_a_list"})
 	}
 	globals := workflowGlobalVariables(graph)
+	edges, _ := graph["edges"].([]any)
 	problems = append(problems, validateWorkflowGlobals(graph)...)
 	problems = append(problems, validateWorkflowNodes(nodes, globals)...)
 	problems = append(problems, validateWorkflowEdges(graph, nodes)...)
+	// Container structure is checked after the edges exist and before the cycle walk: a body whose
+	// membership or boundaries are wrong is described by its own codes, and the cycle walk reads the
+	// same union of scopes either way.
+	problems = append(problems, validateWorkflowContainers(nodes, edges)...)
 	problems = append(problems, validateWorkflowAcyclic(graph)...)
 	problems = append(problems, validateWorkflowSlots(graph, nodes)...)
 	problems = append(problems, validateWorkflowReservedFields(nodes, globals)...)
@@ -311,7 +323,9 @@ func validateWorkflowReservedFields(nodes []any, globals []Object) []workflowGra
 		}
 		o := Object(node)
 		data := o.O("data")
-		if data.S("kind") != "start" {
+		// A loop body's Start is not the form's Start: its variables never enter the `@` form, so a
+		// reserved name there cannot collide with the platform's field.
+		if data.S("kind") != "start" || data.S("containerId") != "" {
 			continue
 		}
 		declared, _ := data["inputVariables"].([]any)
@@ -370,13 +384,28 @@ func validateWorkflowAcyclic(graph Object) []workflowGraphProblem {
 	return []workflowGraphProblem{{Code: "graph_cycle", NodeID: source}}
 }
 
-// validateWorkflowNodes checks node identity, kind, agent configuration and the start-node count. The
-// editor allows at most one Start node, and a run needs exactly one entry point, so zero and two are
-// both refused: a graph with none is unfinished, and one with two has no defined place to begin.
+// validateWorkflowNodes checks node identity, kind, per-kind configuration and the start-node count.
+// The editor allows at most one Start node in the outer graph, and a run needs exactly one entry
+// point, so zero and two are both refused: a graph with none is unfinished, and one with two has no
+// defined place to begin. A loop body's own start is a second `start` in the document; it is counted
+// and checked by validateWorkflowContainers, not here, and it never becomes the run's entry point.
+//
+// Selectors are validated against the roots visible in the node's scope, not the flat declaration
+// set: a body node may read its loop's carried variables, and an outer node may read the loop's
+// published outputs. See workflowVisibleRoots.
 func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	seen := map[string]bool{}
 	declaredRoots := workflowDeclaredRoots(nodes, globals)
+	containers := workflowNodeContainers(nodes)
+	iterations := map[string]bool{}
+	for _, raw := range nodes {
+		node, ok := asWorkflowObject(raw)
+		if ok && node.O("data").S("kind") == "iteration" {
+			iterations[node.S("id")] = true
+		}
+	}
+	loops := workflowLoopRootsByName(nodes)
 	starts := 0
 	for _, raw := range nodes {
 		node, ok := raw.(map[string]any)
@@ -396,13 +425,21 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 		}
 		seen[id] = true
 		kind := o.O("data").S("kind")
+		visibleRoots := workflowVisibleRoots(declaredRoots, loops, containers[id])
+		if iterations[containers[id]] {
+			// A region's members read the current round's item and index, which exist only inside
+			// that region and only while it runs.
+			visibleRoots[containers[id]] = map[string]bool{"item": true, "index": true}
+		}
 		switch {
 		case kind == "":
 			problems = append(problems, workflowGraphProblem{Code: "node_kind_missing", NodeID: id})
 		case !workflowExecutableNodeKinds[kind]:
 			problems = append(problems, workflowGraphProblem{Code: "node_kind_unsupported", NodeID: id, Kind: kind})
 		case kind == "start":
-			starts++
+			if containers[id] == "" {
+				starts++
+			}
 		case kind == "agent":
 			// Only an agent node is asked about its configuration, and only once its kind is known to
 			// be one Cloud executes: a `tool` node carrying `skills` is already refused for the kind,
@@ -410,7 +447,16 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 			// delete anyway.
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
-			problems = append(problems, validateConditionConfig(id, o.O("data"), declaredRoots)...)
+			problems = append(problems, validateConditionConfig(id, o.O("data"), visibleRoots)...)
+		case kind == "output":
+			problems = append(problems, validateWorkflowOutputConfig(id, o.O("data"), visibleRoots)...)
+		case kind == "aggregator":
+			problems = append(problems, validateAggregatorConfig(id, o.O("data"), visibleRoots)...)
+		case kind == "loop" && containers[id] == "":
+			// The loop's own initial values resolve in the outer scope, while feedback, until and
+			// outputs resolve against a round pool; validateLoopConfig derives both from the flat
+			// declarations instead of the node's container visibility.
+			problems = append(problems, validateLoopConfig(id, o.O("data"), declaredRoots, loops)...)
 		}
 	}
 	if starts != 1 {
@@ -609,6 +655,24 @@ func workflowDeclaredRoots(nodes []any, globals []Object) map[string]map[string]
 			}
 		case "output":
 			set["output"] = true
+		case "aggregator":
+			// The aggregator publishes exactly one root: the value of the first assigned candidate.
+			set["output"] = true
+		case "loop":
+			// A loop exposes two root groups under the same writer: its carried variables (visible
+			// only inside the body) and its named outputs (visible only outside). They share a name
+			// space here because the visibility filter separates them by scope; the runtime never
+			// writes both under one key.
+			for _, variable := range workflowObjectEntries(data.O("loopConfig")["variables"]) {
+				if name := variable.S("name"); name != "" {
+					set[name] = true
+				}
+			}
+			for _, output := range workflowObjectEntries(data.O("loopConfig")["outputs"]) {
+				if name := output.S("name"); name != "" {
+					set[name] = true
+				}
+			}
 		}
 		roots[id] = set
 	}

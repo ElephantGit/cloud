@@ -118,6 +118,8 @@ export const workflowAdmissionKeys: Readonly<
   output_name_invalid: 'workflows.errors.admission.output',
   output_selector_invalid: 'workflows.errors.admission.output',
   output_bindings_invalid: 'workflows.errors.admission.output',
+  output_bindings_not_a_list: 'workflows.errors.admission.output',
+  output_selector_unsupported: 'workflows.errors.admission.output',
   iteration_collect_outside_region: 'workflows.errors.admission.collect',
   iteration_collect_unsupported: 'workflows.errors.admission.collect',
   iteration_error_strategy_unknown: 'workflows.errors.admission.strategy',

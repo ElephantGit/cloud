@@ -10,6 +10,8 @@ describe('publish admission guidance', () => {
     'loop_initial_invalid',
     'iteration_collect_outside_region',
     'output_selector_undeclared',
+    'output_bindings_not_a_list',
+    'output_selector_unsupported',
   ])('explains %s in both locales', (code) => {
     const key = workflowAdmissionKeys[code]
     expect(key).toBeDefined()

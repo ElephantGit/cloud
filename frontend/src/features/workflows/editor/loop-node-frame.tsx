@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Handle, Position, useReactFlow } from '@xyflow/react'
+import { Handle, Position, useReactFlow, useStore, type ReactFlowState } from '@xyflow/react'
 import { useTranslation } from 'react-i18next'
 import { Trash } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,36 @@ import type { WorkflowCanvasNode } from '@/features/workflows/editor/canvas-type
 
 /** Height of the frame's title strip, which centers the outer handles. */
 const LOOP_HEADER_HEIGHT = 44
+/** Room the frame keeps right of and below its outermost member, as insertion grows it. */
+const LOOP_CONTENT_RIGHT_PADDING = 48
+const LOOP_CONTENT_BOTTOM_PADDING = 40
+
+/**
+ * The box the Loop's measured members need, as `"width:height"` so the selector result is
+ * compared by value and the frame re-renders only when the needed box changes.
+ *
+ * A body card is measured only after it renders, and Cloud's cards are taller than the
+ * palette group's default box; `expandParent` does not run on that first measurement, so
+ * without this the member would be clamped into a box too small to hold it.
+ */
+function contentBoxSelector(loopId: string): (state: ReactFlowState) => string {
+  return (state) => {
+    let width = 0
+    let height = 0
+    for (const node of state.nodes) {
+      if (node.parentId !== loopId) {
+        continue
+      }
+      const measured = node.measured
+      width = Math.max(width, node.position.x + (measured?.width ?? 0) + LOOP_CONTENT_RIGHT_PADDING)
+      height = Math.max(
+        height,
+        node.position.y + (measured?.height ?? 0) + LOOP_CONTENT_BOTTOM_PADDING,
+      )
+    }
+    return `${Math.ceil(width)}:${Math.ceil(height)}`
+  }
+}
 
 /** The subset of a canvas node the frame renders from. */
 export interface LoopNodeFrameProps {
@@ -58,8 +88,11 @@ export function LoopNodeFrame({
   const kindLabel = translate(workflowNodeTypeDefinition(data.kind).labelKey)
   const frame = getNode(id)
   const authored = frame === undefined ? { width: 0, height: 0 } : loopFrameSize(frame)
-  const boxWidth = Math.max(WORKFLOW_LOOP_MIN_WIDTH, authored.width, width ?? 0)
-  const boxHeight = Math.max(WORKFLOW_LOOP_MIN_HEIGHT, authored.height, height ?? 0)
+  const [contentWidth = 0, contentHeight = 0] = useStore(contentBoxSelector(id))
+    .split(':')
+    .map(Number)
+  const boxWidth = Math.max(WORKFLOW_LOOP_MIN_WIDTH, authored.width, width ?? 0, contentWidth)
+  const boxHeight = Math.max(WORKFLOW_LOOP_MIN_HEIGHT, authored.height, height ?? 0, contentHeight)
   const maxIterations = data.loopConfig?.maxIterations
 
   return (

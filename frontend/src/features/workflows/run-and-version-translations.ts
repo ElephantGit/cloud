@@ -30,6 +30,11 @@ export const runAndVersionTranslations = {
     'workflows.tabs.label': '工作流的分区',
     'workflows.tabs.editor': '编辑',
     'workflows.tabs.versions': '版本',
+    'workflows.draftNavigation.title': '草稿保存失败',
+    'workflows.draftNavigation.description':
+      '修改尚未保存。你可以留在编辑器继续处理，或放弃本次未保存的修改并离开。',
+    'workflows.draftNavigation.stay': '留在编辑器',
+    'workflows.draftNavigation.leave': '放弃修改并离开',
     'workflows.runs.loading': '正在加载运行记录…',
     'workflows.runs.emptyTitle': '还没有运行记录',
     'workflows.runs.emptyDescription':
@@ -72,6 +77,11 @@ export const runAndVersionTranslations = {
     'workflows.tabs.label': 'Workflow sections',
     'workflows.tabs.editor': 'Edit',
     'workflows.tabs.versions': 'Versions',
+    'workflows.draftNavigation.title': 'The draft could not be saved',
+    'workflows.draftNavigation.description':
+      'Your changes are not saved. Stay in the editor to resolve this, or discard the unsaved changes and leave.',
+    'workflows.draftNavigation.stay': 'Stay in editor',
+    'workflows.draftNavigation.leave': 'Discard changes and leave',
     'workflows.runs.loading': 'Loading runs…',
     'workflows.runs.emptyTitle': 'No runs yet',
     'workflows.runs.emptyDescription':

@@ -16,6 +16,7 @@ Depends on runtime, UI components, i18n and workflow API adapters; workflow page
 Case ids and connection ports persist together; different ports may join one target. Output retains
 authored bindings and incomplete draft rows, leaving publication validation to reject invalid data.
 Tests exercise real React Flow ports, controlled inspectors and draft save/reload behavior; network
-tests replace the shared test boundary.
+tests replace the shared test boundary. Leaving the editor waits for the draft write; after a failure the author
+chooses to stay or discard changes and leave, cancelling pending draft state on discard.
 
 Legacy empty condition ports project to ELSE on the canvas without mutating drafts. Loop initial selectors list outer variables; round-end selectors also list body roots and carried values. New members immediately use their parent and relative coordinates.

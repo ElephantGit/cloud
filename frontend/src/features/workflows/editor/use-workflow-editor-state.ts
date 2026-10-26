@@ -102,6 +102,8 @@ export interface WorkflowEditorState extends WorkflowEditorHandlers {
    * Publish calls this first so a released version is never stale.
    */
   flushDraft: () => Promise<boolean>
+  /** Drops an unsaved draft after the member explicitly chooses to leave. */
+  discardDraft: () => void
   /** The document version the server last confirmed; its value guards a restore. */
   committedVersion: number
   /** Serializes the live draft, unsaved edits included, into the graph document. */
@@ -158,7 +160,7 @@ export function useWorkflowEditorState(
     }
   }, [saveGraph, snapshot, workflow.id, workflow.name])
 
-  const { status, markDirty, flush } = useWorkflowDraftAutosave({ enabled: true, save })
+  const { status, markDirty, flush, cancel } = useWorkflowDraftAutosave({ enabled: true, save })
   // A history restore writes the chosen snapshot over the draft and keeps the
   // restored content eligible for autosave, exactly like the edit it replaces.
   const history = useWorkflowHistory(
@@ -204,6 +206,7 @@ export function useWorkflowEditorState(
     status,
     saveNow,
     flushDraft: flush,
+    discardDraft: cancel,
     committedVersion,
     draftGraph,
     onViewportChange,

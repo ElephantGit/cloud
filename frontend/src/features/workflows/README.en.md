@@ -9,3 +9,4 @@ This module composes workflow listing, editing, and run pages and owns API queri
 | `*translations.ts`            | Feature copy and localized publication guidance |
 
 Depends on generated APIs, primitives, identity, and space context; application routes consume this module. Publish errors map stable admission codes to actionable guidance without displaying raw server messages. Tests verify query boundaries and page behavior; known admission reasons must not collapse into generic guidance.
+Leaving the editor waits for its draft save; after a failure the canvas remains visible while the author chooses to stay or discard changes and leave. Navigation must not retry a rejected save indefinitely.

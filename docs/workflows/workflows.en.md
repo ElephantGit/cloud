@@ -23,8 +23,9 @@ and importing workflows from plugins.
   checks nothing about completeness: a half-written draft is a legitimate document. Only **publishing** judges
   whether a graph can execute, returning problems together with the node or slot at fault so the editor can mark
   them. A frozen published version is a graph Cloud has agreed to execute.
-  Switching tabs or leaving through an editor toolbar link waits for an outstanding draft save; a failed save keeps
-  the editor open rather than rebuilding its canvas from an older cache entry on return.
+  Switching tabs or leaving through an editor toolbar link waits for an outstanding draft save. If it fails, the
+  author may stay in the editor or discard unsaved changes and leave, avoiding both a stale canvas on return and a
+  failed draft that traps them in the editor.
 - **Versions are immutable.** Published versions (`workflow_snapshots`) are stored under a per-workflow increasing
   version number and are never modified or soft-deleted, so the graph a run rendered never drifts with the document.
   Publishing locks the workflow row, so two concurrent publishes never get the same version number. A snapshot's

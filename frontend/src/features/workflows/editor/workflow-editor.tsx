@@ -4,6 +4,16 @@ import { Save } from 'lucide-react'
 import { useBlocker } from 'react-router-dom'
 import type { Workflow as CloudWorkflow } from '@/api/generated.schemas'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,7 +30,10 @@ import {
   type ResizablePanelHandle,
 } from '@/components/ui/resizable'
 import type { WorkflowDraftSaveStatus } from '@/features/workflows/editor/use-workflow-draft-autosave'
-import { useWorkflowEditorState } from '@/features/workflows/editor/use-workflow-editor-state'
+import {
+  useWorkflowEditorState,
+  type WorkflowEditorState,
+} from '@/features/workflows/editor/use-workflow-editor-state'
 import { WorkflowCanvas } from '@/features/workflows/editor/workflow-canvas'
 import { WorkflowDraftSaveStatusLabel } from '@/features/workflows/editor/workflow-draft-save-status'
 import { WorkflowHistoryTools } from '@/features/workflows/editor/workflow-history-controls'
@@ -75,9 +88,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {guardNavigation && (
-        <DraftNavigationGuard status={state.status} flushDraft={state.flushDraft} />
-      )}
+      {guardNavigation && <DraftNavigationGuard draft={state} />}
       <EditorToolbar
         nodeCount={state.nodes.length}
         edgeCount={state.edges.length}
@@ -169,32 +180,69 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
 
 /** Keeps the page editor mounted until its draft reaches the query cache or a failed save is shown. */
 function DraftNavigationGuard({
-  status,
-  flushDraft,
+  draft,
 }: {
-  status: WorkflowDraftSaveStatus
-  flushDraft: () => Promise<boolean>
+  draft: Pick<WorkflowEditorState, 'status' | 'flushDraft' | 'discardDraft'>
 }) {
+  const { status, flushDraft, discardDraft } = draft
+  const { t } = useTranslation()
   const blocker = useBlocker(status !== 'clean')
   const settlingNavigation = useRef(false)
+  const [saveFailed, setSaveFailed] = useState(false)
 
   useEffect(() => {
     if (blocker.state !== 'blocked' || settlingNavigation.current) return
+    if (status === 'error') return
     settlingNavigation.current = true
-    // Every in-app exit, including tab and toolbar links, waits for the same flush.
+    // Every in-app exit first waits for the write. A failed write needs a choice: silently
+    // resetting the blocker would trap the member on every later navigation as well.
     void (async () => {
       try {
         if (await flushDraft()) blocker.proceed()
-        else blocker.reset()
+        else setSaveFailed(true)
       } catch {
-        blocker.reset()
+        setSaveFailed(true)
       } finally {
         settlingNavigation.current = false
       }
     })()
-  }, [blocker, flushDraft])
+  }, [blocker, flushDraft, status])
 
-  return null
+  return (
+    <AlertDialog
+      open={blocker.state === 'blocked' && (status === 'error' || saveFailed)}
+      onOpenChange={(open) => {
+        if (!open) stay()
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('workflows.draftNavigation.title')}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('workflows.draftNavigation.description')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('workflows.draftNavigation.stay')}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={leave}>
+            {t('workflows.draftNavigation.leave')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
+  function stay(): void {
+    setSaveFailed(false)
+    if (blocker.state === 'blocked') blocker.reset()
+  }
+
+  function leave(): void {
+    if (blocker.state !== 'blocked') return
+    discardDraft()
+    setSaveFailed(false)
+    blocker.proceed()
+  }
 }
 
 /**

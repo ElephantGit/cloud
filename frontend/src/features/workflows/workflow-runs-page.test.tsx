@@ -303,6 +303,45 @@ describe('WorkflowRunsPage', () => {
     expect(screen.getByText('第 1 次运行')).toBeInTheDocument()
   })
 
+  it('retries the head after its refresh fails before the last page', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let headReads = 0
+    let recovered = false
+    server.use(
+      http.get(RUNS_URL, ({ request }) => {
+        if (new URL(request.url).searchParams.has('after')) {
+          return HttpResponse.json({ items: [runFixture(2)], nextCursor: '' })
+        }
+        headReads += 1
+        if (headReads > 1 && !recovered) {
+          return HttpResponse.json({ code: 'internal' }, { status: 500 })
+        }
+        return HttpResponse.json({
+          items: [
+            runFixture(1, {
+              status: recovered ? 'succeeded' : 'running',
+              finishedAt: recovered ? '2026-09-20T02:00:10.000Z' : null,
+            }),
+          ],
+          nextCursor: 'run-001',
+        })
+      }),
+    )
+    renderRunsPage()
+    await screen.findByText('第 1 次运行')
+
+    await act(() => vi.advanceTimersByTimeAsync(WORKFLOW_RUN_POLL_MS))
+    expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.queryByText('更早的运行读取失败。')).not.toBeInTheDocument()
+    expect(headReads).toBe(2)
+
+    recovered = true
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(headReads).toBe(3))
+    expect(screen.getByText('第 1 次运行')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '加载更早的运行' })).toBeInTheDocument()
+  })
+
   it('shows when each run started and finished, and marks one that has not started', async () => {
     server.use(
       http.get(RUNS_URL, () =>

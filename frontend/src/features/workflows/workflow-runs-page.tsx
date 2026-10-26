@@ -120,7 +120,7 @@ function RunHistoryBody({
 }
 
 /**
- * The paging footer: the next page, its failure, or the note that the walk ended.
+ * The paging footer: a failed refresh, the next page, its failure, or the end of the walk.
  *
  * The failure reads here rather than on a fault page, because the rows already loaded stay: a
  * history is not less readable because its next page failed. A failed read is reported whether or
@@ -143,7 +143,7 @@ function HistoryFooter({ history }: { history: HistoryQuery }) {
       </div>
     )
   }
-  if (failed && !history.hasNextPage) {
+  if (failed && !history.isFetchNextPageError) {
     return (
       <div className="pt-2">
         <HistoryFault
@@ -168,7 +168,9 @@ function HistoryFooter({ history }: { history: HistoryQuery }) {
           ? t('workflows.runs.loadingMore')
           : t('workflows.runs.loadMore')}
       </Button>
-      {failed && <p className="text-xs text-destructive">{t('workflows.runs.loadMoreFailed')}</p>}
+      {history.isFetchNextPageError && (
+        <p className="text-xs text-destructive">{t('workflows.runs.loadMoreFailed')}</p>
+      )}
     </div>
   )
 }

@@ -12,7 +12,8 @@ func validWorkflowIterationProgress(s *workflowIterationRunState, config *workfl
 	failed := 0
 	for i, raw := range s.Ledger {
 		entry, ok := asWorkflowObject(raw)
-		if !ok || len(entry) != 4 || jsonText(entry["item"]) != jsonText(s.Items[i]) {
+		_, hasItem := entry["item"]
+		if !ok || !hasItem || len(entry) != 4 || jsonText(entry["item"]) != jsonText(s.Items[i]) {
 			return false
 		}
 		value, hasOutput := entry["output"]
@@ -54,7 +55,14 @@ func validWorkflowIterationProgress(s *workflowIterationRunState, config *workfl
 				return false
 			}
 		}
+		archivedStates := workflowStatesFromJSON(members)
+		projection := projectWorkflowNodes(body, archivedStates)
+		collector := archivedStates[config.Collect.nodeID]
+		_, collected := collector.Output[config.Collect.root]
 		if entry.S("status") == "succeeded" {
+			if projection.hasFailure() || projection.hasPending() || len(members) != len(body.Nodes) {
+				return false
+			}
 			member, ok := asWorkflowObject(members[config.Collect.nodeID])
 			if !ok || member.S("status") != "succeeded" {
 				return false
@@ -63,6 +71,9 @@ func validWorkflowIterationProgress(s *workflowIterationRunState, config *workfl
 			if !exists || jsonText(collected) != jsonText(value) {
 				return false
 			}
+		} else if !projection.hasFailure() && collector.Status == "succeeded" && collected {
+			// A failure entry must be justified by the archived body or an unset collect target.
+			return false
 		}
 	}
 	return failed == s.Failed && jsonText(output) == jsonText(s.Output)

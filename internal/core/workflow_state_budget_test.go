@@ -71,6 +71,37 @@ func TestWorkflowIterationRejectsCorruptRecovery(t *testing.T) {
 	g := readWorkflowGraph(iterationRunGraph("continue", 10, []any{"it", "item"}))
 	node := g.ByNode["it"]
 	valid := Object{"round": 1, "items": []any{"a", "b"}, "strategy": "continue", "ledger": []any{Object{"item": "a", "status": "succeeded", "output": "a", "error": nil}}, "output": []any{"a"}, "failedCount": 0, "completed": []any{Object{"index": 0, "states": Object{"agg": Object{"status": "succeeded", "output": Object{"output": "a"}}}}}}
+	config, err := parseWorkflowIterationConfig(node.Data)
+	if err != nil || !validWorkflowIterationProgress(workflowIterationRunStateFromJSON(decodeGraph(t, valid)), &config, g, node.ID) {
+		t.Fatalf("valid recovery rejected: %v", err)
+	}
+	mutations := map[string]func(Object){
+		"derived output": func(raw Object) { raw["output"] = []any{"wrong"} },
+		"failed count":   func(raw Object) { raw["failedCount"] = 1 },
+		"archive index":  func(raw Object) { archive, _ := asWorkflowObject(raw["completed"].([]any)[0]); archive["index"] = 1 },
+		"archive contradicts ledger": func(raw Object) {
+			archive, _ := asWorkflowObject(raw["completed"].([]any)[0])
+			member, _ := asWorkflowObject(archive.O("states")["agg"])
+			member["status"] = "failed"
+		},
+		"invented failure": func(raw Object) {
+			entry, _ := asWorkflowObject(raw["ledger"].([]any)[0])
+			entry["status"] = "failed"
+			entry["output"] = nil
+			entry["error"] = "invented"
+			raw["output"] = []any{}
+			raw["failedCount"] = 1
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			raw := decodeGraph(t, valid)
+			mutate(raw)
+			if validWorkflowIterationProgress(workflowIterationRunStateFromJSON(raw), &config, g, node.ID) {
+				t.Fatal("inconsistent recovery accepted")
+			}
+		})
+	}
 	for _, field := range []string{"round", "items", "ledger", "output", "failedCount", "completed", "strategy"} {
 		t.Run(field, func(t *testing.T) {
 			raw := decodeGraph(t, valid)

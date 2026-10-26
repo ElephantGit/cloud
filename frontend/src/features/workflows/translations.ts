@@ -3,6 +3,7 @@ import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
 import { aggregatorTranslations } from '@/features/workflows/aggregator-translations'
 import { loopTranslations } from '@/features/workflows/loop-translations'
+import { runRoundTranslations } from '@/features/workflows/run-round-translations'
 import { nodeTranslations } from '@/features/workflows/node-translations'
 import { operatorTranslations } from '@/features/workflows/operator-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
@@ -30,6 +31,7 @@ export const workflowTranslations = {
     ...launchFieldTranslations['zh-CN'],
     ...aggregatorTranslations['zh-CN'],
     ...loopTranslations['zh-CN'],
+    ...runRoundTranslations['zh-CN'],
     ...nodeTranslations['zh-CN'],
     ...operatorTranslations['zh-CN'],
 
@@ -421,6 +423,7 @@ export const workflowTranslations = {
     ...launchFieldTranslations['en-US'],
     ...aggregatorTranslations['en-US'],
     ...loopTranslations['en-US'],
+    ...runRoundTranslations['en-US'],
     ...nodeTranslations['en-US'],
     ...operatorTranslations['en-US'],
 

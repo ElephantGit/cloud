@@ -662,7 +662,7 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	}
 	outer := workflowOuterGraph(graph)
 	for {
-		if over := workflowStateBudget(graph, states); over != nil {
+		if over := workflowTransitionBudget(t, runID, version, graph, states, "running"); over != nil {
 			if !rejectWorkflowStateOverflow(t, runID, version, states, over) {
 				return
 			}
@@ -775,7 +775,7 @@ func settleWorkflowRunStates(t *transaction, runID string, version int64, status
 	budgetFailed := false
 	if states != nil {
 		snapshot := t.one(`SELECT s.graph FROM workflow_runs r JOIN workflow_snapshots s ON s.id=r.snapshot_id WHERE r.id=$1`, runID)
-		if over := workflowStateBudget(readWorkflowGraph(snapshot.O("graph")), states); over != nil {
+		if over := workflowTransitionBudget(t, runID, version, readWorkflowGraph(snapshot.O("graph")), states, status); over != nil {
 			if !rejectWorkflowStateOverflow(t, runID, version, states, over) {
 				return false
 			}

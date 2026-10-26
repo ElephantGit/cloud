@@ -29,13 +29,6 @@ func workflowEncodedStates(states map[string]workflowNodeState) Object {
 func workflowStateBudget(graph workflowGraphView, states map[string]workflowNodeState) *workflowStateOverflow {
 	var active workflowNodeView
 	var round int64
-	failedBudget := false
-	for id := range states {
-		state := states[id]
-		if state.Status == "failed" || state.Status == "cancelled" {
-			failedBudget = true
-		}
-	}
 	for _, node := range graph.Nodes {
 		if node.Kind != "loop" && node.Kind != "iteration" {
 			continue
@@ -44,9 +37,6 @@ func workflowStateBudget(graph workflowGraphView, states map[string]workflowNode
 			active = node
 		}
 		state := states[node.ID]
-		if state.Status == "cancelled" || (state.Status == "failed" && (state.Output.S("reason") == "workflow_state_size_exceeded" || state.Output.S("reason") == node.Kind+"_state_size_exceeded")) {
-			failedBudget = true
-		}
 		localReason := node.Kind + "_state_size_exceeded"
 		check := func(value any, r int64) *workflowStateOverflow {
 			n := len(jsonText(value))
@@ -108,13 +98,36 @@ func workflowStateBudget(graph workflowGraphView, states map[string]workflowNode
 	}
 	n := len(jsonText(workflowEncodedStates(states)))
 	limit := workflowStateLimit - workflowFailureReserve
-	if failedBudget {
-		limit = workflowStateLimit
-	}
 	if n > limit {
 		return &workflowStateOverflow{node: active, round: round, bytes: n, limit: limit, reason: "workflow_state_size_exceeded"}
 	}
 	return nil
+}
+
+// workflowTransitionBudget opens the reserve only for a new failure/cancellation in this CAS.
+// Retained failed members of a successful continue iteration never enlarge ordinary output writes.
+func workflowTransitionBudget(t *transaction, runID string, version int64, graph workflowGraphView, states map[string]workflowNodeState, status string) *workflowStateOverflow {
+	over := workflowStateBudget(graph, states)
+	if over == nil || over.reason != "workflow_state_size_exceeded" {
+		return over
+	}
+	prior := t.one("SELECT node_states FROM workflow_runs WHERE id=$1 AND version=$2", runID, version)
+	reserved := status == "failed" || status == "cancelled"
+	for id := range states {
+		state := states[id]
+		old := prior.O("nodeStates").O(id)
+		if (state.Status == "failed" || state.Status == "cancelled") &&
+			(old.S("status") != state.Status || old.N("attempt") != state.Attempt) {
+			reserved = true
+		}
+	}
+	if reserved {
+		if over.bytes <= workflowStateLimit {
+			return nil
+		}
+		over.limit = workflowStateLimit
+	}
+	return over
 }
 
 // rejectWorkflowStateOverflow discards the whole candidate, not just its largest value. The

@@ -8,8 +8,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const scheduledTaskMigration = "0061_scheduled_tasks.sql"
-const scheduledTaskModelMigration = "0071_scheduled_task_model.sql"
+const (
+	scheduledTaskMigration      = "0061_scheduled_tasks.sql"
+	scheduledTaskModelMigration = "0071_scheduled_task_model.sql"
+)
 
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
 func seedScheduledTaskAgent(t *testing.T, pool *sql.DB, s skeletonSeed) string {

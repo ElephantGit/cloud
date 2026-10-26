@@ -3,6 +3,7 @@ package pluginmarket
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -281,5 +282,145 @@ func TestScanRejectsDirectoryCopiesAsNonRegular(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].AgentConfiguration != nil || entries[0].AgentConfigurationIssue == "" {
 		t.Fatalf("a directory copy must record an issue without a consumable declaration: %+v", entries)
+	}
+}
+
+// writeDeclaredListing writes an agent listing whose association points at copyPath with the
+// given schema version and declaration digest, and returns its entry directory.
+func writeDeclaredListing(t *testing.T, root, name string, schemaVersion int, declarationDigest, copyPath string) string {
+	t.Helper()
+	return writeListing(t, root, "a", name, fmt.Sprintf("resolver = 1\nidentifier = %q\nkind = \"agent\"\nversion = \"1.0.0\"\ndescription = \"Declared.\"\nurl = \"https://example.invalid/d.orax\"\nsha256 = %q\n\n[agent_configuration]\nschema_version = %d\ndeclaration_sha256 = %q\ncopy = %q\n", name, strings.Repeat("ab", 32), schemaVersion, declarationDigest, copyPath))
+}
+
+// writeFileAt writes content at path, creating its parent directories.
+func writeFileAt(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if e := os.MkdirAll(filepath.Dir(path), 0o700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(path, content, 0o600); e != nil {
+		t.Fatal(e)
+	}
+}
+
+// symlinkOrSkip creates link -> target, skipping where the host cannot create symbolic links
+// (Windows without developer mode or the symlink privilege).
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	if e := os.MkdirAll(filepath.Dir(link), 0o700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Symlink(target, link); e != nil {
+		t.Skipf("symbolic links unavailable on this host: %v", e)
+	}
+}
+
+// scanOnlyEntry scans root and returns its single catalog entry.
+func scanOnlyEntry(t *testing.T, root string) Entry {
+	t.Helper()
+	entries, skipped, e := Scan(filepath.Join(root, "registry"), "official", "https://example.invalid/market.git")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(skipped) != 0 || len(entries) != 1 {
+		t.Fatalf("an invalid copy must keep exactly its listing: entries=%+v skipped=%v", entries, skipped)
+	}
+	return entries[0]
+}
+
+func TestScanRefusesSymbolicLinksOnTheCopyPath(t *testing.T) {
+	// Every link target holds the exact associated bytes, so only the link itself can explain a
+	// refusal: a link is refused wherever it sits on the path and wherever it points.
+	valid := []byte(declarationFor)
+	cases := []struct {
+		name string
+		link func(t *testing.T, root, entryDir string)
+	}{
+		{"intermediate-directory-leaves-the-entry", func(t *testing.T, root, entryDir string) {
+			writeFileAt(t, filepath.Join(root, "outside", "agent.json"), valid)
+			symlinkOrSkip(t, filepath.Join(root, "outside"), filepath.Join(entryDir, "nested"))
+		}},
+		{"intermediate-directory-stays-in-the-entry", func(t *testing.T, root, entryDir string) {
+			writeFileAt(t, filepath.Join(entryDir, "real", "agent.json"), valid)
+			symlinkOrSkip(t, "real", filepath.Join(entryDir, "nested"))
+		}},
+		{"final-segment-leaves-the-entry", func(t *testing.T, root, entryDir string) {
+			writeFileAt(t, filepath.Join(root, "outside", "agent.json"), valid)
+			symlinkOrSkip(t, filepath.Join(root, "outside", "agent.json"), filepath.Join(entryDir, "nested", "agent.json"))
+		}},
+		{"final-segment-stays-in-the-entry", func(t *testing.T, root, entryDir string) {
+			writeFileAt(t, filepath.Join(entryDir, "nested", "real.json"), valid)
+			symlinkOrSkip(t, "real.json", filepath.Join(entryDir, "nested", "agent.json"))
+		}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			entryDir := writeDeclaredListing(t, root, "linked", 2, declarationDigestOf(t, declarationFor), "nested/agent.json")
+			testCase.link(t, root, entryDir)
+			entry := scanOnlyEntry(t, root)
+			if entry.AgentConfiguration != nil {
+				t.Fatalf("a linked copy must not become consumable: %+v", entry.AgentConfiguration)
+			}
+			if entry.AgentConfigurationIssue != "copy path must not traverse a symbolic link" {
+				t.Fatalf("issue must name the link refusal without paths: %q", entry.AgentConfigurationIssue)
+			}
+		})
+	}
+}
+
+func TestReadDeclarationCopyStaysInsideTheEntryWithoutTheGrammar(t *testing.T) {
+	// The manifest grammar rejects parent segments first; this calls the reader directly to show
+	// the root bound alone still refuses an escape to a readable, valid file next to the entry.
+	root := t.TempDir()
+	entryDir := filepath.Join(root, "entry")
+	writeFileAt(t, filepath.Join(entryDir, "orax.toml"), []byte("placeholder"))
+	writeFileAt(t, filepath.Join(root, "outside", "agent.json"), []byte(declarationFor))
+	source, issue := readDeclarationCopy(entryDir, "../outside/agent.json")
+	if source != nil || issue != "copy unreadable" {
+		t.Fatalf("an escaping path must read nothing and name no path: source=%q issue=%q", source, issue)
+	}
+}
+
+func TestScanResolvesNestedDeclarationCopies(t *testing.T) {
+	root := t.TempDir()
+	entryDir := writeDeclaredListing(t, root, "nested", 2, declarationDigestOf(t, declarationFor), "nested/dir/agent-configuration.json")
+	writeFileAt(t, filepath.Join(entryDir, "nested", "dir", "agent-configuration.json"), []byte(declarationFor))
+	entry := scanOnlyEntry(t, root)
+	if entry.AgentConfigurationIssue != "" || entry.AgentConfiguration == nil {
+		t.Fatalf("a nested regular copy must resolve: issue=%q", entry.AgentConfigurationIssue)
+	}
+	if entry.AgentConfiguration.Declaration != declarationFor || entry.AgentConfiguration.CopyPath != "nested/dir/agent-configuration.json" {
+		t.Fatalf("nested copy must keep its exact bytes and declared path: %+v", entry.AgentConfiguration)
+	}
+}
+
+func TestScanRecordsBoundedIssuesForMalformedCopyBytes(t *testing.T) {
+	oversized := []byte(strings.Repeat(" ", maxAgentDeclarationBytes+1))
+	notUTF8 := []byte("{\"schemaVersion\":2,\xff}")
+	cases := []struct {
+		name          string
+		content       []byte
+		schemaVersion int
+		issue         string
+	}{
+		{"exceeds-the-byte-bound", oversized, 2, fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes)},
+		{"not-utf-8", notUTF8, 2, "copy is not valid UTF-8"},
+		{"schema-version-disagrees", []byte(declarationFor), 3, "copy declares schema version 2 but the association declares 3"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			sum := sha256.Sum256(testCase.content)
+			entryDir := writeDeclaredListing(t, root, "malformed", testCase.schemaVersion, hex.EncodeToString(sum[:]), "agent-configuration.json")
+			writeCopy(t, entryDir, "agent-configuration.json", testCase.content)
+			entry := scanOnlyEntry(t, root)
+			if entry.AgentConfiguration != nil {
+				t.Fatalf("no consumable declaration may survive: %+v", entry.AgentConfiguration)
+			}
+			if entry.AgentConfigurationIssue != testCase.issue {
+				t.Fatalf("issue = %q, want %q", entry.AgentConfigurationIssue, testCase.issue)
+			}
+		})
 	}
 }

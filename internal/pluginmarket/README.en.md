@@ -42,7 +42,7 @@ lifecycle), and never modifies the desktop repository.
   `plugin_sources.sync_error`).
 - Catalog reads never leave the database: the API serves the PG snapshot, matching desktop's
   cache-only read semantics.
-- An Agent's `[agent_configuration]` association carries the schema version, declaration SHA-256 and entry-relative copy path. The copy must be a bounded UTF-8 regular file with matching digest, compiled result and associated version. Absence and invalid declarations are distinct; an invalid copy neither hides the listing nor blocks package installation. This package never reads personal configuration, resolves connections or authorizes runtimes.
+- An Agent's `[agent_configuration]` association carries the schema version, declaration SHA-256 and entry-relative copy path. No segment of the copy path may be a symlink and the read stays inside the entry directory; the copy must be a bounded UTF-8 regular file with matching digest, compiled result and associated version. Absence and invalid declarations are distinct; an invalid copy neither hides the listing nor blocks package installation. This package never reads personal configuration, resolves connections or authorizes runtimes.
 - `ErrNonFastForwardMerge` is the `pull --ff-only` contract; desktop's `gitlancer` has the same
   semantics.
 

@@ -242,42 +242,22 @@ const agentConfigurationIssueMaximum = 200
 // synced checkout.
 //
 // Reading the copy is the only filesystem work beyond the manifest and README, and it stays
-// inside the entry directory: the copy path grammar already excludes escapes, the file must be a
-// regular non-symlink file, and the bytes must hash and compile to exactly the associated
-// identity. A listing that declares nothing consumes nothing. A declared association that fails
-// any check leaves the entry visible with a bounded issue and no consumable declaration: the
-// plugin stays installable as a package, it just cannot offer personal configuration until its
-// publisher fixes the release.
+// inside the entry directory (see readDeclarationCopy); the bytes must then hash and compile to
+// exactly the associated identity. A listing that declares nothing consumes nothing. A declared
+// association that fails any check leaves the entry visible with a bounded issue and no
+// consumable declaration: the plugin stays installable as a package, it just cannot offer
+// personal configuration until its publisher fixes the release.
 func resolveAgentConfiguration(dir string, manifest *Manifest) (association *AgentConfigurationMetadata, issue string) {
 	declared := manifest.AgentConfiguration
 	if declared == nil {
 		return nil, ""
 	}
-	copyPath := filepath.Join(dir, filepath.FromSlash(declared.CopyPath))
-	// The manifest path grammar is platform-independent and its segments cannot name a parent,
-	// an absolute location, or a separator escape, so Join stays inside dir; the Lstat below also
-	// refuses anything but a regular file, so a link target outside the entry cannot be read.
-	info, e := os.Lstat(copyPath) // #nosec G703 -- the copy path grammar validated at
-	// manifest parse keeps the join inside the entry: no parent, absolute or separator escape.
-	if e != nil {
-		return nil, "copy unreadable"
-	}
-	if !info.Mode().IsRegular() {
-		return nil, "copy must be a regular file"
-	}
-	if info.Size() > maxAgentDeclarationBytes {
-		return nil, boundIssue(fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes))
-	}
-	source, e := os.ReadFile(copyPath) // #nosec G703 -- same containment argument as the
-	// Lstat above: the validated copy path grammar keeps the read inside the entry directory.
-	if e != nil {
-		return nil, "copy unreadable"
+	source, issue := readDeclarationCopy(dir, declared.CopyPath)
+	if issue != "" {
+		return nil, issue
 	}
 	if !utf8.Valid(source) {
 		return nil, "copy is not valid UTF-8"
-	}
-	if len(source) > maxAgentDeclarationBytes {
-		return nil, boundIssue(fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes))
 	}
 	digest := sha256.Sum256(source)
 	if hex.EncodeToString(digest[:]) != declared.DeclarationSha256 {
@@ -302,6 +282,61 @@ func resolveAgentConfiguration(dir string, manifest *Manifest) (association *Age
 		CopyPath:          declared.CopyPath,
 		Declaration:       string(source),
 	}, ""
+}
+
+// readDeclarationCopy reads the static declaration copy at the slash-separated copyPath relative
+// to the entry directory dir, returning the bytes or a bounded issue that never names a server
+// path.
+//
+// The copy is published data and must be self-contained in the entry, so no segment of its path
+// may be a symbolic link, wherever it points: a link inside the entry has no legitimate use (the
+// release pipeline can copy the file) and does not survive a checkout with core.symlinks=false,
+// while a link leaving the entry would let a market repository choose which host file Cloud
+// reads. The segment walk enforces that rule; opening through an os.Root bound to dir keeps the
+// read inside the entry even if a segment is swapped after the walk, and statting and reading
+// the same open file removes the check-then-use window on the final segment. The manifest path
+// grammar already excludes parent, absolute and separator escapes; the root is the second line.
+func readDeclarationCopy(dir, copyPath string) (source []byte, issue string) {
+	root, e := os.OpenRoot(dir)
+	if e != nil {
+		return nil, "copy unreadable"
+	}
+	defer func() { _ = root.Close() }()
+	segments := strings.Split(copyPath, "/")
+	for index := range segments {
+		info, e := root.Lstat(filepath.Join(segments[:index+1]...))
+		if e != nil {
+			return nil, "copy unreadable"
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return nil, "copy path must not traverse a symbolic link"
+		}
+	}
+	file, e := root.Open(filepath.FromSlash(copyPath))
+	if e != nil {
+		return nil, "copy unreadable"
+	}
+	defer func() { _ = file.Close() }()
+	info, e := file.Stat()
+	if e != nil {
+		return nil, "copy unreadable"
+	}
+	if !info.Mode().IsRegular() {
+		return nil, "copy must be a regular file"
+	}
+	exceeds := boundIssue(fmt.Sprintf("copy exceeds %d bytes", maxAgentDeclarationBytes))
+	if info.Size() > maxAgentDeclarationBytes {
+		return nil, exceeds
+	}
+	// The limit reads one byte past the bound so a file that grew after Stat is still refused.
+	source, e = io.ReadAll(io.LimitReader(file, maxAgentDeclarationBytes+1))
+	if e != nil {
+		return nil, "copy unreadable"
+	}
+	if len(source) > maxAgentDeclarationBytes {
+		return nil, exceeds
+	}
+	return source, ""
 }
 
 // boundIssue truncates one recorded reason so no copy content can grow the catalog row.

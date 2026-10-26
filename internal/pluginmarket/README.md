@@ -33,7 +33,7 @@ release 三元组),然后经 `CatalogSink` 接口把结果交给 `internal/core`
 - 网络与扫描全部发生在数据库事务之外;落库只是 DELETE + INSERT + 时间戳的单事务替换。
 - 一次失败的同步绝不覆盖上一版目录快照(失败路径只写 `plugin_sources.sync_error`)。
 - 目录读取永远不出网:API 只读 PG 快照,与 desktop 的 cache-only 语义一致。
-- Agent 的 `[agent_configuration]` 关联包含 schema version、声明 SHA-256 和条目内副本路径；副本须为有界 UTF-8 普通文件，摘要、编译结果与关联版本一致。未声明与声明无效分别记录，无效副本不使条目消失或禁止包安装；本包不读取个人配置、不解析连接、不授权运行时。
+- Agent 的 `[agent_configuration]` 关联包含 schema version、声明 SHA-256 和条目内副本路径；副本路径的任何一段都不能是符号链接，读取限定在条目目录内，副本须为有界 UTF-8 普通文件，摘要、编译结果与关联版本一致。未声明与声明无效分别记录，无效副本不使条目消失或禁止包安装；本包不读取个人配置、不解析连接、不授权运行时。
 - `ErrNonFastForwardMerge` 即 `pull --ff-only` 契约;desktop 的 `gitlancer` 同语义。
 
 ## 测试

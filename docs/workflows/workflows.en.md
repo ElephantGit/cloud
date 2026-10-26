@@ -32,7 +32,7 @@ and importing workflows from plugins.
 - Workflow names are unique among a tenant's unarchived workflows (`409 workflow_conflict`). Archiving is a soft
   delete, and an archived workflow is hidden from reads together with all its versions and run history.
 
-**The subset Cloud can execute.** Publishing accepts only the node kinds Cloud can currently execute: `start`,
+**The subset Cloud can execute.** Publishing accepts `aggregator`, `loop`, `loopExit`, `iteration`, `start`,
 `agent`, `condition` and `output`. Other node kinds in the editor can still be edited and saved, but publishing
 refuses them rather than freezing a graph whose nodes would be silently dropped. Agent node configuration fields
 that Cloud does not execute are likewise refused by name, so an author never believes a setting is in effect when
@@ -63,6 +63,30 @@ advance on it. HITL is left to the later interactive-run-control decision. Publi
 deliverable declaration `agentConfig.completion` (any non-null value) and any `agentConfig.schemaVersion` other than
 `3` — including `4`, the legacy `1`/`2`, and non-numbers: Cloud executes only version `3`, absent or `null` keeps the
 old behavior, and the refusal names the node and field instead of silently dropping the declaration.
+
+## Condition branches and named outputs
+
+Condition cards expose a port for each case and the implicit ELSE branch. Connections persist the
+case id in `sourceHandle`. Different branches may join the same node; duplicate endpoint-and-port
+pairs are rejected. Deleting a case removes its connections, and undo restores both. Legacy
+unlabeled condition connections retain ELSE semantics; case ordering never renumbers existing edges.
+
+The Output inspector adds, names and removes `data.outputs` bindings, with sources selected from
+the consumer's visible variable catalog. Execution resolves all bindings against one committed
+snapshot and stores the named result on the output node. No bindings retain an empty object.
+Explicit null, false, zero and empty strings remain assigned values. An unassigned binding or an
+invalid path fails the node without publishing partial results. Publication rejects malformed
+bindings, empty or duplicate names, invalid selectors and undeclared roots, with node/field locations.
+
+**Upgrade compatibility:** strict bindings apply to every published snapshot, including new runs
+from old snapshots and in-flight runs started before the upgrade and recovered afterward. There is
+no execution-semantics version and historical snapshots are not rewritten. The former behavior of
+always returning an empty object is not preserved: assigned bindings now produce named outputs,
+missing values fail with `output_value_unset`, and invalid paths fail with `output_invalid_path`.
+Old snapshots and recovered runs can therefore produce new failures or additional named outputs
+after upgrading. No bindings still produce an empty object, and committed terminal results are not
+recomputed. Publication admission cannot retroactively protect old snapshots; inspect their Output
+bindings before upgrading.
 
 ## Executor slots
 
@@ -256,7 +280,36 @@ workflow of the tenant, creating its first published version at the same time:
 Once imported, a workflow is an ordinary tenant workflow; the asset's lifecycle (plugin upgrade or removal) never
 rewrites imported documents or published versions.
 
+## Composite scopes and capacity
+
+Publication resolves effective membership from non-empty `data.containerId`, falling back to `parentId`.
+Body consumers read only region predecessors, the container's outer ancestors, globals / sys and current
+carried or item / index inputs. Loop feedback, until and outputs read the completed body snapshot.
+Iteration accepts at most 100 items.
+
+Every composite state commit measures compact UTF-8 JSON, including every duplicated value.
+Iteration inputs, collect values and member archives, and loop carried-plus-member archives and final
+outputs, each have a 1 MiB limit. Complete `node_states` have an 8 MiB limit, with 64 KiB reserved for
+bounded failure records. Overflow discards the entire candidate and retains the last committed ledger
+and members, reporting `iteration_state_size_exceeded`, `loop_state_size_exceeded` or
+`workflow_state_size_exceeded`; `continue` cannot absorb these failures.
+Both iteration strategies record failed rounds. Terminal states retain the last started round and its
+member projection. Inconsistent persisted progress fails as `iteration_invalid_round` without resetting
+or replaying earlier rounds. Body agent execution attempts stay unique across rounds while retry budgets
+count attempts within the current round.
+The reserve opens only for newly failed/cancelled nodes, settlement of a new failed iteration ledger
+entry, or a run transitioning to failed/cancelled. Historical failed members and ledger entries do not
+enlarge ordinary writes. Re-reading identical committed state does not reject it against the ordinary
+budget again; the local 1 MiB and total 8 MiB hard limits still apply. A body Agent turn timeout keeps the current
+attempt running, persists its timeout diagnosis and requests `end_session{cancelled}`. Only that
+attempt's terminal result permits failed-round settlement and iteration continuation; a late result
+cannot replace the timeout diagnosis. If the end-confirmation window expires without terminal
+evidence, the node reason becomes `session_end_deadline_exceeded` and the run error is
+`session end deadline exceeded`. The run retains the failed round's ledger and archive, terminates and releases its Workspace
+instead of starting another round while the old session may still be alive.
+
 ## Related decisions
+
 
 - [Workflows are executed by a Cloud-side scheduler: WorkflowRun is the execution aggregate](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md) (approved)
 - [Workflow agent nodes reference executors by executor slot; graphs no longer store Agent CLIs or model IDs](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md) (approved)
@@ -266,3 +319,7 @@ rewrites imported documents or published versions.
 - [Workflow plugin assets are fetched by Cloud and imported document by document as editable copies](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [Personal slot mappings resolve a workflow's executors; each run pins one model binding per slot](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md) (approved)
 - [`snapshotId` is a reserved field: the publish gate refuses author declarations and stock versions are not selectable](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md) (approved)
+
+- [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
+- [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)

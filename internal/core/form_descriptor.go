@@ -31,6 +31,10 @@ type FormField struct {
 	Placeholder  string
 	DefaultValue any
 	Options      []FormOption
+	// jsonField marks a control that carries a structured value as a whole. It is unexported and
+	// never serialized: descriptors still render it as a textarea, while a direct run input accepts
+	// the array or object the author declared instead of only its JSON text.
+	jsonField bool
 }
 
 // FormOption is one allowed value for a select / multi_select field.
@@ -125,6 +129,15 @@ func validateFormDescriptor(d FormDescriptor) {
 // validation (defaults), assist filtering (provider output) and confirm validation (client input), so
 // all three agree on what a legal value is.
 func validFieldValue(f *FormField, v any) bool {
+	if f.jsonField {
+		// The declared value is a structured document, so the run may carry the array or object
+		// itself; issue forms still submit it as text, so a string stays accepted as well.
+		switch v.(type) {
+		case []any, Object, map[string]any, string, float64, json.Number, bool:
+			return true
+		}
+		return false
+	}
 	switch f.Type {
 	case fieldText, fieldTextarea:
 		s, ok := v.(string)

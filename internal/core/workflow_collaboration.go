@@ -840,7 +840,7 @@ func workflowStartNode(graph Object) Object {
 			continue
 		}
 		data, ok := node["data"].(map[string]any)
-		if !ok || data["kind"] != "start" || Object(data).S("containerId") != "" {
+		if !ok || data["kind"] != "start" || workflowContainerID(Object(node)) != "" {
 			continue
 		}
 		return Object(data)

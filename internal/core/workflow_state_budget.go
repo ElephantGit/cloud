@@ -30,6 +30,12 @@ func workflowStateBudget(graph workflowGraphView, states map[string]workflowNode
 	var active workflowNodeView
 	var round int64
 	failedBudget := false
+	for id := range states {
+		state := states[id]
+		if state.Status == "failed" || state.Status == "cancelled" {
+			failedBudget = true
+		}
+	}
 	for _, node := range graph.Nodes {
 		if node.Kind != "loop" && node.Kind != "iteration" {
 			continue

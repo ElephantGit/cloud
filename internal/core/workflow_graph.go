@@ -325,7 +325,7 @@ func validateWorkflowReservedFields(nodes []any, globals []Object) []workflowGra
 		data := o.O("data")
 		// A loop body's Start is not the form's Start: its variables never enter the `@` form, so a
 		// reserved name there cannot collide with the platform's field.
-		if data.S("kind") != "start" || data.S("containerId") != "" {
+		if data.S("kind") != "start" || workflowContainerID(o) != "" {
 			continue
 		}
 		declared, _ := data["inputVariables"].([]any)
@@ -447,6 +447,14 @@ func validateWorkflowNodes(nodes, edges []any, globals []Object) []workflowGraph
 			// delete anyway.
 			problems = append(problems, validateAgentConfig(id, o.O("data"))...)
 		case kind == "condition":
+			if containers[id] == "" {
+				visibleRoots = workflowVisibleRoots(declaredRoots, loops, "")
+				for member, container := range containers {
+					if container != "" {
+						delete(visibleRoots, member)
+					}
+				}
+			}
 			problems = append(problems, validateConditionConfig(id, o.O("data"), visibleRoots)...)
 		case kind == "output":
 			problems = append(problems, validateWorkflowOutputConfig(id, o.O("data"), visibleRoots)...)

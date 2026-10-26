@@ -262,14 +262,14 @@ func TestWorkflowPublishRefusesInvalidLoopConfig(t *testing.T) {
 			mutate: func(config Object) {
 				config["variables"] = append(config["variables"].([]any), Object{"name": "draft", "valueType": "string", "initial": Object{"kind": "constant", "value": ""}, "feedback": []any{"worker", "output"}})
 			},
-			want: []string{"loop_variable_duplicate@loop-1#loopConfig.variables.name"},
+			want: []string{"loop_variable_invalid@loop-1#loopConfig.variables.name"},
 		},
 		{
 			name: "unsupported variable type",
 			mutate: func(config Object) {
 				config["variables"].([]any)[0].(Object)["valueType"] = "date"
 			},
-			want: []string{"loop_variable_type_unsupported@loop-1#loopConfig.variables.valueType"},
+			want: []string{"loop_variable_invalid@loop-1#loopConfig.variables.valueType"},
 		},
 		{
 			name: "constant that does not match its type",
@@ -311,7 +311,7 @@ func TestWorkflowPublishRefusesInvalidLoopConfig(t *testing.T) {
 			mutate: func(config Object) {
 				config["outputs"] = append(config["outputs"].([]any), Object{"name": "result", "variableSelector": []any{"worker", "output"}})
 			},
-			want: []string{"loop_output_duplicate@loop-1#loopConfig.outputs.name"},
+			want: []string{"loop_output_invalid@loop-1#loopConfig.outputs.name"},
 		},
 		{
 			name: "output selector on the loop's own output",

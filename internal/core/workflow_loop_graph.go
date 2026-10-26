@@ -109,12 +109,16 @@ func workflowVisibleRoots(
 		}
 		if loopID == containerID {
 			for name := range groups.outputs {
-				delete(set, name)
+				if !groups.carried[name] {
+					delete(set, name)
+				}
 			}
 			continue
 		}
 		for name := range groups.carried {
-			delete(set, name)
+			if !groups.outputs[name] {
+				delete(set, name)
+			}
 		}
 	}
 	return out
@@ -329,11 +333,11 @@ func validateLoopVariables(nodeID string, config Object, outer, body map[string]
 	problems := []workflowGraphProblem{}
 	raw, present := config["variables"]
 	if !present || raw == nil {
-		return append(problems, workflowGraphProblem{Code: "loop_variables_not_a_list", NodeID: nodeID, Field: "loopConfig.variables"})
+		return append(problems, workflowGraphProblem{Code: "loop_variable_invalid", NodeID: nodeID, Field: "loopConfig.variables"})
 	}
 	variables, ok := raw.([]any)
 	if !ok {
-		return append(problems, workflowGraphProblem{Code: "loop_variables_not_a_list", NodeID: nodeID, Field: "loopConfig.variables"})
+		return append(problems, workflowGraphProblem{Code: "loop_variable_invalid", NodeID: nodeID, Field: "loopConfig.variables"})
 	}
 	names := map[string]bool{}
 	for _, item := range variables {
@@ -346,12 +350,12 @@ func validateLoopVariables(nodeID string, config Object, outer, body map[string]
 		if !validWorkflowLoopName(name) {
 			problems = append(problems, workflowGraphProblem{Code: "loop_variable_invalid", NodeID: nodeID, Field: "loopConfig.variables.name"})
 		} else if names[name] {
-			problems = append(problems, workflowGraphProblem{Code: "loop_variable_duplicate", NodeID: nodeID, Field: "loopConfig.variables.name"})
+			problems = append(problems, workflowGraphProblem{Code: "loop_variable_invalid", NodeID: nodeID, Field: "loopConfig.variables.name"})
 		}
 		names[name] = true
 		valueType := variable.S("valueType")
 		if !workflowSupportedVariableType(valueType) {
-			problems = append(problems, workflowGraphProblem{Code: "loop_variable_type_unsupported", NodeID: nodeID, Field: "loopConfig.variables.valueType"})
+			problems = append(problems, workflowGraphProblem{Code: "loop_variable_invalid", NodeID: nodeID, Field: "loopConfig.variables.valueType"})
 			continue
 		}
 		problems = append(problems, validateLoopInitial(nodeID, variable, valueType, outer)...)
@@ -420,11 +424,11 @@ func validateLoopOutputs(nodeID string, config Object, body map[string]map[strin
 	problems := []workflowGraphProblem{}
 	raw, present := config["outputs"]
 	if !present || raw == nil {
-		return append(problems, workflowGraphProblem{Code: "loop_outputs_not_a_list", NodeID: nodeID, Field: "loopConfig.outputs"})
+		return append(problems, workflowGraphProblem{Code: "loop_output_invalid", NodeID: nodeID, Field: "loopConfig.outputs"})
 	}
 	outputs, ok := raw.([]any)
 	if !ok {
-		return append(problems, workflowGraphProblem{Code: "loop_outputs_not_a_list", NodeID: nodeID, Field: "loopConfig.outputs"})
+		return append(problems, workflowGraphProblem{Code: "loop_output_invalid", NodeID: nodeID, Field: "loopConfig.outputs"})
 	}
 	names := map[string]bool{}
 	for _, item := range outputs {
@@ -437,7 +441,7 @@ func validateLoopOutputs(nodeID string, config Object, body map[string]map[strin
 		if !validWorkflowLoopName(name) {
 			problems = append(problems, workflowGraphProblem{Code: "loop_output_invalid", NodeID: nodeID, Field: "loopConfig.outputs.name"})
 		} else if names[name] {
-			problems = append(problems, workflowGraphProblem{Code: "loop_output_duplicate", NodeID: nodeID, Field: "loopConfig.outputs.name"})
+			problems = append(problems, workflowGraphProblem{Code: "loop_output_invalid", NodeID: nodeID, Field: "loopConfig.outputs.name"})
 		}
 		names[name] = true
 		problems = append(problems, validateLoopSelector(nodeID, output["variableSelector"], "loopConfig.outputs.variableSelector", "loop_output_invalid", body)...)

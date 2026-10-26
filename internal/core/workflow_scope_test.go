@@ -2,6 +2,41 @@ package core
 
 import "testing"
 
+func TestWorkflowAmbientSelectorsNeedDeclarationsButNotEdges(t *testing.T) {
+	for _, source := range []string{"sys", "g"} {
+		for _, declared := range []bool{true, false} {
+			root := "missing"
+			if declared {
+				if source == "sys" {
+					root = "workflow_id"
+				} else {
+					root = "items"
+				}
+			}
+			for _, kind := range []string{"aggregator", "iteration"} {
+				g := aggregatorTestGraph(Object{"variables": []any{[]any{source, root}}})
+				code := "aggregator_selector_undeclared"
+				if kind == "iteration" {
+					g = iterationRunGraph("fail", 10, []any{"it", "item"})
+					scopeTestNodeData(g, 1).O("iterationConfig")["iteratorSelector"] = []any{source, root}
+					code = "iteration_iterator_undeclared"
+				}
+				g["globalVariables"] = []any{Object{"name": "g.items", "valueType": "array", "value": []any{1}}}
+				problems := validateWorkflowGraph(decodeGraph(t, g))
+				found := false
+				for _, problem := range problems {
+					if problem.Code == code {
+						found = true
+					}
+				}
+				if found == declared || (declared && len(problems) != 0) {
+					t.Fatalf("%s %s declared=%v: %v", kind, source, declared, problems)
+				}
+			}
+		}
+	}
+}
+
 func scopeTestNodeData(g Object, index int) Object {
 	node, _ := asWorkflowObject(g["nodes"].([]any)[index])
 	return node.O("data")

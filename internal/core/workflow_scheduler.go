@@ -386,6 +386,12 @@ func projectWorkflowNodes(graph workflowGraphView, committed map[string]workflow
 // executable node left. This is the scheduler's ready set: recomputed from committed state only
 // (D1 条件④), never from anything the pass remembers across transactions.
 func (p *workflowProjection) readyNode() (workflowNodeView, bool) {
+	// An exit owns the next serial slot before any sibling can start an external effect.
+	for _, node := range p.graph.Nodes {
+		if node.Kind == "loopExit" && p.projected[node.ID] == "ready" {
+			return node, true
+		}
+	}
 	for _, node := range p.graph.Nodes {
 		if p.projected[node.ID] == "ready" {
 			return node, true
@@ -579,6 +585,14 @@ func advanceWorkflowRun(t *transaction, runID string, unreachableAfter time.Dura
 	}
 	states := workflowStatesFromJSON(run.O("nodeStates"))
 	for _, node := range graph.Nodes {
+		if node.Kind == "loop" && states[node.ID].Status == "running" {
+			config, err := parseWorkflowLoopConfig(node.Data)
+			if err != nil || !validWorkflowLoopProgress(states[node.ID].Loop, &config, graph, node.ID) {
+				failWorkflowLoop(states, node, "loop_invalid_round", "invalid persisted loop progress")
+				finishWorkflowRun(t, runID, version, "failed", "loop_invalid_round", states)
+				return
+			}
+		}
 		if node.Kind != "iteration" || states[node.ID].Status != "running" {
 			continue
 		}

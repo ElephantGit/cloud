@@ -115,7 +115,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 			state.Error = workflowSessionNodeUnavailable
 			state.Output = Object{"reason": workflowSessionNodeUnavailable}
 			states[nodeID] = state
-			finishWorkflowRun(t, runID, version, "failed", workflowSessionNodeUnavailable, states)
+			settleWorkflowAgentFailure(t, runID, version, node, states, workflowSessionNodeUnavailable)
 			return states, false
 		}
 		// The Node is still there. A successful initial turn ends the session — Cloud releases one
@@ -134,10 +134,10 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 			state.Error = workflowSessionTurnDeadlineExceeded
 			state.Output = Object{"reason": workflowSessionTurnDeadlineExceeded}
 			states[nodeID] = state
-			finishWorkflowRun(t, runID, version, "failed", workflowSessionTurnDeadlineExceeded, states)
+			settleWorkflowAgentFailure(t, runID, version, node, states, workflowSessionTurnDeadlineExceeded)
 			return states, false
 		}
-		return workflowSessionEndRequest(t, runID, version, nodeID, attempt, executionID, turnEnded, states)
+		return workflowSessionEndRequest(t, runID, version, node, attempt, executionID, turnEnded, states)
 	}
 	// Never dispatched: the startup deadline applies. A node committed running with no registered
 	// execution past the never dispatched fails honestly — never recorded as succeeded (invariant 5).
@@ -149,7 +149,7 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 		state.Error = "session_start_deadline_exceeded"
 		state.Output = Object{"reason": "session_start_deadline_exceeded"}
 		states[nodeID] = state
-		finishWorkflowRun(t, runID, version, "failed", "session start deadline exceeded", states)
+		settleWorkflowAgentFailure(t, runID, version, node, states, "session start deadline exceeded")
 	}
 	return states, false
 }
@@ -168,7 +168,8 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 // never claims the command would leave the run `running` forever — the same permanent stall this
 // path exists to remove. The deadline is measured from the command's own `created_at`, so retries
 // and replicas all read the same window.
-func workflowSessionEndRequest(t *transaction, runID string, version int64, nodeID string, attempt int64, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+func workflowSessionEndRequest(t *transaction, runID string, version int64, node workflowNodeView, attempt int64, executionID string, turnEnded bool, states map[string]workflowNodeState) (map[string]workflowNodeState, bool) {
+	nodeID := node.ID
 	// The end request is one per (run, node, attempt): 0069 re-keys 0049's uniqueness on the attempt,
 	// so attempt 1's outstanding request is neither reused nor delivered to attempt 2's session.
 	cmd := t.one("SELECT * FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='end_session'", runID, nodeID, attempt)
@@ -191,7 +192,7 @@ func workflowSessionEndRequest(t *transaction, runID string, version int64, node
 	state.Error = "session_end_deadline_exceeded"
 	state.Output = Object{"reason": "session_end_deadline_exceeded"}
 	states[nodeID] = state
-	finishWorkflowRun(t, runID, version, "failed", "session end deadline exceeded", states)
+	settleWorkflowAgentFailure(t, runID, version, node, states, "session end deadline exceeded")
 	return states, false
 }
 
@@ -470,6 +471,15 @@ func startWorkflowAgentSession(t *transaction, run Object, node workflowNodeView
 func failWorkflowAgentNode(t *transaction, runID string, version int64, states map[string]workflowNodeState, node workflowNodeView, reason string) {
 	prior := states[node.ID]
 	states[node.ID] = workflowNodeState{Status: "failed", DisplayName: workflowNodeDisplayName(node), StartedAt: nowRFC3339(), FinishedAt: nowRFC3339(), Attempt: prior.attemptNumber(), Error: reason, Output: Object{"reason": reason}}
+	settleWorkflowAgentFailure(t, runID, version, node, states, reason)
+}
+
+// settleWorkflowAgentFailure leaves container policy and round archival to the scheduler.
+func settleWorkflowAgentFailure(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, reason string) {
+	if node.Container != "" {
+		settleWorkflowRunStates(t, runID, version, "running", "", states)
+		return
+	}
 	finishWorkflowRun(t, runID, version, "failed", reason, states)
 }
 

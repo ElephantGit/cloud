@@ -26,8 +26,7 @@ type workflowLoopRunState struct {
 	// Completed archives every finished round: {index, carried, states}. The final round is archived
 	// too; its member states also stay in the flat map so the run viewer can show them.
 	Completed []any
-	// Reason is the successful completion reason: condition_satisfied, max_iterations or loop_exit.
-	Reason string
+	invalid   bool
 }
 
 // object renders the loop progress in the shape the run viewer reads.
@@ -46,24 +45,21 @@ func (s *workflowLoopRunState) object() Object {
 		"carried":       carried,
 		"completed":     completed,
 	}
-	if s.Reason != "" {
-		out["reason"] = s.Reason
-	}
 	return out
 }
 
-// workflowLoopRunStateFromJSON reads committed loop progress back. A missing round reads as round 1 so
-// a truncated document resumes at the first round instead of inventing a later one.
+// workflowLoopRunStateFromJSON preserves malformed progress for fail-closed recovery.
 func workflowLoopRunStateFromJSON(raw Object) *workflowLoopRunState {
 	state := &workflowLoopRunState{
 		Round:         raw.N("round"),
 		MaxIterations: raw.N("maxIterations"),
 		Carried:       map[string]any{},
-		Reason:        raw.S("reason"),
 	}
-	if state.Round < 1 {
-		state.Round = 1
-	}
+	round, roundOK := workflowNumberOf(raw["round"])
+	ceiling, maxOK := workflowNumberOf(raw["maxIterations"])
+	_, carriedOK := asWorkflowObject(raw["carried"])
+	_, completedOK := raw["completed"].([]any)
+	state.invalid = !roundOK || round < 1 || round > 100 || round != float64(state.Round) || !maxOK || ceiling != float64(state.MaxIterations) || !carriedOK || !completedOK
 	if carried, ok := asWorkflowObject(raw["carried"]); ok {
 		for name, value := range carried {
 			state.Carried[name] = value
@@ -316,6 +312,10 @@ func advanceWorkflowLoop(
 		return true
 	}
 	states[node.ID] = state
+	if !validWorkflowLoopProgress(state.Loop, &config, graph, node.ID) {
+		failWorkflowLoop(states, node, "loop_invalid_round", "invalid persisted loop progress")
+		return true
+	}
 	body := workflowBodyGraph(graph, node.ID)
 	if body.Start == "" {
 		failWorkflowLoop(states, node, "loop_body_start_count", "loop body has no start node")
@@ -324,7 +324,22 @@ func advanceWorkflowLoop(
 	projection := projectWorkflowNodes(body, states)
 	if projection.hasFailure() {
 		reason, detail := workflowBodyFailure(body, states)
+		archiveWorkflowLoopRound(state.Loop, body, states, true)
 		failWorkflowLoop(states, node, reason, detail)
+		return true
+	}
+	if workflowLoopExitSucceeded(body, states) && !workflowBodyInFlight(body, states) {
+		for _, member := range body.Nodes {
+			if _, executed := states[member.ID]; !executed {
+				states[member.ID] = workflowNodeState{Status: "inactive", DisplayName: workflowNodeDisplayName(member)}
+			}
+		}
+		outputs, err := resolveWorkflowLoopOutputs(&config, workflowLoopReadStates(graph, node.ID, states, ambient))
+		if err != nil {
+			failWorkflowLoop(states, node, "loop_exit_output_unset", err.Error())
+			return true
+		}
+		finishWorkflowLoop(states, node, &state, body, outputs)
 		return true
 	}
 	if ready, ok := projection.readyNode(); ok {
@@ -344,18 +359,7 @@ func advanceWorkflowLoop(
 		// session or retry path before the round can be judged complete.
 		return false
 	}
-	// The body is drained. A succeeded loopExit short-circuits the round: no feedback is computed and
-	// the published outputs come from the round the exit produced.
 	roundStates := workflowLoopReadStates(graph, node.ID, states, ambient)
-	if workflowLoopExitSucceeded(body, states) {
-		outputs, err := resolveWorkflowLoopOutputs(&config, roundStates)
-		if err != nil {
-			failWorkflowLoop(states, node, "loop_exit_output_unset", err.Error())
-			return true
-		}
-		finishWorkflowLoop(states, node, &state, body, "loop_exit", outputs)
-		return true
-	}
 	feedback, err := resolveWorkflowLoopFeedback(&config, roundStates)
 	if err != nil {
 		reason := "loop_value_unset"
@@ -376,7 +380,7 @@ func advanceWorkflowLoop(
 			failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 			return true
 		}
-		finishWorkflowLoop(states, node, &state, body, "condition_satisfied", outputs)
+		finishWorkflowLoop(states, node, &state, body, outputs)
 		return true
 	}
 	if state.Loop.Round >= config.MaxIterations {
@@ -386,7 +390,7 @@ func advanceWorkflowLoop(
 				failWorkflowLoop(states, node, "loop_value_unset", err.Error())
 				return true
 			}
-			finishWorkflowLoop(states, node, &state, body, "max_iterations", outputs)
+			finishWorkflowLoop(states, node, &state, body, outputs)
 			return true
 		}
 		// The round that exhausted the budget is a finished round: archive it before failing so the
@@ -628,19 +632,16 @@ func failWorkflowLoop(states map[string]workflowNodeState, node workflowNodeView
 }
 
 // finishWorkflowLoop archives the final round, keeps its member states visible, and publishes the
-// loop's outputs. The completion reason is recorded on the loop state so the viewer can distinguish
-// "the condition held" from "the budget ran out".
+// loop's named outputs without extending the durable D1 progress shape.
 func finishWorkflowLoop(
 	states map[string]workflowNodeState,
 	node workflowNodeView,
 	state *workflowNodeState,
 	body workflowGraphView,
-	reason string,
 	outputs Object,
 ) {
 	if state.Loop != nil {
 		archiveWorkflowLoopRound(state.Loop, body, states, true)
-		state.Loop.Reason = reason
 	}
 	state.Status = "succeeded"
 	state.FinishedAt = nowRFC3339()

@@ -94,8 +94,8 @@ func TestWorkflowAdvanceLoopFinishesWhenUntilHolds(t *testing.T) {
 		t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
 	}
 	round, reason, completed := readLoopState(t, states)
-	if round != 2 || reason != "condition_satisfied" || completed != 2 {
-		t.Fatalf("loop round=%d reason=%q completed=%d; want 2 condition_satisfied 2", round, reason, completed)
+	if round != 2 || reason != "" || completed != 2 {
+		t.Fatalf("loop round=%d reason=%q completed=%d; want 2 with no extra reason field and 2 archives", round, reason, completed)
 	}
 	node, _ := asWorkflowObject(states["l"])
 	output, _ := asWorkflowObject(node["output"])
@@ -230,8 +230,8 @@ func TestWorkflowAdvanceLoopExitsEarly(t *testing.T) {
 		t.Fatalf("run settled %q error %q; want succeeded", status, runErr)
 	}
 	round, reason, completed := readLoopState(t, states)
-	if round != 1 || reason != "loop_exit" || completed != 1 {
-		t.Fatalf("loop round=%d reason=%q completed=%d; want 1 loop_exit 1", round, reason, completed)
+	if round != 1 || reason != "" || completed != 1 {
+		t.Fatalf("loop round=%d reason=%q completed=%d; want 1 with no extra reason field and 1 archive", round, reason, completed)
 	}
 	node, _ := asWorkflowObject(states["l"])
 	output, _ := asWorkflowObject(node["output"])

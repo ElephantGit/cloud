@@ -283,15 +283,16 @@ describe('parseRunContainers for an Iteration', () => {
     expect([iteration?.limit, iteration?.settled, iteration?.failed]).toEqual([3, 3, 1])
   })
 
-  it('stops at the failed item under fail, with no later rounds', () => {
+  /** A failed container whose second of three items failed, under the given strategy. */
+  function secondItemFailed(strategy: string, round: number, reason: string) {
     const raw = {
       'iter-1': {
         status: 'failed',
-        output: { reason: 'aggregator_no_match' },
+        output: { reason },
         iteration: {
-          round: 1,
+          round,
           items: ['甲', '乙', '丙'],
-          strategy: 'fail',
+          strategy,
           failedCount: 1,
           output: ['甲'],
           ledger: [
@@ -302,10 +303,22 @@ describe('parseRunContainers for an Iteration', () => {
         },
       },
     }
-    const iteration = parseRunContainers(raw, iterationSnapshot())['iter-1']
+    return parseRunContainers(raw, iterationSnapshot())['iter-1']
+  }
+
+  it('stops at the failed item under fail, with no later rounds', () => {
+    const iteration = secondItemFailed('fail', 1, 'aggregator_no_match')
 
     expect(iteration?.rounds.map((round) => round.outcome)).toEqual(['succeeded', 'failed'])
     expect(iteration?.reason).toBe('aggregator_no_match')
+  })
+
+  it('keeps an absorbed item absorbed when the container later fails for another reason', () => {
+    // Under continue the round advanced past the absorbed item before the container failed.
+    const iteration = secondItemFailed('continue', 2, 'workflow_state_size_exceeded')
+
+    expect(iteration?.rounds.map((round) => round.outcome)).toEqual(['succeeded', 'absorbed'])
+    expect(iteration?.reason).toBe('workflow_state_size_exceeded')
   })
 
   it('has no rounds for an empty source', () => {

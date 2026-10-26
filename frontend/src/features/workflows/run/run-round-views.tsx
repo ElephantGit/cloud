@@ -192,6 +192,16 @@ function RoundDetail({
           </pre>
         </div>
       )}
+      {round.entry?.status === 'succeeded' && (
+        <div>
+          <p className="mb-1 text-[11px] text-muted-foreground">
+            {t('workflows.run.rounds.collected')}
+          </p>
+          <pre className="max-h-32 overflow-auto rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words">
+            {formatNodeOutput(round.entry.output)}
+          </pre>
+        </div>
+      )}
       {round.entry?.error != null && (
         <pre className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words text-destructive">
           {round.entry.error}

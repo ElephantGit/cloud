@@ -249,8 +249,10 @@ function readIterationContainer(
     active.item = items[active.index]
   }
   const last = rounds.at(-1)
-  if (last !== undefined && last.entry?.status === 'failed' && context.entry.status === 'failed') {
-    // Under `fail` the first failed item ends the node; it was not absorbed.
+  // Under `fail` the first failed item ends the node without advancing `round`, so only that
+  // item reads as failed. Under `continue` an absorbed item stays absorbed even if the container
+  // later fails for another reason (a later item's budget, an invalid round document).
+  if (last?.entry?.status === 'failed' && value['strategy'] === 'fail' && last.index === round) {
     last.outcome = 'failed'
   }
   return {
@@ -268,6 +270,11 @@ function readIterationContainer(
  * A round already in the archive is the final round's compatibility copy and is skipped. A
  * running container shows its active round even before a member started, so the reader sees
  * which round is under way.
+ *
+ * A container that failed or was cancelled after `round` advanced but before any member of the
+ * new round committed has no active round to show; its last archived round then carries the
+ * terminal outcome. The scheduler commits the archive and the next round's first dispatch
+ * together, so that state is not expected to be persisted.
  */
 function appendActiveRound(rounds: RunRound[], round: number, context: ContainerContext): void {
   if (rounds.some((candidate) => candidate.index === round)) {

@@ -110,7 +110,7 @@ func taskConversationSend(t *transaction, s *Store, r *PublicRequest, uid string
 		}
 	}
 	if state == "waiting" {
-		_, gap := taskAgentModelGap(t, uid, agent)
+		_, gap := taskAgentModelGap(t, uid, agent, "")
 		require(gap == "", 409, gap)
 	}
 	t.exec(`INSERT INTO task_conversation_messages(id,tenant_id,issue_id,seq,user_id,agent_id,body,state,run_id,thread_seq) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, id, r.TenantID, i.S("id"), seq, uid, agentID, body, state, runID, threadSeq)

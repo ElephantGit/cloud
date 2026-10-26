@@ -47,7 +47,7 @@ func TestPersonalAgentReadinessAndAdmissionUsePublicModelGaps(t *testing.T) {
 				t.Fatalf("unusable Claude readiness = %v, want %v", page["agentReadiness"], want)
 			}
 			_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-				bindRunModel(tx, s.seed.run, s.uid, Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"})
+				bindRunModel(tx, s.seed.run, s.uid, Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"}, "")
 				return nil
 			})
 			expectModelFault(t, err, test.code)

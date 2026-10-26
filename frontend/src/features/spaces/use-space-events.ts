@@ -6,6 +6,10 @@ import {
   getGetApiV1TenantsTidIssuesIidRunsRidThreadQueryKey,
   getGetApiV1TenantsTidIssuesIidRunsRidArtifactsQueryKey,
 } from '@/api/tenants/tenants'
+import {
+  getGetApiV1TenantsTidScheduledTasksQueryKey,
+  getGetApiV1TenantsTidScheduledTasksStidHistoryQueryKey,
+} from '@/api/scheduled-tasks/scheduled-tasks'
 
 /**
  * Narrows an unknown value to a property bag; JSON.parse and network payloads
@@ -23,7 +27,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isSpaceEvent(value: unknown): value is SpaceEvent {
   if (!isRecord(value)) return false
   if (typeof value['type'] !== 'string' || typeof value['spaceId'] !== 'string') return false
-  return ['issueId', 'runId'].every((field) => optionalString(value[field]))
+  return ['issueId', 'runId', 'scheduledTaskId'].every((field) => optionalString(value[field]))
 }
 
 function optionalString(value: unknown): boolean {
@@ -100,6 +104,25 @@ function invalidateForScheduledArtifactEvent(
   })
 }
 
+// Definition changes update the tenant list; the event's task identity lets an already-open
+// history dialog refresh without invalidating unrelated task histories.
+function invalidateForScheduledTaskEvent(
+  event: SpaceEvent,
+  tenantId: string,
+  queryClient: QueryClient,
+) {
+  void queryClient.invalidateQueries({
+    queryKey: getGetApiV1TenantsTidScheduledTasksQueryKey(tenantId),
+  })
+  if (!event.scheduledTaskId) return
+  void queryClient.invalidateQueries({
+    queryKey: getGetApiV1TenantsTidScheduledTasksStidHistoryQueryKey(
+      tenantId,
+      event.scheduledTaskId,
+    ),
+  })
+}
+
 /** Invalidates exactly the queries an event type affects; never carries state. */
 function invalidateForEvent(
   event: SpaceEvent,
@@ -114,6 +137,8 @@ function invalidateForEvent(
     void queryClient.invalidateQueries({ queryKey: ['issue-runs', tenantId, event.issueId] })
   } else if (event.type === 'scheduled_task.artifacts_updated') {
     invalidateForScheduledArtifactEvent(event, tenantId, queryClient)
+  } else if (event.type === 'space.scheduled_tasks_updated') {
+    invalidateForScheduledTaskEvent(event, tenantId, queryClient)
   } else if (event.type.startsWith('project.')) {
     void queryClient.invalidateQueries({
       queryKey: [`/api/v1/tenants/${tenantId}/spaces/${spaceId}/projects`],

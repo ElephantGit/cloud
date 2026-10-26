@@ -104,6 +104,13 @@ func enqueueRunWithInvocation(t *transaction, tid, iid, executorType, executorID
 	if input == nil {
 		input = Object{}
 	}
+	// A scheduled task may supply an already-authorized model id from its definition. It is never
+	// persisted as execution input; only the binding written below becomes runtime authority.
+	scheduledModel := ""
+	if triggerKind == "scheduled_task" {
+		scheduledModel = input.S("scheduledTaskModel")
+	}
+	delete(input, "scheduledTaskModel")
 	// This opaque reference is server-owned even for agents that do not use personal models.
 	delete(input, "modelBindingId")
 	delete(input, "agentConfiguration")
@@ -118,7 +125,7 @@ func enqueueRunWithInvocation(t *transaction, tid, iid, executorType, executorID
 	if executorType == "agent" {
 		// Caller-supplied private bindings cannot authorize a model connection. The production
 		// OpenCode path always creates its own owner-scoped binding in this transaction.
-		bindRunModel(t, id, actorID, input)
+		bindRunModel(t, id, actorID, input, scheduledModel)
 	}
 	appendActivity(t, tid, iid, actorType, actorID, "run.enqueued", runActivityDetails(id, executorType, executorID, nil))
 	return run(t, tid, iid, id)

@@ -355,6 +355,22 @@ func creatorModelReady(t *transaction, creatorID, pluginID string) bool {
 		  AND c.enabled AND c.deleted_at IS NULL AND c.credential_id IS NOT NULL`, creatorID) != nil
 }
 
+// scheduledTaskModelReady validates an optional task-level model override against the creator's
+// current default connection. A task definition stores only a model ID; the connection and its
+// credential are resolved and frozen when the occurrence is admitted, so this check must use the
+// same policy as bindRunModel rather than treating an arbitrary ID as runnable.
+func scheduledTaskModelReady(t *transaction, creatorID, modelID string) bool {
+	if modelID == "" {
+		return true
+	}
+	selection := modelDefault(t, creatorID)
+	if selection.S("connectionId") == "" {
+		return false
+	}
+	reason, _, _ := personalExecutorGap(t, creatorID, selection.S("connectionId"), modelID)
+	return reason == ""
+}
+
 // scheduledFailureReason maps an eligibility failure kind to the root decision D7 reason set.
 func failScheduledOccurrenceWithReason(t *transaction, taskID string, due time.Time, kind string) {
 	failScheduledOccurrence(t, taskID, due, scheduledFailureReason(kind))

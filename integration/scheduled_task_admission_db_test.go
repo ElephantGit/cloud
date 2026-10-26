@@ -15,7 +15,10 @@ import (
 // and Store.Public, against a real PostgreSQL schema. NOT_VERIFIED locally: this environment has no
 // network to fetch the integration test dependencies (pgx), so the suite only runs in CI.
 
-const scheduledTaskModelID = "vendor/model-v1"
+const (
+	scheduledTaskModelID          = "vendor/model-v1"
+	scheduledTaskAlternateModelID = "vendor/model-v2"
+)
 
 // seedScheduledTaskModelChain gives the creator a usable personal default backed by an enabled,
 // credential-bound connection, so creatorModelReady and bindRunModel both resolve.
@@ -28,7 +31,7 @@ func seedScheduledTaskModelChain(t *testing.T, store *core.Store, userID string)
 	must(t, err)
 	_, err = store.Pool.Exec(`INSERT INTO personal_model_connections(id,user_id,credential_id,name,protocol,base_url,auth_mode,models,enabled)
 		VALUES($1,$2,$3,'Personal Provider','openai-completions','https://models.example.invalid/v1','bearer',$4::jsonb,true)`,
-		conn, userID, cred, `[{"id":"`+scheduledTaskModelID+`","name":"Model V1","contextWindow":128000,"maxTokens":8192}]`)
+		conn, userID, cred, `[{"id":"`+scheduledTaskModelID+`","name":"Model V1","contextWindow":128000,"maxTokens":8192},{"id":"`+scheduledTaskAlternateModelID+`","name":"Model V2","contextWindow":128000,"maxTokens":8192}]`)
 	must(t, err)
 	_, err = store.Pool.Exec(`INSERT INTO personal_model_defaults(user_id,connection_id,model_id,version) VALUES($1,$2,$3,1)`, userID, conn, scheduledTaskModelID)
 	must(t, err)
@@ -89,6 +92,35 @@ func TestScheduledTaskAdmissionCreatesARun(t *testing.T) {
 	must(t, err)
 	if runID == "" || ref != taskID {
 		t.Fatalf("admission must name the task UUID as trigger evidence, got run %q ref %q", runID, ref)
+	}
+}
+
+// TestScheduledTaskModelBindingFreezesDefinitionSelection ensures a definition-selected model is
+// resolved at admission and copied into the run binding. Later edits to either the definition or
+// the personal default cannot rewrite the already admitted occurrence.
+func TestScheduledTaskModelBindingFreezesDefinitionSelection(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Frozen selected model", 65)
+	_, err := store.Pool.Exec(`UPDATE scheduled_tasks SET model=$1 WHERE id=$2`, scheduledTaskAlternateModelID, taskID)
+	must(t, err)
+
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var runID, boundModel string
+	must(t, store.Pool.QueryRow(`SELECT o.run_id, b.model->>'id'
+		FROM scheduled_task_occurrences o
+		JOIN run_model_bindings b ON b.run_id=o.run_id AND b.slot_name='default'
+		WHERE o.task_id=$1`, taskID).Scan(&runID, &boundModel))
+	if runID == "" || boundModel != scheduledTaskAlternateModelID {
+		t.Fatalf("admitted task must freeze selected model %q, got run=%q model=%q", scheduledTaskAlternateModelID, runID, boundModel)
+	}
+
+	_, err = store.Pool.Exec(`UPDATE scheduled_tasks SET model=$1 WHERE id=$2`, scheduledTaskModelID, taskID)
+	must(t, err)
+	_, err = store.Pool.Exec(`UPDATE personal_model_defaults SET model_id=$1 WHERE user_id=$2`, scheduledTaskAlternateModelID, s.userID)
+	must(t, err)
+	must(t, store.Pool.QueryRow(`SELECT model->>'id' FROM run_model_bindings WHERE run_id=$1 AND slot_name='default'`, runID).Scan(&boundModel))
+	if boundModel != scheduledTaskAlternateModelID {
+		t.Fatalf("later definition/default changes must not rewrite run binding, got %q", boundModel)
 	}
 }
 

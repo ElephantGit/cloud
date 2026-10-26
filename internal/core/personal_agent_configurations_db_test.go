@@ -179,7 +179,7 @@ func TestPersonalAgentRunFreezeAndUnavailableAdapter(t *testing.T) {
 	}
 	input := Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"}
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		bindRunModel(tx, s.seed.run, s.uid, input)
+		bindRunModel(tx, s.seed.run, s.uid, input, "")
 		return nil
 	})
 	expectModelFault(t, err, "agent_adapter_unavailable")
@@ -189,7 +189,7 @@ func TestPersonalAgentRunFreezeAndUnavailableAdapter(t *testing.T) {
 	}
 	s.store.PersonalAgentRuntime = &PersonalAgentRuntime{Target: "x86_64-unknown-linux-gnu", ContractVersion: 1, Protocols: []string{"anthropic-messages"}}
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		bindRunModel(tx, s.seed.run, s.uid, input)
+		bindRunModel(tx, s.seed.run, s.uid, input, "")
 		return nil
 	})
 	if err != nil {
@@ -319,7 +319,7 @@ func TestPersonalAgentThreadOwnershipAndPermanentRevocation(t *testing.T) {
 	s.store.PersonalAgentRuntime = &PersonalAgentRuntime{Target: "linux", ContractVersion: 1, Protocols: []string{"anthropic-messages"}}
 	_, err := s.store.transact(context.Background(), func(tx *transaction) Object {
 		input := Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"}
-		bindRunModel(tx, s.seed.run, s.uid, input)
+		bindRunModel(tx, s.seed.run, s.uid, input, "")
 		run := tx.one("SELECT * FROM issue_runs WHERE id=$1", s.seed.run)
 		run["threadState"] = "idle"
 		owner := threadModelPermissions(tx, run, s.uid)
@@ -351,7 +351,7 @@ func TestPersonalAgentInvalidDeclarationCannotUseLegacyFallback(t *testing.T) {
 	_, err = s.request("GET", "", "", nil)
 	expectModelFault(t, err, "agent_declaration_invalid")
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, claudeAgentCLI, "1.0.0")
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, claudeAgentCLI, "1.0.0", "")
 		return nil
 	})
 	expectModelFault(t, err, "agent_declaration_invalid")
@@ -447,7 +447,7 @@ func TestPersonalAgentOpenCodeUsesGlobalDefaultAndRepairsRemovedSettings(t *test
 		t.Fatal(err)
 	}
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, opencodeAgentCLI, "1.0.0")
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, opencodeAgentCLI, "1.0.0", "")
 		return nil
 	})
 	expectModelFault(t, err, "agent_configuration_repair_required")

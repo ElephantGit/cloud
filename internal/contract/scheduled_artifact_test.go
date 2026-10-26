@@ -48,3 +48,30 @@ func TestSpaceEventIncludesScheduledArtifactInvalidation(t *testing.T) {
 		t.Fatal("artifact invalidation missing from the published SSE contract")
 	}
 }
+
+// Pin the D7 invalidation surface: the SpaceEvent carries the scheduled-task notice type and its task
+// identity, so a regenerated client can refetch a tenant's task list and one open history.
+func TestSpaceEventIncludesScheduledTaskInvalidation(t *testing.T) {
+	schemas := Document()["components"].(map[string]any)["schemas"].(map[string]any)
+	event := schemas["SpaceEvent"].(map[string]any)["properties"].(map[string]any)
+	types := event["type"].(map[string]any)["enum"].([]string)
+	if !slices.Contains(types, "space.scheduled_tasks_updated") {
+		t.Fatal("scheduled-task invalidation missing from the published SSE contract")
+	}
+	if event["scheduledTaskId"] == nil {
+		t.Fatal("scheduledTaskId missing from the published SpaceEvent contract")
+	}
+}
+
+// Pin the D1 resource surface: the task resource exposes the creator and the frozen model selection
+// so a regenerated client can read both.
+func TestScheduledTaskResourceCarriesModelAndCreator(t *testing.T) {
+	schemas := Document()["components"].(map[string]any)["schemas"].(map[string]any)
+	props := schemas["ScheduledTask"].(map[string]any)["properties"].(map[string]any)
+	if props["creatorUserId"] == nil {
+		t.Fatal("creatorUserId missing from the ScheduledTask contract")
+	}
+	if props["model"] == nil {
+		t.Fatal("model missing from the ScheduledTask contract")
+	}
+}

@@ -5,6 +5,7 @@ const FAILURE_LABELS: Record<string, string> = {
   agent_failed: 'Agent 会话失败',
   agent_unavailable: 'Agent 当前不可用',
   agent_start_failed: 'Agent 启动失败',
+  agent_plugin_unavailable: '运行所需的 Agent 插件未安装就绪，请检查插件安装状态后重新发送',
   model_proxy_unavailable: '模型代理不可用',
   model_access_unavailable: '模型授权不可用',
   model_access_expired: '模型授权已过期',

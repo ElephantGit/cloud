@@ -152,6 +152,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             edges={state.edges}
             globalVariables={state.globalVariables}
             onUpdate={state.onNodeDataUpdate}
+            onAddLoopExit={state.onAddLoopExit}
             onClose={() => inspectorRef.current?.collapse()}
           />
         </ResizablePanel>

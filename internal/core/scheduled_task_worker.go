@@ -184,10 +184,14 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
 		return
 	}
+	if !scheduledTaskModelReady(t, task.S("creatorUserId"), task.S("model")) {
+		failScheduledOccurrenceWithReason(t, taskID, due, "model_unavailable")
+		return
+	}
 	// bindRunModel rejects after enqueueing for an invalid default or declared configuration. Probe
 	// the same read-only policy first so that rejection becomes this occurrence's durable D5 result
 	// instead of rolling back the ledger row and later being mistaken for a missed schedule point.
-	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent); personal && gap != "" {
+	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent, task.S("model")); personal && gap != "" {
 		failScheduledOccurrenceWithReason(t, taskID, due, scheduledAgentBindingReason(gap))
 		return
 	}
@@ -203,6 +207,9 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	// （内部完成 bindRunModel 的模型冻结与 409 pending_run_exists 兜底）。触发证据指向本任务。
 	runContext := buildRunContext(t, issue, task.S("prompt"), "agent", task.S("agentId"), nil, nil)
 	input := snapshotAgentRunInput(runContext, agent)
+	// This is an internal handoff, not caller-controlled execution input. enqueueRunWithInvocation
+	// removes it before persistence and bindRunModel freezes the resolved model binding instead.
+	input["scheduledTaskModel"] = task.S("model")
 	run := enqueueAdmittedRun(t, task.S("tenantId"), task.S("issueId"), "agent", task.S("agentId"),
 		input, "scheduled_task", taskID, "user", task.S("creatorUserId"))
 

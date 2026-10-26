@@ -184,4 +184,6 @@ projections:
 
 ## Ordering task messages and direct starts
 
+A run that fails or is cancelled during preparation may have no `result.deliveryState`. It still creates a failure pause. Once release is confirmed and the phase is `done`, its initiator or an administrator can explicitly acknowledge the existing discard-undelivered-result action and continue waiting messages. A missing result is not evidence of saved work, never resumes automatically, and does not rewrite the original terminal status.
+
 Manual runs and comment targets for real Space Agents check task pauses, unresolved failed messages and accepted waiting messages in the creation transaction. Pauses/failures return `409 task_paused`; pending input returns `409 task_handoff_pending`, without consuming the pending-Run slot. The task worker admits its specific accepted message in order. Actual claims and retry scans recheck pauses, message order and prior result/release barriers. Already admitted runs drain before the task worker materializes later runs by message sequence; transaction-start timestamps do not determine acceptance order between runs and messages.

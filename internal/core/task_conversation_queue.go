@@ -111,7 +111,7 @@ func (s *Store) dispatchTaskMessage(ctx context.Context, messageID string) (stri
 			taskMessageFail(t, message, "project_unavailable")
 			return Object{}
 		}
-		if _, code := taskAgentModelGap(t, message.S("userId"), agent); code != "" {
+		if _, code := taskAgentModelGap(t, message.S("userId"), agent, ""); code != "" {
 			taskMessageFail(t, message, code)
 			return Object{}
 		}
@@ -205,7 +205,10 @@ func taskConversationDiscard(t *transaction, r *PublicRequest, uid string) Objec
 	require(prior != nil, 404, "not_found")
 	require(taskRecoveryRun(t, r.TenantID, r.IssueID).S("id") == runID, 409, "stale_run")
 	state := prior.O("result").S("deliveryState")
-	require(prior.S("phase") == "done" && (state == "failed" || state == "skipped"), 409, "run_not_resumable")
+	// Preparation can fail before a session or delivery result exists. A missing result is
+	// still undelivered work: only the explicit acknowledgement above may release its barrier.
+	missingFailedResult := state == "" && (prior.S("status") == "failed" || prior.S("status") == "cancelled")
+	require(prior.S("phase") == "done" && (state == "failed" || state == "skipped" || missingFailedResult), 409, "run_not_resumable")
 	require(prior.S("workspaceId") == "" || t.one("SELECT id FROM workspaces WHERE id=$1 AND deleted_at IS NULL", prior.S("workspaceId")) == nil, 409, "workspace_unreleased")
 	require(canEndForTaskHandoff(t, prior, uid), 403, "model_run_end_forbidden")
 	ensureTaskConversation(t, r.TenantID, r.IssueID)

@@ -24,7 +24,7 @@
 - **恢复**把当前文档换成某个版本的图，并像其他编辑一样推进文档版本；它不改动任何已发布版本。
 - 工作流名称在租户内未归档的工作流中唯一（`409 workflow_conflict`）。归档是软删除，归档的工作流连同它的全部版本和运行历史一起从读取中隐藏。
 
-**Cloud 能执行的子集。** 发布时只接受 Cloud 当前能执行的节点类型：`start`、`agent`、`condition`、`output`。编辑器里的其他节点类型仍然可以编辑
+**Cloud 能执行的子集。** 发布时接受 `start`、`agent`、`condition`、`output`、`aggregator`、`loop`、`loopExit`、`iteration`。编辑器里的其他节点类型仍然可以编辑
 和保存，但发布会拒绝，而不是冻结一个节点会被静默丢掉的图。Agent 节点里 Cloud 不执行的配置字段同样按字段名拒绝，避免作者以为某个设置生效、
 实际却没有运行方会应用它。
 
@@ -44,6 +44,22 @@
 页面也不会展示它；取消接口仍按不可取消处理，IssueRun 投影也不会因它推进。HITL 留待后续的交互式运行控制决策。
 同样在发布时拒绝的还有交互式节点的产出物声明 `agentConfig.completion`（任何非 null 值），以及 `agentConfig.schemaVersion` 不是 `3` 的值
 （`4`、旧的 `1`/`2`、非数字）：Cloud 只执行版本 `3`，缺省或 `null` 保持旧行为，其余非 `3` 的值都拒绝，拒绝时点名节点与字段，不静默剥离声明。
+
+## 条件分支与命名输出
+
+Condition 卡片为每个 case 和隐式 ELSE 显示独立端口，连线持久化对应 case id 的 `sourceHandle`。
+不同分支可以汇入同一节点；同一对端点和端口的重复连线被拒绝。删除分支会删除该分支连线，撤销恢复二者。
+旧图未标端口的 condition 连线继续表示 ELSE；新增或调整分支不会把既有连线按分支顺序重新编号。
+
+Output 检查器可添加、命名和删除 `data.outputs` 绑定，从该节点可见的变量目录选择来源。
+运行时在同一个已提交快照上解析所有绑定，结果按声明的名称写入 output 节点状态；没有绑定时保持空对象。
+显式 null、false、0 和空字符串均为有效产物。任何绑定未赋值或路径无效都会使节点失败，不返回部分成功结果。
+发布检查拒绝非法绑定结构、空名称、重名、无效选择器和未声明的变量根，并定位到节点和字段。
+
+**升级兼容性：** 严格绑定适用于所有已发布快照，包括旧快照新建的运行和升级前已开始、升级后恢复的在途运行；
+不设置执行语义版本，也不改写历史快照。此前 Output 固定返回空对象的行为不再保留：旧快照中的绑定已赋值时会新增命名输出，
+缺值时以 `output_value_unset` 失败，路径非法时以 `output_invalid_path` 失败。因此升级后旧快照和在途恢复可能出现新的失败或新增输出。
+没有绑定仍得到空对象；已经提交的终态结果不会因升级重新计算。发布门禁不能追溯保护旧快照，升级前应检查其中的 Output 绑定。
 
 ## 执行器槽位
 
@@ -178,7 +194,29 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 
 导入之后的工作流就是普通的租户工作流，资产的生命周期（插件升级或移除）不会改写已经导入的文档或已发布版本。
 
+## 复合运行的作用域与容量
+
+复合节点的发布门禁按有效容器隔离前驱：非空 `data.containerId` 优先，否则读取 `parentId`。
+body 只能读取本区域前驱、容器的外层祖先、globals / sys 与本轮 carried 或 item / index；
+loop 的 feedback、until、outputs 在轮末读取本 body 完成快照。iteration 最多 100 项。
+
+复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
+iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
+完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。
+预留只在本次提交新增失败/取消节点、结算新的 iteration 失败轮账本，或运行进入失败/取消终态时开放；
+历史失败成员和账本不会扩大普通写入额度。重读完全相同的已提交状态不会被普通预算再次拒绝；
+局部 1 MiB 和整行 8 MiB 硬上限仍始终检查。
+超限丢弃整个候选状态、保留上一次已提交的账本与成员，记录 `iteration_state_size_exceeded`、
+`loop_state_size_exceeded` 或 `workflow_state_size_exceeded`，不会被 `continue` 吸收。
+iteration 两种策略都会保存失败轮账本，终态保留最后启动的轮号与成员投影；恢复时不一致的轮次文档以
+`iteration_invalid_round` 失败，不重置或重跑历史轮。body agent 的执行 attempt 跨轮保持唯一，重试预算仍按当前轮计算。
+body Agent 回合超时后先保留当前 attempt 为 running，提交超时原因并发出 `end_session{cancelled}`。
+收到该 attempt 的会话终止结果后才按失败轮结算，iteration 的 continue 策略可以进入下一轮；迟到结果不改写超时原因。
+结束确认窗口耗尽仍无终止证据时，节点原因改为 `session_end_deadline_exceeded`，运行错误为
+`session end deadline exceeded`；保留失败轮账本与归档，结束运行并释放 Workspace，不在旧会话可能仍存活时启动下一轮。
+
 ## 相关决策
+
 
 - [工作流由 Cloud 侧调度器执行：WorkflowRun 是执行聚合](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/0-cloud-side-scheduler-owns-workflow-execution.md)（approved）
 - [工作流 agent 节点按执行器槽位引用执行器，图里不再存 agent CLI 与模型 ID](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261015-executor-slots-replace-agent-model-ids.md)（approved）
@@ -188,3 +226,7 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 - [Workflow 插件资产由 Cloud 自行取包、逐文档导入为可编辑副本](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）
 - [`snapshotId` 是保留字段：发布门禁拒绝作者声明，存量版本不可选](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md)（approved）
+
+- [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
+- [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)

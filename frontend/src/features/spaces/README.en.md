@@ -32,4 +32,4 @@ MSW replaces the generated client's network boundary; pure tests cover slugs, SS
 
 Creation uses shared `CreateFormSubmit` error and pending feedback. SSE handles member revocation, plugin selection and catalog updates. `issue_run.thread_appended` / `issue_run.thread_changed` invalidate the addressed Thread, task conversation and run list. `issue.conversation_changed` invalidates task messages and runs. Both are lossy hints; only REST moves a cursor. Missing or malformed issue/run identities are rejected at the boundary.
 
-`scheduled_task.artifacts_updated` invalidates only this tenant’s scheduled histories and the addressed run’s artifact index. It never mints downloads or refreshes other tenants or runs.
+`scheduled_task.artifacts_updated` invalidates only this tenant’s scheduled histories and the addressed run’s artifact index. It never mints downloads or refreshes other tenants or runs. `space.scheduled_tasks_updated` invalidates the tenant task list and, when it carries `scheduledTaskId`, only that task's history.

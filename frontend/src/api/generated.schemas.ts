@@ -2007,11 +2007,14 @@ export interface ScheduledTaskSchedule {
 export interface ScheduledTask {
   agentId: string;
   createdAt: string;
+  creatorUserId: string;
   /** @nullable */
   disabledReason?: string | null;
   enabled: boolean;
   id: string;
   issueId: string;
+  /** @nullable */
+  model?: string | null;
   name: string;
   prompt: string;
   revision: number;
@@ -2254,6 +2257,7 @@ export const SpaceEventType = {
   projectrepository_updated: 'project.repository_updated',
   issueconversation_changed: 'issue.conversation_changed',
   scheduled_taskartifacts_updated: 'scheduled_task.artifacts_updated',
+  spacescheduled_tasks_updated: 'space.scheduled_tasks_updated',
 } as const;
 
 export interface SpaceEvent {
@@ -2262,6 +2266,8 @@ export interface SpaceEvent {
   /** @nullable */
   projectId?: string | null;
   runId?: string;
+  /** @nullable */
+  scheduledTaskId?: string | null;
   spaceId: string;
   type: SpaceEventType;
   version?: number;
@@ -4282,9 +4288,10 @@ export type GetApiV1TenantsTidResourceStatus200 = {
 
 export type PostApiV1TenantsTidScheduledTasksBody = {
   agentId: string;
-  approval: ScheduledTaskApproval;
+  approval?: ScheduledTaskApproval;
   enabled?: boolean;
   issueId: string;
+  model?: string;
   name: string;
   prompt: string;
   schedule: ScheduledTaskSchedule;
@@ -4308,6 +4315,7 @@ export type DeleteApiV1TenantsTidScheduledTasksStid200 = {
 
 export type PatchApiV1TenantsTidScheduledTasksStidBody = {
   agentId?: string;
+  model?: string;
   name?: string;
   prompt?: string;
   schedule?: ScheduledTaskSchedule;
@@ -4331,7 +4339,9 @@ export type PostApiV1TenantsTidScheduledTasksStidDisable200 = {
   resource: ScheduledTask;
 };
 
-export type PostApiV1TenantsTidScheduledTasksStidEnableBody = { [key: string]: unknown };
+export type PostApiV1TenantsTidScheduledTasksStidEnableBody = {
+  approval?: ScheduledTaskApproval;
+};
 
 export type PostApiV1TenantsTidScheduledTasksStidEnable200 = {
   resource: ScheduledTask;

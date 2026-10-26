@@ -51,3 +51,38 @@ func TestTaskConversationHTTPReadsAndIdempotentlyAcceptsAddressedMessages(t *tes
 		t.Fatalf("HTTP task pause was not durable: %d %v", status, page)
 	}
 }
+
+func TestTaskConversationHTTPRecoversMissingPreparationResult(t *testing.T) {
+	f := setup(t)
+	scene := seedThreadScene(t, f)
+	_, err := f.store.Pool.Exec("UPDATE issue_runs SET status='failed',phase='done',thread_state=NULL,result=NULL WHERE id=$1", scene.runID)
+	must(t, err)
+	_, err = f.store.Pool.Exec("UPDATE workspaces SET admission_open=false,deleted_at=clock_timestamp() WHERE id=$1", scene.seed.runWorkspaceID)
+	must(t, err)
+	path := "/api/v1/tenants/" + scene.tenantID + "/issues/" + scene.issueID + "/conversation/discard"
+	for _, acknowledgement := range []struct {
+		value any
+		code  string
+	}{
+		{false, "lost_work_acknowledgement_required"},
+		{"true", "invalid_field_type"},
+		{1, "invalid_field_type"},
+		{nil, "invalid_field_type"},
+	} {
+		body := mustJSONRaw(map[string]any{"runId": scene.runID, "acknowledgeLostWork": acknowledgement.value})
+		status, out, err := f.threadRequest("POST", path, body, uuid.NewString())
+		must(t, err)
+		if status != 400 || out.S("code") != acknowledgement.code {
+			t.Fatalf("HTTP acknowledgement %v: %d %v; want %s", acknowledgement.value, status, out, acknowledgement.code)
+		}
+	}
+	body := mustJSONRaw(map[string]any{"runId": scene.runID, "acknowledgeLostWork": true})
+	key := uuid.NewString()
+	for range 2 {
+		status, out, err := f.threadRequest("POST", path, body, key)
+		must(t, err)
+		if status != 200 || out.S("acknowledgedRunId") != scene.runID {
+			t.Fatalf("HTTP preparation recovery: %d %v", status, out)
+		}
+	}
+}

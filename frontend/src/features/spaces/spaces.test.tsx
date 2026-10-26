@@ -364,6 +364,25 @@ describe('useSpaceEvents', () => {
     unmount()
   })
 
+  it('refetches the scheduled-task list and only the history addressed by a task update event', async () => {
+    server.use(
+      http.get(eventsUrl, () =>
+        eventStream([
+          'data: {"type":"space.scheduled_tasks_updated","spaceId":"S","scheduledTaskId":"T"}\n\n',
+        ]),
+      ),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const list = [`/api/v1/tenants/${tenantId}/scheduled-tasks`]
+    const history = [`/api/v1/tenants/${tenantId}/scheduled-tasks/T/history`]
+    const otherHistory = [`/api/v1/tenants/${tenantId}/scheduled-tasks/OTHER/history`]
+    const { unmount, invalidated } = renderEvents(client, [list, history, otherHistory])
+    await waitFor(() => expect(invalidated(list)).toBe(true))
+    expect(invalidated(history)).toBe(true)
+    expect(invalidated(otherHistory)).toBe(false)
+    unmount()
+  })
+
   it('does nothing without a tenant or space', async () => {
     let connections = 0
     server.use(

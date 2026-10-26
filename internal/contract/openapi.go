@@ -93,7 +93,7 @@ func Document() map[string]any {
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
-	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed", "scheduled_task.artifacts_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number()}, "type", "spaceId")
+	s["SpaceEvent"] = object(obj{"type": enumeration("space.updated", "space.member_updated", "project.created", "project.updated", "project.archived", "space.plugins_updated", "plugins.catalog_updated", "issue_run.thread_appended", "issue_run.thread_changed", "project.repository_updated", "issue.conversation_changed", "scheduled_task.artifacts_updated", "space.scheduled_tasks_updated"), "spaceId": uuid(), "projectId": optional(uuid()), "version": number(), "issueId": uuid(), "runId": uuid(), "lastSeq": number(), "scheduledTaskId": optional(uuid())}, "type", "spaceId")
 	// GitIdentity is the identity the caller's Agent runs commit as (identity-access git identity
 	// D1). version is 0 while isDefault is true: no identity is stated and the default applies.
 	s["GitIdentity"] = object(obj{"name": str(), "email": str(), "isDefault": boolean(), "version": number()}, "name", "email", "isDefault", "version")
@@ -264,7 +264,8 @@ func Document() map[string]any {
 	}, "kind")
 	s["ScheduledTaskApproval"] = object(obj{"policy": enumeration("full_auto_in_cloud_workspace")}, "policy")
 	s["ScheduledTask"] = object(obj{
-		"id": uuid(), "issueId": uuid(), "name": str(), "prompt": str(), "agentId": uuid(),
+		"id": uuid(), "issueId": uuid(), "creatorUserId": uuid(), "name": str(), "prompt": str(), "agentId": uuid(),
+		"model":    optional(str()),
 		"schedule": ref("ScheduledTaskSchedule"), "timezone": str(),
 		"revision":              number(),
 		"version":               number(),
@@ -273,7 +274,7 @@ func Document() map[string]any {
 		"unattendedConsentedAt": optional(timestamp()),
 		"disabledReason":        optional(str()),
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
-	}, "id", "issueId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
+	}, "id", "issueId", "creatorUserId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
 	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")
 	s["ScheduledArtifactList"] = object(obj{"artifacts": array(ref("ScheduledArtifact"))}, "artifacts")
 	s["ScheduledArtifact"] = object(obj{
@@ -1080,7 +1081,11 @@ func optionalField(name string, r router.Route) bool {
 		return repositoryOptional(name, r)
 	}
 	if strings.Contains(r.Path, "/scheduled-tasks") {
-		return name == "enabled" || (r.Method == "PATCH" && name != "version")
+		// A disabled create is a draft and therefore carries no unattended consent. Enable accepts
+		// approval only when a prior revoke cleared it, while an already-consented task can be
+		// enabled without re-sending the historical grant. Model selection is optional and falls
+		// back to the creator's current default when omitted.
+		return name == "enabled" || name == "approval" || name == "model" || (r.Method == "PATCH" && name != "version")
 	}
 	if strings.HasPrefix(r.Path, "/api/v1/me/model-") {
 		return name == "enabled"

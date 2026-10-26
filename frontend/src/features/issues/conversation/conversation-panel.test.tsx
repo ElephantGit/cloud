@@ -347,36 +347,44 @@ describe('TaskConversationPanel', () => {
     expect(keys[1]).toBe(keys[0])
     expect(keys[2]).not.toBe(keys[1])
   })
-  it('recovers the older failed delivery when a newer direct Run is queued', async () => {
-    const failed: IssueRun = {
-      ...run('r-failed', 'a1', 'completed', '2026-10-18T01:00:00Z'),
-      result: { deliveryState: 'failed' },
-    }
-    const runs = [failed, run('r-next', 'a2', 'queued', '2026-10-18T02:00:00Z')]
-    mockConversation(runs, [])
-    const bodies: unknown[] = []
-    server.use(
-      http.get(CONVERSATION, () =>
-        HttpResponse.json({
-          items: [],
-          nextCursor: null,
-          prevCursor: null,
-          blockedRunId: 'r-failed',
-          activeRunId: 'r-next',
-          canStop: false,
+  it.each<{ status: IssueRun['status']; result: Exclude<IssueRun['result'], undefined> }>([
+    { status: 'completed', result: { deliveryState: 'failed' } },
+    { status: 'failed', result: null },
+  ])(
+    'recovers an older $status run with an undelivered result before newer work',
+    async (prior) => {
+      const failed: IssueRun = {
+        ...run('r-failed', 'a1', prior.status, '2026-10-18T01:00:00Z'),
+        result: prior.result,
+      }
+      const runs = [failed, run('r-next', 'a2', 'queued', '2026-10-18T02:00:00Z')]
+      mockConversation(runs, [])
+      const bodies: unknown[] = []
+      server.use(
+        http.get(CONVERSATION, () =>
+          HttpResponse.json({
+            items: [],
+            nextCursor: null,
+            prevCursor: null,
+            blockedRunId: 'r-failed',
+            activeRunId: 'r-next',
+            canStop: false,
+          }),
+        ),
+        http.post(`${CONVERSATION}/discard`, async ({ request }) => {
+          bodies.push(await request.json())
+          return HttpResponse.json({ acknowledgedRunId: 'r-failed' })
         }),
-      ),
-      http.post(`${CONVERSATION}/discard`, async ({ request }) => {
-        bodies.push(await request.json())
-        return HttpResponse.json({ acknowledgedRunId: 'r-failed' })
-      }),
-    )
-    const user = userEvent.setup()
-    renderConversation(runs)
-    await user.click(await screen.findByRole('button', { name: '放弃未交付成果并继续' }))
-    await waitFor(() => expect(bodies).toEqual([{ runId: 'r-failed', acknowledgeLostWork: true }]))
-    expect(screen.queryByRole('button', { name: '停止当前执行' })).not.toBeInTheDocument()
-  })
+      )
+      const user = userEvent.setup()
+      renderConversation(runs)
+      await user.click(await screen.findByRole('button', { name: '放弃未交付成果并继续' }))
+      await waitFor(() =>
+        expect(bodies).toEqual([{ runId: 'r-failed', acknowledgeLostWork: true }]),
+      )
+      expect(screen.queryByRole('button', { name: '停止当前执行' })).not.toBeInTheDocument()
+    },
+  )
   it('stops the current task execution without clearing the input draft', async () => {
     const runs = [run('r-live', 'a1', 'running', '2026-10-18T01:00:00Z')]
     mockConversation(runs, [])

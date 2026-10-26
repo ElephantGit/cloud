@@ -1,3 +1,4 @@
+import { workflowAdmissionKeys } from '@/features/workflows/publish-error-translations'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import type { Error as ApiError } from '@/api/generated.schemas'
@@ -47,7 +48,7 @@ function problemMessage(value: unknown, t: TFunction): string[] {
   ]
     .filter(Boolean)
     .join(' · ')
-  let reason = t('workflows.errors.problemCheck')
+  let reason = t(workflowAdmissionKeys[problem['code']] ?? 'workflows.errors.problemCheck')
   if (problem['code'] === 'node_config_unsupported') {
     reason =
       field === 'outputContract'

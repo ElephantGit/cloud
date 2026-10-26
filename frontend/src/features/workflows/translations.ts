@@ -2,6 +2,10 @@ import { publishErrorTranslations } from '@/features/workflows/publish-error-tra
 import { historyTranslations } from '@/features/workflows/history-translations'
 import { launchFieldTranslations } from '@/features/workflows/launch-field-translations'
 import { runAndVersionTranslations } from '@/features/workflows/run-and-version-translations'
+import { aggregatorTranslations } from '@/features/workflows/aggregator-translations'
+import { loopTranslations } from '@/features/workflows/loop-translations'
+import { nodeTranslations } from '@/features/workflows/node-translations'
+import { operatorTranslations } from '@/features/workflows/operator-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
 
 /**
@@ -26,32 +30,10 @@ export const workflowTranslations = {
     ...historyTranslations['zh-CN'],
     ...publishErrorTranslations['zh-CN'],
     ...launchFieldTranslations['zh-CN'],
-    // Node catalog: palette labels and descriptions for every executable kind.
-    'workflows.node.start.label': '开始',
-    'workflows.node.start.description': '定义工作流输入',
-    'workflows.node.agent.label': 'Agent',
-    'workflows.node.agent.description': '交给模型自主执行',
-    'workflows.node.condition.label': '条件分支',
-    'workflows.node.condition.description': '根据规则选择路径',
-    'workflows.node.tool.label': '工具',
-    'workflows.node.tool.description': '调用终端或插件',
-    'workflows.node.junction.label': '汇合',
-    'workflows.node.junction.description': '等待多个执行分支完成',
-    'workflows.node.human.label': '人工确认',
-    'workflows.node.human.description': '等待人工决策后继续',
-    'workflows.node.loop.label': '循环',
-    'workflows.node.loop.description': '重复执行直到满足条件',
-    'workflows.node.iteration.label': '迭代',
-    'workflows.node.iteration.description': '对数组逐项执行区域内节点',
-    'workflows.node.subflow.label': '子流程',
-    'workflows.node.subflow.description': '封装复杂业务步骤',
-    'workflows.node.output.label': '输出',
-    'workflows.node.output.description': '返回最终结果',
-
-    // Loop container: the starter group a factory builds atomically.
-    'workflows.loop.roundStart': '轮次开始',
-    'workflows.loop.loopAgent': '循环 Agent',
-    'workflows.loop.promptTemplate': '改进当前值并输出新值：{{#NODE_ID.value#}}',
+    ...aggregatorTranslations['zh-CN'],
+    ...loopTranslations['zh-CN'],
+    ...nodeTranslations['zh-CN'],
+    ...operatorTranslations['zh-CN'],
 
     // Palette.
     'workflows.palette.title': '节点',
@@ -152,14 +134,6 @@ export const workflowTranslations = {
     'workflows.role.documentation-agent': '文档',
 
     // Condition operators, referenced by the capability catalog.
-    'workflows.operator.equals': '等于',
-    'workflows.operator.not-equals': '不等于',
-    'workflows.operator.contains': '包含',
-    'workflows.operator.not-contains': '不包含',
-    'workflows.operator.greater-than': '大于',
-    'workflows.operator.less-than': '小于',
-    'workflows.operator.empty': '为空',
-    'workflows.operator.not-empty': '不为空',
 
     // Tool operations, referenced by the capability catalog.
     'workflows.operation.run-command': '执行命令',
@@ -210,11 +184,6 @@ export const workflowTranslations = {
     'workflows.junction.field.waitCount': '完成数量',
     'workflows.junction.field.failureStrategy': '失败策略',
     'workflows.human.field.approvalPrompt': '审批说明',
-    'workflows.loop.field.maxIterations': '最大轮次',
-    'workflows.loop.field.initialValue': '初始值',
-    'workflows.loop.defaultBehavior':
-      '每轮将 Agent 输出反馈为下一轮的 value；输出非空时结束，并导出为 result。',
-    'workflows.loop.legacyUnsupported': '此旧循环节点缺少可执行配置，请删除后重新添加。',
     'workflows.iteration.hint':
       '对迭代源数组的每个元素执行一轮区域内的节点；每轮绑定 {iter}.item 与 {iter}.index，完成后暴露 output / entries / failed_count 三个变量。',
     'workflows.iteration.field.iterator': '迭代源',
@@ -439,32 +408,10 @@ export const workflowTranslations = {
     ...historyTranslations['en-US'],
     ...publishErrorTranslations['en-US'],
     ...launchFieldTranslations['en-US'],
-    'workflows.node.start.label': 'Start',
-    'workflows.node.start.description': 'Define workflow inputs',
-    'workflows.node.agent.label': 'Agent',
-    'workflows.node.agent.description': 'Delegate autonomous work to a model',
-    'workflows.node.condition.label': 'Condition',
-    'workflows.node.condition.description': 'Route execution based on rules',
-    'workflows.node.tool.label': 'Tool',
-    'workflows.node.tool.description': 'Call a terminal or plugin',
-    'workflows.node.junction.label': 'Merge',
-    'workflows.node.junction.description': 'Wait for multiple branches to complete',
-    'workflows.node.human.label': 'Human confirmation',
-    'workflows.node.human.description': 'Pause for a human decision',
-    'workflows.node.loop.label': 'Loop',
-    'workflows.node.loop.description': 'Repeat until the exit condition is met',
-    'workflows.node.iteration.label': 'Iteration',
-    'workflows.node.iteration.description': 'Run the region once per array element',
-    'workflows.node.subflow.label': 'Subflow',
-    'workflows.node.subflow.description': 'Encapsulate a complex business step',
-    'workflows.node.output.label': 'Output',
-    'workflows.node.output.description': 'Return the final result',
-
-    // Loop container: the starter group a factory builds atomically.
-    'workflows.loop.roundStart': 'Round start',
-    'workflows.loop.loopAgent': 'Loop Agent',
-    'workflows.loop.promptTemplate':
-      'Improve the current value and output the new value: {{#NODE_ID.value#}}',
+    ...aggregatorTranslations['en-US'],
+    ...loopTranslations['en-US'],
+    ...nodeTranslations['en-US'],
+    ...operatorTranslations['en-US'],
 
     'workflows.palette.title': 'Nodes',
     'workflows.palette.dragHint': 'Drag onto the canvas or click to add at the center',
@@ -563,15 +510,6 @@ export const workflowTranslations = {
     'workflows.role.debugger': 'Debugger',
     'workflows.role.documentation-agent': 'Documentation agent',
 
-    'workflows.operator.equals': 'equals',
-    'workflows.operator.not-equals': 'does not equal',
-    'workflows.operator.contains': 'contains',
-    'workflows.operator.not-contains': 'does not contain',
-    'workflows.operator.greater-than': 'is greater than',
-    'workflows.operator.less-than': 'is less than',
-    'workflows.operator.empty': 'is empty',
-    'workflows.operator.not-empty': 'is not empty',
-
     'workflows.operation.run-command': 'Run command',
     'workflows.operation.read-file': 'Read file',
     'workflows.operation.write-file': 'Write file',
@@ -617,12 +555,6 @@ export const workflowTranslations = {
     'workflows.junction.field.waitCount': 'Completion count',
     'workflows.junction.field.failureStrategy': 'Failure strategy',
     'workflows.human.field.approvalPrompt': 'Approval prompt',
-    'workflows.loop.field.maxIterations': 'Maximum rounds',
-    'workflows.loop.field.initialValue': 'Initial value',
-    'workflows.loop.defaultBehavior':
-      'Each Agent output feeds the next round as value; a non-empty output stops the Loop and is exported as result.',
-    'workflows.loop.legacyUnsupported':
-      'This legacy Loop lacks executable configuration. Delete it and add a new Loop.',
     'workflows.iteration.hint':
       'Runs the region once per element of the iterator array; each round binds {iter}.item and {iter}.index, and completion exposes output / entries / failed_count.',
     'workflows.iteration.field.iterator': 'Iterator source',

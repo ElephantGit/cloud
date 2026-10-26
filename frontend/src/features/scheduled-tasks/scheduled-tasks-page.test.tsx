@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -11,11 +11,18 @@ const TID = 'tid1'
 const LIST = '/api/v1/tenants/tid1/scheduled-tasks'
 const ISSUES = '/api/v1/tenants/tid1/issues'
 const TARGETS = '/api/v1/tenants/tid1/collaboration/targets'
+const MODEL_CONNECTIONS = '/api/v1/me/model-connections'
+const MODEL_DEFAULT = '/api/v1/me/model-default'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 function task(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
   return {
     id: 'st1',
     issueId: 'i1',
+    creatorUserId: 'u1',
     name: '每日同步',
     prompt: '同步仓库',
     agentId: 'a1',
@@ -26,6 +33,7 @@ function task(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
     enabled: false,
     createdAt: '2026-10-01T00:00:00Z',
     updatedAt: '2026-10-01T00:00:00Z',
+    model: null,
     ...overrides,
   }
 }
@@ -41,6 +49,31 @@ function serve(tasks: ScheduledTask[] = [], acceptanceEnabled = false) {
         items: [{ type: 'agent', id: 'a1', displayName: 'Codex', description: '' }],
         nextCursor: '',
       }),
+    ),
+    http.get(MODEL_CONNECTIONS, () =>
+      HttpResponse.json({
+        items: [
+          {
+            id: 'mc1',
+            name: '个人模型',
+            protocol: 'openai-completions',
+            baseUrl: 'https://models.example.test/v1',
+            authMode: 'bearer',
+            models: [
+              { id: 'vendor/model-v1', name: 'Model V1', contextWindow: 128000, maxTokens: 8192 },
+            ],
+            enabled: true,
+            credentialConfigured: true,
+            version: 1,
+            createdAt: '2026-10-01T00:00:00Z',
+            updatedAt: '2026-10-01T00:00:00Z',
+          },
+        ],
+        nextCursor: '',
+      }),
+    ),
+    http.get(MODEL_DEFAULT, () =>
+      HttpResponse.json({ connectionId: 'mc1', modelId: 'vendor/model-v1', version: 1 }),
     ),
   )
 }
@@ -89,6 +122,43 @@ describe('ScheduledTasksPage', () => {
     expect(screen.getByRole('dialog', { name: '新建定时任务' })).toBeInTheDocument()
   })
 
+  it('shows the risk disclosure and requires consent once the task is enabled', async () => {
+    serve([], true)
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '新建定时任务' }))
+    await user.click(screen.getByRole('switch'))
+    expect(screen.getByLabelText('同意无人值守授权')).toBeInTheDocument()
+    expect(screen.getByText(/我已知悉并同意/)).toBeInTheDocument()
+  })
+
+  it('creates a disabled task as an unauthorised draft while offering the default-connection models', async () => {
+    serve([], true)
+    let created: Record<string, unknown> | undefined
+    server.use(
+      http.post(LIST, async ({ request }) => {
+        const payload = await request.json()
+        if (!isRecord(payload)) {
+          return HttpResponse.json({ error: 'expected object' }, { status: 400 })
+        }
+        created = payload
+        return HttpResponse.json({ resource: task() })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '新建定时任务' }))
+    await user.selectOptions(screen.getByLabelText('绑定 issue'), 'i1')
+    await user.selectOptions(screen.getByLabelText('执行智能体'), 'a1')
+    await user.type(screen.getByLabelText('名称'), '无授权草稿')
+    await user.type(screen.getByLabelText('提示词'), '稍后再启用')
+    expect(await screen.findByRole('option', { name: /Model V1/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '创建' }))
+    await waitFor(() => expect(created).toBeDefined())
+    expect(created).toMatchObject({ enabled: false, model: '' })
+    expect(created).not.toHaveProperty('approval')
+  })
+
   it('deletes a task only after confirmation', async () => {
     serve([task()])
     let deleted = null
@@ -120,5 +190,64 @@ describe('ScheduledTasksPage', () => {
     expect(await screen.findByRole('article', { name: '每日同步' })).toHaveTextContent('已启用')
     await user.click(screen.getByRole('switch'))
     expect(disabled).toBe(true)
+  })
+
+  it('requires an explicit re-consent before enabling a stopped task', async () => {
+    serve([task()])
+    let approval: Record<string, unknown> | undefined
+    server.use(
+      http.post(`${LIST}/st1/enable`, async ({ request }) => {
+        const payload = await request.json()
+        if (!isRecord(payload)) {
+          return HttpResponse.json({ error: 'expected object' }, { status: 400 })
+        }
+        approval = payload
+        return HttpResponse.json({ resource: task({ enabled: true }) })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('article', { name: '每日同步' })
+    const enable = screen.getByRole('button', { name: '重新同意并启用' })
+    expect(enable).toBeDisabled()
+    await user.click(screen.getByLabelText('同意无人值守授权'))
+    await user.click(enable)
+    await waitFor(() =>
+      expect(approval).toEqual({ approval: { policy: 'full_auto_in_cloud_workspace' } }),
+    )
+  })
+
+  it('clears a stale consent box after enable and revoke so re-consent is explicit', async () => {
+    let current: ScheduledTask = task({
+      enabled: false,
+      unattendedPolicy: 'full_auto_in_cloud_workspace',
+    })
+    server.use(
+      http.get(LIST, () => HttpResponse.json({ tasks: [current], acceptanceEnabled: false })),
+      http.post(`${LIST}/st1/enable`, () => {
+        current = task({ enabled: true, unattendedPolicy: 'full_auto_in_cloud_workspace' })
+        return HttpResponse.json({ resource: current })
+      }),
+      http.post(`${LIST}/st1/revoke-consent`, () => {
+        current = task({ enabled: false })
+        return HttpResponse.json({ resource: current })
+      }),
+    )
+    const userEventSetup = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('article', { name: '每日同步' })
+    await userEventSetup.click(screen.getByLabelText('同意无人值守授权'))
+    await userEventSetup.click(screen.getByRole('button', { name: '重新同意并启用' }))
+    await waitFor(() => expect(screen.getByRole('switch')).toBeChecked())
+
+    await userEventSetup.click(screen.getByRole('button', { name: '撤销授权' }))
+    await userEventSetup.click(screen.getByRole('button', { name: '确认撤销授权' }))
+    const fresh = await screen.findByLabelText('同意无人值守授权')
+    expect(fresh).not.toBeChecked()
+    expect(screen.getByRole('button', { name: '重新同意并启用' })).toBeDisabled()
+
+    await userEventSetup.click(fresh)
+    expect(screen.getByRole('button', { name: '重新同意并启用' })).toBeEnabled()
   })
 })

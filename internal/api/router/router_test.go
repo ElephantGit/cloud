@@ -127,7 +127,7 @@ func TestScheduledTaskFieldValidation(t *testing.T) {
 func TestScheduledTaskDocumentedBodyPassesFieldValidation(t *testing.T) {
 	const body = `{"issueId":"c0b8b8e4-6a2f-4f6f-9d6d-0d0b5f0c9a11",
 		"agentId":"3f0d0a6e-8f0e-4a53-9a4e-9f1b0d3f5c22","name":"Nightly acceptance",
-		"prompt":"write the acceptance report","timezone":"Asia/Shanghai",
+		"prompt":"write the acceptance report","model":"vendor/model-v1","timezone":"Asia/Shanghai",
 		"schedule":{"kind":"daily","hour":3,"minute":5},
 		"approval":{"policy":"full_auto_in_cloud_workspace"},"enabled":true}`
 	decoder := json.NewDecoder(strings.NewReader(body))
@@ -138,7 +138,7 @@ func TestScheduledTaskDocumentedBodyPassesFieldValidation(t *testing.T) {
 	}
 	fields := map[string]bool{
 		"issueId": true, "name": true, "prompt": true, "agentId": true,
-		"schedule": true, "timezone": true, "approval": true, "enabled": true,
+		"model": true, "schedule": true, "timezone": true, "approval": true, "enabled": true,
 	}
 	if len(decoded) != len(fields) {
 		t.Fatalf("documented body fields = %v", decoded)
@@ -152,7 +152,7 @@ func TestScheduledTaskDocumentedBodyPassesFieldValidation(t *testing.T) {
 		}
 	}
 	patch := `{"version":1,"name":"Renamed","prompt":"new prompt","agentId":"3f0d0a6e-8f0e-4a53-9a4e-9f1b0d3f5c22",
-		"schedule":{"kind":"every_hours","intervalHours":2},"timezone":"Asia/Shanghai"}`
+		"model":"vendor/model-v2","schedule":{"kind":"every_hours","intervalHours":2},"timezone":"Asia/Shanghai"}`
 	decoder = json.NewDecoder(strings.NewReader(patch))
 	decoder.UseNumber()
 	var decodedPatch map[string]any

@@ -16,7 +16,7 @@ func declaredStartupScene(t *testing.T) (personalAgentScene, string) {
 	scene.store.PersonalAgentRuntime = &PersonalAgentRuntime{Target: "x86_64-unknown-linux-gnu", ContractVersion: 1, Protocols: []string{"anthropic-messages"}}
 	result, err := scene.store.transact(context.Background(), func(tx *transaction) Object {
 		input := Object{"agentPluginId": claudeAgentCLI, "agentPluginVersion": "1.0.0"}
-		bindRunModel(tx, scene.seed.run, scene.uid, input)
+		bindRunModel(tx, scene.seed.run, scene.uid, input, "")
 		created := createRunWorkspace(tx, scene.seed.run)
 		workspace, operation := created.O("workspace").S("id"), created.O("operation").S("id")
 		tx.exec("UPDATE operations SET state='succeeded',step='done',version=version+1 WHERE id=$1", operation)

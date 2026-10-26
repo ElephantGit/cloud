@@ -20,8 +20,11 @@ var agentPackageDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // declaredAgentRunModel resolves and freezes the private Agent configuration in the run's
 // creation transaction. False preserves only existing undeclared routes; Claude never falls
-// back to a host login or OpenCode's default when its declaration is absent.
-func declaredAgentRunModel(t *transaction, runID, uid string, input Object) (handled bool, connection, model Object) {
+// back to a host login or OpenCode's default when its declaration is absent. A non-empty
+// selectedModel is a scheduled definition's explicit override: it is resolved and validated by the
+// same protocol gates as the declared configuration, so an incompatible override is refused here
+// rather than frozen into a binding the adapter cannot execute.
+func declaredAgentRunModel(t *transaction, runID, uid string, input Object, selectedModel string) (handled bool, connection, model Object) {
 	pluginID := input.S("agentPluginId")
 	context := t.one(`SELECT sa.space_id
 		FROM issue_runs r JOIN space_agents sa ON sa.id=r.executor_id AND sa.tenant_id=r.tenant_id
@@ -30,7 +33,7 @@ func declaredAgentRunModel(t *transaction, runID, uid string, input Object) (han
 		require(pluginID != claudeAgentCLI, 409, "agent_declaration_required")
 		return false, nil, nil
 	}
-	frozen, connection, model := resolveDeclaredAgentRun(t, uid, context.S("spaceId"), pluginID, input.S("agentPluginVersion"))
+	frozen, connection, model := resolveDeclaredAgentRun(t, uid, context.S("spaceId"), pluginID, input.S("agentPluginVersion"), selectedModel)
 	if frozen == nil {
 		return false, nil, nil
 	}
@@ -45,7 +48,11 @@ func declaredAgentRunModel(t *transaction, runID, uid string, input Object) (han
 
 // resolveDeclaredAgentRun is the read-only policy shared by readiness, queue admission and
 // final run creation. The caller either reports its fault or atomically persists its result.
-func resolveDeclaredAgentRun(t *transaction, uid, spaceID, pluginID, pluginVersion string) (snapshot, connection, model Object) {
+// selectedModel is a scheduled definition's optional model override: when set, it replaces the
+// declared connection/model and the full protocol gates below judge the final pair, so an override
+// that lands on a connection the Agent or runtime cannot execute fails here exactly like a broken
+// declaration instead of being frozen and rejected later by the adapter.
+func resolveDeclaredAgentRun(t *transaction, uid, spaceID, pluginID, pluginVersion, selectedModel string) (snapshot, connection, model Object) {
 	namespace, identifier, ok := pluginIdentity(pluginID)
 	require(ok, 400, "invalid_plugin_id")
 	selected := t.spacePluginRow(spaceID, namespace, identifier)
@@ -67,6 +74,14 @@ func resolveDeclaredAgentRun(t *transaction, uid, spaceID, pluginID, pluginVersi
 		reason, connection, model = defaultExecutorGap(t, uid)
 	} else {
 		reason, connection, model = personalExecutorGap(t, uid, configuration.S("connectionId"), configuration.S("modelId"))
+	}
+	// A scheduled definition may pin a model on the creator's current default connection. Resolve it
+	// before the protocol gates below: the override must be judged by the same rules as the declared
+	// pair, so a Claude declaration backed by Anthropic plus a task model on an OpenAI default cannot
+	// produce an OpenAI binding the Claude runtime refuses after dispatch.
+	if selectedModel != "" {
+		selection := modelDefault(t, uid)
+		reason, connection, model = personalExecutorGap(t, uid, selection.S("connectionId"), selectedModel)
 	}
 	require(reason == "", 409, safeAgentModelGap(reason))
 	require(slices.Contains(declaration.ModelAccess.Protocols, connection.S("protocol")), 409, "agent_model_protocol_mismatch")

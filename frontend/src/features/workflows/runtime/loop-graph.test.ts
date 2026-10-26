@@ -176,6 +176,11 @@ describe('loopExitInsertion', () => {
     })
   })
 
+  it('skips a Condition, whose branches the action cannot choose between', () => {
+    const graph = loopGraph([node('branch', 'condition', { x: 700, y: 145 }, 'loop-1')])
+    expect(loopExitInsertion(graph, 'loop-1')?.sourceId).toBe('loop-1-agent')
+  })
+
   it('returns null for a loop with no body', () => {
     expect(loopExitInsertion(loopGraph(), 'outer')).toBeNull()
   })

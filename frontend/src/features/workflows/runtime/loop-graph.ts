@@ -67,15 +67,22 @@ export function loopOutputInsertion(
 
 /**
  * Picks the seam the inspector's "add early exit" action appends after: the right-most body
- * member that has an output port, so the exit lands clear of the existing round instead of on
- * a fixed coordinate.
+ * member that has a single output port, so the exit lands clear of the existing round instead of
+ * on a fixed coordinate. A Condition is skipped: the action names no branch, and silently wiring
+ * the exit to ELSE would hide which branch now ends the round. Exits on a branch are added from
+ * that branch's own port.
  */
 export function loopExitInsertion(
   graph: WorkflowIterationGraph,
   loopId: string,
 ): WorkflowLoopOutputInsertion | null {
   const sources = loopMembers(graph, loopId)
-    .filter((node) => node.data.kind !== 'output' && node.data.kind !== 'loopExit')
+    .filter(
+      (node) =>
+        node.data.kind !== 'output' &&
+        node.data.kind !== 'loopExit' &&
+        node.data.kind !== 'condition',
+    )
     .toSorted((left, right) => right.position.x - left.position.x)
   const source = sources[0]
   return source === undefined ? null : loopOutputInsertion(graph, source.id, null)

@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CurrentSpaceProvider } from '@/features/spaces/current-space'
@@ -197,6 +198,7 @@ describe('workflow draft navigation', () => {
   )
 
   it('opens the created run after the member discards a draft that cannot be saved', async () => {
+    const user = userEvent.setup()
     const { router, writes, createdRuns } = renderFailedSave(409)
     await attemptHistoryNavigation()
     await screen.findByRole('heading', { name: '草稿保存失败' })
@@ -204,9 +206,9 @@ describe('workflow draft navigation', () => {
 
     const runButton = screen.getByRole('button', { name: '运行' })
     await waitFor(() => expect(runButton).toBeEnabled())
-    fireEvent.click(runButton)
+    await user.click(runButton)
     await chooseProject()
-    fireEvent.click(await screen.findByRole('button', { name: '开始运行' }))
+    await user.click(await screen.findByRole('button', { name: '开始运行' }))
 
     expect(await screen.findByRole('heading', { name: '草稿保存失败' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(PATH)

@@ -5,6 +5,7 @@ import type {
 } from '@/features/workflows/runtime/iteration-graph'
 import {
   insertLoopMember,
+  loopAuthoredSize,
   loopContentBox,
   loopExitInsertion,
   loopFrameSize,
@@ -183,6 +184,19 @@ describe('loopExitInsertion', () => {
 
   it('returns null for a loop with no body', () => {
     expect(loopExitInsertion(loopGraph(), 'outer')).toBeNull()
+  })
+})
+
+describe('loopAuthoredSize', () => {
+  it('ignores the measured and runtime sizes, so a frame drawn from it can shrink', () => {
+    const loop = {
+      ...node('loop', 'loop', { x: 0, y: 0 }),
+      initialWidth: 620,
+      initialHeight: 300,
+      width: 900,
+      measured: { width: 900, height: 500 },
+    }
+    expect(loopAuthoredSize(loop)).toEqual({ width: 620, height: 300 })
   })
 })
 

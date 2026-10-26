@@ -137,6 +137,21 @@ export function insertLoopMember<TGraph extends WorkflowIterationGraph>(
 }
 
 /**
+ * The size the author gave the Loop (or the palette default), ignoring anything React Flow
+ * measured or `expandParent` wrote at runtime.
+ *
+ * The frame draws itself from this plus what its members need. It must not read its own
+ * measured size back: that is the size it drew last time, so it could only ever grow and a body
+ * that got smaller would leave the frame stuck at its largest box until the page reloaded.
+ */
+export function loopAuthoredSize(node: WorkflowIterationNode): { width: number; height: number } {
+  return {
+    width: finiteSize(node.initialWidth, WORKFLOW_LOOP_NODE_WIDTH),
+    height: finiteSize(node.initialHeight, WORKFLOW_LOOP_NODE_HEIGHT),
+  }
+}
+
+/**
  * The box a Loop occupies on the canvas: its authored size, widened to what React Flow measured.
  *
  * The frame draws itself at least as large as its members need, which can exceed the authored

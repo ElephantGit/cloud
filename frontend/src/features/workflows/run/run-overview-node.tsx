@@ -53,8 +53,6 @@ export const RunOverviewNode = memo(function RunOverviewNode({
   data,
   selected,
   deletable,
-  width,
-  height,
 }: NodeProps<Node<RunOverviewNodeData, 'workflow'>>) {
   const translate = useWorkflowTranslator()
   const context = useContext(RunOverviewStatesContext)
@@ -85,15 +83,7 @@ export const RunOverviewNode = memo(function RunOverviewNode({
   if (data.kind === 'loop') {
     return (
       <div data-workflow-run-node="" className={cn('rounded-2xl', tone.ring, 'ring-1')}>
-        <LoopNodeFrame
-          id={id}
-          data={data}
-          selected={selected}
-          deletable={false}
-          width={width}
-          height={height}
-          badge={badge}
-        />
+        <LoopNodeFrame id={id} data={data} selected={selected} deletable={false} badge={badge} />
       </div>
     )
   }

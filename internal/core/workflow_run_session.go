@@ -86,6 +86,9 @@ func workflowRunningAgentNode(states map[string]workflowNodeState) (string, bool
 func workflowAgentSessionOutcome(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, unreachableAfter time.Duration) (map[string]workflowNodeState, bool) {
 	nodeID, nodeState := node.ID, states[node.ID]
 	attempt := nodeState.attemptNumber()
+	if node.Container != "" && nodeState.Error == workflowSessionTurnDeadlineExceeded {
+		return drainWorkflowTimedOutSession(t, runID, version, node, states)
+	}
 	e := t.one(`SELECT result FROM node_executions
 		WHERE operation_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='agent_session' AND result IS NOT NULL`, runID, nodeID, attempt)
 	if e != nil {
@@ -128,6 +131,21 @@ func workflowAgentSessionOutcome(t *transaction, runID string, version int64, no
 		executionID := e.S("executionId")
 		turnEnded := workflowSessionTurnEnded(t, executionID)
 		if !turnEnded && workflowSessionTurnExpired(t, executionID, startupDuration(t.store.WorkflowSessionTurnTimeout, 2*time.Hour)) {
+			if node.Container != "" {
+				if t.one("SELECT id FROM thread_commands WHERE workflow_run_id=$1 AND workflow_node_id=$2 AND workflow_node_attempt=$3 AND kind='end_session'", runID, nodeID, attempt) != nil {
+					// A later non-turn receipt cannot replace an already released idle end request.
+					return workflowSessionEndRequest(t, runID, version, node, attempt, executionID, turnEnded, states)
+				}
+				// Persist the timeout before requesting termination. A late result confirms the
+				// drain, but cannot turn the timed-out attempt into success or user cancellation.
+				state := states[nodeID]
+				state.Error = workflowSessionTurnDeadlineExceeded
+				states[nodeID] = state
+				if settleWorkflowRunStates(t, runID, version, "running", "", states) {
+					enqueueWorkflowThreadCommand(t, runID, nodeID, attempt, "end_session", Object{"reason": "cancelled"})
+				}
+				return states, false
+			}
 			state := states[nodeID]
 			state.Status = "failed"
 			state.FinishedAt = nowRFC3339()
@@ -192,6 +210,10 @@ func workflowSessionEndRequest(t *transaction, runID string, version int64, node
 	state.Error = "session_end_deadline_exceeded"
 	state.Output = Object{"reason": "session_end_deadline_exceeded"}
 	states[nodeID] = state
+	if node.Container != "" {
+		finishWorkflowUndrainedSession(t, runID, version, node, states, "session_end_deadline_exceeded")
+		return states, false
+	}
 	settleWorkflowAgentFailure(t, runID, version, node, states, "session end deadline exceeded")
 	return states, false
 }

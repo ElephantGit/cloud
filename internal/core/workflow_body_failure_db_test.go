@@ -64,6 +64,10 @@ func TestWorkflowBodyOperationalFailuresReachContainer(t *testing.T) {
 				switch fault {
 				case "turn":
 					ageWorkflowSessionExecution(t, store, execution, "7260")
+					if err := store.AdvanceWorkflowRunsOnce(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+					reportSessionEnd(t, store, id, execution, service, "cancelled")
 				case "unreachable":
 					if _, err := store.Pool.Exec(`UPDATE node_instances SET last_seen_at=clock_timestamp()-interval '2 hours' WHERE workspace_id=$1`, ws); err != nil {
 						t.Fatal(err)
@@ -85,7 +89,11 @@ func TestWorkflowBodyOperationalFailuresReachContainer(t *testing.T) {
 			}
 			status, detail, raw, _ := readWorkflowRun(t, store, id)
 			state := workflowStatesFromJSON(raw)["it"]
-			if status != "succeeded" || state.Status != "succeeded" || state.Iteration.Failed != 1 || len(state.Iteration.Completed) != 1 || len(state.Iteration.Ledger) != 1 {
+			want := "succeeded"
+			if fault == "end" {
+				want = "failed" // no terminal evidence: release, never reuse the live Workspace
+			}
+			if status != want || state.Status != want || state.Iteration.Failed != 1 || len(state.Iteration.Completed) != 1 || len(state.Iteration.Ledger) != 1 {
 				t.Fatalf("%s bypassed container: %s %s %v", fault, status, detail, raw)
 			}
 		})

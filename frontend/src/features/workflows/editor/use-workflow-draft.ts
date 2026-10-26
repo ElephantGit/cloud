@@ -337,12 +337,15 @@ function appendLoopExitNode(
   const node = createWorkflowNode({
     kind: 'loopExit',
     sequence,
-    position: { x: loop.position.x + 320, y: loop.position.y },
+    position: { x: 320, y: 240 },
     translate,
   })
   return {
     ...current,
-    nodes: [...current.nodes, { ...node, data: { ...node.data, containerId: loopId } }],
+    nodes: [
+      ...current.nodes,
+      { ...node, parentId: loopId, data: { ...node.data, containerId: loopId } },
+    ],
   }
 }
 

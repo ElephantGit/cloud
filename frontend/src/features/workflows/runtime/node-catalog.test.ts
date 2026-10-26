@@ -43,8 +43,14 @@ describe('workflow node catalog', () => {
 
   it('lists the workflow palette in menu order', () => {
     // The palette also carries the loop-only marker, which the workflow scope filters out.
-    expect(workflowPaletteNodeTypes('workflow').map((entry) => entry.kind)).toEqual(
-      WORKFLOW_NODE_PALETTE.filter((kind) => supportsWorkflowNodeScope(kind, 'workflow')),
-    )
+    expect(workflowPaletteNodeTypes('workflow').map((entry) => entry.kind)).toEqual([
+      'start',
+      'agent',
+      'condition',
+      'aggregator',
+      'loop',
+      'iteration',
+      'output',
+    ])
   })
 })

@@ -32,7 +32,7 @@ and importing workflows from plugins.
 - Workflow names are unique among a tenant's unarchived workflows (`409 workflow_conflict`). Archiving is a soft
   delete, and an archived workflow is hidden from reads together with all its versions and run history.
 
-**The subset Cloud can execute.** Publishing accepts `junction`, `aggregator`, `loop`, `loopExit`, `iteration`, `start`,
+**The subset Cloud can execute.** Publishing accepts `aggregator`, `loop`, `loopExit`, `iteration`, `start`,
 `agent`, `condition` and `output`. Other node kinds in the editor can still be edited and saved, but publishing
 refuses them rather than freezing a graph whose nodes would be silently dropped. Agent node configuration fields
 that Cloud does not execute are likewise refused by name, so an author never believes a setting is in effect when
@@ -299,3 +299,7 @@ count attempts within the current round.
 - [Workflow plugin assets are fetched by Cloud and imported document by document as editable copies](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [Personal slot mappings resolve a workflow's executors; each run pins one model binding per slot](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md) (approved)
 - [`snapshotId` is a reserved field: the publish gate refuses author declarations and stock versions are not selectable](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md) (approved)
+
+- [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
+- [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)

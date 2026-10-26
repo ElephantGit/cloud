@@ -420,6 +420,40 @@ describe('LoopNodeFields', () => {
     expect(data.loopConfig?.until.conditions).toHaveLength(0)
   })
 
+  it('keeps body and carried roots out of first-round variable initial choices', async () => {
+    const user = userEvent.setup()
+    const config: WorkflowLoopConfig = {
+      ...LOOP_CONFIG,
+      variables: [
+        {
+          name: 'value',
+          valueType: 'string',
+          initial: { kind: 'variable', selector: [] },
+          feedback: [],
+        },
+      ],
+    }
+    const member: WorkflowCanvasNode = {
+      id: 'body',
+      type: 'workflow',
+      parentId: 'loop-1',
+      position: { x: 20, y: 30 },
+      data: nodeData({ kind: 'agent', title: '内部产物' }),
+    }
+    renderWithProviders(
+      <LoopNodeFields
+        {...LOOP_PROPS}
+        graphNodes={[member]}
+        data={nodeData({ kind: 'loop', loopConfig: config })}
+        onChange={vi.fn<(data: WorkflowNodeData) => void>()}
+      />,
+    )
+    await user.click(screen.getByLabelText('初值 1'))
+    expect(screen.queryByRole('option', { name: /内部产物/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /value/ })).not.toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /workflow_id/ })).toBeInTheDocument()
+  })
+
   it('hides the config inputs for a legacy loop without executable config', () => {
     const onChange = vi.fn<(data: WorkflowNodeData) => void>()
     renderWithProviders(

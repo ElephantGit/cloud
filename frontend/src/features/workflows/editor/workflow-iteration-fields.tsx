@@ -161,10 +161,16 @@ function IterationLimitsFields({
           id="workflow-node-iteration-max"
           type="number"
           min={1}
+          max={100}
           value={config.maxIterations}
           onChange={(event) => {
             const parsed = Number(event.target.value)
-            if (event.target.value !== '' && Number.isFinite(parsed) && parsed >= 1) {
+            if (
+              event.target.value !== '' &&
+              Number.isFinite(parsed) &&
+              parsed >= 1 &&
+              parsed <= 100
+            ) {
               onConfigChange({ maxIterations: Math.floor(parsed) })
             }
           }}

@@ -73,6 +73,12 @@ export function LoopNodeFields({
 }: LoopFieldsProps & { onAddExit?: () => void }) {
   const { t } = useTranslation()
   const loopConfig = data.loopConfig
+  const normalizedGlobals = normalizeWorkflowGlobalVariables(globalVariables)
+  const initialChoices = decorateWorkflowVariableCatalog(
+    deriveWorkflowVariableCatalog(graphNodes, edges, nodeId, normalizedGlobals),
+    graphNodes,
+    normalizedGlobals,
+  )
   const choices = resolveLoopChoices(graphNodes, edges, {
     loopId: nodeId,
     globalVariables,
@@ -81,7 +87,12 @@ export function LoopNodeFields({
   return (
     <>
       <LoopBudgetFields data={data} onChange={onChange} />
-      <LoopVariablesFields data={data} onChange={onChange} choices={choices} />
+      <LoopVariablesFields
+        data={data}
+        onChange={onChange}
+        choices={choices}
+        initialChoices={initialChoices}
+      />
       <LoopUntilFields data={data} onChange={onChange} choices={choices} />
       <LoopOutputsFields
         data={data}
@@ -99,11 +110,7 @@ export function LoopNodeFields({
         </Button>
       )}
       <p className="rounded-lg border border-border bg-muted/25 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-        {t(
-          loopConfig === undefined
-            ? 'workflows.loop.legacyUnsupported'
-            : 'workflows.loop.defaultBehavior',
-        )}
+        {loopConfig === undefined ? t('workflows.loop.legacyUnsupported') : null}
       </p>
     </>
   )
@@ -182,7 +189,9 @@ function LoopVariablesFields({
   data,
   onChange,
   choices,
+  initialChoices,
 }: Pick<LoopFieldsProps, 'data' | 'onChange'> & {
+  initialChoices: readonly WorkflowDecoratedVariable[]
   choices: readonly WorkflowDecoratedVariable[]
 }) {
   const { t } = useTranslation()
@@ -203,6 +212,7 @@ function LoopVariablesFields({
             index={index}
             variable={variable}
             choices={choices}
+            initialChoices={initialChoices}
             onChange={(next) =>
               update(loopConfig.variables.map((current, i) => (i === index ? next : current)))
             }
@@ -229,11 +239,13 @@ function LoopVariableRow({
   index,
   variable,
   choices,
+  initialChoices,
   onChange,
   onRemove,
 }: {
   index: number
   variable: WorkflowLoopVariable
+  initialChoices: readonly WorkflowDecoratedVariable[]
   choices: readonly WorkflowDecoratedVariable[]
   onChange: (variable: WorkflowLoopVariable) => void
   onRemove: () => void
@@ -263,7 +275,7 @@ function LoopVariableRow({
           value={variable.valueType}
           onValueChange={(valueType) => {
             if (valueType !== null) {
-              onChange({ ...variable, valueType })
+              onChange(loopVariableWithType(variable, valueType))
             }
           }}
         >
@@ -300,11 +312,11 @@ function LoopVariableRow({
       <LoopInitialValueInput
         index={index}
         variable={variable}
-        choices={choices}
+        choices={initialChoices}
         onChange={onChange}
       />
       <WorkflowCatalogSelector
-        htmlId={`workflow-loop-variable-feedback-`}
+        htmlId={`workflow-loop-variable-feedback-${index}`}
         value={variable.feedback}
         placeholder={t('workflows.loop.selectorPlaceholder')}
         choices={choices}
@@ -353,7 +365,7 @@ function LoopInitialValueInput({
   }
   return (
     <WorkflowCatalogSelector
-      htmlId={`workflow-loop-variable-initial-`}
+      htmlId={`workflow-loop-variable-initial-${index}`}
       value={variable.initial.selector}
       placeholder={t('workflows.loop.selectorPlaceholder')}
       choices={choices}
@@ -479,7 +491,7 @@ function LoopUntilRow({
         </Button>
       </div>
       <WorkflowCatalogSelector
-        htmlId={`workflow-loop-until-variable-`}
+        htmlId={`workflow-loop-until-variable-${index}`}
         value={condition.variableSelector}
         placeholder={t('workflows.loop.selectorPlaceholder')}
         choices={choices}
@@ -607,7 +619,9 @@ function resolveLoopChoices(
     normalized,
   )
   const memberIDs = new Set(
-    graphNodes.filter((node) => node.data.containerId === loopId).map((node) => node.id),
+    graphNodes
+      .filter((node) => (node.data.containerId || node.parentId) === loopId)
+      .map((node) => node.id),
   )
   const members = everything.filter((entry) => memberIDs.has(entry.sourceNodeId))
   const carried: WorkflowDecoratedVariable[] = (config?.variables ?? [])
@@ -629,4 +643,19 @@ function resolveLoopChoices(
     seen.add(key)
     return true
   })
+}
+
+/** Reinterprets a constant immediately when its authored type changes. */
+function loopVariableWithType(
+  variable: WorkflowLoopVariable,
+  valueType: WorkflowLoopVariable['valueType'],
+): WorkflowLoopVariable {
+  const initial =
+    variable.initial.kind === 'constant'
+      ? {
+          kind: 'constant' as const,
+          value: loopConstantValue(comparisonValueToText(variable.initial.value), valueType),
+        }
+      : variable.initial
+  return { ...variable, valueType, initial }
 }

@@ -17,3 +17,5 @@ Depends on basic utilities and static contracts; consumed by editors, run pages 
 Distinct branch edges between the same nodes must not overwrite each other. Null and omitted ports
 are equivalent; the node-aware draft layer normalizes legacy Condition ELSE connections. Pure tests
 cover boundaries and codec tests verify persisted ports and Output bindings across reloads.
+
+Loop catalogs expose named outputs outside and carried values plus container ancestors inside; loopExit declares no output. Import preserves parentId and initial dimensions. Nonempty containerId takes precedence over parentId.

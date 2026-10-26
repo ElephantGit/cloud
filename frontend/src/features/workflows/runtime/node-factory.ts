@@ -191,6 +191,7 @@ export function createWorkflowLoopGroup(seed: WorkflowNodeSeed): WorkflowLoopGro
     translate: seed.translate,
   })
   childStart.id = childStartId
+  childStart.parentId = loop.id
   childStart.data = {
     ...childStart.data,
     title: seed.translate('workflows.loop.roundStart'),
@@ -213,6 +214,7 @@ export function createWorkflowLoopGroup(seed: WorkflowNodeSeed): WorkflowLoopGro
     translate: seed.translate,
   })
   childAgent.id = childAgentId
+  childAgent.parentId = loop.id
   childAgent.data = {
     ...childAgent.data,
     title: seed.translate('workflows.loop.loopAgent'),

@@ -171,7 +171,7 @@ describe('useWorkflowDraft', () => {
     const { result } = setup(fixtureWithGraph([outputNode()]))
 
     act(() => {
-      result.current.addNode('loop', { x: 0, y: 0 })
+      result.current.addNode('loop', { x: 600, y: 300 })
     })
 
     expect(
@@ -187,7 +187,7 @@ describe('useWorkflowDraft', () => {
     ])
   })
 
-  it('adds a loopExit into the selected loop body and ignores an unknown loop', () => {
+  it('adds a loopExit at relative coordinates inside a displaced loop and ignores an unknown loop', () => {
     const { result } = setup(fixtureWithGraph([outputNode()]))
 
     act(() => {
@@ -199,7 +199,8 @@ describe('useWorkflowDraft', () => {
 
     const exit = result.current.nodes.find((node) => node.data.kind === 'loopExit')
     expect(exit?.data.containerId).toBe('loop-1')
-    expect(exit?.position).toEqual({ x: 320, y: 0 })
+    expect(exit?.parentId).toBe('loop-1')
+    expect(exit?.position).toEqual({ x: 320, y: 240 })
 
     act(() => {
       result.current.addLoopExit('missing-loop')

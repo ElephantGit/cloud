@@ -17,3 +17,5 @@ Case ids and connection ports persist together; different ports may join one tar
 authored bindings and incomplete draft rows, leaving publication validation to reject invalid data.
 Tests exercise real React Flow ports, controlled inspectors and draft save/reload behavior; network
 tests replace the shared test boundary.
+
+Legacy empty condition ports project to ELSE on the canvas without mutating drafts. Loop initial selectors list outer variables; round-end selectors also list body roots and carried values. New members immediately use their parent and relative coordinates.

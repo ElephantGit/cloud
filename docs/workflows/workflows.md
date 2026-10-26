@@ -23,7 +23,7 @@
 - **恢复**把当前文档换成某个版本的图，并像其他编辑一样推进文档版本；它不改动任何已发布版本。
 - 工作流名称在租户内未归档的工作流中唯一（`409 workflow_conflict`）。归档是软删除，归档的工作流连同它的全部版本和运行历史一起从读取中隐藏。
 
-**Cloud 能执行的子集。** 发布时接受 `start`、`agent`、`condition`、`output`、`junction`、`aggregator`、`loop`、`loopExit`、`iteration`。编辑器里的其他节点类型仍然可以编辑
+**Cloud 能执行的子集。** 发布时接受 `start`、`agent`、`condition`、`output`、`aggregator`、`loop`、`loopExit`、`iteration`。编辑器里的其他节点类型仍然可以编辑
 和保存，但发布会拒绝，而不是冻结一个节点会被静默丢掉的图。Agent 节点里 Cloud 不执行的配置字段同样按字段名拒绝，避免作者以为某个设置生效、
 实际却没有运行方会应用它。
 
@@ -201,3 +201,7 @@ iteration 两种策略都会保存失败轮账本，终态保留最后启动的�
 - [Workflow 插件资产由 Cloud 自行取包、逐文档导入为可编辑副本](https://github.com/ora-space/specs/blob/main/decisions/cloud/plugin-marketplace/20261016-workflow-plugin-assets.md)
 - [个人槽位映射为工作流解析执行器，每次运行按槽位锁定多组模型绑定](https://github.com/ora-space/specs/blob/main/decisions/cloud/model-access/20261015-executor-slot-mappings-and-per-slot-run-bindings.md)（approved）
 - [`snapshotId` 是保留字段：发布门禁拒绝作者声明，存量版本不可选](https://github.com/ora-space/specs/blob/main/decisions/cloud/issue-collaboration/20261021-snapshot-id-is-a-reserved-field.md)（approved）
+
+- [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
+- [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)

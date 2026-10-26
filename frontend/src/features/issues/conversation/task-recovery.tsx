@@ -47,7 +47,11 @@ function recoveryKind(run: IssueRun, paused: boolean): 'resume' | 'discard' | nu
     (paused || ['failed', 'cancelled'].includes(run.status))
   )
     return 'resume'
-  if (['failed', 'skipped'].includes(delivery)) return 'discard'
+  if (
+    ['failed', 'skipped'].includes(delivery) ||
+    (delivery === '' && ['failed', 'cancelled'].includes(run.status))
+  )
+    return 'discard'
   return null
 }
 

@@ -79,10 +79,16 @@ func scheduledTaskCreate(t *transaction, r *PublicRequest, uid string) Object {
 	enabled := r.Body.B("enabled")
 	require(validID(issueID) && validID(agentID) && name != "" && prompt != "" && timezone != "", 400, "invalid_request")
 
-	approval := r.Body.O("approval")
-	require(approval.S("policy") == unattendedPolicyCloud, 400, "invalid_request")
-	// The consent instant is the server's, not the client's claim.
-	consentedAt := dbNow(t)
+	// A disabled definition is only a draft: it must not manufacture unattended consent from
+	// an invisible client value. Consent is frozen only for an explicitly enabled creation.
+	var policy, consentedAt any
+	if enabled {
+		approval := r.Body.O("approval")
+		require(approval.S("policy") == unattendedPolicyCloud, 400, "invalid_request")
+		policy = unattendedPolicyCloud
+		// The consent instant is the server's, not the client's claim.
+		consentedAt = dbNow(t)
+	}
 
 	schedule, err := parseScheduledTaskSchedule(r.Body["schedule"])
 	require(err == nil, 400, "invalid_request")
@@ -97,6 +103,7 @@ func scheduledTaskCreate(t *transaction, r *PublicRequest, uid string) Object {
 	require(ready, 409, "target_unavailable")
 	agentRunGate(t, issue, agent)
 	require(creatorModelReady(t, uid, agent.S("pluginId")), 409, "model_unavailable")
+	require(scheduledTaskModelReady(t, uid, model), 409, "model_unavailable")
 
 	// The unattended-consent risk statement (D5) is the creation form's own copy; the server
 	// freezes the policy name and the server's consent instant.
@@ -117,7 +124,7 @@ func scheduledTaskCreate(t *transaction, r *PublicRequest, uid string) Object {
 		 unattended_policy, unattended_consented_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,1,$11,$12,NULL,$13,$14)`,
 		id, r.TenantID, issueID, uid, agentID, name, prompt, nilIfEmpty(model), jsonText(scheduleDoc), timezone,
-		enabled, enabledAt, unattendedPolicyCloud, consentedAt)
+		enabled, enabledAt, policy, consentedAt)
 	task := t.one("SELECT * FROM scheduled_tasks WHERE id=$1", id)
 	return scheduledTaskOut(task)
 }
@@ -183,6 +190,7 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 		agentRunGate(t, issue, agent)
 	}
 	require(creatorModelReady(t, uid, agent.S("pluginId")), 409, "model_unavailable")
+	require(scheduledTaskModelReady(t, uid, model), 409, "model_unavailable")
 
 	updated := t.execRows(`UPDATE scheduled_tasks
 		SET name=$1, prompt=$2, model=$3, agent_id=$4, schedule=$5, timezone=$6,
@@ -249,6 +257,7 @@ func scheduledTaskEnable(t *transaction, r *PublicRequest, uid string) Object {
 	require(ready, 409, "target_unavailable")
 	agentRunGate(t, issue, agent)
 	require(creatorModelReady(t, creator, agent.S("pluginId")), 409, "model_unavailable")
+	require(scheduledTaskModelReady(t, creator, task.S("model")), 409, "model_unavailable")
 
 	t.exec(`UPDATE scheduled_tasks
 		SET enabled=true, enabled_at=now(), disabled_reason=NULL,

@@ -5065,6 +5065,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "scheduledTaskId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "spaceId": {
             "format": "uuid",
             "type": "string"
@@ -27034,6 +27039,9 @@
                     "format": "uuid",
                     "type": "string"
                   },
+                  "model": {
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -27056,8 +27064,7 @@
                   "prompt",
                   "agentId",
                   "schedule",
-                  "timezone",
-                  "approval"
+                  "timezone"
                 ],
                 "type": "object"
               }
@@ -27497,6 +27504,9 @@
                     "format": "uuid",
                     "type": "string"
                   },
+                  "model": {
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -27840,7 +27850,11 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "properties": {},
+                "properties": {
+                  "approval": {
+                    "$ref": "#/components/schemas/ScheduledTaskApproval"
+                  }
+                },
                 "type": "object"
               }
             }

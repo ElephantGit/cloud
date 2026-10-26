@@ -38,7 +38,7 @@ resources; the module requests, renders and turns user actions into mutations.
 The history tests serve fixed responses through MSW and assert what renders (the verdict text and the
 rejection count). Do not mock internal modules.
 
-The creation entry trusts the Cloud list response’s `acceptanceEnabled`; this module does not choose the gate, and the server independently validates writes.
+The creation entry trusts the Cloud list response’s `acceptanceEnabled`; this module does not choose the gate, and the server independently validates writes. The form may select a model from the creator's default connection; its connection and credential are frozen at admission, while no selection uses the then-current default model. A disabled create is an unauthorised draft and sends no approval; a stopped task must re-check the risk disclosure before it can be enabled.
 
 Artifact lists contain metadata only. Download links target same-origin Cloud routes; each click rechecks authorization and verifies the file before serving a safe attachment. Browsers receive no storage URL, credentials or expiry; artifact content is never rendered inside the app.
 

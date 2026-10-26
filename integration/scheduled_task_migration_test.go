@@ -9,6 +9,7 @@ import (
 )
 
 const scheduledTaskMigration = "0061_scheduled_tasks.sql"
+const scheduledTaskModelMigration = "0071_scheduled_task_model.sql"
 
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
 func seedScheduledTaskAgent(t *testing.T, pool *sql.DB, s skeletonSeed) string {
@@ -149,6 +150,29 @@ func TestMigration0061ScheduledTasksUpgradeAndReplay(t *testing.T) {
 	must(t, pool.QueryRow(`SELECT count(*) FROM scheduled_task_occurrences`).Scan(&occurrences))
 	if definitions != 1 || occurrences != 1 {
 		t.Fatalf("replay left %d definitions / %d occurrences, want 1/1", definitions, occurrences)
+	}
+}
+
+func TestMigration0071ScheduledTaskModelUpgradeAndReplay(t *testing.T) {
+	pool, _ := testSchema(t, "test_scheduled71u_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, scheduledTaskModelMigration))
+	s := seedAgentIssueRunSkeleton(t, pool)
+	agentID := seedScheduledTaskAgent(t, pool, s)
+	taskID := insertScheduledTask(t, pool, s, agentID, "")
+
+	store := newStoreOnSchema(t, pool)
+	must(t, store.Migrate(context.Background()))
+	var model sql.NullString
+	must(t, pool.QueryRow(`SELECT model FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&model))
+	if model.Valid {
+		t.Fatalf("0071 must leave existing definitions without a selected model, got %q", model.String)
+	}
+	_, err := pool.Exec(`UPDATE scheduled_tasks SET model='vendor/model-v2' WHERE id=$1`, taskID)
+	must(t, err)
+	must(t, store.Migrate(context.Background()))
+	must(t, pool.QueryRow(`SELECT model FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&model))
+	if !model.Valid || model.String != "vendor/model-v2" {
+		t.Fatalf("replaying 0071 must preserve selected model, got %#v", model)
 	}
 }
 

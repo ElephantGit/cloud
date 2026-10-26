@@ -27,12 +27,15 @@ import {
   useScheduledTaskIssues,
   type ScheduledTask,
 } from './api'
+import { useModelConnections, useModelDefault } from '@/features/model-connections/api'
 
 const selectClass =
   'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs'
 
+type ModelOption = { id: string; name: string }
+
 /** D5 无人值守授权的风险说明：必须显式同意后才能启用。 */
-const CONSENT_RISK_STATEMENT =
+export const CONSENT_RISK_STATEMENT =
   '我已知悉并同意：定时运行在一次性隔离 Workspace 中全自动执行（非用户可见的数据边界承诺），Agent 可执行任意工具调用，消耗创建者个人模型额度，并以创建者 Git 身份提交。'
 
 const KIND_OPTIONS: readonly { value: ScheduledTaskScheduleKind; label: string }[] = [
@@ -184,6 +187,9 @@ function Fields({
   setAgentId,
   prompt,
   setPrompt,
+  model,
+  setModel,
+  models,
   timezone,
   setTimezone,
   schedule,
@@ -204,6 +210,9 @@ function Fields({
   setAgentId: (value: string) => void
   prompt: string
   setPrompt: (value: string) => void
+  model: string
+  setModel: (value: string) => void
+  models: ModelOption[]
   timezone: string
   setTimezone: (value: string) => void
   schedule: ScheduledTaskSchedule
@@ -238,6 +247,8 @@ function Fields({
         />
       </Field>
 
+      <ModelSelector model={model} setModel={setModel} models={models} />
+
       <Field label="时区（IANA）" htmlFor="st-timezone">
         <Input
           id="st-timezone"
@@ -258,6 +269,34 @@ function Fields({
 
       {enabled && <ConsentAgreement consented={consented} setConsented={setConsented} />}
     </div>
+  )
+}
+
+function ModelSelector({
+  model,
+  setModel,
+  models,
+}: {
+  model: string
+  setModel: (value: string) => void
+  models: ModelOption[]
+}) {
+  return (
+    <Field label="运行模型" htmlFor="st-model">
+      <select
+        id="st-model"
+        className={selectClass}
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+      >
+        <option value="">使用当前默认模型</option>
+        {models.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name} ({option.id})
+          </option>
+        ))}
+      </select>
+    </Field>
   )
 }
 
@@ -318,7 +357,7 @@ function TargetSelectors({
 }
 
 /** The D5 unattended-consent risk statement and its required agreement checkbox. */
-function ConsentAgreement({
+export function ConsentAgreement({
   consented,
   setConsented,
 }: {
@@ -343,6 +382,7 @@ function toDraft(task: ScheduledTask | undefined) {
     issueId: task ? task.issueId : '',
     agentId: task ? task.agentId : '',
     prompt: task ? task.prompt : '',
+    model: task?.model ?? '',
     timezone: task ? task.timezone : 'Asia/Shanghai',
     schedule: task
       ? task.schedule
@@ -375,6 +415,8 @@ export function ScheduledTaskForm({
   const isEdit = task != null
   const issues = useScheduledTaskIssues(tid)
   const agents = useScheduledTaskAgents(tid)
+  const connections = useModelConnections()
+  const defaultModel = useModelDefault()
   const save = useSaveScheduledTask(tid, task)
 
   const draft = toDraft(task)
@@ -382,6 +424,7 @@ export function ScheduledTaskForm({
   const [issueId, setIssueId] = useState(draft.issueId)
   const [agentId, setAgentId] = useState(draft.agentId)
   const [prompt, setPrompt] = useState(draft.prompt)
+  const [model, setModel] = useState(draft.model)
   const [timezone, setTimezone] = useState(draft.timezone)
   const [schedule, setSchedule] = useState<ScheduledTaskSchedule>(draft.schedule)
   const [enabled, setEnabled] = useState(false)
@@ -389,7 +432,7 @@ export function ScheduledTaskForm({
 
   const submit = () =>
     save.mutate(
-      { issueId, agentId, name, prompt, schedule, timezone, enabled },
+      { issueId, agentId, name, prompt, model, schedule, timezone, enabled },
       { onSuccess: onClose },
     )
   const invalid =
@@ -397,6 +440,11 @@ export function ScheduledTaskForm({
   let submitLabel = '创建'
   if (save.isPending) submitLabel = '保存中…'
   else if (isEdit) submitLabel = '保存'
+
+  const defaultConnection = connections.data?.find(
+    (connection) => connection.id === defaultModel.data?.connectionId,
+  )
+  const models = defaultConnection?.models ?? []
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -420,6 +468,9 @@ export function ScheduledTaskForm({
           setAgentId={setAgentId}
           prompt={prompt}
           setPrompt={setPrompt}
+          model={model}
+          setModel={setModel}
+          models={models}
           timezone={timezone}
           setTimezone={setTimezone}
           schedule={schedule}

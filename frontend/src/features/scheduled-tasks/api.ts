@@ -29,6 +29,7 @@ export type ScheduledTaskDraft = {
   agentId: string
   name: string
   prompt: string
+  model: string
   schedule: ScheduledTaskSchedule
   timezone: string
   enabled: boolean
@@ -52,6 +53,7 @@ export function useSaveScheduledTask(tid: string, existing: ScheduledTask | unde
         name: draft.name,
         prompt: draft.prompt,
         agentId: draft.agentId,
+        model: draft.model,
         schedule: draft.schedule,
         timezone: draft.timezone,
       }
@@ -63,8 +65,8 @@ export function useSaveScheduledTask(tid: string, existing: ScheduledTask | unde
         : await postApiV1TenantsTidScheduledTasks(tid, {
             ...base,
             issueId: draft.issueId,
-            approval: { policy: 'full_auto_in_cloud_workspace' },
             enabled: draft.enabled,
+            ...(draft.enabled ? { approval: { policy: 'full_auto_in_cloud_workspace' } } : {}),
           })
       return result.resource
     },
@@ -87,9 +89,13 @@ export function useDeleteScheduledTask(tid: string) {
 export function useSetScheduledTaskEnabled(tid: string, task: ScheduledTask) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (enabled: boolean) =>
+    mutationFn: ({ enabled, consented }: { enabled: boolean; consented?: boolean }) =>
       enabled
-        ? postApiV1TenantsTidScheduledTasksStidEnable(tid, task.id, {})
+        ? postApiV1TenantsTidScheduledTasksStidEnable(
+            tid,
+            task.id,
+            consented ? { approval: { policy: 'full_auto_in_cloud_workspace' } } : {},
+          )
         : postApiV1TenantsTidScheduledTasksStidDisable(tid, task.id, {}),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: getGetApiV1TenantsTidScheduledTasksQueryKey(tid) }),

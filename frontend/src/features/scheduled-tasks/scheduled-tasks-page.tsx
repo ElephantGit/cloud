@@ -12,7 +12,7 @@ import {
   useSetScheduledTaskEnabled,
   type ScheduledTask,
 } from './api'
-import { ScheduledTaskForm } from './scheduled-task-form'
+import { ConsentAgreement, ScheduledTaskForm } from './scheduled-task-form'
 import { ScheduledTaskHistory } from './scheduled-task-history'
 
 function ConfirmButton({
@@ -54,6 +54,7 @@ function ScheduledTaskCard({
   const remove = useDeleteScheduledTask(tid)
   const revoke = useRevokeScheduledTaskConsent(tid)
   const toggle = useSetScheduledTaskEnabled(tid, task)
+  const [consented, setConsented] = useState(false)
   const failure = toggle.error ?? remove.error ?? revoke.error
 
   return (
@@ -70,16 +71,30 @@ function ScheduledTaskCard({
       {task.disabledReason && (
         <p className="text-xs text-muted-foreground">停用原因：{task.disabledReason}</p>
       )}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">启用</span>
-        <Switch
-          checked={task.enabled}
-          disabled={toggle.isPending || !task.enabled}
-          onCheckedChange={(next) => {
-            if (!next) toggle.mutate(false)
-          }}
-        />
-      </div>
+      {task.enabled ? (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">启用</span>
+          <Switch
+            checked
+            disabled={toggle.isPending}
+            onCheckedChange={(next) => {
+              if (!next) toggle.mutate({ enabled: false })
+            }}
+          />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <ConsentAgreement consented={consented} setConsented={setConsented} />
+          <Button
+            type="button"
+            size="sm"
+            disabled={toggle.isPending || !consented}
+            onClick={() => toggle.mutate({ enabled: true, consented: true })}
+          >
+            重新同意并启用
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onHistory}>
           历史

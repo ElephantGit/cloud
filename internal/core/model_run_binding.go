@@ -20,7 +20,7 @@ func defaultExecutorGap(t *transaction, uid string) (reason string, connection, 
 
 // bindRunModel freezes personal model and declared Agent configuration in the run's creation
 // transaction. Missing configuration rolls back the comment, interaction, activity and run.
-func bindRunModel(t *transaction, runID, uid string, input Object) {
+func bindRunModel(t *transaction, runID, uid string, input Object, selectedModel string) {
 	handled, c, m := declaredAgentRunModel(t, runID, uid, input)
 	if !handled && input.S("agentPluginId") != opencodeAgentCLI {
 		return
@@ -30,6 +30,13 @@ func bindRunModel(t *transaction, runID, uid string, input Object) {
 	reason := ""
 	if !handled {
 		reason, c, m = defaultExecutorGap(t, uid)
+	}
+	// Scheduled definitions may name a model explicitly. The selected ID is resolved against the
+	// owner's current default connection in this transaction, then copied into the run binding; a
+	// later default/model edit cannot alter an already admitted occurrence.
+	if selectedModel != "" {
+		defaultSelection := modelDefault(t, uid)
+		reason, c, m = personalExecutorGap(t, uid, defaultSelection.S("connectionId"), selectedModel)
 	}
 	switch reason {
 	case "":

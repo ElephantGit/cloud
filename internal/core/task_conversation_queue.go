@@ -111,7 +111,7 @@ func (s *Store) dispatchTaskMessage(ctx context.Context, messageID string) (stri
 			taskMessageFail(t, message, "project_unavailable")
 			return Object{}
 		}
-		if _, code := taskAgentModelGap(t, message.S("userId"), agent); code != "" {
+		if _, code := taskAgentModelGap(t, message.S("userId"), agent, ""); code != "" {
 			taskMessageFail(t, message, code)
 			return Object{}
 		}

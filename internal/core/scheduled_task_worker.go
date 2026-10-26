@@ -191,7 +191,7 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 	// bindRunModel rejects after enqueueing for an invalid default or declared configuration. Probe
 	// the same read-only policy first so that rejection becomes this occurrence's durable D5 result
 	// instead of rolling back the ledger row and later being mistaken for a missed schedule point.
-	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent); personal && gap != "" {
+	if personal, gap := taskAgentModelGap(t, task.S("creatorUserId"), agent, task.S("model")); personal && gap != "" {
 		failScheduledOccurrenceWithReason(t, taskID, due, scheduledAgentBindingReason(gap))
 		return
 	}

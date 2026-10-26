@@ -351,7 +351,7 @@ func TestPersonalAgentInvalidDeclarationCannotUseLegacyFallback(t *testing.T) {
 	_, err = s.request("GET", "", "", nil)
 	expectModelFault(t, err, "agent_declaration_invalid")
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, claudeAgentCLI, "1.0.0")
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, claudeAgentCLI, "1.0.0", "")
 		return nil
 	})
 	expectModelFault(t, err, "agent_declaration_invalid")
@@ -447,7 +447,7 @@ func TestPersonalAgentOpenCodeUsesGlobalDefaultAndRepairsRemovedSettings(t *test
 		t.Fatal(err)
 	}
 	_, err = s.store.transact(context.Background(), func(tx *transaction) Object {
-		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, opencodeAgentCLI, "1.0.0")
+		_, _, _ = resolveDeclaredAgentRun(tx, s.uid, s.space, opencodeAgentCLI, "1.0.0", "")
 		return nil
 	})
 	expectModelFault(t, err, "agent_configuration_repair_required")

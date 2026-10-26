@@ -29,7 +29,7 @@ func newIterationFixture() iterationFixture {
 			Object{"id": "m1", "parentId": "it", "data": Object{"kind": "agent", "title": "m1"}},
 			Object{"id": "m2", "parentId": "it", "data": Object{"kind": "agent", "title": "m2"}},
 		},
-		edges: []any{Object{"source": "m1", "target": "m2"}},
+		edges: []any{Object{"source": "s", "target": "it"}, Object{"source": "m1", "target": "m2"}},
 		declared: map[string]map[string]bool{
 			"s":  {"items": true},
 			"m1": {"output": true},
@@ -156,6 +156,7 @@ func TestWorkflowPublishValidatesIterationConfig(t *testing.T) {
 				// A two-member cycle with no entry: m1 is the region's only entry but reaches
 				// nothing else, so m2 and m3 would never run in any round.
 				f.edges = []any{
+					Object{"source": "s", "target": "it"},
 					Object{"source": "m2", "target": "m3"},
 					Object{"source": "m3", "target": "m2"},
 				}

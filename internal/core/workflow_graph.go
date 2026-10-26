@@ -286,7 +286,7 @@ func validateWorkflowGraph(graph Object) []workflowGraphProblem {
 	globals := workflowGlobalVariables(graph)
 	edges, _ := graph["edges"].([]any)
 	problems = append(problems, validateWorkflowGlobals(graph)...)
-	problems = append(problems, validateWorkflowNodes(nodes, globals)...)
+	problems = append(problems, validateWorkflowNodes(nodes, edges, globals)...)
 	problems = append(problems, validateWorkflowEdges(graph, nodes)...)
 	// Container structure is checked after the edges exist and before the cycle walk: a body whose
 	// membership or boundaries are wrong is described by its own codes, and the cycle walk reads the
@@ -393,7 +393,7 @@ func validateWorkflowAcyclic(graph Object) []workflowGraphProblem {
 // Selectors are validated against the roots visible in the node's scope, not the flat declaration
 // set: a body node may read its loop's carried variables, and an outer node may read the loop's
 // published outputs. See workflowVisibleRoots.
-func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem {
+func validateWorkflowNodes(nodes, edges []any, globals []Object) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	seen := map[string]bool{}
 	declaredRoots := workflowDeclaredRoots(nodes, globals)
@@ -425,7 +425,7 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 		}
 		seen[id] = true
 		kind := o.O("data").S("kind")
-		visibleRoots := workflowVisibleRoots(declaredRoots, loops, containers[id])
+		visibleRoots := workflowScopeRoots(nodes, edges, declaredRoots, id)
 		if iterations[containers[id]] {
 			// A region's members read the current round's item and index, which exist only inside
 			// that region and only while it runs.
@@ -451,12 +451,19 @@ func validateWorkflowNodes(nodes []any, globals []Object) []workflowGraphProblem
 		case kind == "output":
 			problems = append(problems, validateWorkflowOutputConfig(id, o.O("data"), visibleRoots)...)
 		case kind == "aggregator":
-			problems = append(problems, validateAggregatorConfig(id, o.O("data"), visibleRoots)...)
+			allRoots := workflowVisibleRoots(declaredRoots, nil, containers[id])
+			if iterations[containers[id]] {
+				allRoots[containers[id]]["item"] = true
+				allRoots[containers[id]]["index"] = true
+			}
+			problems = append(problems, workflowAggregatorScopeProblems(id, o.O("data"), allRoots, visibleRoots)...)
+		case kind == "iteration":
+			problems = append(problems, validateIterationConfig(id, o.O("data"), nodes, edges, declaredRoots)...)
 		case kind == "loop" && containers[id] == "":
 			// The loop's own initial values resolve in the outer scope, while feedback, until and
 			// outputs resolve against a round pool; validateLoopConfig derives both from the flat
 			// declarations instead of the node's container visibility.
-			problems = append(problems, validateLoopConfig(id, o.O("data"), declaredRoots, loops)...)
+			problems = append(problems, validateLoopConfig(id, o.O("data"), declaredRoots, loops, nodes, edges)...)
 		}
 	}
 	if starts != 1 {
@@ -658,6 +665,10 @@ func workflowDeclaredRoots(nodes []any, globals []Object) map[string]map[string]
 		case "aggregator":
 			// The aggregator publishes exactly one root: the value of the first assigned candidate.
 			set["output"] = true
+		case "iteration":
+			set["output"] = true
+			set["entries"] = true
+			set["failed_count"] = true
 		case "loop":
 			// A loop exposes two root groups under the same writer: its carried variables (visible
 			// only inside the body) and its named outputs (visible only outside). They share a name

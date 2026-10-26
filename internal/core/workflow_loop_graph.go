@@ -171,14 +171,12 @@ func validateWorkflowContainers(nodes, edges []any) []workflowGraphProblem {
 			continue
 		}
 		owner, known := info[node.container]
-		if known && owner.kind == "iteration" {
-			// Iteration regions are their own contract; the loop rules must not report their
-			// members as mismatched loop containers.
-			continue
-		}
-		if !known || owner.kind != "loop" {
+		if !known || (owner.kind != "loop" && owner.kind != "iteration") {
 			problems = append(problems, workflowGraphProblem{Code: "loop_member_container_mismatch", NodeID: id})
 			continue
+		}
+		if node.kind == "loopExit" && owner.kind != "loop" {
+			problems = append(problems, workflowGraphProblem{Code: "loop_exit_outside_body", NodeID: id})
 		}
 		switch node.kind {
 		case "loop", "iteration", "subflow":
@@ -278,6 +276,7 @@ func validateLoopConfig(
 	data Object,
 	declared map[string]map[string]bool,
 	loops map[string]workflowLoopRoots,
+	nodes, edges []any,
 ) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	raw, present := data["loopConfig"]
@@ -288,11 +287,17 @@ func validateLoopConfig(
 	if !ok {
 		return append(problems, workflowGraphProblem{Code: "loop_config_missing", NodeID: nodeID, Field: "loopConfig"})
 	}
-	outer := workflowVisibleRoots(declared, loops, "")
+	outer := workflowScopeRoots(nodes, edges, declared, nodeID)
 	body := workflowVisibleRoots(declared, loops, nodeID)
+	containers := workflowNodeContainers(nodes)
+	for id := range body {
+		if _, isNode := containers[id]; isNode && id != nodeID && containers[id] != nodeID && outer[id] == nil {
+			delete(body, id)
+		}
+	}
 
 	problems = append(problems, validateLoopMaxIterations(nodeID, config)...)
-	problems = append(problems, validateLoopVariables(nodeID, config, outer)...)
+	problems = append(problems, validateLoopVariables(nodeID, config, outer, body)...)
 	problems = append(problems, validateLoopUntil(nodeID, config, body)...)
 	problems = append(problems, validateLoopOutputs(nodeID, config, body)...)
 	return problems
@@ -320,7 +325,7 @@ func validateLoopMaxIterations(nodeID string, config Object) []workflowGraphProb
 // validateLoopVariables checks the carried variables: names that address a selector segment, a
 // supported type, an initial value that type accepts, and a feedback selector the round pool can
 // resolve. Initial is resolved in the outer scope, feedback in the body.
-func validateLoopVariables(nodeID string, config Object, outer map[string]map[string]bool) []workflowGraphProblem {
+func validateLoopVariables(nodeID string, config Object, outer, body map[string]map[string]bool) []workflowGraphProblem {
 	problems := []workflowGraphProblem{}
 	raw, present := config["variables"]
 	if !present || raw == nil {
@@ -350,7 +355,7 @@ func validateLoopVariables(nodeID string, config Object, outer map[string]map[st
 			continue
 		}
 		problems = append(problems, validateLoopInitial(nodeID, variable, valueType, outer)...)
-		problems = append(problems, validateLoopSelector(nodeID, variable["feedback"], "loopConfig.variables.feedback", "loop_feedback_invalid", outer)...)
+		problems = append(problems, validateLoopSelector(nodeID, variable["feedback"], "loopConfig.variables.feedback", "loop_feedback_invalid", body)...)
 	}
 	return problems
 }

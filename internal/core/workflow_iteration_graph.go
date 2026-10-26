@@ -4,10 +4,7 @@ package core
 // binds `{iteration}.item` / `{iteration}.index` and runs the region once, and the node exposes
 // `output` (collected successful values), `entries` (the per-round ledger) and `failed_count`.
 //
-// This file owns the publish contract only; the round engine and the scheduler wiring land with the
-// execution slice (circus#641), so the validator is wired into the gate in that same change. Until
-// then it is exercised by its table tests and must not be called from production code: publishing a
-// node the scheduler cannot run would freeze a graph that always fails.
+// This validator is shared by publication and frozen-graph runtime admission.
 
 // validateIterationConfig checks the executable contract of one `iteration` node. Every problem
 // names the node and the field so the editor can point at the offending control.
@@ -25,9 +22,10 @@ func validateIterationConfig(
 	members := workflowIterationMembers(nodes, nodeID)
 	problems := []workflowGraphProblem{}
 	iterator, ok := workflowIterationSelector(config["iteratorSelector"])
+	visible := workflowScopeRoots(nodes, edges, declaredRoots, nodeID)
 	if !ok {
 		problems = append(problems, workflowGraphProblem{Code: "iteration_iterator_unsupported", NodeID: nodeID, Field: "iterationConfig.iteratorSelector"})
-	} else if !declaredRoots[iterator.nodeID][iterator.root] || members[iterator.nodeID] {
+	} else if !visible[iterator.nodeID][iterator.root] {
 		// The iterator must resolve before the region runs, so a member-declared root is not
 		// visible here: the body has not produced anything yet in this round.
 		problems = append(problems, workflowGraphProblem{Code: "iteration_iterator_undeclared", NodeID: nodeID, Field: "iterationConfig.iteratorSelector"})
@@ -69,17 +67,15 @@ func workflowIterationSelector(raw any) (workflowSelector, bool) {
 	return selector, true
 }
 
-// workflowIterationCeilingValid accepts a positive whole number; 1 is the smallest ceiling desktop
-// accepts and Cloud adds no upper bound. JSON decoding leaves float64 here, so the fraction check is
-// what distinguishes 3 from 3.5.
+// workflowIterationCeilingValid enforces Cloud's 1..100 whole-number budget.
 func workflowIterationCeilingValid(raw any) bool {
 	switch value := raw.(type) {
 	case float64:
-		return value >= 1 && value == float64(int64(value))
+		return value >= 1 && value <= 100 && value == float64(int64(value))
 	case int:
-		return value >= 1
+		return value >= 1 && value <= 100
 	case int64:
-		return value >= 1
+		return value >= 1 && value <= 100
 	default:
 		return false
 	}

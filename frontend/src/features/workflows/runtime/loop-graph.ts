@@ -135,7 +135,7 @@ export function insertLoopMember<TGraph extends WorkflowIterationGraph>(
     type: 'workflow',
   }
   const nodes = graph.nodes.map((node) =>
-    node.id === insertion.loopId ? grownLoop(node, member) : node,
+    node.id === insertion.loopId ? grownLoop(node, member, graph.nodes) : node,
   )
   return { ...graph, nodes: [...nodes, member], edges: [...graph.edges, edge] }
 }
@@ -158,21 +158,32 @@ export function loopAuthoredSize(node: WorkflowIterationNode): { width: number; 
 /**
  * The box a Loop occupies on the canvas: its authored size, widened to what React Flow measured.
  *
- * The frame draws itself at least as large as its members need, which can exceed the authored
- * size (a new Loop's starter agent is taller than the palette group's box). Every geometric
- * decision — refusing a palette drop on the frame, returning a dragged outer node, insertion
- * growth — must use the box the author actually sees, so the measured size wins when it is
- * larger, as desktop's containment does (`measured ?? width ?? initialWidth`).
+ * The frame draws itself at least as large as its members need ({@link loopContentBox}), which
+ * can exceed both the authored size (a new Loop's starter agent is taller than the palette
+ * group's box) and what React Flow measured (after an `expandParent` or a corner resize in this
+ * session, React Flow pins its wrapper to the member edge, without the padding the frame adds).
+ * Every geometric decision — refusing a palette drop on the frame, returning a dragged outer
+ * node, insertion growth — must use the box the author actually sees, so it takes the largest of
+ * the authored, measured and needed boxes.
+ *
+ * @param node - The Loop.
+ * @param nodes - The graph's nodes, for the members' needed box.
  */
-export function loopFrameSize(node: WorkflowIterationNode): { width: number; height: number } {
+export function loopFrameSize(
+  node: WorkflowIterationNode,
+  nodes: readonly LoopContentNode[],
+): { width: number; height: number } {
+  const needed = loopContentBox(nodes, node.id)
   return {
     width: Math.max(
       finiteSize(node.initialWidth ?? node.width, WORKFLOW_LOOP_NODE_WIDTH),
       node.measured?.width ?? 0,
+      needed.width,
     ),
     height: Math.max(
       finiteSize(node.initialHeight ?? node.height, WORKFLOW_LOOP_NODE_HEIGHT),
       node.measured?.height ?? 0,
+      needed.height,
     ),
   }
 }
@@ -185,7 +196,7 @@ export interface LoopContentNode {
   position: { x: number; y: number }
   parentId?: string | undefined
   measured?: { width?: number | undefined; height?: number | undefined } | undefined
-  data: Record<string, unknown>
+  data: { containerId?: unknown }
 }
 
 /**
@@ -266,8 +277,9 @@ function clearOfMembers(
 function grownLoop(
   loop: WorkflowIterationNode,
   member: WorkflowIterationNode,
+  nodes: readonly WorkflowIterationNode[],
 ): WorkflowIterationNode {
-  const current = loopFrameSize(loop)
+  const current = loopFrameSize(loop, nodes)
   const width = snapSize(
     Math.max(current.width, member.position.x + nodeWidth(member) + LOOP_FRAME_RIGHT_PADDING),
   )

@@ -297,12 +297,15 @@ Both iteration strategies record failed rounds. Terminal states retain the last 
 member projection. Inconsistent persisted progress fails as `iteration_invalid_round` without resetting
 or replaying earlier rounds. Body agent execution attempts stay unique across rounds while retry budgets
 count attempts within the current round.
-The reserve opens only for newly failed/cancelled nodes or a run transitioning to failed/cancelled;
-historical failed members do not enlarge ordinary writes. A body Agent turn timeout keeps the current
+The reserve opens only for newly failed/cancelled nodes, settlement of a new failed iteration ledger
+entry, or a run transitioning to failed/cancelled. Historical failed members and ledger entries do not
+enlarge ordinary writes. Re-reading identical committed state does not reject it against the ordinary
+budget again; the local 1 MiB and total 8 MiB hard limits still apply. A body Agent turn timeout keeps the current
 attempt running, persists its timeout diagnosis and requests `end_session{cancelled}`. Only that
 attempt's terminal result permits failed-round settlement and iteration continuation; a late result
 cannot replace the timeout diagnosis. If the end-confirmation window expires without terminal
-evidence, the run retains the failed round's ledger and archive, terminates and releases its Workspace
+evidence, the node reason becomes `session_end_deadline_exceeded` and the run error is
+`session end deadline exceeded`. The run retains the failed round's ledger and archive, terminates and releases its Workspace
 instead of starting another round while the old session may still be alive.
 
 ## Related decisions

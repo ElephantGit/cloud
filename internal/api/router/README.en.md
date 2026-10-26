@@ -17,6 +17,8 @@ Task conversation adds `GET/POST /issues/:iid/conversation`, explicitly addresse
 
 `thread_preview.go` serves run-scoped snapshot SSE. Every send and periodic heartbeat rechecks credentials and membership; disconnect only cancels the subscription. Slow browsers consume the latest snapshot without blocking Agent or durable records.
 
+Recovery requests strictly accept a JSON boolean for `acknowledgeLostWork`. The domain rejects `false`; HTTP rejects strings, numbers and null. Real HTTP tests cover acknowledgement, type refusals and same-key replay.
+
 `tianzhou.go` adapts the deployment directory query; Core still owns membership authorization. Local tests cover validation and transport boundaries; [integration](../../../integration/README.en.md) covers real database/API contracts.
 
 ## Contract entrypoints

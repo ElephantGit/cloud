@@ -790,7 +790,7 @@ func validField(name string, value any) bool {
 			}
 		}
 		return true
-	case "idle", "initialized", "impactConfirmed", "enabled":
+	case "idle", "initialized", "impactConfirmed", "enabled", "acknowledgeLostWork":
 		_, ok := value.(bool)
 		return ok
 	case "mode":

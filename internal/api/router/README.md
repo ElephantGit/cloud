@@ -17,6 +17,8 @@
 
 `thread_preview.go` 提供运行级快照 SSE；每次发送和定期心跳都重新核对凭据与成员权限，断开仅取消订阅。慢浏览器只接收最新快照，不阻塞 Agent 或持久记录。
 
+恢复请求的 `acknowledgeLostWork` 严格接受 JSON 布尔值；`false` 由领域层拒绝，字符串、数字及 null 在 HTTP 层拒绝。真实 HTTP 测试覆盖确认、类型拒绝和同键重放。
+
 `tianzhou.go` 是部署目录查询适配；领域成员权限仍由 Core 决定。测试在本目录覆盖请求校验与传输边界，完整真实数据库/API 契约验证在 [integration](../../../integration/README.md)。
 
 ## 契约入口

@@ -10,7 +10,7 @@
 | `node-catalog.ts`、`node-factory.ts`、`capabilities.ts` | 可创作节点、初值和能力目录 |
 | `variable-*.ts`、`global-variables.ts` | 消费者可见变量和类型推导 |
 | `layout.ts`、`node-geometry.ts`、`container-layout.ts`、`iteration-*.ts` | 布局、区域成员与纯图变换 |
-| `loop-graph.ts` | Loop 成员端口的追加插入点、`insertLoopMember` 与框尺寸 |
+| `loop-graph.ts` | Loop 成员端口的追加插入点、`insertLoopMember`、框尺寸（作者尺寸与实测取大）和成员需要的框 |
 | 其他格式化、身份与 schema 文件 | 运行展示的纯派生规则 |
 
 依赖基础工具和静态契约；编辑器、运行页面和插件导入消费本模块。相同节点对的不同分支连线不能互相覆盖，

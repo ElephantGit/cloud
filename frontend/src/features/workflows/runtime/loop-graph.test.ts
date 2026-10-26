@@ -5,6 +5,7 @@ import type {
 } from '@/features/workflows/runtime/iteration-graph'
 import {
   insertLoopMember,
+  loopContentBox,
   loopExitInsertion,
   loopFrameSize,
   loopOutputInsertion,
@@ -181,10 +182,42 @@ describe('loopExitInsertion', () => {
 })
 
 describe('loopFrameSize', () => {
+  it('widens the authored box to what React Flow measured, never narrows it', () => {
+    const loop = { ...node('loop', 'loop', { x: 0, y: 0 }), initialWidth: 620, initialHeight: 300 }
+    expect(loopFrameSize({ ...loop, measured: { width: 628, height: 363 } })).toEqual({
+      width: 628,
+      height: 363,
+    })
+    expect(loopFrameSize({ ...loop, measured: { width: 500, height: 200 } })).toEqual({
+      width: 620,
+      height: 300,
+    })
+  })
+
   it('defaults a loop without an authored size to the palette size', () => {
     expect(loopFrameSize(node('loop', 'loop', { x: 0, y: 0 }))).toEqual({
       width: 620,
       height: 300,
     })
+  })
+})
+
+describe('loopContentBox', () => {
+  it('needs room for every measured member plus the insertion padding', () => {
+    const agent = {
+      ...node('a', 'agent', { x: 350, y: 145 }, 'loop-1'),
+      measured: { width: 230, height: 178 },
+    }
+    const nodes = [...loopGraph().nodes.filter((item) => item.id !== 'loop-1-agent'), agent]
+    // 350 + 230 + 48 = 628 wide; 145 + 178 + 40 = 363 tall — taller than the authored 300.
+    expect(loopContentBox(nodes, 'loop-1')).toEqual({ width: 628, height: 363 })
+  })
+
+  it('ignores nodes outside the loop', () => {
+    const outer = {
+      ...node('far', 'agent', { x: 5000, y: 5000 }),
+      measured: { width: 1, height: 1 },
+    }
+    expect(loopContentBox([outer], 'loop-1')).toEqual({ width: 0, height: 0 })
   })
 })

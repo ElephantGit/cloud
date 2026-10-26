@@ -7,7 +7,7 @@ import {
   WORKFLOW_LOOP_MIN_HEIGHT,
   WORKFLOW_LOOP_MIN_WIDTH,
 } from '@/features/workflows/runtime/node-geometry'
-import { loopFrameSize } from '@/features/workflows/runtime/loop-graph'
+import { loopContentBox, loopFrameSize } from '@/features/workflows/runtime/loop-graph'
 import { workflowNodeTypeDefinition } from '@/features/workflows/runtime/node-catalog'
 import { workflowNodeMetadata } from '@/features/workflows/editor/node-metadata'
 import { useWorkflowTranslator } from '@/features/workflows/editor/use-workflow-translator'
@@ -17,34 +17,15 @@ import type { WorkflowCanvasNode } from '@/features/workflows/editor/canvas-type
 
 /** Height of the frame's title strip, which centers the outer handles. */
 const LOOP_HEADER_HEIGHT = 44
-/** Room the frame keeps right of and below its outermost member, as insertion grows it. */
-const LOOP_CONTENT_RIGHT_PADDING = 48
-const LOOP_CONTENT_BOTTOM_PADDING = 40
 
 /**
  * The box the Loop's measured members need, as `"width:height"` so the selector result is
  * compared by value and the frame re-renders only when the needed box changes.
- *
- * A body card is measured only after it renders, and Cloud's cards are taller than the
- * palette group's default box; `expandParent` does not run on that first measurement, so
- * without this the member would be clamped into a box too small to hold it.
  */
 function contentBoxSelector(loopId: string): (state: ReactFlowState) => string {
   return (state) => {
-    let width = 0
-    let height = 0
-    for (const node of state.nodes) {
-      if (node.parentId !== loopId) {
-        continue
-      }
-      const measured = node.measured
-      width = Math.max(width, node.position.x + (measured?.width ?? 0) + LOOP_CONTENT_RIGHT_PADDING)
-      height = Math.max(
-        height,
-        node.position.y + (measured?.height ?? 0) + LOOP_CONTENT_BOTTOM_PADDING,
-      )
-    }
-    return `${Math.ceil(width)}:${Math.ceil(height)}`
+    const box = loopContentBox(state.nodes, loopId)
+    return `${box.width}:${box.height}`
   }
 }
 

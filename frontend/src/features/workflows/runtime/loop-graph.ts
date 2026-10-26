@@ -129,12 +129,70 @@ export function insertLoopMember<TGraph extends WorkflowIterationGraph>(
   return { ...graph, nodes: [...nodes, member], edges: [...graph.edges, edge] }
 }
 
-/** The Loop's authored box: its persisted size, or the default a new Loop is drawn with. */
+/**
+ * The box a Loop occupies on the canvas: its authored size, widened to what React Flow measured.
+ *
+ * The frame draws itself at least as large as its members need, which can exceed the authored
+ * size (a new Loop's starter agent is taller than the palette group's box). Every geometric
+ * decision — refusing a palette drop on the frame, returning a dragged outer node, insertion
+ * growth — must use the box the author actually sees, so the measured size wins when it is
+ * larger, as desktop's containment does (`measured ?? width ?? initialWidth`).
+ */
 export function loopFrameSize(node: WorkflowIterationNode): { width: number; height: number } {
   return {
-    width: finiteSize(node.initialWidth ?? node.width, WORKFLOW_LOOP_NODE_WIDTH),
-    height: finiteSize(node.initialHeight ?? node.height, WORKFLOW_LOOP_NODE_HEIGHT),
+    width: Math.max(
+      finiteSize(node.initialWidth ?? node.width, WORKFLOW_LOOP_NODE_WIDTH),
+      node.measured?.width ?? 0,
+    ),
+    height: Math.max(
+      finiteSize(node.initialHeight ?? node.height, WORKFLOW_LOOP_NODE_HEIGHT),
+      node.measured?.height ?? 0,
+    ),
   }
+}
+
+/**
+ * The node fields {@link loopContentBox} reads. React Flow's store nodes carry untyped data, so
+ * this is deliberately looser than {@link WorkflowIterationNode}.
+ */
+export interface LoopContentNode {
+  position: { x: number; y: number }
+  parentId?: string | undefined
+  measured?: { width?: number | undefined; height?: number | undefined } | undefined
+  data: Record<string, unknown>
+}
+
+/**
+ * The box a Loop's measured members need, with the same padding insertion keeps.
+ *
+ * A body card is measured only after it renders, and React Flow does not run `expandParent` on
+ * that first measurement, so the frame sizes itself from this instead of trusting the authored
+ * box alone. Membership follows the backend rule (non-empty `containerId`, else `parentId`);
+ * members not measured yet contribute their position only.
+ */
+export function loopContentBox(
+  nodes: readonly LoopContentNode[],
+  loopId: string,
+): { width: number; height: number } {
+  let width = 0
+  let height = 0
+  for (const node of nodes) {
+    const containerId = node.data['containerId']
+    const owner =
+      typeof containerId === 'string' && containerId !== '' ? containerId : node.parentId
+    if (owner !== loopId) {
+      continue
+    }
+    width = Math.max(
+      width,
+      node.position.x + (node.measured?.width ?? 0) + LOOP_FRAME_RIGHT_PADDING,
+    )
+    height = Math.max(
+      height,
+      node.position.y + (node.measured?.height ?? 0) + LOOP_FRAME_BOTTOM_PADDING,
+    )
+  }
+  return { width: Math.ceil(width), height: Math.ceil(height) }
 }
 
 /** Whether `id` names a Loop in the graph. */

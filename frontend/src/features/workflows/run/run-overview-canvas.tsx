@@ -30,7 +30,6 @@ import {
 } from '@/features/workflows/run/run-overview-node'
 import type { RunNodeEntry } from '@/features/workflows/run/run-node-state'
 import type { RunContainer } from '@/features/workflows/run/run-rounds'
-import { loopFrameSize } from '@/features/workflows/runtime/loop-graph'
 
 const NODE_TYPE = 'workflow' as const
 const FIT_PADDING = 0.18
@@ -235,9 +234,6 @@ function buildRunGraph(
           ? { collapsed: false, regionMemberCount: memberCountByIteration.get(base.id) ?? 0 }
           : {}),
       },
-    }
-    if (base.data.kind === 'loop') {
-      node.style = loopFrameSize(base)
     }
     if (isIteration) {
       node.style = {

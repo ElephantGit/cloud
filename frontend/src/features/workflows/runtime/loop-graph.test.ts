@@ -5,6 +5,7 @@ import type {
 } from '@/features/workflows/runtime/iteration-graph'
 import {
   insertLoopMember,
+  loopAuthoredSize,
   loopContentBox,
   loopExitInsertion,
   loopFrameSize,
@@ -116,7 +117,7 @@ describe('insertLoopMember', () => {
       (candidate) => candidate.id === 'loop-1',
     )
     // 680 + 230 card + 48 padding = 958 → 960 on the grid; 145 + 98 + 40 stays under 300.
-    expect(loop === undefined ? undefined : loopFrameSize(loop)).toEqual({
+    expect(loop === undefined ? undefined : loopFrameSize(loop, [])).toEqual({
       width: 960,
       height: 300,
     })
@@ -181,26 +182,68 @@ describe('loopExitInsertion', () => {
     expect(loopExitInsertion(graph, 'loop-1')?.sourceId).toBe('loop-1-agent')
   })
 
+  it('never appends after the body start, which would end every round before any work', () => {
+    const graph: WorkflowIterationGraph = {
+      nodes: [
+        node('loop-1', 'loop', { x: 0, y: 0 }),
+        node('entry', 'start', { x: 40, y: 145 }, 'loop-1'),
+        node('branch', 'condition', { x: 350, y: 145 }, 'loop-1'),
+      ],
+      edges: [],
+    }
+    expect(loopExitInsertion(graph, 'loop-1')).toBeNull()
+  })
+
   it('returns null for a loop with no body', () => {
     expect(loopExitInsertion(loopGraph(), 'outer')).toBeNull()
+  })
+})
+
+describe('loopAuthoredSize', () => {
+  it('ignores the measured and runtime sizes, so a frame drawn from it can shrink', () => {
+    const loop = {
+      ...node('loop', 'loop', { x: 0, y: 0 }),
+      initialWidth: 620,
+      initialHeight: 300,
+      width: 900,
+      measured: { width: 900, height: 500 },
+    }
+    expect(loopAuthoredSize(loop)).toEqual({ width: 620, height: 300 })
   })
 })
 
 describe('loopFrameSize', () => {
   it('widens the authored box to what React Flow measured, never narrows it', () => {
     const loop = { ...node('loop', 'loop', { x: 0, y: 0 }), initialWidth: 620, initialHeight: 300 }
-    expect(loopFrameSize({ ...loop, measured: { width: 628, height: 363 } })).toEqual({
+    expect(loopFrameSize({ ...loop, measured: { width: 628, height: 363 } }, [])).toEqual({
       width: 628,
       height: 363,
     })
-    expect(loopFrameSize({ ...loop, measured: { width: 500, height: 200 } })).toEqual({
+    expect(loopFrameSize({ ...loop, measured: { width: 500, height: 200 } }, [])).toEqual({
       width: 620,
       height: 300,
     })
   })
 
+  it('includes the padding the frame draws beyond a member React Flow pinned its box to', () => {
+    // After an expandParent in this session React Flow pins the Loop to the member's edge (700),
+    // while the frame draws that edge plus its 48px padding.
+    const loop = {
+      ...node('loop-1', 'loop', { x: 0, y: 0 }),
+      initialWidth: 700,
+      initialHeight: 300,
+      width: 700,
+      measured: { width: 700, height: 300 },
+    }
+    const member = {
+      ...node('wide', 'agent', { x: 470, y: 145 }, 'loop-1'),
+      measured: { width: 230, height: 98 },
+    }
+    expect(loopFrameSize(loop, [loop, member]).width).toBe(748)
+  })
+
   it('defaults a loop without an authored size to the palette size', () => {
-    expect(loopFrameSize(node('loop', 'loop', { x: 0, y: 0 }))).toEqual({
+    expect(loopFrameSize(node('loop', 'loop', { x: 0, y: 0 }), [])).toEqual({
       width: 620,
       height: 300,
     })

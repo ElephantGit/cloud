@@ -30,8 +30,6 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({
   data,
   selected,
   deletable,
-  width,
-  height,
 }: NodeProps<WorkflowCanvasNode>) {
   const { t } = useTranslation()
   const translate = useWorkflowTranslator()
@@ -47,16 +45,7 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({
     return <IterationNodeFrame id={id} data={data} selected={selected} deletable={deletable} />
   }
   if (data.kind === 'loop') {
-    return (
-      <LoopNodeFrame
-        id={id}
-        data={data}
-        selected={selected}
-        deletable={canDelete}
-        width={width}
-        height={height}
-      />
-    )
+    return <LoopNodeFrame id={id} data={data} selected={selected} deletable={canDelete} />
   }
 
   return (

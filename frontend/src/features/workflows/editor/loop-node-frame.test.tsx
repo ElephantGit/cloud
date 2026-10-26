@@ -96,6 +96,19 @@ describe('Loop container on the canvas', () => {
     expect(within(frame).getByText('最多 5 轮')).toBeInTheDocument()
   })
 
+  it('draws from the authored size and its members, not a size React Flow wrote back', () => {
+    const graph = loopGraph()
+    graph.nodes = graph.nodes.map((candidate) =>
+      candidate.id === 'loop-1'
+        ? { ...candidate, width: 900, height: 500, measured: { width: 900, height: 500 } }
+        : candidate,
+    )
+    renderCanvas(graph)
+
+    // A frame that read back its old size could only ever grow; this one returns to 620×300.
+    expect(loopFrame('loop-1')).toHaveStyle({ width: '620px', height: '300px' })
+  })
+
   it('offers the append menu on a body member port, but not on a top-level node', async () => {
     renderCanvas()
 

@@ -7,7 +7,7 @@ import {
   WORKFLOW_LOOP_MIN_HEIGHT,
   WORKFLOW_LOOP_MIN_WIDTH,
 } from '@/features/workflows/runtime/node-geometry'
-import { loopContentBox, loopFrameSize } from '@/features/workflows/runtime/loop-graph'
+import { loopAuthoredSize, loopContentBox } from '@/features/workflows/runtime/loop-graph'
 import { workflowNodeTypeDefinition } from '@/features/workflows/runtime/node-catalog'
 import { workflowNodeMetadata } from '@/features/workflows/editor/node-metadata'
 import { useWorkflowTranslator } from '@/features/workflows/editor/use-workflow-translator'
@@ -35,9 +35,6 @@ export interface LoopNodeFrameProps {
   data: WorkflowCanvasNode['data']
   selected: boolean
   deletable: boolean
-  /** Size React Flow resolved for the node, which `expandParent` grows as members move out. */
-  width?: number | undefined
-  height?: number | undefined
   /** Extra chrome in the title strip, such as the run viewer's round summary. */
   badge?: ReactNode
 }
@@ -51,15 +48,7 @@ export interface LoopNodeFrameProps {
  * `initialWidth` / `initialHeight`. Outer handles sit on the title strip, so edges into and
  * out of the Loop read as edges of the whole round, not of one member.
  */
-export function LoopNodeFrame({
-  id,
-  data,
-  selected,
-  deletable,
-  width,
-  height,
-  badge,
-}: LoopNodeFrameProps) {
+export function LoopNodeFrame({ id, data, selected, deletable, badge }: LoopNodeFrameProps) {
   const { t } = useTranslation()
   const translate = useWorkflowTranslator()
   const { readOnly } = useWorkflowIterationActions()
@@ -68,12 +57,14 @@ export function LoopNodeFrame({
   const Icon = metadata.icon
   const kindLabel = translate(workflowNodeTypeDefinition(data.kind).labelKey)
   const frame = getNode(id)
-  const authored = frame === undefined ? { width: 0, height: 0 } : loopFrameSize(frame)
+  // Authored size and members only: never the size React Flow measured or wrote back, which is
+  // what this frame drew last time and would keep it from shrinking.
+  const authored = frame === undefined ? { width: 0, height: 0 } : loopAuthoredSize(frame)
   const [contentWidth = 0, contentHeight = 0] = useStore(contentBoxSelector(id))
     .split(':')
     .map(Number)
-  const boxWidth = Math.max(WORKFLOW_LOOP_MIN_WIDTH, authored.width, width ?? 0, contentWidth)
-  const boxHeight = Math.max(WORKFLOW_LOOP_MIN_HEIGHT, authored.height, height ?? 0, contentHeight)
+  const boxWidth = Math.max(WORKFLOW_LOOP_MIN_WIDTH, authored.width, contentWidth)
+  const boxHeight = Math.max(WORKFLOW_LOOP_MIN_HEIGHT, authored.height, contentHeight)
   const maxIterations = data.loopConfig?.maxIterations
 
   return (

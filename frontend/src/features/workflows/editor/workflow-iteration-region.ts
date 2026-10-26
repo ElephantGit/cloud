@@ -163,7 +163,7 @@ export function workflowPointInsideIterationFrame(
 ): boolean {
   return nodes.some((node) => {
     if (node.data.kind === 'loop') {
-      const size = loopFrameSize(node)
+      const size = loopFrameSize(node, nodes)
       return (
         point.x >= node.position.x &&
         point.x <= node.position.x + size.width &&

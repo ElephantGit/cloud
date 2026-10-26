@@ -196,6 +196,25 @@ describe('workflowPointInsideIterationFrame', () => {
     expect(workflowPointInsideIterationFrame([measured], { x: 100, y: 370 })).toBe(false)
   })
 
+  it('counts the strip the frame draws beyond a member it was pinned to as inside', () => {
+    const loop = {
+      ...node('loop-1', 'loop'),
+      initialWidth: 700,
+      initialHeight: 300,
+      width: 700,
+      measured: { width: 700, height: 300 },
+    }
+    const member = {
+      ...node('wide', 'agent', {
+        position: { x: 470, y: 145 },
+        parentId: 'loop-1',
+        containerId: 'loop-1',
+      }),
+      measured: { width: 230, height: 98 },
+    }
+    expect(workflowPointInsideIterationFrame([loop, member], { x: 720, y: 150 })).toBe(true)
+  })
+
   it('ignores non-frame nodes even when they carry coordinates', () => {
     const card = node('agent-1', 'agent', { position: { x: 0, y: 0 } })
     expect(workflowPointInsideIterationFrame([card], { x: 10, y: 10 })).toBe(false)

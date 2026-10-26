@@ -48,7 +48,7 @@ export function applyIterationDragRules<TWorkflow extends WorkflowIterationGraph
     .map((node) => {
       if (node.data.kind === 'loop') {
         // A Loop frame never folds; its box is the authored (or member-grown) size.
-        const { width, height } = loopFrameSize(node)
+        const { width, height } = loopFrameSize(node, workflow.nodes)
         return { node, width, height, visibleWidth: width, visibleHeight: height }
       }
       const expanded = iterationExpandedSize(node)

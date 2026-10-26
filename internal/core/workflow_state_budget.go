@@ -104,7 +104,8 @@ func workflowStateBudget(graph workflowGraphView, states map[string]workflowNode
 	return nil
 }
 
-// workflowTransitionBudget opens the reserve only for a new failure/cancellation in this CAS.
+// workflowTransitionBudget opens the reserve only for a new failure/cancellation in this CAS,
+// including the container's subsequent settlement of a failed iteration round.
 // Retained failed members of a successful continue iteration never enlarge ordinary output writes.
 func workflowTransitionBudget(t *transaction, runID string, version int64, graph workflowGraphView, states map[string]workflowNodeState, status string) *workflowStateOverflow {
 	over := workflowStateBudget(graph, states)
@@ -112,6 +113,11 @@ func workflowTransitionBudget(t *transaction, runID string, version int64, graph
 		return over
 	}
 	prior := t.one("SELECT node_states FROM workflow_runs WHERE id=$1 AND version=$2", runID, version)
+	// A scheduler pass may revisit an already admitted failure before the container settles it.
+	// Re-reading the identical state is not an ordinary write consuming the failure reserve.
+	if over.bytes <= workflowStateLimit && jsonText(workflowEncodedStates(states)) == jsonText(prior.O("nodeStates")) {
+		return nil
+	}
 	reserved := status == "failed" || status == "cancelled"
 	for id := range states {
 		state := states[id]
@@ -119,6 +125,18 @@ func workflowTransitionBudget(t *transaction, runID string, version int64, graph
 		if (state.Status == "failed" || state.Status == "cancelled") &&
 			(old.S("status") != state.Status || old.N("attempt") != state.Attempt) {
 			reserved = true
+		}
+		// Member failure and round settlement can be separate commits. A continue iteration
+		// records a new failure in its ledger without changing the container status to failed.
+		// Compare the appended entries, never the retained failedCount or historical members.
+		if state.Iteration != nil {
+			oldLedger, _ := old.O("iteration")["ledger"].([]any)
+			for i := len(oldLedger); i < len(state.Iteration.Ledger); i++ {
+				entry, _ := asWorkflowObject(state.Iteration.Ledger[i])
+				if entry.S("status") == "failed" {
+					reserved = true
+				}
+			}
 		}
 	}
 	if reserved {

@@ -61,6 +61,14 @@ Output 检查器可添加、命名和删除 `data.outputs` 绑定，从该节点
 缺值时以 `output_value_unset` 失败，路径非法时以 `output_invalid_path` 失败。因此升级后旧快照和在途恢复可能出现新的失败或新增输出。
 没有绑定仍得到空对象；已经提交的终态结果不会因升级重新计算。发布门禁不能追溯保护旧快照，升级前应检查其中的 Output 绑定。
 
+## Agent 输入与输出
+
+Agent 的 prompt 在派发前复用 Condition 的模板实现渲染 `{{#node.root#}}`，读取已提交的当前作用域变量和冻结全局变量。
+缺失变量、非法路径或未闭合模板使节点失败，不把原始占位符发送给模型。重试重新渲染，loop / iteration 使用当前轮的变量。
+初始回合成功结束且会话终态提交后，最后一条完整可见回答写入 Agent 节点的 `output.output`，供 `{agent}.output` 绑定读取。
+工具前说明、其他回合和旧尝试的回答不进入产物；没有回答时保持未赋值，截断 history 不作为完整回答发布。
+结束证据保存在节点的 `sessionEndReason`，不占用变量根；历史已结束运行保持原状，不回填输出。
+
 ## 执行器槽位
 
 Agent 节点不在图里写死 Agent CLI 或模型 ID，而是引用一个**执行器槽位**：
@@ -151,7 +159,7 @@ WorkflowRun 由 Cloud server 里的调度循环推进（`AdvanceWorkflowRunsOnce
 - **Agent 节点重试由冻结在节点上的 `agentConfig.retry` 决定。** 只有会话以 `agent_failed` 结束、策略启用且预算未用完时才重试：预算是
   `maxRetries + 1` 次尝试（`maxRetries` 取值 0–5，默认 2），下一次尝试在 `initialDelaySeconds × 2^(n-1)` 之后开始（`initialDelaySeconds`
   取值 0–300，默认 10，单次等待上限 600 秒）。等待期间节点提交 `retrying`：运行仍是 `running`，节点保留失败尝试的 `startedAt`、
-  `error` 和 `output.reason`，写入数据库时钟计算的 `retryAt` 并清空 `finishedAt`；它继续占用运行唯一的会话位置，直到 `retryAt` 到达才启动
+  `error` 和 `sessionEndReason`，写入数据库时钟计算的 `retryAt` 并清空 `finishedAt`；它继续占用运行唯一的会话位置，直到 `retryAt` 到达才启动
   下一次尝试。新尝试使用自己的执行身份（`workflow_node_attempt`），上一次尝试的结果和结束请求不会被它复用。预算用完、策略关闭或原因不在
   `agent_failed` 内时，节点以最后一次的原因失败，运行进入终态并释放 Workspace。发布时 `agentConfig.retry` 必须是完整对象，缺失或为 `null`
   表示默认策略，未知键忽略；已冻结的历史快照不重新校验，无法解析的策略按默认值执行。

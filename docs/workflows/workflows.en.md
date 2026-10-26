@@ -91,6 +91,18 @@ after upgrading. No bindings still produce an empty object, and committed termin
 recomputed. Publication admission cannot retroactively protect old snapshots; inspect their Output
 bindings before upgrading.
 
+## Agent inputs and outputs
+
+Before dispatch, an Agent prompt uses the Condition template renderer for `{{#node.root#}}`, reading
+committed variables in its current scope and frozen globals. Missing variables, invalid paths and
+unterminated templates fail the node without sending unresolved placeholders to the model. Retries
+render again; loop and iteration members read their current round's variables.
+After the initial turn succeeds and the session terminal evidence commits, the final complete visible
+answer is stored in the Agent state's `output.output`, exposed as `{agent}.output` to bindings.
+Tool preambles, other turns and older attempts do not become deliverables. No answer leaves the root
+unassigned; truncated history is never published as a complete answer. Execution evidence lives in
+`sessionEndReason`, outside the variable roots. Already terminal historical runs are not backfilled.
+
 ## Executor slots
 
 Agent nodes do not hard-code an Agent CLI or model ID in the graph; they reference an **executor slot**:
@@ -227,7 +239,7 @@ seconds):
   (`maxRetries` ranges 0–5 and defaults to 2), and the next attempt starts after `initialDelaySeconds × 2^(n-1)`
   (`initialDelaySeconds` ranges 0–300 and defaults to 10, with a 600-second cap per wait). While it waits, the node
   commits `retrying`: the run stays `running`, the node keeps the failed attempt's `startedAt`, `error` and
-  `output.reason`, records `retryAt` from the database clock and clears `finishedAt`; it keeps the run's single
+  `sessionEndReason`, records `retryAt` from the database clock and clears `finishedAt`; it keeps the run's single
   session slot until `retryAt` arrives. The new attempt has its own execution identity (`workflow_node_attempt`), so
   the previous attempt's result and end request are never reused. A spent budget, a disabled policy or a reason
   outside `agent_failed` fails the node with the last reason, and the run reaches a terminal state and releases its

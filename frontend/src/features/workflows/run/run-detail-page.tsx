@@ -9,6 +9,14 @@ import { parseWorkflowGraphValue } from '@/features/workflows/runtime/graph-code
 import type { WorkflowNodeData } from '@/features/workflows/runtime/types'
 import { formatRunInstant, shortRunId } from '@/features/workflows/run/run-time'
 import { parseRunNodeStates, type RunNodeEntry } from '@/features/workflows/run/run-node-state'
+import {
+  parseRunContainers,
+  projectRoundStates,
+  type RunContainer,
+  type RunRoundSelection,
+} from '@/features/workflows/run/run-rounds'
+import { RunContainerRounds, RunMemberRoundSwitch } from '@/features/workflows/run/run-round-views'
+import { effectiveWorkflowContainer } from '@/features/workflows/runtime/container-layout'
 import { RunInspector } from '@/features/workflows/run/run-inspector'
 import { RunOverviewCanvas } from '@/features/workflows/run/run-overview-canvas'
 import { RunStatusBadge } from '@/features/workflows/run/run-status-mark'
@@ -66,7 +74,9 @@ export function WorkflowRunDetailPage({ slug }: { slug: string }) {
  *
  * Keyed by run id from the parent, so a fresh run mounts with an empty selection
  * instead of resetting state through an effect. The Overview is read-only; only the
- * inspector selection changes here.
+ * inspector selection and the round each container shows change here. A container the
+ * reader has not picked a round for follows its latest round, so a running Loop keeps
+ * showing the round under way.
  */
 function WorkflowRunDetailBody({
   run,
@@ -79,7 +89,23 @@ function WorkflowRunDetailBody({
 }) {
   const { t } = useTranslation()
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const selectedNode = findFrozenNode(run.definitionSnapshot, selectedNodeId)
+  const [roundSelection, setRoundSelection] = useState<RunRoundSelection>({})
+  const frozenNodes = useMemo(
+    () => parseWorkflowGraphValue(run.definitionSnapshot ?? undefined).nodes,
+    [run.definitionSnapshot],
+  )
+  const containers = useMemo(
+    () => parseRunContainers(run.nodeStates, frozenNodes),
+    [run.nodeStates, frozenNodes],
+  )
+  const shownStates = useMemo(
+    () => projectRoundStates(nodeStates, containers, roundSelection),
+    [nodeStates, containers, roundSelection],
+  )
+  const selectedNode = frozenNodes.find((node) => node.id === selectedNodeId)
+  const selectRound = (containerId: string, index: number): void => {
+    setRoundSelection((current) => ({ ...current, [containerId]: index }))
+  }
 
   return (
     <RunPageShell
@@ -111,7 +137,8 @@ function WorkflowRunDetailBody({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <RunOverviewCanvas
               definitionSnapshot={run.definitionSnapshot}
-              nodeStates={nodeStates}
+              nodeStates={shownStates}
+              containers={containers}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
             />
@@ -125,7 +152,20 @@ function WorkflowRunDetailBody({
                 {t('workflows.run.inspector.empty')}
               </p>
             ) : (
-              <RunInspector data={selectedNode.data} entry={nodeStates[selectedNodeId ?? '']} />
+              <RunInspector
+                data={selectedNode.data}
+                entry={shownStates[selectedNode.id]}
+                rounds={
+                  <InspectorRounds
+                    nodeId={selectedNode.id}
+                    owner={effectiveWorkflowContainer(selectedNode)}
+                    containers={containers}
+                    selection={roundSelection}
+                    memberTitles={memberTitles(frozenNodes)}
+                    onSelectRound={selectRound}
+                  />
+                }
+              />
             )}
           </aside>
         </div>
@@ -164,15 +204,45 @@ function RunPageShell({
   )
 }
 
-/** Finds one frozen node by id, tolerating an unreadable or absent graph. */
-function findFrozenNode(
-  definitionSnapshot: Record<string, unknown> | null | undefined,
-  nodeId: string | null,
-): { data: WorkflowNodeData } | undefined {
-  if (nodeId === null) {
-    return undefined
+/**
+ * The inspector's round section: the round list of a selected container, or the round switch
+ * of a selected container member; nothing for a node outside both.
+ */
+function InspectorRounds({
+  nodeId,
+  owner,
+  containers,
+  selection,
+  memberTitles: titles,
+  onSelectRound,
+}: {
+  nodeId: string
+  owner: string | undefined
+  containers: Record<string, RunContainer>
+  selection: RunRoundSelection
+  memberTitles: ReadonlyMap<string, string>
+  onSelectRound: (containerId: string, index: number) => void
+}) {
+  const own = containers[nodeId]
+  if (own !== undefined) {
+    return (
+      <RunContainerRounds
+        container={own}
+        selection={selection}
+        memberTitles={titles}
+        onSelectRound={onSelectRound}
+      />
+    )
   }
-  const envelope = parseWorkflowGraphValue(definitionSnapshot ?? undefined)
-  const node = envelope.nodes.find((candidate) => candidate.id === nodeId)
-  return node === undefined ? undefined : { data: node.data }
+  const parent = owner === undefined ? undefined : containers[owner]
+  return parent === undefined ? null : (
+    <RunMemberRoundSwitch container={parent} selection={selection} onSelectRound={onSelectRound} />
+  )
+}
+
+/** Frozen node titles by id, for the round member list. */
+function memberTitles(
+  nodes: readonly { id: string; data: WorkflowNodeData }[],
+): Map<string, string> {
+  return new Map(nodes.map((node) => [node.id, node.data.title]))
 }

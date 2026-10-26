@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { Workflow as CloudWorkflow } from '@/api/generated.schemas'
 import { useUpdateWorkflowGraph } from '@/features/workflows/api'
 import { isAuthoredNodeChange } from '@/features/workflows/runtime/layout'
-import type { WorkflowIterationInsertion } from '@/features/workflows/runtime/iteration-graph'
+import type { WorkflowContainerInsertion } from '@/features/workflows/runtime/loop-graph'
 import type {
   WorkflowGlobalVariable,
   WorkflowLaunchField,
@@ -45,7 +45,7 @@ export interface WorkflowEditorHandlers {
   onOrganize: () => void
   onNodeDataUpdate: (data: WorkflowNodeData) => void
   /** Adds one region member through an iteration insertion seam. */
-  onIterationInsert: (insertion: WorkflowIterationInsertion, kind: WorkflowNodeKind) => void
+  onIterationInsert: (insertion: WorkflowContainerInsertion, kind: WorkflowNodeKind) => void
   /** Folds or unfolds one iteration frame; members stay in the graph. */
   onToggleIterationCollapsed: (iterationId: string) => void
   /** Replaces the graph nodes after an iteration drag correction. */
@@ -462,7 +462,7 @@ function useWorkflowActionRecorder(
   )
 
   const onIterationInsert = useCallback(
-    (insertion: WorkflowIterationInsertion, kind: WorkflowNodeKind) => {
+    (insertion: WorkflowContainerInsertion, kind: WorkflowNodeKind) => {
       recordNodeAddition(kind, () => addIterationMember(insertion, kind))
     },
     [addIterationMember, recordNodeAddition],

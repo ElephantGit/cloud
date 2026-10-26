@@ -4,6 +4,7 @@ import { launchFieldTranslations } from '@/features/workflows/launch-field-trans
 import { runAndVersionTranslations } from '@/features/workflows/run-and-version-translations'
 import { aggregatorTranslations } from '@/features/workflows/aggregator-translations'
 import { loopTranslations } from '@/features/workflows/loop-translations'
+import { runRoundTranslations } from '@/features/workflows/run-round-translations'
 import { nodeTranslations } from '@/features/workflows/node-translations'
 import { operatorTranslations } from '@/features/workflows/operator-translations'
 import type { TranslationBundle } from '@/i18n/resource-bundle'
@@ -32,6 +33,7 @@ export const workflowTranslations = {
     ...launchFieldTranslations['zh-CN'],
     ...aggregatorTranslations['zh-CN'],
     ...loopTranslations['zh-CN'],
+    ...runRoundTranslations['zh-CN'],
     ...nodeTranslations['zh-CN'],
     ...operatorTranslations['zh-CN'],
 
@@ -202,7 +204,8 @@ export const workflowTranslations = {
     'workflows.iteration.entryHandle': '从入口插入节点',
     'workflows.iteration.addNode': '在此插入一个节点',
     'workflows.iteration.emptyHint': '从入口添加节点开始搭建',
-    'workflows.iteration.useInternalAdd': '成员请从迭代区域入口添加，拖入不会成为成员',
+    'workflows.iteration.useInternalAdd':
+      '成员请从区域入口或循环成员端口的 + 添加，拖入不会成为成员',
     'workflows.iteration.collectTargetDeleted': '{{name}} 的收集目标已被删除，已自动清理',
     'workflows.iteration.deleteRegionTitle': '删除迭代区域',
     'workflows.iteration.deleteRegionMessage':
@@ -408,6 +411,7 @@ export const workflowTranslations = {
     ...launchFieldTranslations['en-US'],
     ...aggregatorTranslations['en-US'],
     ...loopTranslations['en-US'],
+    ...runRoundTranslations['en-US'],
     ...nodeTranslations['en-US'],
     ...operatorTranslations['en-US'],
 
@@ -572,7 +576,7 @@ export const workflowTranslations = {
     'workflows.iteration.addNode': 'Insert a node here',
     'workflows.iteration.emptyHint': 'Add members from the entry to get started',
     'workflows.iteration.useInternalAdd':
-      'Members are added from the region entry; drops are not members',
+      "Members are added from the region entry or a loop member port's +; drops are not members",
     'workflows.iteration.collectTargetDeleted':
       '{{name}}’s collect target was deleted and was cleared',
     'workflows.iteration.deleteRegionTitle': 'Delete iteration region',

@@ -653,7 +653,7 @@ describe('WorkflowEditor iteration regions', () => {
     // The drop was refused: no new card appeared (still four nodes)...
     expect(screen.getByText(/4 个节点/)).toBeInTheDocument()
     // ...and the hint explains why.
-    expect(screen.getByText(/成员请从迭代区域入口添加/)).toBeInTheDocument()
+    expect(screen.getByText(/成员请从区域入口或循环成员端口的 \+ 添加/)).toBeInTheDocument()
   })
 
   it('asks before deleting a region with members, and honours the refusal', async () => {

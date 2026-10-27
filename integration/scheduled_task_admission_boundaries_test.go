@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -155,6 +156,81 @@ func TestScheduledTaskEnableAPIReanchorsTheDisabledInterval(t *testing.T) {
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 	if count, outcome := occurrenceCount(t, store, taskID); count != 0 {
 		t.Fatalf("re-enabling must not admit or back-fill the disabled interval, got %d %q", count, outcome)
+	}
+}
+
+// TestScheduledTaskReadsProjectTheNextDuePoint pins the read-side nextDueAt projection through the
+// public endpoints: it follows the enable anchor on the worker's every_hours grid, is absent while the
+// task is disabled, and moves to the new anchor after enable. Nothing is persisted for it.
+func TestScheduledTaskReadsProjectTheNextDuePoint(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Next due projection", 150)
+	creator := scheduledTaskCaller(t, store, s.tenantID)
+	list := "/api/v1/tenants/" + s.tenantID + "/scheduled-tasks"
+	base := list + "/" + taskID
+	call := func(method, key, path, id string) core.Object {
+		t.Helper()
+		out, status, err := store.Public(context.Background(), &core.PublicRequest{
+			Method: method, Key: key, Path: path,
+			TenantID: s.tenantID, ScheduledTaskID: id, Identity: creator, Body: core.Object{},
+		})
+		must(t, err)
+		if status != 200 {
+			t.Fatalf("%s %s = %d, want 200", method, path, status)
+		}
+		return out
+	}
+	// The hourly grid anchored 150 minutes ago has its next point 30 minutes after the anchor's
+	// third hour, computed here from the stored anchor rather than the test's clock.
+	expected := func() time.Time {
+		t.Helper()
+		var want time.Time
+		must(t, store.Pool.QueryRow(`SELECT enabled_at + (floor(EXTRACT(EPOCH FROM now() - enabled_at) / 3600) + 1) * interval '1 hour'
+			FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&want))
+		return want
+	}
+	nextDue := func(task core.Object) any {
+		t.Helper()
+		// Management writes answer with the definition under "resource"; reads return it bare.
+		if resource, ok := task["resource"].(core.Object); ok {
+			task = resource
+		}
+		value, ok := task["nextDueAt"]
+		if !ok {
+			t.Fatalf("task read has no nextDueAt key: %v", task)
+		}
+		return value
+	}
+	assertAt := func(label string, got any, want time.Time) {
+		t.Helper()
+		text, _ := got.(string)
+		at, err := time.Parse(time.RFC3339Nano, text)
+		if err != nil || !at.Equal(want) {
+			t.Fatalf("%s nextDueAt = %v, want %v", label, got, want.UTC())
+		}
+	}
+
+	want := expected()
+	assertAt("GET", nextDue(call("GET", "next-get", base, taskID)), want)
+	listed, _ := call("GET", "next-list", list, "")["tasks"].([]core.Object)
+	if len(listed) != 1 {
+		t.Fatalf("list = %v, want the one task", listed)
+	}
+	assertAt("list", nextDue(listed[0]), want)
+
+	if got := nextDue(call("POST", "next-disable", base+"/disable", taskID)); got != nil {
+		t.Fatalf("disabled nextDueAt = %v, want none", got)
+	}
+	if got := nextDue(call("GET", "next-get-disabled", base, taskID)); got != nil {
+		t.Fatalf("disabled read nextDueAt = %v, want none", got)
+	}
+
+	enabled := call("POST", "next-enable", base+"/enable", taskID)
+	var anchor time.Time
+	must(t, store.Pool.QueryRow(`SELECT enabled_at FROM scheduled_tasks WHERE id=$1`, taskID).Scan(&anchor))
+	assertAt("re-enabled", nextDue(enabled), anchor.Add(time.Hour))
+	if count, _ := occurrenceCount(t, store, taskID); count != 0 {
+		t.Fatalf("reads must not write occurrences, got %d", count)
 	}
 }
 

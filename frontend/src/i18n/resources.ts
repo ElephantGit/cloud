@@ -10,11 +10,13 @@
  * importable from a test or a script.
  */
 import { workflowTranslations } from '@/features/workflows/translations'
+import { membershipTranslations } from '@/features/members/translations'
 import { composeTranslationResources } from '@/i18n/resource-bundle'
 
 /** Every feature's bundle, keyed by the name used in duplicate-key errors. */
 export const featureTranslationResources = {
   workflows: workflowTranslations,
+  members: membershipTranslations,
 } as const
 
 /** The two message maps i18next loads as the `translation` namespace. */

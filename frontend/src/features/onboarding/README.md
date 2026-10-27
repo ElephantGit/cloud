@@ -19,7 +19,8 @@
 
 依赖 `features/auth/session`、`features/spaces`、生成客户端、`src/lib/paths` 和 UI 组件；仅路由层消费页面。
 
-- `/join/invite/:token` 和 `/join/apply/:token` 经过 `RequireSession`；未登录时令牌路径暂存在当前浏览器标签，Gateway 只收到无令牌的 `/join/continue` 返回路径，登录后再恢复链接。
+- `/join/invite/:token` 和 `/join/apply/:token` 可匿名预检，兑换和申请仍需会话。`join-navigation.ts` 将登录恢复路径保存在当前标签，Gateway 只收到无令牌的 `/join/continue`。
+- 预检不写入身份；已使用、过期、撤销、不可用和网络失败分别展示。已有成员直接进入，待审批者不重复提交；提交竞争以后端重新校验为准。
 - 邀请兑换只授予普通成员；申请提交后不能直接进入空间，必须等管理员审批。
 - 链接输入只接受本站受支持的私有加入路径；创建 slug 在提交前通过与后端一致的校验。
 

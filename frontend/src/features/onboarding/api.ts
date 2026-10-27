@@ -6,8 +6,20 @@ import {
   getGetApiV1MeSpacesQueryKey,
 } from '@/api/me/me'
 import { postApiV1JoinInvitationsRedeem, postApiV1JoinRequests } from '@/api/tenants/tenants'
+import { postApiV1JoinLinksPreview } from '@/api/tenants/tenants'
 import type { ErrorType } from '@/lib/api-client'
 import { readAllPages } from '@/lib/pagination'
+
+/** Inspects a bearer link without changing membership; cache lives only with this page. */
+export function useJoinPreview(kind: 'invite' | 'apply', token: string, identity: string) {
+  return useQuery({
+    queryKey: ['join-preview', kind, token, identity],
+    queryFn: ({ signal }) => postApiV1JoinLinksPreview({ kind, token }, undefined, signal),
+    enabled: /^[A-Za-z0-9_-]{43}$/.test(token),
+    retry: false,
+    gcTime: 0,
+  })
+}
 
 /** Pending and decided applications for the signed-in user. */
 export function useMyJoinRequests() {

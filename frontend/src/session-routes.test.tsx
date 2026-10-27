@@ -6,6 +6,17 @@ import { renderRoutes } from '@/test/render'
 import { server } from '@/test/msw-server'
 import { routes } from './routes'
 
+it('inspects a used invitation through the production route without redirecting to login', async () => {
+  server.use(
+    http.post('/api/v1/join/links/preview', () =>
+      HttpResponse.json({ kind: 'invite', state: 'used' }),
+    ),
+  )
+  const { router } = renderRoutes(routes, `/join/invite/${'A'.repeat(43)}`)
+  expect(await screen.findByRole('heading', { name: '这条邀请链接已被使用' })).toBeInTheDocument()
+  expect(router.state.location.pathname).toContain('/join/invite/')
+})
+
 it('resolves a session-list route through the real workspace tenant boundary', async () => {
   installCloudSpaceHandlers('member')
   const reads: string[] = []

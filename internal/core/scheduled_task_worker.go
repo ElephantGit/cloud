@@ -200,6 +200,13 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		return
 	}
 
+	// 任务对话准入（D5）：enqueueAdmittedRun 不经过 enqueueRun 的对话守卫，这里按同一规则预检。
+	// 对话暂停或有未解决的 failed 消息时运行永远领不到，有 waiting 消息时定时运行会插到它前面。
+	if gap := taskConversationInputGap(t, task.S("tenantId"), task.S("issueId")); gap != "" {
+		failScheduledOccurrenceWithReason(t, taskID, due, gap)
+		return
+	}
+
 	// skipped_busy（D6）：同一任务上一次接纳的运行尚未到达终态时跳过，不排队不补跑。
 	if scheduledTaskBusy(t, taskID, task.S("issueId"), task.S("agentId"), dueText) {
 		t.exec(`UPDATE scheduled_task_occurrences SET outcome='skipped_busy'

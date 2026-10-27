@@ -1,8 +1,10 @@
 import { screen, waitFor } from '@testing-library/react'
+import { useQueryClient } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { JoinContinue, JoinPage } from '@/features/onboarding/join-page'
+import { SESSION_QUERY_KEY } from '@/features/auth/session'
 import { PENDING_JOIN_PATH_KEY } from '@/lib/paths'
 import {
   installSignedInSession,
@@ -174,6 +176,92 @@ describe('JoinPage', () => {
 })
 
 describe('Join link inspection', () => {
+  it('clears successful admission when the signed-in account changes', async () => {
+    let switched = false
+    server.use(
+      http.get('/api/v1/me', () =>
+        HttpResponse.json({
+          id: switched ? '99999999-9999-4999-8999-999999999999' : TEST_USER_ID,
+          displayName: 'Test person',
+          status: 'active',
+          version: 1,
+          createdAt: '2026-10-27T00:00:00Z',
+        }),
+      ),
+      http.post('/api/v1/join/links/preview', () =>
+        HttpResponse.json({
+          kind: 'invite',
+          state: 'active',
+          name: 'Identity test',
+          slug: 'identity-test',
+        }),
+      ),
+      http.post('/api/v1/join/invitations/redeem', () =>
+        HttpResponse.json({
+          userId: TEST_USER_ID,
+          name: 'Identity test',
+          tenantId: TEST_TENANT_ID,
+          role: 'member',
+          status: 'active',
+          version: 1,
+        }),
+      ),
+    )
+    function IdentityRefresh() {
+      const client = useQueryClient()
+      return (
+        <button
+          onClick={() => {
+            switched = true
+            void client.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
+          }}
+        >
+          Switch test account
+        </button>
+      )
+    }
+    renderRoutes(
+      [
+        {
+          path: '/join/invite/:token',
+          element: (
+            <>
+              <IdentityRefresh />
+              <JoinPage kind="invite" />
+            </>
+          ),
+        },
+      ],
+      `/join/invite/${TOKEN}`,
+    )
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '确认加入' }))
+    await waitFor(() => expect(screen.getByText('你已加入此工作区')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Switch test account' }))
+    expect(await screen.findByRole('button', { name: '确认加入' })).toBeInTheDocument()
+    expect(screen.queryByText('你已加入此工作区')).not.toBeInTheDocument()
+  })
+
+  it('retries the session probe when link inspection succeeded but sign-in status failed', async () => {
+    let attempts = 0
+    server.use(
+      http.get('/api/v1/me', () => {
+        attempts += 1
+        return HttpResponse.json(
+          { code: attempts === 1 ? 'upstream_unavailable' : 'unauthenticated' },
+          { status: attempts === 1 ? 503 : 401 },
+        )
+      }),
+      http.post('/api/v1/join/links/preview', () =>
+        HttpResponse.json({ kind: 'invite', state: 'active' }),
+      ),
+    )
+    renderJoin('invite')
+    expect(await screen.findByText('暂时无法确认登录状态，请重试')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByRole('button', { name: '登录后确认加入' })).toBeInTheDocument()
+    expect(attempts).toBe(2)
+  })
   it('does not carry a successful submission into a different bearer route', async () => {
     installSignedInSession()
     server.use(

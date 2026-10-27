@@ -18,6 +18,8 @@
 
 ## 依赖与不变量
 
+设置导航在窄屏移至顶部横向滚动，桌面保留侧栏；子页面使用完整可用宽度，成员表自身承担横向滚动。导航的链接与工作区作用域不随布局变化。
+
 依赖 `features/spaces`（含 `mutationHeaders`、`useIdempotencyKeys`）、生成客户端、`lib/api-client`（`faultCode`）、路由和 UI 组件；由应用路由消费（`settings`、`settings/git-identity`）。服务端仍校验角色与版本，界面的禁用状态不构成授权。Git 身份表单按 `version` 重新挂载：保存或恢复默认后，草稿取自服务端的返回值，下一次保存携带新版本；版本冲突只提示刷新，不自动覆盖用户草稿。
 
 ## 测试

@@ -18,6 +18,8 @@ It does not implement membership authorization or space archival; `features/mode
 
 ## Dependencies and invariants
 
+On narrow screens settings navigation moves to a horizontal scrolling row above content; desktop keeps the sidebar. Child pages use the available width and the member table owns its horizontal scrolling. Navigation destinations and workspace scope are unchanged.
+
 Depends on `features/spaces` (including `mutationHeaders` and `useIdempotencyKeys`), the generated client, `lib/api-client` (`faultCode`), routing, and UI components; app routes consume it (`settings`, `settings/git-identity`). The server still checks role and version; disabled UI controls are not authorization. The Git identity form remounts per `version`: after a save or restore the drafts come from the server's answer and the next save carries the new version; a version conflict only asks for a refresh and never overwrites the user's draft.
 
 ## Testing

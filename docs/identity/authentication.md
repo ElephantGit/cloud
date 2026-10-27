@@ -10,7 +10,7 @@ Cloud 不接入任何外部登录协议，也不签发凭据。外部登录（�
 
 | 调用方 → 被调用方 | 通道 | 证明身份的东西 |
 |---|---|---|
-| Gateway → Cloud server（HTTP） | `/api/v1/*` | 每个请求两份 Ed25519 JWT：service JWT 加 user JWT |
+| Gateway → Cloud server（HTTP） | `/api/v1/*` | 通常为 service 加 user 两份 Ed25519 JWT；只读链接预检允许仅 service JWT |
 | Gateway → model-gateway（HTTPS） | 个人模型 Key 的写入与清除 | 同样的两份 JWT，外加对 model-gateway 证书的 CA 校验 |
 | Controller → Cloud server（gRPC） | 内部控制契约 | TLS 1.3 双向认证的 Controller 证书（SPIFFE URI），加 `x-ora-controller-id` metadata |
 | Node → model-gateway | 模型调用的临时授权 | 沙盒注入的专用模型客户端证书（见 [model-gateway](../models/model-gateway.md)） |

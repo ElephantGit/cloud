@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useLoginProviders } from '@/features/auth/providers'
 import { useMembers, useJoinRequests } from '@/features/members/api'
 import { HuaweiAdd } from '@/features/members/directory-add'
@@ -91,62 +92,51 @@ function MemberAdministration({
   const requests = useJoinRequests(directory ? '' : tenantId)
   const pending = requests.data?.items.filter((row) => row.status === 'pending').length ?? 0
   return (
-    <div className="space-y-5">
-      <div
-        role="tablist"
-        className="flex flex-wrap gap-1 border-b pb-2"
-        aria-label={t('entry.title')}
-      >
-        <Button
-          role="tab"
-          aria-selected={tab === 'members'}
-          variant={tab === 'members' ? 'secondary' : 'ghost'}
-          onClick={() => setTab('members')}
-        >
+    <Tabs
+      className="space-y-5"
+      value={tab}
+      onValueChange={(value) => {
+        if (value === 'members' || value === 'requests' || value === 'links') {
+          setTab(value)
+          setLinkFilter(undefined)
+        }
+      }}
+    >
+      <TabsList variant="line" aria-label={t('entry.title')}>
+        <TabsTrigger value="members">
           {t('entry.members')} ({members.data?.items.length ?? 0})
-        </Button>
+        </TabsTrigger>
         {!directory && (
-          <Button
-            role="tab"
-            aria-selected={tab === 'requests'}
-            variant={tab === 'requests' ? 'secondary' : 'ghost'}
-            onClick={() => {
-              setLinkFilter(undefined)
+          <TabsTrigger value="requests">
+            {t('entry.requests')} ({pending})
+          </TabsTrigger>
+        )}
+        {!directory && <TabsTrigger value="links">{t('entry.links')}</TabsTrigger>}
+      </TabsList>
+      <TabsContent value="members">
+        {tab === 'members' && (
+          <>
+            {directory && <HuaweiAdd tenantId={tenantId} />}
+            <RosterContent tenantId={tenantId} members={members} canManage />
+          </>
+        )}
+      </TabsContent>
+      <TabsContent value="requests">
+        {tab === 'requests' && (
+          <JoinRequests tenantId={tenantId} requests={requests} linkFilter={linkFilter} />
+        )}
+      </TabsContent>
+      <TabsContent value="links">
+        {tab === 'links' && (
+          <JoinLinks
+            tenantId={tenantId}
+            onViewRequests={(id) => {
+              setLinkFilter(id)
               setTab('requests')
             }}
-          >
-            {t('entry.requests')} ({pending})
-          </Button>
+          />
         )}
-        {!directory && (
-          <Button
-            role="tab"
-            aria-selected={tab === 'links'}
-            variant={tab === 'links' ? 'secondary' : 'ghost'}
-            onClick={() => setTab('links')}
-          >
-            {t('entry.links')}
-          </Button>
-        )}
-      </div>
-      {tab === 'members' && (
-        <>
-          {directory && <HuaweiAdd tenantId={tenantId} />}
-          <RosterContent tenantId={tenantId} members={members} canManage />
-        </>
-      )}
-      {tab === 'requests' && (
-        <JoinRequests tenantId={tenantId} requests={requests} linkFilter={linkFilter} />
-      )}
-      {tab === 'links' && (
-        <JoinLinks
-          tenantId={tenantId}
-          onViewRequests={(id) => {
-            setLinkFilter(id)
-            setTab('requests')
-          }}
-        />
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   )
 }

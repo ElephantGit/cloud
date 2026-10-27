@@ -18,9 +18,12 @@ export function SettingsLayout({ slug }: { slug: string }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="设置" />
-      <div className="flex min-h-0 flex-1">
-        <nav className="w-48 shrink-0 border-r p-3">
-          <ul className="space-y-0.5">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <nav
+          aria-label="设置导航"
+          className="shrink-0 overflow-x-auto border-b p-3 md:w-48 md:border-r md:border-b-0"
+        >
+          <ul className="flex min-w-max gap-0.5 md:block md:min-w-0 md:space-y-0.5">
             {tabs.map((tab) => (
               <li key={tab.label}>
                 <NavLink
@@ -28,7 +31,7 @@ export function SettingsLayout({ slug }: { slug: string }) {
                   end={tab.end}
                   className={({ isActive }) =>
                     cn(
-                      'block rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted',
+                      'block rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap text-muted-foreground hover:bg-muted',
                       isActive && 'bg-muted text-foreground',
                     )
                   }
@@ -39,7 +42,7 @@ export function SettingsLayout({ slug }: { slug: string }) {
             ))}
           </ul>
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <Outlet context={slug} />
         </div>
       </div>

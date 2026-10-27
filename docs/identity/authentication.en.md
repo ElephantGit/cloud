@@ -11,7 +11,7 @@ describes those internal trust relationships and how Cloud turns a verified cred
 
 | Caller → callee | Channel | What proves identity |
 |---|---|---|
-| Gateway → Cloud server (HTTP) | `/api/v1/*` | Two Ed25519 JWTs per request: a service JWT plus a user JWT |
+| Gateway → Cloud server (HTTP) | `/api/v1/*` | Normally service and user Ed25519 JWTs; read-only link preview may carry only the service JWT |
 | Gateway → model-gateway (HTTPS) | Writing and clearing personal model keys | The same two JWTs, plus CA verification of model-gateway's certificate |
 | Controller → Cloud server (gRPC) | The internal control contract | A TLS 1.3 mutually authenticated Controller certificate (SPIFFE URI) plus `x-ora-controller-id` metadata |
 | Node → model-gateway | Short-lived grants for model calls | The dedicated model client certificate injected into the sandbox (see [model-gateway](../models/model-gateway.en.md)) |

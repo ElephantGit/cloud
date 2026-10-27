@@ -300,7 +300,7 @@ export const usePutApiV1TenantsTidMembersUid = <TError = ErrorType<Error>,
       return useMutation(getPutApiV1TenantsTidMembersUidMutationOptions(options), queryClient);
     }
     /**
- * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Active tenant members may read the roster. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * Administrator-only, tenant-scoped member admission history. Ordinary members cannot read provenance. Historical memberships without authoritative records remain unknown. Ascending UUID pagination; clients may sort the complete history by joinedAt.
  * @summary GET /api/v1/tenants/:tid/members/:uid/join-history
  */
 export const getApiV1TenantsTidMembersUidJoinHistory = (

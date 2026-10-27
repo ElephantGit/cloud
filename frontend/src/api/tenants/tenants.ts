@@ -244,7 +244,7 @@ export const usePostApiV1JoinInvitationsRedeem = <TError = ErrorType<Error>,
       return useMutation(getPostApiV1JoinInvitationsRedeemMutationOptions(options), queryClient);
     }
     /**
- * Public requests require a gateway service credential plus a caller-bound user credential. Active tenant membership is checked before lookup. Shared projects expose safe runtime summaries; runtime content and use require the verified creator or current tenant administrator. Conflicting mutations additionally require an effective server-confirmed control session. Mutation version conflicts return 409; a missing required version returns 428. Unknown fields are rejected. Lists use ascending UUID pagination.
+ * Read-only bearer-link inspection. Requires a verified gateway service; an optional user credential must be caller-bound. Anonymous responses contain only kind and state. No identity, membership, request or idempotency writes occur. Same-origin and rate limiting apply at Gateway; response is no-store. Corporate directory deployments disable this route.
  * @summary POST /api/v1/join/links/preview
  */
 export const postApiV1JoinLinksPreview = (

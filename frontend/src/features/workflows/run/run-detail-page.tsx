@@ -18,6 +18,7 @@ import {
 import { RunContainerRounds, RunMemberRoundSwitch } from '@/features/workflows/run/run-round-views'
 import { effectiveWorkflowContainer } from '@/features/workflows/runtime/container-layout'
 import { RunInspector } from '@/features/workflows/run/run-inspector'
+import { RunNodeSession } from '@/features/workflows/run/run-node-session'
 import { RunOverviewCanvas } from '@/features/workflows/run/run-overview-canvas'
 import { RunStatusBadge } from '@/features/workflows/run/run-status-mark'
 import { workspacePaths } from '@/lib/paths'
@@ -165,12 +166,32 @@ function WorkflowRunDetailBody({
                     onSelectRound={selectRound}
                   />
                 }
+                session={<NodeSessionSection run={run} node={selectedNode} />}
               />
             )}
           </aside>
         </div>
       </div>
     </RunPageShell>
+  )
+}
+
+/** The recorded conversation of an agent node, and nothing for a node that establishes none. */
+function NodeSessionSection({
+  run,
+  node,
+}: {
+  run: WorkflowRun
+  node: { id: string; data: WorkflowNodeData }
+}) {
+  if (node.data.kind !== 'agent') return null
+  return (
+    <RunNodeSession
+      tenantId={run.tenantId}
+      workflowId={run.workflowId}
+      runId={run.id}
+      nodeId={node.id}
+    />
   )
 }
 

@@ -9,6 +9,7 @@ import type {
   Error as ApiError,
   GetApiV1TenantsTidWorkflowsWfidRuns200,
   Workflow as CloudWorkflow,
+  WorkflowNodeSession,
   WorkflowRun,
   WorkflowRunNodeStates,
   WorkflowRunStatus,
@@ -20,6 +21,7 @@ import {
   getApiV1TenantsTidWorkflowsWfid,
   getApiV1TenantsTidWorkflowsWfidRuns,
   getApiV1TenantsTidWorkflowsWfidRunsRid,
+  getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession,
   getApiV1TenantsTidWorkflowsWfidSnapshots,
   postApiV1TenantsTidWorkflows,
   postApiV1TenantsTidWorkflowsWfidPublish,
@@ -651,6 +653,87 @@ export function useWorkflowRun(
     refetchInterval: (query) =>
       runPollInterval(query.state.data?.status, query.state.status === 'error'),
     structuralSharing: shareRunRead,
+  })
+}
+
+/** Query key of one node attempt's recorded conversation. */
+function workflowNodeSessionKey(
+  tenantId: string | undefined,
+  workflowId: string | undefined,
+  runId: string | undefined,
+  nodeId: string | undefined,
+) {
+  return [
+    `/api/v1/tenants/${tenantId}/workflows/${workflowId}/runs/${runId}/nodes/${nodeId}/session`,
+  ]
+}
+
+/** Where the next older page starts: the attempt it stays pinned to plus the sequence to read below. */
+interface WorkflowNodeSessionCursor {
+  attempt: number
+  before: number
+}
+
+/**
+ * How often the node session walk re-reads: while the attempt can still record, or after a failed
+ * read. An attempt whose node settled recorded everything it ever will, so the walk stops there.
+ */
+function nodeSessionPollInterval(
+  page: WorkflowNodeSession | undefined,
+  failed: boolean,
+): number | false {
+  if (page === undefined) return failed ? WORKFLOW_RUN_POLL_MS : false
+  const live = page.node.status === 'running' || page.execution.state === 'awaiting_first_record'
+  return live ? WORKFLOW_RUN_POLL_MS : false
+}
+
+/**
+ * One agent node's recorded conversation, paged from its newest history receipt backwards.
+ *
+ * The read addresses an attempt by the run, the graph node and the attempt number only, so a page
+ * cannot splice another attempt's receipts onto this one. The first request therefore names no
+ * attempt and lets the server resolve the node's current one; every later request sends back the
+ * attempt and `nextBefore` of the page it continues. Taking the cursor from the response, never
+ * from the node's state, is what keeps the walk inside one attempt while a retry advances the node.
+ *
+ * A live attempt keeps recording, so the walk re-reads while the node is running or the attempt has
+ * recorded nothing yet.
+ *
+ * @param query - Tenant, workflow, run and node the read is scoped to; the hook stays disabled
+ *   until all four resolve.
+ * @returns The paginated walk: `data.pages` holds the loaded pages newest-first, and
+ *   `fetchNextPage` loads earlier receipts until `hasNextPage` is false.
+ */
+export function useWorkflowNodeSession(query: {
+  tenantId: string | undefined
+  workflowId: string | undefined
+  runId: string | undefined
+  nodeId: string | undefined
+}) {
+  const { tenantId, workflowId, runId, nodeId } = query
+  return useInfiniteQuery({
+    queryKey: workflowNodeSessionKey(tenantId, workflowId, runId, nodeId),
+    queryFn: ({ pageParam, signal }) =>
+      getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession(
+        tenantId ?? '',
+        workflowId ?? '',
+        runId ?? '',
+        nodeId ?? '',
+        pageParam === null ? {} : { attempt: pageParam.attempt, before: pageParam.before },
+        undefined,
+        signal,
+      ),
+    // The first page names no cursor: the server resolves the node's current attempt from
+    // committed state, and the page it answers with carries the attempt every later request sends
+    // back. The assertion widens the initial value, which is what fixes the walk's page type.
+    initialPageParam: null as WorkflowNodeSessionCursor | null,
+    getNextPageParam: (page) =>
+      page.execution.hasMore && page.execution.nextBefore !== null
+        ? { attempt: page.execution.attempt, before: page.execution.nextBefore }
+        : undefined,
+    enabled: !!tenantId && !!workflowId && !!runId && !!nodeId,
+    refetchInterval: (walk) =>
+      nodeSessionPollInterval(walk.state.data?.pages[0], walk.state.status === 'error'),
   })
 }
 

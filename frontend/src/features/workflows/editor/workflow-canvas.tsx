@@ -120,6 +120,10 @@ export interface WorkflowCanvasProps {
   onHistoryNodeDragStart?: () => void
   /** Closes the node-drag transaction once containment settles the positions. */
   onHistoryNodeDragStop?: () => void
+  /** Opens the delete transaction once a deletion that removes nodes is confirmed. */
+  onHistoryDeleteStart?: (nodeIds: string[]) => void
+  /** Closes the delete transaction after the nodes and their edges are gone. */
+  onHistoryDeleteEnd?: () => void
   /** Draws the graph as a preview: nothing can be moved, connected or added. */
   readOnly?: boolean
 }
@@ -174,6 +178,7 @@ interface WorkflowIterationGuardServices {
   onConfirmIterationDeletion: ((memberCount: number) => Promise<boolean>) | undefined
   onHistoryNodeDragStart: (() => void) | undefined
   onHistoryNodeDragStop: (() => void) | undefined
+  onHistoryDeleteStart: ((nodeIds: string[]) => void) | undefined
 }
 
 function useIterationCanvasGuards(
@@ -256,13 +261,20 @@ function useIterationCanvasGuards(
   }
 
   /** Resolves a deletion request through confirmation and the cascade repair. */
-  function handleBeforeDelete(
+  async function handleBeforeDelete(
     request: WorkflowDeletionRequest,
   ): Promise<boolean | WorkflowDeletionRequest> {
-    return confirmAndResolveDeletion(request, editor, readOnly, {
+    const resolved = await confirmAndResolveDeletion(request, editor, readOnly, {
       onConfirmIterationDeletion: services.onConfirmIterationDeletion,
       showIterationHint,
     })
+    // React Flow now removes the edges and then the nodes in two change streams; the
+    // transaction opened here folds both into the one step the author undoes.
+    const removedNodes = nodesLeaving(request, resolved)
+    if (removedNodes.length > 0) {
+      services.onHistoryDeleteStart?.(removedNodes.map((node) => node.id))
+    }
+    return resolved
   }
 
   return {
@@ -272,6 +284,17 @@ function useIterationCanvasGuards(
     handleBeforeDelete,
     showIterationHint,
   }
+}
+
+/** The nodes a resolved deletion will actually remove: none when refused. */
+function nodesLeaving(
+  request: WorkflowDeletionRequest,
+  resolved: boolean | WorkflowDeletionRequest,
+): WorkflowDeletionRequest['nodes'] {
+  if (resolved === false) {
+    return []
+  }
+  return resolved === true ? request.nodes : resolved.nodes
 }
 
 /** Resolves a deletion request (keyboard delete or a card's trash button):
@@ -414,6 +437,8 @@ function WorkflowCanvasInner({
   onConfirmIterationDeletion,
   onHistoryNodeDragStart,
   onHistoryNodeDragStop,
+  onHistoryDeleteStart,
+  onHistoryDeleteEnd,
   readOnly = false,
 }: WorkflowCanvasProps) {
   const { t } = useTranslation()
@@ -423,6 +448,7 @@ function WorkflowCanvasInner({
       onConfirmIterationDeletion,
       onHistoryNodeDragStart,
       onHistoryNodeDragStop,
+      onHistoryDeleteStart,
     })
   const { canvasRef, addAtViewportCenter, dropAtClientPosition, organizeAndFrame } =
     useCanvasPlacement(graphNodes, onAddNode, onOrganize, showIterationHint)
@@ -474,6 +500,7 @@ function WorkflowCanvasInner({
           onNodeDragStart={handleNodeDragStart}
           onNodeDragStop={handleNodeDragStop}
           onBeforeDelete={handleBeforeDelete}
+          onDelete={() => onHistoryDeleteEnd?.()}
           onMoveEnd={(_event, nextViewport) => onViewportChange?.(nextViewport)}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >

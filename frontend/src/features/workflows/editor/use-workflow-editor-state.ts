@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, type MutableRefObject } from 'react'
 import type { Connection, EdgeChange, NodeChange, Viewport, XYPosition } from '@xyflow/react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
@@ -55,6 +55,10 @@ export interface WorkflowEditorHandlers {
   onHistoryNodeDragStart: () => void
   /** Closes the node-drag transaction; the canvas fires it after any correction. */
   onHistoryNodeDragStop: () => void
+  /** Opens the delete transaction; the canvas fires it once a node deletion is confirmed. */
+  onHistoryDeleteStart: (nodeIds: string[]) => void
+  /** Closes the delete transaction after React Flow removed the nodes and their edges. */
+  onHistoryDeleteEnd: () => void
 }
 
 /** Everything the editor mounts against the session history. */
@@ -260,6 +264,12 @@ interface WorkflowHistoryBridge {
   commitTransaction: (after: WorkflowHistorySnapshot) => void
 }
 
+/** The bridge the canvas change streams record through, plus the open-deletion flag. */
+interface WorkflowChangeHistory extends WorkflowHistoryBridge {
+  /** True between a confirmed node deletion and React Flow's `onDelete`. */
+  deleting: MutableRefObject<boolean>
+}
+
 /**
  * Adapts the draft's mutators into the callbacks the canvas takes.
  *
@@ -275,8 +285,10 @@ function useWorkflowDraftHandlers(
   history: WorkflowHistoryBridge,
   t: TFunction,
 ): Omit<WorkflowEditorHandlers, 'onViewportChange'> {
-  const nodeChanges = useWorkflowNodeChangesRecorder(draft, markDirty, history, t)
-  const edgeChanges = useWorkflowEdgeChangesRecorder(draft, markDirty, history, t)
+  const deletion = useWorkflowDeleteTransaction(draft, history, t)
+  const changeHistory: WorkflowChangeHistory = { ...history, deleting: deletion.open }
+  const nodeChanges = useWorkflowNodeChangesRecorder(draft, markDirty, changeHistory, t)
+  const edgeChanges = useWorkflowEdgeChangesRecorder(draft, markDirty, changeHistory, t)
   const actions = useWorkflowActionRecorder(draft, markDirty, history, t)
   const nodeEdit = useWorkflowNodeEditRecorder(draft, markDirty, history, t)
   const beginNodeDrag = useCallback(
@@ -294,7 +306,46 @@ function useWorkflowDraftHandlers(
     ...nodeEdit,
     onHistoryNodeDragStart: beginNodeDrag,
     onHistoryNodeDragStop: endNodeDrag,
+    onHistoryDeleteStart: deletion.begin,
+    onHistoryDeleteEnd: deletion.end,
   }
+}
+
+/**
+ * Groups one confirmed deletion into a single history step.
+ *
+ * React Flow removes a node's edges and the node itself through two separate change
+ * streams; recording each would make the user undo twice to get the graph back. The
+ * canvas opens this transaction once it knows nodes are going, both change recorders
+ * stay silent while it is open, and the canvas closes it after React Flow's `onDelete`.
+ */
+function useWorkflowDeleteTransaction(
+  draft: WorkflowDraft,
+  history: WorkflowHistoryBridge,
+  t: TFunction,
+) {
+  const { captureContent } = draft
+  const { beginTransaction, commitTransaction } = history
+  const open = useRef(false)
+  const begin = useCallback(
+    (nodeIds: string[]) => {
+      const before = captureContent()
+      beginTransaction(before, 'node.delete', {
+        nodeIds,
+        subject: deletedNodesSubject(t, before, nodeIds),
+      })
+      open.current = true
+    },
+    [beginTransaction, captureContent, t],
+  )
+  const end = useCallback(() => {
+    if (!open.current) {
+      return
+    }
+    open.current = false
+    commitTransaction(captureContent())
+  }, [captureContent, commitTransaction])
+  return { open, begin, end }
 }
 
 /**
@@ -305,11 +356,11 @@ function useWorkflowDraftHandlers(
 function useWorkflowNodeChangesRecorder(
   draft: WorkflowDraft,
   markDirty: () => void,
-  history: WorkflowHistoryBridge,
+  history: WorkflowChangeHistory,
   t: TFunction,
 ) {
   const { captureContent, applyNodeChanges } = draft
-  const { beginTransaction, commitTransaction, record } = history
+  const { beginTransaction, commitTransaction, record, deleting } = history
   // Which iteration frame is mid-resize; the closing `resizing: false` frame
   // of the same id commits that transaction.
   const activeResizeRef = useRef<string | null>(null)
@@ -354,17 +405,24 @@ function useWorkflowNodeChangesRecorder(
         (change): change is Extract<NodeChange<WorkflowCanvasNode>, { type: 'remove' }> =>
           change.type === 'remove',
       )
-      if (removed.length > 0) {
+      // A confirmed deletion commits as one step through its own transaction.
+      if (removed.length > 0 && !deleting.current) {
         const nodeIds = removed.map((change) => change.id)
-        const subject = before.nodes
-          .filter((node) => nodeIds.includes(node.id))
-          .map((node) => nodeSubjectOf(t, node))
-          .filter((value): value is string => value !== undefined)
-          .join('、')
-        record(before, after, 'node.delete', { meta: { nodeIds, subject } })
+        record(before, after, 'node.delete', {
+          meta: { nodeIds, subject: deletedNodesSubject(t, before, nodeIds) },
+        })
       }
     },
-    [applyNodeChanges, beginTransaction, captureContent, commitTransaction, markDirty, record, t],
+    [
+      applyNodeChanges,
+      beginTransaction,
+      captureContent,
+      commitTransaction,
+      deleting,
+      markDirty,
+      record,
+      t,
+    ],
   )
 
   return { onNodesChange }
@@ -374,11 +432,11 @@ function useWorkflowNodeChangesRecorder(
 function useWorkflowEdgeChangesRecorder(
   draft: WorkflowDraft,
   markDirty: () => void,
-  history: WorkflowHistoryBridge,
+  history: WorkflowChangeHistory,
   t: TFunction,
 ) {
   const { captureContent, applyEdgeChanges } = draft
-  const { record } = history
+  const { record, deleting } = history
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
@@ -392,7 +450,8 @@ function useWorkflowEdgeChangesRecorder(
         (change): change is Extract<EdgeChange<WorkflowCanvasEdge>, { type: 'remove' }> =>
           change.type === 'remove',
       )
-      if (removed.length > 0) {
+      // Edges leaving with a deleted node belong to that node's step.
+      if (removed.length > 0 && !deleting.current) {
         const edgeIds = removed.map((change) => change.id)
         const subjects = removed.flatMap((change) => {
           const edge = before.edges.find((candidate) => candidate.id === change.id)
@@ -406,7 +465,7 @@ function useWorkflowEdgeChangesRecorder(
         })
       }
     },
-    [applyEdgeChanges, captureContent, markDirty, record, t],
+    [applyEdgeChanges, captureContent, deleting, markDirty, record, t],
   )
 
   return { onEdgesChange }
@@ -633,6 +692,19 @@ function useWorkflowLaunchFieldsRecorder(
 }
 
 /** Names one canvas node for a history step without exposing internal ids. */
+/** Joins the readable names of the nodes a deletion removes, in graph order. */
+function deletedNodesSubject(
+  t: TFunction,
+  before: WorkflowHistorySnapshot,
+  nodeIds: readonly string[],
+): string {
+  return before.nodes
+    .filter((node) => nodeIds.includes(node.id))
+    .map((node) => nodeSubjectOf(t, node))
+    .filter((value): value is string => value !== undefined)
+    .join('、')
+}
+
 function nodeSubjectOf(t: TFunction, node: WorkflowCanvasNode | undefined): string | undefined {
   if (node === undefined) {
     return undefined

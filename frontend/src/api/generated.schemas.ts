@@ -2671,6 +2671,72 @@ export interface WorkflowAssetImportList {
   items: WorkflowAssetImport[];
 }
 
+export type WorkflowNodeSessionRecordRecord = { [key: string]: unknown };
+
+export interface WorkflowNodeSessionRecord {
+  /** @nullable */
+  historySequence?: number | null;
+  record: WorkflowNodeSessionRecordRecord;
+  sequence: number;
+  truncated?: boolean;
+  turnId?: string;
+  visibleText?: string;
+  visibleTextTruncated?: boolean;
+}
+
+export type WorkflowNodeSessionExecutionState = typeof WorkflowNodeSessionExecutionState[keyof typeof WorkflowNodeSessionExecutionState];
+
+
+export const WorkflowNodeSessionExecutionState = {
+  available: 'available',
+  not_applicable: 'not_applicable',
+  not_started: 'not_started',
+  awaiting_first_record: 'awaiting_first_record',
+  unavailable: 'unavailable',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * @nullable
+ */
+export type WorkflowNodeSessionExecutionResult = { [key: string]: unknown } | null;
+
+export interface WorkflowNodeSessionExecution {
+  attempt: number;
+  /** @nullable */
+  executionId: string | null;
+  hasMore: boolean;
+  incomplete: boolean;
+  /** @nullable */
+  nextBefore: number | null;
+  records: WorkflowNodeSessionRecord[];
+  /** @nullable */
+  result: WorkflowNodeSessionExecutionResult;
+  state: WorkflowNodeSessionExecutionState;
+}
+
+/**
+ * @nullable
+ */
+export type WorkflowNodeSessionNodeOutput = { [key: string]: unknown } | null;
+
+export interface WorkflowNodeSessionNode {
+  attempt: number;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  output: WorkflowNodeSessionNodeOutput;
+  /** @nullable */
+  sessionEndReason: string | null;
+  /** @nullable */
+  status: string | null;
+}
+
+export interface WorkflowNodeSession {
+  execution: WorkflowNodeSessionExecution;
+  node: WorkflowNodeSessionNode;
+}
+
 /**
  * The frozen graph document this run executed against, from the snapshot it captured.
  * @nullable
@@ -4534,6 +4600,25 @@ after?: string;
 export type GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200 = {
   items: SessionModelAttempt[];
   nextCursor: string;
+};
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams = {
+/**
+ * Attempt to read; absent reads the node's current attempt. An attempt beyond the node's committed attempts is 404. Paging must send back the attempt the first response returned.
+ * @minimum 1
+ */
+attempt?: number;
+/**
+ * Backward receipt-sequence cursor: the page takes the history receipts with sequence < before, newest first, and returns that page oldest first. Only valid together with attempt; without it the request is 400 invalid_pagination. Paging must send back the nextBefore the previous response returned.
+ * @minimum 1
+ */
+before?: number;
+/**
+ * Maximum history receipts in this page. The 4 MiB page byte budget can stop the page earlier.
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
 };
 
 export type PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode = typeof PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode[keyof typeof PostApiV1TenantsTidWorkflowsWfidRunsRidResumeBodyMode];

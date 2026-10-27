@@ -57,6 +57,9 @@ users ──< user_identities          一个用户可以有多条外部身份�
 | 申请链接（`/tenants/:tid/join-links`） | 30 天，可重复使用 | 访问者提交申请（`POST /api/v1/join/requests`），管理员批准（`.../join-requests/:rid/approve`）后成为普通成员，或拒绝 |
 
 - 链接可以撤销（带版本的 `DELETE`）。已过期、已撤销、已兑换的令牌一律返回 `404 join_link_unavailable`。
+- `POST /api/v1/join/links/preview` 只读检查链接，Gateway 同源校验和限流后可不带用户会话；Cloud 仍验证 gateway 服务身份。匿名仅返回类型和状态，已登录才返回自己的加入/待审批状态与工作区确认信息；预检不创建身份或消费令牌。错误码保留，并通过 `params.reason` 区分 used、expired、revoked 与 unavailable。
+- 已有有效成员兑换普通邀请直接返回自己的资格，不消耗邀请或修改角色；停用者重新加入仍需有效准入。预检结果不能替代提交时的事务校验。
+- 邀请/申请链接的管理备注不绑定接收人；管理员读取创建者、使用者、申请统计与来源信息。成员资格首次建立或恢复时，同事务写入 `membership_join_events`；`GET /tenants/:tid/members/:uid/join-history` 只向管理员开放。无法证明的历史来源保留未知，不根据旧兑换记录回填。
 - 已是成员的人再提交申请返回 `409 already_member`；同一人的待处理申请只保留一条。
 - 兑换和申请发生在成为成员之前，幂等记录按用户保存（`join_idempotency_records`）。用户可以通过
   `GET /api/v1/me/join-requests` 查看自己的申请。

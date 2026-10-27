@@ -117,6 +117,8 @@ func Routes() []Route {
 		{"GET", "/api/v1/me/spaces", "", nil},
 		{"GET", "/api/v1/me/join-requests", "", nil},
 		{"POST", "/api/v1/join/invitations/redeem", "", []string{"token"}},
+		{"POST", core.JoinLinkPreviewPath, "", []string{"kind", "token"}},
+		{"GET", "/api/v1/tenants/:tid/members/:uid/join-history", "", nil},
 		{"POST", "/api/v1/join/requests", "", []string{"token"}},
 		{"POST", "/api/v1/tenants", "", []string{"name", "slug"}},
 		{"GET", "/api/v1/tenants/:tid/members", "", nil},
@@ -213,10 +215,10 @@ func Routes() []Route {
 		{"GET", "/api/v1/tenants/:tid/people", "", nil},
 		{"POST", "/api/v1/tenants/:tid/members/huawei", "", []string{"keyword", "globalUserId", "role"}},
 		{"GET", "/api/v1/tenants/:tid/invitations", "", nil},
-		{"POST", "/api/v1/tenants/:tid/invitations", "", []string{"token"}},
+		{"POST", "/api/v1/tenants/:tid/invitations", "", []string{"token", "note"}},
 		{"DELETE", "/api/v1/tenants/:tid/invitations/:iid", "", []string{"version"}},
 		{"GET", "/api/v1/tenants/:tid/join-links", "", nil},
-		{"POST", "/api/v1/tenants/:tid/join-links", "", []string{"token"}},
+		{"POST", "/api/v1/tenants/:tid/join-links", "", []string{"token", "note"}},
 		{"DELETE", "/api/v1/tenants/:tid/join-links/:lid", "", []string{"version"}},
 		{"GET", "/api/v1/tenants/:tid/join-requests", "", nil},
 		{"POST", "/api/v1/tenants/:tid/join-requests/:rid/approve", "", []string{"version"}},
@@ -352,10 +354,12 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 					failure(c, &core.Fault{Code: "service_forbidden", Status: 403, Params: core.Object{}})
 					return
 				}
-				user, e = auth.Verify(c.GetHeader("X-Ora-User-Token"), "user")
-				if e != nil || user.Caller != service.Subject {
-					failure(c, &core.Fault{Code: "invalid_user_credential", Status: 401, Params: core.Object{}})
-					return
+				if route.Path != core.JoinLinkPreviewPath || c.GetHeader("X-Ora-User-Token") != "" {
+					user, e = auth.Verify(c.GetHeader("X-Ora-User-Token"), "user")
+					if e != nil || user.Caller != service.Subject {
+						failure(c, &core.Fault{Code: "invalid_user_credential", Status: 401, Params: core.Object{}})
+						return
+					}
 				}
 			}
 			if public && directory != nil && (strings.HasPrefix(route.Path, "/api/v1/join/") || strings.HasPrefix(route.Path, "/api/v1/tenants/:tid/invitations") || strings.HasPrefix(route.Path, "/api/v1/tenants/:tid/join-links") || strings.HasPrefix(route.Path, "/api/v1/tenants/:tid/join-requests")) {
@@ -483,6 +487,9 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 					req.AgentPluginID = c.Param("pluginNamespace") + "/" + c.Param("pluginIdentifier")
 				}
 				switch route.Path {
+				case core.JoinLinkPreviewPath:
+					c.Header("Cache-Control", "no-store")
+					out, e = store.JoinLinkPreview(c.Request.Context(), body.S("kind"), body.S("token"), user)
 				case scheduledArtifactPath:
 					serveScheduledArtifact(c, store, req)
 					return

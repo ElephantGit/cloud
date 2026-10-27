@@ -26,6 +26,8 @@
 
 ## 定时运行的产物交付
 
+`join_preview.go` 通过受信 Gateway 做不创建身份的只读链接检查；`member_join_history.go` 负责成员准入记录及管理员读取。权限仍仅由 `tenant_memberships` 决定，来源记录不反向授予权限。详见[租户与成员](../../docs/identity/tenancy.md)。
+
 `scheduled_artifact*.go` 保存声明、签发授权、核验对象并收敛交付，依据
 [verdict 与产物 ADR](https://github.com/ora-space/specs/blob/main/decisions/cloud/scheduled-task/20261022-run-verdict-and-artifacts.md)。
 Revision 与产物可以分别派发，每类最多一个未完成执行，两者均收敛后才释放运行 Workspace。

@@ -1433,6 +1433,10 @@
             "nullable": true,
             "type": "string"
           },
+          "consumedByName": {
+            "nullable": true,
+            "type": "string"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -1441,12 +1445,18 @@
             "format": "uuid",
             "type": "string"
           },
+          "createdByName": {
+            "type": "string"
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
           },
           "id": {
             "format": "uuid",
+            "type": "string"
+          },
+          "note": {
             "type": "string"
           },
           "revokedAt": {
@@ -2119,12 +2129,19 @@
       "JoinLink": {
         "additionalProperties": false,
         "properties": {
+          "approvedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
           },
           "createdBy": {
             "format": "uuid",
+            "type": "string"
+          },
+          "createdByName": {
             "type": "string"
           },
           "expiresAt": {
@@ -2134,6 +2151,13 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pendingCount": {
+            "format": "int64",
+            "type": "integer"
           },
           "revokedAt": {
             "format": "date-time",
@@ -2159,6 +2183,48 @@
         ],
         "type": "object"
       },
+      "JoinLinkPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "alreadyMember": {
+            "type": "boolean"
+          },
+          "applicationStatus": {
+            "enum": [
+              "pending"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "invite",
+              "apply"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "used",
+              "expired",
+              "revoked",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "state"
+        ],
+        "type": "object"
+      },
       "JoinRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2176,6 +2242,10 @@
             "nullable": true,
             "type": "string"
           },
+          "decidedByName": {
+            "nullable": true,
+            "type": "string"
+          },
           "displayName": {
             "type": "string"
           },
@@ -2185,6 +2255,9 @@
           },
           "linkId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "linkNote": {
             "type": "string"
           },
           "name": {
@@ -2366,14 +2439,98 @@
         ],
         "type": "object"
       },
+      "MemberJoinEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "actorDisplayName": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invitationId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "invitationNote": {
+            "nullable": true,
+            "type": "string"
+          },
+          "joinedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "linkNote": {
+            "nullable": true,
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "workspace_created",
+              "invitation",
+              "application",
+              "directory"
+            ],
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "tenantId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "userId",
+          "method",
+          "actorUserId",
+          "actorDisplayName",
+          "joinedAt"
+        ],
+        "type": "object"
+      },
       "MemberListItem": {
         "additionalProperties": false,
         "properties": {
+          "actorDisplayName": {
+            "nullable": true,
+            "type": "string"
+          },
           "displayName": {
             "type": "string"
           },
           "id": {
             "format": "uuid",
+            "type": "string"
+          },
+          "joinMethod": {
+            "enum": [
+              "workspace_created",
+              "invitation",
+              "application",
+              "directory"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "joinedAt": {
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "role": {
@@ -6643,6 +6800,144 @@
           }
         ],
         "summary": "POST /api/v1/join/invitations/redeem",
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/api/v1/join/links/preview": {
+      "post": {
+        "description": "Read-only bearer-link inspection. Requires a verified gateway service; an optional user credential must be caller-bound. Anonymous responses contain only kind and state. No identity, membership, request or idempotency writes occur. Same-origin and rate limiting apply at Gateway; response is no-store. Corporate directory deployments disable this route.",
+        "operationId": "post_api_v1_join_links_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "invite",
+                      "apply"
+                    ],
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JoinLinkPreview"
+                }
+              }
+            },
+            "description": "Successful command or resource response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": []
+          },
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "POST /api/v1/join/links/preview",
         "tags": [
           "tenants"
         ]
@@ -12197,6 +12492,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "note": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
                   "token": {
                     "type": "string"
                   }
@@ -21560,6 +21859,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "note": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
                   "token": {
                     "type": "string"
                   }
@@ -23410,6 +23713,169 @@
           }
         ],
         "summary": "PUT /api/v1/tenants/:tid/members/:uid",
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tid}/members/{uid}/join-history": {
+      "get": {
+        "description": "Administrator-only, tenant-scoped member admission history. Ordinary members cannot read provenance. Historical memberships without authoritative records remain unknown. Ascending UUID pagination; clients may sort the complete history by joinedAt.",
+        "operationId": "get_api_v1_tenants_tid_members_uid_join-history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.",
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/MemberJoinEvent"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful command or resource response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "GET /api/v1/tenants/:tid/members/:uid/join-history",
         "tags": [
           "members"
         ]

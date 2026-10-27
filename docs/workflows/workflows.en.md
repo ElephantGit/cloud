@@ -319,6 +319,11 @@ Body consumers read only region predecessors, the container's outer ancestors, g
 carried or item / index inputs. Loop feedback, until and outputs read the completed body snapshot.
 Iteration accepts at most 100 items.
 
+An edge from an iteration to its own member with `sourceHandle = "iteration-entry"` is saved and
+published unchanged, preserving Cloud editor and Desktop graphs. Entry edges are optional and do
+not participate in regional scheduling dependencies or predecessor calculations: members never
+wait for their iteration owner to finish. Other cross-container edges are still rejected at publication.
+
 Every composite state commit measures compact UTF-8 JSON, including every duplicated value.
 Iteration inputs, collect values and member archives, and loop carried-plus-member archives and final
 outputs, each have a 1 MiB limit. Complete `node_states` have an 8 MiB limit, with 64 KiB reserved for

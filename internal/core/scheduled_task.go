@@ -334,6 +334,14 @@ func scheduledTaskAgentReady(t *transaction, tenantID, agentID string) (Object, 
 	return agentRunEvidence(t, tenantID, agentID)
 }
 
+// scheduledTaskSpaceActive reports whether the agent's Space is still unarchived (ADR D5: Space 未归档，
+// 每次接纳校验). It is checked explicitly so every plugin is rejected, not only those whose declared
+// configuration happens to resolve Space membership. ok=false maps to target_unavailable.
+func scheduledTaskSpaceActive(t *transaction, tenantID, spaceID string) bool {
+	return t.one(`SELECT 1 FROM collab_workspaces
+		WHERE id=$1 AND tenant_id=$2 AND archived_at IS NULL`, spaceID, tenantID) != nil
+}
+
 // creatorModelReady approximates the save-time model-configured check of ADR D5: the creator has
 // either a declared personal agent configuration for the agent's plugin backed by an enabled
 // connection with a credential, or a personal default backed by one. The authoritative freeze and

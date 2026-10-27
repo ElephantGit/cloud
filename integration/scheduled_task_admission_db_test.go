@@ -325,6 +325,60 @@ func TestScheduledTaskNonModelBindingFailureIsTargetUnavailable(t *testing.T) {
 	}
 }
 
+// assertArchivedSpaceRejects archives the agent's Space, evaluates twice, and requires one
+// failed/target_unavailable occurrence with no IssueRun (ADR D5: Space 未归档，每次接纳校验).
+func assertArchivedSpaceRejects(t *testing.T, store *core.Store, s skeletonSeed, taskID string) {
+	t.Helper()
+	_, err := store.Pool.Exec(`UPDATE collab_workspaces SET archived_at=now() WHERE id=$1`, s.spaceID)
+	must(t, err)
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var count, runs int
+	var outcome, reason string
+	must(t, store.Pool.QueryRow(`SELECT count(*), COALESCE(min(outcome),''), COALESCE(min(failure_reason),''), count(run_id) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&count, &outcome, &reason, &runs))
+	if count != 1 || outcome != "failed" || reason != "target_unavailable" || runs != 0 {
+		t.Fatalf("archived Space must leave one failed target_unavailable occurrence without a run, got count=%d outcome=%q reason=%q runs=%d", count, outcome, reason, runs)
+	}
+	var issueRuns int
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE trigger_evidence_ref_id=$1`, taskID).Scan(&issueRuns))
+	if issueRuns != 0 {
+		t.Fatalf("archived Space must not create a scheduled IssueRun, got %d", issueRuns)
+	}
+}
+
+// TestScheduledTaskArchivedSpaceRejectsOpenCode covers a plugin without a declared configuration:
+// nothing on its binding path resolves Space membership, so only the explicit D5 check rejects it.
+// TestScheduledTaskAdmissionCreatesARun is the same fixture with the Space left live.
+func TestScheduledTaskArchivedSpaceRejectsOpenCode(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Archived Space OpenCode", 65)
+	assertArchivedSpaceRejects(t, store, s, taskID)
+}
+
+// TestScheduledTaskArchivedSpaceRejectsDeclaredClaude covers a declared plugin. The live subtest
+// pins that the same fixture admits, so the archived failure is attributable to the archive alone.
+func TestScheduledTaskArchivedSpaceRejectsDeclaredClaude(t *testing.T) {
+	declaredClaudeTask := func(t *testing.T) (*core.Store, skeletonSeed, string) {
+		store, s, _ := scheduledTaskStore(t)
+		taskID := seedScheduledTaskClaudeModelOverride(t, store, s)
+		// Fall back to the declared configuration's model instead of the protocol-override case.
+		_, err := store.Pool.Exec(`UPDATE scheduled_tasks SET model=NULL WHERE id=$1`, taskID)
+		must(t, err)
+		return store, s, taskID
+	}
+	t.Run("live", func(t *testing.T) {
+		store, _, taskID := declaredClaudeTask(t)
+		must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+		if count, outcome := occurrenceCount(t, store, taskID); count != 1 || outcome != "admitted" {
+			t.Fatalf("declared Claude in a live Space must admit, got %d %q", count, outcome)
+		}
+	})
+	t.Run("archived", func(t *testing.T) {
+		store, s, taskID := declaredClaudeTask(t)
+		assertArchivedSpaceRejects(t, store, s, taskID)
+	})
+}
+
 // TestScheduledTaskEvaluationProcessesMoreThanOnePage prevents a fixed first 100-task page from
 // starving later enabled definitions forever.
 func TestScheduledTaskEvaluationProcessesMoreThanOnePage(t *testing.T) {

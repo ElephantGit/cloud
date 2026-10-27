@@ -36,6 +36,7 @@ export function useMyJoinRequests() {
 export function useRedeemInvitation() {
   const queryClient = useQueryClient()
   return useMutation<JoinedMembership, ErrorType<ApiError>, string>({
+    gcTime: 0,
     mutationFn: (token) => postApiV1JoinInvitationsRedeem({ token }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetApiV1MeSpacesQueryKey() })
@@ -47,6 +48,7 @@ export function useRedeemInvitation() {
 export function useRequestJoin() {
   const queryClient = useQueryClient()
   return useMutation<JoinRequest, ErrorType<ApiError>, string>({
+    gcTime: 0,
     mutationFn: (token) => postApiV1JoinRequests({ token }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetApiV1MeJoinRequestsQueryKey() })

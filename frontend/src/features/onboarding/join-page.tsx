@@ -1,10 +1,11 @@
 import { Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { ShieldCheck, Link2Off } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { JoinLinkPreview } from '@/api/generated.schemas'
-import { useSession } from '@/features/auth/session'
+import { useSession, SESSION_QUERY_KEY, type Session } from '@/features/auth/session'
 import { useJoinPreview, useRedeemInvitation, useRequestJoin } from '@/features/onboarding/api'
 import {
   clearPendingJoin,
@@ -23,6 +24,22 @@ export function JoinContinue() {
 export function JoinPage({ kind }: { kind: 'invite' | 'apply' }) {
   const { token = '' } = useParams<{ token: string }>()
   const { session } = useSession()
+  const identity = session.status === 'signed-in' ? session.user.id : 'anonymous'
+  return (
+    <JoinEntry key={`${kind}:${token}:${identity}`} kind={kind} token={token} session={session} />
+  )
+}
+
+function JoinEntry({
+  kind,
+  token,
+  session,
+}: {
+  kind: 'invite' | 'apply'
+  token: string
+  session: Session
+}) {
+  const queryClient = useQueryClient()
   const preview = useJoinPreview(
     kind,
     token,
@@ -33,8 +50,10 @@ export function JoinPage({ kind }: { kind: 'invite' | 'apply' }) {
   const navigate = useNavigate()
   const location = useLocation()
   const error = invitation.error ?? application.error
-  const joined = !!invitation.data || preview.data?.alreadyMember === true
-  const pending = !!application.data || preview.data?.applicationStatus === 'pending'
+  const { joined, pending } = ownAdmission(session, preview.data, {
+    invitation: !!invitation.data,
+    application: !!application.data,
+  })
   const slug = preview.data?.slug
   const view = previewState(preview, token, error)
   function submit() {
@@ -61,6 +80,7 @@ export function JoinPage({ kind }: { kind: 'invite' | 'apply' }) {
       onRetry={() => {
         invitation.reset()
         application.reset()
+        void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
         void preview.refetch()
       }}
       onSpaces={() => {
@@ -144,7 +164,9 @@ function JoinView({
             </Button>
           )}
           {joined && onEnter && <Button onClick={onEnter}>{t('entry.enter')}</Button>}
-          {failed && <Button onClick={onRetry}>{t('entry.retry')}</Button>}
+          {(failed || blocked === 'entry.authFailed') && (
+            <Button onClick={onRetry}>{t('entry.retry')}</Button>
+          )}
           <Button variant="outline" onClick={onSpaces}>
             {t('entry.mySpaces')}
           </Button>
@@ -179,6 +201,18 @@ function blockedSession(status: string) {
   if (status === 'disabled') return 'entry.disabledAccount'
   if (status === 'unavailable') return 'entry.authFailed'
   return undefined
+}
+
+function ownAdmission(
+  session: Session,
+  preview: JoinLinkPreview | undefined,
+  submitted: { invitation: boolean; application: boolean },
+) {
+  if (session.status !== 'signed-in') return { joined: false, pending: false }
+  return {
+    joined: submitted.invitation || preview?.alreadyMember === true,
+    pending: submitted.application || preview?.applicationStatus === 'pending',
+  }
 }
 
 function joinAction(kind: 'invite' | 'apply', signedIn: boolean) {

@@ -21,7 +21,9 @@ Cloud 不接入任何外部登录协议，也不签发凭据。外部登录（�
 
 ## HTTP 的双凭据
 
-每个公开请求同时带两份独立签名的 JWT：
+除只读链接预检外，公开请求同时带两份独立签名的 JWT：
+
+确切的 `POST /api/v1/join/links/preview` 必须验证 Gateway service JWT，可不带 user JWT；若带用户凭据仍检查 caller 绑定。Gateway 对此入口校验同源、限流并清除浏览器内部身份头。匿名仅返回链接类型与状态，预检不创建用户或修改业务状态，不用于兑换授权。其余公开接口保持双 JWT 要求。
 
 ```text
 Authorization: Bearer <service JWT>    证明调用方服务，例如 Gateway 的某个实例

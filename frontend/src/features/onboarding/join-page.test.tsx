@@ -174,6 +174,30 @@ describe('JoinPage', () => {
 })
 
 describe('Join link inspection', () => {
+  it('does not carry a successful submission into a different bearer route', async () => {
+    installSignedInSession()
+    server.use(
+      http.post('/api/v1/join/links/preview', () =>
+        HttpResponse.json({ kind: 'invite', state: 'active', name: 'Team', slug: 'team' }),
+      ),
+      http.post('/api/v1/join/invitations/redeem', () =>
+        HttpResponse.json({
+          tenantId: TEST_TENANT_ID,
+          userId: TEST_USER_ID,
+          name: 'Team',
+          role: 'member',
+          status: 'active',
+          version: 1,
+        }),
+      ),
+    )
+    const { router } = renderJoin('invite')
+    await userEvent.setup().click(await screen.findByRole('button', { name: '确认加入' }))
+    expect(await screen.findByText('你已加入此工作区')).toBeInTheDocument()
+    await router.navigate(`/join/invite/${'B'.repeat(43)}`)
+    expect(await screen.findByRole('button', { name: '确认加入' })).toBeInTheDocument()
+    expect(screen.queryByText('你已加入此工作区')).not.toBeInTheDocument()
+  })
   it.each([
     ['used', '这条邀请链接已被使用'],
     ['expired', '这条链接已过期'],

@@ -22,7 +22,9 @@ PostgreSQL state; claims in certificates and JWTs never turn directly into busin
 
 ## Dual credentials over HTTP
 
-Every public request carries two independently signed JWTs:
+Except for read-only link inspection, public requests carry two independently signed JWTs:
+
+The exact `POST /api/v1/join/links/preview` still verifies the Gateway service JWT but permits an absent user JWT; a supplied user credential retains caller binding. Gateway enforces same-origin, rate limiting and browser credential stripping. Anonymous responses contain only link kind and state. Inspection creates no user or business writes and never authorizes redemption. Every other public endpoint retains both JWTs.
 
 ```text
 Authorization: Bearer <service JWT>    proves the calling service, e.g. one Gateway instance

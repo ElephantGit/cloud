@@ -50,6 +50,9 @@ func TestJoinProvenanceIsAtomicPrivateAndRecordsReentry(t *testing.T) {
 	f.call("POST", f.path("/invitations"), core.Object{"token": token}, "provenance-invite", 201)
 	member := joinCall(t, f, bob, "POST", "/api/v1/join/invitations/redeem", "provenance-redeem", core.Object{"token": token}, 200)
 	uid := member.S("userId")
+	outsider := joinCall(t, f, joinUser("foreign-actor"), "GET", "/api/v1/me", "", nil, 200)
+	_, err := f.store.Pool.Exec(`INSERT INTO membership_join_events(id,tenant_id,user_id,method,actor_user_id) VALUES(gen_random_uuid(),$1,$2,'directory',$3)`, f.tid, uid, outsider.S("id"))
+	wantPGError(t, err, "23503")
 	historyPath := f.path("/members/" + uid + "/join-history")
 	history := f.call("GET", historyPath, nil, "", 200)
 	if len(history["items"].([]any)) != 1 || core.Object(history["items"].([]any)[0].(map[string]any)).S("method") != "invitation" {

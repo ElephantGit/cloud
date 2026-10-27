@@ -176,6 +176,10 @@ func admitScheduledTaskDue(t *transaction, taskID string) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
 		return
 	}
+	if !scheduledTaskSpaceActive(t, task.S("tenantId"), agent.S("spaceId")) {
+		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
+		return
+	}
 	if !agentRunGateOK(t, issue, agent) {
 		failScheduledOccurrenceWithReason(t, taskID, due, "target_unavailable")
 		return

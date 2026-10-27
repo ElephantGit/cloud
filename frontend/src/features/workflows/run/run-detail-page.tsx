@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkflowRun } from '@/features/workflows/api'
 import { parseWorkflowGraphValue } from '@/features/workflows/runtime/graph-codec'
 import type { WorkflowNodeData } from '@/features/workflows/runtime/types'
+import { formatRunInstant, shortRunId } from '@/features/workflows/run/run-time'
 import { parseRunNodeStates, type RunNodeEntry } from '@/features/workflows/run/run-node-state'
 import {
   parseRunContainers,
@@ -109,9 +110,11 @@ function WorkflowRunDetailBody({
   return (
     <RunPageShell
       title={run.name}
+      // The way back is the run list this run was opened from, not the editor: a member browsing
+      // history returns to the history, where the next run to look at is one click away.
       breadcrumb={{
-        label: run.workflowName || run.name,
-        to: paths.workflowDetail(run.workflowId),
+        label: `${run.workflowName || run.name} · ${t('workflows.run.history')}`,
+        to: paths.workflowRuns(run.workflowId),
       }}
     >
       <div className="flex min-h-0 flex-1 flex-col">
@@ -125,7 +128,7 @@ function WorkflowRunDetailBody({
             <RunTimestamp label={t('workflows.run.finished')} iso={run.finishedAt} />
           )}
           <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {shortId(run.snapshotId)}
+            {shortRunId(run.snapshotId)}
           </span>
         </div>
         <div className="flex min-h-0 flex-1">
@@ -177,7 +180,7 @@ function RunTimestamp({ label, iso }: { label: string; iso: string }) {
     <span className="text-xs text-muted-foreground">
       {label}{' '}
       <time dateTime={iso} className="font-mono text-[11px] tabular-nums">
-        {formatDateTime(iso)}
+        {formatRunInstant(iso)}
       </time>
     </span>
   )
@@ -242,25 +245,4 @@ function memberTitles(
   nodes: readonly { id: string; data: WorkflowNodeData }[],
 ): Map<string, string> {
   return new Map(nodes.map((node) => [node.id, node.data.title]))
-}
-
-/** Local `YYYY-MM-DD HH:MM` rendering for the header strip. */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) {
-    return '—'
-  }
-  return date.toLocaleString([], {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-/** Shortens a uuid to its 8-character prefix for compact display. */
-function shortId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id
 }

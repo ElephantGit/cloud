@@ -102,10 +102,10 @@ export interface WorkflowEditorState extends WorkflowEditorHandlers {
    * Publish calls this first so a released version is never stale.
    */
   flushDraft: () => Promise<boolean>
+  /** Drops an unsaved draft after the member explicitly chooses to leave. */
+  discardDraft: () => void
   /** The document version the server last confirmed; its value guards a restore. */
   committedVersion: number
-  /** Replaces the draft with a fresh workflow, e.g. after a version restore. */
-  resetDraft: (workflow: CloudWorkflow) => void
   /** Serializes the live draft, unsaved edits included, into the graph document. */
   draftGraph: () => Record<string, unknown>
   /** Replaces the workflow-wide declarations as one history step. */
@@ -192,18 +192,6 @@ export function useWorkflowEditorState(
   // edits included, so what the download previews is what the file will hold.
   const draftGraph = useCallback(() => snapshot(viewportRef.current), [snapshot])
 
-  // An external replace (a version restore) reseeds the draft and adopts the new
-  // version as the guard for later writes and a later restore.
-  const resetDraft = useCallback(
-    (next: CloudWorkflow) => {
-      draft.reset(next)
-      versionRef.current = next.version
-      setCommittedVersion(next.version)
-      cancel()
-    },
-    [cancel, draft],
-  )
-
   return {
     ...useWorkflowDraftHandlers(draft, markDirty, history, t),
     ...globalVariablesSaver,
@@ -218,8 +206,8 @@ export function useWorkflowEditorState(
     status,
     saveNow,
     flushDraft: flush,
+    discardDraft: cancel,
     committedVersion,
-    resetDraft,
     draftGraph,
     onViewportChange,
     history: workflowHistoryControls(draft, history),

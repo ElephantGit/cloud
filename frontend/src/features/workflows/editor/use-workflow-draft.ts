@@ -101,11 +101,7 @@ export interface WorkflowDraft {
   replaceLaunchFields: (fields: WorkflowLaunchField[]) => void
   /** Re-arranges the graph into execution order. */
   organize: () => void
-  /**
-   * Replaces the whole draft with a fresh workflow's graph, an external replace
-   * such as a version restore rather than an edit. The restored graph becomes
-   * the new base, so nothing left over from the discarded draft persists.
-   */
+  /** Replaces the whole draft from a fresh workflow record, e.g. after reloading the document. */
   reset: (workflow: CloudWorkflow) => void
   /**
    * Snapshots the current authored content for a history step. The viewport is
@@ -207,8 +203,6 @@ export function useWorkflowDraft(
     })
   }
 
-  // Reseeds the whole draft for an external replace; the seed closure reads
-  // only from `next`, so the reset carries no stale session state with it.
   const reset = (next: CloudWorkflow): void => {
     replaceState(seedDraft(next))
   }

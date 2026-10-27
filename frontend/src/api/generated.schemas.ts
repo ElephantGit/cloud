@@ -2563,6 +2563,33 @@ export interface User {
  */
 export type WorkflowGraph = { [key: string]: unknown };
 
+export type WorkflowLatestRunStatus = typeof WorkflowLatestRunStatus[keyof typeof WorkflowLatestRunStatus];
+
+
+export const WorkflowLatestRunStatus = {
+  pending: 'pending',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.
+ * @nullable
+ */
+export type WorkflowLatestRun = {
+  createdAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  id: string;
+  name: string;
+  snapshotId: string;
+  /** @nullable */
+  startedAt: string | null;
+  status: WorkflowLatestRunStatus;
+} | null;
+
 export interface Workflow {
   createdAt: string;
   /** @nullable */
@@ -2571,6 +2598,11 @@ export interface Workflow {
   /** The authored graph document: nodes, edges, viewport, editor annotations and global variables. Stored and returned whole; the editor is its only reader. */
   graph: WorkflowGraph;
   id: string;
+  /**
+     * List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.
+     * @nullable
+     */
+  latestRun?: WorkflowLatestRun;
   name: string;
   tenantId: string;
   updatedAt: string;

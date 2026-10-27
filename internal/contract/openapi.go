@@ -126,7 +126,27 @@ func Document() map[string]any {
 	commentProps["seq"] = number()
 	s["Label"] = resource("id tenantId name color version createdAt updatedAt deletedAt", "deletedAt")
 	s["Workflow"] = resource("id tenantId name description graph version createdAt updatedAt deletedAt", "deletedAt")
-	properties(s, "Workflow")["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The authored graph document: nodes, edges, viewport, editor annotations and global variables. Stored and returned whole; the editor is its only reader."}
+	workflowProps := properties(s, "Workflow")
+	workflowProps["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The authored graph document: nodes, edges, viewport, editor annotations and global variables. Stored and returned whole; the editor is its only reader."}
+	// The newest run belongs to a workflow *list* row, so a member can say when a workflow last ran
+	// without a request per row. It is an inline nullable object rather than a $ref: OpenAPI 3.0
+	// ignores every sibling of $ref, so a referenced schema could not also be nullable. Null means
+	// the workflow has never run, which is different from a run still pending. The detail read does
+	// not carry it — a run starting must not rewrite every read of the workflow resource.
+	workflowProps["latestRun"] = optional(obj{
+		"type": "object", "additionalProperties": false,
+		"description": "List rows only. The workflow's most recent run (the order the run history walks), or null when it has never run.",
+		"properties": obj{
+			"id":         uuid(),
+			"name":       str(),
+			"status":     enumeration("pending", "running", "succeeded", "failed", "cancelled"),
+			"snapshotId": uuid(),
+			"createdAt":  timestamp(),
+			"startedAt":  optional(timestamp()),
+			"finishedAt": optional(timestamp()),
+		},
+		"required": []string{"id", "name", "status", "snapshotId", "createdAt", "startedAt", "finishedAt"},
+	})
 	s["WorkflowSnapshot"] = resource("id tenantId workflowId version name graph createdAt", "")
 	properties(s, "WorkflowSnapshot")["graph"] = obj{"type": "object", "additionalProperties": true, "description": "The graph document frozen at publish time; restoring this snapshot writes it back to the workflow's live graph."}
 	s["WorkflowRun"] = resource("id tenantId workflowId snapshotId name status input nodeStates rounds error startedAt finishedAt createdAt updatedAt workflowName cancelRequestedAt pluginVersion", "startedAt finishedAt cancelRequestedAt pluginVersion")

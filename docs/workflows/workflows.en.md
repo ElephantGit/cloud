@@ -23,6 +23,9 @@ and importing workflows from plugins.
   checks nothing about completeness: a half-written draft is a legitimate document. Only **publishing** judges
   whether a graph can execute, returning problems together with the node or slot at fault so the editor can mark
   them. A frozen published version is a graph Cloud has agreed to execute.
+  Switching tabs or leaving through an editor toolbar link waits for an outstanding draft save. If it fails, the
+  author may stay in the editor or discard unsaved changes and leave, avoiding both a stale canvas on return and a
+  failed draft that traps them in the editor.
 - **Versions are immutable.** Published versions (`workflow_snapshots`) are stored under a per-workflow increasing
   version number and are never modified or soft-deleted, so the graph a run rendered never drifts with the document.
   Publishing locks the workflow row, so two concurrent publishes never get the same version number. A snapshot's
@@ -137,6 +140,23 @@ there is nothing to default to, and the run's Workspace, its clone and its whole
 was named. A run Workspace belongs to the run that created it: `workspaces.workflow_run_id` is mutually exclusive
 with an IssueRun's `issue_run_id`, and the `maintenance` reserved for it in runtime control is recorded against the
 same run identity (see [Runtime control](../runtime/runtime-control.en.md)).
+
+**The run history pages by `(created_at, id)`, newest first.** `GET .../workflows/:wfid/runs` returns the newest run
+first, caps `limit` at 100, and takes the last row's WorkflowRun UUID as `after`: the server resolves that row's
+`created_at` and continues strictly below `(created_at, id)`, so several runs created in the same instant are ordered by
+`id` and paging neither repeats nor skips one. The cursor is only a row UUID and carries no timestamp; a cursor that
+resolves to no row (another workflow's, or a purged one) answers an empty page instead of restarting from the top, and a
+value that is not a UUID answers `400 invalid_cursor`. Every workflow **list** row carries `latestRun`, the first run
+of that same order — `null` when the workflow has never run. It holds the status, snapshot and timestamps only; a history
+row is what carries node states and inputs. The detail read carries no such field: a run starting must not rewrite every
+read of the workflow resource, so a reader that wants the label asks the list or the history.
+
+The run-history page distinguishes loading, no runs, a retryable read failure, and missing permission. On initial entry,
+workflow detail and run history are independent reads: a detail `403` also shows missing permission, retrying a transient
+detail failure reads the detail again, and only `not_found` says the workflow is missing. A later paging or refresh
+failure keeps the loaded history, and retry repeats the read that failed. History rows show start and finish
+independently: a run cancelled before starting has no start time but still shows its finish time. Viewing history and
+retrying a read never create a run.
 
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency

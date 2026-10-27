@@ -319,3 +319,44 @@ func TestNextScheduledDueExamples(t *testing.T) {
 		t.Fatalf("daily next with a slot exactly at the anchor = %v, want the following day", got)
 	}
 }
+
+func TestScheduledTaskNextDueAtFollowsEnableAnchor(t *testing.T) {
+	now := time.Date(2026, 1, 1, 13, 0, 0, 0, time.UTC)
+	task := func(enabled bool, enabledAt string) Object {
+		return Object{
+			"enabled":   enabled,
+			"enabledAt": enabledAt,
+			"timezone":  "Asia/Shanghai",
+			"schedule":  Object{"kind": "every_hours", "intervalHours": 2},
+		}
+	}
+	if got := scheduledTaskNextDueAt(task(true, "2026-01-01T10:17:00Z"), now); got != "2026-01-01T14:17:00Z" {
+		t.Fatalf("enabled nextDueAt = %v, want 2026-01-01T14:17:00Z", got)
+	}
+	// Manual disable keeps the anchor (D2) but the task is off: nothing is due.
+	if got := scheduledTaskNextDueAt(task(false, "2026-01-01T10:17:00Z"), now); got != nil {
+		t.Fatalf("manually disabled nextDueAt = %v, want none", got)
+	}
+	// Automatic disable clears the anchor.
+	if got := scheduledTaskNextDueAt(task(false, ""), now); got != nil {
+		t.Fatalf("auto-disabled nextDueAt = %v, want none", got)
+	}
+	// enable moves the anchor to the database clock; the projection follows the new anchor.
+	if got := scheduledTaskNextDueAt(task(true, "2026-01-01T12:59:30Z"), now); got != "2026-01-01T14:59:30Z" {
+		t.Fatalf("re-enabled nextDueAt = %v, want 2026-01-01T14:59:30Z", got)
+	}
+	daily := Object{"enabled": true, "enabledAt": "2026-01-01T00:00:00Z", "timezone": "Asia/Shanghai", "schedule": Object{"kind": "daily", "hour": 9, "minute": 0}}
+	if got := scheduledTaskNextDueAt(daily, now); got != "2026-01-02T01:00:00Z" {
+		t.Fatalf("daily nextDueAt in task timezone = %v, want 2026-01-02T01:00:00Z (09:00 +08:00)", got)
+	}
+	for name, broken := range map[string]Object{
+		"unknown_timezone": {"enabled": true, "enabledAt": "2026-01-01T10:17:00Z", "timezone": "Mars/Base", "schedule": Object{"kind": "daily", "hour": 9, "minute": 0}},
+		"no_timezone":      {"enabled": true, "enabledAt": "2026-01-01T10:17:00Z", "schedule": Object{"kind": "daily", "hour": 9, "minute": 0}},
+		"corrupt_schedule": {"enabled": true, "enabledAt": "2026-01-01T10:17:00Z", "timezone": "UTC", "schedule": Object{"kind": "cron"}},
+		"invalid_anchor":   {"enabled": true, "enabledAt": "yesterday", "timezone": "UTC", "schedule": Object{"kind": "daily", "hour": 9, "minute": 0}},
+	} {
+		if got := scheduledTaskNextDueAt(broken, now); got != nil {
+			t.Fatalf("%s nextDueAt = %v, want none", name, got)
+		}
+	}
+}

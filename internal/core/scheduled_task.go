@@ -266,6 +266,33 @@ func (s scheduledTaskSchedule) latestDue(anchor, now time.Time, loc *time.Locati
 	}
 }
 
+// nextScheduledDue returns the earliest scheduled point strictly after `now` that latestDue lands
+// on for the same enable anchor, i.e. the next point the worker will evaluate. It is a read-side
+// projection only (never persisted, never an occurrence). every_hours stays on the anchor grid like
+// latestDue rather than stepping from `now` as nextDue does. The zero time means none can be computed.
+func (s scheduledTaskSchedule) nextScheduledDue(anchor, now time.Time, loc *time.Location) time.Time {
+	if anchor.IsZero() {
+		return time.Time{}
+	}
+	if s.Kind == "every_hours" {
+		step, ok := scheduledEveryHoursDuration(s.IntervalHours)
+		if !ok {
+			return time.Time{}
+		}
+		if !now.After(anchor) {
+			return anchor.Add(step)
+		}
+		// Two Adds keep steps*step+step from overflowing Duration for the widest intervals.
+		steps := now.Sub(anchor) / step
+		return anchor.Add(steps * step).Add(step)
+	}
+	after := now
+	if anchor.After(after) {
+		after = anchor
+	}
+	return s.nextDue(after, loc)
+}
+
 // scheduledWeekdayNames renders the persisted weekday set for storage.
 func scheduledWeekdayNames(weekdays []time.Weekday) []string {
 	byName := map[time.Weekday]string{

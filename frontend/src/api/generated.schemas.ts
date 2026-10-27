@@ -2016,6 +2016,8 @@ export interface ScheduledTask {
   /** @nullable */
   model?: string | null;
   name: string;
+  /** @nullable */
+  nextDueAt?: string | null;
   prompt: string;
   revision: number;
   schedule: ScheduledTaskSchedule;

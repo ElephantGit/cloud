@@ -273,6 +273,7 @@ func Document() map[string]any {
 		"unattendedPolicy":      optional(str()),
 		"unattendedConsentedAt": optional(timestamp()),
 		"disabledReason":        optional(str()),
+		"nextDueAt":             optional(timestamp()),
 		"createdAt":             timestamp(), "updatedAt": timestamp(),
 	}, "id", "issueId", "creatorUserId", "name", "prompt", "agentId", "schedule", "timezone", "revision", "version", "enabled", "createdAt", "updatedAt")
 	s["ScheduledTaskList"] = object(obj{"tasks": array(ref("ScheduledTask")), "acceptanceEnabled": boolean()}, "tasks", "acceptanceEnabled")

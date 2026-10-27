@@ -4393,6 +4393,11 @@
           "name": {
             "type": "string"
           },
+          "nextDueAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "prompt": {
             "type": "string"
           },

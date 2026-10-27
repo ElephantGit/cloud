@@ -45,3 +45,5 @@ The card’s “next run” only renders `nextDueAt`, which Cloud recomputes on 
 Artifact lists contain metadata only. Download links target same-origin Cloud routes; each click rechecks authorization and verifies the file before serving a safe attachment. Browsers receive no storage URL, credentials or expiry; artifact content is never rendered inside the app.
 
 History uses `artifactsExpired` to identify artifacts removed after successful delivery; a run that produced none is never labeled expired.
+
+The failure reasons `task_paused` and `task_handoff_pending` render as a pointer to the task conversation: they are resolved there, not in the task or Agent configuration. Other failure reasons keep their raw code.

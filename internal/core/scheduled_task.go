@@ -416,7 +416,7 @@ func failScheduledOccurrenceWithReason(t *transaction, taskID string, due time.T
 // being unavailable.
 func scheduledFailureReason(kind string) string {
 	switch kind {
-	case "model_unavailable", "approval_policy_invalid":
+	case "model_unavailable", "approval_policy_invalid", "task_paused", "task_handoff_pending":
 		return kind
 	default:
 		return "target_unavailable"

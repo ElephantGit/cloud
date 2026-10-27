@@ -379,6 +379,76 @@ func TestScheduledTaskArchivedSpaceRejectsDeclaredClaude(t *testing.T) {
 	})
 }
 
+// seedTaskConversationMessage gives the bound issue's task conversation one earlier user message in
+// `state`; a failed message carries the error code the task worker records.
+func seedTaskConversationMessage(t *testing.T, store *core.Store, s skeletonSeed, agentID, state string) {
+	t.Helper()
+	code := any(nil)
+	if state == "failed" {
+		code = "agent_unavailable"
+	}
+	_, err := store.Pool.Exec(`INSERT INTO task_conversations(issue_id, tenant_id, last_seq) VALUES($1,$2,1)`, s.issueID, s.tenantID)
+	must(t, err)
+	_, err = store.Pool.Exec(`INSERT INTO task_conversation_messages(id, tenant_id, issue_id, seq, user_id, agent_id, body, state, error_code)
+		VALUES($1,$2,$3,1,$4,$5,'earlier user input',$6,$7)`, uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID, state, code)
+	must(t, err)
+}
+
+// assertConversationRejects evaluates twice and requires one failed occurrence with `reason` and no
+// scheduled IssueRun: the rejection is durable, so the due point is never retried or relabelled
+// missed (ADR D5: 失败明确到原因，不回退不重试).
+func assertConversationRejects(t *testing.T, store *core.Store, taskID, reason string) {
+	t.Helper()
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+	var count, runs int
+	var outcome, got string
+	must(t, store.Pool.QueryRow(`SELECT count(*), COALESCE(min(outcome),''), COALESCE(min(failure_reason),''), count(run_id) FROM scheduled_task_occurrences WHERE task_id=$1`, taskID).Scan(&count, &outcome, &got, &runs))
+	if count != 1 || outcome != "failed" || got != reason || runs != 0 {
+		t.Fatalf("task conversation must leave one failed %s occurrence without a run, got count=%d outcome=%q reason=%q runs=%d", reason, count, outcome, got, runs)
+	}
+	var issueRuns int
+	must(t, store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE trigger_evidence_ref_id=$1`, taskID).Scan(&issueRuns))
+	if issueRuns != 0 {
+		t.Fatalf("a refused admission must not create a scheduled IssueRun, got %d", issueRuns)
+	}
+}
+
+// The scheduled admission enqueues through enqueueAdmittedRun, which skips the direct-input task
+// conversation guards. Without the precheck a paused conversation or a failed message leaves the run
+// queued forever (the claim guard never takes it), and a waiting message is overtaken by the
+// scheduled run. TestScheduledTaskAdmissionCreatesARun is the same fixture with no conversation.
+
+func TestScheduledTaskPausedConversationRejectsAdmission(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	var finished string
+	must(t, store.Pool.QueryRow(`INSERT INTO issue_runs(id, tenant_id, issue_id, executor_type, executor_id, status, phase)
+		VALUES(gen_random_uuid(),$1,$2,'agent',$3,'failed','done') RETURNING id`, s.tenantID, s.issueID, agentID).Scan(&finished))
+	_, err := store.Pool.Exec(`INSERT INTO task_conversations(issue_id, tenant_id, paused_run_id) VALUES($1,$2,$3)`, s.issueID, s.tenantID, finished)
+	must(t, err)
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Paused conversation", 65)
+	assertConversationRejects(t, store, taskID, "task_paused")
+}
+
+func TestScheduledTaskFailedMessageRejectsAdmission(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	seedTaskConversationMessage(t, store, s, agentID, "failed")
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Failed message", 65)
+	assertConversationRejects(t, store, taskID, "task_paused")
+}
+
+func TestScheduledTaskWaitingMessageRejectsAdmission(t *testing.T) {
+	store, s, agentID := scheduledTaskStore(t)
+	seedTaskConversationMessage(t, store, s, agentID, "waiting")
+	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Waiting message", 65)
+	assertConversationRejects(t, store, taskID, "task_handoff_pending")
+	var state string
+	must(t, store.Pool.QueryRow(`SELECT state FROM task_conversation_messages WHERE issue_id=$1 AND seq=1`, s.issueID).Scan(&state))
+	if state != "waiting" {
+		t.Fatalf("the earlier user message must stay at the head of the queue, got %q", state)
+	}
+}
+
 // TestScheduledTaskEvaluationProcessesMoreThanOnePage prevents a fixed first 100-task page from
 // starving later enabled definitions forever.
 func TestScheduledTaskEvaluationProcessesMoreThanOnePage(t *testing.T) {

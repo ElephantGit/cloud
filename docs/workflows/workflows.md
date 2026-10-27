@@ -200,6 +200,10 @@ WorkflowRun 的实际状态更新成功后，在同一事务里将状态、时�
 body 只能读取本区域前驱、容器的外层祖先、globals / sys 与本轮 carried 或 item / index；
 loop 的 feedback、until、outputs 在轮末读取本 body 完成快照。iteration 最多 100 项。
 
+iteration 指向自身成员、`sourceHandle = "iteration-entry"` 的入口边可以原样保存和发布，
+兼容 Cloud 编辑器及 Desktop 图；入口边可选，不强制添加。它不进入区域内部的调度依赖或前驱计算，
+成员不会等待 iteration 容器完成。其他跨容器连线仍在发布时拒绝。
+
 复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
 iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
 完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。

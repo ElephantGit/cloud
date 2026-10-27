@@ -177,6 +177,27 @@ failure keeps the loaded history, and retry repeats the read that failed. Histor
 independently: a run cancelled before starting has no start time but still shows its finish time. Viewing history and
 retrying a read never create a run.
 
+**A node session is read by attempt.** `GET .../workflows/:wfid/runs/:rid/nodes/:nodeId/session` returns the session
+receipts of one Agent node attempt, paged from the newest receipt sequence backwards and returned oldest first within a
+page (the same convention as the Thread read): `limit` defaults to 100 with a cap of 200, and a page also stops at a
+4 MiB byte budget. The request is addressed only by run, graph node and attempt — never
+by a session or execution row — and authorization is the workflow model read narrowed to the node: an active tenant
+member, a live workflow, a run of that workflow, and a node id the run's frozen graph contains; the attempt and execution
+are resolved from committed node state. A non-Agent node answers `not_applicable`. `attempt` defaults to the node's current
+attempt, and a value beyond the committed attempts is `404`; `before` without `attempt` is `400 invalid_pagination`,
+because a retry would move "the current attempt" between two pages. The paging cursor is the `nextBefore` the previous page
+returned, which keeps the walk pinned to the attempt that page read. The terminal receipt is excluded by committed
+evidence — the execution's result together with `last_event_sequence` — never by shape, since it is an arbitrary string a
+Node wrote and may look like a history record. `state` describes the whole attempt rather than the page: history receipts
+make it `available` (the history itself may still be incomplete), no execution row makes it `not_started`, an in-flight
+session with nothing recorded is `awaiting_first_record`, a settled attempt with no replayable history is `unavailable` —
+the unreachable-Node, deadline and cancellation paths write no result, so an empty result does not prove the session is
+live — and contradictory evidence (the node already on a later attempt while this one has no result) is `unknown`.
+`incomplete` reports only what a page observed, and `hasMore` is probed independently. The response describes the selected
+attempt's evidence under `execution` and the node's current state under `node`, kept apart; the node's output and end
+reason belong to the current attempt only, so a page reading an older attempt must not present them as that attempt's
+answer. Reading never opens a session, advances a node or writes anything.
+
 **Cancellation is a request, not a transition.** `POST .../workflows/:wfid/runs/:rid/cancel` records the request on
 the run row and answers `202` with the instant it was recorded; repeating the request (even under a fresh idempotency
 key) returns the same instant. The request writes only `workflow_runs.cancel_requested_at` — never the run's status,

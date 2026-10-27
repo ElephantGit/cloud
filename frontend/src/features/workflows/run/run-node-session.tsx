@@ -160,6 +160,17 @@ function SessionRow({ row }: { row: NodeSessionRow }) {
       {t('workflows.run.session.truncated')}
     </span>
   ) : null
+  if (row.kind === 'user') {
+    return (
+      <p className="rounded border-l-2 border-primary/60 bg-muted/40 px-2 py-1 text-xs leading-5 break-words whitespace-pre-wrap">
+        <span className="mr-1 text-[10px] text-muted-foreground">
+          {t('workflows.run.session.userInput')}
+        </span>
+        {row.text}
+        {truncated}
+      </p>
+    )
+  }
   if (row.kind === 'message') {
     return (
       <p className="text-xs leading-5 break-words whitespace-pre-wrap">

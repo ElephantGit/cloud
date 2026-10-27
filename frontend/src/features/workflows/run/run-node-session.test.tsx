@@ -80,6 +80,33 @@ describe('RunNodeSession', () => {
     expect(within(region).getByText('end_turn')).toBeInTheDocument()
   })
 
+  it("labels the prompt the Node echoed as the attempt's user input", async () => {
+    installSession(() =>
+      HttpResponse.json(
+        session({
+          records: [
+            {
+              sequence: 1,
+              record: {
+                type: 'update',
+                update: {
+                  sessionUpdate: 'user_message_chunk',
+                  content: [{ type: 'text', text: '整理发布说明' }],
+                },
+              },
+            },
+            chunk(2, '已整理'),
+          ],
+        }),
+      ),
+    )
+    renderPanel()
+
+    const region = screen.getByRole('region', { name: '会话' })
+    const items = await within(region).findAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual(['用户输入整理发布说明', '已整理'])
+  })
+
   it.each([
     ['not_started', '这次尝试还没有派发会话，暂时没有记录。'],
     ['unavailable', '这次尝试已经结束，但没有留下可回放的会话记录。'],

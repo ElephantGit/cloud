@@ -141,6 +141,24 @@ describe('nodeSessionRows', () => {
     ])
   })
 
+  it("reads the prompt the Node echoed back as the attempt's own user input", () => {
+    const rows = nodeSessionRows([
+      receipt(1, {
+        type: 'update',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: [{ type: 'text', text: '把登录页的错误提示统一' }],
+        },
+      }),
+      message(2, '好'),
+    ])
+
+    expect(rows.map(({ kind, text }) => [kind, text])).toEqual([
+      ['user', '把登录页的错误提示统一'],
+      ['message', '好'],
+    ])
+  })
+
   it('falls back to the raw event for kinds this view does not read', () => {
     const rows = nodeSessionRows([
       receipt(1, { type: 'update', update: { sessionUpdate: 'plan', steps: [] } }),

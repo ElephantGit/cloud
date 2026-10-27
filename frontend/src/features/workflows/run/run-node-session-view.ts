@@ -5,8 +5,13 @@ import type {
 } from '@/api/generated.schemas'
 import { asJsonRecord } from '@/features/workflows/runtime/json-record'
 
-/** How one stored receipt reads in the inspector; anything unrecognised falls back to `raw`. */
-export type NodeSessionRowKind = 'message' | 'thought' | 'tool' | 'turnEnded' | 'raw'
+/**
+ * How one stored receipt reads in the inspector; anything unrecognised falls back to `raw`.
+ *
+ * `user` is the turn the Node echoed for the prompt Cloud dispatched — the attempt's own user
+ * input, which every workflow node session records even though the inspector shows no prompt.
+ */
+export type NodeSessionRowKind = 'user' | 'message' | 'thought' | 'tool' | 'turnEnded' | 'raw'
 
 /** One row of a node attempt's conversation, already ordered oldest first. */
 export interface NodeSessionRow {
@@ -103,18 +108,35 @@ function updateRow(
   visibleText: string | undefined,
 ): Pick<NodeSessionRow, 'kind' | 'text'> {
   const kind = update['sessionUpdate']
-  if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
+  if (
+    kind === 'user_message_chunk' ||
+    kind === 'agent_message_chunk' ||
+    kind === 'agent_thought_chunk'
+  ) {
     // The recorded content is authoritative; `visibleText` is Cloud's bounded projection of the
     // same chunk, used only when the content carries no text block this view can read.
     const text = contentText(update['content']) || (visibleText ?? '')
     if (text !== '') {
-      return { kind: kind === 'agent_message_chunk' ? 'message' : 'thought', text }
+      return { kind: chunkKind(kind), text }
     }
   }
   if (kind === 'tool_call' || kind === 'tool_call_update') {
     return { kind: 'tool', text: toolText(update) }
   }
   return { kind: 'raw', text: JSON.stringify(update) }
+}
+
+/**
+ * The row kind of one text chunk. The user chunk is the prompt Cloud dispatched, echoed back by
+ * the Node; the inspector shows it because the conversation is unreadable without the turn it
+ * answers, and because it is the attempt's own record of what it was asked.
+ *
+ * @param sessionUpdate - The chunk's `sessionUpdate` value, already known to be a text chunk.
+ * @returns The row kind the chunk reads as.
+ */
+function chunkKind(sessionUpdate: string): NodeSessionRowKind {
+  if (sessionUpdate === 'user_message_chunk') return 'user'
+  return sessionUpdate === 'agent_message_chunk' ? 'message' : 'thought'
 }
 
 /** The text blocks of an ACP content value; blocks that are not text contribute nothing. */

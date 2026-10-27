@@ -139,6 +139,13 @@ Workflows have three start entries, all sharing one admission gate:
    keys the graph does not declare are not checked (a run's input also carries the platform's own material).
 3. Check executor slots (see above).
 
+For Start JSON controls declaring `array`, a typed array or `object`, all three entries decode JSON text
+once before creating a run and check its shape and element types against the selected version. Native
+arrays/objects from API callers are also accepted; the run stores the decoded value. Malformed JSON,
+type mismatches and the text `null` return `400 invalid_field_value` with `params.field` naming the field.
+Plain strings, `any` and the reserved `input` kickoff are not decoded; absent values and native `null`
+retain the required-field rules.
+
 If any check fails, no run, claimed interaction or activity is left behind. The executed version is frozen onto the
 run, so the run still knows which version it executed after the workflow is edited or published again.
 

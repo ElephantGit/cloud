@@ -1074,6 +1074,9 @@ func workflowRunFailureReason(graph workflowGraphView, states map[string]workflo
 		if state.Status != "failed" {
 			continue
 		}
+		if node.Kind == "agent" && state.Error != "" {
+			return state.Error
+		}
 		if reason := state.Output.S("reason"); reason != "" {
 			return reason
 		}

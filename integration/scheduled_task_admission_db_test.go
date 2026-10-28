@@ -394,11 +394,24 @@ func seedTaskConversationMessage(t *testing.T, store *core.Store, s skeletonSeed
 	must(t, err)
 }
 
+// taskConversationSnapshot reads the issue's whole task conversation, its row and every message, as
+// one comparable value.
+func taskConversationSnapshot(t *testing.T, store *core.Store, issueID string) string {
+	t.Helper()
+	var snapshot string
+	must(t, store.Pool.QueryRow(`SELECT COALESCE((SELECT row_to_json(c)::text FROM task_conversations c WHERE c.issue_id=$1),'')
+		|| ' | ' || COALESCE((SELECT json_agg(m ORDER BY m.seq)::text FROM task_conversation_messages m WHERE m.issue_id=$1),'')`, issueID).Scan(&snapshot))
+	return snapshot
+}
+
 // assertConversationRejects evaluates twice and requires one failed occurrence with `reason` and no
 // scheduled IssueRun: the rejection is durable, so the due point is never retried or relabelled
-// missed (ADR D5: 失败明确到原因，不回退不重试).
-func assertConversationRejects(t *testing.T, store *core.Store, taskID, reason string) {
+// missed (ADR D5: 失败明确到原因，不回退不重试). The refusal must also leave the task conversation
+// exactly as it found it: its messages, pause point and queue order belong to the conversation, not
+// to the scheduler.
+func assertConversationRejects(t *testing.T, store *core.Store, issueID, taskID, reason string) {
 	t.Helper()
+	before := taskConversationSnapshot(t, store, issueID)
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 	must(t, store.EvaluateScheduledTasksOnce(context.Background()))
 	var count, runs int
@@ -411,6 +424,9 @@ func assertConversationRejects(t *testing.T, store *core.Store, taskID, reason s
 	must(t, store.Pool.QueryRow(`SELECT count(*) FROM issue_runs WHERE trigger_evidence_ref_id=$1`, taskID).Scan(&issueRuns))
 	if issueRuns != 0 {
 		t.Fatalf("a refused admission must not create a scheduled IssueRun, got %d", issueRuns)
+	}
+	if after := taskConversationSnapshot(t, store, issueID); after != before {
+		t.Fatalf("a refused admission rewrote the task conversation:\nbefore %s\nafter  %s", before, after)
 	}
 }
 
@@ -427,21 +443,31 @@ func TestScheduledTaskPausedConversationRejectsAdmission(t *testing.T) {
 	_, err := store.Pool.Exec(`INSERT INTO task_conversations(issue_id, tenant_id, paused_run_id) VALUES($1,$2,$3)`, s.issueID, s.tenantID, finished)
 	must(t, err)
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Paused conversation", 65)
-	assertConversationRejects(t, store, taskID, "task_paused")
+	assertConversationRejects(t, store, s.issueID, taskID, "task_paused")
+	var paused string
+	must(t, store.Pool.QueryRow(`SELECT COALESCE(paused_run_id::text,'') FROM task_conversations WHERE issue_id=$1`, s.issueID).Scan(&paused))
+	if paused != finished {
+		t.Fatalf("the conversation must stay paused on run %s, got %q", finished, paused)
+	}
 }
 
 func TestScheduledTaskFailedMessageRejectsAdmission(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	seedTaskConversationMessage(t, store, s, agentID, "failed")
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Failed message", 65)
-	assertConversationRejects(t, store, taskID, "task_paused")
+	assertConversationRejects(t, store, s.issueID, taskID, "task_paused")
+	var state, code string
+	must(t, store.Pool.QueryRow(`SELECT state, COALESCE(error_code,'') FROM task_conversation_messages WHERE issue_id=$1 AND seq=1`, s.issueID).Scan(&state, &code))
+	if state != "failed" || code != "agent_unavailable" {
+		t.Fatalf("the failed message must stay unresolved for its sender, got state=%q error_code=%q", state, code)
+	}
 }
 
 func TestScheduledTaskWaitingMessageRejectsAdmission(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	seedTaskConversationMessage(t, store, s, agentID, "waiting")
 	taskID := seedEnabledScheduledTask(t, store, s, agentID, "Waiting message", 65)
-	assertConversationRejects(t, store, taskID, "task_handoff_pending")
+	assertConversationRejects(t, store, s.issueID, taskID, "task_handoff_pending")
 	var state string
 	must(t, store.Pool.QueryRow(`SELECT state FROM task_conversation_messages WHERE issue_id=$1 AND seq=1`, s.issueID).Scan(&state))
 	if state != "waiting" {

@@ -110,6 +110,36 @@ func Document() map[string]any {
 		"historyAvailable": boolean(), "model": optional(object(obj{"connectionName": str(), "modelId": str(), "modelName": str()}, "connectionName", "modelId", "modelName")),
 	}, "id", "issueId", "issueNumber", "issueTitle", "projectId", "projectName", "agentPluginId", "status", "threadState", "createdAt", "startedAt", "completedAt", "historyAvailable", "model")
 	s["SessionHistory"] = object(obj{"source": enumeration("archive"), "records": array(obj{"type": "object", "additionalProperties": true}), "sizeBytes": number(), "sha256": str()}, "source", "records", "sizeBytes", "sha256")
+	s["WorkflowNodeSessionRecord"] = object(obj{
+		"sequence":             number(),
+		"historySequence":      optional(number()),
+		"turnId":               str(),
+		"truncated":            boolean(),
+		"visibleText":          str(),
+		"visibleTextTruncated": boolean(),
+		"record":               obj{"type": "object", "additionalProperties": true},
+	}, "sequence", "record")
+	s["WorkflowNodeSessionExecution"] = object(obj{
+		"attempt":     number(),
+		"executionId": optional(str()),
+		"result":      optional(obj{"type": "object", "additionalProperties": true}),
+		"records":     array(ref("WorkflowNodeSessionRecord")),
+		"state":       enumeration("available", "not_applicable", "not_started", "awaiting_first_record", "unavailable", "unknown"),
+		"incomplete":  boolean(),
+		"hasMore":     boolean(),
+		"nextBefore":  optional(number()),
+	}, "attempt", "executionId", "result", "records", "state", "incomplete", "hasMore", "nextBefore")
+	s["WorkflowNodeSessionNode"] = object(obj{
+		"status":           optional(str()),
+		"attempt":          number(),
+		"output":           optional(obj{"type": "object", "additionalProperties": true}),
+		"sessionEndReason": optional(str()),
+		"error":            optional(str()),
+	}, "status", "attempt", "output", "sessionEndReason", "error")
+	s["WorkflowNodeSession"] = object(obj{
+		"execution": ref("WorkflowNodeSessionExecution"),
+		"node":      ref("WorkflowNodeSessionNode"),
+	}, "execution", "node")
 	s["SlotMapping"] = object(obj{"slotName": str(), "agentCli": str(), "connectionId": uuid(), "modelId": str(), "modelName": str(), "connectionName": str(), "available": boolean(), "unavailableReason": str(), "version": number(), "createdAt": timestamp(), "updatedAt": timestamp()}, "slotName", "agentCli", "connectionId", "modelId", "modelName", "connectionName", "available", "unavailableReason", "version", "createdAt", "updatedAt")
 	s["ThreadModel"] = object(obj{"connectionName": str(), "modelId": str(), "modelName": str()}, "connectionName", "modelId", "modelName")
 	s["Project"] = resource("id tenantId ownerUserId spaceId name repositoryUrl defaultBranch credentialRefId lifecycle version createdAt deletedAt", "credentialRefId deletedAt")
@@ -557,6 +587,15 @@ func Document() map[string]any {
 				responses[code] = obj{"description": "Archive exceeds limits or cannot be verified/read", "content": obj{"application/json": obj{"schema": ref("Error")}}}
 			}
 		}
+		if r.Path == router.WorkflowNodeSessionPath {
+			// The attempt is spelled as an integer cursor partner of before: before alone cannot name
+			// an attempt, so the route refuses that combination rather than resolving it against a
+			// current attempt a retry may have replaced.
+			parameters = append(parameters,
+				obj{"name": "attempt", "in": "query", "schema": obj{"type": "integer", "format": "int64", "minimum": 1}, "description": "Attempt to read; absent reads the node's current attempt. An attempt beyond the node's committed attempts is 404. Paging must send back the attempt the first response returned."},
+				obj{"name": "before", "in": "query", "schema": obj{"type": "integer", "format": "int64", "minimum": 1}, "description": "Backward receipt-sequence cursor: the page takes the history receipts with sequence < before, newest first, and returns that page oldest first. Only valid together with attempt; without it the request is 400 invalid_pagination. Paging must send back the nextBefore the previous response returned."},
+				obj{"name": "limit", "in": "query", "schema": obj{"type": "integer", "minimum": 1, "maximum": core.NodeSessionPageMax, "default": 100}, "description": "Maximum history receipts in this page. The 4 MiB page byte budget can stop the page earlier."})
+		}
 		if r.Method == "GET" && (r.Path == router.ThreadPath || r.Path == router.TaskConversationPath) {
 			// The Thread read has its own cursor vocabulary and window: `seq` is a decimal
 			// conversation position, not a UUID, and D5 caps the window at 500 rather than the
@@ -643,6 +682,12 @@ func pathParamSchema(name string) obj {
 	if name == "formRef" {
 		return obj{"type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:@-]+$"}
 	}
+	if name == "nodeId" {
+		// A workflow node is addressed by the id it carries in the graph the author saved, so it is
+		// that author's string rather than a UUID Cloud minted: no shape is imposed here, and an id
+		// the snapshot does not contain is 404 like any other unknown resource.
+		return obj{"type": "string", "minLength": 1, "description": "Node id as it appears in the run's frozen workflow snapshot"}
+	}
 	return uuid()
 }
 
@@ -723,6 +768,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 	}
 	if r.Path == router.SessionHistoryPath {
 		return ref("SessionHistory"), "200"
+	}
+	if r.Path == router.WorkflowNodeSessionPath {
+		return ref("WorkflowNodeSession"), "200"
 	}
 	if r.Path == "/api/v1/me/model-default" {
 		return ref("ModelDefault"), "200"
@@ -1287,6 +1335,9 @@ func description(r router.Route) string {
 	}
 	if r.Path == router.SessionHistoryPath {
 		return "Read-only active-member access to a run's registered Revision history. Tenant, issue and run are checked before and after private storage I/O. Verifies exact byte size and SHA-256, parses JSONL objects retaining order and duplicate sequence updates. Maximum 32 MiB and 100000 records; no URLs or paths accepted. 404 history_unavailable for absent/expired registration, 413 history_too_large, 502 history_invalid or history_unavailable. Never scans user filesystems."
+	}
+	if r.Path == router.WorkflowNodeSessionPath {
+		return "Read-only active-member access to one agent node attempt's recorded conversation of a live WorkflowRun. The node is a graph id resolved against the run's frozen snapshot; the attempt and its execution are resolved from committed node state, so no session, execution or storage identifier is accepted. execution carries the selected attempt's evidence and its page of history receipts, newest first; node carries the node's current state, whose output and sessionEndReason belong to the current attempt and never stand in for an older one. The terminal receipt is excluded by its committed sequence (last_event_sequence), never by the shape of its content. nextBefore is the earliest returned receipt sequence and is present only while hasMore; paging must send it back with attempt. incomplete is a per-page observation of missing or invalid history, not a verdict on the whole attempt. A null result does not mean the attempt is in flight: state names what the evidence proves. limit is capped at 200 and each page is bounded to 4 MiB. private, no-store."
 	}
 	if strings.HasPrefix(r.Path, "/api/v1/me/model-connections") {
 		if strings.HasSuffix(r.Path, "/credential") {

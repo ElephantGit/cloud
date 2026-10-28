@@ -27,15 +27,18 @@ import type { RunNodeEntry } from '@/features/workflows/run/run-node-state'
  * member's row is the one from its container's selected round.
  * @param props.rounds - The round section of a container or of a container member, when the
  * node belongs to one.
+ * @param props.session - The recorded conversation section of a node that establishes a session.
  */
 export function RunInspector({
   data,
   entry,
   rounds,
+  session,
 }: {
   data: WorkflowNodeData
   entry: RunNodeEntry | undefined
   rounds?: ReactNode
+  session?: ReactNode
 }) {
   return (
     <div
@@ -48,6 +51,7 @@ export function RunInspector({
       <InspectorExecution entry={entry} />
       <InspectorOutput entry={entry} />
       <InspectorError entry={entry} />
+      {session}
     </div>
   )
 }
@@ -203,7 +207,7 @@ export function InspectorError({ entry }: { entry: RunNodeEntry | undefined }) {
 }
 
 /** The tiny section header every inspector section shares. */
-function InspectorSectionTitle({ children }: { children: string }) {
+export function InspectorSectionTitle({ children }: { children: string }) {
   return <h4 className="mb-2 text-[11px] font-semibold text-muted-foreground">{children}</h4>
 }
 

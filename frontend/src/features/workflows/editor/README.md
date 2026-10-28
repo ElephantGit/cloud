@@ -9,6 +9,7 @@
 | `workflow-inspector.tsx`、`workflow-*-fields.tsx` | 按节点类型组合检查器，Output 编辑命名结果绑定 |
 | `workflow-variable-select.tsx` | 显示和选择消费者可见的变量，不改变持久化 selector |
 | `workflow-canvas.tsx`、`iteration-*.tsx` | React Flow 装配与迭代区域交互 |
+| `workflow-canvas-deletion.ts` | 删除前的确认与级联，并为一次删除打开一步撤销的历史事务 |
 | `loop-node-frame.tsx` | Loop 容器框：外层端口、轮次上限、删除与缩放；成员端口的追加菜单在端口组件里 |
 | 其余 `workflow-*` 文件 | 编辑页、历史及导入/发布/启动等编辑动作 |
 

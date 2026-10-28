@@ -146,6 +146,8 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             onConfirmIterationDeletion={iterationDeletion.confirm}
             onHistoryNodeDragStart={state.onHistoryNodeDragStart}
             onHistoryNodeDragStop={state.onHistoryNodeDragStop}
+            onHistoryDeleteStart={state.onHistoryDeleteStart}
+            onHistoryDeleteEnd={state.onHistoryDeleteEnd}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />

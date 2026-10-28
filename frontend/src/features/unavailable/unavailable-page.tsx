@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/page-header'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 
 /** A supported workspace route offered instead of an unavailable feature. */
 interface AvailableAction {
@@ -29,9 +29,9 @@ export function UnavailablePage({
         <p className="max-w-xl text-sm text-muted-foreground">{description}</p>
         <div className="flex flex-wrap gap-2">
           {actions.map((action) => (
-            <Button key={action.to} variant="outline" render={<Link to={action.to} />}>
+            <Link key={action.to} to={action.to} className={buttonVariants({ variant: 'outline' })}>
               {action.label}
-            </Button>
+            </Link>
           ))}
         </div>
       </section>

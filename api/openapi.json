@@ -6162,6 +6162,148 @@
         ],
         "type": "object"
       },
+      "WorkflowNodeSession": {
+        "additionalProperties": false,
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/WorkflowNodeSessionExecution"
+          },
+          "node": {
+            "$ref": "#/components/schemas/WorkflowNodeSessionNode"
+          }
+        },
+        "required": [
+          "execution",
+          "node"
+        ],
+        "type": "object"
+      },
+      "WorkflowNodeSessionExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "executionId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "nextBefore": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowNodeSessionRecord"
+            },
+            "type": "array"
+          },
+          "result": {
+            "additionalProperties": true,
+            "nullable": true,
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "not_applicable",
+              "not_started",
+              "awaiting_first_record",
+              "unavailable",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "executionId",
+          "result",
+          "records",
+          "state",
+          "incomplete",
+          "hasMore",
+          "nextBefore"
+        ],
+        "type": "object"
+      },
+      "WorkflowNodeSessionNode": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "output": {
+            "additionalProperties": true,
+            "nullable": true,
+            "type": "object"
+          },
+          "sessionEndReason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "attempt",
+          "output",
+          "sessionEndReason",
+          "error"
+        ],
+        "type": "object"
+      },
+      "WorkflowNodeSessionRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "historySequence": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "record": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "visibleText": {
+            "type": "string"
+          },
+          "visibleTextTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sequence",
+          "record"
+        ],
+        "type": "object"
+      },
       "WorkflowRun": {
         "additionalProperties": false,
         "properties": {
@@ -32113,6 +32255,184 @@
           }
         ],
         "summary": "GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tid}/workflows/{wfid}/runs/{rid}/nodes/{nodeId}/session": {
+      "get": {
+        "description": "Read-only active-member access to one agent node attempt's recorded conversation of a live WorkflowRun. The node is a graph id resolved against the run's frozen snapshot; the attempt and its execution are resolved from committed node state, so no session, execution or storage identifier is accepted. execution carries the selected attempt's evidence and its page of history receipts, newest first; node carries the node's current state, whose output and sessionEndReason belong to the current attempt and never stand in for an older one. The terminal receipt is excluded by its committed sequence (last_event_sequence), never by the shape of its content. nextBefore is the earliest returned receipt sequence and is present only while hasMore; paging must send it back with attempt. incomplete is a per-page observation of missing or invalid history, not a verdict on the whole attempt. A null result does not mean the attempt is in flight: state names what the evidence proves. limit is capped at 200 and each page is bounded to 4 MiB. private, no-store.",
+        "operationId": "get_api_v1_tenants_tid_workflows_wfid_runs_rid_nodes_nodeId_session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "wfid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "description": "Node id as it appears in the run's frozen workflow snapshot",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Attempt to read; absent reads the node's current attempt. An attempt beyond the node's committed attempts is 404. Paging must send back the attempt the first response returned.",
+            "in": "query",
+            "name": "attempt",
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Backward receipt-sequence cursor: the page takes the history receipts with sequence \u003c before, newest first, and returns that page oldest first. Only valid together with attempt; without it the request is 400 invalid_pagination. Paging must send back the nextBefore the previous response returned.",
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum history receipts in this page. The 4 MiB page byte budget can stop the page earlier.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowNodeSession"
+                }
+              }
+            },
+            "description": "Successful command or resource response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid JSON/field/input, missing idempotency key, invalid pagination or evidence"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid, forged, expired, wrong-audience, untrusted, or caller-mismatched credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Disabled user, inactive/missing membership, wrong service role, or admin required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource absent or outside authorized tenant/owner scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version/idempotency conflict, resource_in_use, closed admission, stale epoch/Node/sandbox, incomplete effect, invalid transition, unconfirmed termination/idle, last_admin, space_last_owner, space_slug_conflict, or default_space_protected"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error; no SQL or secret details are exposed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "External capability not wired in this deployment (a port is Unavailable), e.g. form_descriptor_unavailable or assist_unavailable"
+          }
+        },
+        "security": [
+          {
+            "serviceCredential": [],
+            "userCredential": []
+          }
+        ],
+        "summary": "GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/nodes/:nodeId/session",
         "tags": [
           "workflows"
         ]

@@ -31,6 +31,14 @@ type PublicRequest struct {
 	RepositoryOperationID string
 	// SlotName addresses one executor-slot mapping under /api/v1/me/executor-slot-mappings/:slot.
 	SlotName string
+	// NodeID addresses one node of a WorkflowRun for the node session read. It is the graph's node
+	// id, not an execution id: the attempt and execution are resolved from committed state, so a
+	// caller cannot ask for another node's or another run's session by naming it here.
+	NodeID string
+	// Attempt is the requested session attempt as the caller spelled it. It stays a string so an
+	// absent attempt (read the node's current one) is distinguishable from `attempt=0`, which is
+	// invalid; the core parses it against the node's committed attempt count.
+	Attempt  string
 	Limit    int
 	Body     Object
 	Identity *Claims
@@ -60,6 +68,9 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 	workflowRunPath := "/api/v1/tenants/" + r.TenantID + "/workflows/" + r.WorkflowID + "/runs/" + r.RunID
 	if r.Method == "GET" && r.WorkflowID != "" && (r.Path == workflowRunPath+"/statistics" || r.Path == workflowRunPath+"/model-calls") {
 		return s.workflowModelRead(ctx, r)
+	}
+	if r.Method == "GET" && r.WorkflowID != "" && r.NodeID != "" && r.Path == workflowRunPath+"/nodes/"+r.NodeID+"/session" {
+		return s.workflowNodeSessionRead(ctx, r)
 	}
 	status := 200
 	var dispatches []dispatchTarget

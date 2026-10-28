@@ -123,6 +123,18 @@ Project 缺失时统一返回 `409 workflow_run_project_required`，不可用、
 后续翻页或刷新失败保留已加载的历史，重试会重新执行失败的那次读取。历史行独立展示开始和结束时刻：开始前取消的运行没有开始时刻，
 但仍显示已有的结束时刻。查看记录和重试读取都不创建运行。
 
+**节点会话按次尝试读取。** `GET .../workflows/:wfid/runs/:rid/nodes/:nodeId/session` 返回一个 Agent 节点某次尝试的会话回执，
+取页时按回执序号从新往旧分页、响应内按序号升序返回（与线程读取同一约定）：`limit` 缺省 100、上限 200，单页还受 4 MiB 字节预算约束。请求只能由运行、图节点和尝试定位，
+不能指定会话或执行行；授权沿用工作流模型读并收窄到节点——活动租户成员、未归档的工作流、属于该工作流的运行、能在运行冻结的图里解析到的节点 id，
+尝试和执行行由已提交的节点状态解析。非 Agent 节点返回 `not_applicable`。`attempt` 缺省为节点的当前尝试，超过已提交尝试数返回 `404`；
+只带 `before` 不带 `attempt` 返回 `400 invalid_pagination`，因为重试会让"当前尝试"在两次翻页之间移动。翻页游标是上一页返回的 `nextBefore`，
+它把翻页固定在该页读取的尝试上。终态回执按已提交的结果和 `last_event_sequence` 排除，不按形状判断——它是 Node 写下的任意字符串，可能看起来像历史记录。
+`state` 描述整次尝试而不是当前页：有历史回执是 `available`（历史本身仍可能不完整），没有执行行是 `not_started`，会话在途且还没有记录是
+`awaiting_first_record`，尝试已结算但没有可回放的历史是 `unavailable`——Node 不可达、各类截止时间与取消这些路径都不写结果，所以"结果为空"不能证明在途；
+证据互相矛盾（节点已进入下一次尝试，而这次尝试没有结果）是 `unknown`。`incomplete` 只报告页面实际观察到的缺失——页面返回的显式 `gap` 记录、被标记 `truncated` 的记录、形状校验失败的回执，以及最早一条历史回执不是从 1 开始（历史开头已丢失，翻页看不到）；`hasMore` 单独探测。
+响应把这次尝试的证据放在 `execution`，把节点的当前状态放在 `node`，两者分开；节点的输出和结束原因只属于当前尝试，读旧尝试的页面不得把它们当作那次尝试的答案。
+读取不打开会话、不推进节点、不写任何东西。
+
 **取消是请求，不是状态切换。** `POST .../workflows/:wfid/runs/:rid/cancel` 在运行行上记录请求，返回 `202` 和记录的时刻；重复请求（即使换一个幂等键）
 返回同一个时刻。请求只写 `workflow_runs.cancel_requested_at`，不改动运行的状态、节点状态、会话或 Workspace——结算由调度器在下一轮完成（见下文）。
 `pending` 和 `running` 的运行接受请求；已经进入终态的运行返回 `409 run_not_cancellable`。授权按运行上冻结的模型绑定判断：带绑定的运行只有发起人和
@@ -218,9 +230,14 @@ iteration 指向自身成员、`sourceHandle = "iteration-entry"` 的入口边�
 
 复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
 iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
-完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。
+完整 `node_states` 有 8 MiB 上限，普通提交的预算为 8 MiB − 64 KiB，剩余 64 KiB 供失败转移使用。
 预留只在本次提交新增失败/取消节点、结算新的 iteration 失败轮账本，或运行进入失败/取消终态时开放；
-历史失败成员和账本不会扩大普通写入额度。重读完全相同的已提交状态不会被普通预算再次拒绝；
+预留作用于整次 CAS 的候选状态：最后一轮失败且策略为 `continue` 时，新增失败账本和最终输出中的
+`output` / `entries` / `failed_count` 复制可以在同一次提交中使用预留，并非只有失败账本字节可使用。
+所有副本仍计入总量；恰好 8 MiB 可以提交，多 1 字节也会拒绝整个候选状态。
+历史失败成员和账本不会扩大普通写入额度。若前一轮失败账本提交后已超过普通预算，下一轮的普通状态增长
+仍以 `workflow_state_size_exceeded` 结束运行，保留已提交的失败账本与归档，不提交该次增长；`continue` 不扩大预算。
+重读完全相同的已提交状态不会被普通预算再次拒绝；终态调度重放不追加账本或重跑下一项。
 局部 1 MiB 和整行 8 MiB 硬上限仍始终检查。
 超限丢弃整个候选状态、保留上一次已提交的账本与成员，记录 `iteration_state_size_exceeded`、
 `loop_state_size_exceeded` 或 `workflow_state_size_exceeded`，不会被 `continue` 吸收。
@@ -245,4 +262,4 @@ body Agent 回合超时后先保留当前 attempt 为 running，提交超时原�
 
 - [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
 - [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
-- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (implemented)

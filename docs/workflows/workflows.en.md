@@ -333,8 +333,8 @@ wait for their iteration owner to finish. Other cross-container edges are still 
 
 Every composite state commit measures compact UTF-8 JSON, including every duplicated value.
 Iteration inputs, collect values and member archives, and loop carried-plus-member archives and final
-outputs, each have a 1 MiB limit. Complete `node_states` have an 8 MiB limit, with 64 KiB reserved for
-bounded failure records. Overflow discards the entire candidate and retains the last committed ledger
+outputs, each have a 1 MiB limit. Complete `node_states` have an 8 MiB limit: ordinary commits have an
+8 MiB − 64 KiB budget, leaving 64 KiB for failure transitions. Overflow discards the entire candidate and retains the last committed ledger
 and members, reporting `iteration_state_size_exceeded`, `loop_state_size_exceeded` or
 `workflow_state_size_exceeded`; `continue` cannot absorb these failures.
 Both iteration strategies record failed rounds. Terminal states retain the last started round and its
@@ -342,9 +342,18 @@ member projection. Inconsistent persisted progress fails as `iteration_invalid_r
 or replaying earlier rounds. Body agent execution attempts stay unique across rounds while retry budgets
 count attempts within the current round.
 The reserve opens only for newly failed/cancelled nodes, settlement of a new failed iteration ledger
-entry, or a run transitioning to failed/cancelled. Historical failed members and ledger entries do not
-enlarge ordinary writes. Re-reading identical committed state does not reject it against the ordinary
-budget again; the local 1 MiB and total 8 MiB hard limits still apply. A body Agent turn timeout keeps the current
+entry, or a run transitioning to failed/cancelled. It applies to the entire candidate in that CAS:
+when the last round fails under `continue`, the new failed ledger entry and the final
+`output` / `entries` / `failed_count` copies may use the reserve together in the same commit.
+The allowance is not restricted to failure-ledger bytes. Every copy still counts toward the total:
+exactly 8 MiB is admissible, but one byte more rejects the entire candidate.
+Historical failed members and ledger entries do not enlarge ordinary writes. If a committed failed
+round has already exceeded the ordinary budget, ordinary state growth in the next round still ends
+the run with `workflow_state_size_exceeded`, retains the committed failed ledger and archive, and
+discards that growth. `continue` does not enlarge the budget. Re-reading identical committed state
+does not reject it against the ordinary budget again; terminal scheduler replay neither appends to
+the ledger nor retries the next item. The local 1 MiB and total 8 MiB hard limits still apply.
+A body Agent turn timeout keeps the current
 attempt running, persists its timeout diagnosis and requests `end_session{cancelled}`. Only that
 attempt's terminal result permits failed-round settlement and iteration continuation; a late result
 cannot replace the timeout diagnosis. If the end-confirmation window expires without terminal
@@ -366,4 +375,4 @@ instead of starting another round while the old session may still be alive.
 
 - [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
 - [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
-- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (implemented)

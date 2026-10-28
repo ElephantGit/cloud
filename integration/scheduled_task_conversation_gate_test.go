@@ -105,3 +105,68 @@ func TestScheduledTaskAdmitsTheNextDuePointAfterConversationRecovery(t *testing.
 		})
 	}
 }
+
+// TestScheduledAdmissionAndDirectInputAgreeOnTheConversationGate drives both entries on one
+// conversation state: a direct agent run request (the 409 the Web client shows) and the scheduled
+// worker. They must refuse the same states with the same reason and accept the same states, so a
+// refusal condition added to only one entry fails here.
+func TestScheduledAdmissionAndDirectInputAgreeOnTheConversationGate(t *testing.T) {
+	cases := []struct {
+		name string
+		seed func(t *testing.T, store *core.Store, s skeletonSeed, agentID string)
+		// refusal is the shared reason code; empty means both entries accept.
+		refusal string
+	}{
+		{"no conversation", func(*testing.T, *core.Store, skeletonSeed, string) {}, ""},
+		{"settled conversation", func(t *testing.T, store *core.Store, s skeletonSeed, agentID string) {
+			seedTaskConversationMessage(t, store, s, agentID, "cancelled")
+		}, ""},
+		{"paused conversation", func(t *testing.T, store *core.Store, s skeletonSeed, agentID string) {
+			seedPausedTaskConversation(t, store, s, agentID)
+		}, "task_paused"},
+		{"failed message", func(t *testing.T, store *core.Store, s skeletonSeed, agentID string) {
+			seedTaskConversationMessage(t, store, s, agentID, "failed")
+		}, "task_paused"},
+		{"waiting message", func(t *testing.T, store *core.Store, s skeletonSeed, agentID string) {
+			seedTaskConversationMessage(t, store, s, agentID, "waiting")
+		}, "task_handoff_pending"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, s, agentID := scheduledTaskStore(t)
+			tc.seed(t, store, s, agentID)
+			taskID := seedEnabledScheduledTask(t, store, s, agentID, "Gate agreement", 65)
+			before := taskConversationSnapshot(t, store, s.issueID)
+
+			out, _, err := store.Public(context.Background(), &core.PublicRequest{
+				Method: "POST", Key: uuid.NewString(),
+				Path:     "/api/v1/tenants/" + s.tenantID + "/issues/" + s.issueID + "/runs",
+				TenantID: s.tenantID, IssueID: s.issueID, Identity: scheduledTaskCaller(t, store, s.tenantID),
+				Body: core.Object{"executorType": "agent", "executorId": agentID},
+			})
+			if tc.refusal == "" {
+				must(t, err)
+				direct := out.O("resource").S("id")
+				if direct == "" {
+					t.Fatalf("direct input must be accepted, got %v", out)
+				}
+				// Settle the accepted direct run: the pending-executor dedup, not the conversation gate,
+				// would otherwise refuse the scheduled input for the same Agent.
+				_, err = store.Pool.Exec(`UPDATE issue_runs SET status='completed', phase='done' WHERE id=$1`, direct)
+				must(t, err)
+				must(t, store.EvaluateScheduledTasksOnce(context.Background()))
+				if count, outcome := occurrenceCount(t, store, taskID); count != 1 || outcome != "admitted" {
+					t.Fatalf("a state direct input accepts must also admit the scheduled input, got %d %q", count, outcome)
+				}
+				return
+			}
+			if fault := core.ErrorCode(err); fault.Status != 409 || fault.Code != tc.refusal {
+				t.Fatalf("direct input must refuse with 409 %s, got %v", tc.refusal, err)
+			}
+			if after := taskConversationSnapshot(t, store, s.issueID); after != before {
+				t.Fatalf("a refused direct input rewrote the task conversation:\nbefore %s\nafter  %s", before, after)
+			}
+			assertConversationRejects(t, store, s.issueID, taskID, tc.refusal)
+		})
+	}
+}

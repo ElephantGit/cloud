@@ -11,6 +11,7 @@ workflow boundary adapters own HTTP.
 | `workflow-variable-select.tsx` | Display/select consumer-visible variables without rewriting persisted selectors |
 | `loop-node-frame.tsx` | Loop container frame: outer ports, round ceiling, delete and resize; the member-port append menu lives in the port component |
 | `workflow-canvas.tsx`, `iteration-*.tsx` | React Flow composition and iteration-region interactions |
+| `workflow-canvas-deletion.ts` | Deletion confirmation and cascade, opening the history transaction that makes one deletion one undo step |
 | Other `workflow-*` files | Editor page, history, import, publication and launch actions |
 
 Depends on runtime, UI components, i18n and workflow API adapters; workflow pages consume this module.

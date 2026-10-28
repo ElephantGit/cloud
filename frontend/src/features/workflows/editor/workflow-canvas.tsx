@@ -27,9 +27,10 @@ import {
 } from '@/features/workflows/runtime/layout'
 import type { WorkflowNodeKind } from '@/features/workflows/runtime/types'
 import {
-  repairIterationGraphAfterNodeDeletion,
-  resolveIterationDeletionCascade,
-} from '@/features/workflows/runtime/iteration-graph'
+  resolveCanvasDeletion,
+  type WorkflowDeletionRequest,
+  type WorkflowIterationHintKey,
+} from '@/features/workflows/editor/workflow-canvas-deletion'
 import { applyIterationDragRules } from '@/features/workflows/runtime/iteration-containment'
 import {
   buildIterationRegionGraph,
@@ -54,10 +55,6 @@ const MAX_ZOOM = 2
 /** Viewport a graph with no saved one opens at. */
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 }
 
-/** Human-readable notices the canvas raises while authoring iteration regions. */
-type WorkflowIterationHintKey =
-  'workflows.iteration.useInternalAdd' | 'workflows.iteration.collectTargetDeleted'
-
 interface WorkflowIterationHint {
   key: WorkflowIterationHintKey
   params?: Record<string, string | number>
@@ -78,12 +75,6 @@ const DEFAULT_EDGE_OPTIONS = {
     color: 'color-mix(in oklch, var(--foreground) 64%, transparent)',
   },
 } satisfies DefaultEdgeOptions
-
-/** The graph the author asked to delete, shaped for React Flow's before-delete hook. */
-type WorkflowDeletionRequest = {
-  nodes: WorkflowCanvasNode[]
-  edges: WorkflowCanvasEdge[]
-}
 
 /** Props for {@link WorkflowCanvas}. */
 export interface WorkflowCanvasProps {
@@ -120,6 +111,10 @@ export interface WorkflowCanvasProps {
   onHistoryNodeDragStart?: () => void
   /** Closes the node-drag transaction once containment settles the positions. */
   onHistoryNodeDragStop?: () => void
+  /** Opens the delete transaction once a deletion that removes nodes is confirmed. */
+  onHistoryDeleteStart?: (nodeIds: string[]) => void
+  /** Closes the delete transaction after the nodes and their edges are gone. */
+  onHistoryDeleteEnd?: () => void
   /** Draws the graph as a preview: nothing can be moved, connected or added. */
   readOnly?: boolean
 }
@@ -174,6 +169,7 @@ interface WorkflowIterationGuardServices {
   onConfirmIterationDeletion: ((memberCount: number) => Promise<boolean>) | undefined
   onHistoryNodeDragStart: (() => void) | undefined
   onHistoryNodeDragStop: (() => void) | undefined
+  onHistoryDeleteStart: ((nodeIds: string[]) => void) | undefined
 }
 
 function useIterationCanvasGuards(
@@ -259,8 +255,9 @@ function useIterationCanvasGuards(
   function handleBeforeDelete(
     request: WorkflowDeletionRequest,
   ): Promise<boolean | WorkflowDeletionRequest> {
-    return confirmAndResolveDeletion(request, editor, readOnly, {
+    return resolveCanvasDeletion(request, editor, readOnly, {
       onConfirmIterationDeletion: services.onConfirmIterationDeletion,
+      onHistoryDeleteStart: services.onHistoryDeleteStart,
       showIterationHint,
     })
   }
@@ -271,68 +268,6 @@ function useIterationCanvasGuards(
     handleNodeDragStop,
     handleBeforeDelete,
     showIterationHint,
-  }
-}
-
-/** Resolves a deletion request (keyboard delete or a card's trash button):
- * iteration containers confirm with their member count, then drag their whole
- * region out; plain deletions hint when they orphan a region's collect target.
- */
-async function confirmAndResolveDeletion(
-  request: WorkflowDeletionRequest,
-  editor: { graphNodes: WorkflowCanvasNode[]; graphEdges: WorkflowCanvasEdge[] },
-  readOnly: boolean,
-  services: {
-    onConfirmIterationDeletion: ((memberCount: number) => Promise<boolean>) | undefined
-    showIterationHint: (
-      key: WorkflowIterationHintKey,
-      params?: Record<string, string | number>,
-    ) => void
-  },
-): Promise<boolean | WorkflowDeletionRequest> {
-  if (readOnly) {
-    return false
-  }
-  const graph = { nodes: editor.graphNodes, edges: editor.graphEdges }
-  const requestedNodeIds = new Set(request.nodes.map((node) => node.id))
-  const cascade = resolveIterationDeletionCascade(graph, requestedNodeIds)
-  const repair = repairIterationGraphAfterNodeDeletion(graph, cascade.nodeIds)
-  const deletedIteration = request.nodes.find((node) => node.data.kind === 'iteration')
-  const deletedContainer =
-    deletedIteration ?? request.nodes.find((node) => node.data.kind === 'loop')
-  if (deletedIteration !== undefined && cascade.memberCount > 0) {
-    if (services.onConfirmIterationDeletion === undefined) {
-      return false
-    }
-    const confirmed = await services.onConfirmIterationDeletion(cascade.memberCount)
-    if (!confirmed) {
-      return false
-    }
-  }
-  if (repair.clearedCollectSelectorIterationIds.length > 0) {
-    const iterationId = repair.clearedCollectSelectorIterationIds[0]
-    if (iterationId !== undefined) {
-      const title = editor.graphNodes.find((node) => node.id === iterationId)?.data.title
-      if (title !== undefined) {
-        services.showIterationHint('workflows.iteration.collectTargetDeleted', { name: title })
-      }
-    }
-  }
-  if (deletedContainer === undefined) {
-    // An ordinary node delete: React Flow removes it and its edges, and the
-    // draft's change pipeline runs the collect-selector repair it needs.
-    return true
-  }
-  // Deleting a container takes its members and their edges along in one step.
-  return {
-    nodes: [...cascade.nodeIds].flatMap((id) => {
-      const node = editor.graphNodes.find((candidate) => candidate.id === id)
-      return node === undefined ? [] : [node]
-    }),
-    edges: [...cascade.edgeIds].flatMap((id) => {
-      const edge = editor.graphEdges.find((candidate) => candidate.id === id)
-      return edge === undefined ? [] : [edge]
-    }),
   }
 }
 
@@ -414,6 +349,8 @@ function WorkflowCanvasInner({
   onConfirmIterationDeletion,
   onHistoryNodeDragStart,
   onHistoryNodeDragStop,
+  onHistoryDeleteStart,
+  onHistoryDeleteEnd,
   readOnly = false,
 }: WorkflowCanvasProps) {
   const { t } = useTranslation()
@@ -423,6 +360,7 @@ function WorkflowCanvasInner({
       onConfirmIterationDeletion,
       onHistoryNodeDragStart,
       onHistoryNodeDragStop,
+      onHistoryDeleteStart,
     })
   const { canvasRef, addAtViewportCenter, dropAtClientPosition, organizeAndFrame } =
     useCanvasPlacement(graphNodes, onAddNode, onOrganize, showIterationHint)
@@ -474,6 +412,7 @@ function WorkflowCanvasInner({
           onNodeDragStart={handleNodeDragStart}
           onNodeDragStop={handleNodeDragStop}
           onBeforeDelete={handleBeforeDelete}
+          onDelete={() => onHistoryDeleteEnd?.()}
           onMoveEnd={(_event, nextViewport) => onViewportChange?.(nextViewport)}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >

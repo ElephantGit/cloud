@@ -105,6 +105,8 @@ users ──< user_identities          一个用户可以有多条外部身份�
 
 ## 相关决策
 
+- [成员加入来源与私有链接预检](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20261027-member-entry-provenance-and-link-preview.md)（approved）：本实现提供普通邀请的空操作不消费、只读预检及真实资格变更的原子来源。定向小队与签发者失权策略由后续实现承接，不以当前普通链接预检宣称这些边界已实现。
+
 - [每个可见协作空间对应一个租户，以租户成员身份授权](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20260923-one-space-per-tenant.md)
 - [已登录用户自助创建租户，租户成为协作空间的隐式容器](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/0-self-serve-tenant-provisioning.md)
 - [协作 Space 是租户内的共享、可见性与授权边界](https://github.com/ora-space/specs/blob/main/decisions/cloud/workspace/0-collab-space-boundary.md)

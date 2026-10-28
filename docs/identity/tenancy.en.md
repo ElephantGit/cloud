@@ -129,6 +129,8 @@ administrators may use it; see [Runtime control](../runtime/runtime-control.en.m
 
 ## Related decisions
 
+- [Member entry provenance and private link preview](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20261027-member-entry-provenance-and-link-preview.md) (approved): this implementation provides non-consuming ordinary-invitation no-ops, read-only preview, and atomic provenance for real membership transitions. Targeted squads and issuer-revocation policy belong to the subsequent implementation; ordinary-link preview does not establish those guarantees.
+
 - [Each visible collaboration space corresponds to one tenant, authorized by tenant membership](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20260923-one-space-per-tenant.md)
 - [Signed-in users provision tenants themselves; the tenant becomes the implicit container of the space](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/0-self-serve-tenant-provisioning.md)
 - [The collaboration Space is the sharing, visibility and authorization boundary within a tenant](https://github.com/ora-space/specs/blob/main/decisions/cloud/workspace/0-collab-space-boundary.md)

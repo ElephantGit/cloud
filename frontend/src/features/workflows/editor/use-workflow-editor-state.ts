@@ -264,10 +264,12 @@ interface WorkflowHistoryBridge {
   commitTransaction: (after: WorkflowHistorySnapshot) => void
 }
 
-/** The bridge the canvas change streams record through, plus the open-deletion flag. */
+/** The bridge the canvas change streams record through, plus the open deletion. */
 interface WorkflowChangeHistory extends WorkflowHistoryBridge {
-  /** True between a confirmed node deletion and React Flow's `onDelete`. */
+  /** True between a confirmed node deletion and the node removals that end it. */
   deleting: MutableRefObject<boolean>
+  /** Commits the open deletion as one step; a no-op when none is open. */
+  endDeletion: () => void
 }
 
 /**
@@ -286,7 +288,11 @@ function useWorkflowDraftHandlers(
   t: TFunction,
 ): Omit<WorkflowEditorHandlers, 'onViewportChange'> {
   const deletion = useWorkflowDeleteTransaction(draft, history, t)
-  const changeHistory: WorkflowChangeHistory = { ...history, deleting: deletion.open }
+  const changeHistory: WorkflowChangeHistory = {
+    ...history,
+    deleting: deletion.open,
+    endDeletion: deletion.end,
+  }
   const nodeChanges = useWorkflowNodeChangesRecorder(draft, markDirty, changeHistory, t)
   const edgeChanges = useWorkflowEdgeChangesRecorder(draft, markDirty, changeHistory, t)
   const actions = useWorkflowActionRecorder(draft, markDirty, history, t)
@@ -316,8 +322,11 @@ function useWorkflowDraftHandlers(
  *
  * React Flow removes a node's edges and the node itself through two separate change
  * streams; recording each would make the user undo twice to get the graph back. The
- * canvas opens this transaction once it knows nodes are going, both change recorders
- * stay silent while it is open, and the canvas closes it after React Flow's `onDelete`.
+ * canvas opens this transaction once it knows nodes are going and both change recorders
+ * stay silent while it is open. The node removals are always the last stream, so they
+ * commit it; React Flow's `onDelete` closing it again is a no-op. A transaction a failed
+ * stream left open is committed before the next one begins, so it cannot swallow later
+ * edits.
  */
 function useWorkflowDeleteTransaction(
   draft: WorkflowDraft,
@@ -329,6 +338,9 @@ function useWorkflowDeleteTransaction(
   const open = useRef(false)
   const begin = useCallback(
     (nodeIds: string[]) => {
+      if (open.current) {
+        commitTransaction(captureContent())
+      }
       const before = captureContent()
       beginTransaction(before, 'node.delete', {
         nodeIds,
@@ -336,7 +348,7 @@ function useWorkflowDeleteTransaction(
       })
       open.current = true
     },
-    [beginTransaction, captureContent, t],
+    [beginTransaction, captureContent, commitTransaction, t],
   )
   const end = useCallback(() => {
     if (!open.current) {
@@ -360,7 +372,7 @@ function useWorkflowNodeChangesRecorder(
   t: TFunction,
 ) {
   const { captureContent, applyNodeChanges } = draft
-  const { beginTransaction, commitTransaction, record, deleting } = history
+  const { beginTransaction, commitTransaction, record, deleting, endDeletion } = history
   // Which iteration frame is mid-resize; the closing `resizing: false` frame
   // of the same id commits that transaction.
   const activeResizeRef = useRef<string | null>(null)
@@ -405,8 +417,10 @@ function useWorkflowNodeChangesRecorder(
         (change): change is Extract<NodeChange<WorkflowCanvasNode>, { type: 'remove' }> =>
           change.type === 'remove',
       )
-      // A confirmed deletion commits as one step through its own transaction.
-      if (removed.length > 0 && !deleting.current) {
+      if (removed.length > 0 && deleting.current) {
+        // The node removals end a confirmed deletion: its edges already went inside it.
+        endDeletion()
+      } else if (removed.length > 0) {
         const nodeIds = removed.map((change) => change.id)
         record(before, after, 'node.delete', {
           meta: { nodeIds, subject: deletedNodesSubject(t, before, nodeIds) },
@@ -419,6 +433,7 @@ function useWorkflowNodeChangesRecorder(
       captureContent,
       commitTransaction,
       deleting,
+      endDeletion,
       markDirty,
       record,
       t,
@@ -691,7 +706,6 @@ function useWorkflowLaunchFieldsRecorder(
   return { onLaunchFieldsSave }
 }
 
-/** Names one canvas node for a history step without exposing internal ids. */
 /** Joins the readable names of the nodes a deletion removes, in graph order. */
 function deletedNodesSubject(
   t: TFunction,
@@ -705,6 +719,7 @@ function deletedNodesSubject(
     .join('、')
 }
 
+/** Names one canvas node for a history step without exposing internal ids. */
 function nodeSubjectOf(t: TFunction, node: WorkflowCanvasNode | undefined): string | undefined {
   if (node === undefined) {
     return undefined

@@ -48,6 +48,18 @@ function idsOf(items: readonly { id: string }[]): string[] {
   return items.map((item) => item.id).toSorted()
 }
 
+/** Deletes `pick` the way React Flow does: the canvas opens the transaction, edges go, then the node. */
+function deletePickInFlowOrder(result: { current: ReturnType<typeof useWorkflowEditorState> }) {
+  act(() => result.current.onHistoryDeleteStart(['pick']))
+  act(() =>
+    result.current.onEdgesChange([
+      { type: 'remove', id: 'e-start-pick' },
+      { type: 'remove', id: 'e-pick-out' },
+    ]),
+  )
+  act(() => result.current.onNodesChange([{ type: 'remove', id: 'pick' }]))
+}
+
 describe('useWorkflowEditorState deletion history', () => {
   beforeEach(() => {
     // Autosave may fire while a test runs; answer it like the server would.
@@ -60,15 +72,7 @@ describe('useWorkflowEditorState deletion history', () => {
 
   it('records a node deletion and the edges it takes along as one undo step', () => {
     const { result } = renderEditorState()
-    // React Flow's order: onBeforeDelete (the canvas opens the transaction), edges, nodes, onDelete.
-    act(() => result.current.onHistoryDeleteStart(['pick']))
-    act(() =>
-      result.current.onEdgesChange([
-        { type: 'remove', id: 'e-start-pick' },
-        { type: 'remove', id: 'e-pick-out' },
-      ]),
-    )
-    act(() => result.current.onNodesChange([{ type: 'remove', id: 'pick' }]))
+    deletePickInFlowOrder(result)
     act(() => result.current.onHistoryDeleteEnd())
 
     expect(idsOf(result.current.nodes)).toEqual(['out', 'start'])
@@ -103,5 +107,30 @@ describe('useWorkflowEditorState deletion history', () => {
 
     expect(result.current.history.past).toHaveLength(2)
     expect(result.current.history.currentEvent).toBe('edge.delete')
+  })
+
+  it('closes the deletion with the node removals even without onDelete', () => {
+    const { result } = renderEditorState()
+    deletePickInFlowOrder(result)
+
+    expect(result.current.history.past).toHaveLength(1)
+    // The edit after it is its own step, not swallowed by a transaction left open.
+    act(() => result.current.onNodesChange([{ type: 'remove', id: 'out' }]))
+    expect(result.current.history.past).toHaveLength(2)
+  })
+
+  it('commits a deletion a failed stream left open before the next one begins', () => {
+    const { result } = renderEditorState()
+    act(() => result.current.onHistoryDeleteStart(['out']))
+    // The edges went, but the node stream never arrived.
+    act(() => result.current.onEdgesChange([{ type: 'remove', id: 'e-pick-out' }]))
+    act(() => result.current.onHistoryDeleteStart(['pick']))
+    act(() => result.current.onEdgesChange([{ type: 'remove', id: 'e-start-pick' }]))
+    act(() => result.current.onNodesChange([{ type: 'remove', id: 'pick' }]))
+
+    expect(result.current.history.past).toHaveLength(2)
+    act(() => result.current.history.undo())
+    expect(idsOf(result.current.nodes)).toEqual(['out', 'pick', 'start'])
+    expect(idsOf(result.current.edges)).toEqual(['e-start-pick'])
   })
 })

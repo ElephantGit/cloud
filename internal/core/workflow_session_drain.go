@@ -33,7 +33,7 @@ func drainWorkflowTimedOutSession(t *transaction, runID string, version int64, n
 
 // finishWorkflowUndrainedSession preserves the failed round and releases the Workspace. A bounded
 // wait is not proof of termination: continuing in this Workspace would overlap the old session.
-func finishWorkflowUndrainedSession(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, reason string) {
+func finishWorkflowUndrainedSession(t *transaction, runID string, version int64, node workflowNodeView, states map[string]workflowNodeState, nodeReason string) {
 	snapshot := t.one(`SELECT s.graph FROM workflow_runs r JOIN workflow_snapshots s ON s.id=r.snapshot_id WHERE r.id=$1`, runID)
 	graph := readWorkflowGraph(snapshot.O("graph"))
 	container := graph.ByNode[node.Container]
@@ -42,13 +42,13 @@ func finishWorkflowUndrainedSession(t *transaction, runID string, version int64,
 	if state.Iteration != nil {
 		iteration := state.Iteration
 		iteration.Failed++
-		iteration.Ledger = append(iteration.Ledger, Object{"item": iteration.Items[iteration.Round], "status": "failed", "output": nil, "error": reason})
+		iteration.Ledger = append(iteration.Ledger, Object{"item": iteration.Items[iteration.Round], "status": "failed", "output": nil, "error": nodeReason})
 		workflowInactiveStates(body, states)
 		archiveWorkflowIterationRound(iteration, body, states)
-		failWorkflowIteration(states, container, reason, reason)
+		failWorkflowIteration(states, container, nodeReason, nodeReason)
 	} else if state.Loop != nil {
 		archiveWorkflowLoopRound(state.Loop, body, states, true)
-		failWorkflowLoop(states, container, reason, reason)
+		failWorkflowLoop(states, container, nodeReason, nodeReason)
 	}
 	// D4 distinguishes the stable node code from the human-readable run error.
 	finishWorkflowRun(t, runID, version, "failed", "session end deadline exceeded", states)

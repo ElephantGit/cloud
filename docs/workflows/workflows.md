@@ -230,9 +230,14 @@ iteration 指向自身成员、`sourceHandle = "iteration-entry"` 的入口边�
 
 复合运行在每次状态提交前按紧凑 UTF-8 JSON 计量，包括全部重复保存的值。
 iteration 单项输入、collect 值和成员归档，以及 loop 的 carried 加成员归档和最终 outputs，各有 1 MiB 上限；
-完整 `node_states` 有 8 MiB 上限，普通提交预留 64 KiB 给有界失败记录。
+完整 `node_states` 有 8 MiB 上限，普通提交的预算为 8 MiB − 64 KiB，剩余 64 KiB 供失败转移使用。
 预留只在本次提交新增失败/取消节点、结算新的 iteration 失败轮账本，或运行进入失败/取消终态时开放；
-历史失败成员和账本不会扩大普通写入额度。重读完全相同的已提交状态不会被普通预算再次拒绝；
+预留作用于整次 CAS 的候选状态：最后一轮失败且策略为 `continue` 时，新增失败账本和最终输出中的
+`output` / `entries` / `failed_count` 复制可以在同一次提交中使用预留，并非只有失败账本字节可使用。
+所有副本仍计入总量；恰好 8 MiB 可以提交，多 1 字节也会拒绝整个候选状态。
+历史失败成员和账本不会扩大普通写入额度。若前一轮失败账本提交后已超过普通预算，下一轮的普通状态增长
+仍以 `workflow_state_size_exceeded` 结束运行，保留已提交的失败账本与归档，不提交该次增长；`continue` 不扩大预算。
+重读完全相同的已提交状态不会被普通预算再次拒绝；终态调度重放不追加账本或重跑下一项。
 局部 1 MiB 和整行 8 MiB 硬上限仍始终检查。
 超限丢弃整个候选状态、保留上一次已提交的账本与成员，记录 `iteration_state_size_exceeded`、
 `loop_state_size_exceeded` 或 `workflow_state_size_exceeded`，不会被 `continue` 吸收。
@@ -257,4 +262,4 @@ body Agent 回合超时后先保留当前 attempt 为 running，提交超时原�
 
 - [variable-aggregator-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-variable-aggregator-execution.md) (approved)
 - [loop-and-loop-exit-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-loop-and-loop-exit-execution.md) (approved)
-- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (approved)
+- [iteration-foreach-execution](https://github.com/ora-space/specs/blob/main/decisions/cloud/workflow/20261025-iteration-foreach-execution.md) (implemented)

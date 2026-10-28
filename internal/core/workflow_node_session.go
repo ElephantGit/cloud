@@ -210,6 +210,14 @@ func nodeSessionPage(t *transaction, execution Object, attempt int64, result Obj
 			incomplete = true
 			continue
 		}
+		// A record the Node truncated, or the Node's own explicit gap marker, is history this page
+		// cannot present in full. D4 makes either observation of incompleteness, not a per-row
+		// decoration: a page that rendered them and stayed "complete" would claim the conversation
+		// it shows is the conversation that happened. Both are still returned — the record is what
+		// the Node reported, and the gap record is where the reader sees the hole.
+		if record.B("truncated") || record.O("record").S("type") == "gap" {
+			incomplete = true
+		}
 		records = append(records, record)
 	}
 	// The cursor is the earliest sequence this page covered, which for an intact page is exactly
@@ -222,6 +230,14 @@ func nodeSessionPage(t *transaction, execution Object, attempt int64, result Obj
 		nextBefore = rows[0].N("sequence")
 	}
 	if nodeSessionGap(rows, before, hasBefore, counts.N("newest")) {
+		incomplete = true
+	}
+	// A history starts at sequence 1: takeOverThreadEvents appends only last_event_sequence+1, so the
+	// first receipt an attempt stores is 1 (and a settled attempt's terminal receipt is above it).
+	// An oldest history receipt above 1 is therefore a lost beginning, and no page walk can see it —
+	// there is no receipt below the first one to page to, so the last page would call the history
+	// complete when it merely starts late.
+	if history > 0 && counts.N("oldest") != 1 {
 		incomplete = true
 	}
 	more := false

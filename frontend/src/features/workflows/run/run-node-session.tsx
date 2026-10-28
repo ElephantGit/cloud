@@ -202,6 +202,13 @@ function SessionRow({ row }: { row: NodeSessionRow }) {
       </p>
     )
   }
+  if (row.kind === 'gap') {
+    return (
+      <p className="rounded border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">
+        {t('workflows.run.session.gap')}
+      </p>
+    )
+  }
   return (
     <pre className="max-h-40 overflow-auto rounded bg-muted/40 px-2 py-1 font-mono text-[10px] break-words whitespace-pre-wrap">
       {row.text}

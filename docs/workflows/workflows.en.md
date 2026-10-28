@@ -193,7 +193,8 @@ make it `available` (the history itself may still be incomplete), no execution r
 session with nothing recorded is `awaiting_first_record`, a settled attempt with no replayable history is `unavailable` —
 the unreachable-Node, deadline and cancellation paths write no result, so an empty result does not prove the session is
 live — and contradictory evidence (the node already on a later attempt while this one has no result) is `unknown`.
-`incomplete` reports only what a page observed, and `hasMore` is probed independently. The response describes the selected
+`incomplete` reports only what a page observed — an explicit `gap` record the page returned, a record marked `truncated`, a receipt that failed shape validation, and a history whose oldest receipt is not 1 (the beginning is lost, and no page below
+it can reveal that) — and `hasMore` is probed independently. The response describes the selected
 attempt's evidence under `execution` and the node's current state under `node`, kept apart; the node's output and end
 reason belong to the current attempt only, so a page reading an older attempt must not present them as that attempt's
 answer. Reading never opens a session, advances a node or writes anything.

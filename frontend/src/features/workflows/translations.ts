@@ -411,6 +411,7 @@ export const workflowTranslations = {
       '已读取的页面观察到缺失或无法解析的记录，这段会话可能不完整。',
     'workflows.run.session.truncated': '（已截断）',
     'workflows.run.session.turnEnded': '本轮结束：{{reason}}',
+    'workflows.run.session.gap': '此处的记录已丢失（Node 报告了 Gap）。',
 
     // Backend faults, keyed by the fault code the API returns.
     'workflows.errors.nameConflict': '已存在同名工作流。',
@@ -820,6 +821,7 @@ export const workflowTranslations = {
       'A loaded page observed missing or unreadable records, so this conversation may be incomplete.',
     'workflows.run.session.truncated': '(truncated)',
     'workflows.run.session.turnEnded': 'Turn ended: {{reason}}',
+    'workflows.run.session.gap': 'Records are missing here (the Node reported a gap).',
 
     'workflows.errors.nameConflict': 'A workflow with this name already exists.',
     'workflows.errors.nameBlank': 'Workflow name cannot be blank.',

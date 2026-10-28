@@ -12,6 +12,7 @@ const SESSION_PATH = '/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/nodes/:node
 function session(overrides: {
   records?: WorkflowNodeSession['execution']['records']
   state?: WorkflowNodeSession['execution']['state']
+  incomplete?: boolean
   hasMore?: boolean
   nextBefore?: number | null
   sessionEndReason?: string | null
@@ -23,7 +24,7 @@ function session(overrides: {
       result: null,
       records: overrides.records ?? [],
       state: overrides.state ?? 'available',
-      incomplete: false,
+      incomplete: overrides.incomplete ?? false,
       hasMore: overrides.hasMore ?? false,
       nextBefore: overrides.nextBefore ?? null,
     },
@@ -151,6 +152,26 @@ describe('RunNodeSession', () => {
         .getAllByRole('listitem')
         .map((item) => item.textContent),
     ).toEqual(['更早', '较新'])
+  })
+
+  it("shows the Node's own gap marker where the records were lost", async () => {
+    installSession(() =>
+      HttpResponse.json(
+        session({
+          records: [chunk(1, '先读代码'), { sequence: 2, record: { type: 'gap' } }],
+          incomplete: true,
+        }),
+      ),
+    )
+    renderPanel()
+
+    const region = screen.getByRole('region', { name: '会话' })
+    const items = await within(region).findAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual([
+      '先读代码',
+      '此处的记录已丢失（Node 报告了 Gap）。',
+    ])
+    expect(within(region).getByText(/可能不完整/)).toBeInTheDocument()
   })
 
   it('tells a failed read apart from a node that recorded nothing', async () => {

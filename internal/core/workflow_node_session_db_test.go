@@ -151,6 +151,15 @@ func rawHistoryReceipt(sequence int64) string {
 	})
 }
 
+// rawTruncatedReceipt is the same canonEvent body with Cloud's truncation marker set: the Node
+// reported that it kept only part of this record.
+func rawTruncatedReceipt(sequence int64) string {
+	return jsonText(Object{
+		"record":   workflowAnswerEvent(sequence, "turn-1", nodeSessionChunk(sequence)).S("record"),
+		"sequence": sequence, "truncated": true, "turnId": "turn-1",
+	})
+}
+
 // The read is addressed by (run, node, attempt). A retry must not let one attempt inherit the
 // other's records, result or state, and a page must stay pinned to the attempt it started on.
 func TestWorkflowNodeSessionReadScopesToTheRequestedAttempt(t *testing.T) {
@@ -407,6 +416,103 @@ func TestWorkflowNodeSessionReadReportsAGapOnlyOnThePageThatObservesIt(t *testin
 		if got := page.O("execution").B("incomplete"); got != tc.incomplete {
 			t.Fatalf("%s: incomplete = %v; want %v", tc.name, got, tc.incomplete)
 		}
+	}
+}
+
+// An explicit `gap` record is the Node saying records inside the conversation were lost. It is
+// returned where the hole is — a page that dropped it would hide the position of the loss — and the
+// page that carries it is incomplete (D4).
+func TestWorkflowNodeSessionReadReportsANodeGapRecordAsIncomplete(t *testing.T) {
+	store := dispatcherDB(t)
+	scene := newNodeSessionScene(t, store, workflowSessionGraph())
+	execution := "exec-a-" + scene.runID[:8]
+	scene.startAttempt(t, "a", execution)
+	takeOverWorkflowEvents(t, store, scene.runID, execution, []Object{
+		workflowAnswerEvent(1, "turn-1", nodeSessionChunk(1)),
+		threadEvent(2, Object{"type": "gap"}, "turn-1"),
+		workflowAnswerEvent(3, "turn-1", nodeSessionChunk(3)),
+	})
+
+	page := scene.mustRead(t, "a", nodeSessionQuery{})
+	if got := nodeSessionSequences(page); got != "1,2,3" {
+		t.Fatalf("records = %s; want 1,2,3 with the gap record kept where the hole is", got)
+	}
+	if got := nodeSessionRecords(page)[1].O("record").S("type"); got != "gap" {
+		t.Fatalf("record 2 = %v; want the Node's own gap record", nodeSessionRecords(page)[1])
+	}
+	if !page.O("execution").B("incomplete") {
+		t.Fatal("a page carrying the Node's gap record reported the history complete")
+	}
+
+	// The gap is still a per-page observation: a page below it sees contiguous receipts of its own.
+	below := scene.mustRead(t, "a", nodeSessionQuery{attempt: "1", before: "2", limit: 1})
+	if got := nodeSessionSequences(below); got != "1" {
+		t.Fatalf("page below the gap = %s; want 1", got)
+	}
+	if below.O("execution").B("incomplete") {
+		t.Fatal("a page that does not carry the gap record reported a gap")
+	}
+}
+
+// A record the Node marked truncated is history Cloud cannot present in full, so the page that
+// returns it is incomplete — while the record itself still has to be read as the partial record it
+// is, not dropped (D4).
+func TestWorkflowNodeSessionReadReportsATruncatedRecordAsIncomplete(t *testing.T) {
+	store := dispatcherDB(t)
+	scene := newNodeSessionScene(t, store, workflowSessionGraph())
+	execution := "exec-a-" + scene.runID[:8]
+	scene.startAttempt(t, "a", execution)
+	insertRawReceipt(t, store, execution, 1, rawHistoryReceipt(1))
+	insertRawReceipt(t, store, execution, 2, rawTruncatedReceipt(2))
+
+	page := scene.mustRead(t, "a", nodeSessionQuery{})
+	exec := page.O("execution")
+	if got := nodeSessionSequences(page); got != "1,2" {
+		t.Fatalf("records = %s; want 1,2", got)
+	}
+	records := nodeSessionRecords(page)
+	if !records[1].B("truncated") || records[0].B("truncated") {
+		t.Fatalf("truncated markers = [%v %v]; want only the second record marked", records[0].B("truncated"), records[1].B("truncated"))
+	}
+	if !exec.B("incomplete") {
+		t.Fatal("a page returning a truncated record reported the history complete")
+	}
+
+	// The marker is per record and the observation per page: the page that returns only the whole
+	// record reports nothing missing.
+	below := scene.mustRead(t, "a", nodeSessionQuery{attempt: "1", before: "2", limit: 1})
+	if got := nodeSessionSequences(below); got != "1" {
+		t.Fatalf("page below the truncated record = %s; want 1", got)
+	}
+	if below.O("execution").B("incomplete") {
+		t.Fatal("a page without the truncated record reported a gap")
+	}
+}
+
+// Receipts are written from sequence 1 onwards, so a history whose oldest receipt is above 1 lost its
+// beginning. No page walk can see that — there is no receipt below the first one to page to — and the
+// last page would otherwise call the history complete when it merely starts late.
+func TestWorkflowNodeSessionReadReportsAHistoryMissingItsBeginning(t *testing.T) {
+	store := dispatcherDB(t)
+	scene := newNodeSessionScene(t, store, workflowSessionGraph())
+	execution := "exec-a-" + scene.runID[:8]
+	scene.startAttempt(t, "a", execution)
+	// The takeover path cannot produce this: it appends only last_event_sequence+1, and no writer
+	// ever removed a receipt. The lost beginning is therefore staged directly.
+	for _, sequence := range []int64{3, 4} {
+		insertRawReceipt(t, store, execution, sequence, rawHistoryReceipt(sequence))
+	}
+
+	last := scene.mustRead(t, "a", nodeSessionQuery{})
+	exec := last.O("execution")
+	if got := nodeSessionSequences(last); got != "3,4" {
+		t.Fatalf("records = %s; want 3,4", got)
+	}
+	if exec.B("hasMore") {
+		t.Fatal("the walk offered a page below the oldest stored receipt")
+	}
+	if !exec.B("incomplete") {
+		t.Fatal("a history whose first receipt is 3 reported a complete start")
 	}
 }
 

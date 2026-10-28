@@ -159,6 +159,20 @@ describe('nodeSessionRows', () => {
     ])
   })
 
+  it("reads the Node's own gap marker as a position in the conversation", () => {
+    const rows = nodeSessionRows([
+      message(1, '先读代码'),
+      receipt(2, { type: 'gap' }),
+      message(3, '读完了'),
+    ])
+
+    expect(rows.map(({ kind, text }) => [kind, text])).toEqual([
+      ['message', '先读代码'],
+      ['gap', ''],
+      ['message', '读完了'],
+    ])
+  })
+
   it('falls back to the raw event for kinds this view does not read', () => {
     const rows = nodeSessionRows([
       receipt(1, { type: 'update', update: { sessionUpdate: 'plan', steps: [] } }),

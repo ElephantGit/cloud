@@ -10,15 +10,18 @@ import { asJsonRecord } from '@/features/workflows/runtime/json-record'
  *
  * `user` is the turn the Node echoed for the prompt Cloud dispatched — the attempt's own user
  * input, which every workflow node session records even though the inspector shows no prompt.
+ * `gap` is the Node's own marker that records inside the conversation were lost: a position, not a
+ * message, so it carries no text.
  */
-export type NodeSessionRowKind = 'user' | 'message' | 'thought' | 'tool' | 'turnEnded' | 'raw'
+export type NodeSessionRowKind =
+  'user' | 'message' | 'thought' | 'tool' | 'turnEnded' | 'gap' | 'raw'
 
 /** One row of a node attempt's conversation, already ordered oldest first. */
 export interface NodeSessionRow {
   /** Receipt sequence, unique within the attempt: the render key and the reader's position. */
   key: number
   kind: NodeSessionRowKind
-  /** The row's readable text; a `turnEnded` row carries its stop reason. */
+  /** The row's readable text; a `turnEnded` row carries its stop reason, a `gap` row has none. */
   text: string
   /** True when Cloud stored only part of the record, so `text` is a partial reading. */
   truncated: boolean
@@ -31,7 +34,10 @@ export interface NodeSessionView {
   /** The read state the newest page reported for the whole attempt. */
   state: WorkflowNodeSessionExecutionState
   rows: NodeSessionRow[]
-  /** At least one loaded page observed missing or unreadable receipts. */
+  /**
+   * At least one loaded page observed history it cannot present in full: an explicit `gap`, a
+   * truncated record, an unreadable receipt, or a history that does not start at sequence 1.
+   */
   incomplete: boolean
   /** The oldest loaded page has receipts older than it. */
   hasMore: boolean
@@ -94,6 +100,12 @@ function rowOf(record: WorkflowNodeSessionRecord): Pick<NodeSessionRow, 'kind' |
   if (payload['type'] === 'turnEnded') {
     const reason = payload['stopReason']
     return { kind: 'turnEnded', text: typeof reason === 'string' ? reason : '' }
+  }
+  // The Node's explicit gap marker says records within the turn were lost. It is a position in the
+  // conversation rather than a message, so it reads as its own row with no text instead of the raw
+  // JSON a `raw` fallback would show; the page it arrives on is `incomplete` for the same reason.
+  if (payload['type'] === 'gap') {
+    return { kind: 'gap', text: '' }
   }
   const update = asJsonRecord(payload['update'])
   if (payload['type'] === 'update' && update !== undefined) {

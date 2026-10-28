@@ -184,22 +184,28 @@ func nodeSessionPage(t *transaction, execution Object, attempt int64, result Obj
 	// included so a page can never come back empty while receipts remain. The page is taken newest
 	// first and returned oldest first, which is the ordering the neighboring conversation reads use
 	// (thread_read.go, task_conversation_messages.go): a client appends pages without a second case.
+	//
+	// Only the rows of the selected page are parsed as JSON. The window has to see every remaining
+	// receipt to accumulate the budget, but that scan reads sequence and octet_length(event) alone;
+	// casting each remaining receipt to jsonb — as much as 256 KiB apiece — before the LIMIT applies
+	// would make one page cost a parse of the whole history behind it.
 	rows := t.list(`WITH history AS MATERIALIZED (
-			SELECT sequence, octet_length(event) AS bytes,
-				CASE WHEN event IS JSON OBJECT THEN event::jsonb END AS canon
+			SELECT sequence, octet_length(event) AS bytes
 			FROM node_event_receipts
 			WHERE execution_id=$1 AND ($2::bigint IS NULL OR sequence <> $2::bigint)
 			  AND ($3::bigint IS NULL OR sequence < $3::bigint)
 		), budgeted AS (
-			SELECT sequence, bytes, canon,
+			SELECT sequence, bytes,
 				SUM(bytes) OVER (ORDER BY sequence DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running
 			FROM history
 		), page AS (
-			SELECT sequence, canon FROM budgeted
+			SELECT sequence FROM budgeted
 			WHERE running - bytes < $4::bigint
 			ORDER BY sequence DESC LIMIT $5
 		)
-		SELECT sequence, canon::text AS canon FROM page ORDER BY sequence`, executionID, terminalSequence, beforeArg, nodeSessionPageBytes, limit)
+		SELECT receipt.sequence, CASE WHEN receipt.event IS JSON OBJECT THEN receipt.event::jsonb END::text AS canon
+		FROM page JOIN node_event_receipts receipt ON receipt.execution_id=$1 AND receipt.sequence=page.sequence
+		ORDER BY receipt.sequence`, executionID, terminalSequence, beforeArg, nodeSessionPageBytes, limit)
 	records := make([]any, 0, len(rows))
 	incomplete := false
 	for _, row := range rows { // ascending, as returned to the caller

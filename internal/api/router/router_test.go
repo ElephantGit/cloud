@@ -11,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	"github.com/wanglongan587/cloud/internal/core"
 )
 
 // TestPluginRouteRegistration pins the marketplace routes into the allowlist
@@ -186,5 +188,74 @@ func TestUnexpectedPanicIncludesValueAndStackInLogs(t *testing.T) {
 	fields := entries[0].ContextMap()
 	if fields["panic"] == nil || fields["stack"] == "" {
 		t.Fatalf("panic log omitted value or stack: %v", fields)
+	}
+}
+
+// TestNodeSessionQueryAllowlist pins the node session read to the three query parameters the
+// decision defines and to exactly one public GET route. A session is addressed by the run, the graph
+// node and the attempt only, so neither a session nor an execution identifier is a parameter this
+// callers can supply — and the path carries neither.
+func TestNodeSessionQueryAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"no query", "", true},
+		{"limit", "limit=50", true},
+		{"attempt and before", "attempt=2&before=40", true},
+		{"limit at the route cap", "limit=" + strconv.Itoa(core.NodeSessionPageMax), true},
+		{"session id", "sessionId=abc", false},
+		{"execution id", "executionId=abc", false},
+		{"forward cursor", "after=3", false},
+		{"unknown parameter", "foo=1", false},
+		{"repeated parameter", "limit=1&limit=2", false},
+		{"empty value", "attempt=", false},
+		{"storage path", "path=/tmp/session", false},
+	}
+	for _, tc := range cases {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, WorkflowNodeSessionPath+"?"+tc.raw, nil)
+		if got := validSessionQuery(c, WorkflowNodeSessionPath); got != tc.want {
+			t.Fatalf("%s: validSessionQuery(%q) = %v; want %v", tc.name, tc.raw, got, tc.want)
+		}
+	}
+
+	// The allowlist applies only to session reads: an ordinary route keeps the shared query handling.
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/:tid/workflows?foo=1", nil)
+	if !validSessionQuery(c, "/api/v1/tenants/:tid/workflows") {
+		t.Fatal("an ordinary route was subjected to the session query allowlist")
+	}
+
+	// The node session route adds before and attempt to no other session read: the dashboard list
+	// rejects before as invalid_pagination (a filter fault) and attempt is not a parameter it has,
+	// so both must still fail the allowlist there rather than reaching the core.
+	for _, raw := range []string{"before=40", "attempt=2"} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, AgentSessionsPath+"?"+raw, nil)
+		if validSessionQuery(c, AgentSessionsPath) {
+			t.Fatalf("dashboard list accepted %q; before and attempt belong to the node session read only", raw)
+		}
+	}
+
+	routes := 0
+	for _, route := range Routes() {
+		if route.Path != WorkflowNodeSessionPath {
+			continue
+		}
+		routes++
+		if route.Method != http.MethodGet || route.Action != "" {
+			t.Fatalf("node session route = %s %s action %q; want one public GET", route.Method, route.Path, route.Action)
+		}
+		for _, segment := range []string{"sessionId", "executionId", "attempt"} {
+			if strings.Contains(route.Path, ":"+segment) {
+				t.Fatalf("node session path carries :%s; the attempt, session and execution must not be addressable", segment)
+			}
+		}
+	}
+	if routes != 1 {
+		t.Fatalf("%d routes registered for %s; want exactly one", routes, WorkflowNodeSessionPath)
 	}
 }

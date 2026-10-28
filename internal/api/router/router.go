@@ -72,6 +72,11 @@ const WorkflowStatisticsPath = "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/s
 // WorkflowModelCallsPath pages content-free model HTTP attempt observations for a WorkflowRun.
 const WorkflowModelCallsPath = "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/model-calls"
 
+// WorkflowNodeSessionPath reads one agent node attempt's recorded conversation for a WorkflowRun.
+// The attempt is resolved server-side from the node's committed state; the route never accepts a
+// session or execution identifier, so a caller cannot use it to cross tenant, run or node scope.
+const WorkflowNodeSessionPath = "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/nodes/:nodeId/session"
+
 // PublishPath, WorkspaceBranchesPath and CredentialConfirmPath are the public routes whose
 // answer depends on another service: the Git Server's ref query (publish source, Workspace
 // branches) or the Credential Store's metadata (confirm). They are served by dedicated Store
@@ -161,6 +166,7 @@ func Routes() []Route {
 		{"POST", "/api/v1/tenants/:tid/workflows/:wfid/runs/:rid/resume", "", []string{"mode"}},
 		{"GET", WorkflowStatisticsPath, "", nil},
 		{"GET", WorkflowModelCallsPath, "", nil},
+		{"GET", WorkflowNodeSessionPath, "", nil},
 		{"GET", "/api/v1/tenants/:tid/issue-views", "", nil},
 		{"POST", "/api/v1/tenants/:tid/issue-views", "", []string{"name", "filter"}},
 		{"PUT", "/api/v1/tenants/:tid/issue-views/:vid", "", []string{"name", "filter", "version"}},
@@ -473,12 +479,15 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 					if route.Path == ThreadPath || route.Path == TaskConversationPath {
 						maxLimit = core.ThreadPageLimit
 					}
+					if route.Path == WorkflowNodeSessionPath {
+						maxLimit = core.NodeSessionPageMax
+					}
 					if e != nil || limit < 1 || limit > maxLimit {
 						failure(c, &core.Fault{Code: "invalid_pagination", Status: 400, Params: core.Object{}})
 						return
 					}
 				}
-				req := &core.PublicRequest{Method: c.Request.Method, Path: c.Request.URL.Path, TenantID: c.Param("tid"), ProjectID: c.Param("pid"), WorkspaceID: c.Param("wid"), SpaceID: c.Param("spaceId"), OperationID: c.Param("oid"), UserID: c.Param("uid"), IssueID: c.Param("iid"), CommentID: c.Param("cid"), ConversationMessageID: c.Param("mid"), LabelID: c.Param("lid"), StatusID: c.Param("sid"), ViewID: c.Param("vid"), RunID: c.Param("rid"), ContextRefID: c.Param("crid"), InteractionID: c.Param("ixid"), WorkflowID: c.Param("wfid"), SnapshotID: c.Param("snapshotId"), FormRef: c.Param("formRef"), FormIssueID: c.Query("issueId"), ModelConnectionID: c.Param("mcid"), SlotName: c.Param("slot"), GitCredentialID: c.Param("gcid"), RepositoryOperationID: c.Param("roid"), InvitationID: c.Param("iid"), JoinLinkID: c.Param("lid"), JoinRequestID: c.Param("rid"), ScheduledTaskID: c.Param("stid"), ArtifactIndex: c.Param("aidx"), Key: c.GetHeader("Idempotency-Key"), SessionProjectID: c.Query("projectId"), SessionStatus: c.Query("status"), SessionAgent: c.Query("agent"), SessionFrom: c.Query("from"), SessionTo: c.Query("to"), Limit: limit, After: c.Query("after"), Before: c.Query("before"), Query: c.Query("q"), GroupBy: c.Query("by"), Body: body, Identity: user, Person: person}
+				req := &core.PublicRequest{Method: c.Request.Method, Path: c.Request.URL.Path, TenantID: c.Param("tid"), ProjectID: c.Param("pid"), WorkspaceID: c.Param("wid"), SpaceID: c.Param("spaceId"), OperationID: c.Param("oid"), UserID: c.Param("uid"), IssueID: c.Param("iid"), CommentID: c.Param("cid"), ConversationMessageID: c.Param("mid"), LabelID: c.Param("lid"), StatusID: c.Param("sid"), ViewID: c.Param("vid"), RunID: c.Param("rid"), ContextRefID: c.Param("crid"), InteractionID: c.Param("ixid"), WorkflowID: c.Param("wfid"), SnapshotID: c.Param("snapshotId"), FormRef: c.Param("formRef"), FormIssueID: c.Query("issueId"), ModelConnectionID: c.Param("mcid"), SlotName: c.Param("slot"), GitCredentialID: c.Param("gcid"), RepositoryOperationID: c.Param("roid"), InvitationID: c.Param("iid"), JoinLinkID: c.Param("lid"), JoinRequestID: c.Param("rid"), ScheduledTaskID: c.Param("stid"), ArtifactIndex: c.Param("aidx"), Key: c.GetHeader("Idempotency-Key"), SessionProjectID: c.Query("projectId"), SessionStatus: c.Query("status"), SessionAgent: c.Query("agent"), SessionFrom: c.Query("from"), SessionTo: c.Query("to"), Limit: limit, After: c.Query("after"), Before: c.Query("before"), Attempt: c.Query("attempt"), NodeID: c.Param("nodeId"), Query: c.Query("q"), GroupBy: c.Query("by"), Body: body, Identity: user, Person: person}
 				if c.Param("pluginNamespace") != "" {
 					req.AgentPluginID = c.Param("pluginNamespace") + "/" + c.Param("pluginIdentifier")
 				}
@@ -848,6 +857,18 @@ func validSessionQuery(c *gin.Context, path string) bool {
 		if (path == SessionModelCallsPath || path == WorkflowModelCallsPath) && key != "limit" && key != "after" {
 			return false
 		}
+		// A node session page is pinned to one attempt: before alone cannot name one, and the core
+		// refuses it, so the route accepts exactly the three parameters the decision defines. No
+		// other session read gains before or attempt: on the session dashboard list before is a
+		// filter fault, not a cursor, and widening the set here would turn it into invalid_pagination.
+		if path == WorkflowNodeSessionPath {
+			switch key {
+			case "limit", "before", "attempt":
+				continue
+			default:
+				return false
+			}
+		}
 		switch key {
 		case "limit", "after", "projectId", "status", "agent", "from", "to":
 		default:
@@ -859,6 +880,6 @@ func validSessionQuery(c *gin.Context, path string) bool {
 
 func isSessionReadPath(path string) bool {
 	return path == AgentSessionsPath || path == SessionHistoryPath || path == SessionStatisticsPath || path == SessionModelCallsPath ||
-		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath ||
+		path == WorkflowStatisticsPath || path == WorkflowModelCallsPath || path == WorkflowNodeSessionPath ||
 		path == scheduledArtifactsPath || path == scheduledArtifactPath
 }

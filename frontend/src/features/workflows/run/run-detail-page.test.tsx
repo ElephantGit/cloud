@@ -124,6 +124,20 @@ describe('WorkflowRunDetailPage', () => {
     expect(within(inspector).queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('adds the recorded conversation section for an agent node only', async () => {
+    renderRun(async () => HttpResponse.json(runFixture()))
+    await screen.findByRole('heading', { name: '巡检运行' })
+    await waitFor(() => expect(runCard('start-1')).toBeInTheDocument())
+
+    fireEvent.click(runCard('start-1'))
+    const startInspector = screen.getByRole('complementary', { name: '节点检视' })
+    expect(within(startInspector).queryByRole('region', { name: '会话' })).not.toBeInTheDocument()
+
+    fireEvent.click(runCard('agent-1'))
+    const agentInspector = screen.getByRole('complementary', { name: '节点检视' })
+    expect(await within(agentInspector).findByRole('region', { name: '会话' })).toBeInTheDocument()
+  })
+
   it('follows a running run to its terminal status without a reload', async () => {
     // Only the query's interval is faked, so the retries below flush real timers.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })

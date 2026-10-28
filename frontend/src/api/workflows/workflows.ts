@@ -33,6 +33,7 @@ import type {
   GetApiV1TenantsTidWorkflowsWfidRunsParams,
   GetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls200,
   GetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsParams,
+  GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams,
   GetApiV1TenantsTidWorkflowsWfidSnapshots200,
   GetApiV1TenantsTidWorkflowsWfidSnapshotsParams,
   GetApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdFormParams,
@@ -49,6 +50,7 @@ import type {
   PutApiV1TenantsTidWorkflowsWfidSnapshotsSnapshotIdRestoreBody,
   SessionModelStatistics,
   Workflow,
+  WorkflowNodeSession,
   WorkflowRun,
   WorkflowSnapshot,
   WorkflowSnapshotForm
@@ -1017,6 +1019,128 @@ export function useGetApiV1TenantsTidWorkflowsWfidRunsRidModelCalls<TData = Awai
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetApiV1TenantsTidWorkflowsWfidRunsRidModelCallsQueryOptions(tid,wfid,rid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Read-only active-member access to one agent node attempt's recorded conversation of a live WorkflowRun. The node is a graph id resolved against the run's frozen snapshot; the attempt and its execution are resolved from committed node state, so no session, execution or storage identifier is accepted. execution carries the selected attempt's evidence and its page of history receipts, newest first; node carries the node's current state, whose output and sessionEndReason belong to the current attempt and never stand in for an older one. The terminal receipt is excluded by its committed sequence (last_event_sequence), never by the shape of its content. nextBefore is the earliest returned receipt sequence and is present only while hasMore; paging must send it back with attempt. incomplete is a per-page observation of missing or invalid history, not a verdict on the whole attempt. A null result does not mean the attempt is in flight: state names what the evidence proves. limit is capped at 200 and each page is bounded to 4 MiB. private, no-store.
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/nodes/:nodeId/session
+ */
+export const getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession = (
+    tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowNodeSession>(
+      {url: `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/nodes/${nodeId}/session`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryKey = (tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams,) => {
+    return [
+    `/api/v1/tenants/${tid}/workflows/${wfid}/runs/${rid}/nodes/${nodeId}/session`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError = ErrorType<Error>>(tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryKey(tid,wfid,rid,nodeId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>> = ({ signal }) => getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession(tid,wfid,rid,nodeId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && wfid !== null && wfid !== undefined && rid !== null && rid !== undefined && nodeId !== null && nodeId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>>
+export type GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params: undefined |  GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/workflows/:wfid/runs/:rid/nodes/:nodeId/session
+ */
+
+export function useGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession<TData = Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError = ErrorType<Error>>(
+ tid: string,
+    wfid: string,
+    rid: string,
+    nodeId: string,
+    params?: GetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSession>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidWorkflowsWfidRunsRidNodesNodeIdSessionQueryOptions(tid,wfid,rid,nodeId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

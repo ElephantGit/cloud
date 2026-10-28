@@ -392,6 +392,26 @@ export const workflowTranslations = {
     'workflows.run.inspector.output': '输出',
     'workflows.run.inspector.noOutput': '该节点没有可展示的输出。',
     'workflows.run.inspector.error': '错误',
+    'workflows.run.session.title': '会话',
+    'workflows.run.session.loading': '正在读取会话记录…',
+    'workflows.run.session.failed': '会话记录读取失败，稍后会自动重试。',
+    'workflows.run.session.attempt': '第 {{attempt}} 次尝试',
+    'workflows.run.session.endReason': '结束原因',
+    'workflows.run.session.userInput': '用户输入',
+    'workflows.run.session.records': '会话记录',
+    'workflows.run.session.loaded': '已加载 {{records}} 条记录',
+    'workflows.run.session.loadEarlier': '加载更早的记录',
+    'workflows.run.session.empty': '这次尝试没有可显示的会话记录。',
+    'workflows.run.session.notApplicable': '该节点不建立会话，没有会话记录可读。',
+    'workflows.run.session.notStarted': '这次尝试还没有派发会话，暂时没有记录。',
+    'workflows.run.session.awaitingFirstRecord': '会话正在进行，还没有记录任何内容。',
+    'workflows.run.session.unavailable': '这次尝试已经结束，但没有留下可回放的会话记录。',
+    'workflows.run.session.unknown': '无法确认这次尝试是否留下了会话记录。',
+    'workflows.run.session.incomplete':
+      '已读取的页面观察到缺失或无法解析的记录，这段会话可能不完整。',
+    'workflows.run.session.truncated': '（已截断）',
+    'workflows.run.session.turnEnded': '本轮结束：{{reason}}',
+    'workflows.run.session.gap': '此处的记录已丢失（Node 报告了 Gap）。',
 
     // Backend faults, keyed by the fault code the API returns.
     'workflows.errors.nameConflict': '已存在同名工作流。',
@@ -778,6 +798,30 @@ export const workflowTranslations = {
     'workflows.run.inspector.output': 'Output',
     'workflows.run.inspector.noOutput': 'This node has no recorded output.',
     'workflows.run.inspector.error': 'Error',
+    'workflows.run.session.title': 'Session',
+    'workflows.run.session.loading': 'Reading the session record…',
+    'workflows.run.session.failed': 'The session record could not be read; retrying shortly.',
+    'workflows.run.session.attempt': 'Attempt {{attempt}}',
+    'workflows.run.session.endReason': 'End reason',
+    'workflows.run.session.userInput': 'User input',
+    'workflows.run.session.records': 'Session records',
+    'workflows.run.session.loaded': '{{records}} records loaded',
+    'workflows.run.session.loadEarlier': 'Load earlier records',
+    'workflows.run.session.empty': 'This attempt has no session records to show.',
+    'workflows.run.session.notApplicable':
+      'This node establishes no session, so it has none to read.',
+    'workflows.run.session.notStarted': 'No session was dispatched for this attempt yet.',
+    'workflows.run.session.awaitingFirstRecord':
+      'The session is running and has recorded nothing yet.',
+    'workflows.run.session.unavailable':
+      'This attempt ended without leaving a replayable session record.',
+    'workflows.run.session.unknown':
+      'Whether this attempt left a session record cannot be determined.',
+    'workflows.run.session.incomplete':
+      'A loaded page observed missing or unreadable records, so this conversation may be incomplete.',
+    'workflows.run.session.truncated': '(truncated)',
+    'workflows.run.session.turnEnded': 'Turn ended: {{reason}}',
+    'workflows.run.session.gap': 'Records are missing here (the Node reported a gap).',
 
     'workflows.errors.nameConflict': 'A workflow with this name already exists.',
     'workflows.errors.nameBlank': 'Workflow name cannot be blank.',

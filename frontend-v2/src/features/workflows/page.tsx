@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { GitBranch, Plus, ArrowRight, RefreshCw } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
 import { useGetApiV1MeTenants } from '@/api/me/me'
@@ -31,9 +32,10 @@ export default function Page() {
 
 function Workspace({ tenant }: { tenant: string }) {
   const [params] = useSearchParams()
+  const [search, setSearch] = useState('')
   const selected = params.get('workflow') ?? ''
   const after = params.get('after') ?? ''
-  const list = useGetApiV1TenantsTidWorkflows(tenant, { limit: 20, ...(after ? { after } : {}) }, { query: { retry: false } })
+  const list = useGetApiV1TenantsTidWorkflows(tenant, { limit: 20, ...(!search && after ? { after } : {}) }, { query: { retry: false } })
   const href = (workflow: string, cursor = after) => {
     const next = new URLSearchParams({ tenant })
     if (workflow) next.set('workflow', workflow)
@@ -47,21 +49,23 @@ function Workspace({ tenant }: { tenant: string }) {
           <span className="text-xs font-medium tracking-wider text-muted-foreground">我的工作流</span>
           <Link to={href('new')} className="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"><Plus size={14} />新建工作流</Link>
         </div>
+        <input aria-label="搜索工作流" placeholder="搜索工作流" className="mb-4 w-full rounded-md border bg-background px-3 py-2 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} />
         {list.isPending && <p className="text-sm text-muted-foreground">正在加载工作流…</p>}
         {list.isError && <ErrorNotice error={list.error} retry={() => void list.refetch()} />}
         {list.data?.items.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{after ? '这一页没有工作流。' : '还没有工作流，创建第一个吧。'}</p>}
         <nav aria-label="工作流列表" className="space-y-2">
-          {list.data?.items.map((w) => (
+          {list.data?.items.filter((w) => w.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((w) => (
             <Link key={w.id} to={href(w.id)} className={`block rounded-lg border p-4 transition-colors ${w.id === selected ? 'border-foreground/30 bg-background shadow-sm' : 'border-transparent hover:bg-background'}`}>
               <span className="flex items-center gap-2 text-sm font-medium"><GitBranch size={16} className="shrink-0 text-muted-foreground" /><span className="truncate">{w.name}</span></span>
               <span className="mt-2 block truncate text-xs text-muted-foreground">{w.description || '暂无描述'}</span>
               <span className="mt-3 block text-xs text-muted-foreground">草稿 v{w.version} · {new Date(w.updatedAt).toLocaleDateString('zh-CN')}</span>
             </Link>
           ))}
+          {search && list.data?.nextCursor && <SearchMore tenant={tenant} cursor={list.data.nextCursor} search={search} href={href} />}
         </nav>
         <div className="mt-4 flex justify-between text-sm">
-          {after && <Link to={href(selected, '')}>回到第一页</Link>}
-          {list.data?.nextCursor && <Link to={href(selected, list.data.nextCursor)} className="ml-auto">下一页 →</Link>}
+          {!search && after && <Link to={href(selected, '')}>回到第一页</Link>}
+          {!search && list.data?.nextCursor && <Link to={href(selected, list.data.nextCursor)} className="ml-auto">下一页 →</Link>}
         </div>
       </aside>
       <section className="min-w-0 p-5 md:p-8">
@@ -74,6 +78,13 @@ function Workspace({ tenant }: { tenant: string }) {
       </section>
     </div>
   )
+}
+
+function SearchMore({ tenant, cursor, search, href }: { tenant: string; cursor: string; search: string; href: (workflow: string) => string }) {
+  const query = useGetApiV1TenantsTidWorkflows(tenant, { limit: 20, after: cursor }, { query: { retry: false } })
+  if (query.isPending) return <p className="text-xs text-muted-foreground">正在搜索更多工作流…</p>
+  if (query.isError) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+  return <>{query.data?.items.filter((item) => item.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((item) => <Link key={item.id} to={href(item.id)} className="block rounded-lg border border-transparent p-4 text-sm hover:bg-background">{item.name}</Link>)}{query.data?.nextCursor && <SearchMore tenant={tenant} cursor={query.data.nextCursor} search={search} href={href} />}</>
 }
 
 function Existing({ tenant, id }: { tenant: string; id: string }) {

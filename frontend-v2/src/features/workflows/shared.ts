@@ -19,11 +19,12 @@ export function errorMessage(error: unknown): string {
 }
 
 /** Download the document without changing its authored fields. */
-export function downloadGraph(name: string, graph: string) {
-  const url = URL.createObjectURL(new Blob([graph], { type: 'application/json' }))
+export function downloadGraph(name: string, graph: string, description = '', id?: string) {
+  const desktopDocument = { ...JSON.parse(graph), ...(id ? { id } : {}), name, description, updatedAt: new Date().toISOString() }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(desktopDocument, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = `${name || 'workflow'}.json`
+  link.download = `${name || 'workflow'}.reactflow.json`
   link.click()
   URL.revokeObjectURL(url)
 }

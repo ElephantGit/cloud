@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
@@ -17,11 +18,11 @@ func TestUnconfiguredStubDoesNotClaimExecution(t *testing.T) {
 	scope := execution.Scope{TenantID: "tenant", UserID: "user"}
 	ref, startErr := s.Start(ctx, scope, execution.StartRequest{})
 	result, cancelErr := s.Cancel(ctx, scope, ref)
-	stream, subscribeErr := s.Subscribe(ctx, scope, ref, 0)
+	stream, subscribeErr := s.Subscribe(ctx, scope, ref.SessionID, 0)
 	if !errors.Is(startErr, execution.ErrUnavailable) || ref != (execution.Ref{}) {
 		t.Fatalf("unconfigured admission = %v, %v", ref, startErr)
 	}
-	if !errors.Is(cancelErr, execution.ErrUnavailable) || result != (execution.Result{}) {
+	if !errors.Is(cancelErr, execution.ErrUnavailable) || !reflect.DeepEqual(result, execution.Result{}) {
 		t.Fatalf("unconfigured stop = %v, %v", result, cancelErr)
 	}
 	if !errors.Is(subscribeErr, execution.ErrUnavailable) || stream != nil {

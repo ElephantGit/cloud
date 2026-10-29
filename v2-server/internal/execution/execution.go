@@ -11,16 +11,19 @@ import (
 
 // Stable errors let consumers distinguish admission failures from an admitted turn's result.
 var (
-	ErrUnavailable     = errors.New("execution unavailable")
-	ErrNotFound        = errors.New("execution not found")
-	ErrInvalidRequest  = errors.New("invalid execution request")
-	ErrWorkspaceBusy   = errors.New("workspace busy")
-	ErrConflict        = errors.New("execution identity conflict")
-	ErrUnsupported     = errors.New("execution capability unsupported")
-	ErrStopUnconfirmed = errors.New("execution stop not confirmed")
+	ErrUnavailable      = errors.New("execution unavailable")
+	ErrNotFound         = errors.New("execution not found")
+	ErrInvalidRequest   = errors.New("invalid execution request")
+	ErrWorkspaceBusy    = errors.New("workspace busy")
+	ErrConflict         = errors.New("execution identity conflict")
+	ErrUnsupported      = errors.New("execution capability unsupported")
+	ErrStopUnconfirmed  = errors.New("execution stop not confirmed")
+	ErrSessionEnded     = errors.New("execution session ended")
+	ErrAdmissionUnknown = errors.New("execution admission outcome unknown")
 )
 
-// Scope comes from the authenticated page service, never directly from a request body.
+// Scope comes from the authenticated page service or persisted schedule owner, never directly
+// from a request body. Background callers do not need an online browser or stored cookie.
 // Implementations must check membership and resource ownership on every operation.
 // Hidden resources return ErrNotFound, including lookups through caller identity.
 type Scope struct {
@@ -70,7 +73,7 @@ type StartRequest struct {
 	Caller     Caller
 	Target     Target
 	ExecutorID string
-	Prompt     string
+	Prompt     Prompt
 }
 
 // AppendRequest adds a turn to a live session, retaining its workspace and executor binding.
@@ -78,7 +81,7 @@ type StartRequest struct {
 type AppendRequest struct {
 	SessionID string
 	Caller    Caller
-	Prompt    string
+	Prompt    Prompt
 }
 
 // Ref identifies an admitted turn. SessionID is stable across Append calls; TurnID is not.
@@ -91,7 +94,6 @@ type Ref struct {
 type Status string
 
 const (
-	StatusRunning     Status = "running"
 	StatusCompleted   Status = "completed"
 	StatusCancelled   Status = "cancelled"
 	StatusFailed      Status = "failed"
@@ -107,13 +109,16 @@ type Result struct {
 	Answer      string
 	StopReason  string
 	FailureCode string
+	// Usage retains ACP PromptResponse.usage; model-only providers normalize their token
+	// counters to the same ACP Usage shape. Unreported usage stays absent, not invented.
+	Usage json.RawMessage
 }
 
 // Turn is the readable record of one admitted prompt. Result is nil only while running.
 type Turn struct {
 	Ref       Ref
 	Caller    Caller
-	Prompt    string
+	Prompt    Prompt
 	StartedAt time.Time
 	EndedAt   *time.Time
 	Result    *Result
@@ -122,11 +127,14 @@ type Turn struct {
 // Session is shared execution metadata; page titles, ordering and deletion remain page-owned.
 // EndedAt means the execution session can no longer accept Append, not merely that a turn ended.
 type Session struct {
-	ID         string
-	Target     Target
-	ExecutorID string
-	CreatedAt  time.Time
-	EndedAt    *time.Time
+	ID string
+	// Target/Executor are nil only for model-only sessions. Selection snapshots never
+	// change when the configured catalog changes; no credentials are retained here.
+	Target    *Target
+	Executor  *Executor
+	Model     Model
+	CreatedAt time.Time
+	EndedAt   *time.Time
 }
 
 // TurnPage lists admitted turns in stable admission order. NextCursor is empty at the current
@@ -140,12 +148,15 @@ type TurnPage struct {
 type EventKind string
 
 const (
-	EventACPUpdate EventKind = "acp_update"
-	EventTurnEnded EventKind = "turn_ended"
+	EventACPUpdate    EventKind = "acp_update"
+	EventTurnEnded    EventKind = "turn_ended"
+	EventTextDelta    EventKind = "text_delta"
+	EventSessionEnded EventKind = "session_ended"
 )
 
 // Event is immutable after publication. Sequence starts at 1 and increases without gaps within
-// Ref. ACPUpdate holds an unchanged ACP SessionUpdate, preserving its sessionUpdate discriminator
+// SessionID. Ref.TurnID is empty outside a turn. ACPUpdate holds an unchanged ACP SessionUpdate,
+// preserving its sessionUpdate discriminator
 // and extension metadata (text, thought, tool, plan, usage, etc.). Result is set only on TurnEnded.
 // Readers must not concatenate thought or tool text into the final answer.
 type Event struct {
@@ -154,12 +165,17 @@ type Event struct {
 	OccurredAt time.Time
 	Kind       EventKind
 	ACPUpdate  json.RawMessage
-	Result     *Result
+	// ACPSessionID preserves child-session identity without changing the owning Ref.
+	ACPSessionID string
+	// TextDelta carries model-only text without inventing ACP tools or Agent events.
+	TextDelta string
+	Result    *Result
 }
 
 // Stream replays retained events then follows live ones with no handoff gap. Next returns io.EOF
-// only after the terminal event is delivered, or immediately if the supplied cursor already
-// acknowledges it. A transport/storage failure is a non-EOF error.
+// only after session_ended is delivered, or immediately if the cursor already acknowledges it.
+// turn_ended does not close the stream: late usage and subsequent turns remain observable.
+// A transport/storage failure is a non-EOF error.
 // One goroutine calls Next; Close may run concurrently and must unblock it. Context cancellation
 // or Close releases the subscription only: stopping observation must never cancel execution.
 type Stream interface {
@@ -168,17 +184,25 @@ type Stream interface {
 }
 
 // Service is the shared execution port. It is a proposed contract, not an available runtime.
-// Start/Append return after admission; their contexts control admission, not the admitted lifetime.
+// Start/StartModel/Append return after admission; contexts control admission, not execution.
 // Within a scope, repeating an identical caller attempt and request returns the original Ref;
 // changing its target, executor, session or prompt returns ErrConflict without dispatching again.
-// A workspace admits at most one running turn; contention returns ErrWorkspaceBusy (no hidden queue).
+// This lookup precedes Busy checks. Admission is atomic across callers for a Workspace, not a
+// project. ErrWorkspaceBusy means not admitted and will never start later; there is no queue.
+// After a call returns, it cannot admit asynchronously. Cancellation before admission returns a
+// context error; admission winning the race returns Ref. An ambiguous storage outcome returns
+// ErrAdmissionUnknown: retry the SAME request to reconcile. ReadAttempt's ErrNotFound alone
+// cannot settle an overlapping or unknown admission. Never retry uncertainty with a new attempt.
 type Service interface {
 	Start(context.Context, Scope, StartRequest) (Ref, error)
+	StartModel(context.Context, Scope, ModelStartRequest) (Ref, error)
+	// Append keeps the execution mode/binding; ended sessions return ErrSessionEnded.
 	Append(context.Context, Scope, AppendRequest) (Ref, error)
 
 	// Subscribe returns events strictly after afterSequence, replaying from the start at zero.
-	// An ahead-of-history cursor is invalid, rather than silently discarding a terminal event.
-	Subscribe(ctx context.Context, scope Scope, ref Ref, afterSequence uint64) (Stream, error)
+	// Sequences are session-wide. Workflow/schedule consumers filter TurnID and stop observing
+	// on their turn's terminal event, not EOF. An ahead-of-history cursor is invalid.
+	Subscribe(ctx context.Context, scope Scope, sessionID string, afterSequence uint64) (Stream, error)
 
 	// Cancel waits for execution-side confirmation and durable terminal publication. It is
 	// idempotent for terminal turns and returns their actual result, including a racing success.
@@ -187,8 +211,12 @@ type Service interface {
 	// still complete later; callers reconcile via ReadAttempt or Subscribe.
 	Cancel(context.Context, Scope, Ref) (Result, error)
 
-	// End closes a session and confirms its execution-side cleanup, cancelling any active turn.
-	// Successful End is idempotent. Failure must not be presented as confirmed cleanup.
+	// End closes only this session, cancelling its active turn and confirming cleanup. It
+	// cannot stop a later session sharing the Workspace. Successful End is idempotent and
+	// keeps history/replay. Cleanup failure cannot rewrite a persisted Result.
+	// Execution-side quiescence precedes turn termination and Workspace release; a stop
+	// timeout never releases it. On restart old live sessions get EndedAt/session_ended and
+	// running turns get interrupted/turn_ended before reads open. Clean residue before admission.
 	End(context.Context, Scope, string) error
 	ReadSession(context.Context, Scope, string) (Session, error)
 	// ReadTurns accepts a limit from 1 to 100; an empty cursor starts at the first turn.

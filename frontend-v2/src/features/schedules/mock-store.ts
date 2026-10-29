@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import { projectName, sampleOutput, sampleTasks, targetFromDraft, type Draft, type Task } from './prototype-model'
+import { projectName, sampleOutput, sampleTasks, targetFromDraft, type Draft, type Task } from './schedule-model'
 
 type Store = { tasks: Task[]; save: (draft: Draft, id?: string) => string; toggle: (id: string) => void; remove: (id: string) => void; simulate: (id: string, fail?: boolean) => void; reset: () => void }
 const pending = new Map<string, ReturnType<typeof setTimeout>>()
 /** Only in-memory sample state; deliberately has no persistence or HTTP port. */
-export const usePrototype = create<Store>((set, get) => ({
+export const useMockSchedules = create<Store>((set, get) => ({
   tasks: sampleTasks(),
   save: (draft, id) => {
     const existing = get().tasks.find(t => t.id === id)

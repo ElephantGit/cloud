@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalog, emptyDraft, nextTimes, targetFromDraft, validateDraft } from './prototype-model'
+import { catalog, emptyDraft, nextTimes, targetFromDraft, validateDraft } from './schedule-model'
 
 describe('schedule rules', () => {
   it('uses task timezone, skips an elapsed time, and rolls the year over', () => {

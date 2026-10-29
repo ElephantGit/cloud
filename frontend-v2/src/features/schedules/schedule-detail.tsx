@@ -1,23 +1,22 @@
 import { useState } from 'react'
 import { ArrowUpRight, Check, ChevronRight, CircleAlert, Clock3, GitBranch, LoaderCircle, MessageSquare, Pause, Pencil, Play, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { catalog, formatTime, nextTimes, projectName, ruleText, workflowName, type Task } from './prototype-model'
-import { usePrototype } from './prototype-store'
+import { catalog, formatTime, nextTimes, projectName, ruleText, workflowName, type Task } from './schedule-model'
+import { useMockSchedules } from './mock-store'
 
 export function RunStatus({ status }: { status?: Task['runs'][number]['status'] }) {
   return <span className={`sp-run-status ${status ?? 'none'}`}>{status === 'running' ? <LoaderCircle size={13} className="sp-spin" /> : status === 'success' ? <Check size={13} /> : status === 'failed' ? <CircleAlert size={13} /> : <Clock3 size={13} />}{status === 'running' ? '运行中' : status === 'success' ? '成功' : status === 'failed' ? '失败' : '尚未运行'}</span>
 }
-export function PrototypeDetail({ task, onEdit, onDelete, initialTab = 'config', embedded = false }: { task: Task; onEdit: () => void; onDelete: () => void; initialTab?: 'config' | 'history'; embedded?: boolean }) {
+export function ScheduleDetail({ task, onEdit, onDelete, initialTab = 'config' }: { task: Task; onEdit: () => void; onDelete: () => void; initialTab?: 'config' | 'history' }) {
   const [tab, setTab] = useState(initialTab)
   const [runId, setRunId] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [previewNow] = useState(() => new Date())
-  const { toggle, simulate } = usePrototype()
+  const { toggle, simulate } = useMockSchedules()
   const selected = task.runs.find(r => r.id === runId) ?? task.runs[0]
   const busy = task.runs.some(r => r.status === 'running')
   const run = (fail = false) => { simulate(task.id, fail); setTab('history'); setRunId(null) }
-  return <div className={`sp-detail ${embedded ? 'sp-embedded' : ''}`}>
-    {embedded && <header className="sp-embedded-header"><span className="sp-eyebrow">TASK OVERVIEW</span><h2>{task.name}</h2><p>{task.target.kind === 'chat' ? '独立对话' : workflowName(task.target.workflowId)} · {projectName(task.projectId)}</p></header>}
+  return <div className="sp-detail">
     <div className="sp-detail-toolbar"><span className={`sp-enabled ${task.enabled ? '' : 'paused'}`}><i />{task.enabled ? '已启用' : '已暂停'}</span><span className="sp-footer-spacer" /><Button variant="outline" size="sm" onClick={onEdit}><Pencil size={14} />编辑</Button><Button size="sm" disabled={busy} onClick={() => run()}>{busy ? <LoaderCircle size={14} className="sp-spin" /> : <Play size={14} />}{busy ? '模拟中' : '模拟运行'}</Button></div>
     <div className="sp-tabs" role="tablist" aria-label="任务详情"><button role="tab" aria-selected={tab === 'config'} onClick={() => setTab('config')}>任务配置</button><button role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')}>运行记录 <span>{task.runs.length}</span></button></div>
     <div className="sp-detail-scroll" role="tabpanel" aria-label={tab === 'config' ? '任务配置' : '运行记录'}>

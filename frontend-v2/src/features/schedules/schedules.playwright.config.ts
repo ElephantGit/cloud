@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, '../../..')
 export default defineConfig({
   ...base,
   testDir: root,
-  testMatch: ['**/e2e/shell.spec.ts', '**/schedules/prototype.e2e.ts'],
+  testMatch: ['**/e2e/shell.spec.ts', '**/schedules/schedules.e2e.ts'],
   outputDir: path.join(root, 'test-results'),
   use: { ...base.use, baseURL: 'http://127.0.0.1:18870' },
   webServer: [

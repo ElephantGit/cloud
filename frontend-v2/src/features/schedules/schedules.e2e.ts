@@ -41,7 +41,7 @@ test('create independent chat, pause, simulate failure, retry, edit and delete w
   expect(writes).toEqual([])
 })
 
-test('workflow validation, fixed version, variant switching and mobile wizard', async ({ page }) => {
+test('workflow validation, fixed version and mobile drawer', async ({ page }) => {
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: '任务名称' }).fill('工作流验收')
@@ -56,10 +56,6 @@ test('workflow validation, fixed version, variant switching and mobile wizard', 
   await dialog.getByRole('button', { name: '创建并启用' }).click()
   await expect(dialog.getByText('v3 · 固定版本')).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: /B\s*工作台/ }).click()
-  await expect(page.getByText('TASK OVERVIEW')).toBeVisible()
-  await expect(page).toHaveURL(/variant=B/)
-  await page.getByRole('button', { name: /C\s*卡片/ }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('heading', { name: '定时任务', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -68,8 +64,6 @@ test('workflow validation, fixed version, variant switching and mobile wizard', 
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   await dialog.getByRole('textbox', { name: '任务名称' }).fill('移动端向导')
   await dialog.getByRole('textbox', { name: '任务指令' }).fill('生成简报')
-  await dialog.getByRole('button', { name: '下一步' }).click()
-  await dialog.getByRole('button', { name: '下一步' }).click()
   await dialog.getByRole('button', { name: '创建并启用' }).click()
   await expect(dialog.getByRole('heading', { name: '移动端向导' })).toBeVisible()
   await page.keyboard.press('Escape')

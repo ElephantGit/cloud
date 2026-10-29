@@ -1,4 +1,4 @@
-/** Throwaway UI model. No object in this module is a backend request. */
+/** Schedule view model. Backend request mapping is not implemented. */
 export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
 export type Target = { kind: 'chat'; prompt: string; agent: string; model: string } | { kind: 'workflow'; workflowId: string; snapshot: string; inputs: Record<string, string> }
 export type Run = { id: string; startedAt: string; status: 'running' | 'success' | 'failed'; target: Target; projectName: string; output: string }

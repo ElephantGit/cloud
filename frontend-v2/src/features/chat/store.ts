@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import type { SidebarLayout } from '@/components/sidebar-resize-handle'
 import { branchNameFor } from './model/branch-name'
 import { applyEvent, isResponding } from './model/conversation'
 import { type Attachment, type ChatEvent, type Conversation, emptyConversation, type PluginRef } from './model/types'
@@ -82,11 +83,6 @@ export const plugins: PluginRef[] = [
 ]
 
 /** How the history column is laid out; kept per browser. */
-export interface SidebarLayout {
-  width: number
-  open: boolean
-}
-
 export const defaultSidebar: SidebarLayout = { width: 288, open: true }
 
 interface State {

@@ -27,7 +27,8 @@ import {
   SquarePenIcon,
   Trash2Icon,
 } from 'lucide-react'
-import { type KeyboardEvent, type PointerEvent, useState } from 'react'
+import { useState } from 'react'
+import { SidebarResizeHandle } from '@/components/sidebar-resize-handle'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -40,12 +41,7 @@ import { type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
 import { NewWorktreeDialog } from './new-worktree-dialog'
-import { subtleScrollbar } from './scrollbar'
-
-const minWidth = 200
-const maxWidth = 480
-/** Dragging the edge this close to the icon rail folds the column away. */
-const foldBelow = 120
+import { subtleScrollbar } from '@/lib/scrollbar'
 
 /** A dragged project moves only up and down. */
 const vertical: Modifier = ({ transform }) => ({ ...transform, x: 0 })
@@ -136,7 +132,7 @@ export function Sidebar() {
           </nav>
         </aside>
       )}
-      <ResizeHandle />
+      <SidebarResizeHandle label="调整对话列表宽度" layout={sidebar} onChange={setSidebar} />
     </>
   )
 }
@@ -149,56 +145,6 @@ export function ShowSidebarButton() {
     <Button variant="ghost" size="icon-sm" aria-label="展开对话列表" onClick={() => useChatStore.getState().setSidebar({ open: true })}>
       <PanelLeftOpenIcon />
     </Button>
-  )
-}
-
-/** The column's right edge: drag (or arrow keys) to resize, past the rail to fold, Enter to toggle. */
-function ResizeHandle() {
-  const { width, open } = useChatStore((s) => s.sidebar)
-  const setSidebar = useChatStore((s) => s.setSidebar)
-  const resizeTo = (next: number) =>
-    setSidebar(next < foldBelow ? { open: false } : { open: true, width: Math.min(maxWidth, Math.max(minWidth, next)) })
-
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    const handle = e.currentTarget
-    const startX = e.clientX
-    const start = open ? width : 0
-    handle.setPointerCapture(e.pointerId)
-    document.body.style.cursor = 'col-resize'
-    const move = (ev: globalThis.PointerEvent) => resizeTo(start + ev.clientX - startX)
-    const stop = () => {
-      document.body.style.cursor = ''
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', stop)
-      handle.removeEventListener('pointercancel', stop)
-    }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', stop)
-    handle.addEventListener('pointercancel', stop)
-  }
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowLeft: -16, ArrowRight: 16 }[e.key]
-    if (step) resizeTo(open ? (width === minWidth && step < 0 ? 0 : width + step) : minWidth)
-    else if (e.key === 'Enter') setSidebar({ open: !open })
-    else return
-    e.preventDefault()
-  }
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="调整对话列表宽度"
-      aria-valuemin={0}
-      aria-valuemax={maxWidth}
-      aria-valuenow={open ? width : 0}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onKeyDown={onKeyDown}
-      className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-primary/40 focus-visible:after:bg-primary active:after:bg-primary/60"
-    />
   )
 }
 

@@ -1,0 +1,407 @@
+import {
+  type CollisionDetection,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  type Modifier,
+  PointerSensor,
+  closestCenter,
+  pointerWithin,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  ChevronRightIcon,
+  FlaskConicalIcon,
+  FolderIcon,
+  GitBranchIcon,
+  GitBranchPlusIcon,
+  GripVerticalIcon,
+  MoreHorizontalIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PencilIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  SquarePenIcon,
+  Trash2Icon,
+} from 'lucide-react'
+import { type KeyboardEvent, type PointerEvent, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+import { isResponding } from '../model/conversation'
+import { emptyConversation } from '../model/types'
+import { type Project, type Session, useChatStore } from '../store'
+import { AgentActivityDots } from './agent-activity-dots'
+import { FadeText } from './fade-text'
+import { NewWorktreeDialog } from './new-worktree-dialog'
+import { subtleScrollbar } from './scrollbar'
+
+const minWidth = 200
+const maxWidth = 480
+/** Dragging the edge this close to the icon rail folds the column away. */
+const foldBelow = 120
+
+/** A dragged project moves only up and down. */
+const vertical: Modifier = ({ transform }) => ({ ...transform, x: 0 })
+
+/** The project under the pointer, else the nearest one (keyboard drags have no pointer). */
+const pointerFirst: CollisionDetection = (args) => {
+  const hits = pointerWithin(args)
+  return hits.length ? hits : closestCenter(args)
+}
+
+/**
+ * Chat history grouped by project. Each project lists the sessions that work in its main
+ * checkout, then one row per worktree (its branch) with that worktree's sessions beneath it.
+ * Projects reorder by dragging the handle (or with the keyboard: focus it, space, arrows): only
+ * the project's row follows the pointer, its sessions stay greyed in place, and a line marks
+ * where it will land. The column's right edge drags to resize it, or to fold it away.
+ * "新建对话" and the projects' and worktrees' + open the new chat view; a session shows up here
+ * once its first prompt is sent.
+ */
+export function Sidebar() {
+  const projects = useChatStore((s) => s.projects)
+  const sidebar = useChatStore((s) => s.sidebar)
+  const newChatOpen = useChatStore((s) => !s.selectedId)
+  const { moveProject, setSidebar, startNewChat } = useChatStore.getState()
+  const [activeId, setActiveId] = useState<string>()
+  const [overId, setOverId] = useState<string>()
+  const [scrolled, setScrolled] = useState(false)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const end = () => (setActiveId(undefined), setOverId(undefined))
+  const index = (id?: string) => projects.findIndex((p) => p.id === id)
+  const active = projects.find((p) => p.id === activeId)
+
+  return (
+    <>
+      {sidebar.open && (
+        <aside aria-label="聊天记录" style={{ width: sidebar.width }} className="flex shrink-0 flex-col border-r bg-muted/20">
+          <div className="flex h-12 items-center justify-between pr-2 pl-4">
+            <h1 className="text-sm font-semibold">对话</h1>
+            <Button variant="ghost" size="icon-xs" aria-label="收起对话列表" onClick={() => setSidebar({ open: false })}>
+              <PanelLeftCloseIcon />
+            </Button>
+          </div>
+          {/* Stays put above the scrolling history; the rule shows once the list scrolls under it. */}
+          <div className={cn('border-b px-2 pb-2 transition-colors', scrolled ? 'border-border' : 'border-transparent')}>
+            <Button
+              variant="ghost"
+              // pl-5.5 lines the icon up with the projects' chevrons (after their drag handle).
+              className="h-9 w-full justify-start gap-2 pr-2 pl-5.5 text-[13px] font-medium"
+              aria-current={newChatOpen ? 'page' : undefined}
+              onClick={() => startNewChat()}
+            >
+              <SquarePenIcon className="size-4 text-muted-foreground" />
+              新建对话
+            </Button>
+          </div>
+          <nav
+            className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-4', subtleScrollbar)}
+            onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+          >
+            <DndContext
+              sensors={sensors}
+              collisionDetection={pointerFirst}
+              onDragStart={({ active }) => setActiveId(String(active.id))}
+              onDragOver={({ over }) => setOverId(over ? String(over.id) : undefined)}
+              onDragCancel={end}
+              onDragEnd={({ active, over }) => {
+                if (over && active.id !== over.id) moveProject(String(active.id), String(over.id))
+                end()
+              }}
+            >
+              <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+                {projects.map((p) => (
+                  <ProjectGroup
+                    key={p.id}
+                    project={p}
+                    // moveProject puts the project where the target was: below it when moving down.
+                    dropLine={activeId && overId === p.id && overId !== activeId ? (index(overId) > index(activeId) ? 'after' : 'before') : undefined}
+                  />
+                ))}
+              </SortableContext>
+              <DragOverlay modifiers={[vertical]} dropAnimation={null} style={{ height: 'auto' }}>
+                {active && <LiftedProject project={active} />}
+              </DragOverlay>
+            </DndContext>
+          </nav>
+        </aside>
+      )}
+      <ResizeHandle />
+    </>
+  )
+}
+
+/** Brings the history column back after it was folded away; renders nothing while it shows. */
+export function ShowSidebarButton() {
+  const open = useChatStore((s) => s.sidebar.open)
+  if (open) return null
+  return (
+    <Button variant="ghost" size="icon-sm" aria-label="展开对话列表" onClick={() => useChatStore.getState().setSidebar({ open: true })}>
+      <PanelLeftOpenIcon />
+    </Button>
+  )
+}
+
+/** The column's right edge: drag (or arrow keys) to resize, past the rail to fold, Enter to toggle. */
+function ResizeHandle() {
+  const { width, open } = useChatStore((s) => s.sidebar)
+  const setSidebar = useChatStore((s) => s.setSidebar)
+  const resizeTo = (next: number) =>
+    setSidebar(next < foldBelow ? { open: false } : { open: true, width: Math.min(maxWidth, Math.max(minWidth, next)) })
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const handle = e.currentTarget
+    const startX = e.clientX
+    const start = open ? width : 0
+    handle.setPointerCapture(e.pointerId)
+    document.body.style.cursor = 'col-resize'
+    const move = (ev: globalThis.PointerEvent) => resizeTo(start + ev.clientX - startX)
+    const stop = () => {
+      document.body.style.cursor = ''
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', stop)
+      handle.removeEventListener('pointercancel', stop)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', stop)
+    handle.addEventListener('pointercancel', stop)
+  }
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowLeft: -16, ArrowRight: 16 }[e.key]
+    if (step) resizeTo(open ? (width === minWidth && step < 0 ? 0 : width + step) : minWidth)
+    else if (e.key === 'Enter') setSidebar({ open: !open })
+    else return
+    e.preventDefault()
+  }
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整对话列表宽度"
+      aria-valuemin={0}
+      aria-valuemax={maxWidth}
+      aria-valuenow={open ? width : 0}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-primary/40 focus-visible:after:bg-primary active:after:bg-primary/60"
+    />
+  )
+}
+
+function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'before' | 'after' }) {
+  const sessions = useChatStore((s) => s.sessions).filter((s) => s.projectId === project.id)
+  const startNewChat = useChatStore((s) => s.startNewChat)
+  // Sortable for the drop targets and keyboard moves only: nothing shifts while dragging.
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useSortable({ id: project.id })
+  const [newWorktree, setNewWorktree] = useState(false)
+  const main = sessions.filter((s) => s.workspace.kind === 'main')
+  const branches = [...new Set(sessions.flatMap((s) => (s.workspace.kind === 'isolated' ? [s.workspace.branch] : [])))]
+  const Icon = project.samples ? FlaskConicalIcon : FolderIcon
+
+  return (
+    <section ref={setNodeRef} className="relative rounded-md" aria-label={`项目 ${project.name}`} data-dragging={isDragging || undefined}>
+      {dropLine && (
+        <div aria-hidden className={cn('absolute inset-x-1 h-0.5 rounded-full bg-primary', dropLine === 'before' ? '-top-[5px]' : '-bottom-[5px]')} />
+      )}
+      <Collapsible defaultOpen className={cn(isDragging && 'opacity-40 grayscale')}>
+        <div className="group/project flex h-8 items-center gap-0.5 rounded-md pr-1 hover:bg-accent/60">
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            aria-label={`拖动以调整 ${project.name} 的顺序`}
+            className="flex h-full w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground opacity-0 group-hover/project:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVerticalIcon className="size-3.5" />
+          </button>
+          <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm font-medium">
+            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
+            <Icon className="size-4 shrink-0 text-muted-foreground" />
+            <FadeText text={project.name} />
+          </CollapsibleTrigger>
+          {!project.samples && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={`在 ${project.name} 新建对话`} />}>
+                <PlusIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id })}>
+                  <FolderIcon />
+                  在主目录新建对话
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'new-worktree' } })}>
+                  <GitBranchPlusIcon />
+                  在新 worktree 中新建对话
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setNewWorktree(true)}>
+                  <PencilIcon />
+                  新建 worktree 并命名…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+        <CollapsibleContent>
+          <div className="mt-0.5 mb-1 ml-[1.9rem] flex flex-col pl-2">
+            {sessions.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">还没有会话</p>}
+            {main.map((s) => (
+              <SessionRow key={s.id} session={s} />
+            ))}
+            {branches.map((branch) => (
+              <WorktreeGroup
+                key={branch}
+                branch={branch}
+                sessions={sessions.filter((s) => s.workspace.kind === 'isolated' && s.workspace.branch === branch)}
+                onNew={project.samples ? undefined : () => startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } })}
+              />
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+      <NewWorktreeDialog
+        open={newWorktree}
+        onOpenChange={setNewWorktree}
+        projectName={project.name}
+        onCreate={(branch) => (startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } }), setNewWorktree(false))}
+      />
+    </section>
+  )
+}
+
+/** The project row that follows the pointer while the project is dragged. */
+function LiftedProject({ project }: { project: Project }) {
+  const Icon = project.samples ? FlaskConicalIcon : FolderIcon
+  return (
+    <div className="flex h-8 cursor-grabbing items-center gap-1.5 rounded-md bg-background pr-2 text-sm font-medium shadow-md ring-1 ring-border">
+      <GripVerticalIcon className="ml-0.5 size-3.5 shrink-0 text-muted-foreground" />
+      <ChevronRightIcon className="size-3.5 shrink-0 rotate-90 text-muted-foreground" />
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <FadeText text={project.name} />
+    </div>
+  )
+}
+
+function WorktreeGroup({ branch, sessions, onNew }: { branch: string; sessions: Session[]; onNew?: () => void }) {
+  return (
+    <Collapsible defaultOpen aria-label={`worktree ${branch}`}>
+      <div className="group/wt flex h-7 items-center rounded-md pr-1 hover:bg-accent/60">
+        <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 px-1 text-left text-xs">
+          <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
+          <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+          <FadeText text={branch} className="font-mono" />
+        </CollapsibleTrigger>
+        {onNew && (
+          <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover/wt:opacity-100" aria-label={`在 ${branch} 新建对话`} onClick={onNew}>
+            <PlusIcon />
+          </Button>
+        )}
+      </div>
+      <CollapsibleContent>
+        <div className="ml-4 flex flex-col">
+          {sessions.map((s) => (
+            <SessionRow key={s.id} session={s} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function SessionRow({ session }: { session: Session }) {
+  const selected = useChatStore((s) => s.selectedId === session.id)
+  const responding = useChatStore((s) => isResponding(s.conversations[session.id] ?? emptyConversation))
+  const unread = useChatStore((s) => !!s.unread[session.id])
+  const { select, renameSession, deleteSession, replay } = useChatStore.getState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+
+  if (editing) {
+    return (
+      <form
+        className="px-1 py-0.5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          renameSession(session.id, new FormData(e.currentTarget).get('title') as string)
+          setEditing(false)
+        }}
+      >
+        <Input
+          name="title"
+          aria-label="会话名称"
+          defaultValue={session.title}
+          autoFocus
+          className="h-7 text-sm"
+          onBlur={(e) => (renameSession(session.id, e.currentTarget.value), setEditing(false))}
+          onKeyDown={(e) => e.key === 'Escape' && setEditing(false)}
+        />
+      </form>
+    )
+  }
+  return (
+    <div className={cn('group/session flex h-8 items-center rounded-md pr-1 text-sm', selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60')}>
+      <button
+        type="button"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left"
+        aria-current={selected ? 'page' : undefined}
+        onClick={() => select(session.id)}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <FadeText text={session.title} className="flex-1" />
+        {responding ? <AgentActivityDots label="回复中" className="text-muted-foreground" /> : unread && <span className="size-2 rounded-full bg-primary" aria-label="有新回复" />}
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon-xs" className="opacity-0 group-hover/session:opacity-100 aria-expanded:opacity-100" aria-label={`${session.title} 的更多操作`} />}
+        >
+          <MoreHorizontalIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          {session.scenarioId && (
+            <DropdownMenuItem onClick={() => (select(session.id), replay(session.id))}>
+              <RotateCcwIcon />
+              重新播放
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => setEditing(true)}>
+            <PencilIcon />
+            重命名
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => setConfirming(true)}>
+            <Trash2Icon />
+            删除
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除"{session.title}"？</DialogTitle>
+            <DialogDescription>会话和它的聊天记录都会删除，无法恢复。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>取消</DialogClose>
+            <Button variant="destructive" onClick={() => (deleteSession(session.id), setConfirming(false))}>
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

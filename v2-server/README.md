@@ -37,6 +37,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 | `POST /api/v1/tenants/{tid}/workflows/{wfid}/publish` | 契约 | 冻结独立快照，并发发布分配不同的版本号 |
 | `GET /api/v1/tenants/{tid}/workflows/{wfid}/snapshots` | 契约 | UUID 游标分页读取版本 |
 | `GET /api/v1/tenants/{tid}/workflows/{wfid}/snapshots/{snapshotId}` | 契约 | 读取所属团队、工作流下的不可变快照 |
+| `PUT /api/v1/tenants/{tid}/workflows/{wfid}/snapshots/{snapshotId}/restore` | 契约 | 检查当前草稿版本，将快照图恢复为草稿；保留当前名称与描述 |
 
 ## 工作流资产
 
@@ -46,14 +47,18 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 所有工作流路由逐请求检查当前用户及团队的活跃成员关系，数据查询始终限定团队和工作流。
 写入请求体上限为 2 MiB；只允许契约定义的顶层字段，拒绝 null、错误类型和多个连续 JSON 文档。
 
-发布目前是**资产快照**：只检查 nodes/edges 数组、唯一节点与连线 ID、一个 start、已知八种
-节点类型及有效连线端点。它不证明节点配置、变量作用域、分支或循环语义已经可执行。
+发布目前是**资产快照**：检查 nodes/edges 数组、唯一节点与连线 ID、一个根 start、已知八种
+节点类型及有效连线端点。容器内的轮次 start 不参与根节点计数；容器必须存在、为 loop 或
+iteration 且无父级环，loop 子节点的 parentId 与 data.containerId 必须一致，iteration
+使用 parentId 表达成员归属。它不证明节点配置、变量作用域、分支或循环语义已经可执行。
 本服务尚未提供工作流运行接口；运行器接入时必须补齐发布语义门禁，并重新校验既有快照，
 不能因为已有快照就跳过执行准入。前端明确显示执行尚未开放。
 
-保存、归档和发布以工作流行锁串行化；发布只复制结构校验时读取的同一草稿版本，
+保存、归档、恢复和发布以工作流行锁串行化；发布只复制结构校验时读取的同一草稿版本，
 中途发生编辑则返回版本冲突。草稿版本与发布版本各自递增，发布不改变草稿版本。
 状态保存在 PostgreSQL，进程重启后仍可读取；每次发布创建新快照，之后保存不改旧快照。
+恢复只复制所选快照的完整 graph，并递增草稿版本；不会改名、改描述或写入历史快照。
+恢复同样拒绝过期版本、其他工作流的快照和已归档资源。
 
 ## 契约之外
 

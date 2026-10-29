@@ -24,19 +24,21 @@ type WorkflowStore interface {
 	PublishWorkflow(context.Context, string, string, string, int64) (store.WorkflowSnapshot, error)
 	WorkflowSnapshots(context.Context, string, string, string, int) ([]store.WorkflowSnapshot, error)
 	WorkflowSnapshot(context.Context, string, string, string) (store.WorkflowSnapshot, error)
+	RestoreWorkflowSnapshot(context.Context, string, string, string, int64) (store.Workflow, error)
 }
 
 func (h *handler) workflowRoutes(mux *http.ServeMux) {
 	const root = "/api/v1/tenants/{tid}/workflows"
 	for pattern, fn := range map[string]http.HandlerFunc{
-		"GET " + root:                                    h.listWorkflows,
-		"POST " + root:                                   h.createWorkflow,
-		"GET " + root + "/{wfid}":                        h.getWorkflow,
-		"PUT " + root + "/{wfid}":                        h.updateWorkflow,
-		"DELETE " + root + "/{wfid}":                     h.archiveWorkflow,
-		"POST " + root + "/{wfid}/publish":               h.publishWorkflow,
-		"GET " + root + "/{wfid}/snapshots":              h.listSnapshots,
-		"GET " + root + "/{wfid}/snapshots/{snapshotId}": h.getSnapshot,
+		"GET " + root:                                            h.listWorkflows,
+		"POST " + root:                                           h.createWorkflow,
+		"GET " + root + "/{wfid}":                                h.getWorkflow,
+		"PUT " + root + "/{wfid}":                                h.updateWorkflow,
+		"DELETE " + root + "/{wfid}":                             h.archiveWorkflow,
+		"POST " + root + "/{wfid}/publish":                       h.publishWorkflow,
+		"GET " + root + "/{wfid}/snapshots":                      h.listSnapshots,
+		"GET " + root + "/{wfid}/snapshots/{snapshotId}":         h.getSnapshot,
+		"PUT " + root + "/{wfid}/snapshots/{snapshotId}/restore": h.restoreSnapshot,
 	} {
 		mux.HandleFunc(pattern, h.workflowMember(fn))
 	}
@@ -298,5 +300,18 @@ func (h *handler) listSnapshots(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getSnapshot(w http.ResponseWriter, r *http.Request) {
 	out, err := h.store.WorkflowSnapshot(r.Context(), r.PathValue("tid"), r.PathValue("wfid"), r.PathValue("snapshotId"))
+	workflowResult(w, out, err)
+}
+
+func (h *handler) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
+	body, ok := readWorkflowBody(w, r, "version")
+	if !ok {
+		return
+	}
+	version, ok := workflowVersion(w, body)
+	if !ok {
+		return
+	}
+	out, err := h.store.RestoreWorkflowSnapshot(r.Context(), r.PathValue("tid"), r.PathValue("wfid"), r.PathValue("snapshotId"), version)
 	workflowResult(w, out, err)
 }

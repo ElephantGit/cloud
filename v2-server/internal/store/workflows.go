@@ -211,3 +211,23 @@ func (s *Store) WorkflowSnapshot(ctx context.Context, tenant, id, snapshot strin
 	return scanSnapshot(s.pool.QueryRow(ctx, "SELECT "+snapshotColumns+
 		" FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND id=$3", tenant, id, snapshot))
 }
+
+// RestoreWorkflowSnapshot copies only the frozen graph, preserving the live name and description.
+// The same row lock and version fence used by edits prevent a restore from overwriting newer work.
+func (s *Store) RestoreWorkflowSnapshot(ctx context.Context, tenant, id, snapshot string, version int64) (Workflow, error) {
+	var out Workflow
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := lockedWorkflow(ctx, tx, tenant, id, version); err != nil {
+			return err
+		}
+		frozen, err := scanSnapshot(tx.QueryRow(ctx, "SELECT "+snapshotColumns+
+			" FROM workflow_snapshots WHERE tenant_id=$1 AND workflow_id=$2 AND id=$3", tenant, id, snapshot))
+		if err != nil {
+			return err
+		}
+		out, err = scanWorkflow(tx.QueryRow(ctx, `UPDATE workflows SET graph=$3,version=version+1,updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 RETURNING `+workflowColumns, tenant, id, frozen.Graph))
+		return err
+	})
+	return out, err
+}

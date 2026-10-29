@@ -1,0 +1,210 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "name": "Desktop canvas compatibility",
+  "description": "",
+  "updatedAt": "2026-10-29T08:31:11.126Z",
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "workflow",
+      "position": {
+        "x": 120,
+        "y": 260
+      },
+      "data": {
+        "kind": "start",
+        "title": "开始",
+        "description": "接收工作流输入"
+      },
+      "deletable": false
+    },
+    {
+      "id": "loop-1",
+      "type": "workflow",
+      "position": {
+        "x": 1000,
+        "y": 600
+      },
+      "data": {
+        "kind": "loop",
+        "title": "循环 1",
+        "description": "重复执行直到满足条件",
+        "loopConfig": {
+          "maxIterations": 3,
+          "maxIterationsBehavior": "fail",
+          "variables": [
+            {
+              "name": "value",
+              "valueType": "string",
+              "initial": {
+                "kind": "constant",
+                "value": ""
+              },
+              "feedback": [
+                "loop-1-agent",
+                "output"
+              ]
+            }
+          ],
+          "until": {
+            "logic": "and",
+            "conditions": [
+              {
+                "variableSelector": [
+                  "loop-1-agent",
+                  "output"
+                ],
+                "operator": "not_empty"
+              }
+            ]
+          },
+          "outputs": [
+            {
+              "name": "result",
+              "variableSelector": [
+                "loop-1-agent",
+                "output"
+              ]
+            }
+          ]
+        }
+      },
+      "initialWidth": 958,
+      "initialHeight": 300
+    },
+    {
+      "id": "condition-1",
+      "type": "workflow",
+      "position": {
+        "x": 860,
+        "y": 600
+      },
+      "data": {
+        "kind": "condition",
+        "title": "条件分支 1",
+        "description": "根据规则选择路径",
+        "condition": "满足条件",
+        "cases": [
+          {
+            "id": "case-1",
+            "logic": "and",
+            "conditions": [
+              {
+                "variableSelector": [],
+                "operator": ""
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "workflow",
+      "position": {
+        "x": 860,
+        "y": 600
+      },
+      "data": {
+        "kind": "output",
+        "title": "输出 1",
+        "description": "返回最终结果",
+        "outputs": [
+          {
+            "name": "result-1",
+            "variableSelector": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "loop-1-start",
+      "type": "workflow",
+      "position": {
+        "x": 40,
+        "y": 145
+      },
+      "data": {
+        "kind": "start",
+        "title": "轮次开始",
+        "description": "定义工作流输入",
+        "input": "",
+        "containerId": "loop-1"
+      },
+      "parentId": "loop-1",
+      "deletable": false
+    },
+    {
+      "id": "loop-1-agent",
+      "type": "workflow",
+      "position": {
+        "x": 350,
+        "y": 145
+      },
+      "data": {
+        "kind": "agent",
+        "title": "循环 Agent",
+        "description": "交给模型自主执行",
+        "agentConfig": {
+          "schemaVersion": 3,
+          "executor": {
+            "agentCli": "official/ora-space.codex",
+            "modelId": "gpt-6-astra"
+          },
+          "roleId": "",
+          "skills": [],
+          "mcps": [],
+          "prompt": "改进当前值并输出新值：{{#loop-1.value#}}",
+          "interactive": false
+        },
+        "containerId": "loop-1"
+      },
+      "parentId": "loop-1"
+    },
+    {
+      "id": "loopExit-1",
+      "type": "workflow",
+      "position": {
+        "x": 680,
+        "y": 145
+      },
+      "data": {
+        "kind": "loopExit",
+        "title": "退出循环 1",
+        "description": "结束当前循环并继续外部流程",
+        "containerId": "loop-1"
+      },
+      "parentId": "loop-1"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-loop-1-start-loop-1-agent",
+      "source": "loop-1-start",
+      "target": "loop-1-agent",
+      "type": "workflow"
+    },
+    {
+      "id": "edge-1",
+      "source": "loop-1-agent",
+      "target": "loopExit-1",
+      "type": "workflow"
+    }
+  ],
+  "annotations": [],
+  "globalVariables": [
+    {
+      "name": "sys.workflow_id",
+      "valueType": "string"
+    },
+    {
+      "name": "sys.timestamp",
+      "valueType": "number"
+    }
+  ]
+}

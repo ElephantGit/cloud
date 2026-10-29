@@ -22,4 +22,4 @@
 
 `npm run check` 运行类型检查、lint、单元测试和构建。
 
-`npm run e2e -- --config=src/features/schedules/schedules.playwright.config.ts` 使用独立测试端口 18870/18871，验证应用外壳和定时任务闭环。可用 `PW_CHROMIUM_PATH` 指定本机 Chromium。
+`npm run e2e` 使用默认 Playwright 配置，自动启动前端（5174）和 v2-server（8091），在本地与 CI 中运行 `e2e/schedules.spec.ts` 的定时任务闭环测试及其他页面测试。可用 `PW_CHROMIUM_PATH` 指定本机 Chromium。

@@ -1,0 +1,131 @@
+name: v2
+# Cloud v2 (see AGENTS.md): frontend-v2/ and the temporary v2-server/ module. The Backend and
+# Frontend workflows skip these directories; this one checks only them. Each job's steps run once
+# its directory exists (hashFiles is only available at step level).
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'frontend-v2/**'
+      - 'v2-server/**'
+      - 'api/openapi.json'
+      - 'compose.yaml'
+      - '.github/workflows/v2.yml'
+  pull_request:
+    paths:
+      - 'frontend-v2/**'
+      - 'v2-server/**'
+      - 'api/openapi.json'
+      - 'compose.yaml'
+      - '.github/workflows/v2.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ora_v2_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: 'host=127.0.0.1 port=5432 user=postgres password=postgres dbname=ora_v2_test sslmode=disable'
+    steps:
+      - uses: actions/checkout@v4
+      - if: hashFiles('v2-server/go.mod') != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: v2-server/go.mod
+          cache-dependency-path: v2-server/go.sum
+      - name: Formatted
+        if: hashFiles('v2-server/go.mod') != ''
+        working-directory: v2-server
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - if: hashFiles('v2-server/go.mod') != ''
+        working-directory: v2-server
+        run: go vet ./...
+      - if: hashFiles('v2-server/go.mod') != ''
+        working-directory: v2-server
+        run: go test -race -count=1 ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - if: hashFiles('frontend-v2/package-lock.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-v2/package-lock.json
+      - if: hashFiles('frontend-v2/package-lock.json') != ''
+        working-directory: frontend-v2
+        run: npm ci
+      # The generated client must match api/openapi.json, the contract v2-server implements.
+      - name: Generated client matches api/openapi.json
+        if: hashFiles('frontend-v2/package-lock.json') != ''
+        working-directory: frontend-v2
+        run: |
+          npm run api:generate
+          git status --porcelain -- src/api
+          test -z "$(git status --porcelain -- src/api)"
+      # frontend-v2 defines its gate (types, lint, tests, build) as `npm run check`.
+      - if: hashFiles('frontend-v2/package-lock.json') != ''
+        working-directory: frontend-v2
+        run: npm run check
+
+  # The real frontend against the real v2-server on PostgreSQL, through a browser.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      E2E_DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:5432/ora_v2_e2e?sslmode=disable'
+    steps:
+      - uses: actions/checkout@v4
+      - if: hashFiles('frontend-v2/playwright.config.ts') != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: v2-server/go.mod
+          cache-dependency-path: v2-server/go.sum
+      - if: hashFiles('frontend-v2/playwright.config.ts') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-v2/package-lock.json
+      - if: hashFiles('frontend-v2/playwright.config.ts') != ''
+        working-directory: frontend-v2
+        run: npm ci && npx playwright install --with-deps chromium
+      - if: hashFiles('frontend-v2/playwright.config.ts') != ''
+        working-directory: frontend-v2
+        run: npm run e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend-v2/test-results/
+          retention-days: 7

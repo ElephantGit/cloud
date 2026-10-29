@@ -4,13 +4,19 @@ on:
     branches: [main, master]
     paths-ignore:
       - 'frontend/**'
+      - 'frontend-v2/**'
+      - 'v2-server/**'
       - '**.md'
       - '.github/workflows/frontend.yml'
+      - '.github/workflows/v2.yml'
   pull_request:
     paths-ignore:
       - 'frontend/**'
+      - 'frontend-v2/**'
+      - 'v2-server/**'
       - '**.md'
       - '.github/workflows/frontend.yml'
+      - '.github/workflows/v2.yml'
 # A newer push to the same branch or pull request supersedes the running check.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

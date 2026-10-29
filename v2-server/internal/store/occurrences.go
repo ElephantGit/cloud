@@ -1,0 +1,159 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
+	"github.com/wanglongan587/cloud/v2-server/internal/schedule"
+	"time"
+)
+
+// ErrIneligible means a new automatic trigger is paused, future, or outside its saved rule.
+var ErrIneligible = errors.New("trigger ineligible")
+
+// Trigger identifies a scheduled instant or an explicitly requested manual occurrence.
+// Key is a caller-generated stable manual request ID; automatic keys are derived internally.
+type Trigger struct {
+	Kind, Key string
+	At        time.Time
+	Version   int64
+}
+
+// Occurrence is a frozen domain record, not proof that any execution started.
+// Public execution sessions and events remain owned by the shared execution module.
+type Occurrence struct {
+	ID            string          `json:"id"`
+	ScheduleID    string          `json:"scheduleId"`
+	Kind          string          `json:"kind"`
+	Key           string          `json:"key"`
+	ScheduledAt   time.Time       `json:"scheduledAt"`
+	ConfigVersion int64           `json:"configVersion"`
+	Snapshot      json.RawMessage `json:"snapshot"`
+	Status        string          `json:"status"`
+	RecordedAt    time.Time       `json:"recordedAt"`
+}
+
+const occurrenceColumns = `id,schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,recorded_at`
+
+func scanOccurrence(row pgx.Row) (Occurrence, error) {
+	var o Occurrence
+	e := row.Scan(&o.ID, &o.ScheduleID, &o.Kind, &o.Key, &o.ScheduledAt, &o.ConfigVersion, &o.Snapshot, &o.Status, &o.RecordedAt)
+	if errors.Is(e, pgx.ErrNoRows) {
+		e = ErrNotFound
+	}
+	return o, e
+}
+
+// RecordOccurrence atomically freezes configuration and deduplicates a trigger.
+// now is supplied by the service clock; no polling loop or executor calls are installed here.
+func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t Trigger, now time.Time) (Occurrence, error) {
+	var out Occurrence
+	t.At = t.At.UTC().Truncate(time.Microsecond)
+	if t.At.IsZero() || now.IsZero() || t.Version < 1 || t.At.After(now) {
+		return out, ErrIneligible
+	}
+	switch t.Kind {
+	case "scheduled":
+		if t.Key != "" {
+			return out, ErrIneligible
+		}
+		t.Key = t.At.Format(time.RFC3339Nano)
+	case "manual":
+		if t.Key == "" || len(t.Key) > 200 {
+			return out, ErrIneligible
+		}
+	default:
+		return out, ErrIneligible
+	}
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var active bool
+		e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM memberships m JOIN users u ON u.id=m.user_id JOIN tenants t ON t.id=m.tenant_id WHERE m.tenant_id=$1 AND m.user_id=$2 AND u.status='active' AND u.deleted_at IS NULL AND t.status='active')`, tenant, user).Scan(&active)
+		if e != nil {
+			return e
+		}
+		if !active {
+			return ErrNotFound
+		}
+		config, e := readSchedule(tx.QueryRow(ctx, `SELECT `+scheduleColumns+` FROM v2_schedule_configs WHERE tenant_id=$1 AND user_id=$2 AND id=$3 FOR UPDATE`, tenant, user, id))
+		if e != nil {
+			return e
+		}
+		existing, e := scanOccurrence(tx.QueryRow(ctx, `SELECT `+occurrenceColumns+` FROM v2_schedule_occurrences WHERE schedule_id=$1 AND kind=$2 AND trigger_key=$3`, id, t.Kind, t.Key))
+		if e == nil {
+			if existing.ConfigVersion != t.Version || !existing.ScheduledAt.Equal(t.At) {
+				return ErrConflict
+			}
+			out = existing
+			return nil
+		}
+		if !errors.Is(e, ErrNotFound) {
+			return e
+		}
+		if config.Version != t.Version {
+			return ErrConflict
+		}
+		if t.At.Before(config.CreatedAt) {
+			return ErrIneligible
+		}
+		if t.Kind == "scheduled" {
+			if !config.Enabled {
+				return ErrIneligible
+			}
+			var rule schedule.Rule
+			if e = json.Unmarshal(config.Rule, &rule); e != nil {
+				return e
+			}
+			next, e := schedule.Next(rule, config.CreatedAt, t.At.Add(-time.Nanosecond), 1)
+			if e != nil {
+				return e
+			}
+			if !next[0].Equal(t.At) {
+				return ErrIneligible
+			}
+		}
+		snapshot, e := json.Marshal(config)
+		if e != nil {
+			return e
+		}
+		out, e = scanOccurrence(tx.QueryRow(ctx, `INSERT INTO v2_schedule_occurrences(schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot) VALUES($1,$2,$3,$4,$5,$6) RETURNING `+occurrenceColumns, id, t.Kind, t.Key, t.At, t.Version, snapshot))
+		return e
+	})
+	return out, err
+}
+
+// Occurrences reads a bounded page in descending immutable ID order within caller ownership.
+func (s *Store) Occurrences(ctx context.Context, tenant, user, id string, before string, limit int) ([]Occurrence, error) {
+	if limit < 1 || limit > 100 {
+		return nil, ErrIneligible
+	}
+	ok, e := s.ScheduleMember(ctx, tenant, user)
+	if e != nil {
+		return nil, e
+	}
+	if !ok {
+		return nil, ErrNotFound
+	}
+	var found bool
+	e = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM v2_schedule_configs WHERE id=$1 AND tenant_id=$2 AND user_id=$3)`, id, tenant, user).Scan(&found)
+	if e != nil {
+		return nil, e
+	}
+	if !found {
+		return nil, ErrNotFound
+	}
+	rows, e := s.pool.Query(ctx, `SELECT `+occurrenceColumns+` FROM v2_schedule_occurrences WHERE schedule_id=$1 AND ($2='' OR id<NULLIF($2,'')::uuid) ORDER BY id DESC LIMIT $3`, id, before, limit)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []Occurrence{}
+	for rows.Next() {
+		o, e := scanOccurrence(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}

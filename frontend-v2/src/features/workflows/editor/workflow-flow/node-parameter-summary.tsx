@@ -1,0 +1,262 @@
+import { useTranslation } from "react-i18next";
+import { type WorkflowNodeData } from "../../mock";
+import {
+  conditionBranchesSummary,
+  createWorkflowSummaryLabels,
+  junctionFailureStrategyLabel,
+  junctionWaitStrategyLabel,
+  type WorkflowSummaryLabels,
+} from "../../node-chrome";
+import { useAgents } from "../../data/catalog-hooks";
+import { useSkills } from "../../data/catalog-hooks";
+import { useInstalledPlugins } from "../../data/catalog-hooks";
+import { normalizeWorkflowAgentConfig } from "../../mock";
+
+interface NodeParameter {
+  label: string;
+  values: string[];
+}
+
+/** Displays the persisted node configuration without introducing card-level editing controls. */
+export function WorkflowNodeParameterSummary({
+  data,
+}: {
+  data: WorkflowNodeData;
+}) {
+  const { i18n, t } = useTranslation();
+  const agentsQuery = useAgents();
+  const skillsQuery = useSkills();
+  const pluginsQuery = useInstalledPlugins();
+  // The workflow JSON stores role/skill by name, so name-keyed lookups resolve directly.
+  const agentNameById = new Map(
+    (agentsQuery.data ?? []).map((agent) => [agent.name, agent.name]),
+  );
+  const skillNameById = new Map(
+    (skillsQuery.data ?? []).map((skill) => [skill.name, skill.name]),
+  );
+  const mcpNameById = new Map(
+    (pluginsQuery.data ?? [])
+      .filter((plugin) => plugin.kind === "mcp")
+      .map((plugin) => [plugin.id, plugin.displayName]),
+  );
+  const locale =
+    i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+  const labels = createWorkflowSummaryLabels(locale);
+  const parameters = configuredParameters(
+    data,
+    t,
+    agentNameById,
+    skillNameById,
+    mcpNameById,
+    labels,
+    locale,
+  );
+
+  if (parameters.length === 0) {
+    return null;
+  }
+
+  return (
+    <dl
+      aria-label={t("settings.workflow.nodeParameters")}
+      className="space-y-2"
+    >
+      {parameters.map((parameter) => (
+        <div key={parameter.label} className="min-w-0">
+          <dt className="mb-1 text-[9px] font-medium text-muted-foreground">
+            {parameter.label}
+          </dt>
+          <div className="space-y-1">
+            {parameter.values.map((value) => (
+              <dd
+                key={`${parameter.label}:${value}`}
+                className="m-0 line-clamp-2 break-words rounded-md bg-muted px-2 py-1 text-[10px] leading-4 text-foreground/85 shadow-inner"
+              >
+                {value}
+              </dd>
+            ))}
+          </div>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Extracts only populated execution fields so cards summarize the saved configuration compactly. */
+function configuredParameters(
+  data: WorkflowNodeData,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  agentNameById: ReadonlyMap<string, string>,
+  skillNameById: ReadonlyMap<string, string>,
+  mcpNameById: ReadonlyMap<string, string>,
+  labels: WorkflowSummaryLabels,
+  locale: "zh-CN" | "en-US",
+): NodeParameter[] {
+  const parameters: NodeParameter[] = [];
+  if (data.kind === "agent" && data.agentConfig !== undefined) {
+    const config = normalizeWorkflowAgentConfig(data.agentConfig);
+    const enabledSkills = config.skills
+      .filter((skill) => skill.enabled)
+      .map((skill) => skillNameById.get(skill.skillId) ?? skill.skillId);
+    const enabledMcps = config.mcps
+      .filter((mcp) => mcp.enabled)
+      .map((mcp) => mcpNameById.get(mcp.mcpId) ?? mcp.mcpId);
+    parameters.push(
+      {
+        label: t("settings.workflow.field.role"),
+        values: [agentNameById.get(config.roleId) ?? config.roleId],
+      },
+      {
+        label: t("settings.workflow.field.agentModel"),
+        values: [
+          `${config.executor.agentCli || "—"} · ${config.executor.modelId || "—"}`,
+        ],
+      },
+    );
+    if (enabledSkills.length > 0) {
+      parameters.push({
+        label: t("settings.workflow.field.skills"),
+        values: enabledSkills.slice(0, 3),
+      });
+    }
+    if (enabledMcps.length > 0) {
+      parameters.push({
+        label: t("settings.workflow.field.mcps"),
+        values: enabledMcps.slice(0, 3),
+      });
+    }
+    return parameters;
+  }
+  if (data.kind === "condition") {
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.condition"),
+      conditionBranchesSummary(data, labels, locale) ?? undefined,
+    );
+    return parameters;
+  }
+  if (data.kind === "tool") {
+    appendParameter(parameters, t("settings.workflow.field.tool"), data.tool);
+    if (data.operation !== undefined && data.operation !== "") {
+      appendParameter(
+        parameters,
+        t("settings.workflow.field.operation"),
+        labels.operationLabel(data.operation),
+      );
+    }
+    if ((data.toolParameters ?? []).length > 0) {
+      appendParameter(
+        parameters,
+        t("settings.workflow.section.parameters"),
+        data.toolParameters!.map(
+          (parameter) => `${parameter.key} = ${parameter.value}`,
+        ),
+      );
+    }
+    return parameters;
+  }
+
+  if (data.kind === "start") {
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.initialPrompt"),
+      data.input,
+    );
+    return parameters;
+  }
+  if (data.kind === "junction") {
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.waitStrategy"),
+      junctionWaitStrategyLabel(data.waitStrategy, t),
+    );
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.failureStrategy"),
+      junctionFailureStrategyLabel(data.failureStrategy, t),
+    );
+    return parameters;
+  }
+  if (data.kind === "loop") {
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.maxIterations"),
+      data.loopConfig?.maxIterations.toString(),
+    );
+    const carriedVariable = data.loopConfig?.variables[0];
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.loopInitialValue"),
+      carriedVariable?.initial.kind === "constant"
+        ? String(carriedVariable.initial.value ?? "")
+        : carriedVariable?.initial.selector.join("."),
+    );
+    return parameters;
+  }
+  if (data.kind === "iteration") {
+    const config = data.iterationConfig;
+    if (config === undefined) {
+      return parameters;
+    }
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.iterationIterator"),
+      config.iteratorSelector.join("."),
+    );
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.iterationCollect"),
+      config.collectSelector.join("."),
+    );
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.iterationErrorStrategy"),
+      config.errorStrategy === "continue"
+        ? t("settings.workflow.iteration.continueStrategy")
+        : t("settings.workflow.iteration.failStrategy"),
+    );
+    appendParameter(
+      parameters,
+      t("settings.workflow.field.maxIterations"),
+      config.maxIterations.toString(),
+    );
+    return parameters;
+  }
+  if (data.kind === "aggregator") {
+    const selectors = (data.aggregatorConfig?.variables ?? []).map((selector) =>
+      selector.join("."),
+    );
+    if (selectors.length > 0) {
+      parameters.push({
+        label: t("settings.workflow.field.aggregation"),
+        values: selectors,
+      });
+    }
+    return parameters;
+  }
+  if (data.kind === "output" || data.kind === "subflow") {
+    return parameters;
+  }
+
+  appendParameter(
+    parameters,
+    t("settings.workflow.field.approvalPrompt"),
+    data.instruction,
+  );
+  return parameters;
+}
+
+/** Keeps absent and whitespace-only values out of the summary so empty defaults do not add visual noise. */
+function appendParameter(
+  parameters: NodeParameter[],
+  label: string,
+  value: string | string[] | undefined,
+): void {
+  const values = Array.isArray(value) ? value : [value];
+  const populated = values
+    .map((entry) => entry?.trim())
+    .filter((entry): entry is string => entry !== undefined && entry !== "");
+  if (populated.length > 0) {
+    parameters.push({ label, values: populated });
+  }
+}

@@ -1,0 +1,664 @@
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import type { EditorView } from "@tiptap/pm/view";
+import {
+  createComposerExtensions,
+  documentPlainText,
+  markdownToComposerContent,
+  resolveComposerEnter,
+  resolveComposerLinkHref,
+  composerPasteInsert,
+  type ComposerFileAttrs,
+  type PromptTokenKind,
+} from "../composer-core/composer";
+import type { AnyExtension, JSONContent } from "@tiptap/core";
+import { useOptionalPlatform } from "../host/platform";
+import { cn } from "../host/ui";
+import {
+  AT_TRIGGER_PATTERN,
+  EMPTY_COMPOSER_QUERY,
+  INLINE_SLASH_TRIGGER_PATTERN,
+  SLASH_TRIGGER_PATTERN,
+  queryStateFromText,
+  queryStatesEqual,
+  type ComposerQueryState,
+  type SlashQueryMode,
+} from "./composer-query";
+import { AppComposerFile } from "./composer-file-extension";
+import {
+  readClipboardFiles,
+  readClipboardText,
+  TextEditContextMenu,
+  writeClipboardText,
+} from "./text-edit-context-menu";
+import { UnsupportedCommandExtension } from "./unsupported-command-extension";
+import "./composer-editor.css";
+
+export interface ComposerEditorHandle {
+  getText: () => string;
+  /** TipTap JSON so chip attrs (path, kind, token name) survive park/restore. */
+  getJSON: () => JSONContent;
+  focus: (options?: {
+    preventScroll?: boolean;
+    /** Defaults to end; `keep` restores focus without moving the caret. */
+    at?: "start" | "end" | "keep";
+  }) => void;
+  clear: () => void;
+  replaceText: (text: string) => void;
+  /** Restores a parked TipTap document without round-tripping through plain text. */
+  replaceDocument: (doc: JSONContent) => void;
+  insertPromptToken: (
+    kind: PromptTokenKind,
+    name: string,
+    label?: string,
+    meta?: string,
+  ) => void;
+  /** Inserts plain text at a preserved editor selection or the live caret. */
+  insertText: (text: string, selection?: { from: number; to: number }) => void;
+  /** Captures the current ProseMirror selection before an external control takes focus. */
+  getSelection: () => { from: number; to: number };
+  insertFileChips: (files: ComposerFileAttrs[]) => void;
+  appendText: (text: string) => void;
+  /** Returns the viewport rectangle immediately below the current caret when layout is available. */
+  getCaretRect: () => DOMRect | null;
+  removeAtToken: () => void;
+  getDom: () => HTMLElement | null;
+}
+
+export interface ComposerEditorProps {
+  placeholder?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  /** Seed from `documentPlainText` so HITL drafts restore as the same nodes. */
+  initialText?: string;
+  /** Optional structured seed for callers that need labeled inline atoms. */
+  initialDocument?: JSONContent;
+  enterKey?: "submit" | "newline";
+  className?: string;
+  /** Optional DOM id so a `<label htmlFor>` can focus the contenteditable. */
+  id?: string;
+  ariaLabel?: string;
+  ariaAutoComplete?: "list" | "none";
+  ariaHasPopup?: "listbox";
+  ariaExpanded?: boolean;
+  ariaControls?: string;
+  ariaActivedescendant?: string;
+  /** Controls whether slash queries require a command boundary or may start inline. */
+  slashQueryMode?: SlashQueryMode;
+  /** Commands advertised by the current Agent; omission disables command warnings. */
+  availableCommandNames?: ReadonlySet<string>;
+  /** Builds the localized explanation shown when hovering an unknown command. */
+  unsupportedCommandTitle?: (commandName: string) => string;
+  /** Overrides the prompt-token slot, e.g. with a React NodeView for workflow variables. */
+  promptTokenExtension?: AnyExtension;
+  onSubmit: () => void;
+  /**
+   * Fires only when slash/@/blankness actually change so typing a normal
+   * sentence does not re-render the surrounding composer chrome.
+   */
+  onQueryChange?: (query: ComposerQueryState) => void;
+  /** Document edits only. Dismisses the plus menu without storing draft text. */
+  onDocChange?: () => void;
+  /** Draft text for HITL persistence. Chat omits this so typing does not re-render chrome. */
+  onTextChange?: (text: string) => void;
+  onPasteFiles?: (files: File[]) => void;
+  /** Return true when the action menu consumed the key. */
+  onMenuKeyDown?: (event: KeyboardEvent) => boolean;
+}
+
+/**
+ * Uncontrolled Tiptap prompt field. The editor is the source of truth; React
+ * is notified only for menu queries, optional draft sync, and submit.
+ */
+export const ComposerEditor = forwardRef<
+  ComposerEditorHandle,
+  ComposerEditorProps
+>(function ComposerEditor(
+  {
+    placeholder = "",
+    disabled = false,
+    autoFocus = false,
+    initialText = "",
+    initialDocument,
+    enterKey = "submit",
+    className,
+    id,
+    ariaLabel,
+    ariaAutoComplete,
+    ariaHasPopup,
+    ariaExpanded,
+    ariaControls,
+    ariaActivedescendant,
+    slashQueryMode = "command",
+    availableCommandNames,
+    unsupportedCommandTitle,
+    promptTokenExtension,
+    onSubmit,
+    onQueryChange,
+    onDocChange,
+    onTextChange,
+    onPasteFiles,
+    onMenuKeyDown,
+  },
+  ref,
+) {
+  const onSubmitRef = useRef(onSubmit);
+  const onQueryChangeRef = useRef(onQueryChange);
+  const onDocChangeRef = useRef(onDocChange);
+  const onTextChangeRef = useRef(onTextChange);
+  const onPasteFilesRef = useRef(onPasteFiles);
+  const onMenuKeyDownRef = useRef(onMenuKeyDown);
+  const enterKeyRef = useRef(enterKey);
+  const slashQueryModeRef = useRef(slashQueryMode);
+  const lastQueryRef = useRef<ComposerQueryState>(EMPTY_COMPOSER_QUERY);
+  const suppressNotifyRef = useRef(false);
+  const parkedSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const placeholderRef = useRef(placeholder);
+  const availableCommandNamesRef = useRef(availableCommandNames);
+  const unsupportedCommandTitleRef = useRef(unsupportedCommandTitle);
+  const [menuHasSelection, setMenuHasSelection] = useState(false);
+  const platform = useOptionalPlatform();
+  const platformRef = useRef(platform);
+  // The extension set is built once per editor; later prop changes do not rebuild it.
+  const [initialPromptTokenExtension] = useState(promptTokenExtension);
+
+  // Handlers registered with the editor read these refs at event time, so they always call the
+  // latest props without rebuilding the editor.
+  useLayoutEffect(() => {
+    onSubmitRef.current = onSubmit;
+    onQueryChangeRef.current = onQueryChange;
+    onDocChangeRef.current = onDocChange;
+    onTextChangeRef.current = onTextChange;
+    onPasteFilesRef.current = onPasteFiles;
+    onMenuKeyDownRef.current = onMenuKeyDown;
+    enterKeyRef.current = enterKey;
+    slashQueryModeRef.current = slashQueryMode;
+    placeholderRef.current = placeholder;
+    availableCommandNamesRef.current = availableCommandNames;
+    unsupportedCommandTitleRef.current = unsupportedCommandTitle;
+    platformRef.current = platform;
+  });
+
+  // The callbacks read refs only when tiptap calls them, after render; the rule cannot tell a
+  // callback defined during render from a read during render.
+  // oxlint-disable-next-line react/refs
+  const [extensions] = useState(() =>
+      createComposerExtensions({
+        placeholder: () => placeholderRef.current,
+        features: {
+          fileChip: AppComposerFile,
+          ...(initialPromptTokenExtension === undefined
+            ? {}
+            : { promptToken: initialPromptTokenExtension }),
+        },
+        extraExtensions: [
+          UnsupportedCommandExtension.configure({
+            availableCommandNames: () => availableCommandNamesRef.current,
+            commandTitle: (commandName) =>
+              unsupportedCommandTitleRef.current?.(commandName),
+          }),
+        ],
+      }),
+  );
+
+  const editor = useEditor({
+    extensions,
+    content: initialDocument ?? markdownToComposerContent(initialText),
+    autofocus: autoFocus ? "end" : false,
+    editable: !disabled,
+    immediatelyRender: true,
+    shouldRerenderOnTransaction: false,
+    editorProps: {
+      attributes: {
+        class: "composer-editor-content px-2 py-1",
+        role: "textbox",
+        "aria-multiline": "true",
+      },
+      // Keep the caret inside the 200px clip without letting jsdom's missing
+      // layout boxes fail tests (coordsAtPos throws without getClientRects).
+      handleScrollToSelection: scrollComposerSelectionIntoView,
+      handleKeyDown: (view, event) => {
+        if (event.isComposing || event.keyCode === 229) {
+          return false;
+        }
+        if (onMenuKeyDownRef.current?.(event) === true) {
+          return true;
+        }
+        if (
+          event.key === "Enter" &&
+          !event.shiftKey &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey
+        ) {
+          const action = resolveComposerEnter(view);
+          if (action === "handled") {
+            event.preventDefault();
+            return true;
+          }
+          if (enterKeyRef.current === "submit") {
+            event.preventDefault();
+            onSubmitRef.current();
+            return true;
+          }
+        }
+        return false;
+      },
+    },
+    onCreate: ({ editor: current }) => {
+      emitQuery(
+        current,
+        lastQueryRef,
+        onQueryChangeRef,
+        slashQueryModeRef.current,
+      );
+    },
+    onUpdate: ({ editor: current }) => {
+      if (suppressNotifyRef.current) {
+        syncComposerTextDataset(current, lastQueryRef);
+        return;
+      }
+      emitQuery(
+        current,
+        lastQueryRef,
+        onQueryChangeRef,
+        slashQueryModeRef.current,
+      );
+      onDocChangeRef.current?.();
+      onTextChangeRef.current?.(documentPlainText(current.state.doc));
+    },
+    onSelectionUpdate: ({ editor: current }) => {
+      if (suppressNotifyRef.current) {
+        syncComposerTextDataset(current, lastQueryRef);
+        return;
+      }
+      emitQuery(
+        current,
+        lastQueryRef,
+        onQueryChangeRef,
+        slashQueryModeRef.current,
+      );
+    },
+  });
+
+  // A catalog update does not edit the document, so explicitly ask ProseMirror
+  // to re-evaluate decorations instead of leaving a stale warning in place.
+  useEffect(() => {
+    editor.view.dispatch(
+      editor.state.tr.setMeta("commandCatalogChanged", true),
+    );
+  }, [availableCommandNames, editor, unsupportedCommandTitle]);
+
+  useEffect(() => {
+    editor.setEditable(!disabled);
+  }, [disabled, editor]);
+
+  useEffect(() => {
+    const dom = editor.view.dom;
+    setOptionalAttr(dom, "id", id);
+    setOptionalAttr(dom, "aria-label", ariaLabel);
+    setOptionalAttr(dom, "aria-autocomplete", ariaAutoComplete);
+    setOptionalAttr(dom, "aria-haspopup", ariaHasPopup);
+    setOptionalAttr(dom, "aria-controls", ariaControls);
+    setOptionalAttr(dom, "aria-activedescendant", ariaActivedescendant);
+    if (ariaExpanded === undefined) {
+      dom.removeAttribute("aria-expanded");
+    } else {
+      dom.setAttribute("aria-expanded", ariaExpanded ? "true" : "false");
+    }
+    if (disabled) {
+      dom.setAttribute("aria-disabled", "true");
+    } else {
+      dom.removeAttribute("aria-disabled");
+    }
+  }, [
+    ariaActivedescendant,
+    ariaAutoComplete,
+    ariaControls,
+    ariaExpanded,
+    ariaHasPopup,
+    ariaLabel,
+    disabled,
+    editor,
+    id,
+  ]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getText: () => documentPlainText(editor.state.doc),
+      focus: (options) => {
+        const at = options?.at ?? "end";
+        if (at === "keep") {
+          if (options?.preventScroll === true) {
+            editor.view.dom.focus({ preventScroll: true });
+            return;
+          }
+          editor.commands.focus();
+          return;
+        }
+        if (options?.preventScroll === true) {
+          editor.view.dom.focus({ preventScroll: true });
+          if (at === "start") {
+            editor.commands.focus("start");
+          }
+          return;
+        }
+        editor.commands.focus(at);
+      },
+      getJSON: () => editor.getJSON(),
+      clear: () => {
+        withSuppressedNotify(suppressNotifyRef, () => {
+          editor.commands.clearContent(true);
+        });
+      },
+      replaceText: (text) => {
+        withSuppressedNotify(suppressNotifyRef, () => {
+          editor
+            .chain()
+            .setContent(markdownToComposerContent(text))
+            .focus("end")
+            .run();
+        });
+      },
+      replaceDocument: (doc) => {
+        withSuppressedNotify(suppressNotifyRef, () => {
+          editor.chain().setContent(doc).focus("end").run();
+        });
+      },
+      insertPromptToken: (kind, name, label, meta) => {
+        deleteTriggerToken(
+          editor,
+          slashQueryModeRef.current === "inline"
+            ? INLINE_SLASH_TRIGGER_PATTERN
+            : SLASH_TRIGGER_PATTERN,
+        );
+        editor.commands.setPromptToken(kind, name, label, meta);
+      },
+      insertText: (text, selection) => {
+        const chain = editor.chain().focus();
+        if (selection === undefined) {
+          chain.insertContent(text).run();
+          return;
+        }
+        chain.insertContentAt(selection, text, { updateSelection: true }).run();
+      },
+      getSelection: () => ({
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+      }),
+      insertFileChips: (files) => {
+        // Leave the caret where insertContent placed it so mid-prompt @ mentions
+        // do not jump to the document end. Callers that want the end (sidebar
+        // inject) should follow with focus({ at: "end" }).
+        editor.commands.insertComposerFiles(files);
+      },
+      appendText: (text) => {
+        // Insert parsed blocks at the end so existing `/command` chips stay
+        // nodes. A full documentPlainText round-trip cannot rebuild slash chips.
+        const blocks = markdownToComposerContent(text).content ?? [];
+        if (blocks.length === 0) {
+          return;
+        }
+        const content = editor.isEmpty
+          ? blocks
+          : [{ type: "paragraph" }, ...blocks];
+        editor.chain().focus("end").insertContent(content).run();
+      },
+      getCaretRect: () => {
+        try {
+          const coordinates = editor.view.coordsAtPos(
+            editor.state.selection.head,
+          );
+          return new DOMRect(
+            coordinates.left,
+            coordinates.top,
+            coordinates.right - coordinates.left,
+            coordinates.bottom - coordinates.top,
+          );
+        } catch {
+          return null;
+        }
+      },
+      removeAtToken: () => {
+        deleteTriggerToken(editor, AT_TRIGGER_PATTERN);
+      },
+      getDom: () => editor.view.dom,
+    }),
+    [editor],
+  );
+
+  /** Menu focus collapses the caret; restore the range parked on right-click. */
+  const restoreParkedSelection = () => {
+    const parked = parkedSelectionRef.current;
+    if (parked === null) {
+      editor.commands.focus();
+      return;
+    }
+    editor.chain().focus().setTextSelection(parked).run();
+  };
+
+  const copyParkedSelection = async () => {
+    restoreParkedSelection();
+    const { from, to, empty } = editor.state.selection;
+    if (empty) {
+      return;
+    }
+    await writeClipboardText(editor.state.doc.textBetween(from, to, "\n"));
+  };
+
+  return (
+    <TextEditContextMenu
+      editable={!disabled}
+      hasSelection={menuHasSelection}
+      trigger={
+        <div
+          data-slot="composer-editor"
+          className={cn(
+            "composer-editor-shell",
+            disabled && "pointer-events-none opacity-50",
+            className,
+          )}
+          onContextMenu={() => {
+            const { from, to } = editor.state.selection;
+            parkedSelectionRef.current = { from, to };
+            setMenuHasSelection(from !== to);
+          }}
+          onPointerDownCapture={(event) => {
+            const adapter = platformRef.current;
+            if (adapter === null) {
+              return;
+            }
+            const safe = resolveComposerLinkHref(event);
+            if (safe === null) {
+              return;
+            }
+            // Consume the press before ProseMirror places a caret or Tiptap waits
+            // for mouseup; Desktop `openExternalUrl` is fire-and-forget from here.
+            event.preventDefault();
+            event.stopPropagation();
+            void adapter.openExternalUrl(safe);
+          }}
+          onPasteCapture={(event) => {
+            const files = [...(event.clipboardData?.files ?? [])];
+            if (files.length === 0 || onPasteFilesRef.current === undefined) {
+              return;
+            }
+            const text =
+              typeof event.clipboardData?.getData === "function"
+                ? event.clipboardData.getData("text/plain")
+                : "";
+            // Always own the paste when files are present so the image path runs;
+            // still insert accompanying plain text so markdown+screenshot copies
+            // do not lose the typed payload.
+            event.preventDefault();
+            event.stopPropagation();
+            onPasteFilesRef.current(files);
+            if (text.length > 0) {
+              const insert = composerPasteInsert(text);
+              if (typeof insert !== "string" || insert.length > 0) {
+                editor.chain().focus().insertContent(insert).run();
+              }
+            }
+          }}
+        />
+      }
+      onCut={() => {
+        void copyParkedSelection().then(() => {
+          editor.commands.deleteSelection();
+        });
+      }}
+      onCopy={() => {
+        void copyParkedSelection();
+      }}
+      onPaste={() => {
+        void (async () => {
+          const files = await readClipboardFiles();
+          const text = await readClipboardText();
+          // Restore after the async clipboard read: the menu stole focus, and
+          // file chips must land at the caret parked on right-click.
+          restoreParkedSelection();
+          if (files.length > 0) {
+            onPasteFilesRef.current?.(files);
+          }
+          if (text.length === 0) {
+            return;
+          }
+          // Chips may have shifted offsets; insert at the live caret, not parked.
+          const insert = composerPasteInsert(text);
+          if (typeof insert === "string" && insert.length === 0) {
+            return;
+          }
+          editor.chain().focus().insertContent(insert).run();
+        })();
+      }}
+      onSelectAll={() => {
+        editor.chain().focus().selectAll().run();
+      }}
+    >
+      <EditorContent editor={editor} />
+    </TextEditContextMenu>
+  );
+});
+
+ComposerEditor.displayName = "ComposerEditor";
+
+function deleteTriggerToken(editor: Editor, pattern: RegExp): void {
+  const { $from } = editor.state.selection;
+  const textBefore = $from.parent.textBetween(
+    0,
+    $from.parentOffset,
+    undefined,
+    "\n",
+  );
+  const match = textBefore.match(pattern);
+  if (match?.index === undefined) {
+    return;
+  }
+  editor
+    .chain()
+    .focus()
+    .deleteRange({ from: $from.start() + match.index, to: $from.pos })
+    .run();
+}
+
+/** Writes live query state to the DOM for tests without a React update. */
+function syncComposerTextDataset(
+  editor: Editor,
+  lastQueryRef: { current: ComposerQueryState },
+): void {
+  const text = documentPlainText(editor.state.doc);
+  const before = editor.state.doc.textBetween(
+    0,
+    editor.state.selection.from,
+    "\n",
+    "\n",
+  );
+  editor.view.dom.dataset.composerText = text;
+  lastQueryRef.current = queryStateFromText(text, before);
+}
+
+/**
+ * Programmatic setContent uses flushSync via React node views. Callers that
+ * must run outside React's commit (session hydrate) wrap with this so those
+ * transactions do not setState the parent composer.
+ */
+function withSuppressedNotify(
+  suppressNotifyRef: { current: boolean },
+  run: () => void,
+): void {
+  suppressNotifyRef.current = true;
+  try {
+    run();
+  } finally {
+    suppressNotifyRef.current = false;
+  }
+}
+
+/** Writes live query state to the DOM for tests without a React update. */
+function emitQuery(
+  editor: Editor,
+  lastQueryRef: { current: ComposerQueryState },
+  onQueryChangeRef: { current: ComposerEditorProps["onQueryChange"] },
+  slashQueryMode: SlashQueryMode,
+): void {
+  const text = documentPlainText(editor.state.doc);
+  const before = editor.state.doc.textBetween(
+    0,
+    editor.state.selection.from,
+    "\n",
+    "\n",
+  );
+  editor.view.dom.dataset.composerText = text;
+  const next = queryStateFromText(text, before, slashQueryMode);
+  if (editor.state.selection.$from.parent.type.name === "codeBlock") {
+    next.slashQuery = null;
+    next.atQuery = null;
+    next.atTriggerIndex = null;
+  }
+  if (queryStatesEqual(lastQueryRef.current, next)) {
+    return;
+  }
+  lastQueryRef.current = next;
+  onQueryChangeRef.current?.(next);
+}
+
+function setOptionalAttr(
+  element: HTMLElement,
+  name: string,
+  value: string | undefined,
+): void {
+  if (value === undefined) {
+    element.removeAttribute(name);
+    return;
+  }
+  element.setAttribute(name, value);
+}
+
+/**
+ * Scrolls the composer clip so the caret stays visible. Returns true so
+ * ProseMirror does not fall back to its default coordsAtPos path.
+ */
+function scrollComposerSelectionIntoView(view: EditorView): boolean {
+  try {
+    const coords = view.coordsAtPos(view.state.selection.head);
+    const scroller = view.dom;
+    const rect = scroller.getBoundingClientRect();
+    const pad = 8;
+    if (coords.bottom > rect.bottom - pad) {
+      scroller.scrollTop += coords.bottom - rect.bottom + pad;
+    } else if (coords.top < rect.top + pad) {
+      scroller.scrollTop -= rect.top - coords.top + pad;
+    }
+  } catch {
+    // jsdom has no layout boxes for coordsAtPos.
+  }
+  return true;
+}

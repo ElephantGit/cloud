@@ -9,7 +9,8 @@ tasks:
   format:
     aliases: [fmt]
     cmds:
-      - go tool gofumpt -w -extra .
+      # Only this module's packages: the nested v2-server module has its own gate.
+      - go tool gofumpt -w -extra $(go list -f '{{"{{"}}.Dir{{"}}"}}' ./...)
       # internal/controlpb is generated and drift-checked; goimports would regroup its imports.
       - go tool goimports -w -local github.com/wanglongan587/cloud $(go list -f '{{"{{"}}.Dir{{"}}"}}' ./... | grep -v /internal/controlpb)
   format:check:

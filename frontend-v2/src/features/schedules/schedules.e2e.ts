@@ -62,7 +62,7 @@ test('workflow validation, fixed version and mobile drawer', async ({ page }) =>
   await expect(page.getByRole('heading', { name: '定时任务', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(await page.evaluate(() => innerWidth)).toBe(390)
-  const table = page.locator('.sp-table-wrap')
+  const table = page.locator('[data-slot="table-container"]')
   expect(await table.evaluate(el => { el.scrollLeft = el.scrollWidth; return el.scrollLeft > 0 })).toBe(true)
   await table.evaluate(el => { el.scrollLeft = 0 })
   await page.screenshot({ path: test.info().outputPath('mobile.png'), fullPage: true })

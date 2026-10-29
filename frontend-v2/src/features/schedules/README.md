@@ -8,6 +8,12 @@
 
 时间规则支持每天、工作日、每周及固定小时间隔。日历规则按任务时区计算，跳过夏令时不存在的时间；间隔规则以创建时间为起点。
 
+## 界面组件
+
+列表和表单采用项目已有的 shadcn/ui（Base UI）与 Tailwind CSS，控件由官方 CLI 生成。界面使用中性色、Geist 字体、紧凑的统计摘要和表格，保留右侧抽屉配置及运行结果。功能内的语义颜色变量仅作用于定时任务；工作流用少量强调色，成功和失败同时用图标及文字表示。
+
+`schedule-table.tsx` 负责表格展示与开关；`schedule-form.tsx` 使用 Field、Input、Textarea、NativeSelect 和 ToggleGroup 组织配置。窄屏下表格在自身容器横向滚动，页面和抽屉保持视口宽度。
+
 ## 本地预览
 
 在 frontend-v2 运行 `npm run dev -- --port 5188`，访问 `/schedules`。后端登录服务默认使用 8090。旧 variant 参数不再影响布局。

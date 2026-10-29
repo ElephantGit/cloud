@@ -77,6 +77,8 @@ interface StoredSnapshot extends WorkflowSnapshot {
 interface StoredState {
   workflows: StoredWorkflow[];
   snapshots: StoredSnapshot[];
+  /** Set once the page has added its sample workflows, so deleted samples stay deleted. */
+  samplesSeeded?: boolean;
 }
 
 export interface WorkflowBackendStorage {
@@ -113,16 +115,22 @@ export class LocalWorkflowBackend {
   private readonly now: () => number;
   private readonly newId: () => string;
   private state: StoredState;
-  /** True when this browser had never stored workflows, so the page may add its samples. */
-  readonly startedEmpty: boolean;
 
   constructor(options: LocalWorkflowBackendOptions = {}) {
     this.storage = options.storage ?? browserWorkflowStorage;
     this.now = options.now ?? Date.now;
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    const stored = this.storage.load();
-    this.startedEmpty = stored === null;
-    this.state = decodeState(stored);
+    this.state = decodeState(this.storage.load());
+  }
+
+  /** Whether the page has already added its sample workflows to this browser's library. */
+  get samplesSeeded(): boolean {
+    return this.state.samplesSeeded === true;
+  }
+
+  markSamplesSeeded(): void {
+    this.state.samplesSeeded = true;
+    this.persist();
   }
 
   /**
@@ -652,6 +660,7 @@ function decodeState(serialized: string | null): StoredState {
     return {
       workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
       snapshots: Array.isArray(parsed.snapshots) ? parsed.snapshots : [],
+      samplesSeeded: parsed.samplesSeeded === true,
     };
   } catch {
     return { workflows: [], snapshots: [] };

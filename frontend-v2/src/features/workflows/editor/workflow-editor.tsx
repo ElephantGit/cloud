@@ -33,7 +33,6 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import {
-  IconArrowLeft,
   IconDownload,
   IconLayoutSidebarLeftExpand,
   IconRoute,
@@ -2556,28 +2555,17 @@ function WorkflowEditorContent({
       }}
     >
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-3 py-1.5">
+        {/* Desktop also offers "back" here to leave the editor for the workspace; the v2 page
+            has nothing behind the editor, so only the button that shows the library remains. */}
         {sidebarCollapsed && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarCollapsed(false)}
-              aria-label={t("sidebar.expand")}
-            >
-              <IconLayoutSidebarLeftExpand />
-            </Button>
-            {/* Chrome (show the rail) vs navigation (leave the editor) are different
-                actions; keep them adjacent for reach, but split the clusters. */}
-            <div className="h-4 w-px shrink-0 bg-border" aria-hidden />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => void leaveEditor()}
-              aria-label={t("sidebar.back")}
-            >
-              <IconArrowLeft />
-            </Button>
-          </>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarCollapsed(false)}
+            aria-label={t("sidebar.expand")}
+          >
+            <IconLayoutSidebarLeftExpand />
+          </Button>
         )}
         {workflow === null ? (
           <DragRegion>

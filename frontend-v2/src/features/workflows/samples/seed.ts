@@ -4,6 +4,7 @@ import {
 } from "../mock";
 import { normalizeWorkflowDocument, serializeWorkflowGraph } from "../runtime";
 import { parseWorkflowImportFile } from "../editor/workflow-transfer";
+import { ContractError } from "../contracts";
 import type { LocalWorkflowBackend } from "../data/local-workflow-backend";
 import { reviewChainSample, translationBatchSample } from "./authored";
 import loopBranchExit from "./loop-branch-exit.json?raw";
@@ -22,11 +23,13 @@ const samples: { file: string; version: string; retarget: boolean }[] = [
 ];
 
 /**
- * Adds the sample workflows to a browser's empty library, each published as `v1`, through the
- * same parse, normalization and serialization the import dialog uses. Desktop's Loop examples
- * get the demo executor and no Role, so their Agent nodes show as configured.
+ * Adds the sample workflows to a browser's library once, each published as `v1`, through the same
+ * parse, normalization and serialization the import dialog uses. Workflows already there are
+ * kept; a sample whose name is taken is skipped. Desktop's Loop examples get the demo executor and
+ * no Role, so their Agent nodes show as configured.
  */
 export function seedSampleWorkflows(backend: LocalWorkflowBackend): void {
+  if (backend.samplesSeeded) return;
   // The list shows the newest first, so the first sample is created last.
   for (const sample of [...samples].reverse()) {
     const parsed = parseWorkflowImportFile(sample.file);
@@ -44,19 +47,26 @@ export function seedSampleWorkflows(backend: LocalWorkflowBackend): void {
       edges: workflow.edges,
       globalVariables: normalizeWorkflowGlobalVariables(workflow.globalVariables),
     });
-    const created = backend.create({
-      name: workflow.name,
-      graph: serializeWorkflowGraph({
-        nodes: definition.nodes,
-        edges: definition.edges,
-        viewport: definition.viewport,
-        annotations: workflow.annotations ?? [],
-        globalVariables: definition.globalVariables,
-        description: definition.description,
-      }),
+    const graph = serializeWorkflowGraph({
+      nodes: definition.nodes,
+      edges: definition.edges,
+      viewport: definition.viewport,
+      annotations: workflow.annotations ?? [],
+      globalVariables: definition.globalVariables,
+      description: definition.description,
     });
+    let created;
+    try {
+      created = backend.create({ name: workflow.name, graph });
+    } catch (error) {
+      if (error instanceof ContractError && error.code === "workflow_name_conflict") {
+        continue;
+      }
+      throw error;
+    }
     backend.publish({ workflowId: created.workflow.id, version: sample.version });
   }
+  backend.markSamplesSeeded();
 }
 
 function withDemoExecutor(workflow: DemoWorkflow): DemoWorkflow {

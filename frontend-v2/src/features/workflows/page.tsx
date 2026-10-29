@@ -17,13 +17,13 @@ import { WorkflowSidebar } from "./workflow-sidebar";
  * The workflow page: desktop's library sidebar and definition editor side by side. In desktop the
  * library replaces the app sidebar while the editor owns the workspace pane; here the page holds
  * both, and the local client stands in for the backend until v2-server stores workflows. The page
- * keeps its own query cache with desktop's policy. A browser's first visit finds the sample
- * workflows already in its library.
+ * keeps its own query cache with desktop's policy. The sample workflows are added to a
+ * browser's library on its first visit after they shipped.
  */
 export default function Page() {
   const [client] = useState(() => {
     const backend = new LocalWorkflowBackend();
-    if (backend.startedEmpty) seedSampleWorkflows(backend);
+    seedSampleWorkflows(backend);
     return createLocalContractsClient(backend);
   });
   const [queryClient] = useState(createWorkflowQueryClient);

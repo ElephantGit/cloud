@@ -70,6 +70,8 @@ describe("workflow page", () => {
     await user.keyboard("{ArrowLeft}");
     expect(screen.queryByRole("complementary", { name: "工作流列表" })).not.toBeInTheDocument();
 
+    // Folded, the editor header offers only the button that shows the library again.
+    expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "展开侧边栏" }));
     expect(library()).toHaveStyle({ width: "200px" });
   });

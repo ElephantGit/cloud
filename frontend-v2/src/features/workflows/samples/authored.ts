@@ -25,7 +25,7 @@ export const reviewChainSample = {
   name: "示例：代码审查",
   description:
     "按仓库和分支审查改动；发现阻塞问题时整理修复清单，否则写通过说明，聚合后输出。",
-  viewport: { x: 40, y: 120, zoom: 0.7 },
+  viewport: { x: 30, y: 140, zoom: 0.55 },
   nodes: [
     {
       id: "start",

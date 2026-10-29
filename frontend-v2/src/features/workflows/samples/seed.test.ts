@@ -18,7 +18,7 @@ function memoryStorage(): WorkflowBackendStorage {
 describe("seedSampleWorkflows", () => {
   it("publishes every sample, the authored ones first", () => {
     const backend = new LocalWorkflowBackend({ storage: memoryStorage() });
-    expect(backend.startedEmpty).toBe(true);
+    expect(backend.samplesSeeded).toBe(false);
 
     seedSampleWorkflows(backend);
 
@@ -70,5 +70,26 @@ describe("seedSampleWorkflows", () => {
         roleId: "",
       });
     }
+  });
+
+  it("adds the samples beside existing workflows once, skipping a taken name", () => {
+    const storage = memoryStorage();
+    const backend = new LocalWorkflowBackend({ storage });
+    backend.create({ name: "我的工作流", graph: null });
+    backend.create({ name: "示例：逐段翻译", graph: null });
+
+    seedSampleWorkflows(backend);
+    const names = backend.list().workflows.map((workflow) => workflow.name);
+    expect(names).toContain("我的工作流");
+    expect(names).toContain("示例：代码审查");
+    expect(names.filter((name) => name === "示例：逐段翻译")).toHaveLength(1);
+    expect(names).toHaveLength(6);
+
+    // A reload does not bring back samples the user deleted.
+    const review = backend.list().workflows.find((w) => w.name === "示例：代码审查")!;
+    backend.delete({ workflowId: review.id });
+    const reloaded = new LocalWorkflowBackend({ storage });
+    seedSampleWorkflows(reloaded);
+    expect(reloaded.list().workflows.map((w) => w.name)).not.toContain("示例：代码审查");
   });
 });

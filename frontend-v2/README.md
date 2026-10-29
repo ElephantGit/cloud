@@ -73,7 +73,7 @@ v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话�
 
 左栏和对话页的聊天记录一样：拖动右边缘调宽度，拖过最小宽度就收起，也可以聚焦边缘后用方向键调整、按回车切换；收起后从编辑器标题栏的按钮展开。宽度和是否收起保存在浏览器本地（`host/ui-store.ts`）。提示条右上角有关闭按钮。
 
-`samples/` 是样例工作流：`authored.ts` 写了两份，代码审查（开始 → Agent → 条件分支 → 两个 Agent → 变量聚合器 → 输出）和逐段翻译（迭代）；另外三份是 desktop 自带的 Loop 样例（`artifacts/workflow-loop-examples/`），原样复制，导入时把 Agent 改成演示执行器、去掉角色。浏览器第一次打开工作流页时，`samples/seed.ts` 按导入对话框的同一条路径把它们建好，并发布为 `v1`。五份合起来覆盖全部八种可执行节点。
+`samples/` 是样例工作流：`authored.ts` 写了两份，代码审查（开始 → Agent → 条件分支 → 两个 Agent → 变量聚合器 → 输出）和逐段翻译（迭代）；另外三份是 desktop 自带的 Loop 样例（`artifacts/workflow-loop-examples/`），原样复制，导入时把 Agent 改成演示执行器、去掉角色。每个浏览器打开工作流页时，`samples/seed.ts` 按导入对话框的同一条路径把它们加进列表、发布为 `v1`，只加一次：已有的工作流保留，同名的样例跳过，删掉的样例不会再出现。五份合起来覆盖全部八种可执行节点。
 
 v2-server 还没有工作流接口，现在由 `data/local-workflow-backend.ts` 在浏览器 localStorage 里代替 desktop 的后端，规则照搬 desktop 的 Rust 实现：名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；版本名不能叫 `draft`，也不能含 `/`、`\`、控制字符；不能删除草稿和当前生效的版本；发布时检查图能否从开始节点投影成可执行图（多余节点不阻塞发布）；analyze 标出未参与运行的节点和不认识的节点类型。desktop 引擎对每个节点配置的检查没有搬过来。Agent、模型、角色、Skill 和 MCP 清单是 `data/demo-catalog.ts` 里的演示数据。页面不运行工作流。接入 v2-server 后，只需把 `data/contracts-client.ts` 换成调生成的客户端。
 

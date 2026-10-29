@@ -113,23 +113,32 @@ export class LocalWorkflowBackend {
   private readonly now: () => number;
   private readonly newId: () => string;
   private state: StoredState;
+  /** True when this browser had never stored workflows, so the page may add its samples. */
+  readonly startedEmpty: boolean;
 
   constructor(options: LocalWorkflowBackendOptions = {}) {
     this.storage = options.storage ?? browserWorkflowStorage;
     this.now = options.now ?? Date.now;
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.state = decodeState(this.storage.load());
+    const stored = this.storage.load();
+    this.startedEmpty = stored === null;
+    this.state = decodeState(stored);
   }
 
-  /** Newest created first, as desktop's library query orders them. */
+  /**
+   * Newest created first, as desktop's library query orders them. Workflows created in the same
+   * millisecond keep their creation order (later first), where desktop falls back to the id.
+   */
   list(): ListWorkflowsResponse {
     const workflows = this.state.workflows
-      .filter((workflow) => !workflow.isDeleted)
+      .map((workflow, index) => ({ workflow, index }))
+      .filter(({ workflow }) => !workflow.isDeleted)
       .sort((a, b) =>
-        a.createdAt === b.createdAt
-          ? b.id.localeCompare(a.id)
-          : Number(b.createdAt - a.createdAt),
+        a.workflow.createdAt === b.workflow.createdAt
+          ? b.index - a.index
+          : Number(b.workflow.createdAt - a.workflow.createdAt),
       )
+      .map(({ workflow }) => workflow)
       .map((workflow) => ({
         id: workflow.id,
         namespace: workflow.namespace,

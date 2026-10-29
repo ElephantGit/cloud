@@ -6,6 +6,29 @@ changing its contents. It owns ADRs, core test cases, and domain documentation; 
 ownership, persistence, external side effects, recovery, security, or compatibility must keep the
 relevant approved ADRs and core-test evidence synchronized with the implementation.
 
+# v2
+
+`frontend-v2/` and `v2-server/` are Cloud v2, built for a fast demo and fast end-to-end checks while
+Cloud itself catches up. They are isolated from the rest of the repository:
+
+- `frontend-v2/` is the production v2 web frontend. It talks only to the HTTP contract, through a
+  client generated from `api/openapi.json`, so it can move from `v2-server` to Cloud without
+  rewriting its data layer.
+- `v2-server/` is a **temporary** single-process backend in its own Go module. It implements the
+  subset of `api/openapi.json` that v2 uses, with deliberately simplified semantics, stores state in
+  its own PostgreSQL database, and runs Node as a local child process with a fixture model by
+  default. It is deleted once `frontend-v2` runs against Cloud.
+- Neither follows the specs process: no ADRs, core-test evidence or `specs/` changes, and the
+  sections below (specs, Frontend, Go, Tests, Documentation) do not bind them. Each directory's own
+  `AGENTS.md` and `README.md`, once present, define its rules. Keep code idiomatic, tested and free of
+  secrets all the same.
+- Endpoints v2 needs but `api/openapi.json` lacks live only in `v2-server`, listed in its README as
+  candidates for Cloud. Do not change Cloud's routes, `internal/contract`, `api/openapi.json` or
+  `frontend/` for v2's sake; such changes go through the normal Cloud workflow.
+- Nothing outside these two directories depends on them. Cloud's gates (`task check`, `task format`,
+  lint, the Backend and Frontend workflows) skip them; `.github/workflows/v2.yml` checks them
+  instead.
+
 # Frontend
 
 `frontend/` has its own `AGENTS.md` with the frontend's cohesion, size, documentation and test

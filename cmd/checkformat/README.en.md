@@ -6,7 +6,7 @@
 
 ## Responsibilities
 
-- **Non-mutating format inspection**: Executes `go tool gofumpt -l -extra .` across the repository to list any files that violate formatting rules without altering them on disk.
+- **Non-mutating format inspection**: Executes `go tool gofumpt -l -extra` on the directories of this module's packages (`go list ./...`) to list any files that violate formatting rules without altering them on disk. The nested `v2-server` module is out of scope; the v2 workflow checks it.
 - **Strict gate enforcement**: Exits with code 0 if all Go source files adhere to formatting standards. If any improperly formatted file is detected, it prints the violating filenames to `stderr` and exits with code 1, prompting the developer to run `task format`.
 
 ## Boundaries and invariants

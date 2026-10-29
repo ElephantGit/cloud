@@ -43,3 +43,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
 - 写请求不检查 `Idempotency-Key`，没有资源版本和代次隔离。
 - 启动时直接建表，没有迁移。
+- 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
+  [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。
+  配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
+  本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。

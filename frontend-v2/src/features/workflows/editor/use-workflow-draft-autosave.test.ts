@@ -36,6 +36,32 @@ describe("useWorkflowDraftAutosave", () => {
     expect(result.current.status).toBe("clean");
   });
 
+  it("saves pending edits when the page goes away, and only once", async () => {
+    const save = vi.fn().mockResolvedValue("saved" as const);
+    const { result } = renderHook(() =>
+      useWorkflowDraftAutosave({ enabled: true, save }),
+    );
+
+    // A clean draft has nothing to write on reload.
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(save).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.markDirty();
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WORKFLOW_DRAFT_AUTOSAVE_MS);
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it("flush writes immediately and cancels the pending timer", async () => {
     const save = vi.fn().mockResolvedValue("saved" as const);
     const { result } = renderHook(() =>

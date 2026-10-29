@@ -191,6 +191,21 @@ export function useWorkflowDraftAutosave({
     }
   }, [clearTimer, enabled, schedule]);
 
+  // A browser reload or tab close never unmounts the editor, so persist the edits still inside
+  // the debounce window when the page goes away. The local store writes synchronously, so the
+  // save lands before the page unloads.
+  useEffect(() => {
+    const persistOnPageHide = () => {
+      if (!dirtyRef.current) {
+        return;
+      }
+      clearTimer();
+      void saveRef.current().catch(() => undefined);
+    };
+    window.addEventListener("pagehide", persistOnPageHide);
+    return () => window.removeEventListener("pagehide", persistOnPageHide);
+  }, [clearTimer]);
+
   // Best-effort persist on unmount so leaving the editor does not drop
   // edits still inside the debounce window. Hard tab closes remain best-effort.
   useEffect(

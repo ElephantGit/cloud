@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { UserMenu } from './auth/user-menu'
 import { features } from './features'
 
 /** The narrow icon column on the far left: one icon per feature page. */
@@ -29,6 +30,7 @@ export function NavRail() {
           <TooltipContent side="right">{f.title}</TooltipContent>
         </Tooltip>
       ))}
+      <UserMenu />
     </nav>
   )
 }

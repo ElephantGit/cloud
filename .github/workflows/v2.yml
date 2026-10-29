@@ -1,0 +1,72 @@
+name: v2
+# Cloud v2 (see AGENTS.md): frontend-v2/ and the temporary v2-server/ module. The Backend and
+# Frontend workflows skip these directories; this one checks only them. Each job runs once its
+# directory exists.
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'frontend-v2/**'
+      - 'v2-server/**'
+      - 'api/openapi.json'
+      - '.github/workflows/v2.yml'
+  pull_request:
+    paths:
+      - 'frontend-v2/**'
+      - 'v2-server/**'
+      - 'api/openapi.json'
+      - '.github/workflows/v2.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  server:
+    if: hashFiles('v2-server/go.mod') != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: v2-server
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ora_v2_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: 'host=127.0.0.1 port=5432 user=postgres password=postgres dbname=ora_v2_test sslmode=disable'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: v2-server/go.mod
+          cache-dependency-path: v2-server/go.sum
+      - name: Formatted
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+  frontend:
+    if: hashFiles('frontend-v2/package-lock.json') != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-v2/package-lock.json
+      - run: npm ci
+      # frontend-v2 defines its gate (types, lint, tests, build) as `npm run check`.
+      - run: npm run check

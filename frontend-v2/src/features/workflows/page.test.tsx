@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { defaultWorkflowSidebar, useUiStore } from "./host/ui-store";
 import Page from "./page";
 
 function renderPage() {
@@ -19,7 +20,7 @@ function renderPage() {
   );
 }
 
-const library = () => screen.getByRole("complementary");
+const library = () => screen.getByRole("complementary", { name: "工作流列表" });
 
 /** Creates a workflow through desktop's library menu and name dialog. */
 async function createWorkflow(user: ReturnType<typeof userEvent.setup>, name: string) {
@@ -39,6 +40,49 @@ async function createWorkflow(user: ReturnType<typeof userEvent.setup>, name: st
 describe("workflow page", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    useUiStore.setState({
+      sidebarCollapsed: defaultWorkflowSidebar.collapsed,
+      sidebarWidth: defaultWorkflowSidebar.width,
+    });
+  });
+
+  it("opens on the published sample workflows", async () => {
+    renderPage();
+
+    for (const name of ["示例：代码审查", "示例：逐段翻译", "循环综合测试：分支与退出"]) {
+      expect(await within(library()).findByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(await screen.findByDisplayValue("示例：代码审查")).toBeInTheDocument();
+    expect(await screen.findByText("生效中 · v1")).toBeInTheDocument();
+  });
+
+  it("resizes the library from its edge and folds it past the minimum, like the chat history", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const edge = screen.getByRole("separator", { name: "调整工作流列表宽度" });
+
+    edge.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(edge).toHaveAttribute("aria-valuenow", "272");
+    expect(library()).toHaveStyle({ width: "272px" });
+
+    useUiStore.setState({ sidebarWidth: 200 });
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.queryByRole("complementary", { name: "工作流列表" })).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: "展开侧边栏" }));
+    expect(library()).toHaveStyle({ width: "200px" });
+  });
+
+  it("lets every toast be dismissed", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByDisplayValue("示例：代码审查");
+
+    await user.click(await screen.findByRole("button", { name: "整理节点" }));
+    const toast = await screen.findByText("已整理工作流节点");
+    await user.click(screen.getByRole("button", { name: "Close toast" }));
+    await waitFor(() => expect(toast).not.toBeInTheDocument());
   });
 
   it("creates a workflow from the library and opens its canvas at the Start node", async () => {

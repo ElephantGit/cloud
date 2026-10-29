@@ -142,7 +142,7 @@ func TestP386JointServer(t *testing.T) {
 	go func() { _ = httpServer.Serve(fixture) }()
 	t.Cleanup(func() { _ = httpServer.Shutdown(context.Background()) })
 	body, _ := json.Marshal(map[string]string{"grpc": "http://" + listener.Addr().String(), "fixture": "http://" + fixture.Addr().String(), "schema": schema})
-	if err := os.WriteFile(metadata, body, 0600); err != nil {
+	if err := os.WriteFile(metadata, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("joint fixture ready schema=%s", schema)

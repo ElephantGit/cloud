@@ -21,6 +21,7 @@ func provisionTenant(t *transaction, uid, name, slug string) (tenant, space Obje
 	require(t.one("SELECT id FROM collab_workspaces WHERE slug=$1", slug) == nil, 409, "space_slug_conflict")
 	t.exec("INSERT INTO tenants(id,name,status) VALUES($1,$2,'active')", tid, name)
 	t.exec("INSERT INTO tenant_memberships(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active')", tid, uid)
+	recordMemberJoin(t, tid, uid, "workspace_created", uid, "", "")
 	sid := newID()
 	t.exec("INSERT INTO collab_workspaces(id,tenant_id,name,slug,created_by) VALUES($1,$2,$3,$4,$5)", sid, tid, name, slug, uid)
 	return t.one("SELECT t.id,t.name,t.status,m.role FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id WHERE t.id=$1 AND m.user_id=$2", tid, uid),

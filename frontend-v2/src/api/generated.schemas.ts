@@ -648,10 +648,14 @@ export interface Invitation {
   consumedAt?: string | null;
   /** @nullable */
   consumedBy?: string | null;
+  /** @nullable */
+  consumedByName?: string | null;
   createdAt: string;
   createdBy: string;
+  createdByName?: string;
   expiresAt: string;
   id: string;
+  note?: string;
   /** @nullable */
   revokedAt?: string | null;
   tenantId: string;
@@ -938,14 +942,53 @@ export interface IssueView {
 }
 
 export interface JoinLink {
+  approvedCount?: number;
   createdAt: string;
   createdBy: string;
+  createdByName?: string;
   expiresAt: string;
   id: string;
+  note?: string;
+  pendingCount?: number;
   /** @nullable */
   revokedAt?: string | null;
   tenantId: string;
   version: number;
+}
+
+export type JoinLinkPreviewApplicationStatus = typeof JoinLinkPreviewApplicationStatus[keyof typeof JoinLinkPreviewApplicationStatus];
+
+
+export const JoinLinkPreviewApplicationStatus = {
+  pending: 'pending',
+} as const;
+
+export type JoinLinkPreviewKind = typeof JoinLinkPreviewKind[keyof typeof JoinLinkPreviewKind];
+
+
+export const JoinLinkPreviewKind = {
+  invite: 'invite',
+  apply: 'apply',
+} as const;
+
+export type JoinLinkPreviewState = typeof JoinLinkPreviewState[keyof typeof JoinLinkPreviewState];
+
+
+export const JoinLinkPreviewState = {
+  active: 'active',
+  used: 'used',
+  expired: 'expired',
+  revoked: 'revoked',
+  unavailable: 'unavailable',
+} as const;
+
+export interface JoinLinkPreview {
+  alreadyMember?: boolean;
+  applicationStatus?: JoinLinkPreviewApplicationStatus;
+  kind: JoinLinkPreviewKind;
+  name?: string;
+  slug?: string;
+  state: JoinLinkPreviewState;
 }
 
 export type JoinRequestStatus = typeof JoinRequestStatus[keyof typeof JoinRequestStatus];
@@ -963,9 +1006,12 @@ export interface JoinRequest {
   decidedAt?: string | null;
   /** @nullable */
   decidedBy?: string | null;
+  /** @nullable */
+  decidedByName?: string | null;
   displayName?: string;
   id: string;
   linkId: string;
+  linkNote?: string;
   name?: string;
   status: JoinRequestStatus;
   tenantId: string;
@@ -998,9 +1044,56 @@ export interface Member {
   version: number;
 }
 
+export type MemberJoinEventMethod = typeof MemberJoinEventMethod[keyof typeof MemberJoinEventMethod];
+
+
+export const MemberJoinEventMethod = {
+  workspace_created: 'workspace_created',
+  invitation: 'invitation',
+  application: 'application',
+  directory: 'directory',
+} as const;
+
+export interface MemberJoinEvent {
+  actorDisplayName: string;
+  actorUserId: string;
+  id: string;
+  /** @nullable */
+  invitationId?: string | null;
+  /** @nullable */
+  invitationNote?: string | null;
+  joinedAt: string;
+  /** @nullable */
+  linkNote?: string | null;
+  method: MemberJoinEventMethod;
+  /** @nullable */
+  requestId?: string | null;
+  tenantId: string;
+  userId: string;
+}
+
+/**
+ * @nullable
+ */
+export type MemberListItemJoinMethod = typeof MemberListItemJoinMethod[keyof typeof MemberListItemJoinMethod] | null;
+
+
+export const MemberListItemJoinMethod = {
+  workspace_created: 'workspace_created',
+  invitation: 'invitation',
+  application: 'application',
+  directory: 'directory',
+} as const;
+
 export interface MemberListItem {
+  /** @nullable */
+  actorDisplayName?: string | null;
   displayName: string;
   id: string;
+  /** @nullable */
+  joinMethod?: MemberListItemJoinMethod;
+  /** @nullable */
+  joinedAt?: string | null;
   role: string;
   status: string;
   tenantId: string;
@@ -2905,6 +2998,19 @@ export type PostApiV1JoinInvitationsRedeemBody = {
   token: string;
 };
 
+export type PostApiV1JoinLinksPreviewBodyKind = typeof PostApiV1JoinLinksPreviewBodyKind[keyof typeof PostApiV1JoinLinksPreviewBodyKind];
+
+
+export const PostApiV1JoinLinksPreviewBodyKind = {
+  invite: 'invite',
+  apply: 'apply',
+} as const;
+
+export type PostApiV1JoinLinksPreviewBody = {
+  kind: PostApiV1JoinLinksPreviewBodyKind;
+  token: string;
+};
+
 export type PostApiV1JoinRequestsBody = {
   token: string;
 };
@@ -3339,6 +3445,8 @@ export type GetApiV1TenantsTidInvitations200 = {
 };
 
 export type PostApiV1TenantsTidInvitationsBody = {
+  /** @maxLength 200 */
+  note?: string;
   token: string;
 };
 
@@ -4022,6 +4130,8 @@ export type GetApiV1TenantsTidJoinLinks200 = {
 };
 
 export type PostApiV1TenantsTidJoinLinksBody = {
+  /** @maxLength 200 */
+  note?: string;
   token: string;
 };
 
@@ -4147,6 +4257,23 @@ export type PutApiV1TenantsTidMembersUidBody = {
   status: PutApiV1TenantsTidMembersUidBodyStatus;
   /** @minimum 0 */
   version?: number;
+};
+
+export type GetApiV1TenantsTidMembersUidJoinHistoryParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Exclusive UUID cursor; Agent sessions use descending (createdAt, id), other lists use ascending stable ordering.
+ */
+after?: string;
+};
+
+export type GetApiV1TenantsTidMembersUidJoinHistory200 = {
+  items: MemberJoinEvent[];
+  nextCursor: string;
 };
 
 export type PostApiV1TenantsTidOperationsOidRetryBody = {

@@ -90,6 +90,7 @@ func Document() map[string]any {
 	s["Invitation"] = object(obj{"id": uuid(), "tenantId": uuid(), "createdBy": uuid(), "createdAt": timestamp(), "expiresAt": timestamp(), "revokedAt": optional(timestamp()), "consumedBy": optional(uuid()), "consumedAt": optional(timestamp()), "version": number()}, "id", "tenantId", "createdBy", "createdAt", "expiresAt", "version")
 	s["JoinLink"] = object(obj{"id": uuid(), "tenantId": uuid(), "createdBy": uuid(), "createdAt": timestamp(), "expiresAt": timestamp(), "revokedAt": optional(timestamp()), "version": number()}, "id", "tenantId", "createdBy", "createdAt", "expiresAt", "version")
 	s["JoinRequest"] = object(obj{"id": uuid(), "tenantId": uuid(), "userId": uuid(), "linkId": uuid(), "status": enumeration("pending", "approved", "rejected"), "createdAt": timestamp(), "decidedAt": optional(timestamp()), "decidedBy": optional(uuid()), "version": number(), "name": str(), "displayName": str()}, "id", "tenantId", "userId", "linkId", "status", "createdAt", "version")
+	joinManagementSchemas(s)
 	// issue_run.thread_appended / issue_run.thread_changed address one agent run's Thread (Thread
 	// D5): issueId and runId name it and lastSeq is only a hint — the Thread GET alone moves a
 	// client's cursor. Every other event omits the three fields.
@@ -521,6 +522,9 @@ func Document() map[string]any {
 		if public || r.Action == "access" || r.Action == "admit" {
 			security = []any{obj{"serviceCredential": []string{}, "userCredential": []string{}}}
 		}
+		if r.Path == core.JoinLinkPreviewPath {
+			security = []any{obj{"serviceCredential": []string{}}, obj{"serviceCredential": []string{}, "userCredential": []string{}}}
+		}
 		description := description(r)
 		response, status := responseSchema(r)
 		responseDescription := "Successful command or resource response"
@@ -553,7 +557,7 @@ func Document() map[string]any {
 		// Restoring the default git identity needs no idempotency record (there is no tenant to scope
 		// one to): an identity that is already the default restores as a no-op, so a retry is safe.
 		credentialWrite := r.Method == "PUT" && strings.HasPrefix(r.Path, "/api/v1/me/model-connections/") && strings.HasSuffix(r.Path, "/credential")
-		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite || personalAgentPath(r.Path) && r.Method == "PUT") && r.Path != "/api/v1/me/git-identity" {
+		if public && (r.Method == "POST" || r.Method == "DELETE" || credentialWrite || personalAgentPath(r.Path) && r.Method == "PUT") && r.Path != "/api/v1/me/git-identity" && r.Path != core.JoinLinkPreviewPath {
 			keyScope := "Scoped to tenant and user."
 			// The personal routes are keyed on the verified user alone: a slot mapping is a
 			// (user_id, slot_name) row and a personal connection is the user's, so neither is scoped
@@ -725,6 +729,9 @@ func snapshotFormPath(path string) bool {
 }
 
 func isList(r router.Route) bool {
+	if strings.HasSuffix(r.Path, "/join-history") {
+		return r.Method == "GET"
+	}
 	if isRepositoryRoute(r) {
 		return repositoryList(r)
 	}
@@ -735,6 +742,12 @@ func isList(r router.Route) bool {
 }
 
 func responseSchema(r router.Route) (schema obj, status string) {
+	if r.Path == core.JoinLinkPreviewPath {
+		return ref("JoinLinkPreview"), "200"
+	}
+	if strings.HasSuffix(r.Path, "/join-history") {
+		return object(obj{"items": array(ref("MemberJoinEvent")), "nextCursor": str()}, "items", "nextCursor"), "200"
+	}
 	if personalAgentPath(r.Path) {
 		if r.Method == "GET" {
 			return ref("PersonalAgentConfigurationContext"), "200"
@@ -1123,6 +1136,9 @@ func responseSchema(r router.Route) (schema obj, status string) {
 }
 
 func optionalField(name string, r router.Route) bool {
+	if name == "note" {
+		return true
+	}
 	if personalAgentPath(r.Path) {
 		return name == "connectionId" || name == "modelId"
 	}
@@ -1171,6 +1187,12 @@ func optionalField(name string, r router.Route) bool {
 }
 
 func inputSchema(name string, r router.Route) obj {
+	if name == "note" {
+		return obj{"type": "string", "maxLength": 200}
+	}
+	if r.Path == core.JoinLinkPreviewPath && name == "kind" {
+		return enumeration("invite", "apply")
+	}
 	if schema, ok := repositoryInput(name); ok && isRepositoryRoute(r) {
 		return schema
 	}
@@ -1287,6 +1309,12 @@ func summary(r router.Route) string {
 }
 
 func description(r router.Route) string {
+	if r.Path == core.JoinLinkPreviewPath {
+		return "Read-only bearer-link inspection. Requires a verified gateway service; an optional user credential must be caller-bound. Anonymous responses contain only kind and state. No identity, membership, request or idempotency writes occur. Same-origin and rate limiting apply at Gateway; response is no-store. Corporate directory deployments disable this route."
+	}
+	if strings.HasSuffix(r.Path, "/join-history") {
+		return "Administrator-only, tenant-scoped member admission history. Ordinary members cannot read provenance. Historical memberships without authoritative records remain unknown. Ascending UUID pagination; clients may sort the complete history by joinedAt."
+	}
 	if isRepositoryRoute(r) {
 		return repositoryDescription(r)
 	}

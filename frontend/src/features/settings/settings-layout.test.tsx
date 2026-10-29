@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { GeneralSettingsPage } from '@/features/settings/general-settings-page'
@@ -37,8 +37,13 @@ describe('SettingsLayout', () => {
 
     expect(await screen.findByDisplayValue('Cloud Dev')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: '成员' }))
+    const navigation = within(screen.getByRole('navigation', { name: '设置导航' }))
+    const memberLink = navigation.getByRole('link', { name: '成员' })
+    expect(memberLink).toHaveAttribute('href', '/w/cloud-dev/settings/members')
+    memberLink.focus()
+    await user.keyboard('{Enter}')
     expect(await screen.findByText('Members screen')).toBeInTheDocument()
+    expect(memberLink).toHaveAttribute('aria-current', 'page')
   })
 
   it('links the Git 身份 tab to the git identity route', async () => {

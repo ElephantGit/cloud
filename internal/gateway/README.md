@@ -23,6 +23,8 @@
 
 ## 不变量
 
+唯一无用户会话的业务代理例外是确切的 `POST /api/v1/join/links/preview`：先校验同源和限流、移除浏览器身份头，以 Gateway 服务凭据转发；可选用户身份只来自已解析会话。其余路径保持会话要求。预检响应 `no-store`，且不回传人员或原文令牌。
+
 个人模型 Key 的 `.../model-connections/:id/credential` 请求在完成同一会话/同源检查与内部签名后，
 只转给固定的 HTTPS model-gateway；Cloud 上游永远不作为该路径的回退。非法 ID 和路径变体也不能
 让原始 Key 落入 Cloud。Gateway 仅挂载该服务的公开 CA，不取得其加密主密钥或 TLS 私钥。

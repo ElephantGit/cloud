@@ -17,6 +17,8 @@ Browser entry point and composition root. This layer only wires things together:
 
 ## Submodules
 
+Private `/join/invite/:token` and `/join/apply/:token` routes inspect links before the session gate. Login and actual admission retain their own authentication boundaries.
+
 | Directory | Description |
 | --- | --- |
 | `api/` | **Generated** by orval; never hand-edited, see [`../README.en.md`](../README.en.md). |

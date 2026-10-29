@@ -133,7 +133,7 @@ func (s *Store) Public(ctx context.Context, r *PublicRequest) (Object, int, erro
 		}
 		// Force-stop resolves the ordinary Workspace before checking administrator status. Hidden
 		// run Workspaces must remain 404 for every tenant role, including ordinary members.
-		isAdmin := r.SpaceID == "" && (strings.HasSuffix(r.Path, "/resource-status") || (r.UserID != "" && r.Method == "PUT") || strings.Contains(r.Path, "/invitations") || strings.Contains(r.Path, "/join-links") || strings.Contains(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/members/huawei"))
+		isAdmin := r.SpaceID == "" && (strings.HasSuffix(r.Path, "/resource-status") || strings.HasSuffix(r.Path, "/join-history") || (r.UserID != "" && r.Method == "PUT") || strings.Contains(r.Path, "/invitations") || strings.Contains(r.Path, "/join-links") || strings.Contains(r.Path, "/join-requests") || strings.HasSuffix(r.Path, "/members/huawei"))
 		membership(t, r.TenantID, uid, isAdmin)
 		refreshRuntimeControls(t)
 		if r.Method == "GET" {
@@ -551,12 +551,14 @@ func readPublic(t *transaction, r *PublicRequest, uid string, scheduledTaskAccep
 		}
 	}
 	switch {
+	case strings.HasSuffix(r.Path, "/join-history"):
+		return memberJoinHistory(t, r)
 	case strings.HasSuffix(r.Path, "/invitations") || strings.HasSuffix(r.Path, "/join-links") || strings.HasSuffix(r.Path, "/join-requests"):
 		return adminJoinRead(t, r)
 	case strings.HasSuffix(r.Path, "/spaces"):
 		return listSpaces(t, r, uid)
 	case strings.HasSuffix(r.Path, "/members"):
-		return page(t, "SELECT m.user_id AS id,m.tenant_id,m.user_id,m.role,m.status,m.version,u.display_name FROM tenant_memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1", []any{r.TenantID}, "m.user_id", r)
+		return memberRoster(t, r, uid)
 	case strings.HasSuffix(r.Path, "/thread/preview"):
 		return threadPreviewRead(t, t.store, r)
 	case strings.HasSuffix(r.Path, "/thread"):

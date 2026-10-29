@@ -67,6 +67,9 @@ database stores only its SHA-256 digest, and the creator assembles the share URL
 
 - Links can be revoked (a versioned `DELETE`). Expired, revoked and already-redeemed tokens all return
   `404 join_link_unavailable`.
+- `POST /api/v1/join/links/preview` performs read-only inspection. Gateway enforces same-origin and rate limits; Cloud still verifies the gateway service. Anonymous responses contain only kind and state. Verified users may receive their own membership/pending status and workspace confirmation. Inspection never provisions identity or consumes tokens; `params.reason` distinguishes used, expired, revoked and unavailable without changing the redemption error code.
+- Existing active members accepting ordinary invitations receive their membership without consuming the invitation or changing roles. Disabled members still need valid admission. Submission revalidates transactionally after inspection.
+- Link notes do not bind a recipient. Administrators read creator/consumer metadata and application counts. New/restored membership appends `membership_join_events` atomically. `GET /tenants/:tid/members/:uid/join-history` is administrator-only; unproven historical provenance remains unknown rather than inferred from old redemptions.
 - An existing member who applies again gets `409 already_member`; a person has at most one pending
   application.
 - Redeeming and applying happen before the user is a member, so their idempotency records are kept
@@ -125,6 +128,8 @@ Runtime content (what is inside a particular Workspace) has finer rules: only it
 administrators may use it; see [Runtime control](../runtime/runtime-control.en.md).
 
 ## Related decisions
+
+- [Member entry provenance and private link preview](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20261027-member-entry-provenance-and-link-preview.md) (approved): this implementation provides non-consuming ordinary-invitation no-ops, read-only preview, and atomic provenance for real membership transitions. Targeted squads and issuer-revocation policy belong to the subsequent implementation; ordinary-link preview does not establish those guarantees.
 
 - [Each visible collaboration space corresponds to one tenant, authorized by tenant membership](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/20260923-one-space-per-tenant.md)
 - [Signed-in users provision tenants themselves; the tenant becomes the implicit container of the space](https://github.com/ora-space/specs/blob/main/decisions/cloud/tenancy/0-self-serve-tenant-provisioning.md)

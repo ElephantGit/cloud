@@ -86,10 +86,12 @@ import type {
   IssueStatus,
   IssueView,
   JoinLink,
+  JoinLinkPreview,
   JoinRequest,
   JoinedMembership,
   Label,
   PostApiV1JoinInvitationsRedeemBody,
+  PostApiV1JoinLinksPreviewBody,
   PostApiV1JoinRequestsBody,
   PostApiV1TenantsBody,
   PostApiV1TenantsTidInvitationsBody,
@@ -240,6 +242,74 @@ export const usePostApiV1JoinInvitationsRedeem = <TError = ErrorType<Error>,
         TContext
       > => {
       return useMutation(getPostApiV1JoinInvitationsRedeemMutationOptions(options), queryClient);
+    }
+    /**
+ * Read-only bearer-link inspection. Requires a verified gateway service; an optional user credential must be caller-bound. Anonymous responses contain only kind and state. No identity, membership, request or idempotency writes occur. Same-origin and rate limiting apply at Gateway; response is no-store. Corporate directory deployments disable this route.
+ * @summary POST /api/v1/join/links/preview
+ */
+export const postApiV1JoinLinksPreview = (
+    postApiV1JoinLinksPreviewBody: PostApiV1JoinLinksPreviewBody,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<JoinLinkPreview>(
+      {url: `/api/v1/join/links/preview`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiV1JoinLinksPreviewBody, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPostApiV1JoinLinksPreviewMutationKey = () => ['postApiV1JoinLinksPreview'] as const;
+
+export const getPostApiV1JoinLinksPreviewMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>, TError,PostApiV1JoinLinksPreviewMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>, TError,PostApiV1JoinLinksPreviewMutationVariables, TContext> => {
+
+const mutationKey = getPostApiV1JoinLinksPreviewMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>, PostApiV1JoinLinksPreviewMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  postApiV1JoinLinksPreview(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostApiV1JoinLinksPreviewMutationResult = NonNullable<Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>>
+    export type PostApiV1JoinLinksPreviewMutationBody = PostApiV1JoinLinksPreviewBody
+    export type PostApiV1JoinLinksPreviewMutationError = ErrorType<Error>
+    export type PostApiV1JoinLinksPreviewMutationVariables = {data: PostApiV1JoinLinksPreviewBody}
+
+    /**
+ * @summary POST /api/v1/join/links/preview
+ */
+export const usePostApiV1JoinLinksPreview = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>, TError,PostApiV1JoinLinksPreviewMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof postApiV1JoinLinksPreview>>,
+        TError,
+        PostApiV1JoinLinksPreviewMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostApiV1JoinLinksPreviewMutationOptions(options), queryClient);
     }
     /**
  * Submits an application from a valid, unrevoked, thirty-day reusable link after login. The applicant receives no tenant access before an administrator approves it.

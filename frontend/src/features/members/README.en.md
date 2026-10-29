@@ -25,4 +25,8 @@ Depends on `features/spaces/current-space`, `features/auth/providers`, the gener
 
 ## Testing
 
+The default roster is separate from administrator-only requests and join links. `member-roster.tsx` owns member actions and admission history; `join-links.tsx` and `join-requests.tsx` own entry management. `create-link-dialog.tsx` owns transient plaintext and close confirmation; `browser.ts` owns clipboard, local dates and expiry refresh. `directory-add.tsx` preserves directory admission. `translations.ts` owns member and joining copy in both languages.
+
+Notes identify links without binding a recipient. Closing the generation dialog or switching spaces discards plaintext; copying again adds no uses. Unknown historical provenance is never inferred from a redemption. Ordinary members never fetch management history.
+
 MSW verifies real endpoints, strict request bodies, and controls for each deployment mode.

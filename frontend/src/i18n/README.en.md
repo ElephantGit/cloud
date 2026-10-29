@@ -4,6 +4,8 @@
 
 ## Responsibility
 
+Resources compose workflow and member/join messages. `features/members/translations.ts` owns the latter vocabulary, also consumed by anonymous join pages.
+
 The i18next instance, locale persistence, and the composition of feature-owned
 message bundles into the resource maps. Only the **business-agnostic** machinery
 lives here; every individual string belongs to the feature that declares it.

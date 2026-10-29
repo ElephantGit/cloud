@@ -61,6 +61,11 @@ func NewIssuer(issuer, audience, serviceSubject string, service, user SigningKey
 // ServiceSubject is the stable caller identity bound into every user credential.
 func (i *Issuer) ServiceSubject() string { return i.serviceSubject }
 
+func (i *Issuer) issueService() (string, error) {
+	now := i.now()
+	return sign(i.service, &core.Claims{RegisteredClaims: jwt.RegisteredClaims{Issuer: i.issuer, Subject: i.serviceSubject, Audience: jwt.ClaimStrings{i.audience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(i.lifetime))}, Kind: "service", Role: "gateway"})
+}
+
 // Issue signs a service credential and a user credential for one resolved session. The user
 // credential's caller equals this issuer's service subject so Cloud's caller binding holds.
 func (i *Issuer) Issue(identity VerifiedIdentity) (Credentials, error) {

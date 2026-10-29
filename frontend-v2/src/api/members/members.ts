@@ -28,6 +28,8 @@ import type {
   Error,
   GetApiV1TenantsTidMembers200,
   GetApiV1TenantsTidMembersParams,
+  GetApiV1TenantsTidMembersUidJoinHistory200,
+  GetApiV1TenantsTidMembersUidJoinHistoryParams,
   HuaweiMember,
   Member,
   PostApiV1TenantsTidMembersHuaweiBody,
@@ -297,3 +299,111 @@ export const usePutApiV1TenantsTidMembersUid = <TError = ErrorType<Error>,
       > => {
       return useMutation(getPutApiV1TenantsTidMembersUidMutationOptions(options), queryClient);
     }
+    /**
+ * Administrator-only, tenant-scoped member admission history. Ordinary members cannot read provenance. Historical memberships without authoritative records remain unknown. Ascending UUID pagination; clients may sort the complete history by joinedAt.
+ * @summary GET /api/v1/tenants/:tid/members/:uid/join-history
+ */
+export const getApiV1TenantsTidMembersUidJoinHistory = (
+    tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<GetApiV1TenantsTidMembersUidJoinHistory200>(
+      {url: `/api/v1/tenants/${tid}/members/${uid}/join-history`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetApiV1TenantsTidMembersUidJoinHistoryQueryKey = (tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams,) => {
+    return [
+    `/api/v1/tenants/${tid}/members/${uid}/join-history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetApiV1TenantsTidMembersUidJoinHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError = ErrorType<Error>>(tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1TenantsTidMembersUidJoinHistoryQueryKey(tid,uid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>> = ({ signal }) => getApiV1TenantsTidMembersUidJoinHistory(tid,uid,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && uid !== null && uid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1TenantsTidMembersUidJoinHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>>
+export type GetApiV1TenantsTidMembersUidJoinHistoryQueryError = ErrorType<Error>
+
+
+export function useGetApiV1TenantsTidMembersUidJoinHistory<TData = Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError = ErrorType<Error>>(
+ tid: string,
+    uid: string,
+    params: undefined |  GetApiV1TenantsTidMembersUidJoinHistoryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidMembersUidJoinHistory<TData = Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError = ErrorType<Error>>(
+ tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1TenantsTidMembersUidJoinHistory<TData = Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError = ErrorType<Error>>(
+ tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary GET /api/v1/tenants/:tid/members/:uid/join-history
+ */
+
+export function useGetApiV1TenantsTidMembersUidJoinHistory<TData = Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError = ErrorType<Error>>(
+ tid: string,
+    uid: string,
+    params?: GetApiV1TenantsTidMembersUidJoinHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1TenantsTidMembersUidJoinHistory>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1TenantsTidMembersUidJoinHistoryQueryOptions(tid,uid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+

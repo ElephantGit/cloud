@@ -15,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/wanglongan587/cloud/internal/core"
 )
 
 // Options wires the Gateway HTTP boundary. Every dependency is injected; the handler holds no
@@ -241,6 +243,10 @@ func (h *handler) logout(c *gin.Context) {
 func (h *handler) relay(c *gin.Context) {
 	if mutating(c.Request.Method) && !SameOrigin(c.Request, h.PublicOrigin) {
 		h.fail(c, fault{"origin_forbidden", http.StatusForbidden})
+		return
+	}
+	if c.Request.Method == http.MethodPost && c.Request.URL.Path == core.JoinLinkPreviewPath {
+		h.previewJoinLink(c)
 		return
 	}
 	cookie, e := c.Request.Cookie(h.Cookies.SessionCookieName())

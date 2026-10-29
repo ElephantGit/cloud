@@ -18,7 +18,7 @@ func operationWaitDBThrough(t *testing.T, through string) *Store {
 	t.Helper()
 	config := coreTestDatabaseConfig(t)
 	admin := stdlib.OpenDB(*config)
-	schema := "p386_" + newID()[:8]
+	schema := "operation_wait_" + newID()[:8]
 	if _, err := admin.Exec("CREATE SCHEMA " + pgx.Identifier{schema}.Sanitize()); err != nil {
 		t.Fatal(err)
 	}

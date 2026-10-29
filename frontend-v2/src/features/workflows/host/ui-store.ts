@@ -1,16 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-/** The library column's width, and whether it is folded away. */
-export interface WorkflowSidebarLayout {
-  width: number;
-  collapsed: boolean;
-}
-
-export const defaultWorkflowSidebar: WorkflowSidebarLayout = {
-  width: 256,
-  collapsed: false,
-};
+/** The library column's starting layout, the same as the chat history's. */
+export const defaultWorkflowSidebar = { width: 288, collapsed: false };
 
 /**
  * The slice of desktop's app UI store the editor reads, plus the library column's layout. In
@@ -34,8 +26,7 @@ export const useUiStore = create<WorkflowUiState>()(
       sidebarCollapsed: defaultWorkflowSidebar.collapsed,
       sidebarWidth: defaultWorkflowSidebar.width,
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-      setSidebarWidth: (width) =>
-        set({ sidebarWidth: width, sidebarCollapsed: false }),
+      setSidebarWidth: (width) => set({ sidebarWidth: width }),
       setWorkflowEditorOpen: (open) => {
         if (!open) set({ sidebarCollapsed: false });
       },

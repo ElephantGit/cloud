@@ -31,6 +31,7 @@ import {
   Input,
   cn,
 } from "../host/ui";
+import { subtleScrollbar } from "@/lib/scrollbar";
 /** Sidebar row identity; the canvas hydrates the full graph separately. */
 export interface WorkflowLibraryItem {
   id: string;
@@ -194,7 +195,8 @@ export function WorkflowManager({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="px-2 pb-3">
+      {/* pt-1 leaves room for the input's focus ring, which the clipped column would cut. */}
+      <div className="px-2 pt-1 pb-3">
         <div className="relative min-w-0">
           <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -253,7 +255,12 @@ export function WorkflowManager({
           {error}
         </p>
       )}
-      <div className="min-h-0 min-w-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3",
+          subtleScrollbar,
+        )}
+      >
         {visibleWorkflows.map((workflow) => {
           const selected = workflow.id === selectedWorkflowId;
           return (

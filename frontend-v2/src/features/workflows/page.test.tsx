@@ -63,8 +63,8 @@ describe("workflow page", () => {
 
     edge.focus();
     await user.keyboard("{ArrowRight}");
-    expect(edge).toHaveAttribute("aria-valuenow", "272");
-    expect(library()).toHaveStyle({ width: "272px" });
+    expect(edge).toHaveAttribute("aria-valuenow", "304");
+    expect(library()).toHaveStyle({ width: "304px" });
 
     useUiStore.setState({ sidebarWidth: 200 });
     await user.keyboard("{ArrowLeft}");

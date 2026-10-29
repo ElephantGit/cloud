@@ -513,6 +513,7 @@ func newRouter(store *core.Store, auth *core.Authenticator, log *zap.Logger, leg
 				}
 			} else {
 				out, e = store.Control(c.Request.Context(), &core.ControlRequest{Action: route.Action, OperationID: c.Param("oid"), EffectID: c.Param("eid"), TicketID: c.Param("ticket"), Body: body, Service: service, Identity: user})
+				legacyOperationResponse(out)
 				// The retired development Node JSON contract keeps its historical resource shape.
 				// Model capability belongs to the production Controller gRPC registration/record.
 				if strings.HasPrefix(route.Action, "node_") {

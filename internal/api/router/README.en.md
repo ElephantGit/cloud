@@ -11,6 +11,7 @@
 - The default body cap is 64 KiB. `ThreadMessagePath` and `TaskConversationMessagesPath` have a separate 256 KiB cap to contain a legal message's JSON envelope; core still limits decoded text to 64 KiB.
 - The JSON decoder uses `UseNumber` and rejects unknown fields, extra JSON values and invalid types; query parsing follows each read entrypoint's constraints.
 - Ordinary requests go to `Store.Public`; archives, statistics and external-service checks use dedicated Store methods. Development management calls go to `Store.Control`.
+- Legacy development management JSON operation responses retain their original fields. The persistent scheduling counter travels only through production Controller gRPC snapshots and is removed by the HTTP adapter.
 - `core.ErrorCode` maps domain errors to safe Faults; unregistered paths return `404 not_found`.
 
 Task conversation adds `GET/POST /issues/:iid/conversation`, explicitly addressed Agent messages, pending-message cancel/retry, saved-result resume and explicit undelivered-result discard under the same member authentication and idempotency rules. URL `:mid` only identifies a pending message; callers never choose author or state. `POST .../conversation/stop` returns 202 and atomically requests cancellation plus a queue pause. Reads identify the current execution, earliest unresolved barrier, manual pause and `canStop`. Historical selection never changes the stop target; explicit recovery must address the earliest barrier.

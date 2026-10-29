@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
@@ -90,12 +91,12 @@ func TestP386JointServer(t *testing.T) {
 			Target bool   `json:"target"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, err.Error(), 400)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		scene, err := p386Seed(pool, request.Step, request.Target)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(scene)
@@ -109,7 +110,7 @@ func TestP386JointServer(t *testing.T) {
  'executions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.execution_id,'node',e.node_id,'input',e.input,'result',e.result,'created_at',e.created_at) ORDER BY e.created_at,e.execution_id) FROM clone_executions e WHERE e.operation_id=o.id),'[]'::jsonb))
  FROM operations o WHERE o.id=$1`, r.PathValue("id")).Scan(&body)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -119,24 +120,27 @@ func TestP386JointServer(t *testing.T) {
 		// Controlled age injection tests durable deadline classification, not a real 30-minute wait.
 		result, err := pool.Exec("UPDATE clone_executions SET created_at=clock_timestamp()-interval '1801 seconds' WHERE operation_id=$1 AND result IS NULL", r.PathValue("id"))
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		n, _ := result.RowsAffected()
 		if n != 1 {
-			http.Error(w, fmt.Sprintf("want one original execution, got %d", n), 409)
+			http.Error(w, fmt.Sprintf("want one original execution, got %d", n), http.StatusConflict)
 			return
 		}
-		w.WriteHeader(204)
+		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /stop", func(w http.ResponseWriter, _ *http.Request) { stopped <- struct{}{}; w.WriteHeader(204) })
+	mux.HandleFunc("POST /stop", func(w http.ResponseWriter, _ *http.Request) {
+		stopped <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /retire/{id}", func(w http.ResponseWriter, r *http.Request) {
 		// Scenario cleanup runs only after the Controller stopped and assertions were captured.
 		if _, err := pool.Exec("UPDATE operations SET state='blocked',error_code='joint_fixture_finished' WHERE id=$1 AND state NOT IN ('succeeded','failed')", r.PathValue("id")); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(204)
+		w.WriteHeader(http.StatusNoContent)
 	})
 	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = httpServer.Serve(fixture) }()

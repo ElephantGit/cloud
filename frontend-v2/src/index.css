@@ -5,6 +5,36 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * The chat's agent activity dots (src/features/chat/components/agent-activity-dots.tsx), timed
+ * as in desktop: each column of the 3x3 grid lights two dots that climb to the top, hold, and
+ * fall back, a third of the 1.2s cycle after its neighbour. Resting dots stay faintly visible so
+ * the grid keeps its shape.
+ */
+@theme {
+    --animate-dot-column-top: dot-column-top 1.2s linear infinite;
+    --animate-dot-column-middle: dot-column-middle 1.2s linear infinite;
+    --animate-dot-column-bottom: dot-column-bottom 1.2s linear infinite;
+
+    @keyframes dot-column-bottom {
+        0%, 10% { opacity: 0.15; }
+        13%, 36% { opacity: 1; }
+        39%, 71% { opacity: 0.15; }
+        74%, 97% { opacity: 1; }
+        100% { opacity: 0.15; }
+    }
+    @keyframes dot-column-middle {
+        0%, 20% { opacity: 0.15; }
+        23%, 87% { opacity: 1; }
+        90%, 100% { opacity: 0.15; }
+    }
+    @keyframes dot-column-top {
+        0%, 33% { opacity: 0.15; }
+        36%, 74% { opacity: 1; }
+        77%, 100% { opacity: 0.15; }
+    }
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;

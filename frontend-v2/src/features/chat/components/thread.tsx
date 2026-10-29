@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { isResponding } from '../model/conversation'
 import type { Conversation, Marker as MarkerData, Turn } from '../model/types'
 import { formatTokens } from './format'
-import { subtleScrollbar } from './scrollbar'
+import { subtleScrollbar } from '@/lib/scrollbar'
 import { AgentTurn, UserPrompt } from './turn'
 
 /** The conversation: each prompt anchors the scroll, so a new question settles near the top. */

@@ -21,6 +21,7 @@ const SessionCookie = "ora_session"
 
 // Store is what the handlers need from the database.
 type Store interface {
+	WorkflowStore
 	Ping(ctx context.Context) error
 	Login(ctx context.Context, who store.Identity, ttl time.Duration) (string, error)
 	Logout(ctx context.Context, token string) error
@@ -46,6 +47,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /auth/logout", h.logout)
 	mux.HandleFunc("GET /api/v1/me", h.authed(h.me))
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
+	h.workflowRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }

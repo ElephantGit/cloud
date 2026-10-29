@@ -2,7 +2,7 @@
 export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
 export type Target = { kind: 'chat'; prompt: string; agent: string; model: string } | { kind: 'workflow'; workflowId: string; snapshot: string; inputs: Record<string, string> }
 export type Run = { id: string; startedAt: string; status: 'running' | 'success' | 'failed'; target: Target; projectName: string; output: string }
-export type Task = { id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
+export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
 export type Draft = { name: string; kind: Target['kind']; projectId: string; prompt: string; agent: string; model: string; workflowId: string; snapshot: string; inputs: Record<string, string>; rule: Rule }
 export type Catalog = { projects: { id: string; name: string; description: string }[]; workflows: { id: string; name: string; description: string; versions: string[]; fields: { key: string; name: string; placeholder: string; required: boolean }[] }[] }
 export const catalog: Catalog = {
@@ -15,7 +15,7 @@ export const catalog: Catalog = {
 }
 export const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
 export function emptyDraft(): Draft {
-  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: 'Ora Assistant', model: '演示默认模型', workflowId: '', snapshot: '', inputs: {}, rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
+  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: '', model: '', workflowId: '', snapshot: '', inputs: {}, rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
 }
 export function taskDraft(task: Task): Draft {
   const d = emptyDraft()

@@ -1,25 +1,9 @@
 # 定时任务
 
-采用列表与右侧抽屉管理任务，支持搜索筛选、创建、编辑、暂停恢复、删除、模拟运行和结果查看。
+列表与右侧抽屉支持保存、编辑、暂停和恢复无项目文本任务配置，配置通过 v2-server 持久化，刷新后保留。工作流、项目、模型选择、执行、删除和历史尚未接入；界面不会生成模拟运行结果。
 
-目前使用 `mock-store.ts` 的内存数据，刷新恢复样例；不调用任务后端、模型或真实调度。应用外壳仍使用现有登录服务。
+时间规则支持每天、工作日、每周及固定小时间隔；日历规则按任务时区预览，间隔以创建时间为起点。预览不代表调度已启用。
 
-直接对话项目可选，每次独立执行；工作流必须选择项目、已发布版本并填写必填参数。执行参数和项目名称在运行时保留快照，编辑不改写历史。暂停保留历史，手动模拟不会恢复启用。
+临时 v2 配置接口由 `v2-server/schedules.openapi.json` 描述，使用 `npm run api:generate:schedules` 生成本功能客户端；正式 Cloud 的接口缺口见 v2-server README。会话和租户继续通过正式生成客户端读取。
 
-时间规则支持每天、工作日、每周及固定小时间隔。日历规则按任务时区计算，跳过夏令时不存在的时间；间隔规则以创建时间为起点。
-
-## 界面组件
-
-列表和表单采用项目已有的 shadcn/ui（Base UI）与 Tailwind CSS，控件由官方 CLI 生成。界面使用中性色、Geist 字体、紧凑的统计摘要和表格，保留右侧抽屉配置及运行结果。功能内的语义颜色变量仅作用于定时任务；工作流用少量强调色，成功和失败同时用图标及文字表示。
-
-`schedule-table.tsx` 负责表格展示与开关；`schedule-form.tsx` 使用 Field、Input、Textarea、NativeSelect 和 ToggleGroup 组织配置。窄屏下表格在自身容器横向滚动，页面和抽屉保持视口宽度。
-
-## 本地预览
-
-在 frontend-v2 运行 `npm run dev -- --port 5188`，访问 `/schedules`。后端登录服务默认使用 8090。旧 variant 参数不再影响布局。
-
-## 验证
-
-`npm run check` 运行类型检查、lint、单元测试和构建。
-
-`npm run e2e` 使用默认 Playwright 配置，自动启动前端（5174）和 v2-server（8091），在本地与 CI 中运行 `e2e/schedules.spec.ts` 的定时任务闭环测试及其他页面测试。可用 `PW_CHROMIUM_PATH` 指定本机 Chromium。
+`npm run check` 运行类型检查、lint、单元测试和构建。`npm run e2e` 使用真实 v2-server 与 PostgreSQL 验证页面；可通过 `E2E_DATABASE_URL` 和 `PW_CHROMIUM_PATH` 指定数据库与浏览器。

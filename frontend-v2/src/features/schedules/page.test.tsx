@@ -1,56 +1,28 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Page from './page'
-import { ScheduleForm } from './schedule-form'
-import { useMockSchedules } from './mock-store'
+import * as api from './api/generated'
 
-beforeEach(() => { useMockSchedules.getState().reset() })
-it('filters the list while retaining paused tasks', async () => {
-  const user = userEvent.setup()
-  render(<MemoryRouter><Page /></MemoryRouter>)
-  await user.click(screen.getByRole('switch', { name: '每日 AI 简报启用状态' }))
-  await user.selectOptions(screen.getByLabelText('状态筛选'), 'paused')
-  expect(screen.getAllByRole('switch')).toHaveLength(2)
-  expect(screen.getByRole('table')).toBeInTheDocument()
+vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant' }] }, isLoading: false, isError: false }) }))
+vi.mock('./api/generated', () => ({ listScheduleConfigs: vi.fn(), createScheduleConfig: vi.fn(), updateScheduleConfig: vi.fn(), setScheduleConfigEnabled: vi.fn() }))
+const item = { id: 'task-1', name: '早报', projectId: '', target: { kind: 'chat' as const, prompt: '摘要', agent: 'a', model: 'm' }, rule: { kind: 'daily' as const, time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' }, enabled: true, version: 1, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', runs: [] }
+function renderPage() { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); return render(<QueryClientProvider client={client}><Page /></QueryClientProvider>) }
+beforeEach(() => { HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }; HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }; vi.clearAllMocks(); vi.mocked(api.listScheduleConfigs).mockResolvedValue({ items: [item], nextCursor: '' }) })
+it('loads persistent configurations and disables unimplemented execution', async () => { renderPage(); expect(await screen.findByText('早报')).toBeInTheDocument(); expect(api.listScheduleConfigs).toHaveBeenCalledWith('tenant'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); expect(screen.getByText(/立即运行和运行历史尚未接入/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: /模拟运行/ })).not.toBeInTheDocument() })
+it('creates a text configuration through the generated client', async () => { vi.mocked(api.createScheduleConfig).mockResolvedValue({ ...item, name: '新任务' }); renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: '新建任务' })); fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '新任务' } }); fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '摘要' } }); await userEvent.click(screen.getByRole('button', { name: '创建并启用' })); await waitFor(() => expect(api.createScheduleConfig).toHaveBeenCalledWith('tenant', expect.objectContaining({ name: '新任务', projectId: '', target: expect.objectContaining({ kind: 'chat', prompt: '摘要' }) }))) })
+it('shows a load failure instead of sample tasks', async () => { vi.mocked(api.listScheduleConfigs).mockRejectedValue(new Error('offline')); renderPage(); expect(await screen.findByRole('alert')).toHaveTextContent('加载失败'); expect(screen.queryByText('早报')).not.toBeInTheDocument() })
+it('preserves edit input and blocks resubmission after version conflict', async () => {
+  vi.mocked(api.updateScheduleConfig).mockRejectedValue({ isAxiosError: true, response: { status: 409 } })
+  renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); await userEvent.click(screen.getByRole('button', { name: '编辑' }));
+  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '我的修改' } }); await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('已被其他操作修改'); expect(screen.getByLabelText('任务名称')).toHaveValue('我的修改'); expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled(); expect(api.updateScheduleConfig).toHaveBeenCalledWith('tenant', 'task-1', expect.objectContaining({ version: 1 }))
 })
-it('keeps both execution drafts, validates project and workflow inputs, and submits only on valid input', async () => {
-  const user = userEvent.setup()
-  const onSave = vi.fn()
-  render(<ScheduleForm onSave={onSave} onCancel={() => {}} />)
-  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '发布检查任务' } })
-  fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '保留这段指令' } })
-  await user.click(screen.getByRole('button', { name: /运行工作流/ }))
-  await user.click(screen.getByRole('button', { name: /发布检查/ }))
-  await user.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(onSave).not.toHaveBeenCalled()
-  expect(screen.getByText('运行工作流需要项目，请选择运行环境')).toBeInTheDocument()
-  expect(screen.getByText('请填写检查分支')).toBeInTheDocument()
-  fireEvent.change(screen.getByRole('textbox', { name: /检查分支/ }), { target: { value: 'main' } })
-  expect(screen.queryByText('请填写检查分支')).not.toBeInTheDocument()
-  expect(screen.getByText('运行工作流需要项目，请选择运行环境')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: /直接对话/ }))
-  expect(screen.getByLabelText('任务指令')).toHaveValue('保留这段指令')
-  await user.click(screen.getByRole('button', { name: /运行工作流/ }))
-  await user.selectOptions(screen.getByRole('combobox', { name: '关联项目' }), 'website')
-  fireEvent.change(screen.getByLabelText('检查分支 *'), { target: { value: 'main' } })
-  await user.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'workflow', projectId: 'website', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main' } }))
-})
-it('validates weekly scheduling and accepts unscoped chat', async () => {
-  const user = userEvent.setup()
-  const onSave = vi.fn()
-  render(<ScheduleForm onSave={onSave} onCancel={() => {}} />)
-  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '每日简报' } })
-  fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '总结资讯' } })
-  expect(screen.getByRole('combobox', { name: '关联项目' })).toHaveValue('')
-  await user.selectOptions(screen.getByLabelText('重复频率'), 'weekly')
-  await user.click(within(screen.getByRole('group', { name: '执行星期' })).getByRole('button', { name: '星期一' }))
-  await user.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(onSave).not.toHaveBeenCalled()
-  expect(screen.getByText('请至少选择一天')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '星期五' }))
-  await user.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'chat', projectId: '', rule: expect.objectContaining({ days: [5] }) }))
+
+it('clears a previous edit conflict when opening a new task', async () => {
+  vi.mocked(api.updateScheduleConfig).mockRejectedValue({ isAxiosError: true, response: { status: 409 } })
+  renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); await userEvent.click(screen.getByRole('button', { name: '编辑' }));
+  await userEvent.click(screen.getByRole('button', { name: '保存修改' })); await screen.findByRole('alert'); await userEvent.click(screen.getByRole('button', { name: '关闭面板' }));
+  await userEvent.click(screen.getByRole('button', { name: '新建任务' })); expect(screen.getByRole('button', { name: '创建并启用' })).toBeEnabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })

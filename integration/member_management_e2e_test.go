@@ -606,10 +606,9 @@ func TestMembershipVisibilityAcrossTenants(t *testing.T) {
 	}
 }
 
-// TestActiveMemberRedeemsAndConsumesInvitation documents that redemption by an
-// already-active member neither changes roles nor frees the single-use link,
-// and that membership roles survive invitation redemption untouched.
-func TestActiveMemberRedeemsAndConsumesInvitation(t *testing.T) {
+// TestActiveMemberDoesNotConsumeInvitation keeps existing membership roles
+// intact and leaves the single-use invitation for someone who needs admission.
+func TestActiveMemberDoesNotConsumeInvitation(t *testing.T) {
 	f := setup(t)
 	bob, bobID := f.addUser(t, "bob", "Bob")
 	// Promote Bob so the assertion covers the strongest case: an invitation
@@ -622,17 +621,15 @@ func TestActiveMemberRedeemsAndConsumesInvitation(t *testing.T) {
 	if redeemed.S("role") != "admin" || redeemed.S("status") != "active" {
 		t.Fatalf("redemption must not rewrite an existing role: %v", redeemed)
 	}
-	// The link was consumed exactly once, by the redeemer.
-	if f.scalar("SELECT count(*) FROM tenant_invitations WHERE consumed_by=$1 AND consumed_at IS NOT NULL", bobID) != 1 {
-		t.Fatal("redemption did not record the consumer")
+	// An already-active member cannot burn a link meant for a new person.
+	if f.scalar("SELECT count(*) FROM tenant_invitations WHERE consumed_by=$1 AND consumed_at IS NOT NULL", bobID) != 0 {
+		t.Fatal("active member consumed the invitation")
 	}
-	// A second redemption under a fresh key is refused with the single code.
-	out := joinCall(t, f, bob, "POST", "/api/v1/join/invitations/redeem", "consume-redeem-2", core.Object{"token": token}, 404)
-	if codeOf(t, out) != "join_link_unavailable" {
-		t.Fatalf("second redemption: want join_link_unavailable got %s", out.S("code"))
-	}
-	// And nobody else can use the burned link.
-	joinCall(t, f, joinUser("carol"), "POST", "/api/v1/join/invitations/redeem", "consume-carol", core.Object{"token": token}, 404)
+	// Reopening under a fresh key is still a no-op for an existing member.
+	joinCall(t, f, bob, "POST", "/api/v1/join/invitations/redeem", "consume-redeem-2", core.Object{"token": token}, 200)
+	// The next newcomer consumes the invitation; later newcomers cannot use it.
+	joinCall(t, f, joinUser("carol"), "POST", "/api/v1/join/invitations/redeem", "consume-carol", core.Object{"token": token}, 200)
+	joinCall(t, f, joinUser("dave"), "POST", "/api/v1/join/invitations/redeem", "consume-dave", core.Object{"token": token}, 404)
 }
 
 // TestMemberUpdateNotifiesOnlineMembers covers the space.member_updated

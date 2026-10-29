@@ -87,9 +87,9 @@ describe('MembersPage', () => {
     renderWithProviders(<MembersPage slug="cloud-dev" />, { slug: 'cloud-dev' })
     const user = userEvent.setup()
     await screen.findByText('Bob')
-    const removeButtons = screen.getAllByRole('button', { name: '移除' })
-    if (!removeButtons[1]) throw new Error('expected Bob row')
-    await user.click(removeButtons[1])
+    await user.click(screen.getByRole('button', { name: '更多操作 · Bob' }))
+    await user.click(await screen.findByRole('menuitem', { name: '移除成员' }))
+    await user.click(screen.getByRole('button', { name: '移除成员' }))
     await waitFor(() => expect(body).toEqual({ role: 'member', status: 'disabled', version: 1 }))
   })
 
@@ -101,8 +101,8 @@ describe('MembersPage', () => {
     ])
     renderWithProviders(<MembersPage slug="cloud-dev" />, { slug: 'cloud-dev' })
     expect(await screen.findByText('Bob')).toBeInTheDocument()
-    expect(screen.getByText('重新加入需再次核验或邀请')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Bob 的角色' })).toBeDisabled()
+    await userEvent.setup().click(screen.getByRole('button', { name: '更多操作 · Bob' }))
+    expect(await screen.findByRole('combobox', { name: 'Bob 角色' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '恢复' })).not.toBeInTheDocument()
   })
 
@@ -128,7 +128,9 @@ describe('MembersPage', () => {
     )
     renderWithProviders(<MembersPage slug="cloud-dev" />, { slug: 'cloud-dev' })
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: '生成邀请链接' }))
+    await user.click(await screen.findByRole('tab', { name: '加入链接' }))
+    await user.click(screen.getByRole('button', { name: '生成单人邀请' }))
+    await user.click(screen.getByRole('button', { name: '生成链接' }))
     await waitFor(() => expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/))
     expect(screen.getByLabelText('新生成的链接')).toHaveValue(
       `http://localhost:3000/join/invite/${token}`,
@@ -182,6 +184,8 @@ describe('MembersPage', () => {
           items: [
             {
               id: 'request-1',
+              linkId: 'link-1',
+              createdAt: '2026-10-27T00:00:00Z',
               tenantId: TEST_TENANT_ID,
               userId: BOB_ID,
               displayName: 'Bob',
@@ -216,11 +220,16 @@ describe('MembersPage', () => {
     )
     const user = userEvent.setup()
     renderWithProviders(<MembersPage slug="cloud-dev" />, { slug: 'cloud-dev' })
-    await user.click(await screen.findByRole('button', { name: '生成申请链接' }))
+    await user.click(await screen.findByRole('tab', { name: '加入链接' }))
+    await user.click(screen.getByRole('button', { name: '生成申请链接' }))
+    await user.click(screen.getByRole('button', { name: '生成链接' }))
     await waitFor(() => expect(linkToken).toMatch(/^[A-Za-z0-9_-]{43}$/))
     expect(screen.getByLabelText('新生成的链接')).toHaveValue(
       `http://localhost:3000/join/apply/${linkToken}`,
     )
+    await user.click(screen.getByRole('button', { name: '关闭' }))
+    await user.click(screen.getByRole('button', { name: '已保存，关闭' }))
+    await user.click(screen.getByRole('tab', { name: '待审批 (1)' }))
     await user.click(await screen.findByRole('button', { name: '批准' }))
     await waitFor(() => expect(approval).toEqual({ version: 1 }))
   })
@@ -236,7 +245,8 @@ describe('MembersPage', () => {
             {
               id: 'invitation-1',
               tenantId: TEST_TENANT_ID,
-              expiresAt: '2026-09-30T00:00:00Z',
+              expiresAt: '2099-09-30T00:00:00Z',
+              createdAt: '2026-10-27T00:00:00Z',
               version: 3,
               revokedAt: null,
             },
@@ -258,6 +268,7 @@ describe('MembersPage', () => {
     )
     const user = userEvent.setup()
     renderWithProviders(<MembersPage slug="cloud-dev" />, { slug: 'cloud-dev' })
+    await user.click(await screen.findByRole('tab', { name: '加入链接' }))
     await user.click(await screen.findByRole('button', { name: '撤销' }))
     await waitFor(() => expect(revocation).toEqual({ version: 3 }))
   })

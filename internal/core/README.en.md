@@ -6,6 +6,8 @@ This package owns business state, authorization, transactions and recovery decis
 
 ## Code map
 
+`join_preview.go` inspects bearer links through trusted Gateway without provisioning identity. `member_join_history.go` owns admission records and administrator-only reads. `tenant_memberships` remains the sole access authority; provenance never grants access. See [tenancy](../../docs/identity/tenancy.en.md).
+
 | File group | Package responsibility | Cross-module documentation |
 |---|---|---|
 | `store.go`, `public.go`, `control.go` | Injected SQL pool, transaction wrapper, dispatch, idempotency and Fault | [Persistence and transactions](../../docs/core/persistence.en.md) |

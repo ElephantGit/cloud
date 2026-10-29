@@ -32,8 +32,8 @@ FROM tenant_join_requests j JOIN tenants tn ON tn.id=j.tenant_id WHERE j.user_id
 	}
 	switch r.Path {
 	case "/api/v1/join/invitations/redeem":
-		out, status = redeemInvitation(t, r.Body.S("token"), uid), 200
-		publishMemberEvent = true
+		out, publishMemberEvent = redeemInvitation(t, r.Body.S("token"), uid)
+		status = 200
 	case "/api/v1/join/requests":
 		out, status = requestJoin(t, r.Body.S("token"), uid), 201
 	default:
@@ -43,21 +43,25 @@ FROM tenant_join_requests j JOIN tenants tn ON tn.id=j.tenant_id WHERE j.user_id
 	return out, status, publishMemberEvent
 }
 
-func redeemInvitation(t *transaction, token, uid string) Object {
-	invite := t.one(`SELECT i.id,i.tenant_id FROM tenant_invitations i JOIN tenants tn ON tn.id=i.tenant_id
-WHERE i.token_hash=$1 AND i.revoked_at IS NULL AND i.consumed_at IS NULL
-AND i.expires_at>clock_timestamp() AND tn.status='active' AND tn.deleted_at IS NULL`, joinTokenDigest(token))
-	require(invite != nil, 404, "join_link_unavailable")
+func redeemInvitation(t *transaction, token, uid string) (Object, bool) {
+	invite := lookupJoinLink(t, "invite", token)
+	if invite != nil && invite.B("workspaceActive") && activeMember(t, invite.S("tenantId"), uid) {
+		return joinedMembership(t, invite.S("tenantId"), uid), false
+	}
+	requireActiveJoinLink(invite)
 	addMembership(t, invite.S("tenantId"), uid, "member")
+	recordMemberJoin(t, invite.S("tenantId"), uid, "invitation", invite.S("createdBy"), invite.S("id"), "")
 	t.exec("UPDATE tenant_invitations SET consumed_by=$2,consumed_at=clock_timestamp(),version=version+1 WHERE id=$1", invite.S("id"), uid)
-	return t.one("SELECT m.tenant_id,m.user_id,m.role,m.status,m.version,tn.name FROM tenant_memberships m JOIN tenants tn ON tn.id=m.tenant_id WHERE m.tenant_id=$1 AND m.user_id=$2", invite.S("tenantId"), uid)
+	return joinedMembership(t, invite.S("tenantId"), uid), true
+}
+
+func joinedMembership(t *transaction, tid, uid string) Object {
+	return t.one("SELECT m.tenant_id,m.user_id,m.role,m.status,m.version,tn.name FROM tenant_memberships m JOIN tenants tn ON tn.id=m.tenant_id WHERE m.tenant_id=$1 AND m.user_id=$2", tid, uid)
 }
 
 func requestJoin(t *transaction, token, uid string) Object {
-	link := t.one(`SELECT l.id,l.tenant_id FROM tenant_join_links l JOIN tenants tn ON tn.id=l.tenant_id
-WHERE l.token_hash=$1 AND l.revoked_at IS NULL AND l.expires_at>clock_timestamp()
-AND tn.status='active' AND tn.deleted_at IS NULL`, joinTokenDigest(token))
-	require(link != nil, 404, "join_link_unavailable")
+	link := lookupJoinLink(t, "apply", token)
+	requireActiveJoinLink(link)
 	require(t.one("SELECT user_id FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active'", link.S("tenantId"), uid) == nil, 409, "already_member")
 	if old := t.one("SELECT * FROM tenant_join_requests WHERE tenant_id=$1 AND user_id=$2 AND status='pending'", link.S("tenantId"), uid); old != nil {
 		return old
@@ -82,11 +86,17 @@ func addMembership(t *transaction, tid, uid, role string) Object {
 func adminJoinRead(t *transaction, r *PublicRequest) Object {
 	switch {
 	case strings.HasSuffix(r.Path, "/invitations"):
-		return page(t, "SELECT id,tenant_id,created_by,created_at,expires_at,revoked_at,consumed_by,consumed_at,version FROM tenant_invitations WHERE tenant_id=$1", []any{r.TenantID}, "id", r)
+		return page(t, `SELECT i.id,i.tenant_id,i.note,i.created_by,i.created_at,i.expires_at,i.revoked_at,i.consumed_by,i.consumed_at,i.version,
+ c.display_name AS created_by_name,u.display_name AS consumed_by_name FROM tenant_invitations i JOIN users c ON c.id=i.created_by LEFT JOIN users u ON u.id=i.consumed_by WHERE i.tenant_id=$1`, []any{r.TenantID}, "i.id", r)
 	case strings.HasSuffix(r.Path, "/join-links"):
-		return page(t, "SELECT id,tenant_id,created_by,created_at,expires_at,revoked_at,version FROM tenant_join_links WHERE tenant_id=$1", []any{r.TenantID}, "id", r)
+		return page(t, `SELECT l.id,l.tenant_id,l.note,l.created_by,l.created_at,l.expires_at,l.revoked_at,l.version,c.display_name AS created_by_name,
+ (SELECT count(*) FROM tenant_join_requests j WHERE j.link_id=l.id AND j.status='pending') AS pending_count,
+ (SELECT count(*) FROM tenant_join_requests j WHERE j.link_id=l.id AND j.status='approved') AS approved_count
+ FROM tenant_join_links l JOIN users c ON c.id=l.created_by WHERE l.tenant_id=$1`, []any{r.TenantID}, "l.id", r)
 	default:
-		return page(t, "SELECT j.id,j.tenant_id,j.user_id,j.link_id,j.status,j.created_at,j.decided_at,j.decided_by,j.version,u.display_name FROM tenant_join_requests j JOIN users u ON u.id=j.user_id WHERE j.tenant_id=$1", []any{r.TenantID}, "j.id", r)
+		return page(t, `SELECT j.id,j.tenant_id,j.user_id,j.link_id,j.status,j.created_at,j.decided_at,j.decided_by,j.version,u.display_name,
+ l.note AS link_note,d.display_name AS decided_by_name FROM tenant_join_requests j JOIN users u ON u.id=j.user_id
+ JOIN tenant_join_links l ON l.id=j.link_id LEFT JOIN users d ON d.id=j.decided_by WHERE j.tenant_id=$1`, []any{r.TenantID}, "j.id", r)
 	}
 }
 
@@ -98,14 +108,14 @@ func adminJoinWrite(t *transaction, r *PublicRequest, uid string) (out Object, s
 		// token is a client conflict, never an internal constraint failure.
 		require(t.one("SELECT id FROM tenant_invitations WHERE token_hash=$1", digest) == nil, 409, "join_token_conflict")
 		id := newID()
-		t.exec("INSERT INTO tenant_invitations(id,tenant_id,token_hash,created_by,expires_at) VALUES($1,$2,$3,$4,now()+interval '7 days')", id, r.TenantID, digest, uid)
-		return t.one("SELECT id,tenant_id,created_by,created_at,expires_at,version FROM tenant_invitations WHERE id=$1", id), 201
+		t.exec("INSERT INTO tenant_invitations(id,tenant_id,token_hash,created_by,expires_at,note) VALUES($1,$2,$3,$4,now()+interval '7 days',$5)", id, r.TenantID, digest, uid, joinNote(r))
+		return t.one("SELECT id,tenant_id,note,created_by,created_at,expires_at,version FROM tenant_invitations WHERE id=$1", id), 201
 	case r.Method == "POST" && strings.HasSuffix(r.Path, "/join-links"):
 		digest := joinTokenDigest(r.Body.S("token"))
 		require(t.one("SELECT id FROM tenant_join_links WHERE token_hash=$1", digest) == nil, 409, "join_token_conflict")
 		id := newID()
-		t.exec("INSERT INTO tenant_join_links(id,tenant_id,token_hash,created_by,expires_at) VALUES($1,$2,$3,$4,now()+interval '30 days')", id, r.TenantID, digest, uid)
-		return t.one("SELECT id,tenant_id,created_by,created_at,expires_at,version FROM tenant_join_links WHERE id=$1", id), 201
+		t.exec("INSERT INTO tenant_join_links(id,tenant_id,token_hash,created_by,expires_at,note) VALUES($1,$2,$3,$4,now()+interval '30 days',$5)", id, r.TenantID, digest, uid, joinNote(r))
+		return t.one("SELECT id,tenant_id,note,created_by,created_at,expires_at,version FROM tenant_join_links WHERE id=$1", id), 201
 	case r.Method == "DELETE" && r.InvitationID != "":
 		row := t.one("SELECT * FROM tenant_invitations WHERE id=$1 AND tenant_id=$2", r.InvitationID, r.TenantID)
 		require(row != nil, 404, "not_found")
@@ -125,7 +135,11 @@ func adminJoinWrite(t *transaction, r *PublicRequest, uid string) (out Object, s
 		require(row.S("status") == "pending", 409, "request_already_decided")
 		decision := "rejected"
 		if strings.HasSuffix(r.Path, "/approve") {
+			changed := !activeMember(t, r.TenantID, row.S("userId"))
 			addMembership(t, r.TenantID, row.S("userId"), "member")
+			if changed {
+				recordMemberJoin(t, r.TenantID, row.S("userId"), "application", uid, "", row.S("id"))
+			}
 			decision = "approved"
 		}
 		t.exec("UPDATE tenant_join_requests SET status=$2,decided_at=clock_timestamp(),decided_by=$3,version=version+1 WHERE id=$1", r.JoinRequestID, decision, uid)
@@ -133,4 +147,10 @@ func adminJoinWrite(t *transaction, r *PublicRequest, uid string) (out Object, s
 	}
 	reject(404, "not_found")
 	return nil, 0
+}
+
+func joinNote(r *PublicRequest) string {
+	note := strings.TrimSpace(r.Body.S("note"))
+	require(len([]rune(note)) <= 200, 400, "invalid_note")
+	return note
 }

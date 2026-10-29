@@ -17,7 +17,7 @@ Gateway 不读写任何 Cloud 业务表：用户、身份映射、成员和资�
 | `POST /auth/login` | 同源 JSON `{"provider":"github","returnTo":"/path"}`；`provider` 省略时用部署的外部 provider。创建一次登录尝试，返回 `{"authorizationUrl"}` 并设置 attempt Cookie |
 | `GET /auth/callback/:provider` | provider 回跳。校验通过后创建会话，`303` 回到登录前的页面；失败统一为 `401 login_failed` |
 | `POST /auth/logout` | 同源校验后吊销当前会话并清除 Cookie，幂等，返回 `204` |
-| `ANY /api/v1/*` | 解析会话，现签内部凭据后转发 |
+| `ANY /api/v1/*` | 解析会话，现签内部凭据后转发；仅确切的 `POST /api/v1/join/links/preview` 允许无用户会话的只读检查 |
 | `GET /healthz` | PostgreSQL 探活 |
 | 其他 `GET`/`HEAD` | 配置了 `web.dist_dir` 时提供前端文件，未命中的客户端路由返回 `index.html` |
 
@@ -80,7 +80,7 @@ access token 和 PKCE verifier 只存在于单次请求的内存里，不持久�
 
 1. 修改类方法要求同源证明：`Origin` 与公开 origin 精确一致，或 `Sec-Fetch-Site: same-origin`，否则
    `403 origin_forbidden`。
-2. 解析会话 Cookie；失败返回 `401 unauthenticated`。
+2. 解析会话 Cookie；失败返回 `401 unauthenticated`。唯一例外是确切的 `POST /api/v1/join/links/preview`：同源检查后限流，无会话时只签 service JWT，有效会话可附 caller 绑定的 user JWT。该响应 `no-store`，匿名仅返回类型与状态，Cloud 不创建身份或修改成员。
 3. 删除浏览器带来的 `Authorization`、`X-Ora-User-Token`、`Cookie`、`Forwarded`、`X-Forwarded-*`、
    `X-Real-Ip`，换上本副本现签的 service JWT 与 user JWT（见 [内部凭据与服务信任](authentication.md)）。
 4. 转发到固定的 `cloud.upstream`，请求不能选择其他目标。请求体上限 64 KiB，响应体上限 8 MiB；Cloud 不可达

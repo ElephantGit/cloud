@@ -31,7 +31,8 @@ src/
   features/     每个页面一个目录：chat、multica、workflows、schedules、dashboard
   api/          orval 生成的客户端，不手改
   components/ui shadcn 生成的组件，不手改
-  lib/          跨页面共用：HTTP 实例（api-client）、登录接口（auth-api）
+  lib/          跨页面共用：HTTP 实例（api-client）、登录接口（auth-api）、代码高亮（highlighter，shadcn 生成）
+  hooks/        shadcn 生成的 hook
   test/         单元测试的公共设置和假后端
 e2e/            Playwright 端到端测试
 ```
@@ -43,6 +44,7 @@ e2e/            Playwright 端到端测试
 
 各页面互不引用，可以并行开发；页面首次访问时才加载，构建时各自拆包。
 
+<<<<<<< HEAD
 ## 工作流
 
 工作流页面使用生成的工作流 API hooks，支持选择团队、UUID 游标分页、创建、编辑名称和描述、
@@ -54,6 +56,19 @@ URL 的 `tenant`、`workflow` 查询参数定位团队和草稿，刷新后重�
 每个编辑器用独立 zustand store 保存本地缓冲；后台查询和版本冲突不会覆盖未保存内容。
 冲突时保留编辑内容，可导出备份后检查最新版本并显式重新载入。切页会提示未保存修改，
 浏览器刷新/离开使用原生离开提醒；确认放弃才离开。
+=======
+## 对话
+
+`src/features/chat/` 是对话页，界面对齐 desktop 的对话界面。组件用 shadcn 的 chat 组件（MessageScroller、Message、Bubble、Trace、Code Block、Attachment、Marker），复制进来的 AI Elements pattern 放在 `components/`。Code Block 的高亮依赖 shadcn 一起生成的 `src/lib/highlighter.tsx` 和 `src/hooks/use-highlighted-code.ts`。
+
+- `model/`：把 ACP 事件（`session/update`、权限请求、轮次结束）归约成界面条目，再排成显示用的行（活动块、子代理分组、改动文件）。真实会话和样例走同一套代码。
+- `samples/`：录好的示例对话，覆盖工具调用、思考、计划、子代理、权限确认、测试结果、报错、引用、上下文、检查点、附件和插件，在左栏"示例"项目里回放。
+- `store.ts`：会话、项目和回放状态。左栏按项目分组，项目下先列主目录里的会话，再按分支列出各 worktree 和它的会话；拖动项目可调整顺序，拖动左栏右边缘可调宽度或收起。项目顺序和左栏布局保存在浏览器本地。
+
+新对话的排版照 desktop：没有会话选中时显示新对话，标题和输入框在页面中间，输入框上方选项目、主目录或 worktree、启动模式（网页上只有云端）；第一条消息发出时才建会话，输入框滑到底部。左栏顶部的"新建对话"和项目、worktree 行上的 `+` 都打开新对话。项目和分支菜单可以搜索；新建项目填主目录路径，项目名取最后一级目录；选"在 worktree 中工作"时先不取名，第一条消息发出后按消息内容命名（取开头几个英文词，没有英文词时用 `ora/<形容词>-<名词>`，见 `model/branch-name.ts`；接入 Agent 后改由 Agent 命名），也可以"新建 worktree 并命名"自己起名。输入框右下角先选 Agent 再选它的模型，模型可以搜索；`store.ts` 里的 Agent 和模型清单是演示数据，等 v2-server 报告可用的 Agent 后改用接口。
+
+v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话发消息得到一条注明"演示回复"的回答。接入后，会话列表、发消息和事件流改走 v2-server，项目顺序也随之存到后端。
+>>>>>>> upstream/main
 
 ## 登录
 

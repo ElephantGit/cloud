@@ -19,7 +19,8 @@ It does not own authentication, member management, or the corporate directory.
 
 Depends on `features/auth/session`, `features/spaces`, the generated client, `src/lib/paths`, and UI components; only the router consumes its pages.
 
-- `/join/invite/:token` and `/join/apply/:token` run inside `RequireSession`. While signed out, the token path stays in this browser tab; Gateway receives only the tokenless `/join/continue` return path, which restores the link after login.
+- `/join/invite/:token` and `/join/apply/:token` permit anonymous inspection; redemption and applications still require a session. `join-navigation.ts` keeps the bearer recovery path in this tab; Gateway receives only `/join/continue`.
+- Inspection never provisions identity. Used, expired, revoked, unavailable and network failures have distinct messages. Existing members enter directly; pending applicants do not resubmit. Submission always revalidates after preview.
 - Invitations grant ordinary membership only. An application cannot enter the space before administrator approval.
 - Link entry accepts only this site's supported private join paths; creation validates slugs against the backend rule.
 

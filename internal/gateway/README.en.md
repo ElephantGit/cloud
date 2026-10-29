@@ -23,6 +23,8 @@
 
 ## Invariants
 
+The only session-optional business proxy is the exact `POST /api/v1/join/links/preview`. It checks origin and rate limits, strips browser credential headers, and forwards its service credential; any optional user comes only from a resolved session. Every other route retains session requirements. Preview is `no-store` and exposes neither people nor raw tokens.
+
 - When an SSE client disconnects after proxy headers were committed, pass the standard `http.ErrAbortHandler` to `net/http` to abort the connection without an internal-error log or a second 500 response. Unexpected panics still retain diagnostics and a safe error response.
 
 Personal model credential routes go only to the fixed HTTPS model-gateway after the normal session,

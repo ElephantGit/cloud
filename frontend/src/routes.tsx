@@ -94,19 +94,11 @@ export const routes: RouteObject[] = [
   },
   {
     path: '/join/invite/:token',
-    element: (
-      <RequireSession>
-        <JoinPage kind="invite" />
-      </RequireSession>
-    ),
+    element: <JoinPage kind="invite" />,
   },
   {
     path: '/join/apply/:token',
-    element: (
-      <RequireSession>
-        <JoinPage kind="apply" />
-      </RequireSession>
-    ),
+    element: <JoinPage kind="apply" />,
   },
   {
     path: WORKSPACE_ROUTE_PATTERN,

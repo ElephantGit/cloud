@@ -3,6 +3,7 @@ import { readAllPages } from '@/lib/pagination'
 import type { DirectoryPerson, MemberListItem } from '@/api/generated.schemas'
 import {
   getApiV1TenantsTidMembers,
+  getApiV1TenantsTidMembersUidJoinHistory,
   postApiV1TenantsTidMembersHuawei,
   putApiV1TenantsTidMembersUid,
 } from '@/api/members/members'
@@ -103,7 +104,9 @@ export function newJoinToken(): string {
 export function useCreateInvitation(tenantId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (token: string) => postApiV1TenantsTidInvitations(tenantId, { token }),
+    gcTime: 0,
+    mutationFn: (input: { token: string; note: string }) =>
+      postApiV1TenantsTidInvitations(tenantId, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: invitationKey(tenantId) })
     },
@@ -114,7 +117,9 @@ export function useCreateInvitation(tenantId: string) {
 export function useCreateJoinLink(tenantId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (token: string) => postApiV1TenantsTidJoinLinks(tenantId, { token }),
+    gcTime: 0,
+    mutationFn: (input: { token: string; note: string }) =>
+      postApiV1TenantsTidJoinLinks(tenantId, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: linkKey(tenantId) })
     },
@@ -206,7 +211,26 @@ export function useDecideJoinRequest(tenantId: string) {
         : postApiV1TenantsTidJoinRequestsRidReject(tenantId, input.id, { version: input.version }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: requestKey(tenantId) })
+      void queryClient.invalidateQueries({ queryKey: linkKey(tenantId) })
       void queryClient.invalidateQueries({ queryKey: memberKey(tenantId) })
     },
+  })
+}
+
+/** Reads admission history only while an administrator has a member detail open. */
+export function useMemberJoinHistory(tenantId: string, userId: string | undefined) {
+  return useQuery({
+    queryKey: [...memberKey(tenantId), userId, 'join-history'],
+    queryFn: ({ signal }) =>
+      readAllPages((after) =>
+        getApiV1TenantsTidMembersUidJoinHistory(
+          tenantId,
+          userId ?? '',
+          after ? { limit: 100, after } : { limit: 100 },
+          undefined,
+          signal,
+        ),
+      ),
+    enabled: !!userId,
   })
 }

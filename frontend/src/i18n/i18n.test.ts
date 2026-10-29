@@ -10,6 +10,10 @@ function bundle(key: string, chinese: string, english: string): TranslationBundl
 }
 
 describe('composeTranslationResources', () => {
+  it('includes distinct invitation lifecycle copy in both shipped languages', () => {
+    expect(translationResources['zh-CN']['entry.usedTitle']).toBe('这条邀请链接已被使用')
+    expect(translationResources['en-US']['entry.expiredTitle']).toBe('This link has expired')
+  })
   it('merges features into one map per locale', () => {
     const resources = composeTranslationResources({
       first: bundle('a.one', '一', 'One'),

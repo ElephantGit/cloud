@@ -20,7 +20,8 @@ describe('app shell, signed in', () => {
 
   it('opens the first page from the root', async () => {
     const router = renderAt('/')
-    expect(await screen.findByRole('heading', { level: 1, name: features[0].title })).toBeInTheDocument()
+    // The first visit loads the page's chunk, which can take a moment under jsdom.
+    expect(await screen.findByRole('heading', { level: 1, name: features[0].title }, { timeout: 5000 })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(`/${features[0].path}`)
   })
 

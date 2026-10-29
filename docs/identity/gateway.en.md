@@ -20,7 +20,7 @@ never runs DDL.
 | `POST /auth/login` | Same-origin JSON `{"provider":"github","returnTo":"/path"}`; an omitted `provider` means the deployment's external provider. Creates a login attempt, returns `{"authorizationUrl"}` and sets the attempt cookie |
 | `GET /auth/callback/:provider` | The provider's redirect target. On success it creates a session and answers `303` back to the page the user came from; every failure is `401 login_failed` |
 | `POST /auth/logout` | After a same-origin check, revokes the current session and clears the cookie; idempotent, returns `204` |
-| `ANY /api/v1/*` | Resolves the session, mints internal credentials, forwards |
+| `ANY /api/v1/*` | Resolves the session, mints credentials and forwards; only the exact `POST /api/v1/join/links/preview` permits session-optional read-only inspection |
 | `GET /healthz` | PostgreSQL liveness |
 | Other `GET`/`HEAD` | With `web.dist_dir` configured, serves frontend files; unknown client-side routes get `index.html` |
 
@@ -94,7 +94,7 @@ How `ANY /api/v1/*` is handled:
 
 1. Modifying methods require same-origin proof: `Origin` exactly equal to the public origin, or
    `Sec-Fetch-Site: same-origin`; otherwise `403 origin_forbidden`.
-2. Resolve the session cookie; failure returns `401 unauthenticated`.
+2. Resolve the session cookie; failure returns `401 unauthenticated`. The sole exception is the exact `POST /api/v1/join/links/preview`: after origin proof and rate limiting it may use only the service JWT. A valid session adds a caller-bound user JWT. The response is `no-store`; anonymous inspection returns only kind/state and Cloud writes no identity or membership.
 3. Drop the browser's `Authorization`, `X-Ora-User-Token`, `Cookie`, `Forwarded`, `X-Forwarded-*` and
    `X-Real-Ip` headers and attach a service JWT and a user JWT freshly signed by this replica (see
    [Internal credentials and service trust](authentication.en.md)).

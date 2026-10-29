@@ -56,6 +56,23 @@ e2e/            Playwright 端到端测试
 
 v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话发消息得到一条注明"演示回复"的回答。接入后，会话列表、发消息和事件流改走 v2-server，项目顺序也随之存到后端。
 
+## 工作流
+
+`src/features/workflows/` 是工作流页，从 desktop（`ora-space/desktop` main `cab59a3c`）的工作流编辑器原样移植：左栏是工作流列表（新建、复制、重命名、删除、导入、导出），右边是 React Flow 画布、节点检查器、撤销重做、草稿自动保存、发布和版本历史。图结构就是 desktop 的工作流文档，导出的文件和 desktop 互通。
+
+| 目录 | 来自 desktop |
+|---|---|
+| `editor/` | `packages/app-shell/src/features/workflow-editor` |
+| `node-chrome/` | `packages/app-shell/src/features/workflow-node-chrome` |
+| `mock/`、`runtime/` | `packages/workflow-mock`、`packages/workflow-runtime` |
+| `composer-core/`、`prompt-composer/` | `packages/editor` 的 composer 和 app-shell 的提示词编辑器（tiptap） |
+| `data/workflows.ts`、`data/workflow-analysis.ts` | `packages/app-shell/src/state/data` |
+| `contracts/dto/` | `packages/contracts` 生成的 DTO 类型 |
+
+复制来的文件只改了 import 路径，以及几处 v2 的 lint 或 TypeScript 设置不接受的写法。desktop 依赖的宿主能力在 `host/` 里换成浏览器实现：`ui.ts` 转出 v2 生成的 shadcn 组件；`i18n.ts` 只加载 desktop 的 zh-CN 文案；`platform.tsx` 用浏览器下载代替保存对话框；`window-chrome.tsx` 去掉了 desktop 的窗口拖拽和窗口按钮。页面自带一个 QueryClient，沿用 desktop 的缓存策略（`staleTime` 30 秒），编辑器的缓存补丁和自动保存依赖这一点。
+
+v2-server 还没有工作流接口，现在由 `data/local-workflow-backend.ts` 在浏览器 localStorage 里代替 desktop 的后端，规则照搬 desktop 的 Rust 实现：名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；版本名不能叫 `draft`，也不能含 `/`、`\`、控制字符；不能删除草稿和当前生效的版本；发布时检查图能否从开始节点投影成可执行图（多余节点不阻塞发布）；analyze 标出未参与运行的节点和不认识的节点类型。desktop 引擎对每个节点配置的检查没有搬过来。Agent、模型、角色、Skill 和 MCP 清单是 `data/demo-catalog.ts` 里的演示数据。页面不运行工作流。接入 v2-server 后，只需把 `data/contracts-client.ts` 换成调生成的客户端。
+
 ## 登录
 
 和正式 Cloud 一样，以 `GET /api/v1/me` 判断是否登录：`401` 时在当前位置显示登录页，登录后回到原页面；`403` 表示账号已停用。登录页按 `GET /auth/providers` 为每种登录方式显示一个按钮，`POST /auth/login` 后跳转到返回的地址。v2-server 只提供开发者登录，接入正式 Gateway 时前端不用改。

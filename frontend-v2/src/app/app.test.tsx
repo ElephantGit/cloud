@@ -30,7 +30,8 @@ describe('app shell, signed in', () => {
     await screen.findByRole('heading', { level: 1, name: features[0].title })
     for (const f of features) {
       await userEvent.click(screen.getByRole('link', { name: f.title }))
-      expect(await screen.findByRole('heading', { level: 1, name: f.title })).toBeInTheDocument()
+      // Each page's chunk loads on its first visit; the workflow editor's is the largest.
+      expect(await screen.findByRole('heading', { level: 1, name: f.title }, { timeout: 5000 })).toBeInTheDocument()
       expect(router.state.location.pathname).toBe(`/${f.path}`)
     }
   })

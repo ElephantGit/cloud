@@ -19,10 +19,10 @@ import (
 	"github.com/wanglongan587/cloud/internal/core"
 )
 
-// TestP386JointServer serves the real gRPC/Store boundary to the Rust integration test.
+// TestShortRoundsJointServer serves the real gRPC/Store boundary to the Rust integration test.
 // Its HTTP listener stages declared preconditions and observes SQL; it never implements control rules.
-func TestP386JointServer(t *testing.T) {
-	metadata := os.Getenv("P386_JOINT_METADATA")
+func TestShortRoundsJointServer(t *testing.T) {
+	metadata := os.Getenv("ORA_SHORT_ROUNDS_JOINT_METADATA")
 	if metadata == "" {
 		t.Skip("explicit cross-process fixture only")
 	}
@@ -35,7 +35,7 @@ func TestP386JointServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := stdlib.OpenDB(*config)
-	schema := "p386_joint_" + uuid.NewString()[:8]
+	schema := "short_rounds_joint_" + uuid.NewString()[:8]
 	if _, err := admin.Exec("CREATE SCHEMA " + pgx.Identifier{schema}.Sanitize()); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestP386JointServer(t *testing.T) {
 	}
 	store := &core.Store{Pool: pool, Signals: core.NewControlHub()}
 	core.BindBusinessHooks(store)
-	address := os.Getenv("P386_JOINT_BIND")
+	address := os.Getenv("ORA_SHORT_ROUNDS_JOINT_BIND")
 	if address == "" {
 		address = "127.0.0.1"
 	}
@@ -94,7 +94,7 @@ func TestP386JointServer(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		scene, err := p386Seed(pool, request.Step, request.Target)
+		scene, err := seedShortRoundsScene(pool, request.Step, request.Target)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -157,8 +157,8 @@ func TestP386JointServer(t *testing.T) {
 	}
 }
 
-// p386Seed stages a minimal valid project at the tested step; all later transitions use gRPC.
-func p386Seed(pool *sql.DB, step string, target bool) (map[string]string, error) {
+// seedShortRoundsScene stages a minimal valid project at the tested step; all later transitions use gRPC.
+func seedShortRoundsScene(pool *sql.DB, step string, target bool) (map[string]string, error) {
 	id := func() string { return uuid.NewString() }
 	user, tenant, space, project, workspace, operation, sandbox, nodeRow := id(), id(), id(), id(), id(), id(), id(), id()
 	node := "joint-" + nodeRow[:8]

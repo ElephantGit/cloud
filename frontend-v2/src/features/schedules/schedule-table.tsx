@@ -20,8 +20,8 @@ export function ScheduleTable({ tasks, now, onOpen, onToggle }: { tasks: Task[];
         </button></TableCell>
         <TableCell><Badge variant="outline">{task.target.kind === 'chat' ? <MessageSquare data-icon="inline-start" /> : <GitBranch data-icon="inline-start" />}{task.target.kind === 'chat' ? '直接对话' : '工作流'}</Badge></TableCell>
         <TableCell><span className={cn('sp-project-label', !task.projectId && 'muted')}>{task.projectId && <Folder size={14} />}{projectName(task.projectId)}</span></TableCell>
-        <TableCell><div className="sp-cell-stack"><span>{ruleText(task.rule)}</span><small>{due ? `下次 ${formatTime(due, task.rule.timezone)}` : '已暂停自动运行'}</small></div></TableCell>
-        <TableCell><button className="sp-run-cell" onClick={() => onOpen(task, 'history')}><RunStatus status={latest?.status} /><small>{latest ? formatTime(latest.startedAt, task.rule.timezone) : '等待首次运行'}</small></button></TableCell>
+        <TableCell><div className="sp-cell-stack"><span>{ruleText(task.rule)}</span><small>{due ? `预计 ${formatTime(due, task.rule.timezone)}` : '已暂停自动运行'}</small></div></TableCell>
+        <TableCell><button className="sp-run-cell" onClick={() => onOpen(task, 'history')}><RunStatus /><small>{latest ? formatTime(latest.startedAt, task.rule.timezone) : '执行尚未接入'}</small></button></TableCell>
         <TableCell><Switch checked={task.enabled} onCheckedChange={() => onToggle(task)} aria-label={`${task.name}启用状态`} /></TableCell>
         <TableCell><Button variant="ghost" size="icon-sm" aria-label={`查看${task.name}`} onClick={() => onOpen(task)}><ChevronRight /></Button></TableCell>
       </TableRow>

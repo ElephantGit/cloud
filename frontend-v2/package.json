@@ -12,6 +12,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "api:generate": "orval --config orval.config.ts",
+    "api:generate:schedules": "orval --config orval.schedules.config.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

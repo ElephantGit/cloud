@@ -1,0 +1,34 @@
+version: '3'
+# Included by the root Taskfile as `v2`; paths are relative to this directory.
+tasks:
+  db:
+    desc: Start the repository's compose PostgreSQL (127.0.0.1:55432)
+    dir: ..
+    cmds: [docker compose -p cloud up -d --wait]
+  server:
+    desc: Run v2-server on :8090 against the compose PostgreSQL
+    deps: [db]
+    cmds: [go run .]
+  web:
+    desc: Run the frontend-v2 dev server on :5173 (proxies /api and /auth to :8090)
+    dir: ../frontend-v2
+    cmds: [npm ci, npm run dev]
+  dev:
+    desc: 'Cloud v2 in one command (PostgreSQL, v2-server, frontend-v2); open http://localhost:5173'
+    deps: [db]
+    cmds:
+      - task: dev:both
+  dev:both:
+    internal: true
+    deps: [server, web]
+  test:
+    desc: v2-server tests against the compose PostgreSQL
+    deps: [db]
+    env:
+      TEST_DATABASE_URL: postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable
+    cmds: [go test -race -count=1 ./...]
+  e2e:
+    desc: Playwright end-to-end tests of frontend-v2 against v2-server
+    deps: [db]
+    dir: ../frontend-v2
+    cmds: [npm ci, npm run e2e]

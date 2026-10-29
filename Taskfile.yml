@@ -3,6 +3,11 @@ version: '3'
 # services plus TEST_DATABASE_URL for the test tasks. Missing file: nothing is loaded; shell
 # environment always wins over it.
 dotenv: ['.local/dev.env']
+# Cloud v2 (frontend-v2 and the temporary v2-server); see v2-server/README.md.
+includes:
+  v2:
+    taskfile: ./v2-server/Taskfile.yml
+    dir: ./v2-server
 tasks:
   default:
     cmds: [task --list]

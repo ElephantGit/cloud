@@ -61,3 +61,10 @@ End 后仍可读取 Session、Turns、Attempt 与事件。重启将旧活 sessio
 callback 替身用于消费方测试，不实现调度、幂等、回放、持久化或进程生命周期。
 本包测试直接验证文本输入的保真与拒绝，以及未配置替身的不可用结果。
 上述运行约定必须由真实 runtime、PostgreSQL/race 与 Node+Agent+fixture 测试兑现；真实 provider 单独验收。
+
+当前 Node（desktop `cab59a3c`）的 `thread_event` 来自合并后的 HistoryLine，
+`thread_preview` 则是可替换的有界快照；两者都不是原始 ACP 增量流。
+history assembler 不保留 usage、模式、配置等会话更新，TurnEnded 也不包含 PromptResponse usage，
+超大历史记录还可能被截断。仅将 Node payload 填入 ACPUpdate 无法满足本接口的完整消费契约，
+也不能把 preview 与最终完整 message 都当作新增文本拼接。实现必须处理这个能力边界，不能伪造缺失字段。
+同样，Agent 完成一轮后仍可能保持会话进程；turn 结果本身不能证明整个 Workspace 已停止被访问。

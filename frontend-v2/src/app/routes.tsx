@@ -6,6 +6,8 @@ export const routes: RouteObject[] = [
   {
     path: '/',
     element: <Layout />,
+    // Shown while the first lazily loaded page arrives.
+    hydrateFallbackElement: <p className="p-4 text-sm text-muted-foreground">加载中…</p>,
     children: [
       { index: true, element: <Navigate to={`/${features[0].path}`} replace /> },
       ...features.map((f) => ({

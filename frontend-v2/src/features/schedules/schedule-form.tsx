@@ -10,7 +10,15 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog }: { task?
   const [discard, setDiscard] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [previewNow] = useState(() => new Date())
-  const patch = (changes: Partial<Draft>) => { setDraft(d => ({ ...d, ...changes })); setDirty(true); setErrors({}) }
+  const patch = (changes: Partial<Draft>) => {
+    const next = { ...draft, ...changes }
+    setDraft(next)
+    setDirty(true)
+    setErrors(previous => {
+      const current = validateDraft(next, data)
+      return Object.fromEntries(Object.keys(previous).filter(key => current[key]).map(key => [key, current[key]!]))
+    })
+  }
   const rule = (changes: Partial<Draft['rule']>) => patch({ rule: { ...draft.rule, ...changes } })
   const flow = data.workflows.find(w => w.id === draft.workflowId)
   const times = nextTimes(draft.rule, previewNow, task ? new Date(task.createdAt) : previewNow)
@@ -65,7 +73,7 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog }: { task?
         <label className="sp-field">时区<select value={draft.rule.timezone} onChange={e => rule({ timezone: e.target.value })}><option value="Asia/Shanghai">Asia/Shanghai · 北京时间</option><option value="Asia/Tokyo">Asia/Tokyo · 东京</option><option value="Europe/London">Europe/London · 伦敦</option><option value="America/New_York">America/New_York · 纽约</option><option value="UTC">UTC · 协调世界时</option></select>{err('timezone')}</label>
         <div className="sp-time-preview"><div><Clock3 size={15} /><strong>接下来三次</strong></div>{times.length ? times.map((time, i) => <p key={time.toISOString()}><span>{i + 1}</span>{formatTime(time, draft.rule.timezone)}</p>) : <p>填写完整时间规则后预览</p>}<small>{draft.rule.kind === 'hours' ? '从任务创建时间起，按固定小时数间隔计算。' : '按所选时区计算；夏令时跳过的时刻不执行。'}</small></div>
       </section>
-      <div className="sp-summary"><Sparkles size={17} /><div><strong>任务预览</strong><p>{summary(draft)}</p><small>原型演示 · 不会实际调度或调用 AI</small></div></div>
+      <div className="sp-summary"><Sparkles size={17} /><div><strong>任务预览</strong><p>{summary(draft)}</p><small>模拟数据 · 不会实际调度或调用 AI</small></div></div>
     </div>
     <footer className="sp-form-footer">
       {discard ? <><span>放弃未保存的修改？</span><Button type="button" variant="outline" onClick={() => setDiscard(false)}>继续编辑</Button><Button type="button" onClick={onCancel}>放弃修改</Button></> : <><Button type="button" variant="outline" onClick={() => dirty ? setDiscard(true) : onCancel()}>取消</Button><span className="sp-footer-spacer" /><Button type="submit">{task ? '保存修改' : '创建并启用'}</Button></>}

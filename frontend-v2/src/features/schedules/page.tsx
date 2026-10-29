@@ -29,7 +29,7 @@ export default function Page() {
   const nearest = tasks.filter(t => t.enabled).flatMap(t => nextTimes(t.rule, now, new Date(t.createdAt)).slice(0, 1).map(date => ({ task: t, date }))).sort((a,b) => a.date.getTime() - b.date.getTime())[0]
   const open = (task: Task, tab?: 'config' | 'history') => { setPanel({ kind: 'detail', id: task.id, tab }) }
   const saved = (draft: Draft) => { const id = save(draft, panel?.kind === 'edit' ? panel.id : undefined); setPanel({ kind: 'detail', id }); setToast(panel?.kind === 'edit' ? '修改已保存 · 仅本次演示' : '任务已创建并启用 · 仅本次演示') }
-  const toggleTask = (task: Task) => { toggle(task.id); setToast(task.enabled ? '任务已暂停，运行记录已保留' : '任务已恢复 · 原型不会实际调度') }
+  const toggleTask = (task: Task) => { toggle(task.id); setToast(task.enabled ? '任务已暂停，运行记录已保留' : '任务已恢复 · 模拟数据不会实际调度') }
   const timing = (task: Task) => task.enabled ? formatTime(nextTimes(task.rule, now, new Date(task.createdAt))[0]!, task.rule.timezone) : '暂停中'
   return <div className="schedules-feature sp-page">
     <header className="sp-page-header"><div><div className="sp-eyebrow">WORKSPACE / AUTOMATIONS</div><h1>定时任务<span className="sp-count" aria-hidden="true">{tasks.length}</span></h1><p>把重复的事交给 Ora，把时间留给更重要的事。</p></div><Button onClick={() => setPanel({ kind: 'create' })}><Plus size={16} />新建任务</Button></header>

@@ -1,0 +1,47 @@
+import { expect, test } from '@playwright/test'
+
+test('create, freeze a version, update, reload and archive a workflow', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const name = `客户反馈整理 ${Date.now()}`
+  await page.goto('/workflows')
+  await page.getByRole('button', { name: '开发者登录' }).click()
+  await page.getByRole('link', { name: '新建工作流' }).click()
+  await page.getByRole('textbox', { name: '名称' }).fill(name)
+  await page.getByRole('textbox', { name: '描述' }).fill('整理客户输入，保留每次发布的流程版本。')
+  await page.getByRole('button', { name: '保存草稿' }).click()
+  await expect(page.getByRole('heading', { name })).toBeVisible()
+  await expect(page).toHaveURL(/workflow=[a-f0-9-]+/)
+  await page.getByRole('button', { name: '发布版本' }).click()
+  await expect(page.getByRole('status')).toHaveText('版本 v1 已发布，内容已冻结。')
+
+  const original = await page.getByRole('textbox', { name: '流程 JSON' }).inputValue()
+  const graph = JSON.parse(original)
+  graph.nodes[0].data.title = '新的开始'
+  graph.annotations = { preserved: [null, false, 0] }
+  await page.getByRole('textbox', { name: '流程 JSON' }).fill(JSON.stringify(graph, null, 2))
+  await expect(page.getByRole('button', { name: '发布版本' })).toBeDisabled()
+  await page.getByRole('button', { name: '保存草稿' }).click()
+  await expect(page.getByRole('status')).toHaveText('草稿已保存。')
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: '流程 JSON' })).toHaveValue(/新的开始/)
+  await page.locator('main').evaluate((element) => { element.scrollTop = 0 })
+  await page.screenshot({ path: testInfo.outputPath('workflow-overview.png') })
+  await page.getByRole('button', { name: new RegExp('v1.*' + name) }).click()
+  await expect(page.getByLabel('版本内容')).not.toContainText('新的开始')
+  await expect(page.getByLabel('版本内容')).toContainText('开始')
+  await expect(page.getByText('当前支持草稿与版本管理', { exact: false })).toBeVisible()
+  await page.getByRole('region', { name: '已发布版本' }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('workflow-assets.png'), fullPage: true })
+
+  await page.getByRole('textbox', { name: '描述' }).fill('尚未保存')
+  await page.getByRole('link', { name: '对话', exact: true }).click()
+  await expect(page.getByRole('alertdialog', { name: '未保存的修改' })).toBeVisible()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await expect(page.getByRole('textbox', { name: '描述' })).toHaveValue('尚未保存')
+  await page.getByRole('button', { name: '保存草稿' }).click()
+  await expect(page.getByRole('status')).toHaveText('草稿已保存。')
+  await page.getByRole('button', { name: '归档工作流', exact: true }).click()
+  await page.getByRole('button', { name: '确认归档', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '把想法变成可复用的流程' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '工作流列表' }).getByText(name)).toHaveCount(0)
+})

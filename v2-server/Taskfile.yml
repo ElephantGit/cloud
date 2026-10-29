@@ -1,6 +1,15 @@
 version: '3'
 # Included by the root Taskfile as `v2`; paths are relative to this directory.
 tasks:
+  node:prepare:
+    desc: Build pinned Node/host/guardian and prepare verified OpenCode assets on Linux
+    cmds: [bash scripts/prepare-node.sh]
+  node:test:
+    desc: Test real Node runtime on a native Linux filesystem (requires V2_NODE_TEST_BIN_DIR)
+    preconditions:
+      - sh: test -n "$V2_NODE_TEST_BIN_DIR"
+        msg: Set V2_NODE_TEST_BIN_DIR to the prepared binary directory
+    cmds: [go test -race -count=1 -run TestReal -v ./internal/node]
   db:
     desc: Start the repository's compose PostgreSQL (127.0.0.1:55432)
     dir: ..

@@ -112,11 +112,15 @@ func run(addr, dbURL string, cleanup, fixture bool) error {
 			slog.Error("execution shutdown unconfirmed", "error", err)
 		}
 	}()
+	scope, demo, e := prepareDemo(ctx, db, projects)
+	if e != nil {
+		return e
+	}
 	if fixture {
 		if driver == nil {
 			return errors.New("fixture-check requires V2_NODE_ASSETS_DIR; run task v2:node:prepare first")
 		}
-		return checkFixture(ctx, db, projects, runtime, filepath.Join(base, "nodes"))
+		return checkFixture(ctx, runtime, scope, demo.ID, filepath.Join(base, "nodes"))
 	}
 
 	srv := &http.Server{
@@ -179,37 +183,50 @@ func lockDirectory(root string) (*os.File, error) {
 	return f, nil
 }
 
-func checkFixture(ctx context.Context, db *store.Store, projects *projectrepos.Service, runtime *executionruntime.Service, nodeRoot string) error {
+// prepareDemo seeds the same real project used by browser selectors and the fixture command.
+// Its temporary login only bootstraps the existing development identity; no token reaches a page.
+func prepareDemo(ctx context.Context, db *store.Store, projects *projectrepos.Service) (execution.Scope, store.Project, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	token, e := db.Login(ctx, store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"}, time.Hour)
+	if e != nil {
+		return execution.Scope{}, store.Project{}, e
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := db.Logout(cleanup, token); err != nil {
+			slog.Warn("remove demo bootstrap session", "error", err)
+		}
+	}()
+	user, e := db.SessionUser(ctx, token)
+	if e != nil {
+		return execution.Scope{}, store.Project{}, e
+	}
+	tenants, e := db.Tenants(ctx, user.ID)
+	if e != nil {
+		return execution.Scope{}, store.Project{}, e
+	}
+	for _, tenant := range tenants {
+		if tenant.Name == store.DemoTenant {
+			scope := execution.Scope{TenantID: tenant.ID, UserID: user.ID}
+			project, err := projects.SeedDemo(ctx, scope)
+			return scope, project, err
+		}
+	}
+	return execution.Scope{}, store.Project{}, errors.New("demo tenant unavailable")
+}
+
+func checkFixture(ctx context.Context, runtime *executionruntime.Service, scope execution.Scope, projectID, nodeRoot string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	before, e := fixtureMarkers(nodeRoot)
 	if e != nil {
 		return e
 	}
-	token, e := db.Login(ctx, store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"}, time.Hour)
-	if e != nil {
-		return e
-	}
-	defer db.Logout(context.Background(), token)
-	user, e := db.SessionUser(ctx, token)
-	if e != nil {
-		return e
-	}
-	tenants, e := db.Tenants(ctx, user.ID)
-	if e != nil {
-		return e
-	}
-	if len(tenants) == 0 {
-		return errors.New("demo tenant unavailable")
-	}
-	scope := execution.Scope{TenantID: tenants[0].ID, UserID: user.ID}
-	p, e := projects.SeedDemo(ctx, scope)
-	if e != nil {
-		return e
-	}
 	started := time.Now()
 	caller := execution.Caller{Kind: execution.CallerChat, ID: fmt.Sprintf("fixture-%d", started.UnixNano()), AttemptID: "first"}
-	ref, e := runtime.Start(ctx, scope, execution.StartRequest{Caller: caller, Target: execution.Target{ProjectID: p.ID}, ExecutorID: "opencode:fixture", Prompt: execution.TextPrompt("Inspect README and save the fixture result.")})
+	ref, e := runtime.Start(ctx, scope, execution.StartRequest{Caller: caller, Target: execution.Target{ProjectID: projectID}, ExecutorID: "opencode:fixture", Prompt: execution.TextPrompt("Inspect README and save the fixture result.")})
 	if e != nil {
 		return e
 	}

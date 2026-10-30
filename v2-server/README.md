@@ -82,6 +82,10 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 clone 或分支检查失败不产生项目。后续不 fetch，也不向上游 commit/push。此接口不伪造正式契约中
 尚未实现的 Space、Operation 或 Workspace。
 
+普通启动会为开发登录的演示团队创建或复用一个真实的 `fixture://demo` 项目，带本地 Git mirror 与固定
+snapshot；项目清单从同一 PostgreSQL 记录读取，重启不重复创建。该可信 seed 不从浏览器接收路径，
+HTTP 创建接口仍不接受 `fixture://` 或本地仓库。`-fixture-check` 使用同一项目。
+
 [`catalog.openapi.json`](internal/server/catalog.openapi.json) 提供
 `GET /api/v2/tenants/{tid}/execution/models` 和 `GET /api/v2/tenants/{tid}/execution/executors`。
 两者均检查登录与租户成员关系，响应为 `{ "items": [...] }`。始终提供免密钥的 `fixture` 模型；

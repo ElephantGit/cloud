@@ -42,3 +42,14 @@ Start 是进程内同步调用。ConversationAdapter 对每条 occurrence 的操
 协调器测试使用显式时钟和记录/执行替身，验证调度选择、跨 Scope 隔离、并发扫描、防止重复手动请求、失败不自动派发、暂停恢复和重启核对门禁。记录模块的 PostgreSQL/race 验证承担实际原子接收、权限和占位约束；公共执行替身只验证消费方式，不算真实模型或完整运行时验收。
 
 恢复测试覆盖两种对话模式、本地引用写入失败、关闭重开连接池后原身份核对、未启动记录收尾、读取错误保留占位、启动与观察并发、同项目不同任务独立会话、Cancel 后 End 失败重试和旧草稿状态升级。统一 Options 测试验证未配置 Stub 返回不可用及显式注入的消费路径。真实 Service 到位后还需验证完整回答持久化、End/重启读取及真实 Agent；本包不会以 Stub 结果冒充这些证据。
+
+### 真实公共执行组合测试
+
+`runtime_integration_test.go` 是 Linux 的 opt-in 验收。需要公共 `executionruntime`、`modelturn`、`agentruntime`、`projectrepos`、`nodehistory` 与实际 store/schema 实现已经组合在同一源码目录；没有这些实现时，普通 CI 不打开此 tag，不用 Stub 替代。Agent 还需通过 `scripts/prepare-node.sh` 准备的固定 Node 资产。
+
+```sh
+TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/scheduler -run '^TestScheduledModelRuntimeRestart$' -v
+V2_NODE_ASSETS_DIR=... TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/scheduler -run '^TestScheduledAgentRuntimeRestart$' -v
+```
+
+每项测试先在子进程中经统一 Options 创建协调器，按时触发真实 fixture 执行、保存完整结果并确认 End；新手动触发使用独立会话，在实际 provider 边界暂停后验证 Cancel 的模式差异及 End。该进程退出后，第二个独立进程重新打开 PostgreSQL、Service 和协调器，核对两条原记录、完整结果与已结束会话，验证旧会话不可 Append、停机不补跑。Agent 路径还验证真实 shell 工具写出的文件在 End/重启后仍存在。默认 fixture 不需要凭据，这不是远端真实模型 provider 验收。

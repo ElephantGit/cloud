@@ -66,6 +66,12 @@ func TestAcceptedModelTurnFinishesAfterPermissionRevocation(t *testing.T) {
 			if _, err := f.service.Append(f.ctx, f.scope, execution.AppendRequest{SessionID: ref.SessionID, Caller: execution.Caller{Kind: execution.CallerChat, ID: "chat", AttemptID: "next"}, Prompt: execution.TextPrompt("rejected")}); !errors.Is(err, execution.ErrNotFound) {
 				t.Fatalf("revoked Append: %v", err)
 			}
+			if _, err := f.service.Cancel(f.ctx, f.scope, ref); !errors.Is(err, execution.ErrNotFound) {
+				t.Fatalf("revoked public Cancel: %v", err)
+			}
+			if err := f.service.End(f.ctx, f.scope, ref.SessionID); !errors.Is(err, execution.ErrNotFound) {
+				t.Fatalf("revoked public End: %v", err)
+			}
 			provider.resume()
 			select {
 			case <-worker.done:

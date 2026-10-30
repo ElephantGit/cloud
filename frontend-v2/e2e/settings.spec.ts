@@ -3,6 +3,9 @@ import { expect, test, type Page } from '@playwright/test'
 async function login(page: Page, path: string) {
   await page.goto(path)
   await page.getByRole('button', { name: '开发者登录' }).click()
+  // The login screen keeps the requested URL. Its equality alone does not mean the
+  // authentication redirect has finished; wait for the newly authenticated shell.
+  await expect(page.getByRole('img', { name: '演示用户', exact: true })).toBeVisible()
   await expect(page).toHaveURL(new RegExp(path.replace(/[?]/g, '\\?') + '$'))
 }
 async function theme(page: Page, name: '浅色' | '深色' | '跟随系统') {

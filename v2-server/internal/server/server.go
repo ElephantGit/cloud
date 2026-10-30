@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/chat"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
@@ -48,6 +49,8 @@ type Options struct {
 	// Catalog exposes the executable Agent/model choices from that backend.
 	// Nil uses an unavailable Stub, independently of Execution.
 	Catalog execution.Catalog
+	// Chat runs the chat routes; nil answers them with execution_unavailable.
+	Chat *chat.Service
 }
 
 // New returns the handler for every route v2-server serves.
@@ -78,6 +81,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads/{sid}/members", h.authed(h.addSquadMember))
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.updateSquadMember))
 	mux.HandleFunc("DELETE /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.removeSquadMember))
+	h.chatRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }
@@ -209,7 +213,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // fault writes Cloud's Error shape.
 func fault(w http.ResponseWriter, status int, code string) {
-	writeJSON(w, status, map[string]any{"code": code, "params": map[string]any{}, "requestId": requestID()})
+	faultParams(w, status, code, map[string]any{})
+}
+
+// faultParams writes Cloud's Error shape with safe parameters for the client.
+func faultParams(w http.ResponseWriter, status int, code string, params map[string]any) {
+	writeJSON(w, status, map[string]any{"code": code, "params": params, "requestId": requestID()})
 }
 
 func internal(w http.ResponseWriter, op string, e error) {

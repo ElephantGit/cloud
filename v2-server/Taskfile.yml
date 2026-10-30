@@ -1,6 +1,12 @@
 version: '3'
 # Included by the root Taskfile as `v2`; paths are relative to this directory.
 tasks:
+  execution:test:
+    desc: Verify public Service with real Node, tool output, PostgreSQL and restart history
+    preconditions:
+      - sh: test -n "$V2_NODE_ASSETS_DIR" && test -n "$TEST_DATABASE_URL"
+        msg: Set V2_NODE_ASSETS_DIR and TEST_DATABASE_URL for real execution evidence
+    cmds: [go test -race -count=1 -run TestReal -v ./internal/executionruntime]
   node:history:test:
     desc: Verify a full answer beyond IPC limits survives End and restart in PostgreSQL
     preconditions:

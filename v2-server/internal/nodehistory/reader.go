@@ -15,7 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/wanglongan587/cloud/v2-server/internal/strictjson"
 )
 
 // Stable, sanitized errors describe why a result cannot be claimed complete.
@@ -95,7 +96,7 @@ type line struct {
 
 func decodeLine(data []byte) (line, error) {
 	var l line
-	if !utf8.Valid(data) || json.Unmarshal(data, &l) != nil || l.Sequence == nil || l.Type == "" {
+	if !strictjson.Valid(data) || json.Unmarshal(data, &l) != nil || l.Sequence == nil || l.Type == "" {
 		return l, ErrDamaged
 	}
 	if _, err := time.Parse(time.RFC3339Nano, l.At); err != nil {
@@ -111,6 +112,13 @@ func decodeLine(data []byte) (line, error) {
 			Kind string `json:"sessionUpdate"`
 		}
 		if json.Unmarshal(l.Update, &update) != nil || update.Kind == "" {
+			return l, ErrDamaged
+		}
+		// desktop cab59a3c's history assembler persists only these update kinds;
+		// tool deltas become tool_call snapshots and session chrome is omitted.
+		switch update.Kind {
+		case "user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "plan":
+		default:
 			return l, ErrDamaged
 		}
 	case "turnEnded":
@@ -286,8 +294,12 @@ func assistantText(raw json.RawMessage) (*string, error) {
 	if json.Unmarshal(update.Content, &content) != nil || content.Type == "" {
 		return nil, ErrDamaged
 	}
-	if content.Type != "text" {
+	switch content.Type {
+	case "text":
+	case "image", "audio", "resource_link", "resource":
 		return nil, nil
+	default:
+		return nil, ErrDamaged
 	}
 	if content.Text == nil {
 		return nil, ErrDamaged

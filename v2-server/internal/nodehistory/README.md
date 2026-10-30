@@ -35,6 +35,14 @@
 按 history sequence 排序并取重复位置的最后记录；要求从 meta 到目标 turnEnded 没有缺口，
 session ID、schema、时间戳和记录类型有效。只消费换行提交的记录；未完成尾行不能构造终态。
 
+`update.sessionUpdate` 只接受该固定 Node 的 settled history 输出：`user_message_chunk`、
+`agent_message_chunk`、`agent_thought_chunk`、`tool_call`、`plan`。这不是完整 ACP 更新枚举：
+Node assembler 将 tool delta 合并为 `tool_call`，不持久化 session chrome 更新。
+接受 schema 1/2 只为读取这份固定 Node 的产物，不表示兼容任意旧版本。
+未知更新类型或 assistant `content.type` 视为损坏；合法 `image`、`audio`、`resource_link`、
+`resource` 保留在记录中，不进入文本回答。原始 JSON 必须是合法 UTF-8，且 Unicode escape
+不能含孤立 UTF-16 surrogate；合法替换字符 U+FFFD 和转义的字面量反斜杠仍可读取。
+
 限制为每文件 64 MiB、每行 8 MiB、单轮回答 16 MiB。文件缺失、损坏、显式 gap、缺少目标终态
 或超限都失败，不能静默截断成成功。超过限制的会话需要显式失败和后续产品策略。
 这些限制不改变固定 Node 的 IPC record 256 KiB / visible_text 64 KiB 上限。
@@ -42,7 +50,8 @@ session ID、schema、时间戳和记录类型有效。只消费换行提交的�
 ## 验证
 
 单元测试覆盖超长 Unicode 回答、重复/乱序记录、多轮边界、工具数组内容、child 排除、
-缺失/损坏/gap/超限、路径逃逸及 preview 替换去重。
+缺失/损坏/gap/超限、未知记录/内容类型、Unicode escape 完整性、合法非文本内容、
+路径逃逸及 preview 替换去重。
 
 在原生 Linux 文件系统准备 Node/Deno/OpenCode 产物并提供 PostgreSQL 后运行：
 

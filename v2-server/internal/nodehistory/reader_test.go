@@ -89,6 +89,62 @@ func TestChildThoughtToolAndPreviousTurnCannotBecomeAnswer(t *testing.T) {
 	}
 }
 
+func TestReadTurnPreservesLegalNonTextHistory(t *testing.T) {
+	lines := []json.RawMessage{meta(), update(1, "agent_message_chunk", "answer")}
+	for _, content := range []string{
+		`{"type":"image","data":"YWJj","mimeType":"image/png"}`,
+		`{"type":"audio","data":"YWJj","mimeType":"audio/wav"}`,
+		`{"type":"resource_link","uri":"file:///workspace/file","name":"file"}`,
+		`{"type":"resource","resource":{"uri":"file:///workspace/file","text":"resource text"}}`,
+	} {
+		lines = append(lines, record(uint32(len(lines)), "update", map[string]any{"update": map[string]any{
+			"sessionUpdate": "agent_message_chunk", "content": json.RawMessage(content),
+		}}))
+	}
+	lines = append(lines, record(uint32(len(lines)), "update", map[string]any{"update": map[string]any{
+		"sessionUpdate": "plan", "entries": []any{},
+	}}))
+	endSequence := uint32(len(lines))
+	lines = append(lines, ended(endSequence, "end_turn"))
+	r, _ := setupReader(t, lines...)
+	got, err := r.ReadTurn(context.Background(), "agent", endSequence, "end_turn")
+	if err != nil || got.Answer != "answer" || len(got.Records) != int(endSequence) {
+		t.Fatalf("answer=%q records=%d err=%v", got.Answer, len(got.Records), err)
+	}
+}
+
+func TestReadTurnValidatesUnicodeWithoutReplacingText(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		textJSON string
+		want     string
+		damaged  bool
+	}{
+		{"high_surrogate", `"answer \ud800"`, "", true},
+		{"low_surrogate", `"answer \udfff"`, "", true},
+		{"paired_surrogates", `"answer \ud83d\ude42"`, "answer 🙂", false},
+		{"replacement_rune", `"answer �"`, "answer �", false},
+		{"replacement_escape", `"answer \ufffd"`, "answer �", false},
+		{"literal_escape", `"answer \\ud800"`, `answer \ud800`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := json.RawMessage(`{"type":"text","text":` + tc.textJSON + `}`)
+			line := record(1, "update", map[string]any{"update": map[string]any{
+				"sessionUpdate": "agent_message_chunk", "content": content,
+			}})
+			r, _ := setupReader(t, meta(), line, ended(2, "end_turn"))
+			got, err := r.ReadTurn(context.Background(), "agent", 2, "end_turn")
+			if tc.damaged {
+				if !errors.Is(err, ErrDamaged) || got.Answer != "" {
+					t.Fatalf("damaged text produced answer=%q err=%v", got.Answer, err)
+				}
+			} else if err != nil || got.Answer != tc.want {
+				t.Fatalf("answer=%q want=%q err=%v", got.Answer, tc.want, err)
+			}
+		})
+	}
+}
+
 func TestReaderFailsClosedForMissingCorruptGappedAndOversizedHistory(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -99,7 +155,10 @@ func TestReaderFailsClosedForMissingCorruptGappedAndOversizedHistory(t *testing.
 		{"gap", []json.RawMessage{meta(), ended(2, "end_turn")}, ErrIncomplete},
 		{"gap_marker", []json.RawMessage{meta(), record(1, "gap", nil), ended(2, "end_turn")}, ErrIncomplete},
 		{"unknown_record", []json.RawMessage{meta(), record(1, "unknown", nil), ended(2, "end_turn")}, ErrDamaged},
+		{"unknown_update_kind", []json.RawMessage{meta(), update(1, "agent_message_chonk", "lost answer"), ended(2, "end_turn")}, ErrDamaged},
+		{"unpersisted_update_kind", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{}}}), ended(2, "end_turn")}, ErrDamaged},
 		{"missing_content_type", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"text": "lost answer"}}}), ended(2, "end_turn")}, ErrDamaged},
+		{"unknown_content_type", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "texx", "text": "lost answer"}}}), ended(2, "end_turn")}, ErrDamaged},
 		{"null_content", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": nil}}), ended(2, "end_turn")}, ErrDamaged},
 		{"identity", []json.RawMessage{record(0, "meta", map[string]any{"sessionId": "other", "schemaVersion": 2}), update(1, "agent_message_chunk", "wrong"), ended(2, "end_turn")}, ErrIdentity},
 		{"oversized", []json.RawMessage{meta(), update(1, "agent_message_chunk", strings.Repeat("x", maxLineBytes)), ended(2, "end_turn")}, ErrLimit},

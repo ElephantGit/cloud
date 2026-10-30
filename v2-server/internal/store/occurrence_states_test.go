@@ -115,15 +115,18 @@ func TestExecutionStateRules(t *testing.T) {
 	if e != nil || auto.Status != "skipped" {
 		t.Fatalf("automatic overlap %v %v", auto, e)
 	}
-	active = apply(active, "busy", "")
-	if !active.Released || active.Status != "skipped" || active.Reason != "workspace_busy" {
+	active, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, active.ID, active.Version, store.ExecutionEvidence{Event: "rejected", Reason: "execution_busy"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !active.Released || active.Status != "skipped" || active.Reason != "execution_busy" {
 		t.Fatal("busy not terminal")
 	}
 	if _, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, active.ID, active.Version, store.ExecutionEvidence{Event: "begin"}); !errors.Is(e, store.ErrIneligible) {
 		t.Fatal("busy automatically retried")
 	}
 	unknown := apply(record("unknown"), "begin", "")
-	unknown = apply(unknown, "unknown", "")
+	unknown = apply(unknown, "reconcile", "")
 	if record("blocked-by-unknown").Status != "skipped" {
 		t.Fatal("unknown released task")
 	}
@@ -166,7 +169,7 @@ func TestExecutionStateRules(t *testing.T) {
 	running = apply(running, "interrupted", "ref-2")
 	running = apply(running, "released", "ref-2")
 	unaccepted := apply(record("not-accepted"), "begin", "")
-	unaccepted = apply(unaccepted, "unknown", "")
+	unaccepted = apply(unaccepted, "reconcile", "")
 	unaccepted = apply(unaccepted, "recover", "")
 	unaccepted = apply(unaccepted, "not_accepted", "")
 	if !unaccepted.Released {
@@ -180,11 +183,46 @@ func TestExecutionStateRules(t *testing.T) {
 	}
 	cancel = apply(cancel, "cancelled", "ref-3")
 	cancel = apply(cancel, "released", "ref-3")
+	queued := record("query-unsent")
+	got, e := s.GetOccurrence(ctx, tid, u.ID, queued.ID)
+	if e != nil || got.ID != queued.ID {
+		t.Fatalf("single query %v %v", got, e)
+	}
+	got, e = s.FindManualOccurrence(ctx, tid, u.ID, config.ID, "query-unsent")
+	if e != nil || !got.ScheduledAt.Equal(queued.ScheduledAt) {
+		t.Fatalf("manual retry lookup %v %v", got, e)
+	}
+	if _, e = s.FindManualOccurrence(ctx, tid, u.ID, config.ID, "missing"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("missing manual identity")
+	}
+	recoverable, e := s.RecoverableOccurrences(ctx, tid, u.ID)
+	if e != nil || len(recoverable) != 1 || recoverable[0].ID != queued.ID {
+		t.Fatalf("recoverable %v %v", recoverable, e)
+	}
+	queued = apply(queued, "begin", "")
+	activeRows, e := s.ActiveOccurrences(ctx, tid, u.ID)
+	if e != nil || len(activeRows) != 1 || activeRows[0].ID != queued.ID {
+		t.Fatalf("active %v %v", activeRows, e)
+	}
+	queued, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, queued.ID, queued.Version, store.ExecutionEvidence{Event: "rejected", Reason: "invalid_model"})
+	if e != nil || !queued.Released || queued.Reason != "invalid_model" {
+		t.Fatalf("definite rejection %v %v", queued, e)
+	}
 	other, e := s.Login(ctx, store.Identity{Source: "test", Subject: "other", DisplayName: "Other"}, time.Hour)
 	if e != nil {
 		t.Fatal(e)
 	}
 	v, _ := s.SessionUser(ctx, other)
+	if _, e = s.GetOccurrence(ctx, tid, v.ID, queued.ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("foreign get")
+	}
+	if _, e = s.FindManualOccurrence(ctx, tid, v.ID, config.ID, "query-unsent"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("foreign lookup")
+	}
+	foreign, e := s.RecoverableOccurrences(ctx, tid, v.ID)
+	if e != nil || len(foreign) != 0 {
+		t.Fatalf("foreign recovery %v %v", foreign, e)
+	}
 	if _, e = s.ApplyOccurrenceEvidence(ctx, tid, v.ID, cancel.ID, cancel.Version, store.ExecutionEvidence{Event: "recover"}); !errors.Is(e, store.ErrNotFound) {
 		t.Fatal("foreign transition")
 	}

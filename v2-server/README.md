@@ -58,6 +58,14 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 ## 与正式 Cloud 的差异
 
+### 调度编排与无项目消费适配
+
+[`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
+
+ModelAdapter 消费公共 StartModel/ReadAttempt/Cancel/End，不直接调用 provider，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，清理失败不释放占位。无项目配置必须指定真实模型 ID；尚未选择模型时明确拒绝，不猜测默认模型。
+
+此包没有接入 main、HTTP 或前端，也不创建后台 goroutine。生产自动扫描和真实派发仍关闭，公共 Service 实现与记录底座就绪后才能装配。测试通过公共 Stub 注入结果，配合实际 PostgreSQL 验证编排行为；这不是模型调用或生产链路验收。
+
 ### 定时触发记录基础
 
 `internal/schedule.Next` 提供服务端时间计算；`Store.RecordOccurrence` 在事务内锁定配置、检查创建者与当前成员关系，并写入 `v2_schedule_occurrences`。尚未安装周期扫描器、自动派发器或 HTTP 触发入口，不调用执行模块。配置页面仍不会触发真实运行。

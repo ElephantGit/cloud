@@ -17,11 +17,16 @@ import (
 	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/node"
+	"github.com/wanglongan587/cloud/v2-server/internal/nodehistory"
 )
 
 // This is the real process/filesystem boundary: fixture model responses, unmodified Node,
 // Deno and OpenCode, real HTTPS clone, actual shell tool and process guardian cleanup.
 func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
+	runRealAgent(t, "")
+}
+
+func runRealAgent(t *testing.T, longAnswer string) {
 	assets := os.Getenv("V2_NODE_ASSETS_DIR")
 	if assets == "" {
 		t.Skip("set V2_NODE_ASSETS_DIR to prepared assets for the real Agent test")
@@ -37,7 +42,7 @@ func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	bare, commit, snapshot := seedRepository(t, root)
-	provider := &pausingFixture{started: make(chan struct{}), stopped: make(chan struct{})}
+	provider := &pausingFixture{started: make(chan struct{}), stopped: make(chan struct{}), longAnswer: longAnswer}
 	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), PackagePath: filepath.Join(assets, "opencode-0.6.11.orax"), PackageSHA256: "88c00f81997fc7fe892f2d58a686f535678e562c7e000d33eb7ee3b1d0f754b5", Bindings: map[string]Binding{"binding": {testModel, provider}}})
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +79,18 @@ func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
 		}
 	}
 	t.Cleanup(stop)
+	reader, err := nodehistory.Open(filepath.Join(opts.Root, "n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	projection := nodehistory.NewProjection(reader, "agent")
+	var evidence *historyEvidence
+	if longAnswer != "" {
+		evidence = openHistoryEvidence(t)
+	}
+	var firstResult *nodehistory.Turn
+	sawTruncation := false
 	t.Cleanup(func() {
 		if t.Failed() {
 			for _, name := range []string{"nb.log", "hb.log"} {
@@ -111,6 +128,25 @@ func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
 			}
 			if err := journal.Sync(); err != nil {
 				t.Fatal(err)
+			}
+			var turn *nodehistory.Turn
+			if m.ExecutionID == "agent" && (m.Type == "thread_preview" || m.Type == "thread_event") {
+				observation, err := projection.Consume(ctx, m)
+				if err != nil {
+					t.Fatalf("consume Node history: %v", err)
+				}
+				turn = observation.Turn
+				if turn != nil && observation.TurnID == "first" {
+					firstResult = turn
+				}
+				var item struct{ Truncated bool }
+				if err := json.Unmarshal(m.Payload, &item); err != nil {
+					t.Fatal(err)
+				}
+				sawTruncation = sawTruncation || item.Truncated
+			}
+			if evidence != nil && m.Sequence != nil {
+				evidence.retain(t, ctx, m, projection.Snapshot(), turn)
 			}
 			if m.Sequence != nil {
 				if err := r.Client.Ack(ctx, m); err != nil {
@@ -173,8 +209,20 @@ func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
 			break
 		}
 	}
-	if !strings.Contains(answer.String(), FixtureAnswer) {
+	if longAnswer == "" && !strings.Contains(answer.String(), FixtureAnswer) {
 		t.Fatalf("answer=%q", answer.String())
+	}
+	if longAnswer != "" {
+		if !sawTruncation {
+			t.Fatal("long test did not cross Node history truncation boundary")
+		}
+		if firstResult == nil || firstResult.Answer != longAnswer {
+			t.Fatalf("full answer mismatch; expected %d bytes", len(longAnswer))
+		}
+		if answer.Len() >= len(longAnswer) {
+			t.Fatal("wire projection unexpectedly complete; test did not prove recovery")
+		}
+		t.Logf("recovered %d-byte full answer from Node history; wire visible text was %d bytes", len(longAnswer), answer.Len())
 	}
 	marker, err := os.ReadFile(filepath.Join(clone.Result.Path, "ora-v2-result.txt"))
 	if err != nil || string(marker) != FixtureMarker {
@@ -222,15 +270,32 @@ func TestRealAgentCloneInstallToolAndEnd(t *testing.T) {
 	}
 	stop()
 	t.Log("EndSession, guardian cleanup and host restart passed; checkout preserved")
+	if evidence != nil {
+		// Verify after the Node restart, close the database connection and discard the source
+		// history so the read cannot accidentally fall back to the still-existing JSONL file.
+		if err := os.RemoveAll(filepath.Join(opts.Root, "n", "sessions")); err != nil {
+			t.Fatal(err)
+		}
+		recovered := evidence.reopenFirst(t, ctx)
+		if recovered.Answer != longAnswer || recovered.StopReason != "end_turn" {
+			t.Fatal("PostgreSQL result changed after End/restart/source removal")
+		}
+		t.Logf("fresh PostgreSQL connection returned all %d bytes after End, Node restart and source removal", len(recovered.Answer))
+	}
 }
 
 type pausingFixture struct {
 	pause            atomic.Bool
 	started, stopped chan struct{}
+	longAnswer       string
 }
 
 func (p *pausingFixture) Complete(w http.ResponseWriter, r *http.Request, m Model) {
 	if !p.pause.Load() {
+		if p.longAnswer != "" {
+			serveLongFixture(w, r, m, p.longAnswer)
+			return
+		}
 		FixtureProvider{}.Complete(w, r, m)
 		return
 	}

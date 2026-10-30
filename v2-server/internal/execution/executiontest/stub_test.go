@@ -40,7 +40,7 @@ func ExampleStub() {
 		Rounds: []execution.Round{{ContainerID: "loop", Index: 0}}, AttemptID: "attempt-1",
 	}
 	completed := execution.Result{
-		Status: execution.StatusCompleted, Answer: "The complete answer.", StopReason: "end_turn",
+		Status: execution.StatusCompleted, Answer: "The complete answer.", AnswerComplete: true, StopReason: "end_turn",
 	}
 	svc := &executiontest.Stub{
 		ReadAttemptFunc: func(_ context.Context, _ execution.Scope, c execution.Caller) (execution.Turn, error) {

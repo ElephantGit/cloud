@@ -105,12 +105,15 @@ const (
 // StopReason retains the protocol reason separately. FailureCode is a stable, sanitized code,
 // never an infrastructure error string. Consumers decide how these map to their domain status.
 type Result struct {
-	Status      Status
-	Answer      string
-	StopReason  string
-	FailureCode string
-	// Usage retains ACP PromptResponse.usage; model-only providers normalize their token
-	// counters to the same ACP Usage shape. Unreported usage stays absent, not invented.
+	Status Status
+	Answer string
+	// AnswerComplete is true only after authoritative full-result retrieval. Completed
+	// requires true; missing, damaged or over-limit history produces failed + a reason.
+	AnswerComplete bool
+	StopReason     string
+	FailureCode    string
+	// Usage is absent for the fixed Node route, which does not relay PromptResponse.usage.
+	// Model-only providers may normalize reported counters to ACP Usage. Never invent zeroes.
 	Usage json.RawMessage
 }
 
@@ -148,33 +151,47 @@ type TurnPage struct {
 type EventKind string
 
 const (
-	EventACPUpdate    EventKind = "acp_update"
-	EventTurnEnded    EventKind = "turn_ended"
-	EventTextDelta    EventKind = "text_delta"
-	EventSessionEnded EventKind = "session_ended"
+	EventHistorySnapshot EventKind = "history_snapshot"
+	EventTurnEnded       EventKind = "turn_ended"
+	EventTextDelta       EventKind = "text_delta"
+	EventSessionEnded    EventKind = "session_ended"
 )
 
 // Event is immutable after publication. Sequence starts at 1 and increases without gaps within
-// SessionID. Ref.TurnID is empty outside a turn. ACPUpdate holds an unchanged ACP SessionUpdate,
-// preserving its sessionUpdate discriminator
-// and extension metadata (text, thought, tool, plan, usage, etc.). Result is set only on TurnEnded.
-// Readers must not concatenate thought or tool text into the final answer.
+// SessionID. Ref.TurnID is empty outside a turn. History replaces the entire displayed Node
+// projection; it is never appended as ACP chunks. Result is set only on TurnEnded, which does
+// not prove session shutdown or Workspace release. Thought/tool text is not part of Answer.
 type Event struct {
 	Ref        Ref
 	Sequence   uint64
 	OccurredAt time.Time
 	Kind       EventKind
-	ACPUpdate  json.RawMessage
-	// ACPSessionID preserves child-session identity without changing the owning Ref.
-	ACPSessionID string
+	History    *HistorySnapshot
 	// TextDelta carries model-only text without inventing ACP tools or Agent events.
 	TextDelta string
 	Result    *Result
 }
 
+// HistorySnapshot is a full replacement of the available settled/pending Node history.
+// Missing ACP chrome/usage is unavailable, not zero. Incomplete concerns process display;
+// Result.AnswerComplete independently describes the authoritative final answer.
+type HistorySnapshot struct {
+	Records    []HistoryRecord `json:"records"`
+	Incomplete bool            `json:"incomplete"`
+}
+
+// HistoryRecord identifies an upsert position within a Node history, not the session's Event
+// cursor. Data is the fixed Node's HistoryLine/preview record, including available _meta and
+// tool details, not a raw ACP delta. Preview is provisional and must never form a final result.
+type HistoryRecord struct {
+	Sequence uint32          `json:"sequence"`
+	Data     json.RawMessage `json:"data"`
+	Preview  bool            `json:"preview,omitempty"`
+}
+
 // Stream replays retained events then follows live ones with no handoff gap. Next returns io.EOF
 // only after session_ended is delivered, or immediately if the cursor already acknowledges it.
-// turn_ended does not close the stream: late usage and subsequent turns remain observable.
+// turn_ended does not close the stream: later snapshots and subsequent turns remain observable.
 // A transport/storage failure is a non-EOF error.
 // One goroutine calls Next; Close may run concurrently and must unblock it. Context cancellation
 // or Close releases the subscription only: stopping observation must never cancel execution.
@@ -206,6 +223,10 @@ type Service interface {
 
 	// Cancel waits for execution-side confirmation and durable terminal publication. It is
 	// idempotent for terminal turns and returns their actual result, including a racing success.
+	// For an active Node turn it ends the entire Agent session (no turn-only Node cancel),
+	// confirms cleanup, then releases the Workspace. A previously terminal turn is a no-op;
+	// its still-live session continues to hold the Workspace until End. Model-only cancellation
+	// stops the provider request without ending the conversation and holds no Workspace.
 	// A deadline or ErrStopUnconfirmed means stopping is NOT confirmed: consumers must not
 	// publish cancellation or start a replacement attempt on that basis. The stop request may
 	// still complete later; callers reconcile via ReadAttempt or Subscribe.
@@ -214,8 +235,10 @@ type Service interface {
 	// End closes only this session, cancelling its active turn and confirming cleanup. It
 	// cannot stop a later session sharing the Workspace. Successful End is idempotent and
 	// keeps history/replay. Cleanup failure cannot rewrite a persisted Result.
-	// Execution-side quiescence precedes turn termination and Workspace release; a stop
-	// timeout never releases it. On restart old live sessions get EndedAt/session_ended and
+	// A naturally completed turn may publish its Result while its session remains live and
+	// holds the Workspace between turns. Only that owner can Append; another Start stays Busy.
+	// Execution-side quiescence and cleanup precede Workspace release; a stop timeout never
+	// releases it. On restart old live sessions get EndedAt/session_ended and
 	// running turns get interrupted/turn_ended before reads open. Clean residue before admission.
 	End(context.Context, Scope, string) error
 	ReadSession(context.Context, Scope, string) (Session, error)

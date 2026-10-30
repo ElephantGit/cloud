@@ -31,28 +31,43 @@ chat 的 ID 是 conversation，workflow 是 run，schedule 是 occurrence；轮�
 ## 会话事件和用量
 
 `Subscribe(sessionID, afterSequence)` 用 session 内连续序号，先回放再跟随，没有交接空档。
-Event.Ref.TurnID 对轮次外事件为空；保留 ACP SessionUpdate 原始 discriminator、元数据，以及 ACPSessionID，
-子代理不同 ACP session 的事件不会被误丢。模型直连使用 `text_delta`，不伪造 ACP tool 或 Agent 活动。
-`Result.Usage` 保存 ACP PromptResponse.usage；模型直连将 provider 用量转为相同 ACP Usage 结构，没有则留空。
+Event.Ref.TurnID 对轮次外事件为空。固定 Node 路线使用 `history_snapshot`：History 是当前可得历史的
+完整替换快照，Records 按历史位置排序，Data 保留 Node 的 settled HistoryLine/preview 对象及可得元数据。
+同一历史位置更新时替换；settled 优先于 preview，后来的 preview 不得覆盖已定稿记录。
+页面替换整个快照，不把 preview 和最终文本重复追加，不直接喂给 ACP 增量归约器。
+HistoryRecord.Sequence 不是 Event.Sequence，后者才是订阅/恢复游标。Preview 只作过程显示，不能构成最终回答。
+快照 Incomplete 表示过程信息有缺失，不代表最终回答的完整性；不标称“完整过程”。
 
-`turn_ended` 不关闭订阅，后续 usage、其他轮次继续可见。只有 `session_ended` 后 EOF；游标已确认它时直接 EOF。
+固定 Node 不提供原始 ACP 流、每轮 usage、上下文及 mode/config 更新，界面留空或显示不可用，不填 0。
+模型直连使用 `text_delta`，不伪造 ACP tool 或 Agent 活动；已报告的 provider 用量可转为 ACP Usage，没有则留空。
+`Result.AnswerComplete` 必须由完整结果读取确认；completed 必须为 true。不能只拼接 bounded visible_text 或 preview。
+记录缺失、损坏或结果超限无法补全时返回 failed、AnswerComplete=false 和明确 FailureCode，不冒充成功。
+
+`turn_ended` 不关闭订阅，后续快照、其他轮次继续可见。只有 `session_ended` 后 EOF；游标已确认它时直接 EOF。
 工作流/定时调用方按 TurnID 过滤，收到目标 turn 终态后主动 Close 观察流，不等待 session EOF。
 关闭观察流或其 context 不取消执行；超出历史的游标报错，读取故障不能冒充 EOF。
 最终可见回答、停止原因、失败码、用量分别保存，thought/tool 输出不拼入 Answer。
 
 ## 停止、释放与恢复
 
-Cancel 等执行侧停止访问目录和终态写入；与自然完成竞争时返回实际结果。
+固定 Node 的活 session 在两轮之间仍持有 Workspace。自然完成的 turn 可以先发布结果，
+其他 session 的 Start 仍为 Busy；只有原 session 可以在空闲轮次间 Append。turn_ended 不证明目录已释放。
+
+取消正在运行的 Node turn 会结束整个 Agent session（固定 Node 无仅取消一轮的命令），
+Cancel 等停止、终态写入及清理确认后返回并释放目录。已终结的 turn 再 Cancel 为幂等只读，
+不停止它后来继续 Append 的轮次；自然完成竞争时返回实际结果，调用方仍主动 End 确认资源收尾。
+无项目 Cancel 只停止本轮 provider 请求，会话可继续 Append，不占目录。
 超时或 `ErrStopUnconfirmed` 都不能表示目录已释放，也不能据此派发后继执行。
-确认 quiescence 后才能发布 turn 终态并释放 Workspace；End 只清理本 session，不能误停后来占用同目录的 session。
+End 等本 session 停止访问目录及清理确认后释放；不能误停后来占用同目录的 session。
+定时任务和工作流收到目标轮次结果后主动 End，不以订阅 EOF 代替停止确认。
 清理失败单独返回，不改写已经持久化的回答或结果。
 
 End 后仍可读取 Session、Turns、Attempt 与事件。重启将旧活 session 设置 EndedAt/session_ended，
 活动 turn 写 interrupted/turn_ended，完成后才开放读取；启动前清理残留，清理未确认的 Workspace 不重新接收。
 不恢复旧活会话、不自动重放 prompt；对已结束 session 的 Append 返回 `ErrSessionEnded`。
 
-首版 Agent 为完全访问模式：适配层在受控演示环境中选 ACP allow_always，只有 allow_once 时选它；
-没有允许选项则取消该权限请求并明确失败，不悬挂等待页面。权限回应 UI 后置，模型直连不提供工具。
+首版使用固定 Node 的完全访问模式，权限行为由 Node/Agent 管理，不提供页面权限回应接口。
+模型直连不提供工具。
 附件、动态插件、模型热切换、任意仓库导入和新建 worktree 不由本草案宣称已支持。
 页面拥有标题、排序、删除、业务队列及自己的 HTTP/SSE；公共层拥有运行和记录。
 
@@ -62,9 +77,7 @@ callback 替身用于消费方测试，不实现调度、幂等、回放、持�
 本包测试直接验证文本输入的保真与拒绝，以及未配置替身的不可用结果。
 上述运行约定必须由真实 runtime、PostgreSQL/race 与 Node+Agent+fixture 测试兑现；真实 provider 单独验收。
 
-当前 Node（desktop `cab59a3c`）的 `thread_event` 来自合并后的 HistoryLine，
-`thread_preview` 则是可替换的有界快照；两者都不是原始 ACP 增量流。
-history assembler 不保留 usage、模式、配置等会话更新，TurnEnded 也不包含 PromptResponse usage，
-超大历史记录还可能被截断。仅将 Node payload 填入 ACPUpdate 无法满足本接口的完整消费契约，
-也不能把 preview 与最终完整 message 都当作新增文本拼接。实现必须处理这个能力边界，不能伪造缺失字段。
-同样，Agent 完成一轮后仍可能保持会话进程；turn 结果本身不能证明整个 Workspace 已停止被访问。
+固定 Node（desktop `cab59a3c`）的 IPC history 在 256 KiB 截断，visible_text 在 64 KiB 截断。
+完整结果需只读其本地 sessions JSONL，按历史位置去重/排序、验证指定 turnEnded 和完整性后入库，
+落库成功才 ACK 对应 Node 事件；此读取不能写 Node SQLite 或修改 Node 的历史文件。
+历史快照和完整结果的丢失/超限路径、跨阈值回答在 End/重启后的 PostgreSQL 读取都必须有直接测试。

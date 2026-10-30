@@ -76,7 +76,9 @@ func (s *Stub) Subscribe(ctx context.Context, scope execution.Scope, sessionID s
 	return s.SubscribeFunc(ctx, scope, sessionID, after)
 }
 
-// Cancel delegates stop confirmation to CancelFunc.
+// Cancel delegates stop confirmation to CancelFunc. Callbacks define the scenario: cancelling
+// an active Agent turn ends its session, while model-only cancellation permits later Append.
+// Stub adds no lifecycle transitions of its own.
 func (s *Stub) Cancel(ctx context.Context, scope execution.Scope, ref execution.Ref) (execution.Result, error) {
 	if s.CancelFunc == nil {
 		return execution.Result{}, execution.ErrUnavailable

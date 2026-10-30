@@ -64,8 +64,11 @@ StopReason 与 FailureCode 分别保留，清理失败不能改写已持久化�
 
 ## Cancel、End 与重启
 
-- `Cancel(ref)` 停止指定的当前轮次，等待执行侧确认并保存终态，保留会话供后续 Append。
-  对已终态的 turn 重复 Cancel 返回实际结果，不误停之后的轮次；与自然完成竞争时也返回实际结果。
+- 有项目的 Agent：`Cancel(ref)` 通过固定 Node 的停止命令结束整个活动会话，等待停止确认并保存真实终态；
+  后续 Append 返回 `ErrSessionEnded`，页面提示新开对话。不重放历史，不悄悄另起 Agent 冒充原会话。
+- 无项目模型直连：`Cancel(ref)` 只停止本轮 provider 请求，确认后会话仍可 Append。
+- 对已终态的 turn 重复 Cancel 返回实际结果，不误停之后的轮次；与自然完成竞争时也返回实际结果，
+  不能把发出 Cancel 请求本身当成 cancelled 的证明。
 - `End(sessionID)` 结束会话，停止活动轮次并等待确认；成功后不能 Append。重复 End 幂等，历史和目录保留。
   它只影响这个 session，不能停止同项目 Node 上的其他会话。
 - 超时或 `ErrStopUnconfirmed` 不代表停止成功，调用方通过记录或事件读取实际状态。
@@ -80,8 +83,10 @@ StopReason 与 FailureCode 分别保留，清理失败不能改写已持久化�
 ## 验证边界
 
 callback 替身用于消费方单元测试，不实现调度、幂等、持久化或进程生命周期。
+Cancel callback 的场景由测试明确配置：Agent 的会话结束和模型直连的仅停本轮不能混为同一种行为。
 本包验证文本输入的保真与拒绝，以及未配置替身的不可用结果。
-真实实现需用 PostgreSQL/race 验证重复 attempt、同会话及同 workflow run 的 Busy、Cancel/End、重启后的历史读取，
+真实实现需用 PostgreSQL/race 验证重复 attempt、同会话及同 workflow run 的 Busy、Agent Cancel 后拒绝 Append、
+模型直连 Cancel 后可继续 Append、End 与重启后的历史读取，
 并经 M4 跑通真实 Node/Agent + fixture 的一轮对话和工具动作；真实 provider 单独验收。
 
 固定 Node 的 IPC history 在 256 KiB 截断，visible_text 在 64 KiB 截断。完整结果从本地 sessions JSONL 只读恢复，

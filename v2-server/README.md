@@ -66,6 +66,8 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 
 此包没有接入 main、HTTP 或前端，也不创建后台 goroutine。生产自动扫描和真实派发仍关闭，公共 Service 实现与记录底座就绪后才能装配。测试通过公共 Stub 注入结果，配合实际 PostgreSQL 验证编排行为；这不是模型调用或生产链路验收。
 
+未知接收在 ReadAttempt 未命中且尚无执行引用时调用公共 SealAttempt：已接收则先持久化原 Ref 后继续读取，明确未接收且空 Ref 才跳过并释放占位；错误、零值及非法组合保留占位。重复恢复只用原身份，不提交 prompt。已有 Ref 的执行仍需结果及 End 确认，不能用闭锁替代清理。公共闭锁的持久化和接收互斥由公共 Service 提供，当前消费方测试不代表该服务已经装配。
+
 ### 定时触发记录基础
 
 `internal/schedule.Next` 提供服务端时间计算；`Store.RecordOccurrence` 在事务内锁定配置、检查创建者与当前成员关系，并写入 `v2_schedule_occurrences`。尚未安装周期扫描器、自动派发器或 HTTP 触发入口，不调用执行模块。配置页面仍不会触发真实运行。

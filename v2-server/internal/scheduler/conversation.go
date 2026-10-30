@@ -91,6 +91,11 @@ func (a *ConversationAdapter) Dispatch(ctx context.Context, scope execution.Scop
 		return errors.Join(startErr, err)
 	}
 	if startErr != nil {
+		if o.Released || o.ExecutionRef != "" {
+			// A concurrent reconciliation may already have sealed or accepted this
+			// identity. A late admission error cannot replace its durable evidence.
+			return startErr
+		}
 		event, reason := admissionFailure(startErr)
 		_, err = a.apply(writeCtx, scope, o, event, "", reason)
 		return errors.Join(startErr, err)
@@ -158,6 +163,8 @@ func admissionFailure(err error) (string, string) {
 	switch {
 	case errors.Is(err, execution.ErrAdmissionUnknown), errors.Is(err, execution.ErrConflict):
 		return "unknown", ""
+	case errors.Is(err, execution.ErrAdmissionClosed):
+		return "rejected", "admission_not_accepted"
 	case errors.Is(err, context.Canceled):
 		return "rejected", "admission_cancelled"
 	case errors.Is(err, context.DeadlineExceeded):
@@ -189,7 +196,8 @@ func isResult(status string) bool {
 	return status == "succeeded" || status == "failed" || status == "cancelled" || status == "interrupted"
 }
 
-// Reconcile reads the original caller identity only. NotFound never proves non-admission.
+// Reconcile follows the original caller identity without submitting another prompt.
+// Missing unbound attempts require SealAttempt; NotFound alone never proves non-admission.
 // A terminal result still requires End confirmation before the task's slot is released.
 func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
 	o, err := a.get(ctx, scope, occurrence.ID)
@@ -203,6 +211,13 @@ func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Sco
 		return a.end(ctx, scope, o)
 	}
 	turn, err := a.executor.ReadAttempt(ctx, scope, occurrenceCaller(o))
+	if errors.Is(err, execution.ErrNotFound) && o.ExecutionRef == "" {
+		o, err = a.seal(ctx, scope, o)
+		if err != nil || o.Released {
+			return err
+		}
+		turn, err = a.executor.ReadAttempt(ctx, scope, occurrenceCaller(o))
+	}
 	if err != nil {
 		return err
 	}
@@ -224,6 +239,33 @@ func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Sco
 		return nil
 	}
 	return a.finish(ctx, scope, o, turn.Ref, *turn.Result)
+}
+
+// seal persists a confirmed resolution before any subsequent lookup can fail. Versions
+// fence concurrent observers; a failed local write is retried under the same identity.
+func (a *ConversationAdapter) seal(ctx context.Context, scope execution.Scope, o store.Occurrence) (store.Occurrence, error) {
+	resolution, err := a.executor.SealAttempt(ctx, scope, occurrenceCaller(o))
+	if err != nil {
+		return o, err // Even a populated resolution is invalid when accompanied by an error.
+	}
+	switch resolution.State {
+	case execution.AdmissionAccepted:
+		if !validRef(resolution.Ref) {
+			return o, execution.ErrAdmissionUnknown
+		}
+		encoded, _ := json.Marshal(resolution.Ref)
+		return a.apply(ctx, scope, o, "accepted", string(encoded), "")
+	case execution.AdmissionNotAdmitted:
+		if resolution.Ref != (execution.Ref{}) {
+			return o, execution.ErrConflict
+		}
+		if o.Status == "starting" {
+			return a.apply(ctx, scope, o, "rejected", "", "admission_not_accepted")
+		}
+		return a.apply(ctx, scope, o, "not_accepted", "", "")
+	default:
+		return o, execution.ErrAdmissionUnknown
+	}
 }
 
 func resultEvent(r execution.Result) (string, string, error) {

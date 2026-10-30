@@ -164,6 +164,7 @@ func TestModelAdmissionFailures(t *testing.T) {
 	}{
 		{"busy", execution.ErrWorkspaceBusy, "skipped", "workspace_busy", true},
 		{"unavailable", execution.ErrUnavailable, "skipped", "execution_unavailable", true},
+		{"closed", execution.ErrAdmissionClosed, "skipped", "admission_not_accepted", true},
 		{"unknown", execution.ErrAdmissionUnknown, "admission_unknown", "admission_unknown", false},
 		{"conflict", execution.ErrConflict, "admission_unknown", "admission_unknown", false},
 		{"timeout", context.DeadlineExceeded, "skipped", "admission_deadline", true},
@@ -205,7 +206,7 @@ func TestModelUnknownReconcilesWithoutReadmission(t *testing.T) {
 	f.executor.ReadAttemptFunc = func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error) {
 		return execution.Turn{}, execution.ErrNotFound
 	}
-	if e := f.adapter.Reconcile(ctx, f.scope, f.occ); !errors.Is(e, execution.ErrNotFound) {
+	if e := f.adapter.Reconcile(ctx, f.scope, f.occ); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatal(e)
 	}
 	o := f.read(t)
@@ -216,7 +217,7 @@ func TestModelUnknownReconcilesWithoutReadmission(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = f.adapter.Reconcile(ctx, f.scope, o); !errors.Is(e, execution.ErrNotFound) {
+	if e = f.adapter.Reconcile(ctx, f.scope, o); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatal(e)
 	}
 	f.executor.ReadAttemptFunc = func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error) {

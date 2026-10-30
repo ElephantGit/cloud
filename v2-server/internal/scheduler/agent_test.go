@@ -119,7 +119,7 @@ func TestProjectAdmissionBusyAndUnknownNeverFallBackOrReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = coordinator.Recover(ctx, f.scope); !errors.Is(err, execution.ErrNotFound) {
+			if err = coordinator.Recover(ctx, f.scope); !errors.Is(err, execution.ErrUnavailable) {
 				t.Fatal(err)
 			}
 			if o = f.read(t); o.Status != "reconciling" || o.Released || starts != 1 {

@@ -47,7 +47,7 @@ func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
 		t.Fatalf("unknown=%+v %v", o, e)
 	}
 	now = now.Add(time.Hour)
-	if e = c.Tick(ctx, f.scope); !errors.Is(e, execution.ErrNotFound) {
+	if e = c.Tick(ctx, f.scope); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatalf("missing outcome %v", e)
 	}
 	items, e := f.records.Occurrences(ctx, f.scope.TenantID, f.scope.UserID, f.occ.ScheduleID, "", 100)
@@ -68,7 +68,7 @@ func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = c.Recover(ctx, f.scope); !errors.Is(e, execution.ErrNotFound) {
+	if e = c.Recover(ctx, f.scope); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatalf("recovery=%v", e)
 	}
 	f.executor.ReadAttemptFunc = func(_ context.Context, _ execution.Scope, got execution.Caller) (execution.Turn, error) {

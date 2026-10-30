@@ -56,26 +56,40 @@ e2e/            Playwright 端到端测试
 
 v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话发消息得到一条注明"演示回复"的回答。接入后，会话列表、发消息和事件流改走 v2-server，项目顺序也随之存到后端。
 
+### 运行工作流
+
+工作流的运行照 desktop 放在对话页里（`workflow-run/`）：项目行 `+` 菜单里的"运行工作流"列出已发布的工作流，选一个后给这次运行起名，创建出一次未开始的运行。运行和会话一起列在项目下面，带状态点；选中后右侧换成运行页，选会话或新建对话就换回来。运行页标题栏有"启动"（先填开始节点的变量和初始提示词）、"停止"、"再跑一次"（新建一次运行，旧的留在列表里）；左边是运行概览图，每个节点显示状态；右边是选中节点的输入、输出和节点对话，运行结束后顶部显示输出节点的结果。Agent 节点的对话只在这里看，不进聊天记录，desktop 也是这样。
+
+| 文件 | 来自 desktop `packages/app-shell/src/features/workflow-run` |
+|---|---|
+| `run-overview-*`、`run-status-*`、`run-retry-wait-label.tsx`、`retry-countdown.ts`、`loop-round-state.ts`、`run-focus.ts`、`theater-motion.css` | 同名文件，原样复制 |
+| `workflow-run-start-dialog.tsx`、`translations.ts` | 同名文件 |
+| `run-pane.tsx`、`run-sidebar.tsx`、`demo-runs.ts` | 新写：desktop 的运行页、侧栏行和运行对话框的精简版 |
+
+后端还不能执行工作流，现在由 desktop 的内存运行时（`src/lib/workflows/runtime/memory-workflow-runtime.ts`、`mock-run-engine.ts`）在浏览器里代替：它冻结发布版本的图，按连线每 1.5 秒推进一个节点，条件节点选一条分支，Agent 节点生成演示对话。所以运行页标着"演示运行"。运行只存在当前页面里，刷新后清空。desktop 运行页的剧场视图、人工介入、从失败处恢复、AI 诊断、会话索引和文件变更都没有搬。接入真实执行后，把 `demo-runs.ts` 换成调接口的实现。
+
 ## 工作流
 
 `src/features/workflows/` 是工作流页，从 desktop（`ora-space/desktop` main `cab59a3c`）的工作流编辑器原样移植：左栏是工作流列表（新建、复制、重命名、删除、导入、导出），右边是 React Flow 画布、节点检查器、撤销重做、草稿自动保存、发布和版本历史。图结构就是 desktop 的工作流文档，导出的文件和 desktop 互通。
 
+对话页也要读工作流库、运行工作流，所以编辑器以外的部分放在 `src/lib/workflows/`，两个页面共用；只有工作流页用的留在 `src/features/workflows/`。
+
 | 目录 | 来自 desktop |
 |---|---|
-| `editor/` | `packages/app-shell/src/features/workflow-editor` |
-| `node-chrome/` | `packages/app-shell/src/features/workflow-node-chrome` |
-| `mock/`、`runtime/` | `packages/workflow-mock`、`packages/workflow-runtime` |
-| `composer-core/`、`prompt-composer/` | `packages/editor` 的 composer 和 app-shell 的提示词编辑器（tiptap） |
-| `data/workflows.ts`、`data/workflow-analysis.ts` | `packages/app-shell/src/state/data` |
-| `contracts/dto/` | `packages/contracts` 生成的 DTO 类型 |
+| `features/workflows/editor/` | `packages/app-shell/src/features/workflow-editor`（`translations.ts`、`workflow-transfer.ts` 在 `lib/workflows/editor/`） |
+| `features/workflows/composer-core/`、`prompt-composer/` | `packages/editor` 的 composer 和 app-shell 的提示词编辑器（tiptap） |
+| `lib/workflows/node-chrome/` | `packages/app-shell/src/features/workflow-node-chrome` |
+| `lib/workflows/mock/`、`runtime/` | `packages/workflow-mock`、`packages/workflow-runtime` |
+| `lib/workflows/data/workflows.ts`、`data/workflow-analysis.ts` | `packages/app-shell/src/state/data` |
+| `lib/workflows/contracts/dto/` | `packages/contracts` 生成的 DTO 类型 |
 
-复制来的文件只改了 import 路径、几处 v2 的 lint 或 TypeScript 设置不接受的写法，以及几处网页上的差别：编辑器标题栏去掉了返回按钮（页面上没有可返回的地方）；草稿在页面刷新或关闭（`pagehide`）时立即补存，不等 1 秒的防抖；列表用共用的细滚动条。desktop 依赖的宿主能力在 `host/` 里换成浏览器实现：`ui.ts` 转出 v2 生成的 shadcn 组件；`i18n.ts` 只加载 desktop 的 zh-CN 文案；`platform.tsx` 用浏览器下载代替保存对话框；`window-chrome.tsx` 去掉了 desktop 的窗口拖拽和窗口按钮。页面自带一个 QueryClient，沿用 desktop 的缓存策略（`staleTime` 30 秒），编辑器的缓存补丁和自动保存依赖这一点。
+复制来的文件只改了 import 路径、几处 v2 的 lint 或 TypeScript 设置不接受的写法，以及几处网页上的差别：编辑器标题栏去掉了返回按钮（页面上没有可返回的地方）；草稿在页面刷新或关闭（`pagehide`）时立即补存，不等 1 秒的防抖；列表用共用的细滚动条。desktop 依赖的宿主能力在 `lib/workflows/host/` 里换成浏览器实现：`ui.ts` 转出 v2 生成的 shadcn 组件；`i18n.ts` 只加载 desktop 的 zh-CN 文案；`platform.tsx` 用浏览器下载代替保存对话框；`window-chrome.tsx` 去掉了 desktop 的窗口拖拽和窗口按钮。页面自带一个 QueryClient，沿用 desktop 的缓存策略（`staleTime` 30 秒），编辑器的缓存补丁和自动保存依赖这一点。
 
-左栏和对话页的聊天记录用同一个拖宽手柄（`src/components/sidebar-resize-handle.tsx`）和同一种细滚动条（`src/lib/scrollbar.ts`）：拖动右边缘调宽度，拖过最小宽度就收起，也可以聚焦边缘后用方向键调整、按回车切换；收起后从编辑器标题栏的按钮展开。宽度和是否收起保存在浏览器本地（`host/ui-store.ts`）。提示条右上角有关闭按钮。
+左栏和对话页的聊天记录用同一个拖宽手柄（`src/components/sidebar-resize-handle.tsx`）和同一种细滚动条（`src/lib/scrollbar.ts`）：拖动右边缘调宽度，拖过最小宽度就收起，也可以聚焦边缘后用方向键调整、按回车切换；收起后从编辑器标题栏的按钮展开。宽度和是否收起保存在浏览器本地（`lib/workflows/host/ui-store.ts`）。提示条右上角有关闭按钮。
 
-`samples/` 是样例工作流：`authored.ts` 写了两份，代码审查（开始 → Agent → 条件分支 → 两个 Agent → 变量聚合器 → 输出）和逐段翻译（迭代）；另外三份是 desktop 自带的 Loop 样例（`artifacts/workflow-loop-examples/`），原样复制，导入时把 Agent 改成演示执行器、去掉角色。每个浏览器打开工作流页时，`samples/seed.ts` 按导入对话框的同一条路径把它们加进列表、发布为 `v1`，只加一次：已有的工作流保留，同名的样例跳过，删掉的样例不会再出现。五份合起来覆盖全部八种可执行节点。
+`lib/workflows/samples/` 是样例工作流：`authored.ts` 写了两份，代码审查（开始 → Agent → 条件分支 → 两个 Agent → 变量聚合器 → 输出）和逐段翻译（迭代）；另外三份是 desktop 自带的 Loop 样例（`artifacts/workflow-loop-examples/`），原样复制，导入时把 Agent 改成演示执行器、去掉角色。每个浏览器打开工作流页（或对话页的"运行工作流"菜单）时，`samples/seed.ts` 按导入对话框的同一条路径把它们加进列表、发布为 `v1`，只加一次：已有的工作流保留，同名的样例跳过，删掉的样例不会再出现。五份合起来覆盖全部八种可执行节点。
 
-v2-server 还没有工作流接口，现在由 `data/local-workflow-backend.ts` 在浏览器 localStorage 里代替 desktop 的后端，规则照搬 desktop 的 Rust 实现：名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；版本名不能叫 `draft`，也不能含 `/`、`\`、控制字符；不能删除草稿和当前生效的版本；发布时检查图能否从开始节点投影成可执行图（多余节点不阻塞发布）；analyze 标出未参与运行的节点和不认识的节点类型。desktop 引擎对每个节点配置的检查没有搬过来。Agent、模型、角色、Skill 和 MCP 清单是 `data/demo-catalog.ts` 里的演示数据。页面不运行工作流。接入 v2-server 后，只需把 `data/contracts-client.ts` 换成调生成的客户端。
+v2-server 还没有工作流接口，现在由 `lib/workflows/data/local-workflow-backend.ts` 在浏览器 localStorage 里代替 desktop 的后端，规则照搬 desktop 的 Rust 实现：名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；版本名不能叫 `draft`，也不能含 `/`、`\`、控制字符；不能删除草稿和当前生效的版本；发布时检查图能否从开始节点投影成可执行图（多余节点不阻塞发布）；analyze 标出未参与运行的节点和不认识的节点类型。desktop 引擎对每个节点配置的检查没有搬过来。Agent、模型、角色、Skill 和 MCP 清单是 `data/demo-catalog.ts` 里的演示数据。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。接入 v2-server 后，只需把 `data/contracts-client.ts` 换成调生成的客户端。
 
 ## 登录
 

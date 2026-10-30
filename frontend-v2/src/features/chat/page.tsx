@@ -1,4 +1,4 @@
-import { FlaskConicalIcon, FolderIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react'
+import { FlaskConicalIcon, FolderIcon, FolderLockIcon, GitBranchIcon, RotateCcwIcon, SquarePenIcon } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { Badge } from '@/components/ui/badge'
@@ -14,7 +14,7 @@ import { ContextUsage, LandingHeading, Thread } from './components/thread'
 import { isResponding } from './model/conversation'
 import { emptyConversation } from './model/types'
 import { scenarios } from './samples/scenarios'
-import { type Agent, agentsOf, emptyDraft, newChatKey, sampleAgents, samplePlugins, type Session, useChatStore } from './store'
+import { type Agent, agentsOf, emptyDraft, isEnded, newChatKey, sampleAgents, samplePlugins, type Session, useChatStore } from './store'
 
 /** The run view brings the graph canvas, so it loads only once a run is opened. */
 const RunPane = lazy(() => import('./workflow-run/run-pane'))
@@ -70,7 +70,9 @@ function ChatPane({ session }: { session?: Session }) {
   const executors = useChatStore((s) => s.executors)
   const backend = useChatStore((s) => s.backend)
   const notice = useChatStore((s) => s.notices[key])
-  const { send, sendNewChat, stop, answer, setAgentModel, setNewChat, setDraft, unqueue, replay, select, release, dismiss } = useChatStore.getState()
+  // A backend conversation whose session ended (stopped, or the server restarted) is read-only.
+  const ended = useChatStore((s) => !!session?.remote && isEnded(s.views[session.id]))
+  const { send, sendNewChat, startNewChat, stop, answer, setAgentModel, setNewChat, setDraft, unqueue, replay, dismiss } = useChatStore.getState()
   const onAnswer = useCallback((permissionId: string, optionId: string) => session && answer(session.id, permissionId, optionId), [answer, session])
   const scenario = scenarios.find((s) => s.id === session?.scenarioId)
   const landing = conversation.turns.length === 0
@@ -91,8 +93,6 @@ function ChatPane({ session }: { session?: Session }) {
     const dy = from.top - slot.current.getBoundingClientRect().top
     if (dy !== 0) slot.current.animate?.([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }], slide)
   })
-
-  const branches = projects.find((p) => p.id === newChat.projectId)?.worktrees?.map((w) => w.branch) ?? []
 
   return (
     <>
@@ -150,14 +150,16 @@ function ChatPane({ session }: { session?: Session }) {
                 {backend === 'loading' ? '正在连接后端…' : '后端还不能运行 Agent，暂时无法开始新对话。左栏的示例不依赖后端，可以先看看。'}
               </p>
             )}
-            {notice && (
-              <Notice
-                notice={notice}
-                onDismiss={() => dismiss(key)}
-                onOpen={(id) => (dismiss(key), select(id))}
-                onRelease={(id) => (dismiss(key), void release(id))}
-              />
-            )}
+            {notice && !ended && <Notice notice={notice} onDismiss={() => dismiss(key)} />}
+            {session && ended ? (
+              <div role="status" className="flex items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                <p className="min-w-0 flex-1">这个对话已结束，Agent 不能继续。要接着做，请新开一个对话。</p>
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => startNewChat({ projectId: session.projectId })}>
+                  <SquarePenIcon />
+                  新对话
+                </Button>
+              </div>
+            ) : (
             <Composer
               draft={draft}
               onDraft={(d) => setDraft(key, d)}
@@ -178,8 +180,9 @@ function ChatPane({ session }: { session?: Session }) {
               onChoose={(agent, model) => (session ? setAgentModel(session.id, agent, model) : setNewChat({ agent, model }))}
               plugins={samplePlugins}
               textOnly={!local}
-              context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} branches={branches} onChange={setNewChat} />}
+              context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} branches={[]} onChange={setNewChat} />}
             />
+            )}
           </div>
         </div>
       </main>
@@ -188,6 +191,14 @@ function ChatPane({ session }: { session?: Session }) {
 }
 
 function WorkspaceBadge({ session }: { session: Session }) {
+  if (session.remote) {
+    return (
+      <Badge variant="secondary" className="gap-1" title="每个对话在自己的目录里工作，不影响其他对话、定时任务和工作流">
+        <FolderLockIcon />
+        独立目录
+      </Badge>
+    )
+  }
   if (session.workspace.kind === 'isolated') {
     return (
       <Badge variant="secondary" className="gap-1 font-mono" title="Agent 在独立的 worktree 里工作">

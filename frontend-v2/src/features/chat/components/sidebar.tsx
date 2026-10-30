@@ -183,7 +183,13 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
             <Icon className="size-4 shrink-0 text-muted-foreground" />
             <FadeText text={project.name} />
           </CollapsibleTrigger>
-          {!project.samples && (
+          {!project.samples && !backendSupports.chooseWorkspace && (
+            // Each backend conversation gets its own directory: there is no workspace to pick.
+            <Button variant="ghost" size="icon-xs" aria-label={`在 ${project.name} 新建对话`} onClick={() => startNewChat({ projectId: project.id })}>
+              <PlusIcon />
+            </Button>
+          )}
+          {!project.samples && backendSupports.chooseWorkspace && (
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={`在 ${project.name} 新建对话`} />}>
                 <PlusIcon />
@@ -205,12 +211,6 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
                     </DropdownMenuItem>
                   </>
                 )}
-                {(project.worktrees ?? []).map((w) => (
-                  <DropdownMenuItem key={w.id} onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch: w.branch } })}>
-                    <GitBranchIcon />
-                    在 {w.branch} 新建对话
-                  </DropdownMenuItem>
-                ))}
                 <DropdownMenuSeparator />
                 <RunWorkflowSubmenu onPick={setRunWorkflow} />
               </DropdownMenuContent>

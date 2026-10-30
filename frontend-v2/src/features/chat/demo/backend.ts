@@ -6,17 +6,14 @@ import { reply, type Run, settled } from './agent'
 
 /**
  * A chat backend that runs in the browser, for showing the page without an execution runtime.
- * It keeps v2-server's chat rules: one live session per workspace, a stop ends the whole session,
- * an idle session is ended after {@link idleAfter}, ending or deleting frees the workspace, and a
- * session's events replay after a cursor. The Agent is {@link reply}: scripted, and it says so.
- * Projects and workspaces are made up here too; login and everything else still go to v2-server.
- * Reloading the page restarts this backend from its seeded conversations.
+ * It keeps v2-server's chat rules: each conversation has one session in its own directory, a
+ * session runs one turn at a time, a stop ends the session and leaves the conversation read-only,
+ * and a session's events replay after a cursor. The Agent is {@link reply}: scripted, and it says
+ * so. Projects are made up here too; login and everything else still go to v2-server. Reloading
+ * the page restarts this backend from its seeded conversations.
  */
-export const idleAfter = 90_000
-
 interface Session {
   id: string
-  ordinal: number
   startedAt: string
   endedAt: string | null
   endReason: ChatSessionEndReason
@@ -32,17 +29,16 @@ interface Conversation {
   id: string
   key: string
   projectId: string
-  workspaceId: string
   executorId: string
   title: string
   createdAt: string
   updatedAt: string
-  sessions: Session[]
+  session: Session
 }
 
 const projects = [
-  { id: 'demo-cloud', name: 'ora-space/cloud', worktrees: [{ id: 'demo-cloud-chat-1', branch: 'demo/chat-1' }, { id: 'demo-cloud-chat-2', branch: 'demo/chat-2' }] },
-  { id: 'demo-desktop', name: 'ora-space/desktop', worktrees: [] },
+  { id: 'demo-cloud', name: 'ora-space/cloud' },
+  { id: 'demo-desktop', name: 'ora-space/desktop' },
 ]
 
 const executors: ChatExecutor[] = [
@@ -67,17 +63,9 @@ function snapshot(s: Session, turnId: string) {
   publish(s, { kind: 'history_snapshot', turnId, history: { records, incomplete: records.some((r) => r.preview) } })
 }
 
-const live = (c: Conversation) => {
-  const last = c.sessions.at(-1)
-  return last && !last.endedAt ? last : undefined
-}
 const running = (s: Session) => s.turns.some((t) => !t.result)
 
-function newSession(c: Conversation): Session {
-  const s: Session = { id: id('session'), ordinal: c.sessions.length + 1, startedAt: nowIso(), endedAt: null, endReason: '', events: [], records: new Map(), position: 1, turns: [], timers: [] }
-  c.sessions.push(s)
-  return s
-}
+const newSession = (): Session => ({ id: id('session'), startedAt: nowIso(), endedAt: null, endReason: '', events: [], records: new Map(), position: 1, turns: [], timers: [] })
 
 /** Plays a turn: each step updates the history and publishes a snapshot; the result comes last. */
 function play(c: Conversation, s: Session, prompt: string, attempt: string, instant = false) {
@@ -111,8 +99,6 @@ function finish(c: Conversation, s: Session, turn: Session['turns'][number], res
   turn.result = result
   publish(s, { kind: 'turn_ended', turnId: turn.id, result })
   c.updatedAt = nowIso()
-  // Between turns the session keeps the workspace; left alone, it is ended to free it.
-  s.timers.push(setTimeout(() => end(s, 'idle'), idleAfter))
 }
 
 function end(s: Session, reason: ChatSessionEndReason, cancel?: ChatResult) {
@@ -135,33 +121,21 @@ function end(s: Session, reason: ChatSessionEndReason, cancel?: ChatResult) {
 
 const cancelled: ChatResult = { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' }
 
-const view = (c: Conversation): ChatConversation => ({
-  id: c.id,
-  projectId: c.projectId,
-  workspaceId: c.workspaceId,
-  executorId: c.executorId,
-  title: c.title,
-  createdAt: c.createdAt,
-  updatedAt: c.updatedAt,
-  sessions: c.sessions.map((s) => ({ id: s.id, ordinal: s.ordinal, startedAt: s.startedAt, endedAt: s.endedAt, endReason: s.endReason })),
-})
+const view = (c: Conversation): ChatConversation => {
+  const s = c.session
+  return {
+    id: c.id,
+    projectId: c.projectId,
+    executorId: c.executorId,
+    title: c.title,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    session: { id: s.id, startedAt: s.startedAt, endedAt: s.endedAt, endReason: s.endReason },
+  }
+}
 
 type Reply = { status: number; data?: unknown }
-const fault = (status: number, code: string, params: Record<string, unknown> = {}): Reply => ({ status, data: { code, params, requestId: id('req') } })
-
-/** Admits a prompt where the conversation works, unless another conversation holds the workspace. */
-function admit(c: Conversation, prompt: string, attempt: string): Reply | Session {
-  const current = live(c)
-  if (current) {
-    if (running(current)) return fault(409, 'workspace_busy', { conversationId: c.id, title: c.title })
-    return current
-  }
-  const holder = db.conversations.find((x) => x !== c && x.projectId === c.projectId && x.workspaceId === c.workspaceId && live(x))
-  if (holder) return fault(409, 'workspace_busy', { conversationId: holder.id, title: holder.title })
-  if (!prompt.trim()) return fault(400, 'invalid_prompt')
-  void attempt
-  return newSession(c)
-}
+const fault = (status: number, code: string): Reply => ({ status, data: { code, params: {}, requestId: id('req') } })
 
 function route(config: InternalAxiosRequestConfig): Reply | undefined {
   const url = config.url ?? ''
@@ -170,11 +144,6 @@ function route(config: InternalAxiosRequestConfig): Reply | undefined {
   const key = String(config.headers?.get?.('Idempotency-Key') ?? id('key'))
   if (/^\/api\/v1\/tenants\/[^/]+\/projects$/.test(url) && method === 'GET') {
     return { status: 200, data: { items: projects.map((p) => ({ id: p.id, name: p.name, createdAt: nowIso(), credentialRefId: null, defaultBranch: 'main', deletedAt: null, lifecycle: 'active', ownerUserId: '', repositoryUrl: '', spaceId: '', tenantId: '', version: 1 })), nextCursor: '' } }
-  }
-  const ws = url.match(/^\/api\/v1\/tenants\/[^/]+\/projects\/([^/]+)\/workspaces$/)
-  if (ws && method === 'GET') {
-    const p = projects.find((x) => x.id === ws[1])
-    return { status: 200, data: { items: (p?.worktrees ?? []).map((w) => ({ id: w.id, kind: 'isolated', branchName: w.branch, projectId: p!.id })), nextCursor: '' } }
   }
   const chat = url.match(/^\/api\/v2\/tenants\/[^/]+\/chat(\/.*)$/)
   if (!chat) return undefined
@@ -187,41 +156,37 @@ function route(config: InternalAxiosRequestConfig): Reply | undefined {
   if (path === '/conversations' && method === 'GET') return { status: 200, data: { items: db.conversations.map(view), nextCursor: '' } }
   if (path === '/conversations' && method === 'POST') {
     const again = db.conversations.find((c) => c.key === key)
-    if (again) return { status: 201, data: { conversation: view(again), turn: { sessionId: again.sessions[0].id, turnId: again.sessions[0].turns[0].id } } }
+    if (again) return { status: 201, data: { conversation: view(again), turn: { sessionId: again.session.id, turnId: again.session.turns[0].id } } }
+    if (!String(body.prompt).trim()) return fault(400, 'invalid_prompt')
+    // Every conversation starts its own session in a directory made for it: nothing to contend for.
     const c: Conversation = {
-      id: id('conv'), key, projectId: body.projectId, workspaceId: body.workspaceId ?? '', executorId: body.executorId,
-      title: String(body.prompt).trim().replace(/\s+/g, ' ').slice(0, 24), createdAt: nowIso(), updatedAt: nowIso(), sessions: [],
+      id: id('conv'), key, projectId: body.projectId, executorId: body.executorId,
+      title: String(body.prompt).trim().replace(/\s+/g, ' ').slice(0, 24), createdAt: nowIso(), updatedAt: nowIso(), session: newSession(),
     }
-    const admitted = admit(c, body.prompt, key)
-    if (!('turns' in admitted)) return admitted
     db.conversations.push(c)
-    const turn = play(c, admitted, body.prompt, key)
-    return { status: 201, data: { conversation: view(c), turn: { sessionId: admitted.id, turnId: turn.id } } }
+    const turn = play(c, c.session, body.prompt, key)
+    return { status: 201, data: { conversation: view(c), turn: { sessionId: c.session.id, turnId: turn.id } } }
   }
   const [, cid, action] = path.match(/^\/conversations\/([^/]+)\/?(.*)$/) ?? []
   const c = db.conversations.find((x) => x.id === cid)
   if (!c) return fault(404, 'not_found')
   switch (action) {
     case 'messages': {
-      const admitted = admit(c, body.prompt, key)
-      if (!('turns' in admitted)) return admitted
-      const turn = play(c, admitted, body.prompt, key)
-      return { status: 201, data: { conversation: view(c), turn: { sessionId: admitted.id, turnId: turn.id } } }
+      const s = c.session
+      if (s.endedAt) return fault(409, 'conversation_ended')
+      if (running(s)) return fault(409, 'turn_running')
+      if (!String(body.prompt).trim()) return fault(400, 'invalid_prompt')
+      const turn = play(c, s, body.prompt, key)
+      return { status: 201, data: { conversation: view(c), turn: { sessionId: s.id, turnId: turn.id } } }
     }
     case 'stop': {
-      const s = live(c)
-      if (!s) return fault(409, 'no_active_turn')
+      const s = c.session
+      if (s.endedAt) return fault(409, 'no_active_turn')
       const last = s.turns.at(-1)
       // As on the fixed Node, cancelling ends the whole session; a finished turn keeps its result.
       if (last?.result) return { status: 200, data: { result: last.result } }
       end(s, 'stopped', cancelled)
       return { status: 200, data: { result: cancelled } }
-    }
-    case 'end': {
-      const s = live(c)
-      if (!s) return fault(409, 'no_active_turn')
-      end(s, 'released', cancelled)
-      return { status: 200, data: view(c) }
     }
     case '':
       if (method === 'PATCH') {
@@ -229,8 +194,7 @@ function route(config: InternalAxiosRequestConfig): Reply | undefined {
         return { status: 200, data: view(c) }
       }
       if (method === 'DELETE') {
-        const s = live(c)
-        if (s) end(s, 'deleted', cancelled)
+        end(c.session, 'deleted', cancelled)
         db.conversations = db.conversations.filter((x) => x !== c)
         return { status: 204 }
       }
@@ -238,15 +202,15 @@ function route(config: InternalAxiosRequestConfig): Reply | undefined {
   return fault(404, 'not_found')
 }
 
-/** An EventSource over the demo backend's session events, resuming after `?after=`. */
+/** An EventSource over a demo conversation's session events, resuming after `?after=`. */
 class DemoEventSource {
   onmessage: ((m: MessageEvent<string>) => void) | null = null
   private listeners: Record<string, (() => void)[]> = {}
   private stop?: () => void
   constructor(url: string) {
-    const [, sid] = url.match(/\/sessions\/([^/?]+)\/events/) ?? []
+    const [, cid] = url.match(/\/conversations\/([^/?]+)\/events/) ?? []
     const after = Number(new URL(url, 'http://demo').searchParams.get('after') ?? 0)
-    const s = db.conversations.flatMap((c) => c.sessions).find((x) => x.id === sid)
+    const s = db.conversations.find((c) => c.id === cid)?.session
     // Deliver asynchronously, as a network stream would, once listeners are attached.
     setTimeout(() => {
       if (!s) return this.emit('failure')
@@ -276,35 +240,32 @@ class DemoEventSource {
 
 /** Seeds conversations that show the states a chat goes through, already settled. */
 export function resetDemoBackend() {
-  for (const c of db.conversations) for (const s of c.sessions) for (const t of s.timers) clearTimeout(t)
+  for (const c of db.conversations) for (const t of c.session.timers) clearTimeout(t)
   db.conversations = []
   db.order = []
   db.listeners.clear()
-  const seed = (projectId: string, workspaceId: string, title: string, prompts: { text: string; then?: ChatSessionEndReason }[]) => {
-    const c: Conversation = { id: id('conv'), key: id('seed'), projectId, workspaceId, executorId: executors[0].id, title, createdAt: nowIso(), updatedAt: nowIso(), sessions: [] }
+  const seed = (projectId: string, title: string, prompts: string[], then?: 'stopped' | 'interrupted') => {
+    const c: Conversation = { id: id('conv'), key: id('seed'), projectId, executorId: executors[0].id, title, createdAt: nowIso(), updatedAt: nowIso(), session: newSession() }
     db.conversations.push(c)
-    let s = newSession(c)
-    for (const p of prompts) {
-      if (s.endedAt) s = newSession(c)
-      if (p.then === 'stopped') {
-        // Stopped mid-turn: the tools settled, the answer never came.
-        const turn = { id: id('turn'), attempt: id('attempt') }
-        s.turns.push(turn)
-        const run = reply(p.text, s.position)
-        for (const r of settled(run.steps).slice(0, 3)) s.records.set(r.sequence, r)
-        s.position += 3
-        snapshot(s, turn.id)
-        end(s, 'stopped', cancelled)
-        continue
-      }
-      play(c, s, p.text, id('attempt'), true)
-      if (p.then) end(s, p.then)
+    const s = c.session
+    for (const text of prompts) play(c, s, text, id('attempt'), true)
+    if (then === 'stopped') {
+      // Stopped mid-turn: the tools settled, the answer never came, and the session ended.
+      const turn = { id: id('turn'), attempt: id('attempt') }
+      s.turns.push(turn)
+      const run = reply('对照 desktop 检查对话页样式', s.position)
+      for (const r of settled(run.steps).slice(0, 3)) s.records.set(r.sequence, r)
+      s.position += 3
+      snapshot(s, turn.id)
+      end(s, 'stopped', cancelled)
     }
+    if (then === 'interrupted') end(s, 'interrupted')
   }
-  // Holds ora-space/cloud's main workspace, so a new chat there shows the busy notice.
-  seed('demo-cloud', '', '梳理 v2 接口缺口', [{ text: '列出对话页要用到的接口', then: 'idle' }, { text: '再补上事件流的续传' }])
-  seed('demo-cloud', 'demo-cloud-chat-1', '对话页样式', [{ text: '对照 desktop 检查对话页样式', then: 'stopped' }])
-  seed('demo-desktop', '', '跑一遍检查', [{ text: '跑一遍检查，看看哪里失败', then: 'released' }])
+  // Still live: more prompts continue the same Agent session.
+  seed('demo-cloud', '梳理 v2 接口缺口', ['列出对话页要用到的接口', '再补上事件流的续传'])
+  // Read-only: one stopped, one ended by a server restart (with an answer that failed).
+  seed('demo-cloud', '对话页样式', [], 'stopped')
+  seed('demo-desktop', '跑一遍检查', ['跑一遍检查，看看哪里失败'], 'interrupted')
 }
 
 /** Routes the chat and project requests to the demo backend and its event streams. */

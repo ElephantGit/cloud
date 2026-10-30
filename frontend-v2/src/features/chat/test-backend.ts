@@ -35,10 +35,10 @@ export class FakeEventSource {
   fire(name: 'end' | 'failure') {
     for (const fn of this.listeners[name] ?? []) fn()
   }
-  /** The stream following session `sid`. */
-  static of(sid: string) {
-    const s = FakeEventSource.all.filter((x) => x.url.endsWith(`/sessions/${sid}/events`)).at(-1)
-    if (!s) throw new Error(`no stream for ${sid}`)
+  /** The latest stream following conversation `cid`. */
+  static of(cid: string) {
+    const s = FakeEventSource.all.filter((x) => x.url.split('?')[0].endsWith(`/conversations/${cid}/events`)).at(-1)
+    if (!s) throw new Error(`no stream for ${cid}`)
     return s
   }
 }
@@ -62,16 +62,16 @@ export const executors: ChatExecutor[] = [
   { id: 'cc-sonnet', name: 'Claude Code · Claude Sonnet 5.5', agentName: 'Claude Code', modelName: 'Claude Sonnet 5.5' },
 ]
 
-const conversation = (id: string, title: string, workspaceId = '', sessions = 1): ChatConversation => ({
-  id, projectId: 'p-cloud', workspaceId, executorId: 'oc-fixture', title, createdAt: at, updatedAt: at,
-  sessions: Array.from({ length: sessions }, (_, i) => ({ id: `${id}-s${i + 1}`, ordinal: i + 1, startedAt: at, endedAt: null, endReason: '' as const })),
+const conversation = (id: string, title: string): ChatConversation => ({
+  id, projectId: 'p-cloud', executorId: 'oc-fixture', title, createdAt: at, updatedAt: at,
+  session: { id: `${id}-s1`, startedAt: at, endedAt: null, endReason: '' },
 })
 
 /** What the fake chat backend holds; tests read and change it. */
 export interface ChatBackend {
   conversations: ChatConversation[]
   projectOrder: string[]
-  /** Makes the next admission answer this instead of admitting. */
+  /** Makes the next create or send answer this instead of taking the prompt. */
   refuse?: { status: number; data: unknown }
   /** Requests seen, as "METHOD /path". */
   seen: string[]
@@ -79,15 +79,15 @@ export interface ChatBackend {
 }
 
 /**
- * Fakes the chat backend for one test: two projects (one with a worktree), three executors and
- * two conversations in ora-space/cloud. With `unavailable` every chat route answers 503, as
- * v2-server does without an execution runtime.
+ * Fakes the chat backend for one test: two projects, three executors and two conversations in
+ * ora-space/cloud. With `unavailable` every chat route answers 503, as v2-server does without an
+ * execution runtime.
  */
 export function chatBackend(options: { unavailable?: boolean } = {}): ChatBackend {
   globalThis.EventSource = FakeEventSource as never
   FakeEventSource.all = []
   const state: ChatBackend = {
-    conversations: [conversation('c-main', '梳理 v2 接口缺口'), conversation('c-wt', '对话页样式', 'w-chat-1')],
+    conversations: [conversation('c-main', '梳理 v2 接口缺口'), conversation('c-style', '对话页样式')],
     projectOrder: [],
     seen: [],
     bodies: [],
@@ -102,8 +102,6 @@ export function chatBackend(options: { unavailable?: boolean } = {}): ChatBacken
     if (url === '/api/v1/me') return { status: 200, data: demoUser }
     if (url === '/api/v1/me/tenants') return { status: 200, data: { items: [{ id: tenantId, name: '演示团队', status: 'active', role: 'owner' }], nextCursor: '' } }
     if (url === `/api/v1/tenants/${tenantId}/projects`) return { status: 200, data: { items: [project('p-cloud', 'ora-space/cloud'), project('p-desktop', 'ora-space/desktop')], nextCursor: '' } }
-    if (url.endsWith('/projects/p-cloud/workspaces')) return { status: 200, data: { items: [{ id: 'w-chat-1', kind: 'isolated', branchName: 'demo/chat-1', projectId: 'p-cloud' }], nextCursor: '' } }
-    if (url.endsWith('/workspaces')) return { status: 200, data: { items: [], nextCursor: '' } }
     if (!url.startsWith(base)) return undefined
     if (options.unavailable) return { status: 503, data: { code: 'execution_unavailable', params: {}, requestId: 'r' } }
     const path = url.slice(base.length)
@@ -120,23 +118,21 @@ export function chatBackend(options: { unavailable?: boolean } = {}): ChatBacken
       return refused
     }
     if (path === '/conversations' && method === 'POST') {
-      const c = { ...conversation(`c-new-${++next}`, String(body.prompt).slice(0, 24), body.workspaceId), projectId: body.projectId, executorId: body.executorId }
+      const c = { ...conversation(`c-new-${++next}`, String(body.prompt).slice(0, 24)), projectId: body.projectId, executorId: body.executorId }
       state.conversations.push(c)
-      return { status: 201, data: { conversation: c, turn: { sessionId: c.sessions[0].id, turnId: 't1' } } }
+      return { status: 201, data: { conversation: c, turn: { sessionId: c.session!.id, turnId: 't1' } } }
     }
     const [, id, action] = path.match(/^\/conversations\/([^/]+)\/?(.*)$/) ?? []
     const c = id ? find(id) : undefined
     if (!c) return { status: 404, data: { code: 'not_found', params: {}, requestId: 'r' } }
-    const last = c.sessions.at(-1)!
+    const session = c.session!
     if (action === 'messages') {
-      if (last.endedAt) c.sessions.push({ id: `${c.id}-s${c.sessions.length + 1}`, ordinal: c.sessions.length + 1, startedAt: at, endedAt: null, endReason: '' })
-      return { status: 201, data: { conversation: c, turn: { sessionId: c.sessions.at(-1)!.id, turnId: 't2' } } }
+      if (session.endedAt) return { status: 409, data: { code: 'conversation_ended', params: {}, requestId: 'r' } }
+      return { status: 201, data: { conversation: c, turn: { sessionId: session.id, turnId: 't2' } } }
     }
-    if (action === 'stop' || action === 'end') {
-      Object.assign(last, { endedAt: at, endReason: action === 'stop' ? 'stopped' : 'released' })
-      return action === 'stop'
-        ? { status: 200, data: { result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } } }
-        : { status: 200, data: c }
+    if (action === 'stop') {
+      Object.assign(session, { endedAt: at, endReason: 'stopped' })
+      return { status: 200, data: { result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } } }
     }
     if (method === 'PATCH') return { status: 200, data: Object.assign(c, { title: body.title }) }
     if (method === 'DELETE') {

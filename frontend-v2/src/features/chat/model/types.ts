@@ -102,12 +102,12 @@ export interface PermissionRequest {
   outcome?: { optionId: string } | { cancelled: true }
 }
 
-/** Why an Agent session behind a conversation ended; the next prompt starts a fresh one. */
-export type SessionEndReason = 'stopped' | 'released' | 'idle' | 'deleted' | 'interrupted'
+/** Why the Agent session behind a conversation ended; the conversation is read-only after. */
+export type SessionEndReason = 'stopped' | 'deleted' | 'interrupted'
 
 /**
- * Something between turns: a model switch, a restorable checkpoint, or the end of an Agent
- * session, after which the Agent no longer remembers the turns above.
+ * Something between turns: a model switch, a restorable checkpoint, or the end of the
+ * conversation's Agent session, after which it cannot continue.
  */
 export type Marker =
   | { kind: 'model'; id: string; afterTurn: number; model: string }

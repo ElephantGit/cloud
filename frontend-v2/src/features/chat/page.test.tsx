@@ -33,12 +33,12 @@ describe('chat page', () => {
     replayClock.scale = 1
   })
 
-  it('groups history by project, with worktree conversations under their branch', async () => {
+  it('groups history by project', async () => {
     await renderReady()
     expect(screen.getByRole('heading', { level: 1, name: '对话' })).toBeInTheDocument()
     const cloud = within(sidebar()).getByRole('region', { name: '项目 ora-space/cloud' })
     expect(within(cloud).getByText('梳理 v2 接口缺口')).toBeInTheDocument()
-    expect(within(within(cloud).getByLabelText('worktree demo/chat-1')).getByText('对话页样式')).toBeInTheDocument()
+    expect(within(cloud).getByText('对话页样式')).toBeInTheDocument()
   })
 
   it('opens on a new chat in the first project, as desktop lands', async () => {
@@ -46,7 +46,8 @@ describe('chat page', () => {
     expect(screen.getByRole('heading', { level: 2, name: '新对话' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
-    expect(screen.getByRole('button', { name: '选择工作目录' })).toHaveTextContent('主目录')
+    // Every conversation gets its own directory: there is no workspace to choose.
+    expect(screen.queryByRole('button', { name: '选择工作目录' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择启动模式' })).toHaveTextContent('云端')
   })
 
@@ -85,50 +86,46 @@ describe('chat page', () => {
 
   it('starts a conversation in a project with a text prompt, and shows the Agent\'s reply', async () => {
     await renderReady()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '在 demo/chat-1 新建对话' }))
-    expect(screen.getByRole('button', { name: '选择工作目录' })).toHaveTextContent('demo/chat-1')
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/desktop 新建对话' }))
+    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/desktop')
     // The first version sends text only: no files or plugins.
     expect(screen.queryByRole('button', { name: '添加' })).not.toBeInTheDocument()
     const input = screen.getByRole('textbox', { name: '消息' })
     await userEvent.type(input, '检查一下 @代码{Enter}')
     expect(screen.queryByRole('option', { name: '代码审查' })).not.toBeInTheDocument()
     expect(await screen.findByRole('heading', { level: 2, name: '检查一下 @代码' })).toBeInTheDocument()
-    expect(backend.bodies.at(-1)).toMatchObject({ projectId: 'p-cloud', workspaceId: 'w-chat-1', executorId: 'oc-fixture' })
+    expect(backend.bodies.at(-1)).toEqual({ projectId: 'p-desktop', executorId: 'oc-fixture', prompt: '检查一下 @代码' })
     act(() =>
-      FakeEventSource.of('c-new-1-s1').emit({
+      FakeEventSource.of('c-new-1').emit({
         kind: 'history_snapshot',
         history: { records: [line.user(1, '检查一下 @代码'), line.say(2, '检查完了，没有问题。'), line.ended(3)], incomplete: false },
       }),
     )
     expect(screen.getByText('检查完了，没有问题。')).toBeInTheDocument()
-    expect(within(sidebar()).getByLabelText('worktree demo/chat-1')).toHaveTextContent('检查一下 @代码')
+    expect(within(sidebar()).getByRole('region', { name: '项目 ora-space/desktop' })).toHaveTextContent('检查一下 @代码')
     expect(input).toHaveValue('')
   })
 
-  it('names the conversation holding a busy workspace and frees it on request', async () => {
+  it('makes a stopped conversation read-only and offers a new chat in its project', async () => {
     await renderReady()
-    backend.refuse = { status: 409, data: { code: 'workspace_busy', params: { conversationId: 'c-main', title: '梳理 v2 接口缺口' }, requestId: 'r' } }
-    await userEvent.type(screen.getByRole('textbox', { name: '消息' }), '再开一个{Enter}')
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('工作目录正被「梳理 v2 接口缺口」使用')
-    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('再开一个')
-    await userEvent.click(within(alert).getByRole('button', { name: '结束该对话的会话' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(backend.seen.some((r) => r.endsWith('/conversations/c-main/end'))).toBe(true)
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
+    const stream = FakeEventSource.of('c-main')
+    act(() => stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '写长一点')], incomplete: false } }))
+    await userEvent.click(screen.getByRole('button', { name: '停止' }))
+    act(() => {
+      stream.emit({ kind: 'turn_ended', result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } })
+      stream.emit({ kind: 'session_ended' })
+    })
+    expect(screen.getByText(/已停止 · 这个对话已结束/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '消息' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '新对话' }))
+    expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
+    expect(screen.getByRole('textbox', { name: '消息' })).toBeInTheDocument()
   })
 
-  it('starts a new chat where the selected conversation works, and moves it with the bar above the input', async () => {
+  it('shows where a new chat runs; the cloud is the only mode on the web', async () => {
     await renderReady()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '对话页样式' }))
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '新建对话' }))
-    const where = () => screen.getByRole('button', { name: '选择工作目录' })
-    expect(where()).toHaveTextContent('demo/chat-1')
-    await userEvent.click(where())
-    // Only workspaces the backend has; it cannot create worktrees yet.
-    expect(screen.queryByRole('option', { name: '在 worktree 中工作' })).not.toBeInTheDocument()
-    await userEvent.click(await screen.findByRole('option', { name: '主目录' }))
-    expect(where()).toHaveTextContent('主目录')
     await userEvent.click(screen.getByRole('button', { name: '选择启动模式' }))
     expect(await screen.findByRole('menuitem', { name: /本地/ })).toHaveAttribute('aria-disabled', 'true')
   })
@@ -159,12 +156,10 @@ describe('chat page', () => {
     expect(await screen.findByText(/后端还不能运行 Agent/)).toHaveRole('status')
   })
 
-  it('shows where the conversation works', async () => {
+  it('shows that each conversation works in its own directory', async () => {
     await renderReady()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '对话页样式' }))
-    expect(screen.getByTitle('Agent 在独立的 worktree 里工作')).toHaveTextContent('demo/chat-1')
     await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
-    expect(screen.getByTitle('Agent 直接在项目主目录里工作')).toHaveTextContent('主目录')
+    expect(screen.getByTitle(/每个对话在自己的目录里工作/)).toHaveTextContent('独立目录')
   })
 
   it('renames a conversation by double-clicking it', async () => {

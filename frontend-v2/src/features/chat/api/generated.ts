@@ -46,7 +46,7 @@ export interface ChatExecutorList {
 }
 
 /**
- * Why chat ended the session (empty when it ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives.
+ * Why the session ended: stopped, deleted, or interrupted (ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives.
  */
 export type ChatSessionEndReason = typeof ChatSessionEndReason[keyof typeof ChatSessionEndReason];
 
@@ -54,33 +54,28 @@ export type ChatSessionEndReason = typeof ChatSessionEndReason[keyof typeof Chat
 export const ChatSessionEndReason = {
   '': '',
   stopped: 'stopped',
-  released: 'released',
-  idle: 'idle',
   deleted: 'deleted',
   interrupted: 'interrupted',
 } as const;
 
 export interface ChatSession {
   id: string;
-  ordinal: number;
   startedAt: string;
   /** @nullable */
   endedAt: string | null;
-  /** Why chat ended the session (empty when it ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives. */
+  /** Why the session ended: stopped, deleted, or interrupted (ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives. */
   endReason: ChatSessionEndReason;
 }
 
 export interface ChatConversation {
   id: string;
   projectId: string;
-  /** Empty selects the project's main workspace. */
-  workspaceId: string;
   executorId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
-  /** Execution sessions in order; only the last can be live. */
-  sessions: ChatSession[];
+  /** The conversation's one execution session; null only until its first turn is accepted. Once it has ended the conversation is read-only. */
+  session: ChatSession | null;
 }
 
 export interface ChatConversationList {
@@ -91,8 +86,6 @@ export interface ChatConversationList {
 export interface ChatCreateInput {
   /** @maxLength 200 */
   projectId: string;
-  /** @maxLength 200 */
-  workspaceId?: string;
   /** @maxLength 200 */
   executorId: string;
   /** @maxLength 200 */
@@ -201,7 +194,7 @@ export interface ChatProjectOrder {
   projectIds: string[];
 }
 
-export type StreamChatSessionEventsParams = {
+export type StreamChatConversationEventsParams = {
 /**
  * Resume after this sequence; Last-Event-ID takes precedence.
  */
@@ -414,8 +407,8 @@ export function useListChatConversations<TData = Awaited<ReturnType<typeof listC
 
 
 /**
- * A definitely refused first prompt leaves no conversation. 409 workspace_busy carries params.conversationId and params.title when the person's own conversation holds the workspace.
- * @summary Create a conversation by admitting its first prompt
+ * Each conversation runs in its own session and directory, so conversations never contend. A definitely refused first prompt leaves no conversation.
+ * @summary Create a conversation and start its session with the first prompt
  */
 export const createChatConversation = (
     tid: string,
@@ -470,7 +463,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CreateChatConversationMutationVariables = {tid: string;data: BodyType<ChatCreateInput>}
 
     /**
- * @summary Create a conversation by admitting its first prompt
+ * @summary Create a conversation and start its session with the first prompt
  */
 export const useCreateChatConversation = <TError = ErrorType<ChatError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatConversation>>, TError,CreateChatConversationMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
@@ -621,8 +614,8 @@ export const useDeleteChatConversation = <TError = ErrorType<ChatError>,
     }
 
 /**
- * Appends to the live session, or starts a new session when the last one ended; the response's turn.sessionId says which.
- * @summary Admit the next prompt
+ * Appends to the conversation's session. 409 turn_running: the previous turn is still running, so the page queues the prompt. 409 conversation_ended: the session has ended (stopped or the server restarted) and the conversation is read-only; start a new chat.
+ * @summary Send the next prompt
  */
 export const sendChatMessage = (
     tid: string,
@@ -678,7 +671,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SendChatMessageMutationVariables = {tid: string;cid: string;data: BodyType<ChatMessageInput>}
 
     /**
- * @summary Admit the next prompt
+ * @summary Send the next prompt
  */
 export const useSendChatMessage = <TError = ErrorType<ChatError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendChatMessage>>, TError,SendChatMessageMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
@@ -692,7 +685,115 @@ export const useSendChatMessage = <TError = ErrorType<ChatError>,
     }
 
 /**
- * On the fixed Node this ends the whole session. 503 stop_unconfirmed means stopping is not confirmed yet.
+ * @summary Follow the conversation's session events as Server-Sent Events
+ */
+export const streamChatConversationEvents = (
+    tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<string>(
+      {url: `/api/v2/tenants/${tid}/chat/conversations/${cid}/events`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getStreamChatConversationEventsQueryKey = (tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams,) => {
+    return [
+    `/api/v2/tenants/${tid}/chat/conversations/${cid}/events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getStreamChatConversationEventsQueryOptions = <TData = Awaited<ReturnType<typeof streamChatConversationEvents>>, TError = ErrorType<ChatError>>(tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamChatConversationEventsQueryKey(tid,cid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamChatConversationEvents>>> = ({ signal }) => streamChatConversationEvents(tid,cid,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && cid !== null && cid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type StreamChatConversationEventsQueryResult = NonNullable<Awaited<ReturnType<typeof streamChatConversationEvents>>>
+export type StreamChatConversationEventsQueryError = ErrorType<ChatError>
+
+
+export function useStreamChatConversationEvents<TData = Awaited<ReturnType<typeof streamChatConversationEvents>>, TError = ErrorType<ChatError>>(
+ tid: string,
+    cid: string,
+    params: undefined |  StreamChatConversationEventsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamChatConversationEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamChatConversationEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useStreamChatConversationEvents<TData = Awaited<ReturnType<typeof streamChatConversationEvents>>, TError = ErrorType<ChatError>>(
+ tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamChatConversationEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamChatConversationEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useStreamChatConversationEvents<TData = Awaited<ReturnType<typeof streamChatConversationEvents>>, TError = ErrorType<ChatError>>(
+ tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Follow the conversation's session events as Server-Sent Events
+ */
+
+export function useStreamChatConversationEvents<TData = Awaited<ReturnType<typeof streamChatConversationEvents>>, TError = ErrorType<ChatError>>(
+ tid: string,
+    cid: string,
+    params?: StreamChatConversationEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatConversationEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getStreamChatConversationEventsQueryOptions(tid,cid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * On the fixed Node this ends the whole session, and the conversation becomes read-only. 503 stop_unconfirmed means stopping is not confirmed yet.
  * @summary Cancel the latest turn
  */
 export const stopChatConversation = (
@@ -758,189 +859,6 @@ export const useStopChatConversation = <TError = ErrorType<ChatError>,
       > => {
       return useMutation(getStopChatConversationMutationOptions(options), queryClient);
     }
-
-/**
- * Ends the session between turns (stopping a running turn with it); the next prompt starts a new session. 409 no_active_turn when no session is live.
- * @summary End the live session so its workspace is free
- */
-export const endChatSession = (
-    tid: string,
-    cid: string,
- options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
-) => {
-
-
-      return customInstance<ChatConversation>(
-      {url: `/api/v2/tenants/${tid}/chat/conversations/${cid}/end`, method: 'POST', signal
-    },
-      options);
-    }
-
-
-
-
-export const getEndChatSessionMutationKey = () => ['endChatSession'] as const;
-
-export const getEndChatSessionMutationOptions = <TError = ErrorType<ChatError>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext> => {
-
-const mutationKey = getEndChatSessionMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endChatSession>>, EndChatSessionMutationVariables> = (props) => {
-          const {tid,cid} = props ?? {};
-
-          return  endChatSession(tid,cid,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type EndChatSessionMutationResult = NonNullable<Awaited<ReturnType<typeof endChatSession>>>
-
-    export type EndChatSessionMutationError = ErrorType<ChatError>
-    export type EndChatSessionMutationVariables = {tid: string;cid: string}
-
-    /**
- * @summary End the live session so its workspace is free
- */
-export const useEndChatSession = <TError = ErrorType<ChatError>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof endChatSession>>,
-        TError,
-        EndChatSessionMutationVariables,
-        TContext
-      > => {
-      return useMutation(getEndChatSessionMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Follow one session's events as Server-Sent Events
- */
-export const streamChatSessionEvents = (
-    tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams,
- options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
-) => {
-
-
-      return customInstance<string>(
-      {url: `/api/v2/tenants/${tid}/chat/conversations/${cid}/sessions/${sid}/events`, method: 'GET',
-        params, signal
-    },
-      options);
-    }
-
-
-
-
-export const getStreamChatSessionEventsQueryKey = (tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams,) => {
-    return [
-    `/api/v2/tenants/${tid}/chat/conversations/${cid}/sessions/${sid}/events`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getStreamChatSessionEventsQueryOptions = <TData = Awaited<ReturnType<typeof streamChatSessionEvents>>, TError = ErrorType<ChatError>>(tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getStreamChatSessionEventsQueryKey(tid,cid,sid,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamChatSessionEvents>>> = ({ signal }) => streamChatSessionEvents(tid,cid,sid,params, requestOptions, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && cid !== null && cid !== undefined && sid !== null && sid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type StreamChatSessionEventsQueryResult = NonNullable<Awaited<ReturnType<typeof streamChatSessionEvents>>>
-export type StreamChatSessionEventsQueryError = ErrorType<ChatError>
-
-
-export function useStreamChatSessionEvents<TData = Awaited<ReturnType<typeof streamChatSessionEvents>>, TError = ErrorType<ChatError>>(
- tid: string,
-    cid: string,
-    sid: string,
-    params: undefined |  StreamChatSessionEventsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof streamChatSessionEvents>>,
-          TError,
-          Awaited<ReturnType<typeof streamChatSessionEvents>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useStreamChatSessionEvents<TData = Awaited<ReturnType<typeof streamChatSessionEvents>>, TError = ErrorType<ChatError>>(
- tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof streamChatSessionEvents>>,
-          TError,
-          Awaited<ReturnType<typeof streamChatSessionEvents>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useStreamChatSessionEvents<TData = Awaited<ReturnType<typeof streamChatSessionEvents>>, TError = ErrorType<ChatError>>(
- tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Follow one session's events as Server-Sent Events
- */
-
-export function useStreamChatSessionEvents<TData = Awaited<ReturnType<typeof streamChatSessionEvents>>, TError = ErrorType<ChatError>>(
- tid: string,
-    cid: string,
-    sid: string,
-    params?: StreamChatSessionEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamChatSessionEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getStreamChatSessionEventsQueryOptions(tid,cid,sid,params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 
 /**
  * @summary The person's project order in the history column

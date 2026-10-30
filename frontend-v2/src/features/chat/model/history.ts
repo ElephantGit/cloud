@@ -4,7 +4,7 @@ import { applyEvent } from './conversation'
 import { type ChatEvent as ModelEvent, type Conversation, emptyConversation, type Turn } from './types'
 
 /**
- * What the page knows about one execution session behind a conversation: the latest history
+ * What the page knows about the execution session behind a conversation: the latest history
  * snapshot, the results of its ended turns in order, and whether and why it ended.
  */
 export interface SessionView {
@@ -44,15 +44,15 @@ export function applySessionEvent(base: SessionView, event: ChatEvent): SessionV
 }
 
 /**
- * The conversation the sessions show, in order. Each session's history is rebuilt from scratch
- * through the same reducer the recorded samples use; a marker after a session that ended says
- * the Agent starts over in the next one.
+ * The conversation its session shows. The history is rebuilt from scratch through the same
+ * reducer the recorded samples use; a marker after an ended session says the conversation cannot
+ * continue. A conversation has one session; the list is empty until its first turn.
  */
 export function conversationOf(sessions: SessionView[]): Conversation {
   let conversation = emptyConversation
-  for (const [i, session] of sessions.entries()) {
+  for (const session of sessions) {
     conversation = appendSession(conversation, session)
-    if (session.ended && (i < sessions.length - 1 || session.endReason !== 'deleted')) {
+    if (session.ended && session.endReason !== 'deleted') {
       const afterTurn = conversation.turns.length
       conversation = {
         ...conversation,

@@ -49,7 +49,9 @@ function SearchTab({ label, trigger, placeholder, empty, children }: { label: st
 
 /**
  * The row above a new chat's input, as in desktop: which project it starts in, whether in the
- * main checkout or a worktree, and where it runs. Only the cloud runs agents from the web.
+ * main checkout or a worktree, and where it runs. Only the cloud runs agents from the web, and it
+ * gives every conversation its own directory, so the workspace tab shows only where the backend
+ * lets the person choose.
  */
 export function ContextBar({
   value,
@@ -121,6 +123,7 @@ export function ContextBar({
         )}
       </SearchTab>
 
+      {backendSupports.chooseWorkspace && (
       <SearchTab
         label="选择工作目录"
         placeholder="搜索分支"
@@ -175,6 +178,7 @@ export function ContextBar({
           </>
         )}
       </SearchTab>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" className={`${tab} shrink-0`} aria-label="选择启动模式" />}>

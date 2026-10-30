@@ -71,18 +71,13 @@ describe('conversationOf', () => {
     expect(turn.error).toContain('history_limit')
   })
 
-  it('marks where each ended session stops, so the next one reads as a fresh Agent', () => {
-    const c = conversationOf([
-      view({ id: 's1', records: [user(1, 'a'), ended(2)], results: [done], ended: true, endReason: 'idle' }),
-      view({ id: 's2', records: [user(1, 'b'), ended(2)], results: [done], ended: true }),
-      view({ id: 's3', records: [user(1, 'c')] }),
-    ])
-    expect(c.turns.map((t) => t.prompt.text)).toEqual(['a', 'b', 'c'])
-    expect(c.turns.map((t) => t.status)).toEqual(['completed', 'completed', 'streaming'])
-    expect(c.markers).toEqual([
-      { kind: 'session', id: 'session-s1', afterTurn: 1, reason: 'idle' },
-      { kind: 'session', id: 'session-s2', afterTurn: 2, reason: 'interrupted' },
-    ])
+  it('marks where an ended session stops the conversation, as interrupted when chat did not end it', () => {
+    const stopped = conversationOf([view({ id: 's1', records: [user(1, 'a'), ended(2)], results: [done], ended: true, endReason: 'stopped' })])
+    expect(stopped.markers).toEqual([{ kind: 'session', id: 'session-s1', afterTurn: 1, reason: 'stopped' }])
+    const restarted = conversationOf([view({ id: 's1', records: [user(1, 'a'), ended(2), user(3, 'b'), ended(4)], results: [done, done], ended: true })])
+    expect(restarted.turns.map((t) => t.status)).toEqual(['completed', 'completed'])
+    expect(restarted.markers).toEqual([{ kind: 'session', id: 'session-s1', afterTurn: 2, reason: 'interrupted' }])
+    expect(conversationOf([view({ id: 's1', records: [user(1, 'a')] })]).markers).toEqual([])
   })
 
   it('joins a prompt sent as several blocks', () => {

@@ -17,9 +17,10 @@ export type NewChatWorkspace = Workspace | { kind: 'new-worktree' }
 
 /**
  * What the first version of the chat backend can do. The input and the history hide what it
- * cannot, rather than offering something that would fail.
+ * cannot, rather than offering something that would fail. Each backend conversation gets its own
+ * directory, so a new chat picks only the project, never a workspace.
  */
-export const backendSupports = { newProject: false, newWorktree: false, attachments: false, plugins: false }
+export const backendSupports = { newProject: false, chooseWorkspace: false, newWorktree: false, attachments: false, plugins: false }
 
 export interface Project {
   id: string
@@ -28,8 +29,6 @@ export interface Project {
   path?: string
   /** Samples replay recorded conversations; the person cannot add sessions to them. */
   samples?: boolean
-  /** The project's worktree workspaces, for projects the backend runs chats in. */
-  worktrees?: { id: string; branch: string }[]
 }
 
 export interface Session {
@@ -42,8 +41,8 @@ export interface Session {
   model: string
   /** The recorded conversation this session replays, for sample sessions. */
   scenarioId?: string
-  /** Set for conversations the backend runs: where, and with which executor. */
-  remote?: { workspaceId: string; executorId: string }
+  /** Set for conversations the backend runs, each in its own directory: with which executor. */
+  remote?: { executorId: string }
   createdAt: number
 }
 
@@ -136,7 +135,7 @@ interface State {
   tenantId?: string
   backend: BackendState
   executors: ChatExecutor[]
-  /** The execution sessions behind each backend conversation, in order. */
+  /** The execution session behind each backend conversation; empty until its first turn. */
   views: Record<string, SessionView[]>
   /** A prompt sent but not yet in the history, shown so the thread never looks empty meanwhile. */
   pending: Record<string, { text: string; turns: number }>
@@ -164,9 +163,8 @@ interface State {
   /** Moves project `id` to where `overId` is, as a drag and drop does. */
   moveProject: (id: string, overId: string) => void
   send: (id: string, draft: Draft) => void
+  /** Stops the running turn; for a backend conversation this ends it, leaving it read-only. */
   stop: (id: string) => void
-  /** Ends a conversation's live session so its workspace is free for another conversation. */
-  release: (id: string) => Promise<void>
   answer: (id: string, permissionId: string, optionId: string) => void
   /** Switches a sample's agent and model; once it has turns the switch is marked in the thread. */
   setAgentModel: (id: string, agent: string, model: string) => void
@@ -214,36 +212,43 @@ interface Player {
 }
 
 const players = new Map<string, Player>()
-/** The event streams being followed, by execution session id. */
+/** The event streams being followed, by conversation id. */
 const streams = new Map<string, () => void>()
-/** Sessions whose stream reached its end: everything they will ever send has been read. */
+/** Conversations whose stream reached its end: everything their session will ever send has been read. */
 const drained = new Set<string>()
+/**
+ * Conversations whose backend refused a prompt because a turn is still running there, before
+ * the page saw it start: their queue waits for that turn's end event rather than retrying.
+ */
+const awaitingTurnEnd = new Set<string>()
 let ids = 0
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(ids++).toString(36)}`
 
-/** A backend conversation as a history entry, placed in its workspace by branch. */
-function sessionOf(c: ChatConversation, projects: Project[], executors: ChatExecutor[]): Session {
-  const branch = projects.find((p) => p.id === c.projectId)?.worktrees?.find((w) => w.id === c.workspaceId)?.branch
+/** A backend conversation as a history entry, listed directly under its project. */
+function sessionOf(c: ChatConversation, executors: ChatExecutor[]): Session {
   const executor = executors.find((x) => x.id === c.executorId)
   return {
     id: c.id,
     projectId: c.projectId,
-    workspace: c.workspaceId ? { kind: 'isolated', branch: branch ?? c.workspaceId } : { kind: 'main' },
+    workspace: { kind: 'main' },
     title: c.title,
     agent: executor?.agentName ?? c.executorId,
     model: executor?.modelName ?? '',
-    remote: { workspaceId: c.workspaceId, executorId: c.executorId },
+    remote: { executorId: c.executorId },
     createdAt: Date.parse(c.createdAt),
   }
 }
 
-/** The sessions behind a conversation as the backend lists them, keeping events already seen. */
+/** The session behind a conversation as the backend lists it, keeping events already seen. */
 function viewsOf(c: ChatConversation, known: SessionView[] = []): SessionView[] {
-  return c.sessions.map((s) => {
-    const seen = known.find((v) => v.id === s.id) ?? emptySessionView(s.id)
-    return { ...seen, ended: seen.ended || s.endedAt != null, endReason: s.endReason || seen.endReason }
-  })
+  const s = c.session
+  if (!s) return []
+  const seen = known.find((v) => v.id === s.id) ?? emptySessionView(s.id)
+  return [{ ...seen, ended: seen.ended || s.endedAt != null, endReason: s.endReason || seen.endReason }]
 }
+
+/** Whether a backend conversation's session has ended, so it can only be read. */
+export const isEnded = (views: SessionView[] | undefined) => !!views?.some((v) => v.ended)
 
 /** The conversation to show: the sessions' history, plus a sent prompt the history lacks yet. */
 function shown(views: SessionView[], pending?: { text: string; turns: number }): Conversation {
@@ -329,6 +334,7 @@ export const useChatStore = create<State>()(
         const next = get().queued[id]?.[0]
         if (next === undefined || players.has(id) || isResponding(get().conversations[id] ?? emptyConversation)) return
         if (isRemote(id)) {
+          if (isEnded(get().views[id]) || awaitingTurnEnd.has(id)) return
           set((s) => ({ queued: { ...s.queued, [id]: s.queued[id].slice(1) } }))
           void sendRemote(id, next)
           return
@@ -367,16 +373,17 @@ export const useChatStore = create<State>()(
       }
 
       /**
-       * Follows every session of a conversation that is not followed yet, after the last event it
-       * has seen; ended ones replay what is left and close.
+       * Follows a conversation's session if it is not followed yet, after the last event it has
+       * seen; an ended one replays what is left and closes.
        */
       const follow = (id: string) => {
         const tid = get().tenantId
         if (!tid) return
         for (const view of get().views[id] ?? []) {
-          if (streams.has(view.id) || drained.has(view.id)) continue
-          const done = () => streams.delete(view.id)
+          if (streams.has(id) || drained.has(id)) continue
+          const done = () => streams.delete(id)
           const apply = (event: ChatEvent) => {
+            if (event.kind === 'turn_ended' || event.kind === 'session_ended') awaitingTurnEnd.delete(id)
             refresh(id, (s) => ({
               views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.id === view.id ? applySessionEvent(v, event) : v)) },
             }))
@@ -384,10 +391,10 @@ export const useChatStore = create<State>()(
             if (event.kind === 'session_ended' && !get().views[id]?.find((v) => v.id === view.id)?.endReason) void reconcile(id)
           }
           streams.set(
-            view.id,
-            remote.follow(tid, id, view.id, view.cursor, {
+            id,
+            remote.follow(tid, id, view.cursor, {
               event: apply,
-              end: () => (done(), drained.add(view.id)),
+              end: () => (done(), drained.add(id)),
               failure: () => (done(), notify(id, { kind: 'error', message: '事件流中断，刷新页面后重试。' })),
             }),
           )
@@ -401,13 +408,11 @@ export const useChatStore = create<State>()(
       const prune = (id: string) => {
         const s = get()
         if (s.selectedId === id || s.pending[id] || s.queued[id]?.length || isResponding(s.conversations[id] ?? emptyConversation)) return
-        for (const v of s.views[id] ?? []) {
-          streams.get(v.id)?.()
-          streams.delete(v.id)
-        }
+        streams.get(id)?.()
+        streams.delete(id)
       }
 
-      /** Reads a conversation's sessions again, for why one ended outside this page's own actions. */
+      /** Reads a conversation again, for why its session ended outside this page's own actions. */
       const reconcile = async (id: string) => {
         const tid = get().tenantId
         if (!tid) return
@@ -417,11 +422,11 @@ export const useChatStore = create<State>()(
 
       /** Takes a conversation as the backend returned it after a write. */
       const absorb = (c: ChatConversation) => {
-        const { projects, executors } = get()
+        const { executors } = get()
         refresh(c.id, (s) => ({
           sessions: s.sessions.some((x) => x.id === c.id)
-            ? s.sessions.map((x) => (x.id === c.id ? { ...sessionOf(c, projects, executors), title: x.title } : x))
-            : [...s.sessions, sessionOf(c, projects, executors)],
+            ? s.sessions.map((x) => (x.id === c.id ? { ...sessionOf(c, executors), title: x.title } : x))
+            : [...s.sessions, sessionOf(c, executors)],
           views: { ...s.views, [c.id]: viewsOf(c, s.views[c.id]) },
         }))
         follow(c.id)
@@ -436,11 +441,18 @@ export const useChatStore = create<State>()(
           const { conversation } = await remote.send(tid, id, text)
           absorb(conversation)
         } catch (error) {
+          const failure = failureOf(error)
+          // Set before the refresh below, which would otherwise send the requeued prompt at once.
+          if (failure.kind === 'running') awaitingTurnEnd.add(id)
           refresh(id, (s) => {
             const { [id]: _, ...pending } = s.pending
-            return { pending }
+            // The previous turn is still running: the prompt waits for its end, like any queued one.
+            return failure.kind === 'running' ? { pending, queued: { ...s.queued, [id]: [text, ...(s.queued[id] ?? [])] } } : { pending }
           })
-          notify(id, failureOf(error))
+          if (failure.kind === 'running') return
+          // Ended outside this page (a restart): read why, so the thread says so.
+          if (failure.kind === 'ended') void reconcile(id)
+          notify(id, failure)
         }
       }
 
@@ -469,7 +481,7 @@ export const useChatStore = create<State>()(
             set({ backend: 'unavailable' })
             return
           }
-          const projects = loaded.projects.map((p): Project => ({ id: p.id, name: p.name, worktrees: p.worktrees }))
+          const projects = loaded.projects.map((p): Project => ({ id: p.id, name: p.name }))
           const local = get().projects.filter((p) => p.samples)
           const order = loaded.projectOrder.length ? loaded.projectOrder : get().projects.map((p) => p.id)
           const all = ordered([...local, ...projects], order)
@@ -478,7 +490,7 @@ export const useChatStore = create<State>()(
             backend: projects.length && loaded.executors.length ? 'ready' : 'unavailable',
             executors: loaded.executors,
             projects: all,
-            sessions: [...s.sessions.filter((x) => !x.remote), ...loaded.conversations.map((c) => sessionOf(c, all, loaded.executors))],
+            sessions: [...s.sessions.filter((x) => !x.remote), ...loaded.conversations.map((c) => sessionOf(c, loaded.executors))],
             views: Object.fromEntries(loaded.conversations.map((c) => [c.id, viewsOf(c)])),
             newChat: {
               projectId: projects[0]?.id ?? '',
@@ -527,17 +539,15 @@ export const useChatStore = create<State>()(
           const { tenantId: tid, newChat, executors, projects } = get()
           const executor = executors.find((x) => x.agentName === newChat.agent && x.modelName === newChat.model)
           const project = projects.find((p) => p.id === newChat.projectId)
-          if (!tid || !executor || !project || project.samples || newChat.workspace.kind === 'new-worktree') {
+          if (!tid || !executor || !project || project.samples) {
             notify(newChatKey, { kind: 'unavailable' })
             return
           }
-          const workspace = newChat.workspace
-          const workspaceId = workspace.kind === 'isolated' ? (project.worktrees?.find((w) => w.branch === workspace.branch)?.id ?? '') : ''
           // The conversation exists once the backend admits its first prompt; until then a
           // placeholder holds the prompt, so the input slides down at once as in desktop.
           const placeholder = newId('pending')
           set((s) => ({
-            sessions: [...s.sessions, { id: placeholder, projectId: project.id, workspace, title: draft.text.slice(0, 24), agent: newChat.agent, model: newChat.model, createdAt: Date.now() }],
+            sessions: [...s.sessions, { id: placeholder, projectId: project.id, workspace: { kind: 'main' }, title: draft.text.slice(0, 24), agent: newChat.agent, model: newChat.model, createdAt: Date.now() }],
             selectedId: placeholder,
             drafts: { ...s.drafts, [newChatKey]: emptyDraft },
             conversations: { ...s.conversations, [placeholder]: applyEvent(emptyConversation, { type: 'prompt', turnId: 'pending', text: draft.text }, Date.now()) },
@@ -548,9 +558,9 @@ export const useChatStore = create<State>()(
               return { sessions: s.sessions.filter((x) => x.id !== placeholder), conversations }
             })
           try {
-            const { conversation } = await remote.create(tid, { projectId: project.id, workspaceId, executorId: executor.id, prompt: draft.text })
+            const { conversation } = await remote.create(tid, { projectId: project.id, executorId: executor.id, prompt: draft.text })
             const selected = get().selectedId === placeholder
-            // Prompts typed while the first one was being admitted wait for the conversation.
+            // Prompts typed while the first one was being sent wait for the conversation.
             const queued = get().queued[placeholder] ?? []
             set((s) => {
               const { [placeholder]: _, ...rest } = s.queued
@@ -589,10 +599,8 @@ export const useChatStore = create<State>()(
               notify(id, failureOf(error))
               return
             }
-            for (const v of get().views[id] ?? []) {
-              streams.get(v.id)?.()
-              streams.delete(v.id)
-            }
+            streams.get(id)?.()
+            streams.delete(id)
           }
           players.get(id)?.cancel?.()
           players.delete(id)
@@ -621,6 +629,10 @@ export const useChatStore = create<State>()(
           if (tid && get().backend === 'ready') void remote.saveOrder(tid, get().projects.map((p) => p.id)).catch(() => {})
         },
         send: (id, draft) => {
+          if (isRemote(id) && isEnded(get().views[id])) {
+            notify(id, { kind: 'ended' })
+            return
+          }
           const conversation = get().conversations[id] ?? emptyConversation
           if (isResponding(conversation) || players.has(id) || get().pending[id]) {
             set((s) => ({ queued: { ...s.queued, [id]: [...(s.queued[id] ?? []), draft.text] } }))
@@ -639,8 +651,10 @@ export const useChatStore = create<State>()(
           if (isRemote(id) && tid) {
             // The fixed Node ends the whole session, and its stream can report that before the
             // stop request returns; the reason is set first so the marker reads right either way.
+            // Prompts queued behind the stopped turn can never be sent.
             const reason = (endReason: SessionView['endReason']) =>
-              refresh(id, (s) => ({ views: { ...s.views, [id]: (s.views[id] ?? []).map((v, i, all) => (i === all.length - 1 && !v.ended ? { ...v, endReason } : v)) } }))
+              refresh(id, (s) => ({ views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.ended ? v : { ...v, endReason })) } }))
+            set((s) => ({ queued: { ...s.queued, [id]: [] } }))
             reason('stopped')
             remote.stop(tid, id).catch((error: unknown) => (reason(''), notify(id, failureOf(error))))
             return
@@ -651,15 +665,6 @@ export const useChatStore = create<State>()(
           setPlaying(id, false)
           if (isResponding(get().conversations[id] ?? emptyConversation)) {
             dispatch(id, { type: 'turnEnd', stopReason: 'cancelled' })
-          }
-        },
-        release: async (id) => {
-          const tid = get().tenantId
-          if (!tid) return
-          try {
-            absorb(await remote.release(tid, id))
-          } catch (error) {
-            notify(id, failureOf(error))
           }
         },
         answer: (id, permissionId, optionId) => {
@@ -742,6 +747,7 @@ export function resetChatStore() {
   for (const stop of streams.values()) stop()
   streams.clear()
   drained.clear()
+  awaitingTurnEnd.clear()
   useChatStore.setState({
     projects: [sampleProject],
     sessions: [...sampleSessions],

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyConversation } from './model/types'
-import { emptyDraft, newChatKey, replayClock, resetChatStore, useChatStore } from './store'
+import { emptyDraft, isEnded, newChatKey, replayClock, resetChatStore, useChatStore } from './store'
 import { type ChatBackend, chatBackend, FakeEventSource, line, tenantId } from './test-backend'
 
 const state = () => useChatStore.getState()
@@ -133,17 +133,17 @@ describe('chat store: backend conversations', () => {
     await state().connect(tenantId)
   })
 
-  it('loads projects with their worktrees, executors and conversations', () => {
+  it('loads projects, executors and conversations', () => {
     expect(state().backend).toBe('ready')
     expect(state().projects.map((p) => p.name)).toEqual(['示例', 'ora-space/cloud', 'ora-space/desktop'])
-    expect(state().sessions.find((s) => s.id === 'c-wt')).toMatchObject({ projectId: 'p-cloud', workspace: { kind: 'isolated', branch: 'demo/chat-1' }, agent: 'OpenCode', model: 'Fixture' })
+    expect(state().sessions.find((s) => s.id === 'c-style')).toMatchObject({ projectId: 'p-cloud', workspace: { kind: 'main' }, agent: 'OpenCode', model: 'Fixture' })
     expect(state().newChat).toEqual({ projectId: 'p-cloud', workspace: { kind: 'main' }, agent: 'OpenCode', model: 'Fixture' })
   })
 
   it('follows a conversation once it is opened and shows each snapshot whole', () => {
     state().select('c-main')
-    const stream = FakeEventSource.of('c-main-s1')
-    expect(stream.url).toBe(`/api/v2/tenants/${tenantId}/chat/conversations/c-main/sessions/c-main-s1/events`)
+    const stream = FakeEventSource.of('c-main')
+    expect(stream.url).toBe(`/api/v2/tenants/${tenantId}/chat/conversations/c-main/events`)
     stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '你好'), line.say(2, '草稿')], incomplete: true } })
     stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '你好'), line.say(2, '你好，我在。'), line.ended(3)], incomplete: false } })
     const [turn] = conversation('c-main').turns
@@ -152,38 +152,51 @@ describe('chat store: backend conversations', () => {
   })
 
   it('creates a conversation from the new chat, showing the prompt until the history has it', async () => {
-    state().setNewChat({ projectId: 'p-cloud', workspace: { kind: 'isolated', branch: 'demo/chat-1' }, agent: 'Claude Code', model: 'Claude Sonnet 5.5' })
+    state().setNewChat({ projectId: 'p-cloud', agent: 'Claude Code', model: 'Claude Sonnet 5.5' })
     state().setDraft(newChatKey, { ...emptyDraft, text: '列出接口' })
     const sent = state().sendNewChat({ ...emptyDraft, text: '列出接口' })
-    // The input slides down at once: a placeholder holds the prompt while the backend admits it.
+    // The input slides down at once: a placeholder holds the prompt while the backend takes it.
     expect(conversation(state().selectedId!).turns[0].prompt.text).toBe('列出接口')
     await sent
-    expect(backend.bodies.at(-1)).toEqual({ projectId: 'p-cloud', workspaceId: 'w-chat-1', executorId: 'cc-sonnet', prompt: '列出接口' })
+    expect(backend.bodies.at(-1)).toEqual({ projectId: 'p-cloud', executorId: 'cc-sonnet', prompt: '列出接口' })
     const id = state().selectedId!
     expect(id).toBe('c-new-1')
     expect(state().drafts[newChatKey]).toEqual(emptyDraft)
     expect(conversation(id).turns.map((t) => [t.prompt.text, t.status])).toEqual([['列出接口', 'streaming']])
-    FakeEventSource.of('c-new-1-s1').emit({ kind: 'history_snapshot', history: { records: [line.user(1, '列出接口')], incomplete: false } })
+    FakeEventSource.of('c-new-1').emit({ kind: 'history_snapshot', history: { records: [line.user(1, '列出接口')], incomplete: false } })
     expect(state().pending[id]).toBeUndefined()
     expect(conversation(id).turns).toHaveLength(1)
   })
 
-  it('names the conversation holding a busy workspace and keeps the draft', async () => {
-    backend.refuse = { status: 409, data: { code: 'workspace_busy', params: { conversationId: 'c-main', title: '梳理 v2 接口缺口' }, requestId: 'r' } }
+  it('keeps the draft when the first prompt is refused, leaving no conversation', async () => {
+    backend.refuse = { status: 503, data: { code: 'stop_unconfirmed', params: {}, requestId: 'r' } }
     await state().sendNewChat({ ...emptyDraft, text: '再开一个' })
-    expect(state().notices[newChatKey]).toMatchObject({ kind: 'busy', occupant: { id: 'c-main', title: '梳理 v2 接口缺口' } })
+    expect(state().notices[newChatKey]).toMatchObject({ kind: 'error' })
     expect(state().selectedId).toBeUndefined()
     expect(state().drafts[newChatKey]?.text).toBe('再开一个')
     expect(state().sessions.filter((s) => s.remote)).toHaveLength(2)
-    await state().release('c-main')
-    expect(backend.seen).toContain(`POST /api/v2/tenants/${tenantId}/chat/conversations/c-main/end`)
+  })
+
+  it('queues a prompt the backend refuses while the previous turn still runs', async () => {
     state().select('c-main')
-    expect(conversation('c-main').markers).toMatchObject([{ kind: 'session', reason: 'released' }])
+    const stream = FakeEventSource.of('c-main')
+    backend.refuse = { status: 409, data: { code: 'turn_running', params: {}, requestId: 'r' } }
+    state().send('c-main', { ...emptyDraft, text: '接着' })
+    await vi.waitFor(() => expect(state().queued['c-main']).toEqual(['接着']))
+    expect(state().notices['c-main']).toBeUndefined()
+    // It waits for the running turn's end instead of retrying straight away.
+    const sends = () => backend.seen.filter((r) => r.endsWith('/conversations/c-main/messages')).length
+    await new Promise((r) => setTimeout(r, 20))
+    expect(sends()).toBe(1)
+    stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '第一条'), line.ended(2)], incomplete: false } })
+    stream.emit({ kind: 'turn_ended', result: { status: 'completed', answer: '', answerComplete: true, stopReason: 'end_turn', failureCode: '' } })
+    await vi.waitFor(() => expect(sends()).toBe(2))
+    expect(backend.bodies.at(-1)).toEqual({ prompt: '接着' })
   })
 
   it('queues while the Agent works, sends when the turn ends, and marks an unread finish', async () => {
     state().select('c-main')
-    const stream = FakeEventSource.of('c-main-s1')
+    const stream = FakeEventSource.of('c-main')
     stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '第一条')], incomplete: false } })
     state().send('c-main', { ...emptyDraft, text: '第二条' })
     expect(state().queued['c-main']).toEqual(['第二条'])
@@ -194,19 +207,34 @@ describe('chat store: backend conversations', () => {
     expect(state().queued['c-main']).toEqual([])
   })
 
-  it('stops a turn, and the next prompt starts over in a new session after a marker', async () => {
+  it('stops a turn, which ends the conversation: it is marked and takes no more prompts', async () => {
     state().select('c-main')
-    const first = FakeEventSource.of('c-main-s1')
+    const first = FakeEventSource.of('c-main')
     first.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '写长一点')], incomplete: false } })
+    state().send('c-main', { ...emptyDraft, text: '排队的' })
     state().stop('c-main')
+    expect(state().queued['c-main']).toEqual([])
     await vi.waitFor(() => expect(backend.seen).toContain(`POST /api/v2/tenants/${tenantId}/chat/conversations/c-main/stop`))
     first.emit({ kind: 'turn_ended', result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } })
     first.emit({ kind: 'session_ended' })
     first.fire('end')
     expect(conversation('c-main').turns[0].status).toBe('cancelled')
     expect(conversation('c-main').markers).toMatchObject([{ kind: 'session', reason: 'stopped', afterTurn: 1 }])
+    expect(isEnded(state().views['c-main'])).toBe(true)
+    const requests = backend.seen.length
     state().send('c-main', { ...emptyDraft, text: '重来' })
-    await vi.waitFor(() => expect(() => FakeEventSource.of('c-main-s2')).not.toThrow())
+    expect(state().notices['c-main']).toMatchObject({ kind: 'ended' })
+    expect(backend.seen).toHaveLength(requests)
+  })
+
+  it('shows a conversation the server ended (a restart) as ended once a send is refused', async () => {
+    state().select('c-main')
+    backend.conversations[0].session = { ...backend.conversations[0].session!, endedAt: '2026-10-30T09:05:00Z', endReason: 'interrupted' }
+    backend.refuse = { status: 409, data: { code: 'conversation_ended', params: {}, requestId: 'r' } }
+    state().send('c-main', { ...emptyDraft, text: '还在吗' })
+    await vi.waitFor(() => expect(isEnded(state().views['c-main'])).toBe(true))
+    expect(state().notices['c-main']).toMatchObject({ kind: 'ended' })
+    expect(conversation('c-main').markers).toMatchObject([{ kind: 'session', reason: 'interrupted' }])
   })
 
   it('renames and deletes conversations on the backend', async () => {

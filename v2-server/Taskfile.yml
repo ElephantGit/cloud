@@ -42,6 +42,18 @@ tasks:
   dev:both:
     internal: true
     deps: [server, web]
+  demo:
+    desc: 'Cloud v2 with the chat page on its in-browser demo backend (scripted replies, no Agent); open http://localhost:5173/chat'
+    deps: [db]
+    cmds:
+      - task: demo:both
+  demo:both:
+    internal: true
+    deps: [server, demo:web]
+  demo:web:
+    internal: true
+    dir: ../frontend-v2
+    cmds: [npm ci, npm run dev:demo]
   test:
     desc: v2-server tests against the compose PostgreSQL
     deps: [db]

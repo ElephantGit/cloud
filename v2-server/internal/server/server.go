@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/chat"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
@@ -30,6 +31,8 @@ type Store interface {
 	SessionUser(ctx context.Context, token string) (store.User, error)
 	Tenants(ctx context.Context, userID string) ([]store.Tenant, error)
 	TenantMembers(ctx context.Context, tenant, caller string) ([]store.Member, error)
+	TenantSpaces(ctx context.Context, tenant, caller string) ([]store.Space, error)
+	SpaceAgentPlugins(ctx context.Context, tenant, space, caller string) ([]store.SpacePlugin, error)
 }
 
 // Options tune the server.
@@ -59,6 +62,8 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v1/me", h.authed(h.me))
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/members", h.authed(h.members))
+	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces", h.authed(h.spaces))
+	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces/{sid}/plugins", h.authed(h.spacePlugins))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects/{pid}", h.authed(h.projects))
@@ -77,6 +82,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads/{sid}/members", h.authed(h.addSquadMember))
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.updateSquadMember))
 	mux.HandleFunc("DELETE /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.removeSquadMember))
+	h.chatRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }
@@ -84,6 +90,9 @@ func New(s Store, o Options) http.Handler {
 type handler struct {
 	store Store
 	opts  Options
+	// chats runs the chat routes on the injected execution service and catalog; nil when the store
+	// cannot keep conversations.
+	chats *chat.Service
 }
 
 // newHandler makes omitted dependencies safe without inferring one interface from another.
@@ -95,7 +104,11 @@ func newHandler(s Store, o Options) *handler {
 	if o.Catalog == nil {
 		o.Catalog = unavailable
 	}
-	return &handler{store: s, opts: o}
+	h := &handler{store: s, opts: o}
+	if cs, ok := s.(chat.Store); ok {
+		h.chats = chat.New(cs, o.Execution, o.Catalog, chat.Options{})
+	}
+	return h
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {

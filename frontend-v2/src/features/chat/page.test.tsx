@@ -1,44 +1,63 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Page from './page'
 import { replayClock, resetChatStore, useChatStore } from './store'
+import { type ChatBackend, chatBackend, FakeEventSource, line } from './test-backend'
 
 const renderPage = () =>
   render(
-    <TooltipProvider>
-      <Page />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <TooltipProvider>
+        <Page />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
 const sidebar = () => screen.getByRole('complementary', { name: '聊天记录' })
+/** Renders the page and waits until it has loaded the backend's projects. */
+const renderReady = async () => {
+  renderPage()
+  await within(sidebar()).findByRole('region', { name: '项目 ora-space/cloud' })
+}
 
 describe('chat page', () => {
+  let backend: ChatBackend
   beforeEach(() => {
     replayClock.scale = 0
     resetChatStore()
+    backend = chatBackend()
   })
   afterEach(() => {
     replayClock.scale = 1
   })
 
-  it('groups history by project, with worktree sessions under their branch', () => {
-    renderPage()
+  it('groups history by project', async () => {
+    await renderReady()
     expect(screen.getByRole('heading', { level: 1, name: '对话' })).toBeInTheDocument()
     const cloud = within(sidebar()).getByRole('region', { name: '项目 ora-space/cloud' })
     expect(within(cloud).getByText('梳理 v2 接口缺口')).toBeInTheDocument()
-    const worktree = within(cloud).getByText('feat/766-v2-chat').closest('[aria-label="worktree feat/766-v2-chat"]') as HTMLElement
-    expect(within(worktree).getByText('对话页样式')).toBeInTheDocument()
-    expect(within(worktree).getByText('左栏拖动排序')).toBeInTheDocument()
+    expect(within(cloud).getByText('对话页样式')).toBeInTheDocument()
   })
 
-  it('opens on a new chat in the first project, as desktop lands', () => {
-    renderPage()
+  it('opens on a new chat in the first project, as desktop lands', async () => {
+    await renderReady()
     expect(screen.getByRole('heading', { level: 2, name: '新对话' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
-    expect(screen.getByRole('button', { name: '选择工作目录' })).toHaveTextContent('主目录')
+    // Every conversation runs in a sandbox of its own: there is nowhere else to choose.
+    expect(screen.queryByRole('button', { name: '选择工作目录' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择启动模式' })).toHaveTextContent('云端')
+  })
+
+  it('puts the cursor in the input when a project\'s + menu opens the chat it already shows', async () => {
+    await renderReady()
+    const input = screen.getByRole('textbox', { name: '消息' })
+    expect(input).not.toHaveFocus()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '新建对话' }))
+    expect(input).toHaveFocus()
   })
 
   it('opens a sample from the history and shows its work', async () => {
@@ -64,94 +83,109 @@ describe('chat page', () => {
     expect(screen.getByText('依赖已经重新安装，共 412 个包。')).toBeInTheDocument()
   })
 
-  it('sends a new chat with a plugin picked by typing @, creating its session', async () => {
+  it('keeps plugins and files for samples, where the input can be tried without the backend', async () => {
     renderPage()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/desktop 新建对话' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '在主目录新建对话' }))
-    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/desktop')
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '工具调用：读、搜、改、执行' }))
     const input = screen.getByRole('textbox', { name: '消息' })
     await userEvent.type(input, '检查一下 @代码')
     await userEvent.click(screen.getByRole('option', { name: '代码审查' }))
-    expect(within(screen.getByLabelText('已选插件')).getByText('代码审查')).toBeInTheDocument()
     await userEvent.type(input, '{Enter}')
-    // The first prompt creates the session and names it; the reply echoes the prompt and its plugin.
-    expect(screen.getByRole('heading', { level: 2, name: '检查一下' })).toBeInTheDocument()
-    expect(within(sidebar()).getByRole('region', { name: '项目 ora-space/desktop' })).toHaveTextContent('检查一下')
-    expect(screen.getByText(/这是演示回复/)).toBeInTheDocument()
     expect(screen.getByText(/插件：代码审查/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '选择项目' })).not.toBeInTheDocument()
+  })
+
+  it('starts a conversation in a project with a text prompt, and shows the Agent\'s reply', async () => {
+    await renderReady()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/desktop 新建对话' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '新建对话' }))
+    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/desktop')
+    // Even when the new chat already shows, 新建对话 in the + menu puts the cursor in its input.
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveFocus()
+    // The first version sends text only: no files or plugins.
+    expect(screen.queryByRole('button', { name: '添加' })).not.toBeInTheDocument()
+    const input = screen.getByRole('textbox', { name: '消息' })
+    await userEvent.type(input, '检查一下 @代码{Enter}')
+    expect(screen.queryByRole('option', { name: '代码审查' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: '检查一下 @代码' })).toBeInTheDocument()
+    expect(backend.bodies.at(-1)).toEqual({ projectId: 'p-desktop', executorId: 'oc-fixture', prompt: '检查一下 @代码' })
+    act(() =>
+      FakeEventSource.of('c-new-1').emit({
+        kind: 'history_snapshot',
+        history: { records: [line.user(1, '检查一下 @代码'), line.say(2, '检查完了，没有问题。'), line.ended(3)], incomplete: false },
+      }),
+    )
+    expect(screen.getByText('检查完了，没有问题。')).toBeInTheDocument()
+    expect(within(sidebar()).getByRole('region', { name: '项目 ora-space/desktop' })).toHaveTextContent('检查一下 @代码')
     expect(input).toHaveValue('')
   })
 
-  it('starts a new chat where the selected session works, and moves it with the bar above the input', async () => {
-    renderPage()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '对话页样式' }))
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '新建对话' }))
-    const where = () => screen.getByRole('button', { name: '选择工作目录' })
+  it('makes a stopped conversation read-only and offers a new chat in its project', async () => {
+    await renderReady()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
+    const stream = FakeEventSource.of('c-main')
+    act(() => stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '写长一点')], incomplete: false } }))
+    await userEvent.click(screen.getByRole('button', { name: '停止' }))
+    act(() => {
+      stream.emit({ kind: 'turn_ended', result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } })
+      stream.emit({ kind: 'session_ended' })
+    })
+    expect(screen.getByText(/已停止 · 这个对话已结束/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '消息' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '新对话' }))
+    expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
-    expect(where()).toHaveTextContent('feat/766-v2-chat')
-    await userEvent.click(where())
-    await userEvent.click(await screen.findByRole('option', { name: '主目录' }))
-    expect(where()).toHaveTextContent('主目录')
+    expect(screen.getByRole('textbox', { name: '消息' })).toBeInTheDocument()
+  })
+
+  it('shows where a new chat runs; the cloud is the only mode on the web', async () => {
+    await renderReady()
     await userEvent.click(screen.getByRole('button', { name: '选择启动模式' }))
     expect(await screen.findByRole('menuitem', { name: /本地/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('works in a new worktree named after the first prompt', async () => {
-    renderPage()
-    const where = () => screen.getByRole('button', { name: '选择工作目录' })
-    await userEvent.click(where())
-    await userEvent.click(await screen.findByRole('option', { name: '在 worktree 中工作' }))
-    // No name until the chat starts.
-    expect(where()).toHaveTextContent('新 worktree')
-    await userEvent.type(screen.getByRole('textbox', { name: '消息' }), 'add retry to the SSE stream{Enter}')
-    expect(screen.getByTitle('Agent 在独立的 worktree 里工作')).toHaveTextContent('ora/add-retry-sse-stream')
-    const cloud = within(sidebar()).getByRole('region', { name: '项目 ora-space/cloud' })
-    expect(within(cloud).getByLabelText('worktree ora/add-retry-sse-stream')).toHaveTextContent('add retry to the SSE')
-  })
-
-  it('searches projects and adds one from its folder', async () => {
-    renderPage()
+  it('searches the backend\'s projects, with no way to add one yet', async () => {
+    await renderReady()
     await userEvent.click(screen.getByRole('button', { name: '选择项目' }))
     await userEvent.type(await screen.findByPlaceholderText('搜索项目'), 'desk')
     expect(screen.getByRole('option', { name: 'ora-space/desktop' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'ora-space/cloud' })).not.toBeInTheDocument()
-    await userEvent.clear(screen.getByPlaceholderText('搜索项目'))
-    await userEvent.click(screen.getByRole('option', { name: /新建项目/ }))
-    await userEvent.type(await screen.findByRole('textbox', { name: '项目文件夹' }), '/workspace/my-app')
-    expect(screen.getByText('项目名：my-app')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '添加项目' }))
-    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('my-app')
-    expect(within(sidebar()).getByRole('region', { name: '项目 my-app' })).toHaveTextContent('还没有会话')
+    expect(screen.queryByRole('option', { name: /新建项目/ })).not.toBeInTheDocument()
   })
 
-  it('picks an agent, then one of its models found by search', async () => {
-    renderPage()
+  it('picks an agent, then one of its models, from the backend\'s executors', async () => {
+    await renderReady()
     await userEvent.click(screen.getByRole('button', { name: /^模型：/ }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Codex' }))
-    // The menu stays open on the new agent's models.
-    expect(screen.getByRole('menuitem', { name: 'GPT-5.5' })).toBeInTheDocument()
-    await userEvent.type(screen.getByRole('textbox', { name: '搜索模型' }), 'mini')
-    expect(screen.queryByRole('menuitem', { name: 'GPT-5.5' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('menuitem', { name: 'GPT-5.5 Mini' }))
-    expect(screen.getByRole('button', { name: /^模型：/ })).toHaveAccessibleName('模型：Codex GPT-5.5 Mini')
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'OpenCode' }))
+    await userEvent.type(screen.getByRole('textbox', { name: '搜索模型' }), 'sonnet')
+    expect(screen.queryByRole('menuitem', { name: 'Fixture' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Claude Sonnet 5.5' }))
+    expect(screen.getByRole('button', { name: /^模型：/ })).toHaveAccessibleName('模型：OpenCode Claude Sonnet 5.5')
   })
 
-  it('shows where the session works', async () => {
+  it('says when the backend cannot run Agents yet', async () => {
+    resetChatStore()
+    chatBackend({ unavailable: true })
     renderPage()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '对话页样式' }))
-    expect(screen.getByTitle('Agent 在独立的 worktree 里工作')).toHaveTextContent('feat/766-v2-chat')
+    expect(await screen.findByText(/后端还不能运行 Agent/)).toHaveRole('status')
+  })
+
+  it('labels every chat as running in a sandbox of its own, explained on hover', async () => {
+    await renderReady()
+    const label = screen.getByText('沙盒')
+    await userEvent.hover(label)
+    expect(await screen.findByText('每个对话在独立的沙盒中运行，代码从项目仓库 clone 而来，改动不会写回')).toBeInTheDocument()
+    await userEvent.unhover(label)
     await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
-    expect(screen.getByTitle('Agent 直接在项目主目录里工作')).toHaveTextContent('主目录')
+    expect(within(screen.getByRole('banner')).getByText('沙盒')).toBeInTheDocument()
   })
 
-  it('renames a session by double-clicking it', async () => {
-    renderPage()
+  it('renames a conversation by double-clicking it', async () => {
+    await renderReady()
     await userEvent.dblClick(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
     const field = screen.getByRole('textbox', { name: '会话名称' })
     await userEvent.clear(field)
     await userEvent.type(field, '接口清单{Enter}')
     expect(within(sidebar()).getByRole('button', { name: '接口清单' })).toBeInTheDocument()
+    expect(backend.bodies.at(-1)).toEqual({ title: '接口清单' })
   })
 
   it('folds the history column away and brings it back', async () => {
@@ -178,16 +212,12 @@ describe('chat page', () => {
     expect(sidebar()).toHaveStyle({ width: '200px' })
   })
 
-  it('reorders projects when one is dropped on another', () => {
-    renderPage()
+  it('reorders projects when one is dropped on another', async () => {
+    await renderReady()
     const order = () => within(sidebar()).getAllByRole('region').map((r) => r.getAttribute('aria-label'))
     expect(order()).toEqual(['项目 示例', '项目 ora-space/cloud', '项目 ora-space/desktop'])
     // dnd-kit's keyboard sensor needs layout jsdom lacks, so drive the store the drop calls.
-    act(() => useChatStore.getState().moveProject('desktop', 'samples'))
-    expect(order()).toEqual([
-      '项目 ora-space/desktop',
-      '项目 示例',
-      '项目 ora-space/cloud',
-    ])
+    act(() => useChatStore.getState().moveProject('p-desktop', 'samples'))
+    expect(order()).toEqual(['项目 ora-space/desktop', '项目 示例', '项目 ora-space/cloud'])
   })
 })

@@ -59,6 +59,7 @@ function permissionsOf(conversation: Conversation, turn: Turn) {
 /** Why the session above ended, said where the Agent's memory of it stops. */
 const sessionEnd: Record<Extract<MarkerData, { kind: 'session' }>['reason'], string> = {
   stopped: '已停止',
+  released: '已结束会话，释放了工作目录',
   idle: '空闲太久，已释放工作目录',
   deleted: '会话已结束',
   interrupted: '服务重启，会话已中断',

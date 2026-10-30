@@ -37,7 +37,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { isResponding } from '../model/conversation'
 import { emptyConversation } from '../model/types'
-import { type Project, type Session, useChatStore } from '../store'
+import { backendSupports, type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
 import { NewWorktreeDialog } from './new-worktree-dialog'
@@ -193,14 +193,24 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
                   <FolderIcon />
                   在主目录新建对话
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'new-worktree' } })}>
-                  <GitBranchPlusIcon />
-                  在新 worktree 中新建对话
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setNewWorktree(true)}>
-                  <PencilIcon />
-                  新建 worktree 并命名…
-                </DropdownMenuItem>
+                {backendSupports.newWorktree && (
+                  <>
+                    <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'new-worktree' } })}>
+                      <GitBranchPlusIcon />
+                      在新 worktree 中新建对话
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setNewWorktree(true)}>
+                      <PencilIcon />
+                      新建 worktree 并命名…
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {(project.worktrees ?? []).map((w) => (
+                  <DropdownMenuItem key={w.id} onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch: w.branch } })}>
+                    <GitBranchIcon />
+                    在 {w.branch} 新建对话
+                  </DropdownMenuItem>
+                ))}
                 <DropdownMenuSeparator />
                 <RunWorkflowSubmenu onPick={setRunWorkflow} />
               </DropdownMenuContent>

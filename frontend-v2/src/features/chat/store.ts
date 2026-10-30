@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { SidebarLayout } from '@/components/sidebar-resize-handle'
-import { branchNameFor } from './model/branch-name'
+import type { ChatConversation, ChatEvent, ChatExecutor } from './api/generated'
 import { applyEvent, isResponding } from './model/conversation'
-import { type Attachment, type ChatEvent, type Conversation, emptyConversation, type PluginRef } from './model/types'
+import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from './model/history'
+import { type Attachment, type ChatEvent as ModelEvent, type Conversation, emptyConversation, type PluginRef } from './model/types'
+import { type Failure, failureOf, remote, type RemoteState } from './remote'
 import { scenarios } from './samples/scenarios'
 import { script, type Step } from './samples/script'
 
@@ -13,6 +15,12 @@ export type Workspace = { kind: 'main' } | { kind: 'isolated'; branch: string }
 /** Where a new chat will work: like a session, or in a worktree its first prompt will name. */
 export type NewChatWorkspace = Workspace | { kind: 'new-worktree' }
 
+/**
+ * What the first version of the chat backend can do. The input and the history hide what it
+ * cannot, rather than offering something that would fail.
+ */
+export const backendSupports = { newProject: false, newWorktree: false, attachments: false, plugins: false }
+
 export interface Project {
   id: string
   name: string
@@ -20,6 +28,8 @@ export interface Project {
   path?: string
   /** Samples replay recorded conversations; the person cannot add sessions to them. */
   samples?: boolean
+  /** The project's worktree workspaces, for projects the backend runs chats in. */
+  worktrees?: { id: string; branch: string }[]
 }
 
 export interface Session {
@@ -27,11 +37,13 @@ export interface Session {
   projectId: string
   workspace: Workspace
   title: string
-  /** The agent's id in {@link agents}, and the model it runs with. */
+  /** The agent's id in the selector, and the model it runs with. */
   agent: string
   model: string
   /** The recorded conversation this session replays, for sample sessions. */
   scenarioId?: string
+  /** Set for conversations the backend runs: where, and with which executor. */
+  remote?: { workspaceId: string; executorId: string }
   createdAt: number
 }
 
@@ -62,28 +74,45 @@ export interface Agent {
   models: string[]
 }
 
-/**
- * The agents and models the selector offers until v2-server reports which agents it runs and
- * their models; the samples all use the first one.
- */
-export const agents: Agent[] = [
+/** The agents the recorded samples use; the selector offers them only inside a sample. */
+export const sampleAgents: Agent[] = [
   { id: 'claude-code', name: 'Claude Code', models: ['Claude Sonnet 5.5', 'Claude Opus 5.5', 'Claude Haiku 5.5'] },
   { id: 'codex', name: 'Codex', models: ['GPT-5.5', 'GPT-5.5 Mini'] },
   { id: 'opencode', name: 'OpenCode', models: ['Claude Sonnet 5.5', 'GPT-5.5', 'Qwen3 Coder'] },
 ]
 
-const defaultChoice = { agent: agents[0].id, model: agents[0].models[0] }
-const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id
+const defaultChoice = { agent: sampleAgents[0].id, model: sampleAgents[0].models[0] }
+const agentName = (id: string) => sampleAgents.find((a) => a.id === id)?.name ?? id
 
-/** Plugins the input can apply until the catalog comes from the backend. */
-export const plugins: PluginRef[] = [
+/** The plugins a sample's input can apply; the backend does not take plugins yet. */
+export const samplePlugins: PluginRef[] = [
   { id: 'ui-guidelines', name: 'UI 规范' },
   { id: 'code-review', name: '代码审查' },
   { id: 'git-helper', name: 'Git 助手' },
 ]
 
+/** The backend's executors as the selector shows them: each agent with the models it runs. */
+export function agentsOf(executors: ChatExecutor[]): Agent[] {
+  const byAgent = new Map<string, Agent>()
+  for (const x of executors) {
+    const agent = byAgent.get(x.agentName) ?? { id: x.agentName, name: x.agentName, models: [] }
+    agent.models.push(x.modelName)
+    byAgent.set(x.agentName, agent)
+  }
+  return [...byAgent.values()]
+}
+
 /** How the history column is laid out; kept per browser. */
 export const defaultSidebar: SidebarLayout = { width: 288, open: true }
+
+/**
+ * Whether the backend can run chats: still loading, ready, or unable to (no execution runtime, no
+ * projects, or unreachable). The samples work in every case.
+ */
+export type BackendState = 'idle' | 'loading' | 'ready' | 'unavailable'
+
+/** Something the person should know about a send, shown above the input until dismissed. */
+export type Notice = Failure & { key: string }
 
 interface State {
   projects: Project[]
@@ -103,6 +132,20 @@ interface State {
   /** The history column's width in pixels, and whether it is shown. */
   sidebar: SidebarLayout
   setSidebar: (sidebar: Partial<SidebarLayout>) => void
+
+  tenantId?: string
+  backend: BackendState
+  executors: ChatExecutor[]
+  /** The execution sessions behind each backend conversation, in order. */
+  views: Record<string, SessionView[]>
+  /** A prompt sent but not yet in the history, shown so the thread never looks empty meanwhile. */
+  pending: Record<string, { text: string; turns: number }>
+  /** The latest problem with a send, per session (or the new chat). */
+  notices: Record<string, Notice>
+  /** Loads the tenant's projects, executors and conversations. */
+  connect: (tenantId: string) => Promise<void>
+  dismiss: (key: string) => void
+
   select: (id: string) => void
   /** Shows a workflow run in place of the session, as desktop's workspace does. */
   selectRun: (id: string | undefined) => void
@@ -114,23 +157,19 @@ interface State {
    */
   startNewChat: (scope?: { projectId: string; workspace?: NewChatWorkspace }) => void
   setNewChat: (patch: Partial<NewChat>) => void
-  /**
-   * Creates the session the new chat describes, selects it and sends its first prompt. A new
-   * worktree is named from that prompt.
-   */
-  sendNewChat: (draft: Draft) => void
-  createSession: (projectId: string, workspace: Workspace, choice?: { agent: string; model: string }) => string
+  /** Creates the conversation the new chat describes with its first prompt, and selects it. */
+  sendNewChat: (draft: Draft) => Promise<void>
   renameSession: (id: string, title: string) => void
-  deleteSession: (id: string) => void
+  deleteSession: (id: string) => Promise<void>
   /** Moves project `id` to where `overId` is, as a drag and drop does. */
   moveProject: (id: string, overId: string) => void
   send: (id: string, draft: Draft) => void
   stop: (id: string) => void
+  /** Ends a conversation's live session so its workspace is free for another conversation. */
+  release: (id: string) => Promise<void>
   answer: (id: string, permissionId: string, optionId: string) => void
-  /** Switches a session's agent and model; once it has turns the switch is marked in the thread. */
+  /** Switches a sample's agent and model; once it has turns the switch is marked in the thread. */
   setAgentModel: (id: string, agent: string, model: string) => void
-  /** Adds a project for the folder at `path`, named after its last segment; returns its id. */
-  createProject: (path: string) => string
   setDraft: (id: string, draft: Draft) => void
   /** Removes the queued prompt at `index`. */
   unqueue: (id: string, index: number) => void
@@ -139,15 +178,6 @@ interface State {
 }
 
 const sampleProject: Project = { id: 'samples', name: '示例', samples: true }
-
-/**
- * The demo projects shown until the session API exists in v2-server; sending in them gets a
- * stand-in reply that says so.
- */
-const demoProjects: Project[] = [
-  { id: 'cloud', name: 'ora-space/cloud' },
-  { id: 'desktop', name: 'ora-space/desktop' },
-]
 
 const sampleSessions: Session[] = scenarios.map((s, i) => ({
   id: `sample-${s.id}`,
@@ -158,13 +188,6 @@ const sampleSessions: Session[] = scenarios.map((s, i) => ({
   scenarioId: s.id,
   createdAt: i,
 }))
-
-const demoSessions: Session[] = [
-  { id: 'demo-1', projectId: 'cloud', workspace: { kind: 'main' }, title: '梳理 v2 接口缺口', ...defaultChoice, createdAt: 1 },
-  { id: 'demo-2', projectId: 'cloud', workspace: { kind: 'isolated', branch: 'feat/766-v2-chat' }, title: '对话页样式', ...defaultChoice, createdAt: 2 },
-  { id: 'demo-3', projectId: 'cloud', workspace: { kind: 'isolated', branch: 'feat/766-v2-chat' }, title: '左栏拖动排序', ...defaultChoice, createdAt: 3 },
-  { id: 'demo-4', projectId: 'desktop', workspace: { kind: 'main' }, title: '对照 desktop 的活动块', ...defaultChoice, createdAt: 4 },
-]
 
 /**
  * How replay waits between steps. Tests set it to run without delays; the scale lets a demo
@@ -191,13 +214,55 @@ interface Player {
 }
 
 const players = new Map<string, Player>()
+/** The event streams being followed, by execution session id. */
+const streams = new Map<string, () => void>()
 let ids = 0
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(ids++).toString(36)}`
+
+/** A backend conversation as a history entry, placed in its workspace by branch. */
+function sessionOf(c: ChatConversation, projects: Project[], executors: ChatExecutor[]): Session {
+  const branch = projects.find((p) => p.id === c.projectId)?.worktrees?.find((w) => w.id === c.workspaceId)?.branch
+  const executor = executors.find((x) => x.id === c.executorId)
+  return {
+    id: c.id,
+    projectId: c.projectId,
+    workspace: c.workspaceId ? { kind: 'isolated', branch: branch ?? c.workspaceId } : { kind: 'main' },
+    title: c.title,
+    agent: executor?.agentName ?? c.executorId,
+    model: executor?.modelName ?? '',
+    remote: { workspaceId: c.workspaceId, executorId: c.executorId },
+    createdAt: Date.parse(c.createdAt),
+  }
+}
+
+/** The sessions behind a conversation as the backend lists them, keeping events already seen. */
+function viewsOf(c: ChatConversation, known: SessionView[] = []): SessionView[] {
+  return c.sessions.map((s) => {
+    const seen = known.find((v) => v.id === s.id) ?? emptySessionView(s.id)
+    return { ...seen, ended: seen.ended || s.endedAt != null, endReason: s.endReason || seen.endReason }
+  })
+}
+
+/** The conversation to show: the sessions' history, plus a sent prompt the history lacks yet. */
+function shown(views: SessionView[], pending?: { text: string; turns: number }): Conversation {
+  const c = conversationOf(views)
+  if (!pending || c.turns.length > pending.turns) return c
+  return applyEvent(c, { type: 'prompt', turnId: 'pending', text: pending.text }, Date.now())
+}
+
+/** Orders projects by `order`, keeping unlisted ones after it in their current order. */
+function ordered(projects: Project[], order: string[]): Project[] {
+  const rank = (id: string) => {
+    const i = order.indexOf(id)
+    return i === -1 ? order.length : i
+  }
+  return [...projects].sort((a, b) => rank(a.id) - rank(b.id))
+}
 
 export const useChatStore = create<State>()(
   persist(
     (set, get) => {
-      const dispatch = (id: string, event: ChatEvent) => {
+      const dispatch = (id: string, event: ModelEvent) => {
         set((s) => {
           const before = s.conversations[id] ?? emptyConversation
           const after = applyEvent(before, event, Date.now())
@@ -211,7 +276,7 @@ export const useChatStore = create<State>()(
             // applied by setAgentModel and only marked here.
             sessions:
               event.type === 'model'
-                ? s.sessions.map((x) => (x.id === id && agents.find((a) => a.id === x.agent)?.models.includes(event.model) ? { ...x, model: event.model } : x))
+                ? s.sessions.map((x) => (x.id === id && sampleAgents.find((a) => a.id === x.agent)?.models.includes(event.model) ? { ...x, model: event.model } : x))
                 : s.sessions,
             conversations: { ...s.conversations, [id]: after },
             queued,
@@ -255,23 +320,148 @@ export const useChatStore = create<State>()(
         advance(id)
       }
 
+      const isRemote = (id: string) => !!get().sessions.find((x) => x.id === id)?.remote
+
       /** Sends the next queued prompt once the agent is free, as the person would have. */
       const sendQueued = (id: string) => {
         const next = get().queued[id]?.[0]
         if (next === undefined || players.has(id) || isResponding(get().conversations[id] ?? emptyConversation)) return
+        if (isRemote(id)) {
+          set((s) => ({ queued: { ...s.queued, [id]: s.queued[id].slice(1) } }))
+          void sendRemote(id, next)
+          return
+        }
         play(id, standInReply(next, { text: next, attachments: [], plugins: [] }).steps)
       }
 
+      const notify = (key: string, failure: Failure) => set((s) => ({ notices: { ...s.notices, [key]: { ...failure, key } } }))
+
+      /** Recomputes what a backend conversation shows after its sessions or pending prompt change. */
+      const refresh = (id: string, change: (s: State) => Partial<State>) => {
+        set((s) => {
+          const patch = change(s)
+          const next = { ...s, ...patch }
+          const views = next.views[id] ?? []
+          let pending: { text: string; turns: number } | undefined = next.pending[id]
+          const before = s.conversations[id] ?? emptyConversation
+          let after = shown(views, pending)
+          if (pending && conversationOf(views).turns.length > pending.turns) {
+            pending = undefined
+            after = shown(views)
+          }
+          const { [id]: _, ...otherPending } = next.pending
+          const finished = isResponding(before) && !isResponding(after) && s.selectedId !== id
+          return {
+            ...patch,
+            pending: pending ? { ...otherPending, [id]: pending } : otherPending,
+            conversations: { ...s.conversations, [id]: after },
+            unread: finished ? { ...s.unread, [id]: true } : s.unread,
+          }
+        })
+        if (!isResponding(get().conversations[id] ?? emptyConversation)) sendQueued(id)
+      }
+
+      /** Follows every session of a conversation that is not followed yet; ended ones replay and close. */
+      const follow = (id: string) => {
+        const tid = get().tenantId
+        if (!tid) return
+        for (const view of get().views[id] ?? []) {
+          if (streams.has(view.id)) continue
+          const done = () => streams.delete(view.id)
+          const apply = (event: ChatEvent) =>
+            refresh(id, (s) => ({
+              views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.id === view.id ? applySessionEvent(v, event) : v)) },
+            }))
+          streams.set(
+            view.id,
+            remote.follow(tid, id, view.id, {
+              event: apply,
+              end: done,
+              failure: () => (done(), notify(id, { kind: 'error', message: '事件流中断，刷新页面后重试。' })),
+            }),
+          )
+        }
+      }
+
+      /** Takes a conversation as the backend returned it after a write. */
+      const absorb = (c: ChatConversation) => {
+        const { projects, executors } = get()
+        refresh(c.id, (s) => ({
+          sessions: s.sessions.some((x) => x.id === c.id)
+            ? s.sessions.map((x) => (x.id === c.id ? { ...sessionOf(c, projects, executors), title: x.title } : x))
+            : [...s.sessions, sessionOf(c, projects, executors)],
+          views: { ...s.views, [c.id]: viewsOf(c, s.views[c.id]) },
+        }))
+        follow(c.id)
+      }
+
+      const sendRemote = async (id: string, text: string) => {
+        const tid = get().tenantId
+        if (!tid) return
+        const turns = (get().conversations[id] ?? emptyConversation).turns.length
+        refresh(id, (s) => ({ pending: { ...s.pending, [id]: { text, turns } } }))
+        try {
+          const { conversation } = await remote.send(tid, id, text)
+          absorb(conversation)
+        } catch (error) {
+          refresh(id, (s) => {
+            const { [id]: _, ...pending } = s.pending
+            return { pending }
+          })
+          notify(id, failureOf(error))
+        }
+      }
+
       return {
-        projects: [sampleProject, ...demoProjects],
-        sessions: [...sampleSessions, ...demoSessions],
+        projects: [sampleProject],
+        sessions: [...sampleSessions],
         conversations: {},
         queued: {},
         unread: {},
         drafts: {},
         playing: {},
         sidebar: defaultSidebar,
+        backend: 'idle',
+        executors: [],
+        views: {},
+        pending: {},
+        notices: {},
         setSidebar: (sidebar) => set((s) => ({ sidebar: { ...s.sidebar, ...sidebar } })),
+        connect: async (tenantId) => {
+          if (get().tenantId === tenantId && get().backend !== 'idle') return
+          set({ tenantId, backend: 'loading' })
+          let loaded: RemoteState
+          try {
+            loaded = await remote.load(tenantId)
+          } catch {
+            set({ backend: 'unavailable' })
+            return
+          }
+          const projects = loaded.projects.map((p): Project => ({ id: p.id, name: p.name, worktrees: p.worktrees }))
+          const local = get().projects.filter((p) => p.samples)
+          const order = loaded.projectOrder.length ? loaded.projectOrder : get().projects.map((p) => p.id)
+          const all = ordered([...local, ...projects], order)
+          const first = loaded.executors[0]
+          set((s) => ({
+            backend: projects.length && loaded.executors.length ? 'ready' : 'unavailable',
+            executors: loaded.executors,
+            projects: all,
+            sessions: [...s.sessions.filter((x) => !x.remote), ...loaded.conversations.map((c) => sessionOf(c, all, loaded.executors))],
+            views: Object.fromEntries(loaded.conversations.map((c) => [c.id, viewsOf(c)])),
+            newChat: {
+              projectId: projects[0]?.id ?? '',
+              workspace: { kind: 'main' },
+              agent: first?.agentName ?? '',
+              model: first?.modelName ?? '',
+            },
+          }))
+          for (const c of loaded.conversations) refresh(c.id, () => ({}))
+        },
+        dismiss: (key) =>
+          set((s) => {
+            const { [key]: _, ...notices } = s.notices
+            return { notices }
+          }),
         select: (id) => {
           set((s) => {
             const { [id]: _, ...unread } = s.unread
@@ -280,13 +470,14 @@ export const useChatStore = create<State>()(
           const session = get().sessions.find((x) => x.id === id)
           // A sample plays the first time it is opened, so picking it is enough to see it work.
           if (session?.scenarioId && !get().conversations[id] && !players.has(id)) get().replay(id)
+          if (session?.remote) follow(id)
         },
         selectRun: (id) => set({ selectedRunId: id }),
-        newChat: { projectId: demoProjects[0].id, workspace: { kind: 'main' }, ...defaultChoice },
+        newChat: { projectId: '', workspace: { kind: 'main' }, agent: '', model: '' },
         startNewChat: (scope) =>
           set((s) => {
             const current = s.sessions.find((x) => x.id === s.selectedId)
-            const fromSelection = current && !s.projects.find((p) => p.id === current.projectId)?.samples ? current : undefined
+            const fromSelection = current?.remote ? current : undefined
             const where = scope
               ? { projectId: scope.projectId, workspace: scope.workspace ?? { kind: 'main' as const } }
               : fromSelection
@@ -295,36 +486,86 @@ export const useChatStore = create<State>()(
             return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where } }
           }),
         setNewChat: (patch) => set((s) => ({ newChat: { ...s.newChat, ...patch } })),
-        sendNewChat: (draft) => {
-          const { projectId, workspace, agent, model } = get().newChat
-          const taken = get().sessions.flatMap((s) => (s.projectId === projectId && s.workspace.kind === 'isolated' ? [s.workspace.branch] : []))
-          const where: Workspace = workspace.kind === 'new-worktree' ? { kind: 'isolated', branch: branchNameFor(draft.text, taken) } : workspace
-          const id = get().createSession(projectId, where, { agent, model })
-          set((s) => ({ drafts: { ...s.drafts, [newChatKey]: emptyDraft } }))
-          get().send(id, draft)
+        sendNewChat: async (draft) => {
+          const { tenantId: tid, newChat, executors, projects } = get()
+          const executor = executors.find((x) => x.agentName === newChat.agent && x.modelName === newChat.model)
+          const project = projects.find((p) => p.id === newChat.projectId)
+          if (!tid || !executor || !project || project.samples || newChat.workspace.kind === 'new-worktree') {
+            notify(newChatKey, { kind: 'unavailable' })
+            return
+          }
+          const workspace = newChat.workspace
+          const workspaceId = workspace.kind === 'isolated' ? (project.worktrees?.find((w) => w.branch === workspace.branch)?.id ?? '') : ''
+          // The conversation exists once the backend admits its first prompt; until then a
+          // placeholder holds the prompt, so the input slides down at once as in desktop.
+          const placeholder = newId('pending')
+          set((s) => ({
+            sessions: [...s.sessions, { id: placeholder, projectId: project.id, workspace, title: draft.text.slice(0, 24), agent: newChat.agent, model: newChat.model, createdAt: Date.now() }],
+            selectedId: placeholder,
+            drafts: { ...s.drafts, [newChatKey]: emptyDraft },
+            conversations: { ...s.conversations, [placeholder]: applyEvent(emptyConversation, { type: 'prompt', turnId: 'pending', text: draft.text }, Date.now()) },
+          }))
+          const drop = () =>
+            set((s) => {
+              const { [placeholder]: _, ...conversations } = s.conversations
+              return { sessions: s.sessions.filter((x) => x.id !== placeholder), conversations }
+            })
+          try {
+            const { conversation } = await remote.create(tid, { projectId: project.id, workspaceId, executorId: executor.id, prompt: draft.text })
+            const selected = get().selectedId === placeholder
+            drop()
+            refresh(conversation.id, (s) => ({ pending: { ...s.pending, [conversation.id]: { text: draft.text, turns: 0 } } }))
+            absorb(conversation)
+            if (selected) get().select(conversation.id)
+          } catch (error) {
+            drop()
+            set((s) => ({ selectedId: s.selectedId === placeholder ? undefined : s.selectedId, drafts: { ...s.drafts, [newChatKey]: draft } }))
+            notify(newChatKey, failureOf(error))
+          }
         },
-        createSession: (projectId, workspace, choice = defaultChoice) => {
-          const id = newId('session')
-          const session: Session = { id, projectId, workspace, title: '新对话', ...choice, createdAt: Date.now() }
-          set((s) => ({ sessions: [...s.sessions, session], selectedId: id, selectedRunId: undefined }))
-          return id
+        renameSession: (id, title) => {
+          const trimmed = title.trim()
+          const before = get().sessions.find((x) => x.id === id)
+          if (!before || !trimmed || trimmed === before.title) return
+          set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: trimmed } : x)) }))
+          const tid = get().tenantId
+          if (before.remote && tid) {
+            remote.rename(tid, id, trimmed).catch((error: unknown) => {
+              set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: before.title } : x)) }))
+              notify(id, failureOf(error))
+            })
+          }
         },
-        renameSession: (id, title) =>
-          set((s) => ({ sessions: s.sessions.map((x) => (x.id === id && title.trim() ? { ...x, title: title.trim() } : x)) })),
-        deleteSession: (id) => {
+        deleteSession: async (id) => {
+          const session = get().sessions.find((x) => x.id === id)
+          const tid = get().tenantId
+          if (session?.remote && tid) {
+            try {
+              await remote.remove(tid, id)
+            } catch (error) {
+              notify(id, failureOf(error))
+              return
+            }
+            for (const v of get().views[id] ?? []) {
+              streams.get(v.id)?.()
+              streams.delete(v.id)
+            }
+          }
           players.get(id)?.cancel?.()
           players.delete(id)
           setPlaying(id, false)
           set((s) => {
             const { [id]: _, ...conversations } = s.conversations
+            const { [id]: __, ...views } = s.views
             return {
               sessions: s.sessions.filter((x) => x.id !== id),
               conversations,
+              views,
               selectedId: s.selectedId === id ? undefined : s.selectedId,
             }
           })
         },
-        moveProject: (id, overId) =>
+        moveProject: (id, overId) => {
           set((s) => {
             const from = s.projects.findIndex((p) => p.id === id)
             const to = s.projects.findIndex((p) => p.id === overId)
@@ -332,26 +573,48 @@ export const useChatStore = create<State>()(
             const projects = [...s.projects]
             projects.splice(to, 0, ...projects.splice(from, 1))
             return { projects }
-          }),
+          })
+          const tid = get().tenantId
+          if (tid && get().backend === 'ready') void remote.saveOrder(tid, get().projects.map((p) => p.id)).catch(() => {})
+        },
         send: (id, draft) => {
           const conversation = get().conversations[id] ?? emptyConversation
-          if (isResponding(conversation) || players.has(id)) {
+          if (isResponding(conversation) || players.has(id) || get().pending[id]) {
             set((s) => ({ queued: { ...s.queued, [id]: [...(s.queued[id] ?? []), draft.text] } }))
             return
           }
-          const session = get().sessions.find((x) => x.id === id)
-          if (session && session.title === '新对话' && conversation.turns.length === 0) {
-            get().renameSession(id, draft.text.slice(0, 24))
+          if (isRemote(id)) {
+            void sendRemote(id, draft.text)
+            return
           }
           play(id, standInReply(draft.text, draft).steps)
         },
         stop: (id) => {
+          const tid = get().tenantId
+          if (isRemote(id) && tid) {
+            // The fixed Node ends the whole session, and its stream can report that before the
+            // stop request returns; the reason is set first so the marker reads right either way.
+            const reason = (endReason: SessionView['endReason']) =>
+              refresh(id, (s) => ({ views: { ...s.views, [id]: (s.views[id] ?? []).map((v, i, all) => (i === all.length - 1 && !v.ended ? { ...v, endReason } : v)) } }))
+            reason('stopped')
+            remote.stop(tid, id).catch((error: unknown) => (reason(''), notify(id, failureOf(error))))
+            return
+          }
           const player = players.get(id)
           player?.cancel?.()
           players.delete(id)
           setPlaying(id, false)
           if (isResponding(get().conversations[id] ?? emptyConversation)) {
             dispatch(id, { type: 'turnEnd', stopReason: 'cancelled' })
+          }
+        },
+        release: async (id) => {
+          const tid = get().tenantId
+          if (!tid) return
+          try {
+            absorb(await remote.release(tid, id))
+          } catch (error) {
+            notify(id, failureOf(error))
           }
         },
         answer: (id, permissionId, optionId) => {
@@ -367,17 +630,12 @@ export const useChatStore = create<State>()(
         },
         setAgentModel: (id, agent, model) => {
           const session = get().sessions.find((x) => x.id === id)
-          if (!session || (session.agent === agent && session.model === model)) return
+          // A backend conversation keeps its executor: the first version cannot switch models.
+          if (!session || session.remote || (session.agent === agent && session.model === model)) return
           set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, agent, model } : x)) }))
           if ((get().conversations[id]?.turns.length ?? 0) > 0) {
             dispatch(id, { type: 'model', model: agent === session.agent ? model : `${agentName(agent)} · ${model}` })
           }
-        },
-        createProject: (path) => {
-          const id = newId('project')
-          const root = path.trim().replace(/[\\/]+$/, '')
-          set((s) => ({ projects: [...s.projects, { id, name: root.split(/[\\/]/).at(-1) || root, path: root }] }))
-          return id
         },
         setDraft: (id, draft) => set((s) => ({ drafts: { ...s.drafts, [id]: draft } })),
         unqueue: (id, index) =>
@@ -394,18 +652,14 @@ export const useChatStore = create<State>()(
       name: 'ora-v2-chat',
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // The project order moves to v2-server with the session API; the layout stays here.
+      // The backend keeps the order of its projects; this copy orders the samples among them
+      // and covers a backend that cannot run chats.
       partialize: (s) => ({ projectOrder: s.projects.map((p) => p.id), sidebar: s.sidebar }),
       merge: (persisted, current) => {
         const saved = persisted as { projectOrder?: string[]; sidebar?: SidebarLayout } | undefined
-        const order = saved?.projectOrder ?? []
-        const rank = (id: string) => {
-          const i = order.indexOf(id)
-          return i === -1 ? order.length : i
-        }
         return {
           ...current,
-          projects: [...current.projects].sort((a, b) => rank(a.id) - rank(b.id)),
+          projects: ordered(current.projects, saved?.projectOrder ?? []),
           sidebar: { ...current.sidebar, ...saved?.sidebar },
         }
       },
@@ -414,21 +668,21 @@ export const useChatStore = create<State>()(
 )
 
 /**
- * The reply a non-sample session gets until v2-server can run an agent (#758): it says plainly
- * that it is a stand-in and echoes what was sent, so the input, attachments and plugins can be
- * tried end to end.
+ * The reply a sample session gets when the person types into it: it says plainly that it is a
+ * stand-in and echoes what was sent, so the input, attachments and plugins can be tried without
+ * the backend.
  */
 function standInReply(text: string, draft: Draft) {
   const turnId = newId('turn')
   const s = script()
   s.steps.push({ kind: 'event', delay: 0, event: { type: 'prompt', turnId, text, attachments: draft.attachments, plugins: draft.plugins } })
-  s.think('后端还不能运行 Agent，这是前端的演示回复。')
+  s.think('示例项目不连后端，这是前端的演示回复。')
   const extras = [
     draft.attachments.length ? `${draft.attachments.length} 个附件` : '',
     draft.plugins.length ? `插件：${draft.plugins.map((p) => p.name).join('、')}` : '',
   ].filter(Boolean)
   s.say(
-    `这是演示回复：v2-server 接入 Agent 之后，这里会显示真实的回答。\n\n你发送的是：\n\n> ${text.replace(/\n/g, '\n> ')}${
+    `这是演示回复：示例只回放录好的对话。在你的项目里新建对话，才会由 Agent 真正回答。\n\n你发送的是：\n\n> ${text.replace(/\n/g, '\n> ')}${
       extras.length ? `\n\n（${extras.join('；')}）` : ''
     }`,
   )
@@ -436,20 +690,28 @@ function standInReply(text: string, draft: Draft) {
   return s
 }
 
-/** Resets everything to the initial demo state; tests call it between cases. */
+/** Resets everything to the initial state; tests call it between cases. */
 export function resetChatStore() {
   for (const p of players.values()) p.cancel?.()
   players.clear()
+  for (const stop of streams.values()) stop()
+  streams.clear()
   useChatStore.setState({
-    projects: [sampleProject, ...demoProjects],
-    sessions: [...sampleSessions, ...demoSessions],
+    projects: [sampleProject],
+    sessions: [...sampleSessions],
     conversations: {},
     queued: {},
     unread: {},
     drafts: {},
     playing: {},
     sidebar: defaultSidebar,
-    newChat: { projectId: demoProjects[0].id, workspace: { kind: 'main' }, ...defaultChoice },
+    tenantId: undefined,
+    backend: 'idle',
+    executors: [],
+    views: {},
+    pending: {},
+    notices: {},
+    newChat: { projectId: '', workspace: { kind: 'main' }, agent: '', model: '' },
     selectedId: undefined,
     selectedRunId: undefined,
   })

@@ -44,6 +44,8 @@ interface ComposerProps {
   model: string
   onChoose: (agent: string, model: string) => void
   plugins: PluginRef[]
+  /** Only text can be sent: the `+` menu and `@` plugins are hidden, and pasted files ignored. */
+  textOnly?: boolean
   /** The row above the box saying where a new chat will run; only before its first prompt. */
   context?: ReactNode
 }
@@ -54,7 +56,8 @@ interface ComposerProps {
  * offers plugins by name. While the agent works a new prompt is queued, not sent.
  */
 export function Composer(props: ComposerProps) {
-  const { draft, onDraft, onSend, responding, queued, plugins } = props
+  const { draft, onDraft, onSend, responding, queued, textOnly } = props
+  const plugins = textOnly ? [] : props.plugins
   const fileInput = useRef<HTMLInputElement>(null)
   const form = useRef<HTMLFormElement>(null)
   const [highlight, setHighlight] = useState(0)
@@ -75,7 +78,7 @@ export function Composer(props: ComposerProps) {
       : addPlugin(p)
 
   const addFiles = (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length || textOnly) return
     const added: Attachment[] = [...files].map((f, i) => ({
       id: `${f.name}-${f.size}-${Date.now()}-${i}`,
       name: f.name,
@@ -133,7 +136,7 @@ export function Composer(props: ComposerProps) {
           <textarea
             aria-label="消息"
             rows={2}
-            placeholder={responding ? '继续输入，会在本轮结束后发送…' : '描述一个任务，输入 @ 选择插件…'}
+            placeholder={responding ? '继续输入，会在本轮结束后发送…' : textOnly ? '描述一个任务…' : '描述一个任务，输入 @ 选择插件…'}
             className="field-sizing-content max-h-[200px] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-normal outline-none placeholder:text-muted-foreground"
             value={draft.text}
             onChange={(e) => {
@@ -165,6 +168,7 @@ export function Composer(props: ComposerProps) {
           <div className="flex min-h-8 items-center justify-between gap-2 pt-0.5">
             <div className="flex min-w-0 items-center gap-1">
               <input ref={fileInput} type="file" multiple hidden aria-label="选择文件" onChange={(e) => (addFiles(e.target.files), (e.target.value = ''))} />
+              {!textOnly && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -200,6 +204,7 @@ export function Composer(props: ComposerProps) {
                   </DropdownMenuSub>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
               <PermissionSelector />
             </div>
             <div className="flex shrink-0 items-center gap-2">

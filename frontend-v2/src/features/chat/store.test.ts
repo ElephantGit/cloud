@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyConversation } from './model/types'
 import { emptyDraft, newChatKey, replayClock, resetChatStore, useChatStore } from './store'
+import { type ChatBackend, chatBackend, FakeEventSource, line, tenantId } from './test-backend'
 
 const state = () => useChatStore.getState()
 const conversation = (id: string) => state().conversations[id] ?? emptyConversation
 
-describe('chat store', () => {
+describe('chat store: samples', () => {
   beforeEach(() => {
     replayClock.scale = 0
     resetChatStore()
@@ -64,105 +65,51 @@ describe('chat store', () => {
     expect(state().sessions.find((s) => s.id === 'sample-context')?.model).toBe('Claude Opus 5.5')
   })
 
-  it('answers a new session with a stand-in reply and names it after the first prompt', () => {
-    const id = state().createSession('cloud', { kind: 'isolated', branch: 'feat/x' })
-    expect(state().selectedId).toBe(id)
-    state().send(id, { ...emptyDraft, text: '列出所有接口' })
-    const c = conversation(id)
-    expect(c.turns[0]).toMatchObject({ prompt: { text: '列出所有接口' }, status: 'completed' })
-    expect(c.turns[0].items.at(-1)).toMatchObject({ kind: 'message', text: expect.stringContaining('演示回复') })
-    expect(state().sessions.find((s) => s.id === id)).toMatchObject({ title: '列出所有接口', workspace: { kind: 'isolated', branch: 'feat/x' } })
+  it('answers a prompt typed into a sample with a stand-in that says so', () => {
+    state().select('sample-markdown')
+    state().send('sample-markdown', { ...emptyDraft, text: '再来一段' })
+    const turn = conversation('sample-markdown').turns.at(-1)
+    expect(turn).toMatchObject({ prompt: { text: '再来一段' }, status: 'completed' })
+    expect(turn?.items.at(-1)).toMatchObject({ kind: 'message', text: expect.stringContaining('演示回复') })
   })
 
-  it('starts a new chat where the selected session works, but never among the samples', () => {
-    state().select('demo-2')
-    state().startNewChat()
-    expect(state().selectedId).toBeUndefined()
-    expect(state().newChat).toMatchObject({ projectId: 'cloud', workspace: { kind: 'isolated', branch: 'feat/766-v2-chat' } })
-    state().select('sample-tools')
-    state().startNewChat()
-    expect(state().newChat).toMatchObject({ projectId: 'cloud', workspace: { kind: 'isolated', branch: 'feat/766-v2-chat' } })
-    state().startNewChat({ projectId: 'desktop' })
-    expect(state().newChat).toMatchObject({ projectId: 'desktop', workspace: { kind: 'main' } })
-  })
-
-  it('creates the session of a new chat from its first prompt', () => {
-    state().startNewChat({ projectId: 'desktop', workspace: { kind: 'isolated', branch: 'feat/y' } })
-    state().setNewChat({ agent: 'codex', model: 'GPT-5.5 Mini' })
-    state().setDraft(newChatKey, { ...emptyDraft, text: '你好' })
-    const before = state().sessions.length
-    state().sendNewChat({ ...emptyDraft, text: '你好' })
-    expect(state().sessions).toHaveLength(before + 1)
-    const session = state().sessions.at(-1)
-    expect(session).toMatchObject({ projectId: 'desktop', workspace: { kind: 'isolated', branch: 'feat/y' }, agent: 'codex', model: 'GPT-5.5 Mini', title: '你好' })
-    expect(state().selectedId).toBe(session?.id)
-    expect(state().drafts[newChatKey]).toEqual(emptyDraft)
-    expect(conversation(session!.id).turns[0].prompt.text).toBe('你好')
-  })
-
-  it('names a new worktree from the first prompt, clear of the branches the project has', () => {
-    state().startNewChat({ projectId: 'cloud', workspace: { kind: 'new-worktree' } })
-    state().sendNewChat({ ...emptyDraft, text: 'feat 766 v2 chat' })
-    expect(state().sessions.at(-1)?.workspace).toEqual({ kind: 'isolated', branch: 'ora/feat-766-v2-chat' })
-    state().startNewChat({ projectId: 'cloud', workspace: { kind: 'new-worktree' } })
-    state().sendNewChat({ ...emptyDraft, text: 'feat 766 v2 chat again' })
-    expect(state().sessions.at(-1)?.workspace).toEqual({ kind: 'isolated', branch: 'ora/feat-766-v2-chat-2' })
-  })
-
-  it('queues a prompt sent while the agent is busy and sends it afterwards', () => {
+  it('queues a prompt typed while a sample replies and sends it afterwards', () => {
     vi.useFakeTimers()
+    state().select('sample-markdown')
     replayClock.scale = 1
-    state().select('demo-1')
-    state().send('demo-1', { ...emptyDraft, text: '第一条' })
-    state().send('demo-1', { ...emptyDraft, text: '第二条' })
-    expect(state().queued['demo-1']).toEqual(['第二条'])
-
+    state().send('sample-markdown', { ...emptyDraft, text: '第一条' })
+    state().send('sample-markdown', { ...emptyDraft, text: '第二条' })
+    expect(state().queued['sample-markdown']).toEqual(['第二条'])
     vi.runAllTimers()
-    expect(state().queued['demo-1']).toEqual([])
-    expect(conversation('demo-1').turns.map((t) => [t.prompt.text, t.status])).toEqual([
+    expect(state().queued['sample-markdown']).toEqual([])
+    expect(conversation('sample-markdown').turns.slice(-2).map((t) => [t.prompt.text, t.status])).toEqual([
       ['第一条', 'completed'],
       ['第二条', 'completed'],
     ])
   })
 
-  it('stops a reply mid-turn', () => {
+  it('stops a sample mid-reply', () => {
     vi.useFakeTimers()
+    state().select('sample-markdown')
     replayClock.scale = 1
-    state().send('demo-1', { ...emptyDraft, text: '写长一点' })
+    state().send('sample-markdown', { ...emptyDraft, text: '写长一点' })
     vi.advanceTimersByTime(300)
-    state().stop('demo-1')
+    state().stop('sample-markdown')
     vi.runAllTimers()
-    expect(conversation('demo-1').turns[0]).toMatchObject({ status: 'cancelled', stopReason: 'cancelled' })
-    expect(state().playing['demo-1']).toBeUndefined()
+    expect(conversation('sample-markdown').turns.at(-1)).toMatchObject({ status: 'cancelled', stopReason: 'cancelled' })
+    expect(state().playing['sample-markdown']).toBeUndefined()
   })
 
-  it('marks a session unread when it finishes in the background', () => {
-    vi.useFakeTimers()
-    replayClock.scale = 1
-    state().send('demo-1', { ...emptyDraft, text: '后台跑' })
-    state().select('demo-4')
-    vi.runAllTimers()
-    expect(state().unread['demo-1']).toBe(true)
-    state().select('demo-1')
-    expect(state().unread['demo-1']).toBeUndefined()
-  })
-
-  it('renames and deletes sessions', () => {
-    state().renameSession('demo-1', '  新名字 ')
-    expect(state().sessions.find((s) => s.id === 'demo-1')?.title).toBe('新名字')
-    state().renameSession('demo-1', '   ')
-    expect(state().sessions.find((s) => s.id === 'demo-1')?.title).toBe('新名字')
-    state().select('demo-1')
-    state().deleteSession('demo-1')
-    expect(state().sessions.some((s) => s.id === 'demo-1')).toBe(false)
-    expect(state().selectedId).toBeUndefined()
-  })
-
-  it('moves a project and remembers the order', () => {
-    state().moveProject('desktop', 'samples')
-    expect(state().projects.map((p) => p.id)).toEqual(['desktop', 'samples', 'cloud'])
-    const saved = JSON.parse(localStorage.getItem('ora-v2-chat') ?? '{}')
-    expect(saved.state.projectOrder).toEqual(['desktop', 'samples', 'cloud'])
+  it('records a sample model switch once it has turns, naming the agent when it changes', () => {
+    state().setAgentModel('sample-markdown', 'claude-code', 'Claude Haiku 5.5')
+    expect(conversation('sample-markdown').markers).toEqual([])
+    state().select('sample-markdown')
+    state().setAgentModel('sample-markdown', 'claude-code', 'Claude Opus 5.5')
+    state().setAgentModel('sample-markdown', 'codex', 'GPT-5.5')
+    expect(conversation('sample-markdown').markers).toMatchObject([
+      { kind: 'model', model: 'Claude Opus 5.5', afterTurn: 1 },
+      { kind: 'model', model: 'Codex · GPT-5.5', afterTurn: 1 },
+    ])
   })
 
   it('remembers how the history column is laid out', async () => {
@@ -175,24 +122,124 @@ describe('chat store', () => {
     await useChatStore.persist.rehydrate()
     expect(state().sidebar).toEqual({ width: 360, open: false })
   })
+})
 
-  it('records a model switch only once the session has turns, naming the agent when it changes', () => {
-    state().setAgentModel('demo-4', 'claude-code', 'Claude Haiku 5.5')
-    expect(conversation('demo-4').markers).toEqual([])
-    state().send('demo-4', { ...emptyDraft, text: '你好' })
-    state().setAgentModel('demo-4', 'claude-code', 'Claude Opus 5.5')
-    state().setAgentModel('demo-4', 'codex', 'GPT-5.5')
-    expect(conversation('demo-4').markers).toMatchObject([
-      { kind: 'model', model: 'Claude Opus 5.5', afterTurn: 1 },
-      { kind: 'model', model: 'Codex · GPT-5.5', afterTurn: 1 },
-    ])
-    expect(state().sessions.find((s) => s.id === 'demo-4')).toMatchObject({ agent: 'codex', model: 'GPT-5.5' })
+describe('chat store: backend conversations', () => {
+  let backend: ChatBackend
+  beforeEach(async () => {
+    replayClock.scale = 0
+    resetChatStore()
+    backend = chatBackend()
+    await state().connect(tenantId)
   })
 
-  it('adds a project named after its folder', () => {
-    const id = state().createProject('/workspace/my-app/')
-    expect(state().projects.at(-1)).toEqual({ id, name: 'my-app', path: '/workspace/my-app' })
-    const windows = state().createProject('C:\\code\\tool')
-    expect(state().projects.find((p) => p.id === windows)?.name).toBe('tool')
+  it('loads projects with their worktrees, executors and conversations', () => {
+    expect(state().backend).toBe('ready')
+    expect(state().projects.map((p) => p.name)).toEqual(['示例', 'ora-space/cloud', 'ora-space/desktop'])
+    expect(state().sessions.find((s) => s.id === 'c-wt')).toMatchObject({ projectId: 'p-cloud', workspace: { kind: 'isolated', branch: 'demo/chat-1' }, agent: 'OpenCode', model: 'Fixture' })
+    expect(state().newChat).toEqual({ projectId: 'p-cloud', workspace: { kind: 'main' }, agent: 'OpenCode', model: 'Fixture' })
+  })
+
+  it('follows a conversation once it is opened and shows each snapshot whole', () => {
+    state().select('c-main')
+    const stream = FakeEventSource.of('c-main-s1')
+    expect(stream.url).toBe(`/api/v2/tenants/${tenantId}/chat/conversations/c-main/sessions/c-main-s1/events`)
+    stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '你好'), line.say(2, '草稿')], incomplete: true } })
+    stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '你好'), line.say(2, '你好，我在。'), line.ended(3)], incomplete: false } })
+    const [turn] = conversation('c-main').turns
+    expect(turn.items).toMatchObject([{ kind: 'message', text: '你好，我在。' }])
+    expect(turn.status).toBe('completed')
+  })
+
+  it('creates a conversation from the new chat, showing the prompt until the history has it', async () => {
+    state().setNewChat({ projectId: 'p-cloud', workspace: { kind: 'isolated', branch: 'demo/chat-1' }, agent: 'Claude Code', model: 'Claude Sonnet 5.5' })
+    state().setDraft(newChatKey, { ...emptyDraft, text: '列出接口' })
+    const sent = state().sendNewChat({ ...emptyDraft, text: '列出接口' })
+    // The input slides down at once: a placeholder holds the prompt while the backend admits it.
+    expect(conversation(state().selectedId!).turns[0].prompt.text).toBe('列出接口')
+    await sent
+    expect(backend.bodies.at(-1)).toEqual({ projectId: 'p-cloud', workspaceId: 'w-chat-1', executorId: 'cc-sonnet', prompt: '列出接口' })
+    const id = state().selectedId!
+    expect(id).toBe('c-new-1')
+    expect(state().drafts[newChatKey]).toEqual(emptyDraft)
+    expect(conversation(id).turns.map((t) => [t.prompt.text, t.status])).toEqual([['列出接口', 'streaming']])
+    FakeEventSource.of('c-new-1-s1').emit({ kind: 'history_snapshot', history: { records: [line.user(1, '列出接口')], incomplete: false } })
+    expect(state().pending[id]).toBeUndefined()
+    expect(conversation(id).turns).toHaveLength(1)
+  })
+
+  it('names the conversation holding a busy workspace and keeps the draft', async () => {
+    backend.refuse = { status: 409, data: { code: 'workspace_busy', params: { conversationId: 'c-main', title: '梳理 v2 接口缺口' }, requestId: 'r' } }
+    await state().sendNewChat({ ...emptyDraft, text: '再开一个' })
+    expect(state().notices[newChatKey]).toMatchObject({ kind: 'busy', occupant: { id: 'c-main', title: '梳理 v2 接口缺口' } })
+    expect(state().selectedId).toBeUndefined()
+    expect(state().drafts[newChatKey]?.text).toBe('再开一个')
+    expect(state().sessions.filter((s) => s.remote)).toHaveLength(2)
+    await state().release('c-main')
+    expect(backend.seen).toContain(`POST /api/v2/tenants/${tenantId}/chat/conversations/c-main/end`)
+    state().select('c-main')
+    expect(conversation('c-main').markers).toMatchObject([{ kind: 'session', reason: 'released' }])
+  })
+
+  it('queues while the Agent works, sends when the turn ends, and marks an unread finish', async () => {
+    state().select('c-main')
+    const stream = FakeEventSource.of('c-main-s1')
+    stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '第一条')], incomplete: false } })
+    state().send('c-main', { ...emptyDraft, text: '第二条' })
+    expect(state().queued['c-main']).toEqual(['第二条'])
+    state().startNewChat()
+    stream.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '第一条'), line.say(2, '好'), line.ended(3)], incomplete: false } })
+    expect(state().unread['c-main']).toBe(true)
+    await vi.waitFor(() => expect(backend.bodies.at(-1)).toEqual({ prompt: '第二条' }))
+    expect(state().queued['c-main']).toEqual([])
+  })
+
+  it('stops a turn, and the next prompt starts over in a new session after a marker', async () => {
+    state().select('c-main')
+    const first = FakeEventSource.of('c-main-s1')
+    first.emit({ kind: 'history_snapshot', history: { records: [line.user(1, '写长一点')], incomplete: false } })
+    state().stop('c-main')
+    await vi.waitFor(() => expect(backend.seen).toContain(`POST /api/v2/tenants/${tenantId}/chat/conversations/c-main/stop`))
+    first.emit({ kind: 'turn_ended', result: { status: 'cancelled', answer: '', answerComplete: false, stopReason: 'cancelled', failureCode: '' } })
+    first.emit({ kind: 'session_ended' })
+    first.fire('end')
+    expect(conversation('c-main').turns[0].status).toBe('cancelled')
+    expect(conversation('c-main').markers).toMatchObject([{ kind: 'session', reason: 'stopped', afterTurn: 1 }])
+    state().send('c-main', { ...emptyDraft, text: '重来' })
+    await vi.waitFor(() => expect(() => FakeEventSource.of('c-main-s2')).not.toThrow())
+  })
+
+  it('renames and deletes conversations on the backend', async () => {
+    state().renameSession('c-main', '  接口清单 ')
+    expect(state().sessions.find((s) => s.id === 'c-main')?.title).toBe('接口清单')
+    expect(backend.bodies.at(-1)).toEqual({ title: '接口清单' })
+    state().select('c-main')
+    await state().deleteSession('c-main')
+    expect(backend.seen).toContain(`DELETE /api/v2/tenants/${tenantId}/chat/conversations/c-main`)
+    expect(state().sessions.some((s) => s.id === 'c-main')).toBe(false)
+    expect(state().selectedId).toBeUndefined()
+  })
+
+  it('saves the project order for the person', () => {
+    state().moveProject('p-desktop', 'samples')
+    expect(state().projects.map((p) => p.id)).toEqual(['p-desktop', 'samples', 'p-cloud'])
+    expect(backend.bodies.at(-1)).toEqual({ projectIds: ['p-desktop', 'samples', 'p-cloud'] })
+  })
+
+  it('keeps a conversation on its executor', () => {
+    state().setAgentModel('c-main', 'Claude Code', 'Claude Sonnet 5.5')
+    expect(state().sessions.find((s) => s.id === 'c-main')).toMatchObject({ agent: 'OpenCode', model: 'Fixture' })
+  })
+})
+
+describe('chat store: backend that cannot run Agents', () => {
+  it('reports unavailable and keeps the samples', async () => {
+    resetChatStore()
+    chatBackend({ unavailable: true })
+    await state().connect(tenantId)
+    expect(state().backend).toBe('unavailable')
+    expect(state().sessions.every((s) => s.scenarioId)).toBe(true)
+    await state().sendNewChat({ ...emptyDraft, text: 'hi' })
+    expect(state().notices[newChatKey]).toMatchObject({ kind: 'unavailable' })
   })
 })

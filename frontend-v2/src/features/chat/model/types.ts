@@ -103,7 +103,7 @@ export interface PermissionRequest {
 }
 
 /** Why an Agent session behind a conversation ended; the next prompt starts a fresh one. */
-export type SessionEndReason = 'stopped' | 'idle' | 'deleted' | 'interrupted'
+export type SessionEndReason = 'stopped' | 'released' | 'idle' | 'deleted' | 'interrupted'
 
 /**
  * Something between turns: a model switch, a restorable checkpoint, or the end of an Agent

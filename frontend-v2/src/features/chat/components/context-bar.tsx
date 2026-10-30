@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { NewChat, NewChatWorkspace, Project } from '../store'
+import { backendSupports, type NewChat, type NewChatWorkspace, type Project } from '../store'
 import { NewProjectDialog } from './new-project-dialog'
 import { NewWorktreeDialog } from './new-worktree-dialog'
 
@@ -64,7 +64,8 @@ export function ContextBar({
   /** The worktree branches the chosen project already has. */
   branches: string[]
   onChange: (patch: Partial<NewChat>) => void
-  onCreateProject: (path: string) => void
+  /** Adds a project from a folder; the menu offers it only when given. */
+  onCreateProject?: (path: string) => void
 }) {
   const [dialog, setDialog] = useState<'project' | 'worktree'>()
   const project = projects.find((p) => p.id === value.projectId)
@@ -102,16 +103,20 @@ export function ContextBar({
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup>
-              <CommandItem value="新建项目" className={item} onSelect={() => (close(), setDialog('project'))}>
-                <FolderPlusIcon className={icon} />
-                新建项目
-                <CommandShortcut>
-                  <ChevronRightIcon className="size-3.5" />
-                </CommandShortcut>
-              </CommandItem>
-            </CommandGroup>
+            {onCreateProject && (
+              <>
+                <CommandSeparator />
+                <CommandGroup>
+                  <CommandItem value="新建项目" className={item} onSelect={() => (close(), setDialog('project'))}>
+                    <FolderPlusIcon className={icon} />
+                    新建项目
+                    <CommandShortcut>
+                      <ChevronRightIcon className="size-3.5" />
+                    </CommandShortcut>
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            )}
           </>
         )}
       </SearchTab>
@@ -151,6 +156,8 @@ export function ContextBar({
                 ))}
               </CommandGroup>
             )}
+            {backendSupports.newWorktree && (
+            <>
             <CommandSeparator />
             <CommandGroup>
               {/* The worktree gets its name from the first prompt, as agent tools name theirs. */}
@@ -163,6 +170,8 @@ export function ContextBar({
                 新建 worktree 并命名…
               </CommandItem>
             </CommandGroup>
+            </>
+            )}
           </>
         )}
       </SearchTab>
@@ -190,7 +199,7 @@ export function ContextBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <NewProjectDialog open={dialog === 'project'} onOpenChange={(o) => setDialog(o ? 'project' : undefined)} onCreate={(path) => (onCreateProject(path), setDialog(undefined))} />
+      <NewProjectDialog open={dialog === 'project'} onOpenChange={(o) => setDialog(o ? 'project' : undefined)} onCreate={(path) => (onCreateProject?.(path), setDialog(undefined))} />
       <NewWorktreeDialog
         open={dialog === 'worktree'}
         onOpenChange={(o) => setDialog(o ? 'worktree' : undefined)}

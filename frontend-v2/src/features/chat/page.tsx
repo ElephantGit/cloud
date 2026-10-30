@@ -1,5 +1,6 @@
 import { FlaskConicalIcon, FolderIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react'
-import { lazy, Suspense, useCallback, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useGetApiV1MeTenants } from '@/api/me/me'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -8,11 +9,12 @@ import { ContextBar } from './components/context-bar'
 import { FadeText } from './components/fade-text'
 import { subtleScrollbar } from '@/lib/scrollbar'
 import { ShowSidebarButton, Sidebar } from './components/sidebar'
+import { Notice } from './components/notice'
 import { ContextUsage, LandingHeading, Thread } from './components/thread'
 import { isResponding } from './model/conversation'
 import { emptyConversation } from './model/types'
 import { scenarios } from './samples/scenarios'
-import { agents, emptyDraft, newChatKey, plugins, type Session, useChatStore } from './store'
+import { type Agent, agentsOf, emptyDraft, newChatKey, sampleAgents, samplePlugins, type Session, useChatStore } from './store'
 
 /** The run view brings the graph canvas, so it loads only once a run is opened. */
 const RunPane = lazy(() => import('./workflow-run/run-pane'))
@@ -30,6 +32,10 @@ const slide = { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
 export default function Page() {
   const session = useChatStore((s) => s.sessions.find((x) => x.id === s.selectedId))
   const runId = useChatStore((s) => s.selectedRunId)
+  const tenantId = useGetApiV1MeTenants().data?.items[0]?.id
+  useEffect(() => {
+    if (tenantId) void useChatStore.getState().connect(tenantId)
+  }, [tenantId])
   return (
     <div className="flex min-h-0 flex-1">
       <Sidebar />
@@ -61,11 +67,17 @@ function ChatPane({ session }: { session?: Session }) {
   const playing = useChatStore((s) => !!(session && s.playing[session.id]))
   const newChat = useChatStore((s) => s.newChat)
   const projects = useChatStore((s) => s.projects)
-  const sessions = useChatStore((s) => s.sessions)
-  const { send, sendNewChat, stop, answer, setAgentModel, setNewChat, createProject, setDraft, unqueue, replay } = useChatStore.getState()
+  const executors = useChatStore((s) => s.executors)
+  const backend = useChatStore((s) => s.backend)
+  const notice = useChatStore((s) => s.notices[key])
+  const { send, sendNewChat, stop, answer, setAgentModel, setNewChat, setDraft, unqueue, replay, select, release, dismiss } = useChatStore.getState()
   const onAnswer = useCallback((permissionId: string, optionId: string) => session && answer(session.id, permissionId, optionId), [answer, session])
   const scenario = scenarios.find((s) => s.id === session?.scenarioId)
   const landing = conversation.turns.length === 0
+  // Samples play in the browser; everything else runs on the backend, text only, and keeps the
+  // agent and model it started with.
+  const local = !!session?.scenarioId
+  const agents: Agent[] = local ? sampleAgents : session ? [{ id: session.agent, name: session.agent, models: [session.model] }] : agentsOf(executors)
 
   // FLIP: where the input was when the first prompt left; once the layout has switched, it is
   // offset back there and animated home.
@@ -80,11 +92,7 @@ function ChatPane({ session }: { session?: Session }) {
     if (dy !== 0) slot.current.animate?.([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }], slide)
   })
 
-  const branches = [
-    ...new Set(
-      sessions.flatMap((s) => (s.projectId === newChat.projectId && s.workspace.kind === 'isolated' ? [s.workspace.branch] : [])),
-    ),
-  ]
+  const branches = projects.find((p) => p.id === newChat.projectId)?.worktrees?.map((w) => w.branch) ?? []
 
   return (
     <>
@@ -132,6 +140,19 @@ function ChatPane({ session }: { session?: Session }) {
           }
         >
           <div className="mx-auto w-full max-w-[760px]">
+            {!session && (backend === 'unavailable' || backend === 'loading') && (
+              <p role="status" className="mb-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                {backend === 'loading' ? '正在连接后端…' : '后端还不能运行 Agent，暂时无法开始新对话。左栏的示例不依赖后端，可以先看看。'}
+              </p>
+            )}
+            {notice && (
+              <Notice
+                notice={notice}
+                onDismiss={() => dismiss(key)}
+                onOpen={(id) => (dismiss(key), select(id))}
+                onRelease={(id) => (dismiss(key), void release(id))}
+              />
+            )}
             <Composer
               draft={draft}
               onDraft={(d) => setDraft(key, d)}
@@ -140,7 +161,7 @@ function ChatPane({ session }: { session?: Session }) {
                 if (session) {
                   send(session.id, d)
                   setDraft(key, emptyDraft)
-                } else sendNewChat(d)
+                } else void sendNewChat(d)
               }}
               onStop={() => session && stop(session.id)}
               responding={isResponding(conversation)}
@@ -150,18 +171,9 @@ function ChatPane({ session }: { session?: Session }) {
               agent={session?.agent ?? newChat.agent}
               model={session?.model ?? newChat.model}
               onChoose={(agent, model) => (session ? setAgentModel(session.id, agent, model) : setNewChat({ agent, model }))}
-              plugins={plugins}
-              context={
-                !session && (
-                  <ContextBar
-                    value={newChat}
-                    projects={projects.filter((p) => !p.samples)}
-                    branches={branches}
-                    onChange={setNewChat}
-                    onCreateProject={(path) => setNewChat({ projectId: createProject(path), workspace: { kind: 'main' } })}
-                  />
-                )
-              }
+              plugins={samplePlugins}
+              textOnly={!local}
+              context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} branches={branches} onChange={setNewChat} />}
             />
           </div>
         </div>

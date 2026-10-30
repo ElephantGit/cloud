@@ -3,7 +3,7 @@
 `projectrepos.New(store, Options{Root: absolutePath})` 创建仓库服务，交给 `server.Options.Projects`。
 Root 是后端配置，不接浏览器目录。`Create(ctx, scope, Input)` 检查成员关系后同步执行一次
 `git clone --mirror`，验证指定分支，创建固定 snapshot ref，最后写入 Project。
-`SnapshotRef(projectID, commit)` 与固定 Node 的 clone 协议匹配；M4 将 Project.MirrorPath 交给
+`SnapshotRef(projectID, commit)` 与固定 Node 的 clone 协议匹配；Agent driver 将 Project.MirrorPath 交给
 nodeservices.Repository，并使用 Project.SnapshotRef 与 Commit 创建对话目录。
 
 内部 `SeedDemo(ctx, scope)` 为一条命令的 fixture 验收准备本地仓库：在 Root 下生成私有临时源，
@@ -17,7 +17,8 @@ Git 不继承用户配置、HOME、代理、SSH、askpass 或凭据 helper；不
 
 创建后删除 mirror 的 origin 配置，后续不 fetch。上游变化不会改变 Project.Commit 或 snapshot ref。
 clone/分支失败不写项目并清理准备目录。数据库返回错误后保留已准备的镜像，避免连接中断时删除可能已被记录引用的目录；
-这类孤立镜像由显式清理命令处理。普通 End 和重启不删除仓库或会话目录，Agent 改动不写回这里。
+这些镜像保留供管理员核对；`-cleanup` 只清理登记的 Node/对话目录，不删除项目镜像。
+普通 End 和重启不删除仓库或会话目录，Agent 改动不写回这里。
 
 ## 契约之外
 

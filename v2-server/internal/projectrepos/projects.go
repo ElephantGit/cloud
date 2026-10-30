@@ -150,7 +150,7 @@ func (s *Service) recordMirror(ctx context.Context, scope execution.Scope, in In
 	project := store.Project{ID: id, Name: in.Name, RepositoryURL: in.RepositoryURL, Branch: in.DefaultBranch,
 		Commit: commit, SnapshotRef: snapshot, MirrorPath: final}
 	// Keep the mirror if the database returns an error: a failed connection does not prove
-	// the INSERT rolled back. Unreferenced mirrors are handled by explicit demo cleanup.
+	// the INSERT rolled back. Retain unreferenced mirrors for explicit administrative inspection.
 	return s.store.CreateProject(ctx, scope, project)
 }
 

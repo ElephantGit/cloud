@@ -200,3 +200,5 @@
   .sp-time-preview > div > span { width: 100%; margin-left: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { .sp-spin { animation: none; } .schedules-feature * { transition-duration: 0s !important; } }
+
+.sp-resource-status { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; color:var(--muted-foreground); font-size:13px; }

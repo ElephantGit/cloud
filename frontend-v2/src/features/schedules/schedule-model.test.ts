@@ -21,7 +21,7 @@ describe('schedule rules', () => {
   })
 })
 describe('execution target boundaries', () => {
-  const data = { ...catalog, workflows: [{ id: 'release', name: '测试工作流', description: '', versions: ['v3'], fields: [{ key: 'branch', name: '分支', placeholder: '', required: true }, { key: 'focus', name: '关注', placeholder: '', required: false }] }] }
+  const data = { ...catalog, projects:[{id:'website',name:'测试项目',description:''}], workflows: [{ id: 'release', name: '测试工作流', description: '', versions: ['v3'], fields: [{ key: 'branch', name: '分支', placeholder: '', required: true }, { key: 'focus', name: '关注', placeholder: '', required: false }] }] }
 
   it('allows unscoped chat but requires a project, publication and inputs for workflow', () => {
     const draft = { ...emptyDraft(), name: '简报', prompt: '汇总变化' }

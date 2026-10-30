@@ -4,13 +4,13 @@ import { parseWorkflowVariableValueText, type WorkflowInputVariable } from '@/li
 export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
 export type SourceTask = { id: string; title: string; description: string; projectId: string; projectName: string; status: string; unavailable?: string }
 export type TaskTarget = { kind: 'task'; sourceTaskId: string; supplementalInstruction: string }
-export type Target = TaskTarget | { kind: 'chat'; prompt: string; agent: string; model: string } | { kind: 'workflow'; workflowId: string; snapshot: string; inputs: Record<string, string> }
-export type Run = { id: string; startedAt: string; status: 'running' | 'success' | 'failed'; target: Target; projectName: string; output: string; source?: SourceTask }
+export type Target = TaskTarget | { kind: 'chat'; prompt: string; agent: string; model: string; executorId?: string } | { kind: 'workflow'; workflowId: string; snapshot: string; inputs: Record<string, string> }
+export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; target: Target; projectName: string; output: string; source?: SourceTask;reason?:string;released?:boolean }
 export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
-export type Draft = { name: string; kind: Target['kind']; sourceTaskId: string; supplementalInstruction: string; projectId: string; prompt: string; agent: string; model: string; workflowId: string; snapshot: string; inputs: Record<string, string>; rule: Rule }
-export type Catalog = { tasks?: SourceTask[]; projects: { id: string; name: string; description: string }[]; workflows: { id: string; name: string; description: string; versions: string[]; fields: { key: string; name: string; placeholder: string; required: boolean; variable?: WorkflowInputVariable }[] }[] }
+export type Draft = { name: string; kind: Target['kind']; sourceTaskId: string; supplementalInstruction: string; projectId: string; prompt: string; agent: string; model: string; executorId?:string; workflowId: string; snapshot: string; inputs: Record<string, string>; rule: Rule }
+export type Catalog = { tasks?: SourceTask[]; projects: { id: string; name: string; description: string }[]; models?:{id:string;name:string}[];executors?:{id:string;name:string;agentName:string;modelId:string}[];available?:{projects:boolean;models:boolean;executors:boolean}; workflows: { id: string; name: string; description: string; versions: string[]; fields: { key: string; name: string; placeholder: string; required: boolean; variable?: WorkflowInputVariable }[] }[] }
 export const catalog: Catalog = {
-  projects: [{ id: 'website', name: 'Ora 官网', description: '网站代码与发布资料' }, { id: 'product', name: '产品研发', description: '产品文档与开发工作区' }],
+  projects: [],
   workflows: [],
 }
 export const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
@@ -52,11 +52,11 @@ export function validateDraft(d: Draft, data: Catalog = catalog): Record<string,
 }
 export function targetFromDraft(d: Draft, data: Catalog = catalog): Target {
   if (d.kind === 'task') return { kind: 'task', sourceTaskId: d.sourceTaskId, supplementalInstruction: d.supplementalInstruction.trim() }
-  if (d.kind === 'chat') return { kind: 'chat', prompt: d.prompt.trim(), agent: d.agent, model: d.model }
+  if (d.kind === 'chat') return { kind: 'chat', prompt: d.prompt.trim(), agent: d.agent, model: d.model, ...(d.executorId ? {executorId:d.executorId}: {}) }
   const fields = data.workflows.find(w => w.id === d.workflowId)?.fields ?? []
   return { kind: 'workflow', workflowId: d.workflowId, snapshot: d.snapshot, inputs: Object.fromEntries(fields.map(f => [f.key, d.inputs[f.key] ?? ''])) }
 }
-export function projectName(id: string) { return catalog.projects.find(p => p.id === id)?.name ?? '不关联项目' }
+export function projectName(id: string, data:Catalog=catalog) { return !id?'不关联项目':data.projects.find(p => p.id === id)?.name ?? '项目暂不可用' }
 export function workflowName(id: string, data: Catalog = catalog) { return data.workflows.find(w => w.id === id)?.name ?? '工作流不可用' }
 export function ruleText(rule: Rule) {
   if (rule.kind === 'hours') return `每隔 ${rule.hours} 小时`
@@ -68,7 +68,7 @@ export function summary(d: Draft, data: Catalog = catalog) {
     const source = data.tasks?.find(t => t.id === d.sourceTaskId)
     return `${ruleText(d.rule)}，使用「${source?.title ?? '待选任务'}」的最新描述与项目独立执行。`
   }
-  const context = d.projectId ? `在「${projectName(d.projectId)}」中` : '不关联项目，'
+  const context = d.projectId ? `在「${projectName(d.projectId,data)}」中` : '不关联项目，'
   return `${ruleText(d.rule)}，${context}${d.kind === 'chat' ? '新建对话执行任务指令' : `运行「${d.workflowId ? workflowName(d.workflowId, data) : '待选工作流'}」${d.snapshot ? ` ${d.snapshot}` : ''}`}。`
 }
 function parts(date: Date, timezone: string) {

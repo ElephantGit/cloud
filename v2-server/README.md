@@ -45,10 +45,15 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 | `POST /api/v2/tenants/{tid}/schedule-configs` | 创建配置，返回 201，初始 version 为 1、enabled 为 true |
 | `PUT /api/v2/tenants/{tid}/schedule-configs/{id}` | 携带 version 修改配置，保留 enabled 和创建时间 |
 | `PATCH /api/v2/tenants/{tid}/schedule-configs/{id}/enabled` | 携带 version 和 enabled 暂停/恢复配置 |
+| `GET /api/v2/tenants/{tid}/schedule-resources` | 当前有效成员的真实项目、模型和执行器投影；分别标明目录是否可用，不返回后端路径或凭据 |
 
 接口要求登录 cookie、有效成员关系及创建者归属。无权限资源返回 404，过期版本返回 409，缺失更新版本返回 428；每次修改递增版本。配置持久存储于 PostgreSQL，服务重新启动后保留。请求大小限制 64 KiB，拒绝未知字段，并校验时间、时区、星期和间隔。
 
-本阶段仅保存无项目的文本对话配置。公共项目、工作流、执行器和模型目录尚未接入，不接受项目关联；执行器/模型文字仅为待接入配置，不能表示可执行绑定。`enabled` 表示保存的计划开关，不代表已部署定时器。没有触发器、真实模型调用或运行历史，`runs` 始终为空；不提供模拟运行、删除或重试入口。真实接入时还需对接公共目录并校验执行选择。
+对话配置保存时按当前权限验证绑定：无项目的 model ID 必须来自共享 Catalog；有项目的 projectId 必须来自当前租户的共享项目存储，target.executorId 必须匹配共享执行器和所选 model ID。agent 字段只用于展示，不作为执行身份。公共目录未就绪或选择失效时拒绝写入，不猜测默认模型/项目。兼容未绑定执行的文本配置：无项目、空模型、无 executorId 可先保存，运行时仍不能通过 model_required 门禁。
+
+资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/模型/执行器在每次保存时重检，真正执行时仍由公共服务再次鉴权。
+
+配置响应中的 `runs` 保留兼容空列表。前端另消费执行操作和历史领域的独立候选契约 `schedule-actions.openapi.json` / `schedule-history.openapi.json`；这两份契约在本线是提供方快照，不代表相应路由已装配。公开执行 Service、调度 Host 和历史后端就绪后再联调，缺少时页面明确显示不可用，不生成模拟结果。
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
@@ -58,7 +63,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 引用型创建/编辑需要宿主通过 `server.Options.ScheduleTargets` 注入共享资源模块实现的 `ScheduleTargetResolver`。它按当前租户和用户鉴权，校验工作流发布快照、参数及项目，或读取可访问任务的最新项目。无法访问的引用返回 `store.ErrNotFound`；模块未就绪返回 `ErrScheduleResourcesUnavailable`。已有任务的 projectId 由解析结果规范化，工作流解析出的项目必须与选择一致。接口成功返回只表示配置可保存，不表示执行已经接收。
 
-当前 `main.go` 未注入该解析器：引用型写入返回 `503 schedule_resources_unavailable`，没有任何内置示例目录或 permissive fallback。已经保存的引用型配置仍可读取，配置开关也可管理；将来每次派发必须重新校验当前权限、来源内容和项目，不能把保存时校验当执行授权。前端目前仍保留明确标注的内存演示，真实目录、执行编排装配与结果接入等待其所属模块交付后联调。
+当前 `main.go` 未注入该解析器：引用型写入返回 `503 schedule_resources_unavailable`，没有内置示例目录或 permissive fallback。已经保存的引用型配置仍可读取，配置开关也可管理；每次派发仍须重新校验当前权限、来源内容和项目，不能把保存时校验当执行授权。前端已移除内存演示，工作流/已有任务选项在真实目录与执行能力接入前禁用，保留已有持久配置。
 小队协作使用独立候选契约 [`squads.openapi.json`](squads.openapi.json)。正式 Cloud 尚无小队接口（P1 真实编组由 circus#750 承接），本批不修改 `api/openapi.json`；#750 合入后按正式契约收口。
 
 | 路由 | 行为 |

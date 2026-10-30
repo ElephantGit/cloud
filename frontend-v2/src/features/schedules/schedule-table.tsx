@@ -20,7 +20,7 @@ export function ScheduleTable({ tasks, sources = [], now, onOpen, onToggle }: { 
       return <TableRow key={task.id} className="sp-task-row" data-paused={!task.enabled}>
         <TableCell><button className="sp-task-cell" onClick={() => onOpen(task)}>
           <span className={cn('sp-task-icon', target.kind !== 'chat' && 'sp-task-icon-workflow')}><Icon size={17} /></span>
-          <span><strong>{task.name}</strong><small>{target.kind === 'chat' ? '每次创建独立对话' : target.kind === 'task' ? `${source?.title ?? '来源任务不可用'} · 演示` : `${workflowName(target.workflowId)} · ${target.snapshot}`}</small></span>
+          <span><strong>{task.name}</strong><small>{target.kind === 'chat' ? '每次创建独立对话' : target.kind === 'task' ? `${source?.title ?? '来源任务不可用'} · 演示` : `${workflowName(target.workflowId)} · ${target.snapshot} · 演示`}</small></span>
         </button></TableCell>
         <TableCell><Badge variant="outline"><Icon data-icon="inline-start" />{label}</Badge></TableCell>
         <TableCell><span className={cn('sp-project-label', !task.projectId && 'muted')}>{task.projectId && <Folder size={14} />}{target.kind === 'task' ? source?.projectName ?? '来源不可用' : projectName(task.projectId)}</span></TableCell>

@@ -1,6 +1,21 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test'
 
+test('configures a workflow schedule without calling configuration writes', async ({ page }) => {
+  await page.goto('/schedules')
+  await page.getByRole('button', { name: '开发者登录' }).click()
+  await page.locator('.sp-page-header').getByRole('button', { name: '新建任务' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: /运行工作流/ }).click()
+  await dialog.getByLabel('任务名称').fill('演示工作流定时')
+  await dialog.getByRole('button', { name: /发布检查.*v3/ }).click()
+  await dialog.getByLabel('检查分支 *').fill('main')
+  await dialog.getByLabel('关联项目').selectOption('website')
+  await dialog.getByRole('button', { name: '创建并启用' }).click()
+  await expect(dialog.getByText(/工作流配置为前端演示，刷新后清除/)).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('workflow-config.png'), fullPage: true })
+})
+
 test('existing task schedules extend the original table and drawer without API writes', async ({ page }) => {
   const writes: string[] = []
   page.on('request', request => { if (request.url().includes('/api/') && request.method() !== 'GET') writes.push(request.url()) })

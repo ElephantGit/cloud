@@ -53,9 +53,9 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog, saving = 
         <FieldLegend variant="label"><span className="sp-section-number">01</span>执行内容</FieldLegend>
         <FieldGroup>
           <ScheduleField name="name" label="任务名称" error={errors.name}><Input placeholder="例如：每日 AI 简报" value={effectiveDraft.name} onChange={e => { setNameEdited(true); patch({ name: e.target.value }) }} {...control('name')} /></ScheduleField>
-          <ToggleGroup className="sp-kind-picker w-full" aria-label="执行方式" value={[draft.kind]} onValueChange={values => { const value = values[0]; if (value === 'chat' || value === 'workflow' || value === 'task') patch({ kind: value }) }} variant="outline" spacing={3}>
+          <ToggleGroup className="sp-kind-picker w-full" aria-label="执行方式" value={[draft.kind]} onValueChange={values => { const value = values[0]; if (value === 'chat' || value === 'workflow' || value === 'task') patch({ kind: value, projectId: value === 'chat' ? '' : draft.projectId }) }} variant="outline" spacing={3}>
             <ToggleGroupItem disabled={!!task && task.target.kind !== 'chat'} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="chat"><MessageSquare /><strong>直接对话</strong><small>用一段指令完成工作</small>{draft.kind === 'chat' && <Check className="sp-selected-check" />}</ToggleGroupItem>
-            <ToggleGroupItem disabled className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch /><strong>运行工作流</strong><small>执行已发布的多步流程</small>{draft.kind === 'workflow' && <Check className="sp-selected-check" />}</ToggleGroupItem>
+            <ToggleGroupItem disabled={!!task && task.target.kind !== 'workflow'} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch /><strong>运行工作流</strong><small>执行已发布的多步流程</small>{draft.kind === 'workflow' && <Check className="sp-selected-check" />}</ToggleGroupItem>
             <ToggleGroupItem disabled={!!task && task.target.kind !== 'task'} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="task"><ListTodo /><strong>已有任务</strong><small>选择 Cloud 中的任务</small>{draft.kind === 'task' && <Check className="sp-selected-check" />}</ToggleGroupItem>
           </ToggleGroup>
           {draft.kind === 'task' ? <>
@@ -69,6 +69,7 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog, saving = 
               <ScheduleField name="model" label="模型"><NativeSelect disabled className="w-full" id="schedule-model" value={draft.model} onChange={e => patch({ model: e.target.value })}><NativeSelectOption value={draft.model}>尚未接入</NativeSelectOption></NativeSelect></ScheduleField>
             </FieldGroup>
           </> : <>
+            <FieldDescription>工作流配置为前端演示，使用示例目录；刷新后清除，真实执行尚未接入。</FieldDescription>
             <Field data-invalid={!!errors.workflow}>
               <FieldLabel htmlFor="workflow-search">选择工作流</FieldLabel>
               <div className="sp-search"><Search size={15} aria-hidden="true" /><Input id="workflow-search" placeholder="搜索工作流名称" value={query} onChange={e => setQuery(e.target.value)} /></div>
@@ -92,7 +93,7 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog, saving = 
         <FieldGroup>
           {draft.kind === 'task' ? <ScheduleField name="sourceProject" label="关联项目" hint="自动沿用来源任务的最新项目。"><Input id="schedule-sourceProject" readOnly value={source?.projectName ?? ''} placeholder="选择任务后自动带入" /></ScheduleField> : <>
           <ScheduleField name="projectId" label="关联项目" error={errors.projectId} hint={draft.kind === 'workflow' ? '必选。项目为工作流提供文件与运行环境。' : draft.projectId ? '本次任务可使用所选项目的文件与工作环境。' : '可选。不关联项目时独立执行，不使用项目文件。'}>
-            <NativeSelect className="w-full" value={draft.projectId} onChange={e => patch({ projectId: e.target.value })} {...control('projectId')}><NativeSelectOption value="">{draft.kind === 'workflow' ? '请选择运行项目' : '不关联项目'}</NativeSelectOption>{data.projects.map(p => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}</NativeSelect>
+            <NativeSelect className="w-full" value={draft.projectId} onChange={e => patch({ projectId: e.target.value })} {...control('projectId')}><NativeSelectOption value="">{draft.kind === 'workflow' ? '请选择运行项目' : '不关联项目'}</NativeSelectOption>{(draft.kind === 'workflow' ? data.projects : []).map(p => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}</NativeSelect>
           </ScheduleField>
           {!data.projects.length && <FieldDescription>暂无可用项目。直接对话可独立执行，工作流需先创建项目。</FieldDescription>}
           </>}
@@ -111,7 +112,7 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog, saving = 
           <div className="sp-time-preview"><div><Clock3 size={15} /><strong>接下来三次</strong><span>{draft.rule.timezone}</span></div>{times.length ? times.map((time, i) => <p key={time.toISOString()}><span>{String(i + 1).padStart(2, '0')}</span>{formatTime(time, draft.rule.timezone)}</p>) : <p>填写完整时间规则后预览</p>}<small>{draft.rule.kind === 'hours' ? '从创建时间起，按固定小时数间隔计算。' : '按所选时区计算，跳过夏令时不存在的时刻。'}</small></div>
         </FieldGroup>
       </FieldSet>
-      <div className="sp-summary"><Clock3 size={17} /><div><strong>任务预览</strong><p>{summary(effectiveDraft, data)}</p><small>{draft.kind === 'task' ? '已有任务为前端演示，仅在本次浏览会话中保存，刷新后清除；不会执行真实任务。' : '配置已保存后可随时编辑；自动执行尚未接入。'}</small></div></div>
+      <div className="sp-summary"><Clock3 size={17} /><div><strong>任务预览</strong><p>{summary(effectiveDraft, data)}</p><small>{draft.kind !== 'chat' ? '此配置为前端演示，仅在本次浏览会话中保存，刷新后清除；不会执行真实任务。' : '配置已保存后可随时编辑；自动执行尚未接入。'}</small></div></div>
     </FieldGroup></div>
     {saveError && <p role="alert" className="sp-helper">{saveError}</p>}
     <footer className="sp-form-footer">

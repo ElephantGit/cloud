@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { targetFromDraft, validateDraft, type Draft, type Run, type SourceTask, type Task } from './schedule-model'
+import { catalog, targetFromDraft, validateDraft, type Draft, type Run, type SourceTask, type Task } from './schedule-model'
 
 /** Sample task catalog until Cloud v2 exposes its task directory. These are never presented as live records. */
 export const demoSources: SourceTask[] = [
@@ -58,16 +58,16 @@ export const useTaskScheduleDemo = create<State>((set, get) => ({
     const source = sources.find((s) => s.id === draft.sourceTaskId)
     const existing = schedules[scope]?.find((t) => t.id === id)
     if (
-      draft.kind !== 'task' ||
-      !source ||
+      draft.kind === 'chat' ||
+      (draft.kind === 'task' && !source) ||
       (id && !existing) ||
-      Object.keys(validateDraft(draft, { projects: [], workflows: [], tasks: sources })).length
+      Object.keys(validateDraft(draft, { ...catalog, tasks: sources })).length
     )
       return
     const task: Task = {
       id: id ?? `demo-${crypto.randomUUID()}`,
       name: draft.name.trim(),
-      projectId: source.projectId,
+      projectId: draft.kind === 'task' ? source!.projectId : draft.projectId,
       target: targetFromDraft(draft),
       rule: structuredClone(draft.rule),
       enabled: existing?.enabled ?? true,

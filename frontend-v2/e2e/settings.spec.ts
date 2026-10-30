@@ -200,9 +200,15 @@ for (const width of [768, 375]) {
   test(`five settings pages at ${width}px keep the active link visible`, async ({
     page,
   }, info) => {
-    await page.setViewportSize({ width, height: 900 })
+    await page.setViewportSize({ width: 1440, height: 900 })
     await page.emulateMedia({ colorScheme: 'light' })
-    await login(page, '/settings/members')
+    await login(page, '/settings/skills')
+    await page.setViewportSize({ width, height: 900 })
+    await expect(
+      page
+        .getByRole('navigation', { name: '设置导航' })
+        .getByRole('link', { name: 'Skills', exact: true }),
+    ).toBeInViewport({ ratio: 1 })
     for (const [path, title] of titles) {
       await page.goto('/settings/' + path)
       await expect(
@@ -215,7 +221,7 @@ for (const width of [768, 375]) {
       ).toBe(true)
       const nav = page.getByRole('navigation', { name: '设置导航' })
       const active = nav.getByRole('link', { name: title, exact: true })
-      await expect(active).toBeInViewport()
+      await expect(active).toBeInViewport({ ratio: 1 })
       if (width === 375 && ['plugins', 'skills'].includes(path)) {
         await expect(page.getByRole('article').first()).toBeVisible()
         await page.screenshot({

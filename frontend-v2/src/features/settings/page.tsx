@@ -18,9 +18,14 @@ export default function SettingsPage() {
   const themePage = location.pathname === '/settings/theme'
   const navigation = useRef<HTMLElement>(null)
   useEffect(() => {
-    navigation.current
-      ?.querySelector('[aria-current="page"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const keepCurrentVisible = () =>
+      navigation.current
+        ?.querySelector('[aria-current="page"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'center' })
+    keepCurrentVisible()
+    const observer = new ResizeObserver(keepCurrentVisible)
+    if (navigation.current) observer.observe(navigation.current)
+    return () => observer.disconnect()
   }, [location.pathname])
   useEffect(() => {
     const refresh = (event: StorageEvent) => {

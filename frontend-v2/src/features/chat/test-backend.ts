@@ -6,8 +6,8 @@ export const tenantId = '00000000-0000-4000-8000-0000000000aa'
 
 const at = '2026-10-30T09:00:00Z'
 const project = (id: string, name: string) => ({
-  id, name, createdAt: at, credentialRefId: null, defaultBranch: 'main', deletedAt: null, lifecycle: 'active',
-  ownerUserId: demoUser.id, repositoryUrl: `https://git.example/${name}`, spaceId: 's', tenantId, version: 1,
+  id, tenantId, ownerUserId: demoUser.id, name, repositoryUrl: `https://git.example/${name}`, defaultBranch: 'main',
+  commitId: '0'.repeat(40), createdAt: at,
 })
 
 /** One followed event stream; tests push events into it as the backend would. */
@@ -101,7 +101,12 @@ export function chatBackend(options: { unavailable?: boolean } = {}): ChatBacken
     if (body !== undefined) state.bodies.push(body)
     if (url === '/api/v1/me') return { status: 200, data: demoUser }
     if (url === '/api/v1/me/tenants') return { status: 200, data: { items: [{ id: tenantId, name: '演示团队', status: 'active', role: 'owner' }], nextCursor: '' } }
-    if (url === `/api/v1/tenants/${tenantId}/projects`) return { status: 200, data: { items: [project('p-cloud', 'ora-space/cloud'), project('p-desktop', 'ora-space/desktop')], nextCursor: '' } }
+    // One project per page, so the page has to follow nextCursor to see both.
+    if (url === `/api/v2/tenants/${tenantId}/projects`) {
+      return config.params?.after === 'p-cloud'
+        ? { status: 200, data: { items: [project('p-desktop', 'ora-space/desktop')], nextCursor: '' } }
+        : { status: 200, data: { items: [project('p-cloud', 'ora-space/cloud')], nextCursor: 'p-cloud' } }
+    }
     if (!url.startsWith(base)) return undefined
     if (options.unavailable) return { status: 503, data: { code: 'execution_unavailable', params: {}, requestId: 'r' } }
     const path = url.slice(base.length)

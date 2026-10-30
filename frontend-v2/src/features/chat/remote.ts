@@ -1,4 +1,3 @@
-import { getApiV1TenantsTidProjects } from '@/api/projects/projects'
 import { statusOf } from '@/lib/api-client'
 import { isAxiosError } from 'axios'
 import {
@@ -15,6 +14,7 @@ import {
   setChatProjectOrder,
   stopChatConversation,
 } from './api/generated'
+import { getApiV2TenantsTidProjects } from './projects-api/generated'
 
 /** A project the backend can run chats in; each conversation gets its own directory of it. */
 export interface RemoteProject {
@@ -36,6 +36,18 @@ export interface RemoteState {
  * Agents yet, or something else went wrong.
  */
 export type Failure = { kind: 'running' } | { kind: 'ended' } | { kind: 'unavailable' } | { kind: 'error'; message: string }
+
+/** Reads every page of the tenant's projects. */
+async function allProjects(tid: string): Promise<RemoteProject[]> {
+  const all: RemoteProject[] = []
+  let after: string | undefined
+  do {
+    const page = await getApiV2TenantsTidProjects(tid, { limit: 100, after })
+    all.push(...page.items.map((p) => ({ id: p.id, name: p.name })))
+    after = page.nextCursor || undefined
+  } while (after)
+  return all
+}
 
 /** Turns a failed request into a {@link Failure}. */
 export function failureOf(error: unknown): Failure {
@@ -77,20 +89,20 @@ async function once<T>(run: (headers: Record<string, string>) => Promise<T>): Pr
  * call still goes through the generated client.
  */
 export const remote = {
-  /** Loads what the page needs; projects come from the Cloud contract, the rest from v2-server. */
+  /** Loads what the page needs, all from v2-server's candidate routes. */
   async load(tid: string): Promise<RemoteState> {
     // `npm run dev:demo` swaps the backend for one that plays scripted replies in the browser.
     if (import.meta.env.VITE_CHAT_DEMO === '1') (await import('./demo/backend')).installDemoBackend()
     const [executors, conversations, projects, order] = await Promise.all([
       listChatExecutors(tid),
       listChatConversations(tid),
-      getApiV1TenantsTidProjects(tid),
+      allProjects(tid),
       getChatProjectOrder(tid),
     ])
     return {
       executors: executors.items,
       conversations: conversations.items,
-      projects: projects.items.map((p) => ({ id: p.id, name: p.name })),
+      projects,
       projectOrder: order.projectIds,
     }
   },

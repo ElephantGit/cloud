@@ -142,8 +142,8 @@ function route(config: InternalAxiosRequestConfig): Reply | undefined {
   const method = config.method?.toUpperCase()
   const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
   const key = String(config.headers?.get?.('Idempotency-Key') ?? id('key'))
-  if (/^\/api\/v1\/tenants\/[^/]+\/projects$/.test(url) && method === 'GET') {
-    return { status: 200, data: { items: projects.map((p) => ({ id: p.id, name: p.name, createdAt: nowIso(), credentialRefId: null, defaultBranch: 'main', deletedAt: null, lifecycle: 'active', ownerUserId: '', repositoryUrl: '', spaceId: '', tenantId: '', version: 1 })), nextCursor: '' } }
+  if (/^\/api\/v2\/tenants\/[^/]+\/projects$/.test(url) && method === 'GET') {
+    return { status: 200, data: { items: projects.map((p) => ({ id: p.id, tenantId: '', ownerUserId: '', name: p.name, repositoryUrl: '', defaultBranch: 'main', commitId: '0'.repeat(40), createdAt: nowIso() })), nextCursor: '' } }
   }
   const chat = url.match(/^\/api\/v2\/tenants\/[^/]+\/chat(\/.*)$/)
   if (!chat) return undefined

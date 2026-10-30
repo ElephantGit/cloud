@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
@@ -40,11 +41,16 @@ func run(addr, dbURL string) error {
 	}
 	defer db.Close()
 
+	// The explicit unavailable backend lets page adapters share one injection point
+	// without reporting successful execution before the real runtime is installed.
+	executions := &executiontest.Stub{}
 	srv := &http.Server{
 		Addr: addr,
 		Handler: server.New(db, server.Options{
 			SessionTTL: 7 * 24 * time.Hour,
 			DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
+			Execution:  executions,
+			Catalog:    executions,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -177,3 +177,17 @@
   .sp-time-preview > div > span { width: 100%; margin-left: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { .sp-spin { animation: none; } .schedules-feature * { transition-duration: 0s !important; } }
+.tp-list { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.tp-row { display: flex; align-items: center; gap: 24px; width: 100%; padding: 24px; text-align: left; border-bottom: 1px solid var(--border); }
+.tp-row:hover, .tp-option:hover { background: var(--accent); }
+.tp-row > span:first-child { flex: 1; }
+.tp-row strong, .tp-option strong { display: block; font-weight: 500; }
+.tp-row small, .tp-option small { display: block; color: var(--muted-foreground); margin-top: 4px; }
+.tp-types { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.tp-types > [data-slot="badge"] { justify-content: center; min-height: 40px; }
+.tp-picker { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.tp-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px; text-align: left; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tp-option > span:first-child { flex: 1; }
+.tp-option[aria-pressed="true"] { background: var(--sp-accent-bg); box-shadow: inset 3px 0 var(--sp-accent); }
+.tp-option:disabled { opacity: .6; }
+@media (max-width: 760px) { .tp-row { align-items: flex-start; gap: 12px; flex-wrap: wrap; } .tp-row > span:first-child { flex-basis: 100%; } }

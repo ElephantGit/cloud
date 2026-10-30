@@ -34,6 +34,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 | `POST /auth/logout` | Gateway | 吊销会话，`204` |
 | `GET /api/v1/me` | 契约 | 当前用户；无会话 `401 unauthenticated` |
 | `GET /api/v1/me/tenants` | 契约 | 当前用户所在租户，一页返回全部，`nextCursor` 为空 |
+| `GET /api/v1/tenants/{tid}/members` | 契约 | 当前用户所在工作区成员，一页返回全部，按显示名排序；非成员 `403 forbidden`，非法租户 id `404 not_found` |
 
 ## 契约之外
 
@@ -109,6 +110,7 @@ admission、会话和事件持久化、重启恢复仍由调用方负责。
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
 - 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查。
 - 小队权限把开发登录的 `owner` 角色也当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
+- 成员列表：`memberships` 没有成员 id、版本和加入来源，所以 `id` 直接用 user id、`version` 恒为 1、`status` 取用户状态，`joinMethod` / `joinedAt` / `actorDisplayName` 恒为空；分页参数被忽略，一页返回全部。切到正式 Cloud 的成员接口时替换。
 - 启动时直接建表，没有迁移。
 - 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
   [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。

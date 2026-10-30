@@ -180,7 +180,7 @@ const sampleProject: Project = { id: 'samples', name: '示例', samples: true }
 const sampleSessions: Session[] = scenarios.map((s, i) => ({
   id: `sample-${s.id}`,
   projectId: sampleProject.id,
-  workspace: s.worktree ? { kind: 'isolated', branch: s.worktree } : { kind: 'main' },
+  workspace: { kind: 'main' },
   title: s.title,
   ...defaultChoice,
   scenarioId: s.id,

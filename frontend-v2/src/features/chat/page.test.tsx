@@ -156,10 +156,14 @@ describe('chat page', () => {
     expect(await screen.findByText(/后端还不能运行 Agent/)).toHaveRole('status')
   })
 
-  it('shows that each conversation works in its own directory', async () => {
+  it('labels every chat as working in a worktree of its own, explained on hover', async () => {
     await renderReady()
+    const label = screen.getByText('Worktree')
+    await userEvent.hover(label)
+    expect(await screen.findByText(/每个对话都会从项目仓库新建一个独立的 worktree/)).toBeInTheDocument()
+    await userEvent.unhover(label)
     await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
-    expect(screen.getByTitle(/每个对话在自己的目录里工作/)).toHaveTextContent('独立目录')
+    expect(within(screen.getByRole('banner')).getByText('Worktree')).toBeInTheDocument()
   })
 
   it('renames a conversation by double-clicking it', async () => {

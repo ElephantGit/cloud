@@ -1,4 +1,4 @@
-import { FlaskConicalIcon, FolderIcon, FolderLockIcon, GitBranchIcon, RotateCcwIcon, SquarePenIcon } from 'lucide-react'
+import { FlaskConicalIcon, RotateCcwIcon, SquarePenIcon } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,7 @@ import { FadeText } from './components/fade-text'
 import { subtleScrollbar } from '@/lib/scrollbar'
 import { ShowSidebarButton, Sidebar } from './components/sidebar'
 import { Notice } from './components/notice'
+import { WorktreeLabel } from './components/worktree-label'
 import { ContextUsage, LandingHeading, Thread } from './components/thread'
 import { isResponding } from './model/conversation'
 import { emptyConversation } from './model/types'
@@ -101,7 +102,7 @@ function ChatPane({ session }: { session?: Session }) {
         <h2 className="flex min-w-0 text-sm font-medium">
           <FadeText text={session?.title ?? '新对话'} />
         </h2>
-        {session && <WorkspaceBadge session={session} />}
+        {session && <WorktreeLabel />}
         {scenario && (
           <Badge variant="outline" className="gap-1 text-muted-foreground">
             <FlaskConicalIcon />
@@ -187,30 +188,5 @@ function ChatPane({ session }: { session?: Session }) {
         </div>
       </main>
     </>
-  )
-}
-
-function WorkspaceBadge({ session }: { session: Session }) {
-  if (session.remote) {
-    return (
-      <Badge variant="secondary" className="gap-1" title="每个对话在自己的目录里工作，不影响其他对话、定时任务和工作流">
-        <FolderLockIcon />
-        独立目录
-      </Badge>
-    )
-  }
-  if (session.workspace.kind === 'isolated') {
-    return (
-      <Badge variant="secondary" className="gap-1 font-mono" title="Agent 在独立的 worktree 里工作">
-        <GitBranchIcon />
-        {session.workspace.branch}
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant="secondary" className="gap-1" title="Agent 直接在项目主目录里工作">
-      <FolderIcon />
-      主目录
-    </Badge>
   )
 }

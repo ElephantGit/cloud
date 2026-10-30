@@ -7,8 +7,6 @@ export interface Scenario {
   title: string
   /** What the sample is there to show, listed in the empty state and the session header. */
   covers: string
-  /** Samples under a worktree show the isolated way of working. */
-  worktree?: string
   steps: Step[]
 }
 
@@ -239,7 +237,7 @@ function okInstall(s: ReturnType<typeof script>) {
 }
 
 const worktree = script()
-  .user('在这个 worktree 里给对话页加暗色模式')
+  .user('给对话页加暗色模式')
   .say('我在 `feat/dark-mode` 分支上改，主目录不受影响。')
   .tool({ id: 'w-e1', title: '编辑 src/index.css', kind: 'edit', locations: [{ path: 'src/index.css' }] })
   .done(
@@ -287,7 +285,7 @@ const worktree = script()
     },
     500,
   )
-  .say('暗色模式已加上：图标栏底部有切换按钮。改动都在 worktree 里，确认后再合回主分支。')
+  .say('暗色模式已加上：图标栏底部有切换按钮。改动都在这个对话自己的 worktree 里，不影响其他对话。')
   .end()
 
 const failures = script()
@@ -413,5 +411,5 @@ export const scenarios: Scenario[] = [
   { id: 'context', title: '上下文、模型切换与检查点', covers: 'Context、Model Selector、Checkpoint', steps: context.steps },
   { id: 'interrupted', title: '中断与失败', covers: '取消、出错', steps: interrupted.steps },
   { id: 'attachments', title: '附件与插件', covers: 'Prompt Input、Attachment', steps: attachments.steps },
-  { id: 'worktree', title: '在 worktree 里改代码', covers: 'File Tree', worktree: 'feat/dark-mode', steps: worktree.steps },
+  { id: 'worktree', title: '改代码与改动文件', covers: 'File Tree', steps: worktree.steps },
 ]

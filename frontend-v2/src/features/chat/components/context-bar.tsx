@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { backendSupports, type NewChat, type NewChatWorkspace, type Project } from '../store'
 import { NewProjectDialog } from './new-project-dialog'
 import { NewWorktreeDialog } from './new-worktree-dialog'
+import { WorktreeLabel } from './worktree-label'
 
 const tab =
   'group/context h-6 min-w-0 gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground data-popup-open:bg-muted/60 data-popup-open:text-foreground'
@@ -50,8 +51,7 @@ function SearchTab({ label, trigger, placeholder, empty, children }: { label: st
 /**
  * The row above a new chat's input, as in desktop: which project it starts in, whether in the
  * main checkout or a worktree, and where it runs. Only the cloud runs agents from the web, and it
- * gives every conversation its own directory, so the workspace tab shows only where the backend
- * lets the person choose.
+ * gives every conversation a worktree of its own: then a label says so instead of a workspace tab.
  */
 export function ContextBar({
   value,
@@ -123,6 +123,7 @@ export function ContextBar({
         )}
       </SearchTab>
 
+      {!backendSupports.chooseWorkspace && <WorktreeLabel />}
       {backendSupports.chooseWorkspace && (
       <SearchTab
         label="选择工作目录"

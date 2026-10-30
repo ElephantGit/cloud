@@ -34,4 +34,13 @@
 
 真实 PostgreSQL HTTP 测试校验候选契约、全部既有状态及释放标记、分页/游标隔离、当前权限撤销、服务不可用和错误脱敏。公共 Stub 测试另验证完整长答案、Caller/Ref 错配、部分结果、两种 Cancel 会话边界、结束后读取和 GET 零写入；Stub 不证明真实执行或公共持久化。
 
-有公共 `internal/executionruntime` 与 M3 实现的 Linux 组合源码可显式运行 `TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/server -run TestScheduleResultRuntime -v`。该测试使用公共默认 fixture 和真实 Service/数据库：第一子进程执行、End 并读取 HTTP，退出后第二子进程重新打开数据库与服务，比较原 Caller/Ref 的完整 HTTP 响应。此测试需真实公共实现，不会为缺失依赖注入 Stub；普通 CI 未开启此 tag，不能把普通 CI 通过当成该项验收。它验证纯模型路径，不代表真实 Node/Agent 或页面端到端通过。
+有公共 `internal/executionruntime` 与 M3 实现的 Linux 组合源码可显式运行纯模型跨进程验收；Agent 路径还需要公共 `agentruntime`、`projectrepos`、Node 恢复代码和准备好的固定资产：
+
+```sh
+TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/server -run '^TestScheduleResultRuntimeRestart$' -v
+V2_NODE_ASSETS_DIR=... TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/server -run '^TestScheduleAgentResultRuntimeRestart$' -v
+```
+
+两条测试均使用公共默认 fixture、真实 Service 和 PostgreSQL。第一子进程真实执行，确认完整结果和 End 后，经 HTTP 读取列表、单项与完整结果；完全退出后，第二子进程重新打开数据库与服务，比较三种响应中的原身份、冻结内容、状态和结果是否保持一致。每次 GET 前后比较 occurrence，证明读取不推进状态。Agent 另核对实际 shell 工具文件在 End 和新进程后仍存在、内容正确，不能只凭 Agent 回答判断工具执行。
+
+测试使用短的独立 Linux 目录容纳 Node 套接字，父进程等两个子进程结束后才清理；没有共享内存、持久替身或自建 provider。缺少实际实现或资产时不能用 Stub 顶替；普通 CI 不开启该 tag。此证据验证成功运行的只读持久化边界，不替代浏览器页面、主干完整启动或公共驱动异常恢复验收。

@@ -91,6 +91,8 @@ message Operation {
   // Epoch of the Controller that claimed it last.
   optional int64 controller_epoch = 8;
   optional string error_code = 9;
+  // Consecutive Node-unavailable rounds; only a real step advance resets this count.
+  int64 node_unavailable_attempts = 10;
 }
 
 // The Project an operation belongs to. Its external repository, branch and credential reference
@@ -352,6 +354,10 @@ enum DeferReason {
   DEFER_REASON_PLUGIN_EXECUTION_FAILED = 7;
   // The Node could not tell the plugin execution's outcome; not retried automatically.
   DEFER_REASON_PLUGIN_RESULT_UNKNOWN = 8;
+  // Continue waiting for the same clone execution; Cloud owns the one-second reclaim delay.
+  DEFER_REASON_CLONE_RESULT_PENDING = 9;
+  // No result within 1800 seconds of execution registration; late known results still resume it.
+  DEFER_REASON_CLONE_RESULT_TIMEOUT = 10;
 }
 
 message DeferOperationRequest {
@@ -361,7 +367,8 @@ message DeferOperationRequest {
   int64 version = 4;
   DeferState state = 5;
   DeferReason reason = 6;
-  // 1 to 3600 seconds.
+  // 1 to 3600 seconds for generic reasons. Ignored (including zero) for Node unavailable,
+  // clone pending and clone timeout: Cloud owns their retry policy and durable deadline.
   uint32 retry_seconds = 7;
 }
 

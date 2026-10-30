@@ -190,6 +190,24 @@ delivery's session JSONL; code is delivered through the Git Server, and there is
 **`RuntimeControlService`** delivers runtime control bindings, issues execution and effect permits and
 carries out force-stops; see [Runtime control](runtime-control.en.md).
 
+## Bounded waits for ordinary operations
+
+Cloud persists consecutive `node_unavailable` rounds and atomically computes their retry time from
+database time: 5/10/20/40/60 seconds, capped at 60 thereafter. Claims, Controller handovers and manual
+retry preserve the count; a real step advance or completion resets it. Caller-supplied delays cannot
+override it. Claim ordering remains `created_at,id`, excluding future `retry_at` rows.
+
+`clone_result_pending` keeps the original execution and attempt budget, with a one-second database-time
+reclaim interval. The execution record carries its durable registration `created_at`; the total window
+is 1800 seconds. Cloud rereads the original result and database time before persisting timeout. An
+expired execution without a result becomes `blocked/clone_result_timeout`. A late known success
+automatically queues the same operation for Controller reconciliation and advancement; a known failure
+follows the original three-attempt budget and 5/10-second delays. Neither needs manual retry or claiming
+a blocked row. Timeout result recovery checks the original live sandbox generation and Node identity
+without requiring a fresh heartbeat; actual advancement still requires readiness. Node Unknown remains
+the separate `blocked/clone_result_unknown`; elapsed time, reconnects and restarts alone cannot clear it.
+See the [approved decision](https://github.com/ora-space/specs/blob/main/decisions/controller/node-management/20261028-defer-unavailable-node-operations.md).
+
 ## Changing the contract
 
 - `buf.yaml` uses `STANDARD` lint and `FILE`-level breaking checks: `v1` accepts only non-breaking

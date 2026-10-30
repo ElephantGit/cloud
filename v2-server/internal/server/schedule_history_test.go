@@ -102,7 +102,7 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 	call(path, "invalid", 401)
 	expected := map[string]store.Occurrence{}
 	// Each transition is written through the actual domain API. GET must not reconcile it.
-	scenarios := [][]string{{}, {"begin"}, {"begin", "unknown"}, {"begin", "unknown", "recover"}, {"begin", "accepted"}, {"begin", "accepted", "cancel_requested"}, {"begin", "accepted", "completed"}, {"begin", "accepted", "failed"}, {"begin", "accepted", "cancelled"}, {"begin", "accepted", "interrupted"}, {"begin", "busy"}, {"begin", "accepted", "completed", "released"}}
+	scenarios := [][]string{{}, {"begin"}, {"begin", "reconcile"}, {"begin", "reconcile", "recover"}, {"begin", "accepted"}, {"begin", "accepted", "cancel_requested"}, {"begin", "accepted", "completed"}, {"begin", "accepted", "failed"}, {"begin", "accepted", "cancelled"}, {"begin", "accepted", "interrupted"}, {"begin", "rejected"}, {"begin", "reconcile", "not_accepted"}, {"begin", "accepted", "completed", "released"}}
 	for i, events := range scenarios {
 		// Separate schedules allow all occupied states to coexist; use the main schedule
 		// for pagination records below and each dedicated schedule for state assertions.
@@ -120,13 +120,31 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 			if event == "accepted" || event == "completed" || event == "failed" || event == "cancelled" || event == "interrupted" || event == "released" {
 				ref = "stable-ref"
 			}
-			o, e = s.ApplyOccurrenceEvidence(ctx, tenant, user.ID, o.ID, o.Version, store.ExecutionEvidence{Event: event, Ref: ref})
+			reason := ""
+			if event == "rejected" {
+				reason = "execution_busy"
+			}
+			o, e = s.ApplyOccurrenceEvidence(ctx, tenant, user.ID, o.ID, o.Version, store.ExecutionEvidence{Event: event, Ref: ref, Reason: reason})
 			if e != nil {
 				t.Fatal(e)
 			}
 		}
 		detail := fmt.Sprintf("/api/v2/tenants/%s/schedule-configs/%s/runs/%s", tenant, config.ID, o.ID)
 		raw := call(detail, token, 200)
+		switch eventsLast(events) {
+		case "reconcile":
+			if raw["status"] != "reconciling" || raw["reason"] != "lookup_required" {
+				t.Fatal(raw)
+			}
+		case "rejected":
+			if raw["status"] != "skipped" || raw["reason"] != "execution_busy" {
+				t.Fatal(raw)
+			}
+		case "not_accepted":
+			if raw["status"] != "skipped" || raw["reason"] != "execution_not_started" {
+				t.Fatal(raw)
+			}
+		}
 		data, _ := json.Marshal(raw)
 		var got store.Occurrence
 		json.Unmarshal(data, &got)
@@ -205,4 +223,11 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	call(path, token, 401)
+}
+
+func eventsLast(events []string) string {
+	if len(events) == 0 {
+		return ""
+	}
+	return events[len(events)-1]
 }

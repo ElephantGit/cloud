@@ -646,7 +646,6 @@
             "enum": [
               "recorded",
               "starting",
-              "admission_unknown",
               "reconciling",
               "running",
               "cancelling",

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
+	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
@@ -44,14 +45,35 @@ func run(addr, dbURL string) error {
 	// The explicit unavailable backend lets page adapters share one injection point
 	// without reporting successful execution before the real runtime is installed.
 	executions := &executiontest.Stub{}
+	options := server.Options{
+		SessionTTL: 7 * 24 * time.Hour,
+		DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
+		Execution:  executions, Catalog: executions,
+	}
+	// A real execution service must finish its startup recovery before this point.
+	// Until then the unavailable Catalog gates both scanning and HTTP commands.
+	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
+	if e != nil {
+		return e
+	}
+	schedules, e := scheduler.NewHost(db, coordinator, options.Catalog)
+	if e != nil {
+		return e
+	}
+	scheduleCtx, cancelSchedules := context.WithCancel(ctx)
+	ticks := time.NewTicker(time.Second)
+	scheduleDone := make(chan error, 1)
+	go func() { scheduleDone <- schedules.Run(scheduleCtx, ticks.C) }()
+	defer func() {
+		cancelSchedules()
+		ticks.Stop()
+		<-scheduleDone // Join scans and admitted HTTP commands before closing the database.
+	}()
+	<-schedules.Ready()
+	options.Schedules = schedules
 	srv := &http.Server{
-		Addr: addr,
-		Handler: server.New(db, server.Options{
-			SessionTTL: 7 * 24 * time.Hour,
-			DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
-			Execution:  executions,
-			Catalog:    executions,
-		}),
+		Addr:              addr,
+		Handler:           server.New(db, options),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errs := make(chan error, 1)

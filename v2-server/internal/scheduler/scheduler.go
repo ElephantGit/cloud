@@ -1,5 +1,5 @@
 // Package scheduler coordinates saved schedules with an injected execution adapter.
-// Nothing in this package is installed in the production server automatically.
+// Host connects the coordinator to a process-owned ticker and authenticated commands.
 package scheduler
 
 import (

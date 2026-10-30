@@ -42,6 +42,8 @@ type Options struct {
 	// Catalog exposes the executable Agent/model choices from that backend.
 	// Nil uses an unavailable Stub, independently of Execution.
 	Catalog execution.Catalog
+	// Schedules is the same host used by the process's periodic scanner. Nil disables commands.
+	Schedules ScheduleActions
 }
 
 // New returns the handler for every route v2-server serves.
@@ -58,6 +60,8 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/schedule-configs/{id}", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("PATCH /api/v2/tenants/{tid}/schedule-configs/{id}/enabled", h.authed(h.scheduleConfigs))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs/{id}/run", h.authed(h.scheduleAction))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}/cancel", h.authed(h.scheduleAction))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/squads", h.authed(h.listSquads))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads", h.authed(h.createSquad))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/squads/{sid}", h.authed(h.getSquad))

@@ -8,7 +8,7 @@ import (
 
 // NewScheduleCoordinator uses the same execution dependency as page handlers.
 // The host owns one instance, calls Recover after public execution startup recovery,
-// then drives Tick/Manual. Construction starts no timer and exposes no HTTP routes.
+// then drives Tick/Manual, or gives it to a scheduler.Host. Construction starts no timer.
 func NewScheduleCoordinator(records scheduler.CoordinatorStore, o Options, now func() time.Time) (*scheduler.Coordinator, error) {
 	adapter, err := scheduler.NewConversationAdapter(records, o.Execution)
 	if err != nil {

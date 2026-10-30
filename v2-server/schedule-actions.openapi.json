@@ -1,0 +1,362 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Temporary v2 schedule execution actions",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v2/tenants/{tid}/schedule-configs/{id}/run": {
+      "post": {
+        "operationId": "runScheduleNow",
+        "tags": [
+          "scheduleActions"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleManualRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current occurrence; HTTP success does not imply execution success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}/cancel": {
+      "post": {
+        "operationId": "cancelScheduleRun",
+        "tags": [
+          "scheduleActions"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current occurrence; HTTP success does not imply execution success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Operation rejected or incomplete; occurrenceId is returned when a record already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleActionError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ScheduleActionError": {
+        "type": "object",
+        "required": [
+          "code",
+          "params",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ScheduleActionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scheduleId",
+          "kind",
+          "status",
+          "reason",
+          "released",
+          "version",
+          "scheduledAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scheduleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "manual"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "starting",
+              "reconciling",
+              "running",
+              "cancelling",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "interrupted",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "released": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ScheduleManualRequest": {
+        "type": "object",
+        "required": [
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Stable client request key; retry with the same key, explicit rerun with a new key."
+          }
+        }
+      },
+      "ScheduleCancelRequest": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "ora_session"
+      }
+    }
+  }
+}

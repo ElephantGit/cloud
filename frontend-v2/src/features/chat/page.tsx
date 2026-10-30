@@ -67,6 +67,7 @@ function ChatPane({ session }: { session?: Session }) {
   const queued = useChatStore((s) => (session && s.queued[session.id]) || noQueue)
   const playing = useChatStore((s) => !!(session && s.playing[session.id]))
   const newChat = useChatStore((s) => s.newChat)
+  const newChatOpens = useChatStore((s) => s.newChatOpens)
   const projects = useChatStore((s) => s.projects)
   const executors = useChatStore((s) => s.executors)
   const backend = useChatStore((s) => s.backend)
@@ -181,6 +182,7 @@ function ChatPane({ session }: { session?: Session }) {
               onChoose={(agent, model) => (session ? setAgentModel(session.id, agent, model) : setNewChat({ agent, model }))}
               plugins={samplePlugins}
               textOnly={!local}
+              focusKey={session ? undefined : newChatOpens}
               context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} onChange={setNewChat} />}
             />
             )}

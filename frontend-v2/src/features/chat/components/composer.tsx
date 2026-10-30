@@ -12,7 +12,7 @@ import {
   SquareIcon,
   XIcon,
 } from 'lucide-react'
-import { type ReactNode, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -48,6 +48,8 @@ interface ComposerProps {
   textOnly?: boolean
   /** The row above the box saying where a new chat will run; only before its first prompt. */
   context?: ReactNode
+  /** Puts the cursor in the input whenever it changes to a value above zero. */
+  focusKey?: number
 }
 
 /**
@@ -60,6 +62,11 @@ export function Composer(props: ComposerProps) {
   const plugins = textOnly ? [] : props.plugins
   const fileInput = useRef<HTMLInputElement>(null)
   const form = useRef<HTMLFormElement>(null)
+  const text = useRef<HTMLTextAreaElement>(null)
+  const { focusKey } = props
+  useEffect(() => {
+    if (focusKey) text.current?.focus()
+  }, [focusKey])
   const [highlight, setHighlight] = useState(0)
   const mention = draft.text.match(/(?:^|\s)@([^\s@]*)$/)
   const matches = mention
@@ -134,6 +141,7 @@ export function Composer(props: ComposerProps) {
             </div>
           )}
           <textarea
+            ref={text}
             aria-label="消息"
             rows={2}
             placeholder={responding ? '继续输入，会在本轮结束后发送…' : textOnly ? '描述一个任务…' : '描述一个任务，输入 @ 选择插件…'}

@@ -147,6 +147,8 @@ interface State {
    * project, so "new chat" from inside a project stays there.
    */
   startNewChat: (scope?: { projectId: string }) => void
+  /** Counts the times the new chat view was asked for, so its input takes the focus each time. */
+  newChatOpens: number
   setNewChat: (patch: Partial<NewChat>) => void
   /** Creates the conversation the new chat describes with its first prompt, and selects it. */
   sendNewChat: (draft: Draft) => Promise<void>
@@ -509,13 +511,14 @@ export const useChatStore = create<State>()(
         },
         selectRun: (id) => set({ selectedRunId: id }),
         newChat: { projectId: '', agent: '', model: '' },
+        newChatOpens: 0,
         startNewChat: (scope) => {
           const previous = get().selectedId
           set((s) => {
             const current = s.sessions.find((x) => x.id === s.selectedId)
             const fromSelection = current?.remote ? current : undefined
             const where = scope ? { projectId: scope.projectId } : fromSelection ? { projectId: fromSelection.projectId } : {}
-            return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where } }
+            return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where }, newChatOpens: s.newChatOpens + 1 }
           })
           if (previous) prune(previous)
         },
@@ -749,6 +752,7 @@ export function resetChatStore() {
     pending: {},
     notices: {},
     newChat: { projectId: '', agent: '', model: '' },
+    newChatOpens: 0,
     selectedId: undefined,
     selectedRunId: undefined,
   })

@@ -125,7 +125,7 @@ func (FixtureProvider) Complete(w http.ResponseWriter, r *http.Request, model Mo
 	}
 	message := map[string]any{"role": "assistant", "content": answer}
 	if tool != "" {
-		args, _ := json.Marshal(map[string]string{"command": "cat README >/dev/null && printf '%s\\n' 'v2 fixture tool executed' > ora-v2-result.txt", "description": "Read README and write the v2 fixture marker"})
+		args, _ := json.Marshal(map[string]string{"command": "(cat README.md 2>/dev/null || cat README) >/dev/null && printf '%s\\n' 'v2 fixture tool executed' > ora-v2-result.txt", "description": "Read README and write the v2 fixture marker"})
 		message["content"] = nil
 		message["tool_calls"] = []any{map[string]any{"index": 0, "id": "call_v2_fixture", "type": "function", "function": map[string]string{"name": tool, "arguments": string(args)}}}
 		finish = "tool_calls"

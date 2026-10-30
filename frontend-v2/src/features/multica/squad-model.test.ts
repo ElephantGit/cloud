@@ -28,7 +28,7 @@ describe('squad members', () => {
     expect(leaderName(squad())).toBeNull()
   })
 
-  it('recognizes only a live human maintainer as editor', () => {
+  it('recognizes a live human maintainer or a workspace administrator as editor', () => {
     const detail = squad({ members: [
       member({ id: 'me', userId: 'me', maintainer: true }),
       member({ id: 'left', userId: 'left', maintainer: true, endedAt: '2026-10-02T00:00:00Z' }),
@@ -37,6 +37,10 @@ describe('squad members', () => {
     expect(canMaintain(detail, 'me')).toBe(true)
     expect(canMaintain(detail, 'left')).toBe(false)
     expect(canMaintain(squad({ members: [{ ...member({ userId: 'me', maintainer: true }), endedAt: '2026-10-02T00:00:00Z' }] }), 'me')).toBe(false)
+    // Workspace administrators may edit any squad, matching the server's check.
+    expect(canMaintain(detail, 'stranger', 'owner')).toBe(true)
+    expect(canMaintain(detail, 'stranger', 'admin')).toBe(true)
+    expect(canMaintain(detail, 'stranger', 'member')).toBe(false)
   })
 })
 

@@ -4,7 +4,7 @@ import type { ScheduleResources } from './api/generated'
 import type { Catalog, Task, Run } from './schedule-model'
 
 export const emptyResources: ScheduleResources = { projects: [], models: [], executors: [], available: { projects: false, models: false, executors: false } }
-export function resourceCatalog(resources: ScheduleResources): Catalog { return { projects: resources.projects, workflows: [], models: resources.models, executors: resources.executors, available: resources.available } }
+export function resourceCatalog(resources: ScheduleResources): Catalog { return { projects: resources.projects, models: resources.models, executors: resources.executors, available: resources.available } }
 export const runLabels: Record<string,string> = { recorded: '已记录', starting: '正在启动', reconciling: '正在核对', running: '进行中', cancelling: '正在取消', succeeded: '成功', success: '成功', failed: '失败', cancelled: '已取消', interrupted: '已中断', skipped: '已跳过' }
 const reasons: Record<string,string> = {
   previous_unfinished: '上一次运行尚未结束', execution_busy: '执行器正忙', server_restarted: '服务重启，本次不补跑', execution_not_started: '本次执行未启动', lookup_required: '正在核对执行结果', configuration_changed: '配置已修改', paused: '计划已暂停', result_incomplete: '回答不完整', model_required: '尚未选择模型', executor_required: '尚未选择执行器', execution_unavailable: '执行服务尚未就绪', execution_target_unavailable: '执行目标已不可用', unsupported_schedule_target: '此执行方式尚未接入', execution_failed: '执行失败', cancelled: '运行已取消',

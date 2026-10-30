@@ -525,10 +525,7 @@
             "$ref": "#/components/schemas/ScheduleChatTarget"
           },
           {
-            "$ref": "#/components/schemas/ScheduleWorkflowTarget"
-          },
-          {
-            "$ref": "#/components/schemas/ScheduleTaskTarget"
+            "$ref": "#/components/schemas/ScheduleLegacyTarget"
           }
         ]
       },
@@ -588,7 +585,7 @@
             "type": "string"
           },
           "target": {
-            "$ref": "#/components/schemas/ScheduleTarget"
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
           "rule": {
             "$ref": "#/components/schemas/ScheduleRule"
@@ -613,7 +610,7 @@
             "type": "string"
           },
           "target": {
-            "$ref": "#/components/schemas/ScheduleTarget"
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
           "rule": {
             "$ref": "#/components/schemas/ScheduleRule"
@@ -761,63 +758,6 @@
           }
         }
       },
-      "ScheduleWorkflowTarget": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "kind",
-          "workflowId",
-          "snapshot",
-          "inputs"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "workflow"
-            ]
-          },
-          "workflowId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "snapshot": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "inputs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ScheduleTaskTarget": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "kind",
-          "sourceTaskId",
-          "supplementalInstruction"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "task"
-            ]
-          },
-          "sourceTaskId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "supplementalInstruction": {
-            "type": "string",
-            "maxLength": 32000
-          }
-        }
-      },
       "ScheduleResources": {
         "type": "object",
         "additionalProperties": false,
@@ -918,6 +858,23 @@
             }
           }
         }
+      },
+      "ScheduleLegacyTarget": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "workflow",
+              "task"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "description": "Read-only compatibility for previously stored references. Provider fields are preserved without interpretation; no write API is defined."
       }
     }
   }

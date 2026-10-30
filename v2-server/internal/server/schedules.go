@@ -59,18 +59,12 @@ func validateSchedule(in *store.ScheduleInput) string {
 	if in.Name == "" || len(in.Name) > 200 {
 		return "invalid_name"
 	}
-	target, code := decodeScheduleTarget(in.Target)
+	target, code := decodeScheduleChat(in.Target)
 	if code != "" {
 		return code
 	}
 	if target.Kind == "chat" && in.ProjectID != "" && (!scheduleUUID.MatchString(in.ProjectID) || target.ExecutorID == "") {
 		return "invalid_project_executor"
-	}
-	if target.Kind == "workflow" && !scheduleUUID.MatchString(in.ProjectID) {
-		return "invalid_project"
-	}
-	if target.Kind == "task" && in.ProjectID != "" && !scheduleUUID.MatchString(in.ProjectID) {
-		return "invalid_project"
 	}
 	var rule struct {
 		Kind     string `json:"kind"`
@@ -166,10 +160,15 @@ func (h *handler) scheduleConfigs(w http.ResponseWriter, r *http.Request, u stor
 			return
 		}
 		if code := validateSchedule(&in); code != "" {
-			fault(w, 400, code)
+			status := 400
+			if code == "schedule_target_unavailable" {
+				status = 503
+			}
+			fault(w, status, code)
 			return
 		}
-		if err := h.resolveScheduleTarget(r.Context(), tenant, u.ID, &in); err != nil {
+		target, _ := decodeScheduleChat(in.Target)
+		if err := h.resolveScheduleChat(r.Context(), tenant, u.ID, &in, target); err != nil {
 			switch {
 			case errors.Is(err, ErrScheduleResourcesUnavailable):
 				fault(w, 503, "schedule_resources_unavailable")

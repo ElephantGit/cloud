@@ -1,48 +1,26 @@
-import { parseWorkflowVariableValueText, type WorkflowInputVariable } from '@/lib/workflows/mock'
-
-/** Schedule view model. Backend request mapping is not implemented. */
+/** Schedule-owned configuration and read-only legacy target metadata. */
 export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
-export type SourceTask = { id: string; title: string; description: string; projectId: string; projectName: string; status: string; unavailable?: string }
-export type TaskTarget = { kind: 'task'; sourceTaskId: string; supplementalInstruction: string }
-export type Target = TaskTarget | { kind: 'chat'; prompt: string; agent: string; model: string; executorId?: string } | { kind: 'workflow'; workflowId: string; snapshot: string; inputs: Record<string, string> }
-export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; target: Target; projectName: string; output: string; source?: SourceTask;reason?:string;released?:boolean }
+export type ChatTarget = { kind: 'chat'; prompt: string; agent: string; model: string; executorId?: string }
+export type LegacyTarget = { kind: 'workflow' | 'task'; [key:string]:unknown }
+export type Target = ChatTarget | LegacyTarget
+export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; target: Target; projectName: string; output: string; reason?:string;released?:boolean }
 export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
-export type Draft = { name: string; kind: Target['kind']; sourceTaskId: string; supplementalInstruction: string; projectId: string; prompt: string; agent: string; model: string; executorId?:string; workflowId: string; snapshot: string; inputs: Record<string, string>; rule: Rule }
-export type Catalog = { tasks?: SourceTask[]; projects: { id: string; name: string; description: string }[]; models?:{id:string;name:string}[];executors?:{id:string;name:string;agentName:string;modelId:string}[];available?:{projects:boolean;models:boolean;executors:boolean}; workflows: { id: string; name: string; description: string; versions: string[]; fields: { key: string; name: string; placeholder: string; required: boolean; variable?: WorkflowInputVariable }[] }[] }
-export const catalog: Catalog = {
-  projects: [],
-  workflows: [],
-}
+export type Draft = { name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;model:string;executorId?:string;rule:Rule }
+export type Catalog = { projects:{id:string;name:string;description:string}[];models?:{id:string;name:string}[];executors?:{id:string;name:string;agentName:string;modelId:string}[];available?:{projects:boolean;models:boolean;executors:boolean} }
+export const catalog: Catalog = {projects:[]}
 export const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
 export function emptyDraft(): Draft {
-  return { name: '', kind: 'chat', sourceTaskId: '', supplementalInstruction: '', projectId: '', prompt: '', agent: '', model: '', workflowId: '', snapshot: '', inputs: {}, rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
+  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: '', model: '', rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
 }
 export function taskDraft(task: Task): Draft {
   const d = emptyDraft()
-  return { ...d, name: task.name, projectId: task.projectId, kind: task.target.kind, rule: structuredClone(task.rule), ...(task.target.kind !== 'workflow' ? task.target : { workflowId: task.target.workflowId, snapshot: task.target.snapshot, inputs: { ...task.target.inputs } }) }
+  return { ...d, name: task.name, projectId: task.projectId, kind: task.target.kind, rule: structuredClone(task.rule), ...(task.target.kind === 'chat' ? task.target : {}) }
 }
 export function validateDraft(d: Draft, data: Catalog = catalog): Record<string, string> {
   const errors: Record<string, string> = {}
   if (!d.name.trim()) errors.name = '请输入任务名称'
   if (d.kind === 'chat' && !d.prompt.trim()) errors.prompt = '请告诉 AI 每次需要做什么'
-  if (d.kind === 'task') {
-    const source = data.tasks?.find(t => t.id === d.sourceTaskId)
-    if (!source) errors.sourceTaskId = '请选择一个可用任务'
-    else if (source.unavailable) errors.sourceTaskId = source.unavailable
-  }
-  if (d.kind === 'workflow') {
-    const flow = data.workflows.find(w => w.id === d.workflowId)
-    if (!flow || !flow.versions.includes(d.snapshot)) errors.workflow = '请选择已发布的工作流版本'
-    if (!d.projectId) errors.projectId = '运行工作流需要项目，请选择运行环境'
-    flow?.fields.forEach(f => {
-      const text = d.inputs[f.key] ?? ''
-      const parsed = f.variable ? parseWorkflowVariableValueText(text, f.variable.valueType) : { valid: true, value: text.trim() || undefined }
-      if (!parsed.valid) errors[`input:${f.key}`] = `请输入有效的${f.name}（${f.variable?.valueType}）`
-      else if (f.required && parsed.value === undefined) errors[`input:${f.key}`] = `请填写${f.name}`
-      else if (f.variable?.maxLength !== undefined && typeof parsed.value === 'string' && Array.from(parsed.value).length > f.variable.maxLength) errors[`input:${f.key}`] = `${f.name}最多 ${f.variable.maxLength} 个字符`
-      else if (f.variable?.options?.length && text && !f.variable.options.includes(text)) errors[`input:${f.key}`] = `请选择有效的${f.name}`
-    })
-  }
+  if (d.kind !== 'chat') errors.target = '此执行方式尚未接入，原配置仅供查看'
   if (d.kind !== 'task' && d.projectId && !data.projects.some(p => p.id === d.projectId)) errors.projectId = '该项目已不可用，请重新选择'
   if (d.rule.kind === 'weekly' && !d.rule.days.length) errors.days = '请至少选择一天'
   if (d.rule.kind !== 'hours' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.rule.time)) errors.time = '请输入有效时间'
@@ -50,26 +28,19 @@ export function validateDraft(d: Draft, data: Catalog = catalog): Record<string,
   try { new Intl.DateTimeFormat('zh-CN', { timeZone: d.rule.timezone }).format() } catch { errors.timezone = '请选择有效时区' }
   return errors
 }
-export function targetFromDraft(d: Draft, data: Catalog = catalog): Target {
-  if (d.kind === 'task') return { kind: 'task', sourceTaskId: d.sourceTaskId, supplementalInstruction: d.supplementalInstruction.trim() }
-  if (d.kind === 'chat') return { kind: 'chat', prompt: d.prompt.trim(), agent: d.agent, model: d.model, ...(d.executorId ? {executorId:d.executorId}: {}) }
-  const fields = data.workflows.find(w => w.id === d.workflowId)?.fields ?? []
-  return { kind: 'workflow', workflowId: d.workflowId, snapshot: d.snapshot, inputs: Object.fromEntries(fields.map(f => [f.key, d.inputs[f.key] ?? ''])) }
+export function targetFromDraft(d: Draft): ChatTarget {
+  if(d.kind!=='chat')throw new Error('引用目标只读，等待提供方接口')
+  return {kind:'chat',prompt:d.prompt.trim(),agent:d.agent,model:d.model,...(d.executorId?{executorId:d.executorId}:{})}
 }
 export function projectName(id: string, data:Catalog=catalog) { return !id?'不关联项目':data.projects.find(p => p.id === id)?.name ?? '项目暂不可用' }
-export function workflowName(id: string, data: Catalog = catalog) { return data.workflows.find(w => w.id === id)?.name ?? '工作流不可用' }
 export function ruleText(rule: Rule) {
   if (rule.kind === 'hours') return `每隔 ${rule.hours} 小时`
   const prefix = rule.kind === 'daily' ? '每天' : rule.kind === 'weekdays' ? '每个工作日' : `每周${[...rule.days].sort((a,b) => ((a+6)%7)-((b+6)%7)).map(d => weekdayNames[d]).join('、')}`
   return `${prefix} ${rule.time}`
 }
-export function summary(d: Draft, data: Catalog = catalog) {
-  if (d.kind === 'task') {
-    const source = data.tasks?.find(t => t.id === d.sourceTaskId)
-    return `${ruleText(d.rule)}，使用「${source?.title ?? '待选任务'}」的最新描述与项目独立执行。`
-  }
-  const context = d.projectId ? `在「${projectName(d.projectId,data)}」中` : '不关联项目，'
-  return `${ruleText(d.rule)}，${context}${d.kind === 'chat' ? '新建对话执行任务指令' : `运行「${d.workflowId ? workflowName(d.workflowId, data) : '待选工作流'}」${d.snapshot ? ` ${d.snapshot}` : ''}`}。`
+export function summary(d:Draft,data:Catalog=catalog) {
+  if(d.kind!=='chat')return '原引用配置已保留；此执行方式尚未接入。'
+  return `${ruleText(d.rule)}，${d.projectId?`在「${projectName(d.projectId,data)}」中`:'不关联项目，'}新建对话执行任务指令。`
 }
 function parts(date: Date, timezone: string) {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date)

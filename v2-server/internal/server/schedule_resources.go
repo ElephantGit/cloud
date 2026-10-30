@@ -9,6 +9,9 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
+// ErrScheduleResourcesUnavailable indicates the shared execution catalog is not installed.
+var ErrScheduleResourcesUnavailable = errors.New("schedule resources unavailable")
+
 type scheduleProjects interface {
 	ListProjects(context.Context, execution.Scope) ([]store.Project, error)
 	GetProject(context.Context, execution.Scope, string) (store.Project, error)
@@ -112,7 +115,7 @@ func scheduleResourceError(w http.ResponseWriter, err error) bool {
 	return true
 }
 
-func (h *handler) resolveScheduleChat(ctx context.Context, tenant, user string, in *store.ScheduleInput, target ScheduleTarget) error {
+func (h *handler) resolveScheduleChat(ctx context.Context, tenant, user string, in *store.ScheduleInput, target ScheduleChatTarget) error {
 	// Preserve unbound text-only configuration drafts; they cannot pass the runtime's
 	// model_required gate. Any executable selection must resolve through the catalog.
 	if in.ProjectID == "" && target.Model == "" && target.ExecutorID == "" {

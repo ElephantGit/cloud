@@ -7,7 +7,7 @@ import { ScheduleForm } from './schedule-form'
 it('validates weekly scheduling and accepts unscoped chat', async () => {
   const user = userEvent.setup()
   const onSave = vi.fn()
-  render(<QueryClientProvider client={new QueryClient()}><ScheduleForm onSave={onSave} onCancel={() => {}} data={{ projects: [], workflows: [] }} /></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient()}><ScheduleForm onSave={onSave} onCancel={() => {}} data={{ projects: [] }} /></QueryClientProvider>)
   fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '每日简报' } })
   fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '总结资讯' } })
   expect(screen.getByRole('combobox', { name: '关联项目' })).toHaveValue('')

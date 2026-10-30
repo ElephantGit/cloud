@@ -60,13 +60,14 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
-### 引用型定时配置接入
+### 定时任务职责与旧引用兼容
 
-候选配置契约另支持 `workflow`（workflowId、snapshot UUID、字符串 inputs）及 `task`（sourceTaskId UUID、supplementalInstruction）。它们仍存于同一 PostgreSQL 配置表，并沿用创建者隔离与 version 并发检查。目标字段按类型严格区分；示例名称、`v3` 或 `CLOUD-128` 不能作为真实资源 ID。
+定时任务只负责计划、触发身份、防重叠、调用提供方的执行接口，以及关联和展示外部运行事实。工作流的定义、发布快照、参数模式/语义校验、节点调度和执行由工作流模块拥有；任务目录、描述、项目和执行绑定由任务模块拥有。定时模块不要求这些提供方实现自己预设的解析协议。
 
-引用型创建/编辑需要宿主通过 `server.Options.ScheduleTargets` 注入共享资源模块实现的 `ScheduleTargetResolver`。它按当前租户和用户鉴权，校验工作流发布快照、参数及项目，或读取可访问任务的最新项目。无法访问的引用返回 `store.ErrNotFound`；模块未就绪返回 `ErrScheduleResourcesUnavailable`。已有任务的 projectId 由解析结果规范化，工作流解析出的项目必须与选择一致。接口成功返回只表示配置可保存，不表示执行已经接收。
+当前写入契约只接受已接通的 chat 配置。workflow/task 写入明确返回 `503 schedule_target_unavailable`；没有 ScheduleTargetResolver、参数字符串化或可由替身开启的引用写入通道。后续接入以提供方实际交付的接口为准。
 
-当前 `main.go` 未注入该解析器：引用型写入返回 `503 schedule_resources_unavailable`，没有内置示例目录或 permissive fallback。已经保存的引用型配置仍可读取，配置开关也可管理；每次派发仍须重新校验当前权限、来源内容和项目，不能把保存时校验当执行授权。前端已移除内存演示，工作流/已有任务选项在真实目录与执行能力接入前禁用，保留已有持久配置。
+之前已保存的引用仍按原 JSON 读取，可暂停/恢复计划；只读候选类型 `ScheduleLegacyTarget` 保留未知字段，不解释、改写或校验其中的提供方参数。没有删除数据库数据或迁移其字段，前端也不提供引用参数编辑/执行入口。
+
 小队协作使用独立候选契约 [`squads.openapi.json`](squads.openapi.json)。正式 Cloud 尚无小队接口（P1 真实编组由 circus#750 承接），本批不修改 `api/openapi.json`；#750 合入后按正式契约收口。
 
 | 路由 | 行为 |

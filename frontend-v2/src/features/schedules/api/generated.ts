@@ -40,37 +40,23 @@ export interface ScheduleChatTarget {
   executorId?: string;
 }
 
-export type ScheduleWorkflowTargetKind = typeof ScheduleWorkflowTargetKind[keyof typeof ScheduleWorkflowTargetKind];
+export type ScheduleLegacyTargetKind = typeof ScheduleLegacyTargetKind[keyof typeof ScheduleLegacyTargetKind];
 
 
-export const ScheduleWorkflowTargetKind = {
+export const ScheduleLegacyTargetKind = {
   workflow: 'workflow',
-} as const;
-
-export type ScheduleWorkflowTargetInputs = {[key: string]: string};
-
-export interface ScheduleWorkflowTarget {
-  kind: ScheduleWorkflowTargetKind;
-  workflowId: string;
-  snapshot: string;
-  inputs: ScheduleWorkflowTargetInputs;
-}
-
-export type ScheduleTaskTargetKind = typeof ScheduleTaskTargetKind[keyof typeof ScheduleTaskTargetKind];
-
-
-export const ScheduleTaskTargetKind = {
   task: 'task',
 } as const;
 
-export interface ScheduleTaskTarget {
-  kind: ScheduleTaskTargetKind;
-  sourceTaskId: string;
-  /** @maxLength 32000 */
-  supplementalInstruction: string;
-}
+/**
+ * Read-only compatibility for previously stored references. Provider fields are preserved without interpretation; no write API is defined.
+ */
+export interface ScheduleLegacyTarget {
+  kind: ScheduleLegacyTargetKind;
+  [key: string]: unknown;
+ }
 
-export type ScheduleTarget = ScheduleChatTarget | ScheduleWorkflowTarget | ScheduleTaskTarget;
+export type ScheduleTarget = ScheduleChatTarget | ScheduleLegacyTarget;
 
 export type ScheduleRuleKind = typeof ScheduleRuleKind[keyof typeof ScheduleRuleKind];
 
@@ -97,14 +83,14 @@ export interface ScheduleRule {
 export interface ScheduleInput {
   name: string;
   projectId: string;
-  target: ScheduleTarget;
+  target: ScheduleChatTarget;
   rule: ScheduleRule;
 }
 
 export interface ScheduleUpdate {
   name: string;
   projectId: string;
-  target: ScheduleTarget;
+  target: ScheduleChatTarget;
   rule: ScheduleRule;
   /** @minimum 1 */
   version: number;

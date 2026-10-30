@@ -20,7 +20,8 @@ func TestUsageNormalization(t *testing.T) {
 		{"reported zero", `{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}`, `{"inputTokens":0,"outputTokens":0,"totalTokens":0}`, false},
 		{"optional", `{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":5},"completion_tokens_details":{"reasoning_tokens":2}}`, `{"inputTokens":12,"outputTokens":3,"totalTokens":15,"cachedReadTokens":5,"thoughtTokens":2}`, false},
 		{"optional zero", `{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15,"completion_tokens_details":{"reasoning_tokens":0}}`, `{"inputTokens":12,"outputTokens":3,"totalTokens":15,"thoughtTokens":0}`, false},
-		{"inconsistent", `{"prompt_tokens":12,"completion_tokens":3,"total_tokens":14}`, "", true},
+		{"inconsistent smaller total", `{"prompt_tokens":12,"completion_tokens":3,"total_tokens":14}`, "", false},
+		{"inconsistent larger total", `{"prompt_tokens":12,"completion_tokens":3,"total_tokens":20}`, "", false},
 		{"negative", `{"prompt_tokens":-1,"completion_tokens":3,"total_tokens":2}`, "", true},
 		{"fractional", `{"prompt_tokens":0.5}`, "", true},
 		{"string", `{"prompt_tokens":"12"}`, "", true},
@@ -57,18 +58,26 @@ func TestUsageNormalization(t *testing.T) {
 func TestSSEFinalUsage(t *testing.T) {
 	full := `data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}` + "\n\n"
 	partial := `data: {"choices":[],"usage":{"prompt_tokens":12}}` + "\n\n"
+	empty := `data: {"choices":[],"usage":{}}` + "\n\n"
 	result, err := Run(t.Context(), binding(response("text/event-stream", chunk("answer", "stop")+full+done)), prompt, discard)
 	if err != nil || !result.AnswerComplete {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	assertJSONEqual(t, result.Usage, `{"inputTokens":12,"outputTokens":3,"totalTokens":15}`)
-	result, err = Run(t.Context(), binding(response("text/event-stream", chunk("answer", "stop")+full+partial+done)), prompt, discard)
-	if err != nil || !result.AnswerComplete || result.Usage != nil {
-		t.Fatalf("incomplete final metadata must not preserve previous counters: result=%+v err=%v", result, err)
+	result, err = Run(t.Context(), binding(response("text/event-stream", chunk("answer", "stop")+full+partial+empty+done)), prompt, discard)
+	if err != nil || !result.AnswerComplete {
+		t.Fatalf("incomplete final metadata: result=%+v err=%v", result, err)
 	}
+	assertJSONEqual(t, result.Usage, `{"inputTokens":12,"outputTokens":3,"totalTokens":15}`)
 	result, err = Run(t.Context(), binding(response("text/event-stream", full+chunk("answer", "stop")+done)), prompt, discard)
-	if !errors.Is(err, ErrInvalidResponse) || result.AnswerComplete {
+	if err != nil || !result.AnswerComplete {
 		t.Fatalf("metadata before choice finish: result=%+v err=%v", result, err)
+	}
+	assertJSONEqual(t, result.Usage, `{"inputTokens":12,"outputTokens":3,"totalTokens":15}`)
+	inconsistent := `data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":20}}` + "\n\n"
+	result, err = Run(t.Context(), binding(response("text/event-stream", chunk("answer", "stop")+full+inconsistent+done)), prompt, discard)
+	if err != nil || !result.AnswerComplete || result.Usage != nil {
+		t.Fatalf("inconsistent counters must only clear usage: result=%+v err=%v", result, err)
 	}
 }
 

@@ -28,6 +28,7 @@ type responseWriter struct {
 	finished    bool
 	sawContent  bool
 	done        bool
+	completed   bool
 	err         error
 	line, event []byte
 	hasData     bool
@@ -62,6 +63,11 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
 	}
+	if w.completed {
+		// The protocol terminator already completed this turn. Stop provider writes
+		// without turning our own transport cancellation into a failed answer.
+		return 0, context.Canceled
+	}
 	if err := w.ctx.Err(); err != nil {
 		return 0, w.fail(err)
 	}
@@ -79,6 +85,15 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 		_, _ = w.jsonBody.Write(data)
 	} else if err := w.stream(data); err != nil {
 		return 0, w.fail(err)
+	}
+	if w.done && len(w.line) == 0 && !w.hasData {
+		if err := w.ctx.Err(); err != nil {
+			return 0, w.fail(err)
+		}
+		// Validate the whole received write before stopping I/O, including any data
+		// after DONE. Run still joins the provider before publishing completion.
+		w.completed = true
+		w.cancel()
 	}
 	return len(data), nil
 }
@@ -100,6 +115,9 @@ func (w *responseWriter) fail(err error) error {
 func (w *responseWriter) finish() error {
 	if w.err != nil {
 		return w.err
+	}
+	if w.completed {
+		return nil
 	}
 	if err := w.ctx.Err(); err != nil {
 		return err
@@ -153,16 +171,17 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 	if json.Unmarshal(data, &response) != nil || nonNull(response.Error) {
 		return ErrInvalidResponse
 	}
-	usage, err := normalizeUsage(response.Usage)
+	usage, hasCounters, err := normalizeUsage(response.Usage)
 	if err != nil {
 		return err
 	}
-	if nonNull(response.Usage) {
+	if hasCounters {
 		w.usage = usage
 	}
 	if len(response.Choices) == 0 {
-		// include_usage emits one final metadata chunk, after the choice's terminal chunk.
-		if stream && w.finished && nonNull(response.Usage) {
+		// Compatible providers may send filtering or usage metadata before, between,
+		// or after text chunks. Such metadata never proves answer completion.
+		if stream {
 			return nil
 		}
 		return ErrInvalidResponse
@@ -180,13 +199,13 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 	} else if nonNull(choice.Delta) {
 		return ErrInvalidResponse
 	}
-	if !nonNull(content) {
+	if !nonNull(content) && !(stream && choice.FinishReason != nil && *choice.FinishReason != "") {
 		return ErrInvalidResponse
 	}
 	var message assistant
-	decoder := json.NewDecoder(bytes.NewReader(content))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&message) != nil {
+	// Ignore provider extension fields (including reasoning); only content is answer
+	// text. Known fields retain their type and unsupported-content checks below.
+	if nonNull(content) && json.Unmarshal(content, &message) != nil {
 		return ErrInvalidResponse
 	}
 	if (message.Role != nil && *message.Role != "assistant") || (!stream && (message.Role == nil || message.Content == nil)) {
@@ -218,7 +237,7 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 		}
 		w.answer.WriteString(*message.Content)
 	}
-	if choice.FinishReason == nil {
+	if choice.FinishReason == nil || *choice.FinishReason == "" {
 		if !stream {
 			return ErrIncomplete
 		}

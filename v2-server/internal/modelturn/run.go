@@ -58,6 +58,7 @@ type Emit func(ctx context.Context, delta string) error
 // Run invokes Provider.Complete synchronously with a cancellable, bounded context and returns
 // only after that call has exited. Providers must honor request cancellation and use their writer
 // from one goroutine. Closing an observer must not cancel this execution context.
+// A complete SSE stop plus DONE cancels upstream I/O without changing the completed result.
 func Run(ctx context.Context, binding nodeservices.Binding, messages []Message, emit Emit) (execution.Result, error) {
 	if err := ctx.Err(); err != nil {
 		return failed("", "", err), err

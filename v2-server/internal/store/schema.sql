@@ -47,3 +47,39 @@ CREATE TABLE IF NOT EXISTS sessions (
 	user_id    uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
 	expires_at timestamptz NOT NULL
 );
+
+-- Execution state belongs to the authenticated owner; projects are tenant-shared.
+CREATE TABLE IF NOT EXISTS v2_execution_sessions (
+ id text PRIMARY KEY,
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ user_id uuid NOT NULL REFERENCES users(id),
+ data jsonb NOT NULL,
+ ended_at timestamptz,
+ event_sequence bigint NOT NULL DEFAULT 0,
+ turn_position bigint NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS v2_execution_turns (
+ id text PRIMARY KEY,
+ session_id text NOT NULL REFERENCES v2_execution_sessions(id),
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ user_id uuid NOT NULL REFERENCES users(id),
+ caller jsonb NOT NULL,
+ position bigint NOT NULL,
+ data jsonb NOT NULL,
+ ended_at timestamptz,
+ UNIQUE (tenant_id, user_id, caller),
+ UNIQUE (session_id, position)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_execution_active_turn
+ ON v2_execution_turns(session_id) WHERE ended_at IS NULL;
+CREATE TABLE IF NOT EXISTS v2_execution_events (
+ session_id text NOT NULL REFERENCES v2_execution_sessions(id),
+ sequence bigint NOT NULL,
+ data jsonb NOT NULL,
+ PRIMARY KEY (session_id, sequence)
+);
+CREATE TABLE IF NOT EXISTS v2_projects (
+ id text PRIMARY KEY,
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ data jsonb NOT NULL
+);

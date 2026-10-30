@@ -92,6 +92,23 @@
 .sp-choice strong { font-weight: 500; font-size: 14px; }
 .sp-choice small { color: var(--sp-muted); font-weight: 400; font-size: 12px; white-space: normal; }
 .sp-selected-check { position: absolute; right: 13px; top: 13px; }
+.sp-kind-picker { align-items: stretch; }
+.sp-kind-picker > button { min-width: 0; }
+.sp-source-label, .sp-source-heading, .sp-source-actions { display: flex; align-items: center; gap: 10px; }
+.sp-source-label { justify-content: space-between; }
+.sp-source-filters { display: flex; gap: 10px; }
+.sp-source-filters > .sp-search { flex: 1; width: auto; }
+.sp-source-filters > [data-slot="native-select-wrapper"] { width: 140px; }
+.sp-source-list { max-height: 228px; overflow-y: auto; }
+.sp-source-card { border: 1px solid var(--border); background: var(--sp-surface); border-radius: 8px; padding: 16px; }
+.sp-source-heading { flex-wrap: wrap; }
+.sp-source-heading > svg { color: var(--sp-accent); }
+.sp-source-heading strong { flex: 1; font-weight: 500; }
+.sp-source-meta { color: var(--sp-muted); font-size: 12px; margin-top: 6px !important; }
+.sp-source-description, .sp-source-full { font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 12px !important; }
+.sp-source-actions { margin-top: 14px; }
+.sp-source-card details { font-size: 12px; color: var(--sp-muted); margin-top: 8px; }
+.sp-tabs button[aria-pressed="true"] { color: var(--foreground); border-color: var(--foreground); font-weight: 500; }
 .sp-workflow-list { border: 1px solid var(--sp-line); border-radius: 8px; padding: 4px; }
 .sp-workflow-option { text-align: left; }
 .sp-workflow-option > span:first-of-type { flex: 1; min-width: 0; }
@@ -164,6 +181,12 @@
   .sp-list-footer { align-items: flex-start; flex-direction: column; gap: 4px; } .sp-toast { left: 50%; }
 }
 @media (max-width: 460px) {
+  .sp-kind-picker { flex-direction: column; }
+  .sp-kind-picker > button { display: grid; grid-template-columns: 20px 1fr; grid-template-rows: auto auto; gap: 4px 12px; width: 100%; min-height: 72px; padding: 12px 16px; }
+  .sp-kind-picker > button > svg:first-child { grid-row: 1 / 3; align-self: center; }
+  .sp-kind-picker > button > strong, .sp-kind-picker > button > small { grid-column: 2; justify-self: start; text-align: left; }
+  .sp-source-filters { flex-direction: column; }
+  .sp-source-filters > [data-slot="native-select-wrapper"] { width: 100%; }
   .sp-workspace-bar { padding: 0 14px; } .sp-content { padding: 24px 14px; }
   .sp-breadcrumb { font-size: 12px; gap: 6px; } .sp-page-header { flex-wrap: wrap; margin-bottom: 18px; }
   .sp-page-header p { max-width: none; } .sp-summary-counts { gap: 15px; } .sp-summary-counts > span { gap: 5px; }
@@ -177,17 +200,3 @@
   .sp-time-preview > div > span { width: 100%; margin-left: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { .sp-spin { animation: none; } .schedules-feature * { transition-duration: 0s !important; } }
-.tp-list { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
-.tp-row { display: flex; align-items: center; gap: 24px; width: 100%; padding: 24px; text-align: left; border-bottom: 1px solid var(--border); }
-.tp-row:hover, .tp-option:hover { background: var(--accent); }
-.tp-row > span:first-child { flex: 1; }
-.tp-row strong, .tp-option strong { display: block; font-weight: 500; }
-.tp-row small, .tp-option small { display: block; color: var(--muted-foreground); margin-top: 4px; }
-.tp-types { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-.tp-types > [data-slot="badge"] { justify-content: center; min-height: 40px; }
-.tp-picker { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-.tp-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px; text-align: left; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.tp-option > span:first-child { flex: 1; }
-.tp-option[aria-pressed="true"] { background: var(--sp-accent-bg); box-shadow: inset 3px 0 var(--sp-accent); }
-.tp-option:disabled { opacity: .6; }
-@media (max-width: 760px) { .tp-row { align-items: flex-start; gap: 12px; flex-wrap: wrap; } .tp-row > span:first-child { flex-basis: 100%; } }

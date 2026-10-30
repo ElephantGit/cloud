@@ -40,6 +40,8 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 ## 契约之外
 
+### 定时任务配置
+
 定时任务配置使用独立候选契约 [`schedules.openapi.json`](schedules.openapi.json)，不改变正式 Cloud 的 ScheduledTask（其 issue/agent 执行语义不能表达本次独立对话配置）。前端以独立 Orval 配置生成客户端，后续正式契约收敛时替换这一适配。
 
 | 路由 | 行为 |
@@ -87,6 +89,39 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 内部 `SeedDemo` 可创建或复用带真实 Git mirror 的演示项目，但构造服务和 HTTP 请求不会自动调用它。
 本接口不伪造正式 v1 创建契约中的 Space、Workspace 或异步 Operation，也不创建执行目录。
 
+### 对话
+
+对话页使用独立候选契约 [`chat.openapi.json`](chat.openapi.json)。正式契约里的对话挂在 issue 下，没有独立的对话列表。前端以独立 Orval 配置生成客户端。领域逻辑在 [`internal/chat`](internal/chat)，只经 [`internal/execution`](internal/execution/README.md) 的公共接口运行 Agent。
+
+| 路由 | 行为 |
+|---|---|
+| `GET …/chat/executors` | 可选的 Agent 与模型绑定，来自公共执行目录 |
+| `GET …/chat/conversations` | 本人在该租户的对话，按创建时间排序，各带自己的执行 session |
+| `POST …/chat/conversations` | 以第一条消息创建对话并 `Start`，返回 201 和该轮的 session/turn |
+| `PATCH …/chat/conversations/{cid}` | 改名 |
+| `DELETE …/chat/conversations/{cid}` | 先 `End` 活 session，确认后再删除对话 |
+| `POST …/chat/conversations/{cid}/messages` | 在对话的 session 上 `Append` 下一条消息 |
+| `POST …/chat/conversations/{cid}/stop` | `Cancel` 最近一轮 |
+| `GET …/chat/conversations/{cid}/events` | 对话 session 的事件，Server-Sent Events |
+| `GET`/`PUT …/chat/project-order` | 本人在左栏的项目顺序 |
+
+`…` 是 `/api/v2/tenants/{tid}`。所有路由要求登录 cookie 和成员关系；他人的对话按 404 处理。执行服务和目录取自统一注入点 `server.Options.Execution` / `Catalog`（见下一节）；它们还是未配置的 Stub 时，对话列表照常读取，执行器清单、创建对话和发消息等需要执行的调用返回 503 `execution_unavailable`。
+
+- **一个对话、一个 session**：创建对话时只选项目，执行服务为这个对话新建目录，对话之间、对话与定时任务和工作流之间都不争抢目录。session 在两轮之间保持，直到下列情况之一，并记下 `endReason`：
+  - `stopped`：停止。固定 Node 取消进行中的一轮会结束整个 session。
+  - `deleted`：删除对话。
+  - `interrupted`：在对话之外结束，例如服务重启后 `Append` 返回 `ErrSessionEnded`。
+
+  session 结束后对话只读：再发消息返回 409 `conversation_ended`，页面提示新开对话。不会在同一对话里新开 session，也不重放上下文。
+- **幂等**：创建对话和发消息必须带 `Idempotency-Key`，它就是该轮的 attempt ID。用同一个 key 重试，返回原对话和原 Ref，不会重复执行；同一个 key 换了参数，返回 409 `idempotency_conflict`。结果未知时返回 503 `outcome_unknown`，要用同一个 key 重试。第一条消息被明确拒绝时不留下空对话。
+- **上一轮未结束**：返回 409 `turn_running`，由页面排队，上一轮结束后再发。
+- **事件流**：每条消息的 `id` 是 session 内序号，`Last-Event-ID`（或 `after`）从其后续上。`session_ended` 之后发 `end` 事件；读取失败发 `failure`，不会冒充正常结束。快照 `history` 每次整份替换，`records[].data` 是固定 Node 的 HistoryLine。关闭事件流只停止观察，不停止 Agent。
+- **简化**：同一对话的操作用进程内互斥串行，依赖 v2-server 是单进程；首版只接文本消息，必须选项目。
+
+装配：`server.New` 用传入的 store 和注入的 `Execution` / `Catalog` 建一个 `chat.Service`，chat 不改 `main.go` 或启动入口。chat 只调用公共 `execution.Service`，不直接写执行存储的事件、终态或 End；chat 自己的表只记录对话、session 归属和结束原因。
+
+HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，向注入点传入 `executiontest.Stub`，覆盖对话生命周期、停止后只读、事件流续传、项目顺序和执行不可用；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、结果未知、上一轮未结束、停止与重启后只读和删除顺序。
+
 ## 进程内 Agent 执行接口
 
 [`internal/execution`](internal/execution/README.md) 的公共 Go 接口由
@@ -110,7 +145,7 @@ admission、会话和事件持久化、重启恢复仍由调用方负责。
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
-- 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查。
+- 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查，对话的创建和发消息把 `Idempotency-Key` 用作执行的 attempt ID。
 - 小队权限把开发登录的 `owner` 角色也当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
 - 空间与插件：每个租户固定一个「演示空间」，开发登录时自动创建；里面只登记一个真实安装的 Agent 插件——`official/ora-space.opencode@0.6.11`，即 [`scripts/prepare-node.sh`](scripts/prepare-node.sh) 校验 SHA 后准备、chat、工作流与定时任务真正加载的那个。没有安装、卸载写入接口，`kind` 恒为 `agent`，安装计数与请求者不记录；`SpaceAgentPlugins` 的读法在 `#774` 的 `Catalog.ListExecutors` 装配好后可以换成真实来源，契约形状不变。
 - 成员列表：`memberships` 没有成员 id、版本和加入来源，所以 `id` 直接用 user id、`version` 恒为 1、`status` 取用户状态，`joinMethod` / `joinedAt` / `actorDisplayName` 恒为空；分页参数被忽略，一页返回全部。切到正式 Cloud 的成员接口时替换。

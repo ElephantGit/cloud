@@ -3,6 +3,14 @@ import { expect, test } from '@playwright/test'
 test('workflow runs: start a published workflow from chat and follow it to the result', async ({ page }) => {
   // The demo engine takes 1.5 s a node, so the sample needs about ten seconds to finish.
   test.setTimeout(90_000)
+  // v2-server has no project or execution runtime wired yet, so the chat page is given one project
+  // and executor to hang the run on; the run itself plays on the in-browser demo engine.
+  await page.route('**/api/v2/tenants/*/projects?*', (route) =>
+    route.fulfill({ json: { items: [{ id: '00000000-0000-4000-8000-0000000000c1', tenantId: '00000000-0000-4000-8000-0000000000aa', ownerUserId: '00000000-0000-4000-8000-0000000000bb', name: 'ora-space/cloud', repositoryUrl: 'https://github.com/ora-space/cloud', defaultBranch: 'main', commitId: '0'.repeat(40), createdAt: '2026-10-30T09:00:00Z' }], nextCursor: '' } }),
+  )
+  await page.route('**/api/v2/tenants/*/chat/executors', (route) =>
+    route.fulfill({ json: { items: [{ id: 'oc-fixture', name: 'OpenCode · Fixture', agentName: 'OpenCode', modelName: 'Fixture' }] } }),
+  )
   await page.goto('/chat')
   await page.getByRole('button', { name: '开发者登录' }).click()
   const cloud = page.getByRole('complementary', { name: '聊天记录' }).getByRole('region').filter({ hasText: 'ora-space/cloud' })
@@ -36,7 +44,7 @@ test('workflow runs: start a published workflow from chat and follow it to the r
   await expect(pane.getByRole('heading', { name: 'Mock 结论' })).toBeVisible()
 
   // A session takes the main area back; the run stays in the list.
-  await cloud.getByRole('button', { name: '梳理 v2 接口缺口', exact: true }).click()
+  await page.getByRole('complementary', { name: '聊天记录' }).getByRole('button', { name: '工具调用：读、搜、改、执行', exact: true }).click()
   await expect(pane).toBeHidden()
   await expect(cloud.getByRole('button', { name: '工作流运行 审查 e2e（成功）' })).toBeVisible()
 })

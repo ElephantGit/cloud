@@ -15,8 +15,6 @@ import {
   ChevronRightIcon,
   FlaskConicalIcon,
   FolderIcon,
-  GitBranchIcon,
-  GitBranchPlusIcon,
   GripVerticalIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
@@ -40,7 +38,6 @@ import { emptyConversation } from '../model/types'
 import { type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
-import { NewWorktreeDialog } from './new-worktree-dialog'
 import type { PublishedWorkflow } from '../workflow-run/demo-runs'
 import { ProjectRuns, RunWorkflowDialog, RunWorkflowSubmenu } from '../workflow-run/run-sidebar'
 import { subtleScrollbar } from '@/lib/scrollbar'
@@ -55,13 +52,12 @@ const pointerFirst: CollisionDetection = (args) => {
 }
 
 /**
- * Chat history grouped by project. Each project lists the sessions that work in its main
- * checkout, then one row per worktree (its branch) with that worktree's sessions beneath it.
+ * Chat history grouped by project, each project listing its conversations.
  * Projects reorder by dragging the handle (or with the keyboard: focus it, space, arrows): only
  * the project's row follows the pointer, its sessions stay greyed in place, and a line marks
  * where it will land. The column's right edge drags to resize it, or to fold it away.
- * "新建对话" and the projects' and worktrees' + open the new chat view; a session shows up here
- * once its first prompt is sent.
+ * "新建对话", and the same item in each project's + menu, open the new chat view; a session shows
+ * up here once its first prompt is sent. The + menu also runs a published workflow in the project.
  */
 export function Sidebar() {
   const projects = useChatStore((s) => s.projects)
@@ -155,10 +151,7 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
   const startNewChat = useChatStore((s) => s.startNewChat)
   // Sortable for the drop targets and keyboard moves only: nothing shifts while dragging.
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useSortable({ id: project.id })
-  const [newWorktree, setNewWorktree] = useState(false)
   const [runWorkflow, setRunWorkflow] = useState<PublishedWorkflow>()
-  const main = sessions.filter((s) => s.workspace.kind === 'main')
-  const branches = [...new Set(sessions.flatMap((s) => (s.workspace.kind === 'isolated' ? [s.workspace.branch] : [])))]
   const Icon = project.samples ? FlaskConicalIcon : FolderIcon
 
   return (
@@ -190,16 +183,8 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id })}>
-                  <FolderIcon />
-                  在主目录新建对话
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'new-worktree' } })}>
-                  <GitBranchPlusIcon />
-                  在新 worktree 中新建对话
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setNewWorktree(true)}>
-                  <PencilIcon />
-                  新建 worktree 并命名…
+                  <SquarePenIcon />
+                  新建对话
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <RunWorkflowSubmenu onPick={setRunWorkflow} />
@@ -211,26 +196,12 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
           <div className="mt-0.5 mb-1 ml-[1.9rem] flex flex-col pl-2">
             {sessions.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">还没有会话</p>}
             <ProjectRuns projectId={project.id} />
-            {main.map((s) => (
+            {sessions.map((s) => (
               <SessionRow key={s.id} session={s} />
-            ))}
-            {branches.map((branch) => (
-              <WorktreeGroup
-                key={branch}
-                branch={branch}
-                sessions={sessions.filter((s) => s.workspace.kind === 'isolated' && s.workspace.branch === branch)}
-                onNew={project.samples ? undefined : () => startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } })}
-              />
             ))}
           </div>
         </CollapsibleContent>
       </Collapsible>
-      <NewWorktreeDialog
-        open={newWorktree}
-        onOpenChange={setNewWorktree}
-        projectName={project.name}
-        onCreate={(branch) => (startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } }), setNewWorktree(false))}
-      />
       <RunWorkflowDialog projectId={project.id} workflow={runWorkflow} onClose={() => setRunWorkflow(undefined)} />
     </section>
   )
@@ -246,32 +217,6 @@ function LiftedProject({ project }: { project: Project }) {
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <FadeText text={project.name} />
     </div>
-  )
-}
-
-function WorktreeGroup({ branch, sessions, onNew }: { branch: string; sessions: Session[]; onNew?: () => void }) {
-  return (
-    <Collapsible defaultOpen aria-label={`worktree ${branch}`}>
-      <div className="group/wt flex h-7 items-center rounded-md pr-1 hover:bg-accent/60">
-        <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 px-1 text-left text-xs">
-          <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
-          <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <FadeText text={branch} className="font-mono" />
-        </CollapsibleTrigger>
-        {onNew && (
-          <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover/wt:opacity-100" aria-label={`在 ${branch} 新建对话`} onClick={onNew}>
-            <PlusIcon />
-          </Button>
-        )}
-      </div>
-      <CollapsibleContent>
-        <div className="ml-4 flex flex-col">
-          {sessions.map((s) => (
-            <SessionRow key={s.id} session={s} />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   )
 }
 

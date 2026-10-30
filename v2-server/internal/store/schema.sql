@@ -173,3 +173,42 @@ CREATE TABLE IF NOT EXISTS v2_projects (
  tenant_id uuid NOT NULL REFERENCES tenants(id),
  data jsonb NOT NULL
 );
+
+-- Chat conversations are page-owned: title, project and executor choice. Each conversation runs
+-- in exactly one execution session (v2_chat_sessions), in a directory the execution service makes
+-- for it; once that session ends the conversation is read-only. create_key is the Idempotency-Key
+-- of the request that created the row, so a retried creation finds the same conversation and
+-- replays the same attempt identity.
+CREATE TABLE IF NOT EXISTS v2_chat_conversations (
+	id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	tenant_id   uuid NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+	user_id     uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	create_key  text NOT NULL,
+	project_id  text NOT NULL,
+	executor_id text NOT NULL,
+	title       text NOT NULL,
+	created_at  timestamptz NOT NULL DEFAULT now(),
+	updated_at  timestamptz NOT NULL DEFAULT now(),
+	UNIQUE (tenant_id, user_id, create_key)
+);
+CREATE INDEX IF NOT EXISTS v2_chat_conversations_owner ON v2_chat_conversations (tenant_id, user_id);
+
+-- end_reason records why the session ended (stopped, deleted, interrupted). It is written before
+-- chat asks the port to end the session, so a page seeing session_ended can already read it; with
+-- ended_at still unset it means the end is in progress, and it is cleared if ending fails.
+CREATE TABLE IF NOT EXISTS v2_chat_sessions (
+	conversation_id uuid PRIMARY KEY REFERENCES v2_chat_conversations (id) ON DELETE CASCADE,
+	session_id      text NOT NULL UNIQUE,
+	started_at      timestamptz NOT NULL DEFAULT now(),
+	last_attempt_id text NOT NULL,
+	last_turn_id    text NOT NULL,
+	ended_at        timestamptz,
+	end_reason      text NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS v2_chat_project_order (
+	tenant_id   uuid NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+	user_id     uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	project_ids text[] NOT NULL,
+	PRIMARY KEY (tenant_id, user_id)
+);

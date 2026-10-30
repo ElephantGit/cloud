@@ -31,7 +31,7 @@ export default function ThemePage() {
         <h2 className="mb-4 text-sm font-medium">界面外观</h2>
         <ToggleGroup
           aria-label="界面外观"
-          value={[theme ?? 'system']}
+          value={[theme ?? 'light']}
           onValueChange={(values) => {
             const next = values[0]
             if (typeof next === 'string') setTheme(next)

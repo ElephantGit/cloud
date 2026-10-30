@@ -16,7 +16,7 @@ export function App({
       {/* createRoot cannot execute the library's SSR bootstrap. main.tsx initializes before mount. */}
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
+        defaultTheme="light"
         enableSystem
         storageKey="ora-v2-theme"
         disableTransitionOnChange

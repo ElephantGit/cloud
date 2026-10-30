@@ -129,8 +129,13 @@ test('corrupt local data shows a recoverable error and requires reset confirmati
 test('theme survives reload and follows system changes across existing pages', async ({
   page,
 }) => {
-  await page.emulateMedia({ colorScheme: 'light' })
+  await page.emulateMedia({ colorScheme: 'dark' })
   await login(page, '/settings/theme')
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
+  await expect(page.getByRole('button', { name: '浅色', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '主题', exact: true })).toBeVisible()
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
   await page.getByRole('button', { name: '深色', exact: true }).click()
   await expect(page.locator('html')).toHaveClass(/dark/)
   await page.reload()
@@ -149,6 +154,8 @@ test('theme survives reload and follows system changes across existing pages', a
     .evaluate((el) => getComputedStyle(el).backgroundColor)
   expect(darkSurface).not.toBe(lightSurface)
   await theme(page, '跟随系统')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '主题', exact: true })).toBeVisible()
   await page.emulateMedia({ colorScheme: 'dark' })
   await expect(page.locator('html')).toHaveClass(/dark/)
   await page.emulateMedia({ colorScheme: 'light' })

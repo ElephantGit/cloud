@@ -17,7 +17,7 @@ export function renderSettingsPage(element: ReactNode, path = '/settings') {
     <ThemeProvider
       attribute="class"
       storageKey="ora-v2-theme"
-      defaultTheme="system"
+      defaultTheme="light"
       scriptProps={{ type: 'text/plain' }}
     >
       <QueryClientProvider client={client}>

@@ -11,7 +11,7 @@ try {
   const preference = localStorage.getItem('ora-v2-theme')
   const dark =
     preference === 'dark' ||
-    (preference !== 'light' &&
+    (preference === 'system' &&
       matchMedia('(prefers-color-scheme: dark)').matches)
   document.documentElement.classList.toggle('dark', dark)
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'

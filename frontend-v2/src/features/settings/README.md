@@ -20,7 +20,7 @@
 - `components/`：设置页面共用的状态、确认、详情和 Markdown 展示。
 - `data/`：独立类型、示例、持久化边界与领域操作；只通过这里更新演示状态。
 
-主题由应用级 next-themes 管理，默认跟随系统，浏览器键为 `ora-v2-theme`。Vite 的 createRoot 模式不会执行组件里的 SSR 脚本，因此 `main.tsx` 在挂载前应用初始主题，provider 的 SSR 脚本显式保持 inert；之后由 provider 管理主题及系统变化。现有定时页仅补深色变量适配。
+主题由应用级 next-themes 管理，默认浅色，浏览器键为 `ora-v2-theme`。只有用户明确选择“跟随系统”后才读取系统外观；已有的浅色、深色或跟随系统偏好继续生效。Vite 的 createRoot 模式不会执行组件里的 SSR 脚本，因此 `main.tsx` 在挂载前应用初始主题，provider 的 SSR 脚本显式保持 inert；之后由 provider 管理主题及系统变化。现有定时页仅补深色变量适配。
 
 ## 验证
 

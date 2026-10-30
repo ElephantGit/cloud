@@ -86,11 +86,11 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 
 [`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
 
-ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId，使用该项目主 Workspace；两路不相互降级。HTTP/前端仍未开放项目绑定，公共项目和执行器目录就绪后才能接入。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，清理失败不释放占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
+ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。HTTP/前端仍未开放项目绑定，公共项目和执行器目录就绪后才能接入。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
 
 此包没有接入 main、HTTP 或前端，也不创建后台 goroutine。生产自动扫描和真实派发仍关闭，公共 Service 实现与记录底座就绪后才能装配。测试通过公共 Stub 注入结果，配合实际 PostgreSQL 验证编排行为；这不是模型调用或生产链路验收。
 
-未知接收在 ReadAttempt 未命中且尚无执行引用时调用公共 SealAttempt：已接收则先持久化原 Ref 后继续读取，明确未接收且空 Ref 才跳过并释放占位；错误、零值及非法组合保留占位。重复恢复只用原身份，不提交 prompt。已有 Ref 的执行仍需结果及 End 确认，不能用闭锁替代清理。公共闭锁的持久化和接收互斥由公共 Service 提供，当前消费方测试不代表该服务已经装配。
+`server.NewScheduleCoordinator(records, options, now)` 使用页面统一的 `Options.Execution`，不另建执行服务；宿主在公共启动恢复完成后调用 Recover，再驱动 Tick/Manual。Start 与同记录的核对/取消不会并行。启动错误或本地引用未保存时只按原 Caller 读取；无引用且确定没有进行中的 Start，查询未命中可记 skipped/execution_not_started。读取错误或已有引用但缺失记录时保留占位，不重放 prompt。Agent Cancel 结束会话，model-only Cancel 只停当前轮；定时对话两路都随后确认 End，保留历史与目录。详细状态、原因及 released 含义见 [状态说明](internal/store/occurrence-states.md)。
 
 ### 定时触发记录基础
 
@@ -103,7 +103,7 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 - 配置行锁串行化创建触发与编辑，数据库 UNIQUE 约束兜底防重复。跨租户/用户读写不可用。`Occurrences` 是内部有界分页接口（1–100条），按不可变 UUID 降序，游标为上一页末项 ID，不是时间排序。
 - 时间统一为 PostgreSQL 支持的微秒精度；固定间隔沿创建时间锚点，日历规则跳过 DST 空缺，同一本地时刻回拨时仅记录第一次。
 
-这一层接受显式计划时刻，不替调用方选择停机期间哪些时刻应记录。内部状态接口现已实现忙即跳过、同任务占位与基于证据的重启恢复规则，详见 [状态说明](internal/store/occurrence-states.md)；尚未装配真实执行或启动恢复扫描。明确 Busy 且未接收时记为 skipped；接收未知仍按原身份核对。结果终态与资源释放分开，未确认释放前继续阻止重叠。记录防重复不等于外部执行恰好一次，公共 Session/Turn/事件仍由公共执行模块保存。
+这一层接受显式计划时刻，不替调用方选择停机期间哪些时刻应记录。内部状态接口保留同任务占位与重启不补跑，尚未装配真实执行或启动扫描。公共 Busy 仅表示同会话/运行的上一轮仍活动，定时消费保留明确拒绝的 skipped/execution_busy，不做跨任务目录竞争或等待。结果终态与任务占位释放分开，未确认 End 前继续阻止重叠。记录防重复不等于外部执行恰好一次，公共 Session/Turn/事件仍由公共执行模块保存。
 
 真实 PostgreSQL 测试覆盖八个并发请求返回同一个触发、不同触发各自存在、编辑后的快照不变、暂停/版本/时刻拒绝、手动重试身份、分页隔离以及关闭数据库连接后重新读取。
 

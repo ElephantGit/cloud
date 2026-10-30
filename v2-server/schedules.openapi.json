@@ -453,31 +453,17 @@
   "components": {
     "schemas": {
       "ScheduleTarget": {
-        "type": "object",
-        "required": [
-          "kind",
-          "prompt",
-          "agent",
-          "model"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "chat"
-            ]
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
-          "prompt": {
-            "type": "string"
+          {
+            "$ref": "#/components/schemas/ScheduleWorkflowTarget"
           },
-          "agent": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
+          {
+            "$ref": "#/components/schemas/ScheduleTaskTarget"
           }
-        }
+        ]
       },
       "ScheduleRule": {
         "type": "object",
@@ -675,6 +661,90 @@
           },
           "requestId": {
             "type": "string"
+          }
+        }
+      },
+      "ScheduleChatTarget": {
+        "type": "object",
+        "required": [
+          "kind",
+          "prompt",
+          "agent",
+          "model"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "ScheduleWorkflowTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "workflowId",
+          "snapshot",
+          "inputs"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "workflow"
+            ]
+          },
+          "workflowId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "snapshot": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ScheduleTaskTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "sourceTaskId",
+          "supplementalInstruction"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "supplementalInstruction": {
+            "type": "string",
+            "maxLength": 32000
           }
         }
       }

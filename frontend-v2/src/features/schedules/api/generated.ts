@@ -25,19 +25,51 @@ import type {
 
 import { customInstance } from '../../../lib/api-client';
 import type { ErrorType , BodyType } from '../../../lib/api-client';
-export type ScheduleTargetKind = typeof ScheduleTargetKind[keyof typeof ScheduleTargetKind];
+export type ScheduleChatTargetKind = typeof ScheduleChatTargetKind[keyof typeof ScheduleChatTargetKind];
 
 
-export const ScheduleTargetKind = {
+export const ScheduleChatTargetKind = {
   chat: 'chat',
 } as const;
 
-export interface ScheduleTarget {
-  kind: ScheduleTargetKind;
+export interface ScheduleChatTarget {
+  kind: ScheduleChatTargetKind;
   prompt: string;
   agent: string;
   model: string;
 }
+
+export type ScheduleWorkflowTargetKind = typeof ScheduleWorkflowTargetKind[keyof typeof ScheduleWorkflowTargetKind];
+
+
+export const ScheduleWorkflowTargetKind = {
+  workflow: 'workflow',
+} as const;
+
+export type ScheduleWorkflowTargetInputs = {[key: string]: string};
+
+export interface ScheduleWorkflowTarget {
+  kind: ScheduleWorkflowTargetKind;
+  workflowId: string;
+  snapshot: string;
+  inputs: ScheduleWorkflowTargetInputs;
+}
+
+export type ScheduleTaskTargetKind = typeof ScheduleTaskTargetKind[keyof typeof ScheduleTaskTargetKind];
+
+
+export const ScheduleTaskTargetKind = {
+  task: 'task',
+} as const;
+
+export interface ScheduleTaskTarget {
+  kind: ScheduleTaskTargetKind;
+  sourceTaskId: string;
+  /** @maxLength 32000 */
+  supplementalInstruction: string;
+}
+
+export type ScheduleTarget = ScheduleChatTarget | ScheduleWorkflowTarget | ScheduleTaskTarget;
 
 export type ScheduleRuleKind = typeof ScheduleRuleKind[keyof typeof ScheduleRuleKind];
 

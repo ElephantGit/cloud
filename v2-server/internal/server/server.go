@@ -30,6 +30,8 @@ type Store interface {
 
 // Options tune the server.
 type Options struct {
+	// ScheduleTargets is the shared resource authorization adapter. Nil rejects non-chat saves.
+	ScheduleTargets ScheduleTargetResolver
 	// SessionTTL is how long a login lasts.
 	SessionTTL time.Duration
 	// DemoUser is the identity the development login signs in as.

@@ -50,6 +50,14 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
+### 引用型定时配置接入
+
+候选配置契约另支持 `workflow`（workflowId、snapshot UUID、字符串 inputs）及 `task`（sourceTaskId UUID、supplementalInstruction）。它们仍存于同一 PostgreSQL 配置表，并沿用创建者隔离与 version 并发检查。目标字段按类型严格区分；示例名称、`v3` 或 `CLOUD-128` 不能作为真实资源 ID。
+
+引用型创建/编辑需要宿主通过 `server.Options.ScheduleTargets` 注入共享资源模块实现的 `ScheduleTargetResolver`。它按当前租户和用户鉴权，校验工作流发布快照、参数及项目，或读取可访问任务的最新项目。无法访问的引用返回 `store.ErrNotFound`；模块未就绪返回 `ErrScheduleResourcesUnavailable`。已有任务的 projectId 由解析结果规范化，工作流解析出的项目必须与选择一致。接口成功返回只表示配置可保存，不表示执行已经接收。
+
+当前 `main.go` 未注入该解析器：引用型写入返回 `503 schedule_resources_unavailable`，没有任何内置示例目录或 permissive fallback。已经保存的引用型配置仍可读取，配置开关也可管理；将来每次派发必须重新校验当前权限、来源内容和项目，不能把保存时校验当执行授权。前端目前仍保留明确标注的内存演示，真实目录、执行编排装配与结果接入等待其所属模块交付后联调。
+
 ## 与正式 Cloud 的差异
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。

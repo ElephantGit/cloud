@@ -344,7 +344,8 @@ func ensureLeaderMember(ctx context.Context, tx pgx.Tx, tenant, squadID, agentID
 func requireActiveAgent(ctx context.Context, q dbTX, tenant, id string) error {
 	var active bool
 	e := q.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM v2_space_agents WHERE id = $1 AND tenant_id = $2 AND status = 'active')`,
+		SELECT EXISTS (SELECT 1 FROM v2_space_agents
+			WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND observed_state = 'installed')`,
 		id, tenant).Scan(&active)
 	if e != nil {
 		return fmt.Errorf("look up space agent: %w", e)

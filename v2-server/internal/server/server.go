@@ -30,6 +30,8 @@ type Store interface {
 	SessionUser(ctx context.Context, token string) (store.User, error)
 	Tenants(ctx context.Context, userID string) ([]store.Tenant, error)
 	TenantMembers(ctx context.Context, tenant, caller string) ([]store.Member, error)
+	TenantSpaces(ctx context.Context, tenant, caller string) ([]store.Space, error)
+	SpaceAgentPlugins(ctx context.Context, tenant, space, caller string) ([]store.SpacePlugin, error)
 }
 
 // Options tune the server.
@@ -59,6 +61,8 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v1/me", h.authed(h.me))
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/members", h.authed(h.members))
+	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces", h.authed(h.spaces))
+	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces/{sid}/plugins", h.authed(h.spacePlugins))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects/{pid}", h.authed(h.projects))

@@ -65,16 +65,56 @@ CREATE TABLE IF NOT EXISTS v2_squads (
 );
 CREATE INDEX IF NOT EXISTS v2_squads_tenant ON v2_squads (tenant_id, archived_at);
 
--- The v2 stand-in for the shared Space Agent directory: agent members reference an active row
--- here, and no HTTP route owns this table yet. It is not a second directory API.
-CREATE TABLE IF NOT EXISTS v2_space_agents (
-	id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	tenant_id  uuid NOT NULL REFERENCES tenants (id),
-	name       text NOT NULL,
-	status     text NOT NULL DEFAULT 'active',
-	created_at timestamptz NOT NULL DEFAULT now()
+-- v2 has exactly one collaboration space per tenant, created with the demo tenant. It exists so
+-- the contract's space and installed-plugin reads answer from real rows instead of a fixture.
+CREATE TABLE IF NOT EXISTS v2_spaces (
+	id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	tenant_id   uuid NOT NULL REFERENCES tenants (id),
+	name        text NOT NULL,
+	slug        text NOT NULL,
+	description text NOT NULL DEFAULT '',
+	created_by  uuid NOT NULL REFERENCES users (id),
+	version     bigint NOT NULL DEFAULT 1,
+	created_at  timestamptz NOT NULL DEFAULT now(),
+	updated_at  timestamptz NOT NULL DEFAULT now(),
+	archived_at timestamptz,
+	UNIQUE (tenant_id, slug)
 );
+
+-- The v2 stand-in for the shared Space Agent directory: one row per plugin installed in a space.
+-- Agent squad members reference the id of a row whose observed state is installed. The columns
+-- mirror the contract's SpacePlugin so the read route can answer without a translation layer.
+CREATE TABLE IF NOT EXISTS v2_space_agents (
+	id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	tenant_id        uuid NOT NULL REFERENCES tenants (id),
+	space_id         uuid REFERENCES v2_spaces (id),
+	name             text NOT NULL,
+	status           text NOT NULL DEFAULT 'active',
+	source_namespace text NOT NULL DEFAULT 'official',
+	identifier       text NOT NULL DEFAULT '',
+	desired_state    text NOT NULL DEFAULT 'installed',
+	desired_version  text NOT NULL DEFAULT '',
+	observed_state   text NOT NULL DEFAULT 'installed',
+	observed_version text NOT NULL DEFAULT '',
+	version          bigint NOT NULL DEFAULT 1,
+	created_at       timestamptz NOT NULL DEFAULT now(),
+	updated_at       timestamptz NOT NULL DEFAULT now()
+);
+-- Columns added after the first v2 schema; existing demo databases keep their rows. They run
+-- before the indexes below, which reference them: on an existing table the CREATE TABLE above is
+-- a no-op, so the columns exist only once these statements have run.
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS space_id uuid REFERENCES v2_spaces (id);
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS source_namespace text NOT NULL DEFAULT 'official';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS identifier text NOT NULL DEFAULT '';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS desired_state text NOT NULL DEFAULT 'installed';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS desired_version text NOT NULL DEFAULT '';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS observed_state text NOT NULL DEFAULT 'installed';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS observed_version text NOT NULL DEFAULT '';
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE v2_space_agents ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS v2_space_agents_tenant ON v2_space_agents (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_space_agents_plugin ON v2_space_agents (space_id, source_namespace, identifier);
 
 -- Members are typed references: a human row points at a user, an agent row at a Space Agent.
 -- Ending a membership keeps the row as history; rejoining inserts a new grant.

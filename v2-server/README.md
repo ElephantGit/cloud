@@ -85,6 +85,11 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 `execution.ErrUnavailable`；它不会伪造运行、清单或持久历史。替换为真实执行服务只改变启动装配，
 页面继续依赖同一接口。本注入点不新增 HTTP 契约。
 
+[`internal/modelturn`](internal/modelturn/README.md) 提供无项目的纯文本单轮执行器，
+通过配置的 provider 解析 JSON / SSE，返回完整答案、停止原因和实际可得的 usage。
+取消会停止上游调用；截断、损坏或缺少终态的响应明确失败。该组件尚未装配到公共执行服务，
+admission、会话和事件持久化、重启恢复仍由调用方负责。
+
 ## 与正式 Cloud 的差异
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。

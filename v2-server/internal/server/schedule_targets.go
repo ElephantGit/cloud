@@ -26,6 +26,7 @@ type ScheduleTarget struct {
 	Prompt                  string            `json:"prompt,omitempty"`
 	Agent                   string            `json:"agent,omitempty"`
 	Model                   string            `json:"model,omitempty"`
+	ExecutorID              string            `json:"executorId,omitempty"`
 	WorkflowID              string            `json:"workflowId,omitempty"`
 	Snapshot                string            `json:"snapshot,omitempty"`
 	Inputs                  map[string]string `json:"inputs,omitempty"`
@@ -49,6 +50,9 @@ func decodeScheduleTarget(raw json.RawMessage) (ScheduleTarget, string) {
 	switch target.Kind {
 	case "chat":
 		required = []string{"kind", "prompt", "agent", "model"}
+		if _, ok := fields["executorId"]; ok {
+			required = append(required, "executorId")
+		}
 		if strings.TrimSpace(target.Prompt) == "" || len(target.Prompt) > 32000 {
 			return target, "invalid_target"
 		}
@@ -82,7 +86,7 @@ func (h *handler) resolveScheduleTarget(ctx context.Context, tenant, user string
 		return store.ErrNotFound
 	}
 	if target.Kind == "chat" {
-		return nil
+		return h.resolveScheduleChat(ctx, tenant, user, in, target)
 	}
 	if h.opts.ScheduleTargets == nil {
 		return ErrScheduleResourcesUnavailable

@@ -37,6 +37,7 @@ export interface ScheduleChatTarget {
   prompt: string;
   agent: string;
   model: string;
+  executorId?: string;
 }
 
 export type ScheduleWorkflowTargetKind = typeof ScheduleWorkflowTargetKind[keyof typeof ScheduleWorkflowTargetKind];
@@ -141,6 +142,37 @@ export interface ScheduleError {
   code: string;
   params: ScheduleErrorParams;
   requestId: string;
+}
+
+export type ScheduleResourcesProjectsItem = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+export type ScheduleResourcesModelsItem = {
+  id: string;
+  name: string;
+};
+
+export type ScheduleResourcesExecutorsItem = {
+  id: string;
+  name: string;
+  agentName: string;
+  modelId: string;
+};
+
+export type ScheduleResourcesAvailable = {
+  projects: boolean;
+  models: boolean;
+  executors: boolean;
+};
+
+export interface ScheduleResources {
+  projects: ScheduleResourcesProjectsItem[];
+  models: ScheduleResourcesModelsItem[];
+  executors: ScheduleResourcesExecutorsItem[];
+  available: ScheduleResourcesAvailable;
 }
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -439,3 +471,84 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getSetScheduleConfigEnabledMutationOptions(options), queryClient);
     }
+
+export const getScheduleResources = (
+    tid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<ScheduleResources>(
+      {url: `/api/v2/tenants/${tid}/schedule-resources`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetScheduleResourcesQueryKey = (tid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/schedule-resources`
+    ] as const;
+    }
+
+
+export const getGetScheduleResourcesQueryOptions = <TData = Awaited<ReturnType<typeof getScheduleResources>>, TError = ErrorType<ScheduleError>>(tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScheduleResourcesQueryKey(tid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScheduleResources>>> = ({ signal }) => getScheduleResources(tid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetScheduleResourcesQueryResult = NonNullable<Awaited<ReturnType<typeof getScheduleResources>>>
+export type GetScheduleResourcesQueryError = ErrorType<ScheduleError>
+
+
+export function useGetScheduleResources<TData = Awaited<ReturnType<typeof getScheduleResources>>, TError = ErrorType<ScheduleError>>(
+ tid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScheduleResources>>,
+          TError,
+          Awaited<ReturnType<typeof getScheduleResources>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScheduleResources<TData = Awaited<ReturnType<typeof getScheduleResources>>, TError = ErrorType<ScheduleError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScheduleResources>>,
+          TError,
+          Awaited<ReturnType<typeof getScheduleResources>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScheduleResources<TData = Awaited<ReturnType<typeof getScheduleResources>>, TError = ErrorType<ScheduleError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetScheduleResources<TData = Awaited<ReturnType<typeof getScheduleResources>>, TError = ErrorType<ScheduleError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScheduleResources>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetScheduleResourcesQueryOptions(tid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

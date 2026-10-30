@@ -448,6 +448,73 @@
           }
         }
       }
+    },
+    "/api/v2/tenants/{tid}/schedule-resources": {
+      "get": {
+        "operationId": "getScheduleResources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared execution resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResources"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -688,6 +755,9 @@
           },
           "model": {
             "type": "string"
+          },
+          "executorId": {
+            "type": "string"
           }
         }
       },
@@ -745,6 +815,107 @@
           "supplementalInstruction": {
             "type": "string",
             "maxLength": 32000
+          }
+        }
+      },
+      "ScheduleResources": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "projects",
+          "models",
+          "executors",
+          "available"
+        ],
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "description"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "executors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "agentName",
+                "modelId"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "agentName": {
+                  "type": "string"
+                },
+                "modelId": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "projects",
+              "models",
+              "executors"
+            ],
+            "properties": {
+              "projects": {
+                "type": "boolean"
+              },
+              "models": {
+                "type": "boolean"
+              },
+              "executors": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -55,19 +56,19 @@ func (s *events) Next(context.Context) (execution.Event, error) {
 
 func (s *events) Close() error { return nil }
 
-// chatRuntime admits one session per workspace, frees it on End or Cancel, and replays the same
-// events for any session.
-func chatRuntime() *executiontest.Stub {
+// chatRuntime starts a session per conversation, runs one turn at a time until finish ends it,
+// ends the session when a running turn is cancelled, and replays the same events for any session.
+func chatRuntime() (rt *executiontest.Stub, finish func(sid string)) {
 	var mu sync.Mutex
-	busy := map[execution.Target]bool{}
-	targets := map[string]execution.Target{}
-	release := func(sid string) {
-		mu.Lock()
-		defer mu.Unlock()
-		delete(busy, targets[sid])
-	}
+	running := map[string]bool{}
+	ended := map[string]bool{}
 	n := 0
 	at := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	finish = func(sid string) {
+		mu.Lock()
+		defer mu.Unlock()
+		running[sid] = false
+	}
 	return &executiontest.Stub{
 		ListExecutorsFunc: func(context.Context, execution.Scope) ([]execution.Executor, error) {
 			return []execution.Executor{{ID: "fixture", Name: "OpenCode · Fixture", AgentName: "OpenCode", Model: execution.Model{ID: "fixture", Name: "Fixture"}}}, nil
@@ -75,27 +76,42 @@ func chatRuntime() *executiontest.Stub {
 		StartFunc: func(_ context.Context, _ execution.Scope, req execution.StartRequest) (execution.Ref, error) {
 			mu.Lock()
 			defer mu.Unlock()
-			if busy[req.Target] {
-				return execution.Ref{}, execution.ErrWorkspaceBusy
-			}
-			busy[req.Target] = true
 			n++
-			sid := "s" + string(rune('0'+n))
-			targets[sid] = req.Target
+			sid := fmt.Sprintf("s%d", n)
+			running[sid] = true
 			return execution.Ref{SessionID: sid, TurnID: "t1"}, nil
 		},
 		AppendFunc: func(_ context.Context, _ execution.Scope, req execution.AppendRequest) (execution.Ref, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case ended[req.SessionID]:
+				return execution.Ref{}, execution.ErrSessionEnded
+			case running[req.SessionID]:
+				return execution.Ref{}, execution.ErrWorkspaceBusy
+			}
+			running[req.SessionID] = true
 			return execution.Ref{SessionID: req.SessionID, TurnID: "t2"}, nil
 		},
 		CancelFunc: func(_ context.Context, _ execution.Scope, ref execution.Ref) (execution.Result, error) {
-			release(ref.SessionID)
+			mu.Lock()
+			defer mu.Unlock()
+			running[ref.SessionID], ended[ref.SessionID] = false, true
 			return execution.Result{Status: execution.StatusCancelled, StopReason: "cancelled", FailureCode: ""}, nil
 		},
 		ReadSessionFunc: func(_ context.Context, _ execution.Scope, sid string) (execution.Session, error) {
-			return execution.Session{ID: sid, EndedAt: &at}, nil
+			mu.Lock()
+			defer mu.Unlock()
+			s := execution.Session{ID: sid}
+			if ended[sid] {
+				s.EndedAt = &at
+			}
+			return s, nil
 		},
 		EndFunc: func(_ context.Context, _ execution.Scope, sid string) error {
-			release(sid)
+			mu.Lock()
+			defer mu.Unlock()
+			running[sid], ended[sid] = false, true
 			return nil
 		},
 		SubscribeFunc: func(_ context.Context, _ execution.Scope, sid string, after uint64) (execution.Stream, error) {
@@ -108,7 +124,7 @@ func chatRuntime() *executiontest.Stub {
 			}
 			return &events{list: all[min(int(after), len(all)):]}, nil
 		},
-	}
+	}, finish
 }
 
 type chatClient struct {
@@ -137,16 +153,18 @@ func newChatClient(t *testing.T, svc func(*store.Store) *chat.Service) *chatClie
 	return cl
 }
 
-func withRuntime(s *store.Store) *chat.Service {
-	rt := chatRuntime()
-	svc, e := chat.New(s, struct {
-		execution.Service
-		execution.Catalog
-	}{rt, rt}, chat.Options{IdleAfter: time.Minute})
-	if e != nil {
-		panic(e)
+// withRuntime wires a chat service to chatRuntime; finish lets a test end a running turn.
+func withRuntime(finish *func(string)) func(*store.Store) *chat.Service {
+	return func(s *store.Store) *chat.Service {
+		rt, f := chatRuntime()
+		if finish != nil {
+			*finish = f
+		}
+		return chat.New(s, struct {
+			execution.Service
+			execution.Catalog
+		}{rt, rt}, chat.Options{})
 	}
-	return svc
 }
 
 func (c *chatClient) raw(method, path string, body any, header map[string]string) (int, map[string]any) {
@@ -208,7 +226,8 @@ func TestChatUnavailableWithoutRuntime(t *testing.T) {
 }
 
 func TestChatConversationLifecycle(t *testing.T) {
-	c := newChatClient(t, withRuntime)
+	var finish func(string)
+	c := newChatClient(t, withRuntime(&finish))
 	if status, body := c.do("GET", "/executors", nil); status != 200 || len(body["items"].([]any)) != 1 {
 		t.Fatalf("executors = %d %v", status, body)
 	}
@@ -225,32 +244,34 @@ func TestChatConversationLifecycle(t *testing.T) {
 	}
 	conv := created["conversation"].(map[string]any)
 	id := conv["id"].(string)
-	if conv["title"] != "你好" || created["turn"].(map[string]any)["sessionId"] != "s1" {
+	if conv["title"] != "你好" || conv["session"].(map[string]any)["id"] != "s1" || created["turn"].(map[string]any)["sessionId"] != "s1" {
 		t.Fatalf("created = %v", created)
 	}
-	if status, body := c.post("/conversations", "k2", input); status != 409 || body["code"] != "workspace_busy" || body["params"].(map[string]any)["conversationId"] != id {
-		t.Fatalf("busy = %d %v", status, body)
+	if status, body := c.post("/conversations", "k2", input); status != 201 || body["turn"].(map[string]any)["sessionId"] != "s2" {
+		t.Fatalf("a second conversation in the same project = %d %v", status, body)
 	}
-	if status, body := c.do("PATCH", "/conversations/"+id, map[string]any{"title": "改名"}); status != 200 || body["title"] != "改名" {
-		t.Fatalf("rename = %d %v", status, body)
+	if status, body := c.post("/conversations/"+id+"/messages", "k3", map[string]any{"prompt": "继续"}); status != 409 || body["code"] != "turn_running" {
+		t.Fatalf("send while the turn runs = %d %v", status, body)
 	}
+	finish("s1")
 	if status, body := c.post("/conversations/"+id+"/messages", "k3", map[string]any{"prompt": "继续"}); status != 201 || body["turn"].(map[string]any)["turnId"] != "t2" {
 		t.Fatalf("send = %d %v", status, body)
 	}
-	if status, body := c.do("GET", "/conversations", nil); status != 200 || len(body["items"].([]any)) != 1 {
-		t.Fatalf("list = %d %v", status, body)
-	}
-	if status, body := c.post("/conversations/"+id+"/end", "k6", nil); status != 200 || body["sessions"].([]any)[0].(map[string]any)["endReason"] != "released" {
-		t.Fatalf("end = %d %v", status, body)
-	}
-	if status, body := c.post("/conversations/"+id+"/messages", "k7", map[string]any{"prompt": "再来"}); status != 201 || body["turn"].(map[string]any)["sessionId"] == "s1" {
-		t.Fatalf("send after end = %d %v", status, body)
+	if status, body := c.do("PATCH", "/conversations/"+id, map[string]any{"title": "改名"}); status != 200 || body["title"] != "改名" {
+		t.Fatalf("rename = %d %v", status, body)
 	}
 	if status, body := c.post("/conversations/"+id+"/stop", "k4", nil); status != 200 || body["result"].(map[string]any)["status"] != "cancelled" {
 		t.Fatalf("stop = %d %v", status, body)
 	}
 	if status, body := c.post("/conversations/"+id+"/stop", "k5", nil); status != 409 || body["code"] != "no_active_turn" {
 		t.Fatalf("stop again = %d %v", status, body)
+	}
+	if status, body := c.post("/conversations/"+id+"/messages", "k6", map[string]any{"prompt": "再来"}); status != 409 || body["code"] != "conversation_ended" {
+		t.Fatalf("send after stop = %d %v", status, body)
+	}
+	status, list := c.do("GET", "/conversations", nil)
+	if items := list["items"].([]any); status != 200 || len(items) != 2 || items[0].(map[string]any)["session"].(map[string]any)["endReason"] != "stopped" {
+		t.Fatalf("list = %d %v", status, list)
 	}
 	if status, _ := c.do("DELETE", "/conversations/"+id, nil); status != 204 {
 		t.Fatalf("delete = %d", status)
@@ -264,10 +285,10 @@ func TestChatConversationLifecycle(t *testing.T) {
 }
 
 func TestChatEventStream(t *testing.T) {
-	c := newChatClient(t, withRuntime)
+	c := newChatClient(t, withRuntime(nil))
 	_, created := c.post("/conversations", "k1", map[string]any{"projectId": "demo", "executorId": "fixture", "prompt": "你好"})
 	id := created["conversation"].(map[string]any)["id"].(string)
-	path := c.base + "/api/v2/tenants/" + c.tenant + "/chat/conversations/" + id + "/sessions/s1/events"
+	path := c.base + "/api/v2/tenants/" + c.tenant + "/chat/conversations/" + id + "/events"
 
 	read := func(lastEventID string) []string {
 		req, _ := http.NewRequest("GET", path, nil)
@@ -308,14 +329,14 @@ func TestChatEventStream(t *testing.T) {
 	if res, _ := c.http.Do(req); res.StatusCode != 400 {
 		t.Fatalf("bad cursor = %d", res.StatusCode)
 	}
-	req, _ = http.NewRequest("GET", strings.Replace(path, "/s1/", "/s9/", 1), nil)
+	req, _ = http.NewRequest("GET", strings.Replace(path, id, "00000000-0000-0000-0000-000000000009", 1), nil)
 	if res, _ := c.http.Do(req); res.StatusCode != 404 {
-		t.Fatalf("foreign session = %d", res.StatusCode)
+		t.Fatalf("unknown conversation = %d", res.StatusCode)
 	}
 }
 
 func TestChatProjectOrder(t *testing.T) {
-	c := newChatClient(t, withRuntime)
+	c := newChatClient(t, withRuntime(nil))
 	if status, body := c.do("GET", "/project-order", nil); status != 200 || len(body["projectIds"].([]any)) != 0 {
 		t.Fatalf("empty order = %d %v", status, body)
 	}

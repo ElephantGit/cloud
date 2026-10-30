@@ -213,12 +213,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // fault writes Cloud's Error shape.
 func fault(w http.ResponseWriter, status int, code string) {
-	faultParams(w, status, code, map[string]any{})
-}
-
-// faultParams writes Cloud's Error shape with safe parameters for the client.
-func faultParams(w http.ResponseWriter, status int, code string, params map[string]any) {
-	writeJSON(w, status, map[string]any{"code": code, "params": params, "requestId": requestID()})
+	writeJSON(w, status, map[string]any{"code": code, "params": map[string]any{}, "requestId": requestID()})
 }
 
 func internal(w http.ResponseWriter, op string, e error) {

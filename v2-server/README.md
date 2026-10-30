@@ -96,34 +96,31 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 | 路由 | 行为 |
 |---|---|
 | `GET …/chat/executors` | 可选的 Agent 与模型绑定，来自公共执行目录 |
-| `GET …/chat/conversations` | 本人在该租户的对话，按创建时间排序，各带执行 session 列表 |
+| `GET …/chat/conversations` | 本人在该租户的对话，按创建时间排序，各带自己的执行 session |
 | `POST …/chat/conversations` | 以第一条消息创建对话并 `Start`，返回 201 和该轮的 session/turn |
 | `PATCH …/chat/conversations/{cid}` | 改名 |
 | `DELETE …/chat/conversations/{cid}` | 先 `End` 活 session，确认后再删除对话 |
-| `POST …/chat/conversations/{cid}/messages` | 发下一条消息：活 session 上 `Append`，已结束则在原 Workspace 新开 session |
+| `POST …/chat/conversations/{cid}/messages` | 在对话的 session 上 `Append` 下一条消息 |
 | `POST …/chat/conversations/{cid}/stop` | `Cancel` 最近一轮 |
-| `POST …/chat/conversations/{cid}/end` | `End` 活 session，释放 Workspace；下一条消息新开 session |
-| `GET …/chat/conversations/{cid}/sessions/{sid}/events` | 一个 session 的事件，Server-Sent Events |
+| `GET …/chat/conversations/{cid}/events` | 对话 session 的事件，Server-Sent Events |
 | `GET`/`PUT …/chat/project-order` | 本人在左栏的项目顺序 |
 
 `…` 是 `/api/v2/tenants/{tid}`。所有路由要求登录 cookie 和成员关系；他人的对话按 404 处理。没有装配执行运行时（`server.Options.Chat` 为空）时一律返回 503 `execution_unavailable`。
 
-- **一个对话、多个 session**：固定 Node 的活 session 在两轮之间一直持有 Workspace，只有 `End`（或取消进行中的一轮）才释放。对话在下列情况结束当前 session，并记下 `endReason`：
-  - `stopped`：停止。
-  - `released`：手动结束会话，把 Workspace 让给别的对话。
-  - `idle`：最近一轮结束后空闲超过 `chat.Options.IdleAfter`，由 `RunIdleReclaim` 定期 `End`；进行中的一轮不会被结束。
+- **一个对话、一个 session**：创建对话时只选项目，执行服务为这个对话新建目录，对话之间、对话与定时任务和工作流之间都不争抢目录。session 在两轮之间保持，直到下列情况之一，并记下 `endReason`：
+  - `stopped`：停止。固定 Node 取消进行中的一轮会结束整个 session。
   - `deleted`：删除对话。
   - `interrupted`：在对话之外结束，例如服务重启后 `Append` 返回 `ErrSessionEnded`。
 
-  下一条消息在同一 Workspace 新开 session，Agent 不继承之前的上下文；页面在 session 之间显示分隔。
-- **幂等**：创建对话和发消息必须带 `Idempotency-Key`，它就是该轮的 attempt ID。用同一个 key 重试，返回原对话和原 Ref，不会重复执行；同一个 key 换了参数，返回 409 `idempotency_conflict`。接收结果未知时返回 503 `admission_unknown`，要用同一个 key 重试。第一条消息被明确拒绝时不留下空对话。
-- **忙碌**：Workspace 被占用时返回 409 `workspace_busy`。占用者是本人的对话时，`params` 带它的 `conversationId` 和 `title`；其他调用方或其他人占用时不透露。没有排队。
+  session 结束后对话只读：再发消息返回 409 `conversation_ended`，页面提示新开对话。不会在同一对话里新开 session，也不重放上下文。
+- **幂等**：创建对话和发消息必须带 `Idempotency-Key`，它就是该轮的 attempt ID。用同一个 key 重试，返回原对话和原 Ref，不会重复执行；同一个 key 换了参数，返回 409 `idempotency_conflict`。结果未知时返回 503 `outcome_unknown`，要用同一个 key 重试。第一条消息被明确拒绝时不留下空对话。
+- **上一轮未结束**：返回 409 `turn_running`，由页面排队，上一轮结束后再发。
 - **事件流**：每条消息的 `id` 是 session 内序号，`Last-Event-ID`（或 `after`）从其后续上。`session_ended` 之后发 `end` 事件；读取失败发 `failure`，不会冒充正常结束。快照 `history` 每次整份替换，`records[].data` 是固定 Node 的 HistoryLine。关闭事件流只停止观察，不停止 Agent。
-- **简化**：同一对话的操作用进程内互斥串行，依赖 v2-server 是单进程；首版只接文本消息。
+- **简化**：同一对话的操作用进程内互斥串行，依赖 v2-server 是单进程；首版只接文本消息，必须选项目。
 
-装配（由公共执行能力接入时完成）：`chat.New(db, runtime, chat.Options{IdleAfter: 10 * time.Minute})`，`go svc.RunIdleReclaim(ctx, time.Minute)`，再把它传给 `server.Options{Chat: svc}`。
+装配（由公共执行能力接入时完成）：`chat.New(db, runtime, chat.Options{})`，再把它传给 `server.Options{Chat: svc}`。
 
-HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，并覆盖对话生命周期、忙碌、事件流续传与项目顺序；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、未知接收、停止后新开 session、重启中断、空闲回收和删除顺序。
+HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，并覆盖对话生命周期、停止后只读、事件流续传与项目顺序；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、结果未知、上一轮未结束、停止与重启后只读和删除顺序。
 
 ## 进程内 Agent 执行接口
 

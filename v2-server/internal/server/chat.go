@@ -38,8 +38,7 @@ func (h *handler) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE "+chatBase+"/conversations/{cid}", h.chat(h.chatDelete))
 	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/messages", h.chat(h.chatSend))
 	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/stop", h.chat(h.chatStop))
-	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/end", h.chat(h.chatRelease))
-	mux.HandleFunc("GET "+chatBase+"/conversations/{cid}/sessions/{sid}/events", h.chat(h.chatEvents))
+	mux.HandleFunc("GET "+chatBase+"/conversations/{cid}/events", h.chat(h.chatEvents))
 	mux.HandleFunc("GET "+chatBase+"/project-order", h.chat(h.chatProjectOrder))
 	mux.HandleFunc("PUT "+chatBase+"/project-order", h.chat(h.chatSetProjectOrder))
 }
@@ -122,11 +121,10 @@ func (h *handler) chatCreate(w http.ResponseWriter, r *http.Request, c chatReque
 		return
 	}
 	var in struct {
-		ProjectID   string `json:"projectId"`
-		WorkspaceID string `json:"workspaceId"`
-		ExecutorID  string `json:"executorId"`
-		Title       string `json:"title"`
-		Prompt      string `json:"prompt"`
+		ProjectID  string `json:"projectId"`
+		ExecutorID string `json:"executorId"`
+		Title      string `json:"title"`
+		Prompt     string `json:"prompt"`
 	}
 	if !decodeStrict(w, r, &in) {
 		return
@@ -134,9 +132,6 @@ func (h *handler) chatCreate(w http.ResponseWriter, r *http.Request, c chatReque
 	switch {
 	case !boundedID(in.ProjectID):
 		fault(w, http.StatusBadRequest, "invalid_project")
-		return
-	case in.WorkspaceID != "" && !boundedID(in.WorkspaceID):
-		fault(w, http.StatusBadRequest, "invalid_workspace")
 		return
 	case !boundedID(in.ExecutorID):
 		fault(w, http.StatusBadRequest, "invalid_executor")
@@ -149,7 +144,7 @@ func (h *handler) chatCreate(w http.ResponseWriter, r *http.Request, c chatReque
 		return
 	}
 	conv, ref, e := c.svc.Create(r.Context(), c.scope, chat.CreateRequest{
-		Key: key, ProjectID: in.ProjectID, WorkspaceID: in.WorkspaceID, ExecutorID: in.ExecutorID, Title: in.Title, Prompt: in.Prompt,
+		Key: key, ProjectID: in.ProjectID, ExecutorID: in.ExecutorID, Title: in.Title, Prompt: in.Prompt,
 	})
 	if e != nil {
 		chatFault(w, "chat create", e)
@@ -231,15 +226,6 @@ func (h *handler) chatStop(w http.ResponseWriter, r *http.Request, c chatRequest
 	writeJSON(w, http.StatusOK, map[string]any{"result": resultOf(result)})
 }
 
-func (h *handler) chatRelease(w http.ResponseWriter, r *http.Request, c chatRequest) {
-	conv, e := c.svc.Release(r.Context(), c.scope, r.PathValue("cid"))
-	if e != nil {
-		chatFault(w, "chat release", e)
-		return
-	}
-	writeJSON(w, http.StatusOK, conv)
-}
-
 type chatEvent struct {
 	Sequence   uint64                     `json:"sequence"`
 	OccurredAt time.Time                  `json:"occurredAt"`
@@ -250,8 +236,8 @@ type chatEvent struct {
 	Result     *chatResult                `json:"result,omitempty"`
 }
 
-// chatEvents relays one session's events as Server-Sent Events. Each event's id is its session
-// sequence, so a reconnecting EventSource resumes after the last one it saw. A stream that ends
+// chatEvents relays the conversation's session events as Server-Sent Events. Each event's id is
+// its session sequence, so a reconnecting EventSource resumes after the last one it saw. A stream that ends
 // with the session sends an "end" event; a failure sends "failure" with a code instead of looking
 // like a clean end. Closing the stream stops observation only, never the Agent.
 func (h *handler) chatEvents(w http.ResponseWriter, r *http.Request, c chatRequest) {
@@ -266,12 +252,8 @@ func (h *handler) chatEvents(w http.ResponseWriter, r *http.Request, c chatReque
 		return
 	}
 	ctx := r.Context()
-	sid := r.PathValue("sid")
-	if _, e := c.svc.Session(ctx, c.scope, r.PathValue("cid"), sid); e != nil {
-		chatFault(w, "chat events", e)
-		return
-	}
-	stream, e := c.svc.Subscribe(ctx, c.scope, sid, after)
+	cid := r.PathValue("cid")
+	stream, e := c.svc.Subscribe(ctx, c.scope, cid, after)
 	if e != nil {
 		chatFault(w, "chat subscribe", e)
 		return
@@ -324,7 +306,7 @@ func (h *handler) chatEvents(w http.ResponseWriter, r *http.Request, c chatReque
 				return
 			case n.err != nil:
 				if ctx.Err() == nil {
-					slog.Error("chat events", "session", sid, "error", n.err)
+					slog.Error("chat events", "conversation", cid, "error", n.err)
 					writeEvent(w, "failure", "", map[string]string{"code": eventFailure(n.err)})
 					flusher.Flush()
 				}
@@ -415,15 +397,12 @@ func (h *handler) chatSetProjectOrder(w http.ResponseWriter, r *http.Request, c 
 
 // chatFault maps the chat service's and the execution port's errors to stable codes.
 func chatFault(w http.ResponseWriter, op string, e error) {
-	var busy *chat.BusyError
 	switch {
-	case errors.As(e, &busy):
-		params := map[string]any{}
-		if o := busy.Occupant; o != nil {
-			params["conversationId"] = o.ID
-			params["title"] = o.Title
-		}
-		faultParams(w, http.StatusConflict, "workspace_busy", params)
+	case errors.Is(e, execution.ErrWorkspaceBusy):
+		// The previous turn is still running; the page queues the prompt and sends it after.
+		fault(w, http.StatusConflict, "turn_running")
+	case errors.Is(e, execution.ErrSessionEnded):
+		fault(w, http.StatusConflict, "conversation_ended")
 	case errors.Is(e, store.ErrNotFound), errors.Is(e, execution.ErrNotFound):
 		fault(w, http.StatusNotFound, "not_found")
 	case errors.Is(e, store.ErrKeyReused), errors.Is(e, execution.ErrConflict):
@@ -434,9 +413,9 @@ func chatFault(w http.ResponseWriter, op string, e error) {
 		fault(w, http.StatusBadRequest, "unsupported_content")
 	case errors.Is(e, execution.ErrInvalidRequest):
 		fault(w, http.StatusBadRequest, "invalid_request")
-	case errors.Is(e, execution.ErrAdmissionUnknown), errors.Is(e, context.DeadlineExceeded):
+	case errors.Is(e, context.DeadlineExceeded):
 		// The same request, with the same Idempotency-Key, settles the outcome.
-		fault(w, http.StatusServiceUnavailable, "admission_unknown")
+		fault(w, http.StatusServiceUnavailable, "outcome_unknown")
 	case errors.Is(e, execution.ErrStopUnconfirmed):
 		fault(w, http.StatusServiceUnavailable, "stop_unconfirmed")
 	case errors.Is(e, execution.ErrUnavailable):

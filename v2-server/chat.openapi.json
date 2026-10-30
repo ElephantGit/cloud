@@ -152,7 +152,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Create a conversation by admitting its first prompt",
+        "summary": "Create a conversation and start its session with the first prompt",
         "parameters": [
           {
             "name": "tid",
@@ -170,7 +170,7 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "The turn's attempt identity. Retry an uncertain request (503 admission_unknown) with the same key; it never runs the prompt twice."
+            "description": "The turn's attempt identity. Retry an uncertain request (503 outcome_unknown) with the same key; it never runs the prompt twice."
           }
         ],
         "responses": {
@@ -245,7 +245,7 @@
             }
           }
         },
-        "description": "A definitely refused first prompt leaves no conversation. 409 workspace_busy carries params.conversationId and params.title when the person's own conversation holds the workspace."
+        "description": "Each conversation runs in its own session and directory, so conversations never contend. A definitely refused first prompt leaves no conversation."
       }
     },
     "/api/v2/tenants/{tid}/chat/conversations/{cid}": {
@@ -413,7 +413,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Admit the next prompt",
+        "summary": "Send the next prompt",
         "parameters": [
           {
             "name": "tid",
@@ -439,7 +439,7 @@
               "type": "string",
               "maxLength": 200
             },
-            "description": "The turn's attempt identity. Retry an uncertain request (503 admission_unknown) with the same key; it never runs the prompt twice."
+            "description": "The turn's attempt identity. Retry an uncertain request (503 outcome_unknown) with the same key; it never runs the prompt twice."
           }
         ],
         "responses": {
@@ -514,7 +514,95 @@
             }
           }
         },
-        "description": "Appends to the live session, or starts a new session when the last one ended; the response's turn.sessionId says which."
+        "description": "Appends to the conversation's session. 409 turn_running: the previous turn is still running, so the page queues the prompt. 409 conversation_ended: the session has ended (stopped or the server restarted) and the conversation is read-only; start a new chat."
+      }
+    },
+    "/api/v2/tenants/{tid}/chat/conversations/{cid}/events": {
+      "get": {
+        "operationId": "streamChatConversationEvents",
+        "tags": [
+          "chat"
+        ],
+        "summary": "Follow the conversation's session events as Server-Sent Events",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Resume after this sequence; Last-Event-ID takes precedence."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An event stream. Each message's id is its sequence and its data a ChatEvent; an 'end' event follows session_ended, and 'failure' (data {code}) reports a broken stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v2/tenants/{tid}/chat/conversations/{cid}/stop": {
@@ -594,183 +682,7 @@
             }
           }
         },
-        "description": "On the fixed Node this ends the whole session. 503 stop_unconfirmed means stopping is not confirmed yet."
-      }
-    },
-    "/api/v2/tenants/{tid}/chat/conversations/{cid}/end": {
-      "post": {
-        "operationId": "endChatSession",
-        "tags": [
-          "chat"
-        ],
-        "summary": "End the live session so its workspace is free",
-        "parameters": [
-          {
-            "name": "tid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatConversation"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Ends the session between turns (stopping a running turn with it); the next prompt starts a new session. 409 no_active_turn when no session is live."
-      }
-    },
-    "/api/v2/tenants/{tid}/chat/conversations/{cid}/sessions/{sid}/events": {
-      "get": {
-        "operationId": "streamChatSessionEvents",
-        "tags": [
-          "chat"
-        ],
-        "summary": "Follow one session's events as Server-Sent Events",
-        "parameters": [
-          {
-            "name": "tid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "sid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Resume after this sequence; Last-Event-ID takes precedence."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "An event stream. Each message's id is its sequence and its data a ChatEvent; an 'end' event follows session_ended, and 'failure' (data {code}) reports a broken stream.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatError"
-                }
-              }
-            }
-          }
-        }
+        "description": "On the fixed Node this ends the whole session, and the conversation becomes read-only. 503 stop_unconfirmed means stopping is not confirmed yet."
       }
     },
     "/api/v2/tenants/{tid}/chat/project-order": {
@@ -993,9 +905,6 @@
           "id": {
             "type": "string"
           },
-          "ordinal": {
-            "type": "integer"
-          },
           "startedAt": {
             "type": "string",
             "format": "date-time"
@@ -1010,17 +919,14 @@
             "enum": [
               "",
               "stopped",
-              "released",
-              "idle",
               "deleted",
               "interrupted"
             ],
-            "description": "Why chat ended the session (empty when it ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives."
+            "description": "Why the session ended: stopped, deleted, or interrupted (ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives."
           }
         },
         "required": [
           "id",
-          "ordinal",
           "startedAt",
           "endedAt",
           "endReason"
@@ -1036,10 +942,6 @@
           "projectId": {
             "type": "string"
           },
-          "workspaceId": {
-            "type": "string",
-            "description": "Empty selects the project's main workspace."
-          },
           "executorId": {
             "type": "string"
           },
@@ -1054,23 +956,24 @@
             "type": "string",
             "format": "date-time"
           },
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChatSession"
-            },
-            "description": "Execution sessions in order; only the last can be live."
+          "session": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatSession"
+              }
+            ],
+            "nullable": true,
+            "description": "The conversation's one execution session; null only until its first turn is accepted. Once it has ended the conversation is read-only."
           }
         },
         "required": [
           "id",
           "projectId",
-          "workspaceId",
           "executorId",
           "title",
           "createdAt",
           "updatedAt",
-          "sessions"
+          "session"
         ]
       },
       "ChatConversationList": {
@@ -1097,10 +1000,6 @@
         "additionalProperties": false,
         "properties": {
           "projectId": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "workspaceId": {
             "type": "string",
             "maxLength": 200
           },

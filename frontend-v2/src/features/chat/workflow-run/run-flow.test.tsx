@@ -41,26 +41,33 @@ describe('workflow runs in chat', () => {
     demoRunClock.nodeStepMs = 1500
   })
 
-  it('runs a published workflow from a project and shows each node’s work', async () => {
+  it('runs a published workflow from a project and plays it on the Theater', async () => {
     const user = userEvent.setup()
     renderPage()
     await createRun(user, '审查 cloud#210')
 
-    // The run opens pending in the main area and is listed with the project's sessions.
+    // The run opens pending on its Overview and is listed with the project's sessions.
     const pane = await screen.findByRole('region', { name: '工作流运行' })
-    // The run view is loaded on first use.
-    expect(await within(pane).findByRole('heading', { level: 2, name: '审查 cloud#210' })).toBeInTheDocument()
+    // The run view is loaded on first use, which takes a while the first time in jsdom.
+    expect(await within(pane).findByRole('heading', { level: 2, name: '审查 cloud#210' }, { timeout: 10_000 })).toBeInTheDocument()
     expect(within(pane).getByText('演示运行')).toBeInTheDocument()
+    expect(within(pane).getByRole('button', { name: '全图' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(project()).getByRole('button', { name: '工作流运行 审查 cloud#210（未运行）' })).toHaveAttribute('aria-current', 'page')
 
+    // Starting moves to the Theater, which ends on the result act.
     await user.click(within(pane).getByRole('button', { name: '启动' }))
     const start = await screen.findByRole('dialog')
     await user.click(within(start).getByRole('button', { name: '启动' }))
-
+    expect(within(pane).getByRole('button', { name: '舞台' })).toHaveAttribute('aria-pressed', 'true')
     await waitFor(() => expect(within(project()).getByRole('button', { name: '工作流运行 审查 cloud#210（成功）' })).toBeInTheDocument(), { timeout: 25_000 })
-    const result = within(pane).getByRole('region', { name: '运行结果' })
-    expect(result).toHaveTextContent('运行结果 · 成功')
+    expect(await within(pane).findByText('运行完成')).toBeInTheDocument()
     expect(within(pane).getByRole('button', { name: '再跑一次' })).toBeInTheDocument()
+
+    // An Agent's act keeps what it was sent and what it answered.
+    await user.click(within(pane).getByRole('button', { name: /Agent：审查改动/ }))
+    await user.click(await within(pane).findByRole('button', { name: '查看节点会话' }))
+    expect(within(pane).getAllByLabelText('发给 Agent 的内容')).not.toHaveLength(0)
+    expect(within(pane).getAllByLabelText('Agent 回复')).not.toHaveLength(0)
     // jsdom re-renders the canvas on every node step, so the whole run takes seconds here.
   }, 30_000)
 
@@ -82,7 +89,7 @@ describe('workflow runs in chat', () => {
     const user = userEvent.setup()
     renderPage()
     await createRun(user, '临时运行')
-    await within(await screen.findByRole('region', { name: '工作流运行' })).findByRole('heading', { level: 2, name: '临时运行' })
+    await within(await screen.findByRole('region', { name: '工作流运行' })).findByRole('heading', { level: 2, name: '临时运行' }, { timeout: 10_000 })
 
     await user.click(within(project()).getByRole('button', { name: '梳理 v2 接口缺口' }))
     expect(screen.queryByRole('region', { name: '工作流运行' })).not.toBeInTheDocument()

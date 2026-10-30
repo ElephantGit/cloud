@@ -1,71 +1,176 @@
-import { ChevronRightIcon, FlaskConicalIcon, PlayIcon, RotateCcwIcon, SquareIcon, WorkflowIcon } from 'lucide-react'
-import { useState } from 'react'
-import { I18nextProvider } from 'react-i18next'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { FlaskConicalIcon, MapIcon, PlayIcon, RotateCcwIcon, SquareIcon, TheaterIcon, WorkflowIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { I18nextProvider, useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { subtleScrollbar } from '@/lib/scrollbar'
+import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
+import { createLocalContractsClient } from '@/lib/workflows/data/contracts-client'
+import { ContractsClientProvider } from '@/lib/workflows/data/contracts-client-provider'
+import { LocalWorkflowBackend } from '@/lib/workflows/data/local-workflow-backend'
+import { createWorkflowQueryClient } from '@/lib/workflows/data/query-client'
 import { createWorkflowI18n } from '@/lib/workflows/host/i18n'
-import type { GraphWorkflowNodeState, GraphWorkflowRun, WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
+import { useDarkTheme } from '@/lib/workflows/host/theme'
+import { toast } from '@/lib/workflows/host/ui'
+import { isTerminalRunStatus, type GraphWorkflowRun, type WorkflowArtifact, type WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
 import { FadeText } from '../components/fade-text'
-import { Markdown } from '../components/markdown'
 import { ShowSidebarButton } from '../components/sidebar'
 import { useChatStore } from '../store'
 import { cancelDemoRun, rerunDemoRun, startDemoRun, useDemoRuns } from './demo-runs'
+import { isLoopHistoryNode } from './loop-round-state'
+import { resolveStageFocusNodeId, resolveTheaterFocus, shouldReleaseLivePinToFollow, shouldStealFocusForArtifactReveal, type TheaterFocusStatusSample } from './run-focus'
 import { RunOverviewCanvas } from './run-overview-canvas'
-import { isNodeWorking, runStatusLabel, runStatusTone } from './run-status-style'
-import { formatRunClock } from './run-format'
+import { runStatusLabel, runStatusTone } from './run-status-style'
+import { RunTheater } from './run-theater'
 import { workflowRunTranslations } from './translations'
 import { WorkflowRunStartDialog } from './workflow-run-start-dialog'
 
 /** The workflow bundles plus the run view's strings, for the components copied from desktop. */
-const runI18n = createWorkflowI18n(['zh-CN'], {
-  'zh-CN': {
-    ...workflowRunTranslations['zh-CN'],
-    // Desktop's hint sends a click to the Theater view, which this page does not have.
-    'workflowRun.overview.hint': '点击节点，在右侧查看它的输入、输出和对话',
-  },
-})
+const runI18n = createWorkflowI18n(['zh-CN'], { 'zh-CN': workflowRunTranslations['zh-CN'] })
 
-const noItems: WorkflowNodeConversationItem[] = []
-const terminal = new Set<GraphWorkflowRun['status']>(['succeeded', 'failed', 'cancelled'])
+/** Below this width, Overview → Theater skips auto-opening the act inspector, as in desktop. */
+const NARROW_THEATER_INSPECTOR_AUTO_OPEN_WIDTH = 1_000
+
+type ViewMode = 'theater' | 'overview'
+
+const noArtifacts: WorkflowArtifact[] = []
 
 /**
- * A workflow run in the chat page's main area, as desktop's run workspace: the frozen graph with
- * each node's status, and the picked node's input, output and Agent conversation. The run is
- * played by the in-browser engine, so the header says it is a demo.
+ * A workflow run in the chat page's main area, as desktop's run workspace: Theater plays the run
+ * one act at a time, Overview shows the frozen graph with each node's status. The run is played
+ * by the in-browser engine, so the header says it is a demo. The page brings the workflow
+ * library's client and query cache, which the Agent configuration in the inspector reads.
  */
 export default function RunPane({ runId }: { runId: string }) {
+  const [client] = useState(() => createLocalContractsClient(new LocalWorkflowBackend()))
+  const [queryClient] = useState(createWorkflowQueryClient)
   const run = useDemoRuns((s) => s.runs[runId])
-  if (!run) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        <p>这次运行已经不在了。</p>
-      </div>
-    )
-  }
   return (
     <I18nextProvider i18n={runI18n}>
-      <RunWorkspace run={run} />
+      <QueryClientProvider client={queryClient}>
+        <ContractsClientProvider client={client}>
+          {run ? (
+            <RunWorkspace key={runId} run={run} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              <p>这次运行已经不在了。</p>
+            </div>
+          )}
+          <RunToaster />
+        </ContractsClientProvider>
+      </QueryClientProvider>
     </I18nextProvider>
   )
 }
 
+function RunToaster() {
+  const dark = useDarkTheme()
+  return <Toaster position="bottom-right" theme={dark ? 'dark' : 'light'} closeButton />
+}
+
 function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
-  const conversation = useDemoRuns((s) => s.conversations[run.id] ?? noItems)
+  const { t } = useTranslation()
+  const conversations = useDemoRuns((s) => s.conversations[run.id])
+  const artifacts = useDemoRuns((s) => s.artifacts[run.id]) ?? noArtifacts
+  const revealedArtifactId = useDemoRuns((s) => s.revealedArtifactIds[run.id]) ?? null
   const selectRun = useChatStore((s) => s.selectRun)
-  const [picked, setPicked] = useState<string | null>(null)
+  // A live run opens on its Theater; a pending or finished one on Overview, as desktop primes it.
+  const [viewMode, setViewMode] = useState<ViewMode>(run.status === 'running' || run.status === 'awaiting_input' ? 'theater' : 'overview')
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
+  /** Node whose conversation is open; it pins the act until closed. */
+  const [conversationNodeId, setConversationNodeId] = useState<string | null>(null)
+  const [openInspectorOnTheaterEnter, setOpenInspectorOnTheaterEnter] = useState(false)
+  const [overviewFitRequestKey, setOverviewFitRequestKey] = useState(0)
   const [startOpen, setStartOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const stageAreaRef = useRef<HTMLDivElement>(null)
+  const focusStatusSampleRef = useRef<TheaterFocusStatusSample | null>(null)
+  const conversationByNodeId = useConversationByNode(conversations)
+
   const nodes = run.definitionSnapshot.nodes
   const startNode = nodes.find((n) => n.data.kind === 'start')
-  // Follows the node at work until the person picks one, as desktop's run view does.
-  const working = nodes.find((n) => isNodeWorking(run.nodeStates[n.id]?.status ?? 'idle'))
-  const focusedId = picked ?? working?.id ?? (terminal.has(run.status) ? lastFinished(run) : startNode?.id) ?? null
-  const focused = nodes.find((n) => n.id === focusedId)
   const tone = runStatusTone(run.status)
-  const finished = terminal.has(run.status)
+  const finished = isTerminalRunStatus(run.status)
+  const stageFocusNodeId = resolveStageFocusNodeId(conversationNodeId, focusNodeId)
+  if (conversationNodeId !== null && focusNodeId !== conversationNodeId) setFocusNodeId(conversationNodeId)
+
+  // Run edges desktop hears from its run stream: a finished run drops every pin so its result act
+  // owns the stage, and a new human-in-the-loop gate asks for attention.
+  const [previousStatus, setPreviousStatus] = useState(run.status)
+  const [seenHitls, setSeenHitls] = useState(() => new Set(run.openHitls.map((h) => h.id)))
+  if (previousStatus !== run.status) {
+    setPreviousStatus(run.status)
+    if (finished && !isTerminalRunStatus(previousStatus)) {
+      setFocusNodeId(null)
+      setConversationNodeId(null)
+    }
+  }
+  const freshHitls = run.openHitls.filter((h) => !seenHitls.has(h.id))
+  if (freshHitls.length > 0) setSeenHitls(new Set(run.openHitls.map((h) => h.id)))
+  const announcedFinish = useRef(finished)
+  useEffect(() => {
+    if (!finished || announcedFinish.current) return
+    announcedFinish.current = true
+    if (viewMode === 'overview') {
+      toast.message(t('workflowRun.result.finishedToastTitle'), {
+        description: t('workflowRun.result.finishedToastDescription'),
+        action: { label: t('workflowRun.result.finishedToastAction'), onClick: () => setViewMode('theater') },
+      })
+    }
+  }, [finished, viewMode, t])
+  const freshHitl = freshHitls[0]
+  useEffect(() => {
+    if (!freshHitl) return
+    toast.message(t('workflowRun.hitl.toastTitle'), {
+      description: t(freshHitl.schema.kind === 'clarify' ? 'workflowRun.hitl.toastClarifyDescription' : 'workflowRun.hitl.toastDescription'),
+      action: {
+        label: t('workflowRun.hitl.toastAction'),
+        onClick: () => {
+          setFocusNodeId(freshHitl.nodeId)
+          setOpenInspectorOnTheaterEnter(false)
+          setViewMode('theater')
+        },
+      },
+    })
+  }, [freshHitl, t])
+
+  // Live pin release: once the focused act itself finishes, Theater follows the run again.
+  useEffect(() => {
+    if (focusNodeId === null || isLoopHistoryNode(run, focusNodeId)) {
+      focusStatusSampleRef.current = null
+      return
+    }
+    const status = run.nodeStates[focusNodeId]?.status
+    if (shouldReleaseLivePinToFollow(conversationNodeId, focusStatusSampleRef.current, focusNodeId, status)) {
+      focusStatusSampleRef.current = null
+      setFocusNodeId(null)
+      return
+    }
+    if (status !== undefined) focusStatusSampleRef.current = { nodeId: focusNodeId, status }
+  }, [run, focusNodeId, conversationNodeId])
+
+  // A new artifact moves Theater to the act that produced it, unless the reader is elsewhere on purpose.
+  const [handledReveal, setHandledReveal] = useState<string | null>(null)
+  const revealed = !finished && viewMode === 'theater' && revealedArtifactId !== handledReveal ? artifacts.find((item) => item.id === revealedArtifactId) : undefined
+  if (revealed) {
+    setHandledReveal(revealed.id)
+    const stagePrimaryId = resolveTheaterFocus(run, stageFocusNodeId).primaryId
+    const onLoopHistory = focusNodeId !== null && isLoopHistoryNode(run, focusNodeId)
+    if (!onLoopHistory && shouldStealFocusForArtifactReveal({ conversationNodeId, stagePrimaryId, artifactNodeId: revealed.nodeId })) setFocusNodeId(revealed.nodeId)
+  }
+
+  // Esc from Theater returns to Overview.
+  useEffect(() => {
+    if (viewMode !== 'theater') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      setOpenInspectorOnTheaterEnter(false)
+      setViewMode('overview')
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [viewMode])
 
   const act = async (action: () => Promise<void>) => {
     setBusy(true)
@@ -74,6 +179,32 @@ function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  function focusNode(nodeId: string) {
+    if (conversationNodeId !== null && conversationNodeId !== nodeId) setConversationNodeId(null)
+    setFocusNodeId(nodeId)
+  }
+
+  /** An Overview click opens that node's act, with its inspector when the stage is wide enough. */
+  function focusNodeFromOverview(nodeId: string) {
+    setConversationNodeId(null)
+    setFocusNodeId(nodeId)
+    const waiting = run.nodeStates[nodeId]?.status === 'awaiting_input'
+    const stageWidth = stageAreaRef.current?.getBoundingClientRect().width ?? Number.POSITIVE_INFINITY
+    setOpenInspectorOnTheaterEnter(!waiting && stageWidth >= NARROW_THEATER_INSPECTOR_AUTO_OPEN_WIDTH)
+    setViewMode('theater')
+  }
+
+  /** The header's Theater button; pressed again on a finished run, it goes back to the result act. */
+  function enterTheaterFromHeader() {
+    if (viewMode === 'theater' && finished && focusNodeId !== null) {
+      setFocusNodeId(null)
+      setConversationNodeId(null)
+      return
+    }
+    setOpenInspectorOnTheaterEnter(false)
+    setViewMode('theater')
   }
 
   return (
@@ -92,15 +223,35 @@ function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
           <FlaskConicalIcon />
           演示运行
         </Badge>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div role="group" aria-label={t('workflowRun.viewMode.label')} className="inline-flex rounded-lg border p-0.5">
+            <Button size="sm" variant={viewMode === 'theater' ? 'secondary' : 'ghost'} className="h-7 gap-1.5 px-2.5 text-xs" aria-pressed={viewMode === 'theater'} onClick={enterTheaterFromHeader}>
+              <TheaterIcon className="size-3.5" />
+              {t('workflowRun.viewMode.theater')}
+            </Button>
+            <Button
+              size="sm"
+              variant={viewMode === 'overview' ? 'secondary' : 'ghost'}
+              className="h-7 gap-1.5 px-2.5 text-xs"
+              aria-pressed={viewMode === 'overview'}
+              onClick={() => {
+                setOpenInspectorOnTheaterEnter(false)
+                setViewMode('overview')
+                setOverviewFitRequestKey((key) => key + 1)
+              }}
+            >
+              <MapIcon className="size-3.5" />
+              {t('workflowRun.viewMode.overview')}
+            </Button>
+          </div>
           {run.status === 'pending' && (
-            <Button size="sm" onClick={() => setStartOpen(true)} disabled={busy}>
+            <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setStartOpen(true)} disabled={busy}>
               <PlayIcon />
               启动
             </Button>
           )}
           {(run.status === 'running' || run.status === 'awaiting_input') && (
-            <Button variant="outline" size="sm" onClick={() => act(() => cancelDemoRun(run.id))} disabled={busy}>
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => act(() => cancelDemoRun(run.id))} disabled={busy}>
               <SquareIcon />
               停止
             </Button>
@@ -109,6 +260,7 @@ function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
             <Button
               variant="outline"
               size="sm"
+              className="h-7 px-2.5 text-xs"
               disabled={busy}
               onClick={() =>
                 act(async () => {
@@ -123,28 +275,39 @@ function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1">
-        <div className="relative flex min-w-0 flex-1 flex-col">
-          {run.status === 'pending' && (
-            <p className="absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
-              还没开始：点右上角「启动」，填写输入后运行
-            </p>
-          )}
-          <RunOverviewCanvas run={run} focusedNodeId={focusedId} onFocusNode={setPicked} />
-        </div>
-        <aside aria-label="节点详情" className={cn('flex w-[340px] shrink-0 flex-col overflow-y-auto border-l', subtleScrollbar)}>
-          {finished && <RunResult run={run} />}
-          {focused ? (
-            <NodeDetails
-              title={focused.data.title}
-              kind={focused.data.kind}
-              state={run.nodeStates[focused.id] ?? { status: 'idle' }}
-              items={conversation.filter((item) => item.nodeId === focused.id)}
-            />
-          ) : (
-            <p className="p-4 text-sm text-muted-foreground">在左侧点一个节点查看它的输入、输出和对话。</p>
-          )}
-        </aside>
+      <div ref={stageAreaRef} aria-label={viewMode === 'theater' ? '运行舞台' : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {run.status === 'pending' && viewMode === 'overview' && (
+          <p className="absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+            还没开始：点右上角「启动」，填写输入后运行
+          </p>
+        )}
+        {viewMode === 'theater' ? (
+          <RunTheater
+            run={run}
+            focusNodeId={stageFocusNodeId}
+            onFocusNode={focusNode}
+            onClearFocus={() => {
+              setFocusNodeId(null)
+              setConversationNodeId(null)
+            }}
+            artifacts={artifacts}
+            conversationByNodeId={conversationByNodeId}
+            revealedArtifactId={revealedArtifactId}
+            openInspectorOnMount={openInspectorOnTheaterEnter}
+            onOpenInspectorOnMountConsumed={() => setOpenInspectorOnTheaterEnter(false)}
+            sessionConversationNodeId={conversationNodeId}
+            onSessionConversationNodeIdChange={(nodeId) => {
+              setConversationNodeId(nodeId)
+              if (nodeId !== null) setFocusNodeId(nodeId)
+            }}
+            onShowOverview={() => {
+              setOpenInspectorOnTheaterEnter(false)
+              setViewMode('overview')
+            }}
+          />
+        ) : (
+          <RunOverviewCanvas run={run} focusedNodeId={stageFocusNodeId} onFocusNode={focusNodeFromOverview} artifacts={artifacts} fitRequestKey={overviewFitRequestKey} />
+        )}
       </div>
       <WorkflowRunStartDialog
         open={startOpen}
@@ -156,106 +319,18 @@ function RunWorkspace({ run }: { run: GraphWorkflowRun }) {
         onStart={async (prompt, variables) => {
           await act(() => startDemoRun(run.id, prompt, variables))
           setStartOpen(false)
+          setViewMode('theater')
         }}
       />
     </>
   )
 }
 
-/** The node that finished last, shown once the run has ended and nothing is picked. */
-function lastFinished(run: GraphWorkflowRun): string | undefined {
-  return Object.entries(run.nodeStates)
-    .filter(([, state]) => state.finishedAt)
-    .sort(([, a], [, b]) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.[0]
-}
-
-/** What the run ended with: the Output nodes' results, or why it stopped. */
-function RunResult({ run }: { run: GraphWorkflowRun }) {
-  const outputs = run.definitionSnapshot.nodes.flatMap((n) => {
-    const output = n.data.kind === 'output' ? run.nodeStates[n.id]?.output : undefined
-    return output ? [{ id: n.id, title: n.data.title, text: output.detail || output.summary }] : []
-  })
-  return (
-    <section aria-label="运行结果" className="border-b bg-muted/30 p-4">
-      <h3 className="mb-2 text-xs font-medium text-muted-foreground">运行结果 · {runStatusLabel(run.status)}</h3>
-      {run.status === 'cancelled' && <p className="text-sm">运行已停止，后面的节点没有执行。</p>}
-      {run.status === 'failed' && <p className="text-sm text-destructive">运行失败，点失败的节点查看原因。</p>}
-      {run.status === 'succeeded' && outputs.length === 0 && <p className="text-sm">运行完成。</p>}
-      {outputs.map((o) => (
-        <div key={o.id} className="text-sm">
-          <p className="font-medium">{o.title}</p>
-          <Markdown text={o.text} />
-        </div>
-      ))}
-    </section>
-  )
-}
-
-function NodeDetails({ title, kind, state, items }: { title: string; kind: string; state: GraphWorkflowNodeState; items: WorkflowNodeConversationItem[] }) {
-  const tone = runStatusTone(state.status)
-  const messages = items.filter((item) => item.kind === 'message')
-  const activity = items.filter((item) => item.kind === 'activity')
-  return (
-    <section aria-label={`节点 ${title}`} className="flex flex-col gap-4 p-4">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-medium break-words">{title}</h3>
-          <p className="text-xs text-muted-foreground">
-            {kind}
-            {state.startedAt && ` · 开始 ${formatRunClock(state.startedAt)}`}
-            {state.finishedAt && ` · 结束 ${formatRunClock(state.finishedAt)}`}
-          </p>
-        </div>
-        <Badge variant="outline" className={cn('shrink-0 gap-1.5', tone.badge)}>
-          <span className={cn('size-1.5 rounded-full', tone.dot, isNodeWorking(state.status) && 'animate-pulse')} />
-          {runStatusLabel(state.status)}
-        </Badge>
-      </div>
-      {state.errorMessage && <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">{state.errorMessage}</p>}
-      {state.input && <Io label="输入" summary={state.input.summary} detail={state.input.detail} />}
-      {state.output && <Io label="输出" summary={state.output.summary} detail={state.output.detail} />}
-      {(messages.length > 0 || activity.length > 0) && (
-        <div className="flex flex-col gap-2">
-          <h4 className="text-xs font-medium text-muted-foreground">节点对话</h4>
-          {activity.length > 0 && (
-            <Collapsible>
-              <CollapsibleTrigger className="group/trigger flex items-center gap-1 text-xs text-muted-foreground">
-                <ChevronRightIcon className="size-3 transition-transform group-aria-expanded/trigger:rotate-90" />
-                活动 {activity.length} 项
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <ul className="mt-1 flex flex-col gap-1 border-l pl-3 text-xs text-muted-foreground">
-                  {activity.map((item) => item.kind === 'activity' && <li key={item.id}>{item.summary}</li>)}
-                </ul>
-              </CollapsibleContent>
-            </Collapsible>
-          )}
-          {messages.map(
-            (item) =>
-              item.kind === 'message' && (
-                <div
-                  key={item.id}
-                  className={cn('rounded-lg px-3 py-2 text-sm', item.role === 'user' ? 'ml-6 bg-muted' : 'border bg-background')}
-                  aria-label={item.role === 'user' ? '发给 Agent 的内容' : 'Agent 回复'}
-                >
-                  <Markdown text={item.markdown} />
-                </div>
-              ),
-          )}
-        </div>
-      )}
-      {state.status === 'idle' && !state.input && <p className="text-sm text-muted-foreground">这个节点还没执行。</p>}
-    </section>
-  )
-}
-
-function Io({ label, summary, detail }: { label: string; summary: string; detail?: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <h4 className="text-xs font-medium text-muted-foreground">{label}</h4>
-      <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
-        <Markdown text={detail?.trim() ? detail : summary} />
-      </div>
-    </div>
-  )
+/** Groups the run's conversation by node, the shape desktop's live run query hands Theater. */
+function useConversationByNode(items: WorkflowNodeConversationItem[] | undefined): Map<string, WorkflowNodeConversationItem[]> {
+  return useMemo(() => {
+    const byNode = new Map<string, WorkflowNodeConversationItem[]>()
+    for (const item of items ?? []) byNode.set(item.nodeId, [...(byNode.get(item.nodeId) ?? []), item])
+    return byNode
+  }, [items])
 }

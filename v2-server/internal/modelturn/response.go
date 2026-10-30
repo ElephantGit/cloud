@@ -150,13 +150,16 @@ type completion struct {
 }
 
 type assistant struct {
-	Role         *string           `json:"role"`
-	Content      *string           `json:"content"`
-	ToolCalls    json.RawMessage   `json:"tool_calls"`
-	FunctionCall json.RawMessage   `json:"function_call"`
-	Refusal      *string           `json:"refusal"`
-	Annotations  []json.RawMessage `json:"annotations"`
-	Audio        json.RawMessage   `json:"audio"`
+	Role             *string           `json:"role"`
+	Content          *string           `json:"content"`
+	ToolCalls        json.RawMessage   `json:"tool_calls"`
+	FunctionCall     json.RawMessage   `json:"function_call"`
+	Refusal          *string           `json:"refusal"`
+	Annotations      []json.RawMessage `json:"annotations"`
+	Audio            json.RawMessage   `json:"audio"`
+	Reasoning        json.RawMessage   `json:"reasoning"`
+	ReasoningContent json.RawMessage   `json:"reasoning_content"`
+	ReasoningDetails json.RawMessage   `json:"reasoning_details"`
 }
 
 func nonNull(raw json.RawMessage) bool {
@@ -186,10 +189,15 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 		}
 		return ErrInvalidResponse
 	}
-	if len(response.Choices) != 1 || response.Choices[0].Index == nil || *response.Choices[0].Index != 0 || w.finished {
+	if len(response.Choices) != 1 || response.Choices[0].Index == nil || *response.Choices[0].Index != 0 {
 		return ErrInvalidResponse
 	}
 	choice := response.Choices[0]
+	// Some compatible providers repeat the normal terminal choice in their final
+	// usage chunk. It must carry counters and cannot change the established stop.
+	if w.finished && (!stream || !hasCounters || choice.FinishReason == nil || *choice.FinishReason != w.stopReason || w.stopReason != "stop") {
+		return ErrInvalidResponse
+	}
 	content := choice.Message
 	if stream {
 		content = choice.Delta
@@ -208,7 +216,7 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 	if nonNull(content) && json.Unmarshal(content, &message) != nil {
 		return ErrInvalidResponse
 	}
-	if (message.Role != nil && *message.Role != "assistant") || (!stream && (message.Role == nil || message.Content == nil)) {
+	if (message.Role != nil && *message.Role != "assistant" && !(w.finished && *message.Role == "")) || (!stream && (message.Role == nil || message.Content == nil)) {
 		return ErrInvalidResponse
 	}
 	if len(message.Annotations) != 0 || nonNull(message.Audio) {
@@ -221,6 +229,14 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 	if message.Refusal != nil && *message.Refusal != "" {
 		w.stopReason = "refusal"
 		return ErrRefused
+	}
+	if w.finished {
+		// No answer, reasoning, tool or refusal output may follow the terminal
+		// choice. Missing/null/empty delta fields carry only usage metadata.
+		if (message.Content != nil && *message.Content != "") || !emptyExtension(message.Reasoning) || !emptyExtension(message.ReasoningContent) || !emptyReasoningDetails(message.ReasoningDetails) {
+			return ErrInvalidResponse
+		}
+		return nil
 	}
 	if message.Content != nil {
 		w.sawContent = true
@@ -262,4 +278,16 @@ func (w *responseWriter) consume(data []byte, stream bool) error {
 	default:
 		return ErrInvalidResponse
 	}
+}
+
+func emptyExtension(raw json.RawMessage) bool {
+	return !nonNull(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte(`""`))
+}
+
+func emptyReasoningDetails(raw json.RawMessage) bool {
+	if !nonNull(raw) {
+		return true
+	}
+	var details []json.RawMessage
+	return json.Unmarshal(raw, &details) == nil && len(details) == 0
 }

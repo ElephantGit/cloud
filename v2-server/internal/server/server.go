@@ -15,6 +15,7 @@ import (
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
+	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
@@ -36,6 +37,8 @@ type Options struct {
 	SessionTTL time.Duration
 	// DemoUser is the identity the development login signs in as.
 	DemoUser store.Identity
+	// Projects prepares fixed repository mirrors; nil leaves project operations unavailable.
+	Projects *projectrepos.Service
 	// Execution is the shared backend for page-owned conversations and runs.
 	// Nil uses an unavailable Stub; an explicitly supplied backend is kept unchanged.
 	Execution execution.Service
@@ -54,6 +57,9 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /auth/logout", h.logout)
 	mux.HandleFunc("GET /api/v1/me", h.authed(h.me))
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects", h.authed(h.projects))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/projects", h.authed(h.projects))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects/{pid}", h.authed(h.projects))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs", h.authed(h.scheduleHistory))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}", h.authed(h.scheduleHistory))

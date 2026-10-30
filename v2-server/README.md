@@ -35,7 +35,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 ## 契约之外
 
-定时触发历史新增只读 `GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs` 与 `GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}`，候选契约、权限、分页和状态边界见 [运行历史 HTTP](schedule-history.md)。该接口读取持久触发记录，不启动执行；配置响应中的 `runs` 仍为空，公共最终回答与事件尚待接入。
+定时触发历史提供只读 `GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs`、`GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}` 及 `GET /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}/result`。候选契约、权限、分页和结果边界见 [运行历史 HTTP](schedule-history.md)。结果读取经统一 `Options.Execution` 注入，校验当前身份、服务端 Caller 和已存 Ref；不启动执行或推进状态。配置响应中的 `runs` 仍为空，公共事件订阅未在历史 HTTP 暴露；启动入口的未配置 Stub 不提供真实结果。
 
 定时任务配置使用独立候选契约 [`schedules.openapi.json`](schedules.openapi.json)，不改变正式 Cloud 的 ScheduledTask（其 issue/agent 执行语义不能表达本次独立对话配置）。前端以独立 Orval 配置生成客户端，后续正式契约收敛时替换这一适配。
 

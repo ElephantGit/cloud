@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/wanglongan587/cloud/v2-server/internal/execution"
+	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
@@ -81,11 +84,32 @@ func TestHistoryRevocationAndUnavailable(t *testing.T) {
 		t.Fatal(e)
 	}
 	base := fmt.Sprintf("/api/v2/tenants/%s/schedule-configs/%s/runs", tid, cfg.ID)
+	ref := execution.Ref{SessionID: "access-session", TurnID: "access-turn"}
+	encoded, _ := json.Marshal(ref)
+	for _, evidence := range []store.ExecutionEvidence{{Event: "begin"}, {Event: "accepted", Ref: string(encoded)}} {
+		o, e = s.ApplyOccurrenceEvidence(ctx, tid, user.ID, o.ID, o.Version, evidence)
+		if e != nil {
+			t.Fatal(e)
+		}
+	}
 	check := func(backend server.Store, want int) {
 		t.Helper()
-		srv := httptest.NewServer(server.New(backend, server.Options{}))
+		reads := 0
+		stub := &executiontest.Stub{
+			ReadAttemptFunc: func(_ context.Context, scope execution.Scope, caller execution.Caller) (execution.Turn, error) {
+				reads++
+				if scope != (execution.Scope{TenantID: tid, UserID: user.ID}) {
+					t.Error("incorrect execution scope")
+				}
+				return execution.Turn{Ref: ref, Caller: caller, StartedAt: at}, nil
+			},
+			ReadSessionFunc: func(context.Context, execution.Scope, string) (execution.Session, error) {
+				return execution.Session{ID: ref.SessionID}, nil
+			},
+		}
+		srv := httptest.NewServer(server.New(backend, server.Options{Execution: stub}))
 		defer srv.Close()
-		for _, path := range []string{base, base + "/" + o.ID} {
+		for _, path := range []string{base, base + "/" + o.ID, base + "/" + o.ID + "/result"} {
 			req, _ := http.NewRequest("GET", srv.URL+path, nil)
 			req.AddCookie(&http.Cookie{Name: server.SessionCookie, Value: token})
 			res, e := http.DefaultClient.Do(req)
@@ -97,6 +121,9 @@ func TestHistoryRevocationAndUnavailable(t *testing.T) {
 			if res.StatusCode != want || strings.Contains(string(raw), "private database") {
 				t.Fatalf("%d %s", res.StatusCode, raw)
 			}
+		}
+		if want != 200 && reads != 0 {
+			t.Fatal("execution read before occurrence authorization")
 		}
 	}
 	check(s, 200)

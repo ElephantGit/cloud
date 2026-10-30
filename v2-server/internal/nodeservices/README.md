@@ -26,7 +26,7 @@ renew 必须匹配原 execution，过期后不能续期。binding 和 Model 快�
 崩溃恢复时创建新的服务实例和凭据，不重放用户 prompt。`Close` 取消 provider、关闭监听器、
 等待 HTTP handler 退出并只删除其凭据目录；实现 Provider 时必须遵守 request context。
 
-`FixtureProvider` 只替代模型：收到 shell 工具定义时返回固定工具调用，实际读取 README 和
+`FixtureProvider` 只替代模型：收到 shell 工具定义时返回固定工具调用，实际读取 README.md（兼容 README）和
 写入 `ora-v2-result.txt` 由未修改的 Agent 执行；无工具请求返回普通 fixture 回答。
 `RemoteProvider` 支持 OpenAI chat completions 的 JSON/SSE，强制使用已选模型，保留成功响应的
 usage 等字段。真实 API key 留在后端内存，不转发 Agent token、调用者自定义 header 或上游错误正文；

@@ -160,7 +160,7 @@ describe('chat page', () => {
     await renderReady()
     const label = screen.getByText('Worktree')
     await userEvent.hover(label)
-    expect(await screen.findByText(/每个对话都会从项目仓库新建一个独立的 worktree/)).toBeInTheDocument()
+    expect(await screen.findByText('每个对话都在新建的 worktree 里工作')).toBeInTheDocument()
     await userEvent.unhover(label)
     await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
     expect(within(screen.getByRole('banner')).getByText('Worktree')).toBeInTheDocument()

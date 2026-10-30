@@ -19,7 +19,7 @@ export function WorktreeLabel() {
         <GitBranchIcon className="size-3.5" />
         Worktree
       </TooltipTrigger>
-      <TooltipContent className="max-w-64">每个对话都会从项目仓库新建一个独立的 worktree，在里面读代码、改文件、跑命令，不影响其他对话、定时任务和工作流。改动不会写回仓库。</TooltipContent>
+      <TooltipContent>每个对话都在新建的 worktree 里工作</TooltipContent>
     </Tooltip>
   )
 }

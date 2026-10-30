@@ -123,7 +123,6 @@ export function ContextBar({
         )}
       </SearchTab>
 
-      {!backendSupports.chooseWorkspace && <WorktreeLabel />}
       {backendSupports.chooseWorkspace && (
       <SearchTab
         label="选择工作目录"
@@ -203,6 +202,7 @@ export function ContextBar({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      {!backendSupports.chooseWorkspace && <WorktreeLabel />}
 
       <NewProjectDialog open={dialog === 'project'} onOpenChange={(o) => setDialog(o ? 'project' : undefined)} onCreate={(path) => (onCreateProject?.(path), setDialog(undefined))} />
       <NewWorktreeDialog

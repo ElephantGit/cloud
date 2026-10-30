@@ -130,6 +130,9 @@ func (s *Store) Login(ctx context.Context, who Identity, ttl time.Duration) (str
 			ON CONFLICT DO NOTHING`, tenantID, userID); e != nil {
 			return fmt.Errorf("join tenant: %w", e)
 		}
+		if e := ensureDemoSpace(ctx, tx, tenantID, userID); e != nil {
+			return e
+		}
 		if _, e := tx.Exec(ctx, `
 			INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + $3::interval)`,
 			hash(secret), userID, ttl.String()); e != nil {

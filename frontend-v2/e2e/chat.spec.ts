@@ -9,7 +9,7 @@ test('chat: replay a sample, say the backend cannot run Agents yet, resize the c
 
   // v2-server has no execution runtime wired yet, so its chat routes answer 503 and the new chat
   // says so instead of offering projects it cannot run.
-  await expect(page.getByRole('status')).toHaveText(/后端还不能运行 Agent/)
+  await expect(page.getByRole('status').filter({ hasText: /后端还不能运行 Agent/ })).toBeVisible()
   expect(await projects(page).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['项目 示例'])
 
   // A sample replays its recording: tool calls stream in, then fold into a summary.

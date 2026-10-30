@@ -11,11 +11,11 @@ import {
   DialogTitle,
   Input,
   cn,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import {
   workflowExportFileName,
   type WorkflowDependency,
-} from "./workflow-transfer";
+} from "@/lib/workflows/editor/workflow-transfer";
 import {
   WorkflowTransferDependencies,
   WorkflowTransferPill,

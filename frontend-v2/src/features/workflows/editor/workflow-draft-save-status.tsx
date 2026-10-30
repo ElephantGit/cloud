@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { cn } from "../host/ui";
+import { cn } from "@/lib/workflows/host/ui";
 import type { WorkflowDraftSaveStatus } from "./use-workflow-draft-autosave";
 
 type WorkflowDraftSaveStatusProps = {

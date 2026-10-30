@@ -5,7 +5,7 @@ import {
   WORKFLOW_NODE_INITIAL_HEIGHT,
   WORKFLOW_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   expandIterationFrames,
   iterationExpandedSize,

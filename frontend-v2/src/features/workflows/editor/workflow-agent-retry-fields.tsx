@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Input, Label, Switch } from "../host/ui";
+import { Input, Label, Switch } from "@/lib/workflows/host/ui";
 import {
   DEFAULT_WORKFLOW_AGENT_RETRY,
   WORKFLOW_AGENT_RETRY_BOUNDS,
@@ -11,7 +11,7 @@ import {
   type WorkflowAgentRetryNumericField,
   type WorkflowAgentRetryNumericIssue,
   type WorkflowAgentRetryPolicy,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import { InspectorField } from "./workflow-node-details";
 
 const FIELD_LABEL_KEYS = {

@@ -3,7 +3,7 @@ import type { Edge, Node } from "@xyflow/react";
 import {
   createMockWorkflowLoopGroup,
   type WorkflowNodeData,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   canvasEdgeInsertPosition,
   insertOnCanvasEdge,

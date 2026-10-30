@@ -15,7 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import {
   formatWorkflowVariableValue,
   normalizeWorkflowVariableValue,
@@ -25,7 +25,7 @@ import {
   workflowVariableValueExample,
   type WorkflowGlobalVariable,
   type WorkflowVariableValueType,
-} from "../mock";
+} from "@/lib/workflows/mock";
 
 const SYSTEM_GLOBALS = new Set(["sys.workflow_id", "sys.timestamp"]);
 interface WorkflowGlobalVariablesDialogProps {

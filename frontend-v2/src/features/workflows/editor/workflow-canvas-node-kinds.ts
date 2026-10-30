@@ -1,4 +1,4 @@
-import type { WorkflowNodeKind } from "../mock";
+import type { WorkflowNodeKind } from "@/lib/workflows/mock";
 
 // Keep prototype node definitions available for incremental implementation,
 // but do not advertise nodes that the current workflow runtime cannot execute.

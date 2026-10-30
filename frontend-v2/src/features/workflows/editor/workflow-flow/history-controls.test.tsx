@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
-import { AppI18nProvider } from "../../test/i18n";
-import { appI18n } from "../../test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
 import type { WorkflowHistoryStep } from "../workflow-history";
 import { WorkflowHistoryControls } from "./history-controls";
 

@@ -18,7 +18,7 @@ import type {
   WorkflowAnnotationNode,
   WorkflowNodeData,
   WorkflowNodeKind,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 import type {
   WorkflowHistoryEvent,
   WorkflowHistoryStep,

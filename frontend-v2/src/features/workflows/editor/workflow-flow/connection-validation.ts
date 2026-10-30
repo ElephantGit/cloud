@@ -1,5 +1,5 @@
 import type { Connection, Edge, Node } from "@xyflow/react";
-import type { WorkflowNodeData } from "../../mock";
+import type { WorkflowNodeData } from "@/lib/workflows/mock";
 
 export interface WorkflowConnectionValidationInput {
   connection: Connection | Edge;

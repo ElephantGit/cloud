@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Edge, Node } from "@xyflow/react";
-import type { WorkflowNodeData } from "../mock";
+import type { WorkflowNodeData } from "@/lib/workflows/mock";
 import {
   applyIterationFrameResize,
   compactIterationFrames,

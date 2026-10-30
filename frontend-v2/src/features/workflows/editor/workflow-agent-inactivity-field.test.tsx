@@ -7,9 +7,9 @@ import {
   createMockWorkflowCapabilities,
   type WorkflowAgentConfig,
   type WorkflowNodeData,
-} from "../mock";
-import { appI18n, translationResources } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+} from "@/lib/workflows/mock";
+import { appI18n, translationResources } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowInspector } from "./workflow-inspector";
 
 /** Keeps inspector edits and external undo/redo changes in the same persisted node contract. */

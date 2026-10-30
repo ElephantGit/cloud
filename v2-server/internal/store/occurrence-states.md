@@ -1,33 +1,32 @@
 # 定时任务执行状态
 
-`ApplyOccurrenceEvidence` 是进程内可信执行适配层调用的状态接口，不是可由浏览器填写事件的 HTTP 接口。本阶段未装配执行器、启动扫描或 UI，不能把状态测试视为模型/Node 已交付。
+`ApplyOccurrenceEvidence` 只由可信执行适配层调用，浏览器不能提交状态证据。公共执行的 Session、Turn、结果和事件由 execution.Service 保存，本层只保存触发身份、冻结配置、状态与引用。
 
-| 当前状态 | 已确认事实/操作 | 下一状态 |
+状态枚举为 `recorded`、`starting`、`reconciling`、`running`、`cancelling`、`succeeded`、`failed`、`cancelled`、`interrupted`、`skipped`。
+
+| 当前状态 | 事实/操作 | 下一状态及 reason |
 |---|---|---|
-| recorded | begin，配置仍有效且没有其他占位 | starting，占用该任务执行资格 |
-| recorded / 新触发 | 同任务已有未结束占位 | skipped / previous_unfinished |
-| starting | 执行侧明确 Busy 且未接收 | skipped / workspace_busy，释放占位 |
-| starting | 接收结果不明确 | admission_unknown，保留占位 |
-| starting / admission_unknown / reconciling | 按原身份确认接收，带稳定 Ref | running |
-| admission_unknown / reconciling（无已知 Ref） | 明确未接收证明 | skipped / admission_not_accepted |
+| recorded | begin，配置有效且同任务无占位 | starting，占用任务执行资格 |
+| recorded / 新触发 | 同任务已有占位 | skipped / previous_unfinished |
+| recorded | 配置版本变化或自动触发已暂停 | skipped / configuration_changed 或 paused |
+| starting | 公共服务明确拒绝 | skipped / 拒绝原因，释放占位 |
+| starting | 需要只读核对（调用错误或本地引用未保存） | reconciling / lookup_required，保留占位 |
+| starting / reconciling | 原 Caller 对应完整 Ref | running，reason 清空 |
+| starting / reconciling，无 Ref | Start 已返回或公共启动恢复已完成，原 Caller 查询未命中 | skipped / execution_not_started |
 | running | 请求取消 | cancelling，仍占位 |
-| running / cancelling / reconciling | 同 Ref 的成功/失败/取消/中断终态 | succeeded / failed / cancelled / interrupted，仍占位 |
-| 上述结果终态 | 同 Ref 的停止与清理确认 | 保留结果，释放占位 |
-| recorded | 启动恢复检查 | skipped / server_restarted |
-| starting / admission_unknown / running / cancelling | 启动恢复检查 | reconciling，保留 Ref 和占位，等待公共记录核对 |
+| running / cancelling / reconciling | 同 Ref 的真实终态 | succeeded / failed / cancelled / interrupted，仍占位 |
+| 上述结果终态 | 同会话 End 确认成功 | 保留状态、reason、Ref，释放占位 |
+| recorded | 启动恢复 | skipped / server_restarted |
+| starting / running / cancelling | 启动恢复 | reconciling / server_restarted，保留 Ref 和占位 |
 
-## 身份和并发
+`reason` 是稳定原因码，不是异常原文。拒绝原因包括 `execution_busy`、`execution_unavailable`、`invalid_execution_request`、`execution_unsupported`、`execution_target_unavailable`，以及配置校验的 `invalid_snapshot`、`unsupported_schedule_target`、`model_required`、`project_required`、`executor_required`、`invalid_prompt`。`execution_busy` 只消费公共服务的 Busy 拒绝，不表示其他调用方抢占项目目录，不进入等待队列。成功但回答不完整转 `failed/result_incomplete`；其他执行终态使用公共 Result.FailureCode（过长时用 `execution_failed`），没有原因时为空。
 
-配置行锁使触发创建、begin和配置编辑串行；数据库部分唯一索引保证同一任务最多一个 released=false 的记录。不同任务不在此层互斥，Workspace 争用继续由公共执行模块裁定。手动触发和自动触发使用相同占位保护。
+`released=false` 表示本记录仍占用**同任务的执行资格**。`released=true` 表示不占位：recorded 尚未 begin、skipped 未执行，或结果终态已经确认 End。它不证明目录已删除，也不是结果完整性标志。End 保留历史及目录；模型 Cancel 只停当前轮，Agent Cancel 结束会话，定时任务两路都随后调用幂等 End。
 
-begin 的成功返回才允许其调用方请求外部接收，执行身份用原 occurrence ID，必须持久传递。expectedVersion 对每次状态修改做比较，阻止重复 begin 和迟到回调覆盖更新。出现冲突需重读记录核对，不能重新分配身份或将事务结果不明当作未接收。Ref 一旦记录就不可更换；后续终态和释放必须匹配该 Ref。
+配置行锁和部分唯一索引保证同任务最多一个未释放记录，自动与手动触发共用此约束。不同任务即使属于同一项目也不互斥；每次触发新建会话，有项目时公共服务创建目录。触发唯一键和 expectedVersion 防重复与过期状态写入，Ref 绑定后不可替换。
 
-## 证据与恢复
+宿主先完成公共 Service 的启动恢复，再创建单个 Coordinator/ConversationAdapter 并调用 Recover。旧轮次的 interrupted 以公共持久记录为准；本地不会重放 prompt。适配层按 occurrence 串行处理 Start、核对与取消，尚在 Start 中的记录不能提前用 NotFound 收尾。读取错误、Caller/Ref 不匹配、已绑定记录查询缺失均保留占位；结果已保存但 End 未确认只重试 End。
 
-`busy` 必须是执行侧明确未接收，`not_accepted` 必须是已终结原接收竞态的未接收证明。请求超时、一次 ReadAttempt 未命中均不构成该证明。`released` 必须确认执行侧停止和清理；仅收到回答、发出取消或 End 超时不能释放。状态层不替代公共执行模块判断这些事实。
+schema 幂等升级早期草稿：旧 admission_unknown 转 reconciling/lookup_required，保留触发身份、快照、引用、占位并递增 version；旧 workspace_busy、admission_not_accepted 原因规范为 execution_busy、execution_not_started。重复打开数据库不再改写已升级的记录。状态检查不再接受旧枚举。
 
-宿主未来应在开启派发前遍历旧记录应用 recover，再按公共执行持久记录核对；该接口本身不在数据库 Open 时自动执行恢复，以免另一个连接池打开被误当作进程重启。已在运行的回合确认被重启打断后写 interrupted，再取得释放确认；结果已保存但尚未释放的记录保留结果和占位。恢复不会调用 Start，也不重放 prompt。
-
-本层没有10分钟等待、取消等待或自动重试。Busy和同任务占用均留下跳过记录，显式重跑使用新触发身份。状态修改不写配置、时间规则或原计划锚点，因此不会因跳过或手动操作改变原计划。真实运行的开始/结束时间、最终回答与事件继续由公共执行记录承担，当前仅保存其稳定引用。
-
-schema 在旧 recorded-only 表上追加字段并替换状态检查，旧记录默认保持 recorded/released=true/version=1；启动的幂等建表也适用于连接池重新打开。状态字段和占位由上述事务接口一起更新，不应绕过接口直接写 SQL。
+没有10分钟等待、自动重试执行或停机补跑。跳过和手动运行均不改变原计划锚点。PostgreSQL 测试证明本层状态和占位，Stub 只证明公共接口消费行为，不能替代真实执行/目录/完整历史验收。

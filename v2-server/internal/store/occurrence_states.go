@@ -7,8 +7,8 @@ import (
 )
 
 // ExecutionEvidence is supplied only by the trusted execution adapter, never an HTTP body.
-// Busy/NotAccepted require definitive non-admission; Released requires confirmed quiescence.
-// A timeout or a single missing lookup is not such evidence. Ref is an opaque stable public ref.
+// NotAccepted follows a completed Start or the public startup recovery barrier.
+// Released confirms session End, not directory deletion. Ref is an opaque stable public ref.
 type ExecutionEvidence struct{ Event, Ref, Reason string }
 
 func terminal(status string) bool {
@@ -65,11 +65,6 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 					o.Status, o.Released = "starting", false
 				}
 			}
-		case "busy":
-			if o.Status != "starting" {
-				return ErrIneligible
-			}
-			o.Status, o.Reason, o.Released = "skipped", "workspace_busy", true
 		case "rejected":
 			// Only a definitive admission refusal is evidence. Conflicts and ambiguous
 			// outcomes may conceal an existing execution and must retain their slot.
@@ -77,13 +72,13 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 				return ErrIneligible
 			}
 			o.Status, o.Reason, o.Released = "skipped", proof.Reason, true
-		case "unknown":
+		case "reconcile":
 			if o.Status != "starting" {
 				return ErrIneligible
 			}
-			o.Status, o.Reason = "admission_unknown", "admission_unknown"
+			o.Status, o.Reason = "reconciling", "lookup_required"
 		case "accepted":
-			if o.Status != "starting" && o.Status != "admission_unknown" && o.Status != "reconciling" {
+			if o.Status != "starting" && o.Status != "reconciling" {
 				return ErrIneligible
 			}
 			if proof.Ref == "" || (o.ExecutionRef != "" && o.ExecutionRef != proof.Ref) {
@@ -92,10 +87,10 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 			o.ExecutionRef = proof.Ref
 			o.Status, o.Reason = "running", ""
 		case "not_accepted":
-			if (o.Status != "admission_unknown" && o.Status != "reconciling") || o.ExecutionRef != "" {
+			if (o.Status != "starting" && o.Status != "reconciling") || o.ExecutionRef != "" {
 				return ErrIneligible
 			}
-			o.Status, o.Reason, o.Released = "skipped", "admission_not_accepted", true
+			o.Status, o.Reason, o.Released = "skipped", "execution_not_started", true
 		case "cancel_requested":
 			if o.Status != "running" {
 				return ErrIneligible
@@ -113,7 +108,7 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 				o.Status = "succeeded"
 			}
 			o.Reason = proof.Reason
-			// A result does not prove that the live session has released the directory.
+			// A result does not prove that the dedicated session has ended.
 		case "released":
 			if !terminal(o.Status) || o.Released || proof.Ref != o.ExecutionRef {
 				return ErrIneligible
@@ -123,7 +118,7 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 			switch o.Status {
 			case "recorded":
 				o.Status, o.Reason = "skipped", "server_restarted"
-			case "starting", "admission_unknown", "running", "cancelling":
+			case "starting", "running", "cancelling":
 				o.Status, o.Reason = "reconciling", "server_restarted"
 			default:
 				out = o

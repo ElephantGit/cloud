@@ -11,7 +11,7 @@ import (
 
 // Real scheduling persistence and the actual adapter share a fake execution service.
 // This verifies cross-module effects rather than declaring Stub responses to be execution.
-func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
+func TestCoordinatorConversationAdapterLookupThroughCleanup(t *testing.T) {
 	f := newModelFixture(t, "fixture-model")
 	ctx := context.Background()
 	now := f.occ.ScheduledAt
@@ -20,10 +20,10 @@ func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
 	f.executor.StartModelFunc = func(_ context.Context, _ execution.Scope, r execution.ModelStartRequest) (execution.Ref, error) {
 		starts++
 		caller = r.Caller
-		return execution.Ref{}, execution.ErrAdmissionUnknown
+		return execution.Ref{}, execution.ErrConflict
 	}
 	f.executor.ReadAttemptFunc = func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error) {
-		return execution.Turn{}, execution.ErrNotFound
+		return execution.Turn{}, execution.ErrUnavailable
 	}
 	c, e := NewCoordinator(f.records, f.adapter, func() time.Time { return now })
 	if e != nil {
@@ -36,14 +36,14 @@ func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
 		t.Fatal(e)
 	}
 	now = now.Add(time.Hour)
-	if e = c.Tick(ctx, f.scope); !errors.Is(e, execution.ErrAdmissionUnknown) {
+	if e = c.Tick(ctx, f.scope); !errors.Is(e, execution.ErrConflict) {
 		t.Fatalf("start outcome %v", e)
 	}
 	if starts != 1 {
 		t.Fatalf("starts=%d", starts)
 	}
 	o, e := f.records.GetOccurrence(ctx, f.scope.TenantID, f.scope.UserID, caller.ID)
-	if e != nil || o.Status != "admission_unknown" || o.Released {
+	if e != nil || o.Status != "reconciling" || o.Released {
 		t.Fatalf("unknown=%+v %v", o, e)
 	}
 	now = now.Add(time.Hour)

@@ -4,7 +4,7 @@
 
 ## 调用顺序
 
-1. `NewCoordinator(records, runner, now)` 创建单进程协调器，不启动 goroutine。
+1. 宿主先完成公共执行服务的启动恢复，旧活动轮次标 interrupted、旧会话结束后，使用 `server.NewScheduleCoordinator(records, options, now)` 接同一 `server.Options.Execution`。它内部创建一个 ConversationAdapter 和 Coordinator，不启动 goroutine；内部测试也可直接调用 `NewCoordinator(records, runner, now)`。
 2. 对每个明确的租户/用户 Scope 调用 `Recover`。持久恢复失败时该 Scope 不允许 Tick 或 Manual。旧 recorded 标为重启跳过；可能已接收的记录转为 reconciling，保留身份和占位，只调用执行适配的 Reconcile，不调用 Dispatch。公共读取不可用时返回错误，但已持久恢复的 Scope 可以处理其他任务；未解决记录继续防止本任务重叠。
 3. 调用一次 `Tick` 发现配置并安排未来时刻，随后由宿主按需要继续 Tick。首次发现、版本变化或暂停后恢复都严格从当前时刻往后计算，不回补此前的执行点，间隔仍以任务创建时间为锚点。
 4. Tick 先核对未释放记录，再扫描每个当前配置。到点写入固定计划时刻的记录，仅 recorded 状态交给 Dispatch。已跳过或已接收的记录不重新派发。一个任务的执行错误会返回给宿主，同时继续处理其余任务。
@@ -15,7 +15,7 @@
 
 ## 手动与取消
 
-`Manual(scope, scheduleID, stableKey)` 要求稳定请求键。第一次保存请求时刻与配置快照，重试先查已有记录，保留原时刻、版本与身份。记录仍为 recorded（尚未完成 begin）时，可以再次交给 Dispatch 完成第一次接收；适配层重新读取状态并以原子 begin 和版本检查防重复。starting、接收未知、运行中及终态等其他状态只核对，绝不再次 Start。暂停任务可以手动请求，但同任务占位仍由数据库接口检查，不能绕过防重叠。已开始执行后的显式重跑需要新的请求键。
+`Manual(scope, scheduleID, stableKey)` 要求稳定请求键。第一次保存请求时刻与配置快照，重试先查已有记录，保留原时刻、版本与身份。记录仍为 recorded（尚未完成 begin）时，可以再次交给 Dispatch 完成第一次接收；适配层重新读取状态并以原子 begin 和版本检查防重复。starting、reconciling、运行中及终态等其他状态只核对，绝不再次 Start。暂停任务可以手动请求，但同任务占位仍由数据库接口检查，不能绕过防重叠。已开始执行后的显式重跑需要新的请求键。
 
 `Cancel(scope, occurrenceID)` 先经记录模块按当前身份读取，再交给执行适配；客户端不能直接传任意公共执行引用。取消请求/超时不构成停止或释放证明。
 
@@ -24,23 +24,21 @@
 `ConversationAdapter` 使用公共 `execution.Service`，不是新的 provider 或 Session/Turn 实现。从冻结配置读取执行目标，以 occurrence ID 作为公共 Caller 的 ID 和 AttemptID：
 
 - 无项目文本对话使用 `StartModel` 与明确的模型 ID，不创建 Agent 或 Workspace；不能同时携带项目执行器 ID。
-- 有项目文本对话使用 `Start`，传入冻结的 projectId 和 target.executorId（公共目录里的执行器绑定 ID），WorkspaceID 留空，由公共服务选择并授权该项目主 Workspace。执行器名称、agent/model 展示文字不能替代绑定 ID。
+- 有项目文本对话使用 `Start`，传入冻结的 projectId 和 target.executorId（公共目录里的执行器绑定 ID）。每次触发都是独立会话，目录由公共服务创建，消费方不能选择或争抢目录。执行器名称、agent/model 展示文字不能替代绑定 ID。
 - 任一路的接收错误都不会降级到另一路；缺少绑定、空提示词及工作流目标明确拒绝。工作流必须经自己的运行入口，不能在这里当作 Agent 对话运行。
 
 当前 HTTP 配置接口仍只允许无项目文本对话，项目/执行器目录尚未装配。上述有项目消费适配只供进程内集成，不表示用户界面已开放项目选择或能执行真实 Agent。
 
-两路共用结果、取消与释放流程。已接收的执行结果通过公共记录读取。成功必须满足 `AnswerComplete`；完整性不足不能标 succeeded。结果写入定时领域状态后仍需 End 确认会话结束，之后才释放同任务占位。
+两路共用结果、取消与释放流程。已接收的执行结果通过公共记录读取。成功必须满足 `AnswerComplete`；完整性不足不能标 succeeded。Agent Cancel 结束会话，model-only Cancel 只停止当前轮；定时任务不追问结果，两路随后都调用幂等 End。只有 End 确认后才释放同任务占位，历史和目录继续保留。
 
-重启/接收未知先按原身份 ReadAttempt，一次 NotFound 不能证明原请求从未接收。尚未绑定 Ref 且查询未命中时，适配层用同一 Scope 和完整 Caller 调用 `SealAttempt`，不再次 Start、不提交 prompt：
+Start 是进程内同步调用。ConversationAdapter 对每条 occurrence 的操作串行；同一条正在处理时返回 `ErrOperationInProgress`，后续 Tick 可继续观察，不排队或重派。一个适配器负责全部定时对话，不能为相同记录创建并行适配器；启动恢复必须先于新派发。
 
-- `accepted` 必须带完整 Ref；先持久化绑定，再读取原执行结果。后续读取失败仍保留引用和占位，查询返回的 Caller/Ref 必须与原身份及绑定一致。
-- `not_admitted` 必须带空 Ref；将本次记录置为 skipped/admission_not_accepted 并释放占位。该结果证明同身份已被持久闭锁，不代表取消了任何执行，无需 Cancel/End。
-- 错误、零值、未知状态或非法 Ref 组合都不释放占位。重复核对继续用原身份；公共结果已确认但本地写入失败时也如此。
+调用错误或本地引用保存失败后按原 Caller `ReadAttempt`：存在时校验 Caller/Ref 并保存绑定；Start 已返回（或公共启动恢复已完成）、无已知 Ref 且查询未命中时，记 skipped/execution_not_started。读取错误或已绑定记录缺失保留占位。恢复只读，不提交 prompt；没有接收闭锁接口。相同手动键始终找回原记录，显式新键仍受同任务防重叠保护。
 
-已有绑定的执行不再 Seal；ReadAttempt 未命中仍保留占位，不能用闭锁代替 End。迟到的 Start/StartModel 若返回 `ErrAdmissionClosed`，按明确未接收收尾；并发核对已经保存的接收/闭锁事实不会被迟到错误覆盖。同一手动键不会重派，明确的新键在原占位释放后才可开始新的执行。
+`ErrWorkspaceBusy` 只指同一会话/工作流运行的前一轮仍活动。每次定时对话都新建会话，正常不会遇到；若公共服务仍明确拒绝，记 skipped/execution_busy，不自动重试，也不把它解释成项目目录被其他任务占用。
 
 ## 验证边界
 
 协调器测试使用显式时钟和记录/执行替身，验证调度选择、跨 Scope 隔离、并发扫描、防止重复手动请求、失败不自动派发、暂停恢复和重启核对门禁。记录模块的 PostgreSQL/race 验证承担实际原子接收、权限和占位约束；公共执行替身只验证消费方式，不算真实模型或完整运行时验收。
 
-恢复测试对有项目/无项目两路覆盖 SealAttempt 的已接收、已闭锁、仍未知及非法响应，验证原身份重试、引用持久化、重启后读取失败、结果完整性与 End 失败后继续占位，以及闭锁先于迟到接收返回的消费方行为。公共服务内 Start/StartModel/Append 与 SealAttempt 的 PostgreSQL 互斥及闭锁持久化由公共存储实现验证，不能用这些 Stub 测试替代。
+恢复测试覆盖两种对话模式、本地引用写入失败、关闭重开连接池后原身份核对、未启动记录收尾、读取错误保留占位、启动与观察并发、同项目不同任务独立会话、Cancel 后 End 失败重试和旧草稿状态升级。统一 Options 测试验证未配置 Stub 返回不可用及显式注入的消费路径。真实 Service 到位后还需验证完整回答持久化、End/重启读取及真实 Agent；本包不会以 Stub 结果冒充这些证据。

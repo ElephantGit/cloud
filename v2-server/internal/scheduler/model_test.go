@@ -20,6 +20,7 @@ import (
 )
 
 type modelFixture struct {
+	config   *pgxpool.Config
 	records  *store.Store
 	adapter  *ConversationAdapter
 	executor *executiontest.Stub
@@ -90,7 +91,7 @@ func newConversationFixture(t *testing.T, project string, target json.RawMessage
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &modelFixture{records: records, adapter: adapter, executor: executor, scope: scope, occ: occ, ref: execution.Ref{SessionID: "session-1", TurnID: "turn-1"}}
+	return &modelFixture{config: config, records: records, adapter: adapter, executor: executor, scope: scope, occ: occ, ref: execution.Ref{SessionID: "session-1", TurnID: "turn-1"}}
 }
 
 func (f *modelFixture) read(t *testing.T) store.Occurrence {
@@ -162,15 +163,11 @@ func TestModelAdmissionFailures(t *testing.T) {
 		state, reason string
 		released      bool
 	}{
-		{"busy", execution.ErrWorkspaceBusy, "skipped", "workspace_busy", true},
+		{"busy", execution.ErrWorkspaceBusy, "skipped", "execution_busy", true},
 		{"unavailable", execution.ErrUnavailable, "skipped", "execution_unavailable", true},
-		{"closed", execution.ErrAdmissionClosed, "skipped", "admission_not_accepted", true},
-		{"unknown", execution.ErrAdmissionUnknown, "admission_unknown", "admission_unknown", false},
-		{"conflict", execution.ErrConflict, "admission_unknown", "admission_unknown", false},
-		{"timeout", context.DeadlineExceeded, "skipped", "admission_deadline", true},
-		{"cancelled", context.Canceled, "skipped", "admission_cancelled", true},
-		{"unknown-and-timeout", errors.Join(execution.ErrAdmissionUnknown, context.DeadlineExceeded), "admission_unknown", "admission_unknown", false},
-		{"unknown-and-busy", errors.Join(execution.ErrAdmissionUnknown, execution.ErrWorkspaceBusy), "admission_unknown", "admission_unknown", false},
+		{"conflict", execution.ErrConflict, "reconciling", "lookup_required", false},
+		{"timeout", context.DeadlineExceeded, "reconciling", "lookup_required", false},
+		{"cancelled", context.Canceled, "reconciling", "lookup_required", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newModelFixture(t, "fixture-model")
@@ -194,23 +191,23 @@ func TestModelAdmissionFailures(t *testing.T) {
 	}
 }
 
-func TestModelUnknownReconcilesWithoutReadmission(t *testing.T) {
+func TestModelLookupFailureReconcilesWithoutReadmission(t *testing.T) {
 	f := newModelFixture(t, "fixture-model")
 	ctx := context.Background()
 	calls := 0
 	f.executor.StartModelFunc = func(context.Context, execution.Scope, execution.ModelStartRequest) (execution.Ref, error) {
 		calls++
-		return execution.Ref{}, execution.ErrAdmissionUnknown
+		return execution.Ref{}, execution.ErrConflict
 	}
 	_ = f.adapter.Dispatch(ctx, f.scope, f.occ)
 	f.executor.ReadAttemptFunc = func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error) {
-		return execution.Turn{}, execution.ErrNotFound
+		return execution.Turn{}, execution.ErrUnavailable
 	}
 	if e := f.adapter.Reconcile(ctx, f.scope, f.occ); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatal(e)
 	}
 	o := f.read(t)
-	if o.Released || o.Status != "admission_unknown" {
+	if o.Released || o.Status != "reconciling" {
 		t.Fatal("missing lookup released unknown")
 	}
 	o, e := f.records.ApplyOccurrenceEvidence(ctx, f.scope.TenantID, f.scope.UserID, o.ID, o.Version, store.ExecutionEvidence{Event: "recover"})
@@ -312,7 +309,7 @@ func TestConcurrentModelDispatchAdmitsOnce(t *testing.T) {
 	group.Wait()
 	close(errs)
 	for e := range errs {
-		if e != nil && !errors.Is(e, store.ErrConflict) {
+		if e != nil && !errors.Is(e, store.ErrConflict) && !errors.Is(e, ErrOperationInProgress) {
 			t.Fatal(e)
 		}
 	}

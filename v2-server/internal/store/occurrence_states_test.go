@@ -115,15 +115,18 @@ func TestExecutionStateRules(t *testing.T) {
 	if e != nil || auto.Status != "skipped" {
 		t.Fatalf("automatic overlap %v %v", auto, e)
 	}
-	active = apply(active, "busy", "")
-	if !active.Released || active.Status != "skipped" || active.Reason != "workspace_busy" {
+	active, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, active.ID, active.Version, store.ExecutionEvidence{Event: "rejected", Reason: "execution_busy"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !active.Released || active.Status != "skipped" || active.Reason != "execution_busy" {
 		t.Fatal("busy not terminal")
 	}
 	if _, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, active.ID, active.Version, store.ExecutionEvidence{Event: "begin"}); !errors.Is(e, store.ErrIneligible) {
 		t.Fatal("busy automatically retried")
 	}
 	unknown := apply(record("unknown"), "begin", "")
-	unknown = apply(unknown, "unknown", "")
+	unknown = apply(unknown, "reconcile", "")
 	if record("blocked-by-unknown").Status != "skipped" {
 		t.Fatal("unknown released task")
 	}
@@ -166,7 +169,7 @@ func TestExecutionStateRules(t *testing.T) {
 	running = apply(running, "interrupted", "ref-2")
 	running = apply(running, "released", "ref-2")
 	unaccepted := apply(record("not-accepted"), "begin", "")
-	unaccepted = apply(unaccepted, "unknown", "")
+	unaccepted = apply(unaccepted, "reconcile", "")
 	unaccepted = apply(unaccepted, "recover", "")
 	unaccepted = apply(unaccepted, "not_accepted", "")
 	if !unaccepted.Released {

@@ -28,7 +28,7 @@ func TestProjectConversationUsesFrozenBindingAndWaitsForCleanup(t *testing.T) {
 	f.executor.StartFunc = func(_ context.Context, scope execution.Scope, req execution.StartRequest) (execution.Ref, error) {
 		starts++
 		prompt, err := req.Prompt.Text()
-		if err != nil || scope != f.scope || !reflect.DeepEqual(req.Caller, occurrenceCaller(f.occ)) || req.Target.ProjectID != agentProject || req.Target.WorkspaceID != "" || req.ExecutorID != "catalog-executor" || prompt != "frozen prompt" {
+		if err != nil || scope != f.scope || !reflect.DeepEqual(req.Caller, occurrenceCaller(f.occ)) || req.Target.ProjectID != agentProject || req.ExecutorID != "catalog-executor" || prompt != "frozen prompt" {
 			t.Fatalf("wrong frozen selection: scope=%+v request=%+v prompt=%q err=%v", scope, req, prompt, err)
 		}
 		// A configuration edit after admission begins must not change its frozen selection.
@@ -79,8 +79,8 @@ func TestProjectConversationUsesFrozenBindingAndWaitsForCleanup(t *testing.T) {
 	}
 }
 
-func TestProjectAdmissionBusyAndUnknownNeverFallBackOrReplay(t *testing.T) {
-	for _, mode := range []string{"busy", "unknown"} {
+func TestProjectAdmissionBusyAndConflictNeverFallBackOrReplay(t *testing.T) {
+	for _, mode := range []string{"busy", "conflict"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newConversationFixture(t, agentProject, json.RawMessage(agentTarget))
 			ctx := context.Background()
@@ -90,7 +90,7 @@ func TestProjectAdmissionBusyAndUnknownNeverFallBackOrReplay(t *testing.T) {
 				if mode == "busy" {
 					return execution.Ref{}, execution.ErrWorkspaceBusy
 				}
-				return execution.Ref{}, execution.ErrAdmissionUnknown
+				return execution.Ref{}, execution.ErrConflict
 			}
 			f.executor.StartModelFunc = func(context.Context, execution.Scope, execution.ModelStartRequest) (execution.Ref, error) {
 				t.Fatal("failed Agent admission fell back to direct model")
@@ -104,7 +104,7 @@ func TestProjectAdmissionBusyAndUnknownNeverFallBackOrReplay(t *testing.T) {
 			}
 			o := f.read(t)
 			if mode == "busy" {
-				if o.Status != "skipped" || o.Reason != "workspace_busy" || !o.Released {
+				if o.Status != "skipped" || o.Reason != "execution_busy" || !o.Released {
 					t.Fatal(o)
 				}
 				return
@@ -113,7 +113,7 @@ func TestProjectAdmissionBusyAndUnknownNeverFallBackOrReplay(t *testing.T) {
 				if scope != f.scope || caller.ID != o.ID || caller.AttemptID != o.ID {
 					t.Fatal("reconciliation changed identity")
 				}
-				return execution.Turn{}, execution.ErrNotFound
+				return execution.Turn{}, execution.ErrUnavailable
 			}
 			coordinator, err := NewCoordinator(f.records, f.adapter, func() time.Time { return f.occ.ScheduledAt })
 			if err != nil {

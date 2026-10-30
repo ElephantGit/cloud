@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
@@ -23,6 +24,8 @@ type RecordStore interface {
 type ConversationAdapter struct {
 	records  RecordStore
 	executor execution.Service
+	mu       sync.Mutex
+	active   map[string]bool
 }
 
 // NewConversationAdapter requires explicit dependencies; an unconfigured execution Stub remains unavailable.
@@ -30,7 +33,23 @@ func NewConversationAdapter(records RecordStore, executor execution.Service) (*C
 	if records == nil || executor == nil {
 		return nil, errors.New("schedule conversation adapter requires records and execution")
 	}
-	return &ConversationAdapter{records: records, executor: executor}, nil
+	return &ConversationAdapter{records: records, executor: executor, active: make(map[string]bool)}, nil
+}
+
+// ErrOperationInProgress means another local operation owns this occurrence.
+// The caller can observe again on the next tick; no operation is queued.
+var ErrOperationInProgress = errors.New("schedule operation in progress")
+
+// enter prevents a lookup from overtaking an in-process Start. Only one adapter may
+// own these occurrences; recovery runs after the public service's startup barrier.
+func (a *ConversationAdapter) enter(id string) (func(), error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active[id] {
+		return nil, ErrOperationInProgress
+	}
+	a.active[id] = true
+	return func() { a.mu.Lock(); delete(a.active, id); a.mu.Unlock() }, nil
 }
 
 func occurrenceCaller(o store.Occurrence) execution.Caller {
@@ -46,8 +65,13 @@ func (a *ConversationAdapter) apply(ctx context.Context, scope execution.Scope, 
 }
 
 // Dispatch reserves a recorded occurrence before issuing one StartModel or Start call.
-// Duplicate dispatch attempts never issue a second admission, even after an ambiguous outcome.
+// Duplicate dispatch attempts never issue a second admission, including after a local persistence failure.
 func (a *ConversationAdapter) Dispatch(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+	leave, err := a.enter(occurrence.ID)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err
@@ -92,8 +116,7 @@ func (a *ConversationAdapter) Dispatch(ctx context.Context, scope execution.Scop
 	}
 	if startErr != nil {
 		if o.Released || o.ExecutionRef != "" {
-			// A concurrent reconciliation may already have sealed or accepted this
-			// identity. A late admission error cannot replace its durable evidence.
+			// Never replace a persisted execution binding or terminal record.
 			return startErr
 		}
 		event, reason := admissionFailure(startErr)
@@ -101,12 +124,12 @@ func (a *ConversationAdapter) Dispatch(ctx context.Context, scope execution.Scop
 		return errors.Join(startErr, err)
 	}
 	if !validRef(ref) {
-		_, err = a.apply(writeCtx, scope, o, "unknown", "", "")
-		return errors.Join(execution.ErrAdmissionUnknown, err)
+		_, err = a.apply(writeCtx, scope, o, "reconcile", "", "lookup_required")
+		return errors.Join(execution.ErrConflict, err)
 	}
 	encoded, _ := json.Marshal(ref)
 	if o.ExecutionRef == string(encoded) {
-		// A concurrent observer may already have resolved and even finished this turn.
+		// A durable binding is authoritative even if a previous local write reported an error.
 		return nil
 	}
 	if o.ExecutionRef != "" {
@@ -139,7 +162,7 @@ func modelRequest(o store.Occurrence) (execution.ModelStartRequest, string) {
 }
 
 // agentRequest requires a catalog executor ID, never a guessed binding of display names.
-// The shared service authorizes the selected project and resolves its main Workspace.
+// The shared service authorizes the selected project and creates an independent directory for this new session.
 func agentRequest(o store.Occurrence) (execution.StartRequest, string) {
 	var config store.ScheduleConfig
 	if json.Unmarshal(o.Snapshot, &config) != nil {
@@ -161,16 +184,14 @@ func agentRequest(o store.Occurrence) (execution.StartRequest, string) {
 
 func admissionFailure(err error) (string, string) {
 	switch {
-	case errors.Is(err, execution.ErrAdmissionUnknown), errors.Is(err, execution.ErrConflict):
-		return "unknown", ""
-	case errors.Is(err, execution.ErrAdmissionClosed):
-		return "rejected", "admission_not_accepted"
+	case errors.Is(err, execution.ErrConflict):
+		return "reconcile", "lookup_required"
 	case errors.Is(err, context.Canceled):
-		return "rejected", "admission_cancelled"
+		return "reconcile", "lookup_required"
 	case errors.Is(err, context.DeadlineExceeded):
-		return "rejected", "admission_deadline"
+		return "reconcile", "lookup_required"
 	case errors.Is(err, execution.ErrWorkspaceBusy):
-		return "busy", ""
+		return "rejected", "execution_busy"
 	case errors.Is(err, execution.ErrUnavailable):
 		return "rejected", "execution_unavailable"
 	case errors.Is(err, execution.ErrInvalidRequest):
@@ -180,7 +201,7 @@ func admissionFailure(err error) (string, string) {
 	case errors.Is(err, execution.ErrNotFound):
 		return "rejected", "execution_target_unavailable"
 	default:
-		return "unknown", ""
+		return "reconcile", "lookup_required"
 	}
 }
 
@@ -188,7 +209,7 @@ func validRef(ref execution.Ref) bool { return ref.SessionID != "" && ref.TurnID
 func storedRef(o store.Occurrence) (execution.Ref, error) {
 	var ref execution.Ref
 	if json.Unmarshal([]byte(o.ExecutionRef), &ref) != nil || !validRef(ref) {
-		return ref, execution.ErrAdmissionUnknown
+		return ref, execution.ErrConflict
 	}
 	return ref, nil
 }
@@ -197,9 +218,15 @@ func isResult(status string) bool {
 }
 
 // Reconcile follows the original caller identity without submitting another prompt.
-// Missing unbound attempts require SealAttempt; NotFound alone never proves non-admission.
+// After Start has returned (or startup recovery), a missing unbound attempt can be closed.
+// Read errors and missing previously bound turns retain the task slot.
 // A terminal result still requires End confirmation before the task's slot is released.
 func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+	leave, err := a.enter(occurrence.ID)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err
@@ -212,11 +239,8 @@ func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Sco
 	}
 	turn, err := a.executor.ReadAttempt(ctx, scope, occurrenceCaller(o))
 	if errors.Is(err, execution.ErrNotFound) && o.ExecutionRef == "" {
-		o, err = a.seal(ctx, scope, o)
-		if err != nil || o.Released {
-			return err
-		}
-		turn, err = a.executor.ReadAttempt(ctx, scope, occurrenceCaller(o))
+		_, err = a.apply(ctx, scope, o, "not_accepted", "", "execution_not_started")
+		return err
 	}
 	if err != nil {
 		return err
@@ -229,7 +253,7 @@ func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Sco
 	if o.ExecutionRef != "" && o.ExecutionRef != string(encoded) {
 		return execution.ErrConflict
 	}
-	if o.Status == "starting" || o.Status == "admission_unknown" || o.Status == "reconciling" {
+	if o.Status == "starting" || o.Status == "reconciling" {
 		o, err = a.apply(ctx, scope, o, "accepted", string(encoded), "")
 		if err != nil {
 			return err
@@ -239,33 +263,6 @@ func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Sco
 		return nil
 	}
 	return a.finish(ctx, scope, o, turn.Ref, *turn.Result)
-}
-
-// seal persists a confirmed resolution before any subsequent lookup can fail. Versions
-// fence concurrent observers; a failed local write is retried under the same identity.
-func (a *ConversationAdapter) seal(ctx context.Context, scope execution.Scope, o store.Occurrence) (store.Occurrence, error) {
-	resolution, err := a.executor.SealAttempt(ctx, scope, occurrenceCaller(o))
-	if err != nil {
-		return o, err // Even a populated resolution is invalid when accompanied by an error.
-	}
-	switch resolution.State {
-	case execution.AdmissionAccepted:
-		if !validRef(resolution.Ref) {
-			return o, execution.ErrAdmissionUnknown
-		}
-		encoded, _ := json.Marshal(resolution.Ref)
-		return a.apply(ctx, scope, o, "accepted", string(encoded), "")
-	case execution.AdmissionNotAdmitted:
-		if resolution.Ref != (execution.Ref{}) {
-			return o, execution.ErrConflict
-		}
-		if o.Status == "starting" {
-			return a.apply(ctx, scope, o, "rejected", "", "admission_not_accepted")
-		}
-		return a.apply(ctx, scope, o, "not_accepted", "", "")
-	default:
-		return o, execution.ErrAdmissionUnknown
-	}
 }
 
 func resultEvent(r execution.Result) (string, string, error) {
@@ -339,9 +336,15 @@ func (a *ConversationAdapter) end(ctx context.Context, scope execution.Scope, o 
 	return err
 }
 
-// Cancel retains the slot until both a terminal result and session cleanup are confirmed.
-// Unknown admission has no cancellable Ref: the caller must reconcile it, never replace it.
+// Cancel follows the shared mode semantics: Agent ends its session, model-only stops its turn.
+// A schedule always ends its dedicated session afterward; End preserves history and directory.
+// Unbound occurrences must be reconciled first, never replaced.
 func (a *ConversationAdapter) Cancel(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+	leave, err := a.enter(occurrence.ID)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err
@@ -353,7 +356,7 @@ func (a *ConversationAdapter) Cancel(ctx context.Context, scope execution.Scope,
 		return a.end(ctx, scope, o)
 	}
 	if o.Status != "running" && o.Status != "cancelling" {
-		return execution.ErrAdmissionUnknown
+		return execution.ErrConflict
 	}
 	ref, err := storedRef(o)
 	if err != nil {

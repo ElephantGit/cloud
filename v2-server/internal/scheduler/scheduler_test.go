@@ -269,15 +269,15 @@ func TestCoordinatorUnknownManualRetryKeepsTimeAndNeverRedispatches(t *testing.T
 	clock := coordTime("2026-10-29T08:30:00Z")
 	c := coordService(t, f, &clock)
 	_ = c.Recover(ctx, coordScope)
-	f.dispatchErr = errors.New("admission unknown")
+	f.dispatchErr = errors.New("lookup failed")
 	first, e := c.Manual(ctx, coordScope, "one", "stable")
 	if e == nil {
 		t.Fatal("dispatch error hidden")
 	}
-	// ConversationAdapter persists unknown admission before returning that error. This fixture
+	// ConversationAdapter persists reconciliation state before returning that error. This fixture
 	// only models dispatch decisions, so install the durable state explicitly here.
 	unknown := f.items[first.ID]
-	unknown.Status, unknown.Released = "admission_unknown", false
+	unknown.Status, unknown.Released = "reconciling", false
 	f.items[first.ID] = unknown
 	clock = clock.Add(time.Hour)
 	config.Version = 2

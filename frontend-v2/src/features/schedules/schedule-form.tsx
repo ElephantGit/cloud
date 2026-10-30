@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { catalog, emptyDraft, formatTime, nextTimes, summary, taskDraft, validateDraft, weekdayNames, type Catalog, type Draft, type Task } from './schedule-model'
 
-export function ScheduleForm({ task, onSave, onCancel, data = catalog }: { task?: Task; onSave: (draft: Draft) => void; onCancel: () => void; data?: Catalog }) {
+export function ScheduleForm({ task, onSave, onCancel, data = catalog, saving = false, blocked = false, saveError }: { task?: Task; onSave: (draft: Draft) => void; onCancel: () => void; data?: Catalog; saving?: boolean; blocked?: boolean; saveError?: string }) {
   const [draft, setDraft] = useState(() => task ? taskDraft(task) : emptyDraft())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
@@ -49,13 +49,13 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog }: { task?
           <ScheduleField name="name" label="任务名称" error={errors.name}><Input placeholder="例如：每日 AI 简报" value={draft.name} onChange={e => patch({ name: e.target.value })} {...control('name')} /></ScheduleField>
           <ToggleGroup className="sp-kind-picker w-full" aria-label="执行方式" value={[draft.kind]} onValueChange={values => { const value = values[0]; if (value === 'chat' || value === 'workflow') patch({ kind: value }) }} variant="outline" spacing={3}>
             <ToggleGroupItem className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="chat"><MessageSquare /><strong>直接对话</strong><small>用一段指令完成工作</small>{draft.kind === 'chat' && <Check className="sp-selected-check" />}</ToggleGroupItem>
-            <ToggleGroupItem className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch /><strong>运行工作流</strong><small>执行已发布的多步流程</small>{draft.kind === 'workflow' && <Check className="sp-selected-check" />}</ToggleGroupItem>
+            <ToggleGroupItem disabled className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch /><strong>运行工作流</strong><small>执行已发布的多步流程</small>{draft.kind === 'workflow' && <Check className="sp-selected-check" />}</ToggleGroupItem>
           </ToggleGroup>
           {draft.kind === 'chat' ? <>
             <ScheduleField name="prompt" label="任务指令" error={errors.prompt} hint="每次运行新建独立对话，不携带上次聊天记录。"><Textarea className="min-h-28" rows={4} placeholder="描述任务目标、需要关注的信息，以及期望的输出格式…" value={draft.prompt} onChange={e => patch({ prompt: e.target.value })} {...control('prompt')} /></ScheduleField>
             <FieldGroup className="grid grid-cols-2 gap-4">
-              <ScheduleField name="agent" label="执行器"><NativeSelect className="w-full" id="schedule-agent" value={draft.agent} onChange={e => patch({ agent: e.target.value })}><NativeSelectOption>Ora Assistant</NativeSelectOption><NativeSelectOption>Research Assistant</NativeSelectOption></NativeSelect></ScheduleField>
-              <ScheduleField name="model" label="模型"><NativeSelect className="w-full" id="schedule-model" value={draft.model} onChange={e => patch({ model: e.target.value })}><NativeSelectOption>演示默认模型</NativeSelectOption><NativeSelectOption>演示深度分析模型</NativeSelectOption></NativeSelect></ScheduleField>
+              <ScheduleField name="agent" label="执行器"><NativeSelect disabled className="w-full" id="schedule-agent" value={draft.agent} onChange={e => patch({ agent: e.target.value })}><NativeSelectOption value={draft.agent}>尚未接入</NativeSelectOption></NativeSelect></ScheduleField>
+              <ScheduleField name="model" label="模型"><NativeSelect disabled className="w-full" id="schedule-model" value={draft.model} onChange={e => patch({ model: e.target.value })}><NativeSelectOption value={draft.model}>尚未接入</NativeSelectOption></NativeSelect></ScheduleField>
             </FieldGroup>
           </> : <>
             <Field data-invalid={!!errors.workflow}>
@@ -98,10 +98,11 @@ export function ScheduleForm({ task, onSave, onCancel, data = catalog }: { task?
           <div className="sp-time-preview"><div><Clock3 size={15} /><strong>接下来三次</strong><span>{draft.rule.timezone}</span></div>{times.length ? times.map((time, i) => <p key={time.toISOString()}><span>{String(i + 1).padStart(2, '0')}</span>{formatTime(time, draft.rule.timezone)}</p>) : <p>填写完整时间规则后预览</p>}<small>{draft.rule.kind === 'hours' ? '从创建时间起，按固定小时数间隔计算。' : '按所选时区计算，跳过夏令时不存在的时刻。'}</small></div>
         </FieldGroup>
       </FieldSet>
-      <div className="sp-summary"><Clock3 size={17} /><div><strong>任务预览</strong><p>{summary(draft)}</p><small>模拟数据 · 不会实际调度或调用 AI</small></div></div>
+      <div className="sp-summary"><Clock3 size={17} /><div><strong>任务预览</strong><p>{summary(draft)}</p><small>配置已保存后可随时编辑；自动执行尚未接入。</small></div></div>
     </FieldGroup></div>
+    {saveError && <p role="alert" className="sp-helper">{saveError}</p>}
     <footer className="sp-form-footer">
-      {discard ? <><span>放弃未保存的修改？</span><Button type="button" variant="outline" onClick={() => setDiscard(false)}>继续编辑</Button><Button type="button" onClick={onCancel}>放弃修改</Button></> : <><Button type="button" variant="outline" onClick={() => dirty ? setDiscard(true) : onCancel()}>取消</Button><span className="sp-footer-spacer" /><Button type="submit">{task ? '保存修改' : '创建并启用'}</Button></>}
+      {discard ? <><span>放弃未保存的修改？</span><Button type="button" variant="outline" onClick={() => setDiscard(false)}>继续编辑</Button><Button type="button" onClick={onCancel}>放弃修改</Button></> : <><Button type="button" variant="outline" onClick={() => dirty ? setDiscard(true) : onCancel()}>取消</Button><span className="sp-footer-spacer" /><Button type="submit" disabled={saving || blocked}>{saving ? '保存中…' : task ? '保存修改' : '创建并启用'}</Button></>}
     </footer>
   </form>
 }

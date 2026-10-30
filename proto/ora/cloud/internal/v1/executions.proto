@@ -143,6 +143,8 @@ message ExecutionRecord {
   optional ExecutionResult result = 5;
   // Stable Node operation for this execution attempt; distinct from the durable business intent.
   string node_operation_id = 6;
+  // Cloud's durable registration wall clock, RFC3339. Clone result windows start here.
+  optional string created_at = 7;
 }
 
 message ClaimWorkRequest {

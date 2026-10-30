@@ -11,6 +11,8 @@ docker compose -p cloud up -d --wait   # 在仓库根目录
 go run .                               # 监听 127.0.0.1:8090
 ```
 
+使用本地 Node 配套服务时，自签证书从服务创建起有效 24 小时，不会自动轮换。连续运行超过一天需重启后端以重新生成证书；长时间演示应在证书到期前安排重启。
+
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `V2_ADDR` | `127.0.0.1:8090` | 监听地址 |
@@ -85,6 +87,11 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 `execution.ErrUnavailable`；它不会伪造运行、清单或持久历史。替换为真实执行服务只改变启动装配，
 页面继续依赖同一接口。本注入点不新增 HTTP 契约。
 
+[`internal/modelturn`](internal/modelturn/README.md) 提供无项目的纯文本单轮执行器，
+通过配置的 provider 解析 JSON / SSE，返回完整答案、停止原因和实际可得的 usage。
+取消会停止上游调用；截断、损坏或缺少终态的响应明确失败。该组件尚未装配到公共执行服务，
+admission、会话和事件持久化、重启恢复仍由调用方负责。
+
 ## 与正式 Cloud 的差异
 
 ### 定时触发记录基础
@@ -111,3 +118,6 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
   [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。
   配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
   本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。
+- [`internal/nodehistory`](internal/nodehistory/README.md) 将固定 Node 的历史转换为替换快照，
+  只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL
+  的超长回答验证，但尚未接入页面 Session/Turn 存储、公共执行服务或 HTTP 路由。

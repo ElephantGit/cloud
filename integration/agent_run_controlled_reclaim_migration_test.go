@@ -140,8 +140,9 @@ func TestControlledResidualMigrationUpgradePreserves0057HistoryAndDoesNotInventD
  'residuals',(SELECT jsonb_agg(to_jsonb(r)-'stop_evidence' ORDER BY run_id) FROM agent_run_residuals r),
  'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM issue_runs r),
  'workspaces',(SELECT jsonb_agg(to_jsonb(w) ORDER BY id) FROM workspaces w),
- 'operations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM operations o))::text`
-	// Migrate applies every later migration too; stop_evidence is 0059's additive column, not a rewrite of history.
+ 'operations',(SELECT jsonb_agg(to_jsonb(o)-'node_unavailable_attempts' ORDER BY id) FROM operations o))::text`
+	// Migrate applies every later migration too. Exclude only 0059's additive stop evidence and
+	// 0074's scheduling counter from historical equality; assert the new counter's default below.
 	var before, after string
 	must(t, pool.QueryRow(snapshot).Scan(&before))
 	store := newStoreOnSchema(t, pool)
@@ -150,6 +151,11 @@ func TestControlledResidualMigrationUpgradePreserves0057HistoryAndDoesNotInventD
 	must(t, pool.QueryRow(snapshot).Scan(&after))
 	if before != after {
 		t.Fatal("controlled migration changed 0057 responsibility/state/clear time or historical business rows")
+	}
+	var zeroUnavailableAttempts bool
+	must(t, pool.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM operations WHERE node_unavailable_attempts<>0)`).Scan(&zeroUnavailableAttempts))
+	if !zeroUnavailableAttempts {
+		t.Fatal("migration invented historical Node-unavailable attempts")
 	}
 	var empty bool
 	must(t, pool.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM agent_run_reclamation_intents)

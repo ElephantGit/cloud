@@ -20,7 +20,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
-// ErrNoActiveTurn reports a stop with no live session to stop.
+// ErrNoActiveTurn reports a stop or release with no live session to act on.
 var ErrNoActiveTurn = errors.New("no active turn")
 
 // BusyError is a workspace-busy refusal. Occupant is the person's own conversation holding the
@@ -223,6 +223,27 @@ func (s *Service) Stop(ctx context.Context, scope execution.Scope, conversationI
 		}
 	}
 	return result, nil
+}
+
+// Release ends the live session between turns, so another conversation can use its workspace.
+// A running turn is stopped with it. Without a live session there is nothing to release.
+func (s *Service) Release(ctx context.Context, scope execution.Scope, conversationID string) (store.ChatConversation, error) {
+	defer s.lock(conversationID)()
+	c, e := s.store.ChatConversation(ctx, scope.TenantID, scope.UserID, conversationID)
+	if e != nil {
+		return c, e
+	}
+	live, ok := c.Live()
+	if !ok {
+		return c, ErrNoActiveTurn
+	}
+	if e := s.runtime.End(ctx, scope, live.ID); e != nil {
+		return c, fmt.Errorf("end session: %w", e)
+	}
+	if e := s.store.EndChatSession(ctx, live.ID, store.EndReleased, s.now()); e != nil {
+		return c, e
+	}
+	return s.store.ChatConversation(ctx, scope.TenantID, scope.UserID, conversationID)
 }
 
 // Rename changes a conversation's title.

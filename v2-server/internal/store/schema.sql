@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS v2_chat_conversations (
 );
 CREATE INDEX IF NOT EXISTS v2_chat_conversations_owner ON v2_chat_conversations (tenant_id, user_id);
 
--- end_reason records why chat ended a session (stopped, idle, deleted, interrupted); an empty
+-- end_reason records why chat ended a session (stopped, released, idle, deleted, interrupted); an empty
 -- reason with ended_at unset means chat still treats the session as live.
 CREATE TABLE IF NOT EXISTS v2_chat_sessions (
 	conversation_id uuid NOT NULL REFERENCES v2_chat_conversations (id) ON DELETE CASCADE,

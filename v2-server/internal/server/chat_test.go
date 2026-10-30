@@ -55,10 +55,17 @@ func (s *events) Next(context.Context) (execution.Event, error) {
 
 func (s *events) Close() error { return nil }
 
-// chatRuntime admits one session per workspace and replays two events for any session.
+// chatRuntime admits one session per workspace, frees it on End or Cancel, and replays the same
+// events for any session.
 func chatRuntime() *executiontest.Stub {
 	var mu sync.Mutex
 	busy := map[execution.Target]bool{}
+	targets := map[string]execution.Target{}
+	release := func(sid string) {
+		mu.Lock()
+		defer mu.Unlock()
+		delete(busy, targets[sid])
+	}
 	n := 0
 	at := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
 	return &executiontest.Stub{
@@ -73,18 +80,24 @@ func chatRuntime() *executiontest.Stub {
 			}
 			busy[req.Target] = true
 			n++
-			return execution.Ref{SessionID: "s" + string(rune('0'+n)), TurnID: "t1"}, nil
+			sid := "s" + string(rune('0'+n))
+			targets[sid] = req.Target
+			return execution.Ref{SessionID: sid, TurnID: "t1"}, nil
 		},
 		AppendFunc: func(_ context.Context, _ execution.Scope, req execution.AppendRequest) (execution.Ref, error) {
 			return execution.Ref{SessionID: req.SessionID, TurnID: "t2"}, nil
 		},
-		CancelFunc: func(context.Context, execution.Scope, execution.Ref) (execution.Result, error) {
+		CancelFunc: func(_ context.Context, _ execution.Scope, ref execution.Ref) (execution.Result, error) {
+			release(ref.SessionID)
 			return execution.Result{Status: execution.StatusCancelled, StopReason: "cancelled", FailureCode: ""}, nil
 		},
 		ReadSessionFunc: func(_ context.Context, _ execution.Scope, sid string) (execution.Session, error) {
 			return execution.Session{ID: sid, EndedAt: &at}, nil
 		},
-		EndFunc: func(context.Context, execution.Scope, string) error { return nil },
+		EndFunc: func(_ context.Context, _ execution.Scope, sid string) error {
+			release(sid)
+			return nil
+		},
 		SubscribeFunc: func(_ context.Context, _ execution.Scope, sid string, after uint64) (execution.Stream, error) {
 			all := []execution.Event{
 				{Ref: execution.Ref{SessionID: sid, TurnID: "t1"}, Sequence: 1, OccurredAt: at, Kind: execution.EventHistorySnapshot,
@@ -226,6 +239,12 @@ func TestChatConversationLifecycle(t *testing.T) {
 	}
 	if status, body := c.do("GET", "/conversations", nil); status != 200 || len(body["items"].([]any)) != 1 {
 		t.Fatalf("list = %d %v", status, body)
+	}
+	if status, body := c.post("/conversations/"+id+"/end", "k6", nil); status != 200 || body["sessions"].([]any)[0].(map[string]any)["endReason"] != "released" {
+		t.Fatalf("end = %d %v", status, body)
+	}
+	if status, body := c.post("/conversations/"+id+"/messages", "k7", map[string]any{"prompt": "再来"}); status != 201 || body["turn"].(map[string]any)["sessionId"] == "s1" {
+		t.Fatalf("send after end = %d %v", status, body)
 	}
 	if status, body := c.post("/conversations/"+id+"/stop", "k4", nil); status != 200 || body["result"].(map[string]any)["status"] != "cancelled" {
 		t.Fatalf("stop = %d %v", status, body)

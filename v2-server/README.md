@@ -102,6 +102,7 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 | `DELETE …/chat/conversations/{cid}` | 先 `End` 活 session，确认后再删除对话 |
 | `POST …/chat/conversations/{cid}/messages` | 发下一条消息：活 session 上 `Append`，已结束则在原 Workspace 新开 session |
 | `POST …/chat/conversations/{cid}/stop` | `Cancel` 最近一轮 |
+| `POST …/chat/conversations/{cid}/end` | `End` 活 session，释放 Workspace；下一条消息新开 session |
 | `GET …/chat/conversations/{cid}/sessions/{sid}/events` | 一个 session 的事件，Server-Sent Events |
 | `GET`/`PUT …/chat/project-order` | 本人在左栏的项目顺序 |
 
@@ -109,6 +110,7 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 
 - **一个对话、多个 session**：固定 Node 的活 session 在两轮之间一直持有 Workspace，只有 `End`（或取消进行中的一轮）才释放。对话在下列情况结束当前 session，并记下 `endReason`：
   - `stopped`：停止。
+  - `released`：手动结束会话，把 Workspace 让给别的对话。
   - `idle`：最近一轮结束后空闲超过 `chat.Options.IdleAfter`，由 `RunIdleReclaim` 定期 `End`；进行中的一轮不会被结束。
   - `deleted`：删除对话。
   - `interrupted`：在对话之外结束，例如服务重启后 `Append` 返回 `ErrSessionEnded`。

@@ -251,6 +251,24 @@ func TestStopThenSendStartsNewSession(t *testing.T) {
 	}
 }
 
+func TestReleaseFreesWorkspace(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	held, ref := f.create(t, "k1", "")
+	f.port.finish(ref.TurnID, f.clock.now())
+	if _, _, e := f.svc.Create(ctx, f.scope, chat.CreateRequest{Key: "k2", ProjectID: "demo", ExecutorID: "fixture", Prompt: "b"}); !errors.Is(e, execution.ErrWorkspaceBusy) {
+		t.Fatalf("an idle live session must still hold the workspace: %v", e)
+	}
+	c, e := f.svc.Release(ctx, f.scope, held.ID)
+	if e != nil || c.Sessions[0].EndReason != store.EndReleased {
+		t.Fatalf("release = %+v %v", c, e)
+	}
+	if _, e := f.svc.Release(ctx, f.scope, held.ID); !errors.Is(e, chat.ErrNoActiveTurn) {
+		t.Fatalf("second release = %v", e)
+	}
+	f.create(t, "k2", "")
+}
+
 func TestEndedOutsideChatIsInterrupted(t *testing.T) {
 	f := setup(t)
 	c, first := f.create(t, "k1", "")

@@ -54,6 +54,7 @@ export type ChatSessionEndReason = typeof ChatSessionEndReason[keyof typeof Chat
 export const ChatSessionEndReason = {
   '': '',
   stopped: 'stopped',
+  released: 'released',
   idle: 'idle',
   deleted: 'deleted',
   interrupted: 'interrupted',
@@ -756,6 +757,74 @@ export const useStopChatConversation = <TError = ErrorType<ChatError>,
         TContext
       > => {
       return useMutation(getStopChatConversationMutationOptions(options), queryClient);
+    }
+
+/**
+ * Ends the session between turns (stopping a running turn with it); the next prompt starts a new session. 409 no_active_turn when no session is live.
+ * @summary End the live session so its workspace is free
+ */
+export const endChatSession = (
+    tid: string,
+    cid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<ChatConversation>(
+      {url: `/api/v2/tenants/${tid}/chat/conversations/${cid}/end`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getEndChatSessionMutationKey = () => ['endChatSession'] as const;
+
+export const getEndChatSessionMutationOptions = <TError = ErrorType<ChatError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext> => {
+
+const mutationKey = getEndChatSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endChatSession>>, EndChatSessionMutationVariables> = (props) => {
+          const {tid,cid} = props ?? {};
+
+          return  endChatSession(tid,cid,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EndChatSessionMutationResult = NonNullable<Awaited<ReturnType<typeof endChatSession>>>
+
+    export type EndChatSessionMutationError = ErrorType<ChatError>
+    export type EndChatSessionMutationVariables = {tid: string;cid: string}
+
+    /**
+ * @summary End the live session so its workspace is free
+ */
+export const useEndChatSession = <TError = ErrorType<ChatError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endChatSession>>, TError,EndChatSessionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof endChatSession>>,
+        TError,
+        EndChatSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEndChatSessionMutationOptions(options), queryClient);
     }
 
 /**

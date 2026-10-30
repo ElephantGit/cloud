@@ -38,6 +38,7 @@ func (h *handler) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE "+chatBase+"/conversations/{cid}", h.chat(h.chatDelete))
 	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/messages", h.chat(h.chatSend))
 	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/stop", h.chat(h.chatStop))
+	mux.HandleFunc("POST "+chatBase+"/conversations/{cid}/end", h.chat(h.chatRelease))
 	mux.HandleFunc("GET "+chatBase+"/conversations/{cid}/sessions/{sid}/events", h.chat(h.chatEvents))
 	mux.HandleFunc("GET "+chatBase+"/project-order", h.chat(h.chatProjectOrder))
 	mux.HandleFunc("PUT "+chatBase+"/project-order", h.chat(h.chatSetProjectOrder))
@@ -228,6 +229,15 @@ func (h *handler) chatStop(w http.ResponseWriter, r *http.Request, c chatRequest
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"result": resultOf(result)})
+}
+
+func (h *handler) chatRelease(w http.ResponseWriter, r *http.Request, c chatRequest) {
+	conv, e := c.svc.Release(r.Context(), c.scope, r.PathValue("cid"))
+	if e != nil {
+		chatFault(w, "chat release", e)
+		return
+	}
+	writeJSON(w, http.StatusOK, conv)
 }
 
 type chatEvent struct {

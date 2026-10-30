@@ -15,6 +15,7 @@ var ErrKeyReused = errors.New("idempotency key reused")
 // Why chat ended an execution session; the conversation can continue in a new one.
 const (
 	EndStopped     = "stopped"
+	EndReleased    = "released"
 	EndIdle        = "idle"
 	EndDeleted     = "deleted"
 	EndInterrupted = "interrupted"

@@ -120,6 +120,8 @@ V2_NODE_ASSETS_DIR=/absolute/path/to/assets TEST_DATABASE_URL='postgres://ora:or
 
 目录不会在 End 或重启时自动删除。停止服务后运行 `go run . -cleanup`，显式清理本数据根登记的 Node
 与对话目录；保留项目 mirror 和数据库历史。此命令拒绝与持有同一数据目录的服务并行执行。
+`server.New` 将未配置的 Execution/Catalog 字段默认设为同一个未配置 Stub；显式传入的依赖保留不变。
+这两个字段分别配置：即使 Execution 同时实现 Catalog，省略 Catalog 仍表示该清单不可用。
 
 ## 与正式 Cloud 的差异
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
+	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
@@ -38,14 +39,17 @@ type Options struct {
 	DemoUser store.Identity
 	// Projects prepares fixed repository mirrors; nil leaves project operations unavailable.
 	Projects *projectrepos.Service
-	// Execution and Catalog are shared by page adapters and catalog routes.
+	// Execution is the shared backend for page-owned conversations and runs.
+	// Nil uses an unavailable Stub; an explicitly supplied backend is kept unchanged.
 	Execution execution.Service
-	Catalog   execution.Catalog
+	// Catalog exposes the executable Agent/model choices from that backend.
+	// Nil uses an unavailable Stub, independently of Execution.
+	Catalog execution.Catalog
 }
 
 // New returns the handler for every route v2-server serves.
 func New(s Store, o Options) http.Handler {
-	h := &handler{store: s, opts: o}
+	h := newHandler(s, o)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /auth/providers", h.providers)
@@ -77,6 +81,18 @@ func New(s Store, o Options) http.Handler {
 type handler struct {
 	store Store
 	opts  Options
+}
+
+// newHandler makes omitted dependencies safe without inferring one interface from another.
+func newHandler(s Store, o Options) *handler {
+	unavailable := &executiontest.Stub{}
+	if o.Execution == nil {
+		o.Execution = unavailable
+	}
+	if o.Catalog == nil {
+		o.Catalog = unavailable
+	}
+	return &handler{store: s, opts: o}
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {

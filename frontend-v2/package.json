@@ -5,19 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "VITE_CHAT_DEMO=1 vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint --deny-warnings",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "check": "npm run api:check:schedules && npm run api:check:squads && npm run typecheck && npm run lint && npm run test && npm run build",
+    "check": "npm run api:check:schedules && npm run api:check:squads && npm run api:check:chat && npm run typecheck && npm run lint && npm run test && npm run build",
     "api:generate": "orval --config orval.config.ts",
     "api:generate:schedules": "orval --config orval.schedules.config.ts && npm run api:generate:schedule-runtime",
     "api:check:schedules": "npm run api:generate:schedules && git diff --exit-code -- src/features/schedules/api",
     "api:generate:squads": "orval --config orval.squads.config.ts",
     "api:check:squads": "npm run api:generate:squads && git diff --exit-code -- src/features/multica/api",
     "e2e": "playwright test",
-    "api:generate:schedule-runtime": "orval --config orval.schedule-runtime.config.ts"
+    "api:generate:schedule-runtime": "orval --config orval.schedule-runtime.config.ts",
+    "api:generate:chat": "orval --config orval.chat.config.ts",
+    "api:check:chat": "npm run api:generate:chat && git diff --exit-code -- src/features/chat/api src/features/chat/projects-api"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",

@@ -73,6 +73,13 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   // The agent membership is untouched by the human removal.
   await expect(detail.getByText(/Agent\s*1/)).toBeVisible()
   await expect(detail.getByText('OpenCode')).toBeVisible()
+
+  // An agent leaves the same way: the membership ends and the history keeps the row.
+  await detail.getByRole('button', { name: '移除OpenCode' }).click()
+  await detail.getByRole('button', { name: '确认移除' }).click()
+  await expect(page.getByText('已移除 OpenCode')).toBeVisible()
+  await expect(detail.getByText('已退出 2')).toBeVisible()
+  await expect(detail.getByText(/Agent\s*0/)).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('members.png'), fullPage: true })
 
   // Archiving needs confirmation, ends the live membership and keeps the history read-only.

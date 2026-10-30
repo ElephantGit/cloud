@@ -58,6 +58,12 @@ describe('demo workflow runs', () => {
     const output = nodes.find((n) => n.data.kind === 'output')!
     expect(finished.nodeStates[output.id]).toMatchObject({ status: 'succeeded', output: expect.anything() })
 
+    // The condition took one branch; the other one's nodes are inactive, so the path is complete.
+    const condition = nodes.find((n) => n.data.kind === 'condition')!
+    const branches = finished.definitionSnapshot.edges.filter((e) => e.source === condition.id).map((e) => finished.nodeStates[e.target]?.status)
+    expect(branches.sort()).toEqual(['inactive', 'succeeded'])
+    expect(Object.values(finished.nodeStates).every((state) => state.status === 'succeeded' || state.status === 'inactive')).toBe(true)
+
     // Theater lists each node's artifacts and brings the newest into view.
     const artifacts = useDemoRuns.getState().artifacts[run.id] ?? []
     expect(artifacts.length).toBeGreaterThan(0)

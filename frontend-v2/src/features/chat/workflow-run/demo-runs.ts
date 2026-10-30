@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { LocalWorkflowBackend } from '@/lib/workflows/data/local-workflow-backend'
 import {
+  computeInactiveNodes,
   normalizeWorkflowDefinition,
   parseWorkflowGraph,
   type GraphWorkflowRun,
@@ -9,6 +10,7 @@ import {
   type WorkflowRuntime,
 } from '@/lib/workflows/runtime'
 import { createMemoryWorkflowRuntime } from '@/lib/workflows/runtime/memory'
+import { planMockExecution } from '@/lib/workflows/runtime/mock-execution-plan'
 import { seedSampleWorkflows } from '@/lib/workflows/samples/seed'
 
 /** A workflow the "运行工作流" menu offers: one with a published version. */
@@ -48,8 +50,32 @@ const unsubscribes = new Map<string, () => void>()
 function demoRuntime(): WorkflowRuntime {
   if (runtime) return runtime
   runtime = createMemoryWorkflowRuntime({ nodeStepMs: demoRunClock.nodeStepMs })
-  runtime.runs.watch((run) => useDemoRuns.setState((s) => ({ runs: { ...s.runs, [run.id]: run } })))
+  runtime.runs.watch((run) => useDemoRuns.setState((s) => ({ runs: { ...s.runs, [run.id]: withInactiveBranches(run) } })))
   return runtime
+}
+
+/**
+ * Marks the nodes behind a condition's untaken branch inactive, as desktop's run adapter does for
+ * a backend run, so Theater leaves them off the path and counts the run complete. The engine keeps
+ * them idle and does not record which branch a condition took; its path choice is deterministic,
+ * so the same plan recovers each decision.
+ */
+export function withInactiveBranches(run: GraphWorkflowRun): GraphWorkflowRun {
+  if (run.status === 'pending') return run
+  const definition = run.definitionSnapshot
+  const reachable = new Set(planMockExecution(definition, { kickoffInput: run.kickoffInput }).order)
+  const decisions: Record<string, string> = {}
+  for (const node of definition.nodes) {
+    if (node.data.kind !== 'condition') continue
+    const taken = definition.edges.find((edge) => edge.source === node.id && reachable.has(edge.target))
+    if (taken) decisions[node.id] = taken.sourceHandle ?? 'else'
+  }
+  const statuses = Object.fromEntries(Object.entries(run.nodeStates).map(([id, state]) => [id, state.status]))
+  const inactive = computeInactiveNodes(definition, statuses, decisions)
+  if (inactive.size === 0) return run
+  const nodeStates = { ...run.nodeStates }
+  for (const id of inactive) nodeStates[id] = { ...nodeStates[id], status: 'inactive' }
+  return { ...run, nodeStates }
 }
 
 /** Drops every demo run; tests call it between cases. */

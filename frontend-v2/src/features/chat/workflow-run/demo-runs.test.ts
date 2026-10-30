@@ -9,6 +9,7 @@ import {
   rerunDemoRun,
   resetDemoRuns,
   startDemoRun,
+  updateDemoRunInput,
   useDemoRuns,
 } from './demo-runs'
 
@@ -56,6 +57,20 @@ describe('demo workflow runs', () => {
     }
     const output = nodes.find((n) => n.data.kind === 'output')!
     expect(finished.nodeStates[output.id]).toMatchObject({ status: 'succeeded', output: expect.anything() })
+
+    // Theater lists each node's artifacts and brings the newest into view.
+    const artifacts = useDemoRuns.getState().artifacts[run.id] ?? []
+    expect(artifacts.length).toBeGreaterThan(0)
+    expect(useDemoRuns.getState().revealedArtifactIds[run.id]).toBe(artifacts.at(-1)?.id)
+  })
+
+  it('saves the kickoff input edited before the run starts', async () => {
+    const run = await createDemoRun('cloud', sample().id, '')
+    await updateDemoRunInput(run.id, '只看 v2 目录', { repository: 'ora-space/desktop' })
+
+    const start = useDemoRuns.getState().runs[run.id]!.definitionSnapshot.nodes.find((n) => n.data.kind === 'start')!
+    expect(start.data.input).toBe('只看 v2 目录')
+    expect(useDemoRuns.getState().inputs[run.id]).toEqual({ repository: 'ora-space/desktop' })
   })
 
   it('stops a running run and starts a fresh pending one on rerun, keeping the old one', async () => {
@@ -78,5 +93,6 @@ describe('demo workflow runs', () => {
     await deleteDemoRun(run.id)
     expect(useDemoRuns.getState().runs[run.id]).toBeUndefined()
     expect(useDemoRuns.getState().conversations[run.id]).toBeUndefined()
+    expect(useDemoRuns.getState().artifacts[run.id]).toBeUndefined()
   })
 })

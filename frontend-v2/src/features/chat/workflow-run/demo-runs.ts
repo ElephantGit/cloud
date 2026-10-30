@@ -4,6 +4,7 @@ import {
   normalizeWorkflowDefinition,
   parseWorkflowGraph,
   type GraphWorkflowRun,
+  type WorkflowArtifact,
   type WorkflowNodeConversationItem,
   type WorkflowRuntime,
 } from '@/lib/workflows/runtime'
@@ -26,10 +27,16 @@ interface RunState {
   conversations: Record<string, WorkflowNodeConversationItem[]>
   /** Start values the person entered, kept for the Start node's output. */
   inputs: Record<string, Record<string, unknown>>
+  /** Files the run's nodes produced, oldest first. */
+  artifacts: Record<string, WorkflowArtifact[]>
+  /** The artifact that arrived last, which Theater brings into view. */
+  revealedArtifactIds: Record<string, string>
 }
 
+const emptyRuns: RunState = { runs: {}, conversations: {}, inputs: {}, artifacts: {}, revealedArtifactIds: {} }
+
 /** Runs of the in-browser engine, kept current by its change and event streams. */
-export const useDemoRuns = create<RunState>()(() => ({ runs: {}, conversations: {}, inputs: {} }))
+export const useDemoRuns = create<RunState>()(() => ({ ...emptyRuns }))
 
 let runtime: WorkflowRuntime | undefined
 const unsubscribes = new Map<string, () => void>()
@@ -51,7 +58,7 @@ export function resetDemoRuns(): void {
   unsubscribes.clear()
   runtime?.dispose()
   runtime = undefined
-  useDemoRuns.setState({ runs: {}, conversations: {}, inputs: {} })
+  useDemoRuns.setState({ ...emptyRuns })
 }
 
 /** The workflow library this browser keeps, with the samples added on a first visit. */
@@ -96,11 +103,18 @@ export async function createDemoRun(projectId: string, workflowId: string, name:
   return run
 }
 
-/** Keeps the run's node conversation in the store until the run is deleted. */
+/** Keeps the run's node conversation and artifacts in the store until the run is deleted. */
 function followConversation(rt: WorkflowRuntime, runId: string): void {
   const unsubscribe = rt.runs.subscribe(
     runId,
     (event) => {
+      if (event.type === 'artifact_added') {
+        useDemoRuns.setState((s) => ({
+          artifacts: { ...s.artifacts, [runId]: [...(s.artifacts[runId] ?? []), event.artifact] },
+          revealedArtifactIds: { ...s.revealedArtifactIds, [runId]: event.artifact.id },
+        }))
+        return
+      }
       if (event.type !== 'node_conversation_item_upserted') return
       useDemoRuns.setState((s) => {
         const list = s.conversations[runId] ?? []
@@ -114,14 +128,24 @@ function followConversation(rt: WorkflowRuntime, runId: string): void {
   unsubscribes.set(runId, unsubscribe)
 }
 
-/** Starts a pending run with the Start dialog's prompt and values. */
-export async function startDemoRun(runId: string, initialPrompt: string, variables: Record<string, unknown>): Promise<void> {
+/** Sets a run's kickoff input: the Start node's prompt, and the values when given. */
+export async function updateDemoRunInput(runId: string, initialPrompt: string, variables?: Record<string, unknown>): Promise<void> {
   const rt = demoRuntime()
   const run = await rt.runs.get(runId)
   const start = run?.definitionSnapshot.nodes.find((node) => node.data.kind === 'start')
   if (start) await rt.runs.updateSnapshotNode(runId, start.id, { input: initialPrompt })
-  useDemoRuns.setState((s) => ({ inputs: { ...s.inputs, [runId]: variables } }))
-  await rt.runs.start(runId)
+  if (variables) useDemoRuns.setState((s) => ({ inputs: { ...s.inputs, [runId]: variables } }))
+}
+
+/** Starts a pending run with the Start dialog's prompt and values. */
+export async function startDemoRun(runId: string, initialPrompt: string, variables: Record<string, unknown>): Promise<void> {
+  await updateDemoRunInput(runId, initialPrompt, variables)
+  await demoRuntime().runs.start(runId)
+}
+
+/** Answers one open human-in-the-loop gate; the run carries on when no gate is left. */
+export async function submitDemoHitl(runId: string, requestId: string, payload: Record<string, unknown>): Promise<GraphWorkflowRun> {
+  return demoRuntime().runs.submitHitl(runId, requestId, payload)
 }
 
 export async function cancelDemoRun(runId: string): Promise<void> {
@@ -135,7 +159,8 @@ export async function deleteDemoRun(runId: string): Promise<void> {
   useDemoRuns.setState((s) => {
     const { [runId]: _run, ...runs } = s.runs
     const { [runId]: _conversation, ...conversations } = s.conversations
-    return { runs, conversations }
+    const { [runId]: _artifacts, ...artifacts } = s.artifacts
+    return { runs, conversations, artifacts }
   })
 }
 

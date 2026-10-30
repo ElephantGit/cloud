@@ -1,4 +1,4 @@
-import { BookmarkIcon, CpuIcon } from 'lucide-react'
+import { BookmarkIcon, CpuIcon, RotateCcwIcon } from 'lucide-react'
 import { Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -56,7 +56,25 @@ function permissionsOf(conversation: Conversation, turn: Turn) {
   return conversation.permissions.filter((p) => tools.has(p.toolCall.toolCallId))
 }
 
+/** Why the session above ended, said where the Agent's memory of it stops. */
+const sessionEnd: Record<Extract<MarkerData, { kind: 'session' }>['reason'], string> = {
+  stopped: '已停止',
+  idle: '空闲太久，已释放工作目录',
+  deleted: '会话已结束',
+  interrupted: '服务重启，会话已中断',
+}
+
 function MarkerRow({ marker }: { marker: MarkerData }) {
+  if (marker.kind === 'session') {
+    return (
+      <Marker variant="separator">
+        <MarkerIcon>
+          <RotateCcwIcon />
+        </MarkerIcon>
+        <MarkerContent>{sessionEnd[marker.reason]} · 之后的消息由 Agent 重新开始，不记得上面的内容</MarkerContent>
+      </Marker>
+    )
+  }
   if (marker.kind === 'model') {
     return (
       <Marker variant="separator">

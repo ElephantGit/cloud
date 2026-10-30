@@ -2,14 +2,14 @@ import { useState } from 'react'
 import { Check, Clock3, FlaskConical, ListTodo, Pause, Pencil, Play, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { formatTime, nextTimes, projectName, workflowName, ruleText, type Run, type SourceTask, type Task } from './schedule-model'
+import { catalog, type Catalog, formatTime, nextTimes, projectName, workflowName, ruleText, type Run, type SourceTask, type Task } from './schedule-model'
 
 export function RunStatus({ run }: { run?: Run }) {
   const Icon = run?.status === 'success' ? Check : run?.status === 'failed' ? TriangleAlert : Clock3
   return <span className={`sp-run-status ${run?.status ?? 'none'}`}><Icon size={13} />{!run ? '尚未运行' : run.status === 'running' ? '进行中' : run.status === 'success' ? '成功' : '失败'}</span>
 }
 
-export function ScheduleDetail({ task, sources = [], initialTab = 'config', onEdit, onToggle, onSimulate }: { task: Task; sources?: SourceTask[]; initialTab?: 'config' | 'history'; onEdit: () => void; onToggle: () => void; onSimulate?: (fail?: boolean) => void }) {
+export function ScheduleDetail({ data = catalog, task, sources = [], initialTab = 'config', onEdit, onToggle, onSimulate }: { data?: Catalog; task: Task; sources?: SourceTask[]; initialTab?: 'config' | 'history'; onEdit: () => void; onToggle: () => void; onSimulate?: (fail?: boolean) => void }) {
   const [now] = useState(() => new Date())
   const [tab, setTab] = useState(initialTab)
   const [runId, setRunId] = useState('')
@@ -32,7 +32,7 @@ export function ScheduleDetail({ task, sources = [], initialTab = 'config', onEd
       </>}
     </> : <>
       <div className="sp-config-heading">执行内容</div>
-      {target.kind === 'task' ? <><div className="sp-target-title"><ListTodo size={17} /><strong>{source?.title ?? '来源任务不可用'}</strong><Badge variant="outline">已有任务</Badge></div><p className="sp-helper">{target.sourceTaskId} · {source?.status}</p>{source && <p className="sp-prompt-preview">{source.description}</p>}{target.supplementalInstruction && <><div className="sp-config-heading">补充说明</div><p className="sp-prompt-preview">{target.supplementalInstruction}</p></>}</> : <><strong>{target.kind === 'chat' ? '直接对话' : '工作流'}</strong>{target.kind === 'chat' ? <p className="sp-prompt-preview">{target.prompt}</p> : <><p>{workflowName(target.workflowId)} · {target.snapshot}</p><dl className="sp-key-values">{Object.entries(target.inputs).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value || '未填写'}</dd></div>)}</dl></>}</>}
+      {target.kind === 'task' ? <><div className="sp-target-title"><ListTodo size={17} /><strong>{source?.title ?? '来源任务不可用'}</strong><Badge variant="outline">已有任务</Badge></div><p className="sp-helper">{target.sourceTaskId} · {source?.status}</p>{source && <p className="sp-prompt-preview">{source.description}</p>}{target.supplementalInstruction && <><div className="sp-config-heading">补充说明</div><p className="sp-prompt-preview">{target.supplementalInstruction}</p></>}</> : <><strong>{target.kind === 'chat' ? '直接对话' : '工作流'}</strong>{target.kind === 'chat' ? <p className="sp-prompt-preview">{target.prompt}</p> : <><p>{workflowName(target.workflowId, data)} · {target.snapshot}</p><dl className="sp-key-values">{Object.entries(target.inputs).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value || '未填写'}</dd></div>)}</dl></>}</>}
       <div className="sp-config-heading">运行环境</div><dl className="sp-key-values"><div><dt>关联项目</dt><dd>{target.kind === 'task' ? source?.projectName ?? '来源不可用' : projectName(task.projectId)}</dd></div><div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div></dl>
       <div className="sp-time-preview"><div><Clock3 size={15} /><strong>预计时间</strong></div>{nextTimes(task.rule, now, new Date(task.createdAt)).map((date, i) => <p key={date.toISOString()}><span>{i + 1}</span>{formatTime(date, task.rule.timezone)}</p>)}</div>
       <p className="sp-helper">{target.kind === 'task' ? '前端演示，刷新后清除。每次使用最新任务描述与项目，不读取历史对话；原任务完成不会暂停此安排。' : target.kind === 'workflow' ? '工作流配置为前端演示，刷新后清除。真实执行与运行历史尚未接入。' : '配置已保存。自动执行、立即运行和运行历史尚未接入。'}</p>

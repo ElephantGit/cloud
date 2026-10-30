@@ -19,8 +19,8 @@ import {
   type PromptTokenKind,
 } from "../composer-core/composer";
 import type { AnyExtension, JSONContent } from "@tiptap/core";
-import { useOptionalPlatform } from "../host/platform";
-import { cn } from "../host/ui";
+import { useOptionalPlatform } from "@/lib/workflows/host/platform";
+import { cn } from "@/lib/workflows/host/ui";
 import {
   AT_TRIGGER_PATTERN,
   EMPTY_COMPOSER_QUERY,

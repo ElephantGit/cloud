@@ -62,6 +62,14 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/schedule-configs/{id}", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("PATCH /api/v2/tenants/{tid}/schedule-configs/{id}/enabled", h.authed(h.scheduleConfigs))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/squads", h.authed(h.listSquads))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads", h.authed(h.createSquad))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/squads/{sid}", h.authed(h.getSquad))
+	mux.HandleFunc("PUT /api/v2/tenants/{tid}/squads/{sid}", h.authed(h.updateSquad))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads/{sid}/archive", h.authed(h.archiveSquad))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/squads/{sid}/members", h.authed(h.addSquadMember))
+	mux.HandleFunc("PUT /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.updateSquadMember))
+	mux.HandleFunc("DELETE /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.removeSquadMember))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }

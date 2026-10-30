@@ -14,11 +14,11 @@ import {
   resolveConditionCases,
   type WorkflowNodeData,
   type WorkflowVariableCatalogEntry,
-} from "../mock";
-import { appI18n } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+} from "@/lib/workflows/mock";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowInspector } from "./workflow-inspector";
-import { AGENT_REF } from "../test/agent-identity";
+import { AGENT_REF } from "@/lib/workflows/test/agent-identity";
 
 const LONG_MODEL_LABEL =
   "OpenCode · deepseek/deepseek-v4-pro-with-an-extremely-long-model-identifier";

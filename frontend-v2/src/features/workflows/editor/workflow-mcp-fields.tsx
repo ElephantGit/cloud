@@ -13,11 +13,11 @@ import {
   PopoverContent,
   PopoverTrigger,
   Switch,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import type {
   WorkflowAgentConfig,
   WorkflowMcpChoice,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import type { WorkflowMcpCatalogStatus } from "./mcp-catalog";
 
 /** Edits node-local intent while preserving bindings whose installed plugin is unavailable. */

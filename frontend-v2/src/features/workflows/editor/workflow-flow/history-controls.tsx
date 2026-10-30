@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "../../host/ui";
+import { Button } from "@/lib/workflows/host/ui";
 import type {
   WorkflowHistoryEvent,
   WorkflowHistoryStep,

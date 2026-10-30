@@ -24,13 +24,13 @@ import {
   SelectValue,
   Switch,
   Textarea,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import {
   DEFAULT_WORKFLOW_STRUCTURED_OUTPUT_SCHEMA,
   validateWorkflowStructuredOutputSchema,
   WORKFLOW_VARIABLE_VALUE_TYPES,
   type WorkflowVariableValueType,
-} from "../mock";
+} from "@/lib/workflows/mock";
 
 type SchemaObject = Record<string, unknown>;
 type EditorMode = "visual" | "json";

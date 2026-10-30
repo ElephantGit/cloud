@@ -6,7 +6,7 @@ import {
   type EdgeProps,
   getBezierPath,
 } from "@xyflow/react";
-import { cn } from "../../host/ui";
+import { cn } from "@/lib/workflows/host/ui";
 import { IterationInsertMenu } from "./iteration-actions";
 import { useWorkflowIterationActions } from "./iteration-actions-context";
 import { useWorkflowEdgeHover } from "./workflow-edge-hover";

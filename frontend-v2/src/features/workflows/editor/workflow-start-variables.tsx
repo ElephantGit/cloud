@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
   Textarea,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import {
   formatWorkflowVariableValue,
   isWorkflowJsonFieldValueType,
@@ -45,7 +45,7 @@ import {
   type WorkflowInputVariable,
   workflowVariableValueExample,
   type WorkflowVariableValueType,
-} from "../mock";
+} from "@/lib/workflows/mock";
 
 interface WorkflowStartVariablesProps {
   variables: WorkflowInputVariable[];

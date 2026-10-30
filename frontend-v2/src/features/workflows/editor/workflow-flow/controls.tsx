@@ -7,11 +7,11 @@ import {
   IconMinus,
   IconPlus,
 } from "@tabler/icons-react";
-import { Button } from "../../host/ui";
+import { Button } from "@/lib/workflows/host/ui";
 import {
   MAX_WORKFLOW_ZOOM,
   MIN_WORKFLOW_ZOOM,
-} from "../../node-chrome/viewport";
+} from "@/lib/workflows/node-chrome/viewport";
 
 interface WorkflowCanvasControlsProps {
   defaultViewport: { x: number; y: number; zoom: number };

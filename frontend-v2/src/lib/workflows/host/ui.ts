@@ -10,6 +10,7 @@ export * from "@/components/ui/context-menu";
 export * from "@/components/ui/dialog";
 export * from "@/components/ui/dropdown-menu";
 export * from "@/components/ui/input";
+export * from "@/components/ui/native-select";
 export * from "@/components/ui/label";
 export * from "@/components/ui/popover";
 export * from "@/components/ui/select";
@@ -21,6 +22,7 @@ export {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 export { TooltipContent } from "./tooltip";
+export { Spinner } from "./spinner";
 export { Toaster } from "@/components/ui/sonner";
 export { toast } from "sonner";
 export {

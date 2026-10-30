@@ -8,7 +8,7 @@ import {
   WORKFLOW_NODE_ANCHOR_Y,
   WORKFLOW_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 import {
   authoredWorkflowNodesEqual,
   containWorkflowCanvasNodes,

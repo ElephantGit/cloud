@@ -6,7 +6,7 @@ import {
   StickyNotePlusIcon,
   VariableIcon,
 } from "./canvas-tool-icons";
-import { Button } from "../../host/ui";
+import { Button } from "@/lib/workflows/host/ui";
 
 export type CanvasInteractionMode = "pointer" | "hand";
 

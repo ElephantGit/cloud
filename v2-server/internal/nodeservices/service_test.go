@@ -40,10 +40,10 @@ func seedRepository(t *testing.T, root string) (string, string, string) {
 		t.Fatal(err)
 	}
 	gitCommand(t, seed, "init", "-b", "main")
-	if err := os.WriteFile(filepath.Join(seed, "README"), []byte("V2 real Node fixture\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("V2 real Node fixture\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, seed, "add", "README")
+	gitCommand(t, seed, "add", "README.md")
 	gitCommand(t, seed, "-c", "user.name=V2", "-c", "user.email=v2@example.test", "commit", "-m", "seed")
 	commit := gitCommand(t, seed, "rev-parse", "HEAD")
 	bare := filepath.Join(root, "repo.git")

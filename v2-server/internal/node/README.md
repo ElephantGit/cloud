@@ -45,7 +45,7 @@ ext4/xfs/btrfs：host 会拒绝容器 overlay、Windows 挂载和过长的 guard
 
 `StartRuntime` 为每个 Workspace 接收一个短、绝对、私有的 Root。独占文件锁跨监督进程生效；
 已有非运行时目录拒绝接管。启动前确认残留进程退出，保留 Node DB 和 checkout，恢复 host 后再启动 Node。
-二进制复制到 Workspace 专属路径并重新校验摘要；任一进程退出使 Done 关闭，由业务层记录 interrupted，
+二进制复制到 Workspace 专属路径并重新校验摘要；任一进程退出或 IPC 连接失效都使 Done 关闭（连接不重拨，需 Stop 后重新启动），由业务层记录 interrupted，
 不自动重放 prompt。调用方正常结束时先发 EndSession 收齐终态，再 Stop。
 
 Stop 按 Node、host、guardian 顺序定向停止。残留清理用 Linux pidfd，避免 PID 重用误杀；

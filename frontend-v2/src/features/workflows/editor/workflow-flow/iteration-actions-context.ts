@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { Edge } from "@xyflow/react";
-import type { WorkflowNodeKind, WorkflowNodeType } from "../../mock";
+import type { WorkflowNodeKind, WorkflowNodeType } from "@/lib/workflows/mock";
 
 import type { WorkflowContainerInsertion } from "../workflow-container-insertion";
 

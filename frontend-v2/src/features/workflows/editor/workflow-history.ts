@@ -4,7 +4,7 @@ import type {
   WorkflowAnnotationNode,
   WorkflowGlobalVariable,
   WorkflowNodeData,
-} from "../mock";
+} from "@/lib/workflows/mock";
 
 /** Identifies the user-visible operation that produced a history step. */
 export type WorkflowHistoryEvent =

@@ -15,9 +15,9 @@ import {
   WORKFLOW_ITERATION_NODE_WIDTH,
   type WorkflowNodeData,
   type WorkflowNodeKind,
-} from "../../mock";
-import { AppI18nProvider } from "../../test/i18n";
-import { appI18n } from "../../test/i18n-instance";
+} from "@/lib/workflows/mock";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
 import { WorkflowIterationActionsProvider } from "./iteration-actions";
 import { WorkflowConnectionStateProvider } from "./connection-state";
 import { WorkflowFlowNodeView } from "./node";

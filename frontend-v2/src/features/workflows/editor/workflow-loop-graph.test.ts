@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMockWorkflowLoopGroup,
   createMockWorkflowNode,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import { insertLoopMember } from "./workflow-loop-graph";
 import { isValidWorkflowConnection } from "./workflow-flow/connection-validation";
 

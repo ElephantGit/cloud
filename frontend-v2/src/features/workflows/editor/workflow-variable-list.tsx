@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { SelectGroup, SelectItem, SelectLabel } from "../host/ui";
-import type { WorkflowVariableCatalogEntry } from "../mock";
+import { SelectGroup, SelectItem, SelectLabel } from "@/lib/workflows/host/ui";
+import type { WorkflowVariableCatalogEntry } from "@/lib/workflows/mock";
 import { groupWorkflowVariables } from "./workflow-variable-groups";
 
 /** Renders one variable row with stable semantic colors across hover and focus states. */

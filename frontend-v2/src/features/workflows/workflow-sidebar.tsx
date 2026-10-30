@@ -5,7 +5,7 @@ import {
 } from "@/components/sidebar-resize-handle";
 import { Button } from "@/components/ui/button";
 import { WorkflowEditorList } from "./editor/workflow-editor-list";
-import { useUiStore } from "./host/ui-store";
+import { useUiStore } from "@/lib/workflows/host/ui-store";
 
 /**
  * Desktop's workflow library in a column that resizes and folds with the shared edge the chat

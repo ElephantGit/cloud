@@ -8,9 +8,9 @@ import {
   validateWorkflowAgentRetry,
   type WorkflowAgentConfig,
   type WorkflowNodeData,
-} from "../mock";
-import { appI18n, translationResources } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+} from "@/lib/workflows/mock";
+import { appI18n, translationResources } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowInspector } from "./workflow-inspector";
 
 /** An Agent node built from the catalog default, which carries no `retry` field. */

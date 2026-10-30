@@ -1,5 +1,5 @@
-import type { InstalledPlugin } from "../contracts";
-import type { WorkflowMcpChoice } from "../mock";
+import type { InstalledPlugin } from "@/lib/workflows/contracts";
+import type { WorkflowMcpChoice } from "@/lib/workflows/mock";
 
 /** Maps installed identities and secret-free readiness to the authoring catalog. */
 export function workflowMcpChoices(

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import type { WorkflowLoopConfig } from "../mock";
-import { Input, Label, Switch } from "../host/ui";
+import type { WorkflowLoopConfig } from "@/lib/workflows/mock";
+import { Input, Label, Switch } from "@/lib/workflows/host/ui";
 
 /** Keeps the safety ceiling and its exhaustion policy together in the Loop inspector. */
 export function WorkflowLoopLimitFields({

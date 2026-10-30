@@ -220,6 +220,7 @@ func operation(o core.Object) *controlpb.Operation {
 		State:           controlpb.OperationState(enum(controlpb.OperationState_value, "OPERATION_STATE_", o.S("state"))),
 		Step:            controlpb.OperationStep(enum(controlpb.OperationStep_value, "OPERATION_STEP_", o.S("step"))),
 		ControllerEpoch: optionalInt(o, "controllerEpoch"), ErrorCode: optionalString(o, "errorCode"),
+		NodeUnavailableAttempts: o.N("nodeUnavailableAttempts"),
 	}
 }
 

@@ -4,7 +4,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 
 /** Pause before the full description appears so the header stays quiet on pass-through. */
 const DESCRIPTION_TOOLTIP_DELAY_MS = 400;

@@ -5,10 +5,12 @@ test('configuration persists through reload, edits, pause and resume', async ({ 
   const suffix = crypto.randomUUID().slice(0, 8)
   const name = `持久化验收-${suffix}`
   const edited = `${name}-已编辑`
+  // An empty list renders a second 新建任务 in its empty state, so always use the page header's.
+  const create = page.locator('header').getByRole('button', { name: '新建任务', exact: true })
   await page.goto('/schedules')
   await page.getByRole('button', { name: '开发者登录' }).click()
   await expect(page.getByRole('heading', { name: '定时任务', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  await create.click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: '任务名称' }).fill(name)
   await dialog.getByRole('textbox', { name: '任务指令' }).fill('整理产品动态')
@@ -31,7 +33,7 @@ test('configuration persists through reload, edits, pause and resume', async ({ 
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  await create.click()
   await dialog.getByRole('textbox', { name: '任务名称' }).fill(`移动端-${suffix}`)
   await dialog.getByRole('textbox', { name: '任务指令' }).fill('生成摘要')
   await dialog.getByRole('button', { name: '创建并启用' }).click()

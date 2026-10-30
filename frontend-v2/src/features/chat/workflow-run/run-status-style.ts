@@ -1,0 +1,111 @@
+import type {
+  GraphWorkflowNodeStatus,
+  GraphWorkflowRunStatus,
+} from "@/lib/workflows/runtime";
+import { workflowRunTranslations } from "./translations";
+
+/**
+ * Node is actively executing or blocked on HITL—the only spinner-worthy states. A node waiting to
+ * retry is deliberately excluded: it has no session and nothing is executing until the wait ends.
+ */
+export function isNodeWorking(
+  status: GraphWorkflowRunStatus | GraphWorkflowNodeStatus,
+): boolean {
+  return status === "running" || status === "awaiting_input";
+}
+
+/** Shared run/node status chrome —color is never the only signal (dot + label + tone). */
+export function runStatusTone(
+  status: GraphWorkflowRunStatus | GraphWorkflowNodeStatus,
+): {
+  dot: string;
+  ring: string;
+  badge: string;
+  labelKey: string;
+} {
+  switch (status) {
+    case "running":
+      return {
+        dot: "bg-sky-500",
+        ring: "border-sky-500/50 ring-sky-500/20",
+        badge: "border-sky-500/30 bg-sky-500/10 text-sky-800 dark:text-sky-300",
+        labelKey: "workflowRun.status.running",
+      };
+    case "awaiting_input":
+      // Amber matches HITL “must handle—chrome on the dock and stage card.
+      return {
+        dot: "bg-amber-500",
+        ring: "border-amber-500/50 ring-amber-500/20",
+        badge:
+          "border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+        labelKey: "workflowRun.status.awaiting_input",
+      };
+    case "retry_waiting":
+      // Orange sits between amber (“needs you”) and rose (failed): an attempt failed and the
+      // engine will run the node again by itself, so no action is expected from the user.
+      return {
+        dot: "bg-orange-500",
+        ring: "border-orange-500/45 ring-orange-500/15",
+        badge:
+          "border-orange-500/30 bg-orange-500/10 text-orange-800 dark:text-orange-300",
+        labelKey: "workflowRun.status.retry_waiting",
+      };
+    case "succeeded":
+      return {
+        dot: "bg-emerald-500",
+        ring: "border-emerald-500/45 ring-emerald-500/15",
+        badge:
+          "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+        labelKey: "workflowRun.status.succeeded",
+      };
+    case "failed":
+      return {
+        dot: "bg-rose-500",
+        ring: "border-rose-500/45 ring-rose-500/15",
+        badge:
+          "border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300",
+        labelKey: "workflowRun.status.failed",
+      };
+    case "cancelled":
+      return {
+        dot: "bg-zinc-400",
+        ring: "border-zinc-400/45 ring-zinc-400/10",
+        badge:
+          "border-zinc-400/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+        labelKey: "workflowRun.status.cancelled",
+      };
+    case "pending":
+      return {
+        dot: "bg-amber-400",
+        ring: "border-amber-400/40 ring-amber-400/10",
+        badge:
+          "border-amber-400/30 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+        labelKey: "workflowRun.status.pending",
+      };
+    case "idle":
+      return {
+        dot: "bg-muted-foreground/35",
+        ring: "border-border ring-transparent",
+        badge: "border-border bg-muted/60 text-muted-foreground",
+        labelKey: "workflowRun.nodeStatus.idle",
+      };
+    case "inactive":
+      // A node behind a lost condition branch: never ran, never will. Dimmed so the active path
+      // reads clearly without implying failure.
+      return {
+        dot: "bg-muted-foreground/20",
+        ring: "border-transparent ring-transparent",
+        badge: "border-transparent bg-muted/30 text-muted-foreground/60",
+        labelKey: "workflowRun.nodeStatus.inactive",
+      };
+  }
+}
+
+/** A status's Chinese label, for chat's own components that render outside the run i18n scope. */
+export function runStatusLabel(
+  status: GraphWorkflowRunStatus | GraphWorkflowNodeStatus,
+): string {
+  const key = runStatusTone(status)
+    .labelKey as keyof (typeof workflowRunTranslations)["zh-CN"];
+  return workflowRunTranslations["zh-CN"][key];
+}

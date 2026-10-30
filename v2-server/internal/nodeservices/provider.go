@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -60,6 +61,7 @@ func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		slog.WarnContext(r.Context(), "model provider rejected request", "status", resp.StatusCode)
 		fault(w, 502, "provider_rejected")
 		return
 	}

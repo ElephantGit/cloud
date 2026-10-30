@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { formatTime, nextTimes, type Draft, type Task } from './schedule-model'
+import { catalog, formatTime, nextTimes, type Draft, type Task } from './schedule-model'
 import { ScheduleDrawer } from './schedule-drawer'
 import { ScheduleForm } from './schedule-form'
 import { ScheduleDetail } from './schedule-detail'
@@ -64,15 +64,15 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const open = (task: Task, tab?: 'config' | 'history') => setPanel({ kind: 'detail', id: task.id, tab })
   const saved = (draft: Draft) => {
     setSaveError('')
-    if (draft.kind === 'task') {
+    if (draft.kind !== 'chat') {
       const id = useTaskScheduleDemo.getState().save(scope, draft, panel?.kind === 'edit' ? panel.id : undefined)
       if (!id) { setSaveError('来源任务已不可用，请重新选择。'); return }
       setPanel({ kind: 'detail', id }); setToast('演示配置已保存，刷新后清除'); return
     }
-    if (editTask?.target.kind === 'task') { setSaveError('请新建直接对话配置。'); return }
+    if (editTask && editTask.target.kind !== 'chat') { setSaveError('请新建直接对话配置。'); return }
     saveMutation.mutate({ draft, task: panel?.kind === 'edit' ? editTask : undefined })
   }
-  const toggleTask = (task: Task) => { if (task.target.kind === 'task') { useTaskScheduleDemo.getState().toggle(scope, task.id); return } if (!toggleMutation.isPending) toggleMutation.mutate(task) }
+  const toggleTask = (task: Task) => { if (task.target.kind !== 'chat') { useTaskScheduleDemo.getState().toggle(scope, task.id); return } if (!toggleMutation.isPending) toggleMutation.mutate(task) }
   const openCreate = () => { setConflict(false); setSaveError(''); setEditTask(undefined); setPanel({ kind: 'create' }) }
   const clearFilters = () => { setQuery(''); setStatus('all'); setKind('all'); setProject('all') }
 
@@ -98,7 +98,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
           <div className="sp-filter-selects"><SlidersHorizontal size={14} aria-hidden="true" />
             <NativeSelect aria-label="状态筛选" value={status} onChange={e => setStatus(e.target.value)}><NativeSelectOption value="all">全部状态</NativeSelectOption><NativeSelectOption value="enabled">已启用</NativeSelectOption><NativeSelectOption value="paused">已暂停</NativeSelectOption></NativeSelect>
             <NativeSelect aria-label="执行方式筛选" value={kind} onChange={e => setKind(e.target.value)}><NativeSelectOption value="all">全部类型</NativeSelectOption><NativeSelectOption value="chat">直接对话</NativeSelectOption><NativeSelectOption value="workflow">工作流</NativeSelectOption><NativeSelectOption value="task">已有任务</NativeSelectOption></NativeSelect>
-            <NativeSelect aria-label="项目筛选" value={project} onChange={e => setProject(e.target.value)}><NativeSelectOption value="all">全部项目</NativeSelectOption><NativeSelectOption value="none">不关联项目</NativeSelectOption>{[...new Map(sources.filter(s => tasks.some(t => t.target.kind === 'task' && t.target.sourceTaskId === s.id)).map(s => [s.projectId, s.projectName])).entries()].map(([id, name]) => <NativeSelectOption key={id} value={id}>{name}</NativeSelectOption>)}</NativeSelect>
+            <NativeSelect aria-label="项目筛选" value={project} onChange={e => setProject(e.target.value)}><NativeSelectOption value="all">全部项目</NativeSelectOption><NativeSelectOption value="none">不关联项目</NativeSelectOption>{[...new Map([...sources.map(s => ({ id: s.projectId, name: s.projectName })), ...catalog.projects].filter(p => tasks.some(t => t.projectId === p.id)).map(p => [p.id, p.name])).entries()].map(([id, name]) => <NativeSelectOption key={id} value={id}>{name}</NativeSelectOption>)}</NativeSelect>
           </div>
         </div>
 
@@ -112,7 +112,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
 
     {toast && <div className="sp-toast" role="status"><Check size={16} />{toast}</div>}
     {panel && <ScheduleDrawer title={panel.kind === 'create' ? '新建定时任务' : panel.kind === 'edit' ? '编辑定时任务' : panelTask?.name ?? '任务详情'} subtitle={panel.kind === 'detail' ? '查看任务配置与每次运行的结果。' : '配置执行内容、项目与时间安排。'} onClose={() => panel.kind === 'detail' ? setPanel(null) : closeForm.current()}>
-      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm onCloseReady={fn => { closeForm.current = fn }} data={{ projects: [], workflows: [], tasks: sources }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail key={`${panelTask.id}-${panel.tab}`} task={panelTask} sources={sources} initialTab={panel.tab} onSimulate={panelTask.target.kind === 'task' ? fail => useTaskScheduleDemo.getState().run(scope, panelTask.id, fail) : undefined} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
+      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm onCloseReady={fn => { closeForm.current = fn }} data={{ ...catalog, tasks: sources }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail key={`${panelTask.id}-${panel.tab}`} task={panelTask} sources={sources} initialTab={panel.tab} onSimulate={panelTask.target.kind === 'task' ? fail => useTaskScheduleDemo.getState().run(scope, panelTask.id, fail) : undefined} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
     </ScheduleDrawer>}
   </div>
 }

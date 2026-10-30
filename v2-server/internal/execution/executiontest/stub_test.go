@@ -19,6 +19,7 @@ func TestUnconfiguredStubDoesNotClaimExecution(t *testing.T) {
 	ref, startErr := s.Start(ctx, scope, execution.StartRequest{})
 	result, cancelErr := s.Cancel(ctx, scope, ref)
 	stream, subscribeErr := s.Subscribe(ctx, scope, ref.SessionID, 0)
+	resolution, sealErr := s.SealAttempt(ctx, scope, execution.Caller{Kind: execution.CallerSchedule, ID: "occurrence", AttemptID: "occurrence"})
 	if !errors.Is(startErr, execution.ErrUnavailable) || ref != (execution.Ref{}) {
 		t.Fatalf("unconfigured admission = %v, %v", ref, startErr)
 	}
@@ -30,6 +31,9 @@ func TestUnconfiguredStubDoesNotClaimExecution(t *testing.T) {
 	}
 	if err := s.End(ctx, scope, "session"); !errors.Is(err, execution.ErrUnavailable) {
 		t.Fatalf("unconfigured cleanup = %v", err)
+	}
+	if !errors.Is(sealErr, execution.ErrUnavailable) || resolution != (execution.AdmissionResolution{}) {
+		t.Fatalf("unconfigured admission resolution = %v, %v", resolution, sealErr)
 	}
 }
 
@@ -59,4 +63,45 @@ func ExampleStub() {
 	// Output:
 	// The complete answer.
 	// end_turn
+}
+
+// This demonstrates recovery decisions with explicit callback outcomes, not a persistence or
+// race implementation. A recovering schedule never calls Start to discover past admission.
+func ExampleStub_SealAttempt() {
+	svc := &executiontest.Stub{
+		SealAttemptFunc: func(_ context.Context, _ execution.Scope, caller execution.Caller) (execution.AdmissionResolution, error) {
+			switch caller.ID {
+			case "unknown":
+				return execution.AdmissionResolution{}, execution.ErrAdmissionUnknown
+			case "accepted":
+				return execution.AdmissionResolution{State: execution.AdmissionAccepted, Ref: execution.Ref{SessionID: "session", TurnID: "turn"}}, nil
+			case "not-admitted":
+				return execution.AdmissionResolution{State: execution.AdmissionNotAdmitted}, nil
+			default:
+				// A malformed backend response must not turn a zero value into success.
+				return execution.AdmissionResolution{}, nil
+			}
+		},
+	}
+	for _, id := range []string{"unknown", "accepted", "not-admitted", "zero-value"} {
+		caller := execution.Caller{Kind: execution.CallerSchedule, ID: id, AttemptID: id}
+		resolution, err := svc.SealAttempt(context.Background(), execution.Scope{TenantID: "tenant", UserID: "owner"}, caller)
+		if err != nil {
+			fmt.Println("unknown: retain occurrence reservation")
+			continue
+		}
+		switch resolution.State {
+		case execution.AdmissionAccepted:
+			fmt.Printf("accepted: follow %s/%s\n", resolution.Ref.SessionID, resolution.Ref.TurnID)
+		case execution.AdmissionNotAdmitted:
+			fmt.Println("not_admitted: finish occurrence without execution")
+		default:
+			fmt.Println("unknown: retain occurrence reservation")
+		}
+	}
+	// Output:
+	// unknown: retain occurrence reservation
+	// accepted: follow session/turn
+	// not_admitted: finish occurrence without execution
+	// unknown: retain occurrence reservation
 }

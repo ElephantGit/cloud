@@ -24,9 +24,40 @@ chat 的 ID 是 conversation，workflow 是 run，schedule 是 occurrence；轮�
 先查询同身份：相同请求返回原 Ref，变更参数报 `ErrConflict`；之后才检查 Busy。
 `ErrWorkspaceBusy` 明确表示未接收、不会稍后自己启动，没有公共队列；等待策略由页面模块负责。
 
-接收方法返回后不能在后台迟到接收。context 截止先赢则返回 context 错误；接收先赢则返回 Ref。
-存储提交结果无法确定时返回 `ErrAdmissionUnknown`，调用方用完全相同的请求重试核对，不能换新 attempt。
-`ReadAttempt` 的一次未命中不能终结一个仍在途/结果未知的 Start。业务显式重跑才用新 attempt。
+已确认未接收的返回不得在后台迟到接收。提交前已停止接收的 context 取消返回 context 错误；接收先提交则返回 Ref。
+存储提交结果无法确定时返回 `ErrAdmissionUnknown`。只有业务仍允许启动时，才用完全相同的请求重试；
+若前一次确实未接收，这个重试可能首次接收，不能把它当成无副作用查询。不能换新 attempt 掩盖不确定性。
+`ReadAttempt` 是纯查询，它的一次未命中不能终结仍在途/结果未知的接收请求。业务显式重跑才用新 attempt。
+
+### 恢复时确认未接收
+
+重启后不允许补跑的调用方使用 `SealAttempt(scope, caller)`。它只接收 Scope 与完整 Caller，
+不接 prompt，不派发执行，也不取消已接收的执行。它是持久化操作：与 Start、StartModel、Append
+在同一身份上排定先后，返回以下已确认结果之一：
+
+| 结果 | 含义及消费方处理 |
+|---|---|
+| `accepted` + 原 Ref | 接收已提交；用 ReadAttempt/Subscribe 跟踪原执行，不能重新派发，也不能据此认为执行已停止 |
+| `not_admitted` + 空 Ref | 已持久化关闭该身份的接收资格；任何迟到或后续的同身份接收都报 `ErrAdmissionClosed`，调用方可结束本次触发的未知占位 |
+| 错误或零值 | 未建立确定结果，保留未知占位；可以按同身份再次 SealAttempt，不能推断未接收 |
+
+已接收记录优先返回原 Ref；未接收闭锁不创建 Session、Turn、会话事件或 Workspace 占位。
+它不能释放别的执行所持有的 Workspace，不替代 Cancel/End 的停止确认。
+锁等待尚未结束、context 截止或提交结果不确定都不能返回 `not_admitted`；未知提交用 `ErrAdmissionUnknown`。
+恢复屏障尚未完成时保持不可用，不能趁旧执行尚未收尾把查询未命中包装成未接收。
+
+M3 的事务接缝：
+
+- Scope 的 tenant/user 与 Caller 的 kind/ID/node/有序容器轮次/attempt 组成同一唯一身份；空 Rounds 统一表示无容器轮次。
+  三种接收方法与 SealAttempt 共用该唯一约束和原子互斥，不能分别先查后写。
+- 接收先赢时，完整请求、Ref、Turn 与所需的 Workspace 排他在同一事务提交；SealAttempt 返回原 Ref。
+  同身份改换接收方法、target、executor/model、session 或完整 prompt 仍为 `ErrConflict`，不能新增执行。
+- SealAttempt 先赢时，提交该身份的持久闭锁记录；全部接收路径在任何派发前检查它，返回 `ErrAdmissionClosed`。
+  闭锁跨重启保留，不通过 TTL 或删除记录重新允许迟到接收。
+- 每次操作检查当前 Scope 授权；无权限的 `ErrNotFound` 不能变成 `not_admitted`，也不能写入闭锁。
+  事务只处理数据库，不跨 Node/provider 调用持锁；先确认接收持久化，再产生执行副作用。
+- PostgreSQL/race 验收需覆盖两个获胜顺序、提交结果不确定后的重复核对、跨身份隔离、已接收请求参数冲突、
+  三条接收路径被闭锁阻止，以及重启恢复屏障与闭锁持久化。不得用内存替身证明这些义务。
 
 ## 会话事件和用量
 

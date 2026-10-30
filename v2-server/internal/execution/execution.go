@@ -20,6 +20,7 @@ var (
 	ErrStopUnconfirmed  = errors.New("execution stop not confirmed")
 	ErrSessionEnded     = errors.New("execution session ended")
 	ErrAdmissionUnknown = errors.New("execution admission outcome unknown")
+	ErrAdmissionClosed  = errors.New("execution admission closed")
 )
 
 // Scope comes from the authenticated page service or persisted schedule owner, never directly
@@ -204,11 +205,13 @@ type Stream interface {
 // Start/StartModel/Append return after admission; contexts control admission, not execution.
 // Within a scope, repeating an identical caller attempt and request returns the original Ref;
 // changing its target, executor, session or prompt returns ErrConflict without dispatching again.
+// An identity closed by SealAttempt instead returns ErrAdmissionClosed on every admission path.
 // This lookup precedes Busy checks. Admission is atomic across callers for a Workspace, not a
 // project. ErrWorkspaceBusy means not admitted and will never start later; there is no queue.
-// After a call returns, it cannot admit asynchronously. Cancellation before admission returns a
-// context error; admission winning the race returns Ref. An ambiguous storage outcome returns
-// ErrAdmissionUnknown: retry the SAME request to reconcile. ReadAttempt's ErrNotFound alone
+// A confirmed rejection cannot admit later. Context errors are conclusive only when admission
+// stopped before commit; admission winning the race returns Ref. An ambiguous commit returns
+// ErrAdmissionUnknown. Retrying the SAME request may admit it if the previous call did not;
+// callers that must not start work use SealAttempt instead. ReadAttempt's ErrNotFound alone
 // cannot settle an overlapping or unknown admission. Never retry uncertainty with a new attempt.
 type Service interface {
 	Start(context.Context, Scope, StartRequest) (Ref, error)
@@ -244,5 +247,24 @@ type Service interface {
 	ReadSession(context.Context, Scope, string) (Session, error)
 	// ReadTurns accepts a limit from 1 to 100; an empty cursor starts at the first turn.
 	ReadTurns(ctx context.Context, scope Scope, sessionID, cursor string, limit int) (TurnPage, error)
+	// ReadAttempt is a pure lookup of admitted turns. ErrNotFound is not proof that an
+	// overlapping/unknown request was never admitted, even after the caller restarts.
 	ReadAttempt(context.Context, Scope, Caller) (Turn, error)
+
+	// SealAttempt resolves admission without submitting a prompt or dispatching work. It
+	// serializes with Start, StartModel and Append using Scope and the complete Caller identity.
+	// If admission already committed, it returns AdmissionAccepted and the original Ref,
+	// without cancelling or changing that execution; ReadAttempt reads its latest result.
+	// Otherwise it durably closes admission for this identity before returning
+	// AdmissionNotAdmitted. Every overlapping or later admission of that identity must then
+	// return ErrAdmissionClosed. Closing an absent identity creates no Session, Turn or
+	// Workspace reservation. The closure survives restart and cannot expire into acceptance.
+	//
+	// This is a storage mutation, not a read-only query. Only a confirmed transaction outcome
+	// permits a successful resolution. Unknown commits, unfinished lock waits/cancellation and
+	// unavailable recovery barriers return errors (including ErrAdmissionUnknown/context errors); callers
+	// retain their unknown occupancy and may retry SealAttempt with the same identity. They
+	// must never interpret an error or zero-value resolution as proof of non-admission.
+	// Scope authorization and startup recovery gates are the same as for other operations.
+	SealAttempt(context.Context, Scope, Caller) (AdmissionResolution, error)
 }

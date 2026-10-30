@@ -62,10 +62,17 @@ func TestCleanupOnlyOwnedExecutablesAndSocketFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := copyAsset(testAsset(t, "/usr/bin/sleep"), filepath.Join(root, "gb")); err != nil {
+	// The test binary stands in for the guardian: /usr/bin/sleep may be a symlink into a
+	// multi-call coreutils, which copyAsset refuses and which dispatches on argv[0].
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	owned := exec.Command(filepath.Join(root, "gb"), "60")
+	if err := copyAsset(testAsset(t, self), filepath.Join(root, "gb")); err != nil {
+		t.Fatal(err)
+	}
+	owned := exec.Command(filepath.Join(root, "gb"), "-test.run=^TestSleepHelper$")
+	owned.Env = append(os.Environ(), "V2_SLEEP_HELPER=1")
 	owned.Dir = paths.HostHome
 	if err := owned.Start(); err != nil {
 		t.Fatal(err)
@@ -99,6 +106,14 @@ func TestCleanupOnlyOwnedExecutablesAndSocketFiles(t *testing.T) {
 	if err := other.Process.Signal(syscall.Signal(0)); err != nil {
 		t.Fatalf("other workspace process affected: %v", err)
 	}
+}
+
+// TestSleepHelper blocks when started as a stand-in runtime process.
+func TestSleepHelper(t *testing.T) {
+	if os.Getenv("V2_SLEEP_HELPER") == "" {
+		return
+	}
+	time.Sleep(time.Minute)
 }
 
 func TestCleanupRefusesUnknownProcessInRoot(t *testing.T) {

@@ -151,10 +151,8 @@ func setup(t *testing.T) fixture {
 	user, tenant := storetest.Login(t, s, "chat-"+t.Name())
 	p := newPort()
 	now := func() time.Time { return time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC) }
-	svc := chat.New(s, struct {
-		execution.Service
-		execution.Catalog
-	}{p.runtime(), p.runtime()}, chat.Options{Now: now})
+	rt := p.runtime()
+	svc := chat.New(s, rt, rt, chat.Options{Now: now})
 	return fixture{svc: svc, port: p, scope: execution.Scope{TenantID: tenant, UserID: user}}
 }
 

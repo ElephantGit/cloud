@@ -21,7 +21,6 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 
-	"github.com/wanglongan587/cloud/v2-server/internal/chat"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
@@ -134,16 +133,16 @@ type chatClient struct {
 	tenant string
 }
 
-func newChatClient(t *testing.T, svc func(*store.Store) *chat.Service) *chatClient {
+// newChatClient serves v2-server with rt injected as both the execution service and the catalog,
+// as main does; a nil rt leaves both to the server's unavailable default.
+func newChatClient(t *testing.T, rt *executiontest.Stub) *chatClient {
 	t.Helper()
 	s := storetest.Open(t)
-	var c *chat.Service
-	if svc != nil {
-		c = svc(s)
+	opts := server.Options{SessionTTL: time.Hour, DemoUser: store.Identity{Source: "dev", Subject: "chat", DisplayName: "Chat"}}
+	if rt != nil {
+		opts.Execution, opts.Catalog = rt, rt
 	}
-	srv := httptest.NewServer(server.New(s, server.Options{
-		SessionTTL: time.Hour, DemoUser: store.Identity{Source: "dev", Subject: "chat", DisplayName: "Chat"}, Chat: c,
-	}))
+	srv := httptest.NewServer(server.New(s, opts))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	cl := &chatClient{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
@@ -153,18 +152,13 @@ func newChatClient(t *testing.T, svc func(*store.Store) *chat.Service) *chatClie
 	return cl
 }
 
-// withRuntime wires a chat service to chatRuntime; finish lets a test end a running turn.
-func withRuntime(finish *func(string)) func(*store.Store) *chat.Service {
-	return func(s *store.Store) *chat.Service {
-		rt, f := chatRuntime()
-		if finish != nil {
-			*finish = f
-		}
-		return chat.New(s, struct {
-			execution.Service
-			execution.Catalog
-		}{rt, rt}, chat.Options{})
+// withRuntime is chatRuntime for newChatClient; finish lets a test end a running turn.
+func withRuntime(finish *func(string)) *executiontest.Stub {
+	rt, f := chatRuntime()
+	if finish != nil {
+		*finish = f
 	}
+	return rt
 }
 
 func (c *chatClient) raw(method, path string, body any, header map[string]string) (int, map[string]any) {
@@ -218,10 +212,23 @@ func (c *chatClient) post(path, key string, body any) (int, map[string]any) {
 	return c.raw("POST", "/api/v2/tenants/"+c.tenant+"/chat"+path, body, map[string]string{"Idempotency-Key": key})
 }
 
+// Until main installs the real execution service, the injected default is an unavailable Stub:
+// the history still reads, but nothing that needs execution pretends to work.
 func TestChatUnavailableWithoutRuntime(t *testing.T) {
 	c := newChatClient(t, nil)
-	if status, body := c.do("GET", "/conversations", nil); status != 503 || body["code"] != "execution_unavailable" {
-		t.Fatalf("without a runtime = %d %v", status, body)
+	if status, body := c.do("GET", "/conversations", nil); status != 200 || len(body["items"].([]any)) != 0 {
+		t.Fatalf("conversations without a runtime = %d %v", status, body)
+	}
+	if status, body := c.do("GET", "/executors", nil); status != 503 || body["code"] != "execution_unavailable" {
+		t.Fatalf("executors without a runtime = %d %v", status, body)
+	}
+	input := map[string]any{"projectId": "demo", "executorId": "fixture", "prompt": "你好"}
+	if status, body := c.post("/conversations", "k1", input); status != 503 || body["code"] != "execution_unavailable" {
+		t.Fatalf("create without a runtime = %d %v", status, body)
+	}
+	// A refused first turn leaves no empty conversation behind.
+	if status, body := c.do("GET", "/conversations", nil); status != 200 || len(body["items"].([]any)) != 0 {
+		t.Fatalf("conversations after a refused create = %d %v", status, body)
 	}
 }
 

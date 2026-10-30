@@ -105,7 +105,7 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 | `GET …/chat/conversations/{cid}/events` | 对话 session 的事件，Server-Sent Events |
 | `GET`/`PUT …/chat/project-order` | 本人在左栏的项目顺序 |
 
-`…` 是 `/api/v2/tenants/{tid}`。所有路由要求登录 cookie 和成员关系；他人的对话按 404 处理。没有装配执行运行时（`server.Options.Chat` 为空）时一律返回 503 `execution_unavailable`。
+`…` 是 `/api/v2/tenants/{tid}`。所有路由要求登录 cookie 和成员关系；他人的对话按 404 处理。执行服务和目录取自统一注入点 `server.Options.Execution` / `Catalog`（见下一节）；它们还是未配置的 Stub 时，对话列表照常读取，执行器清单、创建对话和发消息等需要执行的调用返回 503 `execution_unavailable`。
 
 - **一个对话、一个 session**：创建对话时只选项目，执行服务为这个对话新建目录，对话之间、对话与定时任务和工作流之间都不争抢目录。session 在两轮之间保持，直到下列情况之一，并记下 `endReason`：
   - `stopped`：停止。固定 Node 取消进行中的一轮会结束整个 session。
@@ -118,9 +118,9 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 - **事件流**：每条消息的 `id` 是 session 内序号，`Last-Event-ID`（或 `after`）从其后续上。`session_ended` 之后发 `end` 事件；读取失败发 `failure`，不会冒充正常结束。快照 `history` 每次整份替换，`records[].data` 是固定 Node 的 HistoryLine。关闭事件流只停止观察，不停止 Agent。
 - **简化**：同一对话的操作用进程内互斥串行，依赖 v2-server 是单进程；首版只接文本消息，必须选项目。
 
-装配（由公共执行能力接入时完成）：`chat.New(db, runtime, chat.Options{})`，再把它传给 `server.Options{Chat: svc}`。
+装配：`server.New` 用传入的 store 和注入的 `Execution` / `Catalog` 建一个 `chat.Service`，chat 不改 `main.go` 或启动入口。chat 只调用公共 `execution.Service`，不直接写执行存储的事件、终态或 End；chat 自己的表只记录对话、session 归属和结束原因。
 
-HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，并覆盖对话生命周期、停止后只读、事件流续传与项目顺序；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、结果未知、上一轮未结束、停止与重启后只读和删除顺序。
+HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，向注入点传入 `executiontest.Stub`，覆盖对话生命周期、停止后只读、事件流续传、项目顺序和执行不可用；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、结果未知、上一轮未结束、停止与重启后只读和删除顺序。
 
 ## 进程内 Agent 执行接口
 

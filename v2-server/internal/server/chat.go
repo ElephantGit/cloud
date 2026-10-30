@@ -49,12 +49,13 @@ type chatRequest struct {
 	store chatStore
 }
 
-// chat authenticates, checks membership of the path's tenant and that chat can run at all.
-// Every chat route answers 503 until v2-server is wired to an execution runtime.
+// chat authenticates and checks membership of the path's tenant. The execution service and catalog
+// come from the shared injection point (Options.Execution and Catalog); until main installs the
+// real ones, each call that needs them answers 503 execution_unavailable.
 func (h *handler) chat(next func(http.ResponseWriter, *http.Request, chatRequest)) http.HandlerFunc {
 	return h.authed(func(w http.ResponseWriter, r *http.Request, u store.User) {
 		s, ok := h.store.(chatStore)
-		if !ok || h.opts.Chat == nil {
+		if !ok || h.chats == nil {
 			fault(w, http.StatusServiceUnavailable, "execution_unavailable")
 			return
 		}
@@ -72,7 +73,7 @@ func (h *handler) chat(next func(http.ResponseWriter, *http.Request, chatRequest
 			fault(w, http.StatusNotFound, "not_found")
 			return
 		}
-		next(w, r, chatRequest{scope: execution.Scope{TenantID: tenant, UserID: u.ID}, svc: h.opts.Chat, store: s})
+		next(w, r, chatRequest{scope: execution.Scope{TenantID: tenant, UserID: u.ID}, svc: h.chats, store: s})
 	})
 }
 

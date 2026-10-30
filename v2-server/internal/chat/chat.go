@@ -37,12 +37,6 @@ type Store interface {
 	ClearChatSessionEnding(ctx context.Context, sessionID string) error
 }
 
-// Runtime is the shared execution port and its catalog.
-type Runtime interface {
-	execution.Service
-	execution.Catalog
-}
-
 // Options tune a Service.
 type Options struct {
 	// Now is the clock; nil uses time.Now.
@@ -52,19 +46,21 @@ type Options struct {
 // Service coordinates conversations with the execution port.
 type Service struct {
 	store   Store
-	runtime Runtime
+	runtime execution.Service
+	catalog execution.Catalog
 	now     func() time.Time
 	// locks serialize work on one conversation, so two first prompts cannot both start a session.
 	// v2-server is a single process, which is what makes an in-memory lock sufficient.
 	locks sync.Map
 }
 
-// New returns a Service.
-func New(s Store, r Runtime, o Options) *Service {
+// New returns a Service that runs Agents on runtime and lists the choices from catalog: the
+// shared execution service and catalog v2-server injects into every page.
+func New(s Store, runtime execution.Service, catalog execution.Catalog, o Options) *Service {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Service{store: s, runtime: r, now: o.Now}
+	return &Service{store: s, runtime: runtime, catalog: catalog, now: o.Now}
 }
 
 func (s *Service) lock(id string) func() {
@@ -76,7 +72,7 @@ func (s *Service) lock(id string) func() {
 
 // Executors lists the Agent and model bindings a chat can start with.
 func (s *Service) Executors(ctx context.Context, scope execution.Scope) ([]execution.Executor, error) {
-	return s.runtime.ListExecutors(ctx, scope)
+	return s.catalog.ListExecutors(ctx, scope)
 }
 
 // Conversations lists the person's conversations.

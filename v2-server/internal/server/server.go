@@ -49,8 +49,6 @@ type Options struct {
 	// Catalog exposes the executable Agent/model choices from that backend.
 	// Nil uses an unavailable Stub, independently of Execution.
 	Catalog execution.Catalog
-	// Chat runs the chat routes; nil answers them with execution_unavailable.
-	Chat *chat.Service
 }
 
 // New returns the handler for every route v2-server serves.
@@ -89,6 +87,9 @@ func New(s Store, o Options) http.Handler {
 type handler struct {
 	store Store
 	opts  Options
+	// chats runs the chat routes on the injected execution service and catalog; nil when the store
+	// cannot keep conversations.
+	chats *chat.Service
 }
 
 // newHandler makes omitted dependencies safe without inferring one interface from another.
@@ -100,7 +101,11 @@ func newHandler(s Store, o Options) *handler {
 	if o.Catalog == nil {
 		o.Catalog = unavailable
 	}
-	return &handler{store: s, opts: o}
+	h := &handler{store: s, opts: o}
+	if cs, ok := s.(chat.Store); ok {
+		h.chats = chat.New(cs, o.Execution, o.Catalog, chat.Options{})
+	}
+	return h
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {

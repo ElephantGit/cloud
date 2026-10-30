@@ -216,6 +216,8 @@ interface Player {
 const players = new Map<string, Player>()
 /** The event streams being followed, by execution session id. */
 const streams = new Map<string, () => void>()
+/** Sessions whose stream reached its end: everything they will ever send has been read. */
+const drained = new Set<string>()
 let ids = 0
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(ids++).toString(36)}`
 
@@ -358,29 +360,59 @@ export const useChatStore = create<State>()(
             unread: finished ? { ...s.unread, [id]: true } : s.unread,
           }
         })
-        if (!isResponding(get().conversations[id] ?? emptyConversation)) sendQueued(id)
+        if (!isResponding(get().conversations[id] ?? emptyConversation)) {
+          sendQueued(id)
+          prune(id)
+        }
       }
 
-      /** Follows every session of a conversation that is not followed yet; ended ones replay and close. */
+      /**
+       * Follows every session of a conversation that is not followed yet, after the last event it
+       * has seen; ended ones replay what is left and close.
+       */
       const follow = (id: string) => {
         const tid = get().tenantId
         if (!tid) return
         for (const view of get().views[id] ?? []) {
-          if (streams.has(view.id)) continue
+          if (streams.has(view.id) || drained.has(view.id)) continue
           const done = () => streams.delete(view.id)
-          const apply = (event: ChatEvent) =>
+          const apply = (event: ChatEvent) => {
             refresh(id, (s) => ({
               views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.id === view.id ? applySessionEvent(v, event) : v)) },
             }))
+            // The event does not say why the session ended; the conversation does.
+            if (event.kind === 'session_ended' && !get().views[id]?.find((v) => v.id === view.id)?.endReason) void reconcile(id)
+          }
           streams.set(
             view.id,
-            remote.follow(tid, id, view.id, {
+            remote.follow(tid, id, view.id, view.cursor, {
               event: apply,
-              end: done,
+              end: () => (done(), drained.add(view.id)),
               failure: () => (done(), notify(id, { kind: 'error', message: '事件流中断，刷新页面后重试。' })),
             }),
           )
         }
+      }
+
+      /**
+       * Stops following a conversation nobody is watching and that waits on nothing, so open
+       * streams stay few: browsers allow only six connections per origin over HTTP/1.1.
+       */
+      const prune = (id: string) => {
+        const s = get()
+        if (s.selectedId === id || s.pending[id] || s.queued[id]?.length || isResponding(s.conversations[id] ?? emptyConversation)) return
+        for (const v of s.views[id] ?? []) {
+          streams.get(v.id)?.()
+          streams.delete(v.id)
+        }
+      }
+
+      /** Reads a conversation's sessions again, for why one ended outside this page's own actions. */
+      const reconcile = async (id: string) => {
+        const tid = get().tenantId
+        if (!tid) return
+        const c = (await remote.conversations(tid).catch(() => [])).find((x) => x.id === id)
+        if (c) refresh(id, (s) => ({ views: { ...s.views, [id]: viewsOf(c, s.views[id]) } }))
       }
 
       /** Takes a conversation as the backend returned it after a write. */
@@ -463,10 +495,12 @@ export const useChatStore = create<State>()(
             return { notices }
           }),
         select: (id) => {
+          const previous = get().selectedId
           set((s) => {
             const { [id]: _, ...unread } = s.unread
             return { selectedId: id, selectedRunId: undefined, unread }
           })
+          if (previous && previous !== id) prune(previous)
           const session = get().sessions.find((x) => x.id === id)
           // A sample plays the first time it is opened, so picking it is enough to see it work.
           if (session?.scenarioId && !get().conversations[id] && !players.has(id)) get().replay(id)
@@ -474,7 +508,8 @@ export const useChatStore = create<State>()(
         },
         selectRun: (id) => set({ selectedRunId: id }),
         newChat: { projectId: '', workspace: { kind: 'main' }, agent: '', model: '' },
-        startNewChat: (scope) =>
+        startNewChat: (scope) => {
+          const previous = get().selectedId
           set((s) => {
             const current = s.sessions.find((x) => x.id === s.selectedId)
             const fromSelection = current?.remote ? current : undefined
@@ -484,7 +519,9 @@ export const useChatStore = create<State>()(
                 ? { projectId: fromSelection.projectId, workspace: fromSelection.workspace }
                 : {}
             return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where } }
-          }),
+          })
+          if (previous) prune(previous)
+        },
         setNewChat: (patch) => set((s) => ({ newChat: { ...s.newChat, ...patch } })),
         sendNewChat: async (draft) => {
           const { tenantId: tid, newChat, executors, projects } = get()
@@ -513,6 +550,12 @@ export const useChatStore = create<State>()(
           try {
             const { conversation } = await remote.create(tid, { projectId: project.id, workspaceId, executorId: executor.id, prompt: draft.text })
             const selected = get().selectedId === placeholder
+            // Prompts typed while the first one was being admitted wait for the conversation.
+            const queued = get().queued[placeholder] ?? []
+            set((s) => {
+              const { [placeholder]: _, ...rest } = s.queued
+              return { queued: queued.length ? { ...rest, [conversation.id]: queued } : rest }
+            })
             drop()
             refresh(conversation.id, (s) => ({ pending: { ...s.pending, [conversation.id]: { text: draft.text, turns: 0 } } }))
             absorb(conversation)
@@ -590,6 +633,8 @@ export const useChatStore = create<State>()(
           play(id, standInReply(draft.text, draft).steps)
         },
         stop: (id) => {
+          // A first prompt still being admitted has nothing to stop yet.
+          if (id.startsWith('pending-')) return
           const tid = get().tenantId
           if (isRemote(id) && tid) {
             // The fixed Node ends the whole session, and its stream can report that before the
@@ -696,6 +741,7 @@ export function resetChatStore() {
   players.clear()
   for (const stop of streams.values()) stop()
   streams.clear()
+  drained.clear()
   useChatStore.setState({
     projects: [sampleProject],
     sessions: [...sampleSessions],

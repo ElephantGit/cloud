@@ -27,8 +27,10 @@ export class FakeEventSource {
   close() {
     this.closed = true
   }
+  private sequence = 0
+  /** Delivers the stream's next event; sequences count up per stream, as the backend's do. */
   emit(event: Partial<ChatEvent>) {
-    this.onmessage?.({ data: JSON.stringify({ sequence: 1, occurredAt: at, turnId: 't', ...event }) } as MessageEvent<string>)
+    this.onmessage?.({ data: JSON.stringify({ sequence: ++this.sequence, occurredAt: at, turnId: 't', ...event }) } as MessageEvent<string>)
   }
   fire(name: 'end' | 'failure') {
     for (const fn of this.listeners[name] ?? []) fn()

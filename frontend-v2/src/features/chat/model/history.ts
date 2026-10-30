@@ -17,16 +17,20 @@ export interface SessionView {
   ended: boolean
   /** Why chat ended the session; empty when it ended outside chat (a restart) or is live. */
   endReason: ChatSessionEndReason
+  /** The last event folded in; following again resumes after it, so nothing is applied twice. */
+  cursor: number
 }
 
 /** A session before any event has arrived. */
-export const emptySessionView = (id: string): SessionView => ({ id, records: [], incomplete: false, results: [], ended: false, endReason: '' })
+export const emptySessionView = (id: string): SessionView => ({ id, records: [], incomplete: false, results: [], ended: false, endReason: '', cursor: 0 })
 
 /**
  * Folds one event-stream message into a session. A history snapshot replaces the whole history,
  * as the backend sends it; nothing is appended chunk by chunk.
  */
-export function applySessionEvent(view: SessionView, event: ChatEvent): SessionView {
+export function applySessionEvent(base: SessionView, event: ChatEvent): SessionView {
+  if (event.sequence <= base.cursor) return base
+  const view = { ...base, cursor: event.sequence }
   switch (event.kind) {
     case 'history_snapshot':
       return event.history ? { ...view, records: event.history.records, incomplete: event.history.incomplete } : view

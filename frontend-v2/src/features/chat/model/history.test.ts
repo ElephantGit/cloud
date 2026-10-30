@@ -32,14 +32,17 @@ const view = (patch: Partial<SessionView>): SessionView => ({ ...emptySessionVie
 
 describe('applySessionEvent', () => {
   it('replaces the whole history on each snapshot and keeps turn results in order', () => {
-    const event = (e: Partial<ChatEvent>): ChatEvent => ({ sequence: 1, occurredAt: at(0), kind: 'history_snapshot', turnId: 't1', ...e })
+    let sequence = 0
+    const event = (e: Partial<ChatEvent>): ChatEvent => ({ sequence: ++sequence, occurredAt: at(0), kind: 'history_snapshot', turnId: 't1', ...e })
     let v = emptySessionView('s1')
     v = applySessionEvent(v, event({ history: { records: [user(1, 'hi'), say(2, '草稿', true)], incomplete: true } }))
     v = applySessionEvent(v, event({ history: { records: [user(1, 'hi'), say(2, '定稿')], incomplete: false } }))
     v = applySessionEvent(v, event({ kind: 'turn_ended', result: done }))
     v = applySessionEvent(v, event({ kind: 'session_ended' }))
     expect(v.records.map((r) => r.data)).toEqual([user(1, 'hi').data, say(2, '定稿').data])
-    expect(v).toMatchObject({ incomplete: false, results: [done], ended: true })
+    expect(v).toMatchObject({ incomplete: false, results: [done], ended: true, cursor: 4 })
+    // An event already folded in (a replay after following again) changes nothing.
+    expect(applySessionEvent(v, { sequence: 3, occurredAt: at(0), kind: 'turn_ended', turnId: 't1', result: done })).toBe(v)
   })
 })
 

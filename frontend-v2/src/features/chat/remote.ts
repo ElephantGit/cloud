@@ -105,6 +105,7 @@ export const remote = {
   create: (tid: string, input: { projectId: string; workspaceId: string; executorId: string; prompt: string }) =>
     admit((headers) => createChatConversation(tid, input, { headers })),
   send: (tid: string, cid: string, prompt: string) => admit((headers) => sendChatMessage(tid, cid, { prompt }, { headers })),
+  conversations: async (tid: string) => (await listChatConversations(tid)).items,
   stop: (tid: string, cid: string) => stopChatConversation(tid, cid),
   release: (tid: string, cid: string) => endChatSession(tid, cid),
   rename: (tid: string, cid: string, title: string) => renameChatConversation(tid, cid, { title }),
@@ -116,11 +117,13 @@ export const remote = {
    * its own; `end` closes the stream when the session has ended and `failure` when the backend
    * cannot continue it. Returns the function that stops following.
    */
-  follow(tid: string, cid: string, sid: string, on: { event: (e: ChatEvent) => void; end: () => void; failure: () => void }): () => void {
-    const source = new EventSource(`/api/v2/tenants/${tid}/chat/conversations/${cid}/sessions/${sid}/events`)
+  follow(tid: string, cid: string, sid: string, after: number, on: { event: (e: ChatEvent) => void; end: () => void; failure: () => void }): () => void {
+    const source = remote.eventSource(`/api/v2/tenants/${tid}/chat/conversations/${cid}/sessions/${sid}/events${after ? `?after=${after}` : ''}`)
     source.onmessage = (m: MessageEvent<string>) => on.event(JSON.parse(m.data) as ChatEvent)
     source.addEventListener('end', () => (source.close(), on.end()))
     source.addEventListener('failure', () => (source.close(), on.failure()))
     return () => source.close()
   },
+  /** Opens an event stream; the demo backend replaces it with its own. */
+  eventSource: (url: string): EventSource => new EventSource(url),
 }

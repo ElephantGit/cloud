@@ -94,8 +94,10 @@ func TestConfiguredProviderServicePostgresRestart(t *testing.T) {
 		Prompt: execution.TextPrompt("Reply with one short plain-text sentence confirming you can answer. Do not use tools."),
 	})
 	configuredOK(t, "StartModel admission", err)
+	t.Log("model admitted; waiting for its complete terminal result")
 	modelResult, _ := observeTurn(t, &f.runtimeFixture, modelRef, 0)
 	configuredComplete(t, "model", modelResult)
+	t.Log("model completed; checking End and PostgreSQL restart readback")
 	configuredOK(t, "End model session", f.service.End(ctx, f.scope, modelRef.SessionID))
 	reopen()
 	configuredReadBack(t, f, modelCaller, modelRef, modelResult)
@@ -106,8 +108,10 @@ func TestConfiguredProviderServicePostgresRestart(t *testing.T) {
 		Prompt: execution.TextPrompt("Use the shell tool in this repository to read README.md, then run exactly:\n```sh\nprintf '%s\\n' 'v2 configured provider tool executed' > " + configuredMarkerName + "\n```\nDo not modify any other files. After the tool succeeds, reply with one short plain-text confirmation sentence."),
 	})
 	configuredOK(t, "Start real Agent admission", err)
+	t.Log("Agent admitted; waiting for real Node/OpenCode tool execution and terminal result")
 	agentResult, _ := observeTurn(t, &f.runtimeFixture, agentRef, 0)
 	configuredComplete(t, "Agent", agentResult)
+	t.Log("Agent completed; checking tool marker, End and PostgreSQL restart readback")
 	marker := configuredToolMarker(t, driverRoot)
 	configuredOK(t, "End Agent session", f.service.End(ctx, f.scope, agentRef.SessionID))
 	reopen()
@@ -211,7 +215,8 @@ func configuredOK(t *testing.T, stage string, err error) {
 func configuredComplete(t *testing.T, mode string, result execution.Result) {
 	t.Helper()
 	if result.Status != execution.StatusCompleted || !result.AnswerComplete || strings.TrimSpace(result.Answer) == "" {
-		t.Fatalf("%s did not produce a completed, complete, nonempty text answer", mode)
+		t.Fatalf("%s did not produce a completed, complete, nonempty text answer: status=%q failure_code=%q stop_reason=%q answer_complete=%t answer_bytes=%d usage_present=%t",
+			mode, result.Status, result.FailureCode, result.StopReason, result.AnswerComplete, len(result.Answer), result.Usage != nil)
 	}
 }
 

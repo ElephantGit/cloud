@@ -15,8 +15,6 @@ import {
   ChevronRightIcon,
   FlaskConicalIcon,
   FolderIcon,
-  GitBranchIcon,
-  GitBranchPlusIcon,
   GripVerticalIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
@@ -27,7 +25,8 @@ import {
   SquarePenIcon,
   Trash2Icon,
 } from 'lucide-react'
-import { type KeyboardEvent, type PointerEvent, useState } from 'react'
+import { useState } from 'react'
+import { SidebarResizeHandle } from '@/components/sidebar-resize-handle'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -39,13 +38,9 @@ import { emptyConversation } from '../model/types'
 import { type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
-import { NewWorktreeDialog } from './new-worktree-dialog'
-import { subtleScrollbar } from './scrollbar'
-
-const minWidth = 200
-const maxWidth = 480
-/** Dragging the edge this close to the icon rail folds the column away. */
-const foldBelow = 120
+import type { PublishedWorkflow } from '../workflow-run/demo-runs'
+import { ProjectRuns, RunWorkflowDialog, RunWorkflowSubmenu } from '../workflow-run/run-sidebar'
+import { subtleScrollbar } from '@/lib/scrollbar'
 
 /** A dragged project moves only up and down. */
 const vertical: Modifier = ({ transform }) => ({ ...transform, x: 0 })
@@ -57,18 +52,17 @@ const pointerFirst: CollisionDetection = (args) => {
 }
 
 /**
- * Chat history grouped by project. Each project lists the sessions that work in its main
- * checkout, then one row per worktree (its branch) with that worktree's sessions beneath it.
+ * Chat history grouped by project, each project listing its conversations.
  * Projects reorder by dragging the handle (or with the keyboard: focus it, space, arrows): only
  * the project's row follows the pointer, its sessions stay greyed in place, and a line marks
  * where it will land. The column's right edge drags to resize it, or to fold it away.
- * "新建对话" and the projects' and worktrees' + open the new chat view; a session shows up here
- * once its first prompt is sent.
+ * "新建对话", and the same item in each project's + menu, open the new chat view; a session shows
+ * up here once its first prompt is sent. The + menu also runs a published workflow in the project.
  */
 export function Sidebar() {
   const projects = useChatStore((s) => s.projects)
   const sidebar = useChatStore((s) => s.sidebar)
-  const newChatOpen = useChatStore((s) => !s.selectedId)
+  const newChatOpen = useChatStore((s) => !s.selectedId && !s.selectedRunId)
   const { moveProject, setSidebar, startNewChat } = useChatStore.getState()
   const [activeId, setActiveId] = useState<string>()
   const [overId, setOverId] = useState<string>()
@@ -136,7 +130,7 @@ export function Sidebar() {
           </nav>
         </aside>
       )}
-      <ResizeHandle />
+      <SidebarResizeHandle label="调整对话列表宽度" layout={sidebar} onChange={setSidebar} />
     </>
   )
 }
@@ -152,64 +146,12 @@ export function ShowSidebarButton() {
   )
 }
 
-/** The column's right edge: drag (or arrow keys) to resize, past the rail to fold, Enter to toggle. */
-function ResizeHandle() {
-  const { width, open } = useChatStore((s) => s.sidebar)
-  const setSidebar = useChatStore((s) => s.setSidebar)
-  const resizeTo = (next: number) =>
-    setSidebar(next < foldBelow ? { open: false } : { open: true, width: Math.min(maxWidth, Math.max(minWidth, next)) })
-
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    const handle = e.currentTarget
-    const startX = e.clientX
-    const start = open ? width : 0
-    handle.setPointerCapture(e.pointerId)
-    document.body.style.cursor = 'col-resize'
-    const move = (ev: globalThis.PointerEvent) => resizeTo(start + ev.clientX - startX)
-    const stop = () => {
-      document.body.style.cursor = ''
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', stop)
-      handle.removeEventListener('pointercancel', stop)
-    }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', stop)
-    handle.addEventListener('pointercancel', stop)
-  }
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowLeft: -16, ArrowRight: 16 }[e.key]
-    if (step) resizeTo(open ? (width === minWidth && step < 0 ? 0 : width + step) : minWidth)
-    else if (e.key === 'Enter') setSidebar({ open: !open })
-    else return
-    e.preventDefault()
-  }
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="调整对话列表宽度"
-      aria-valuemin={0}
-      aria-valuemax={maxWidth}
-      aria-valuenow={open ? width : 0}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onKeyDown={onKeyDown}
-      className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-primary/40 focus-visible:after:bg-primary active:after:bg-primary/60"
-    />
-  )
-}
-
 function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'before' | 'after' }) {
   const sessions = useChatStore((s) => s.sessions).filter((s) => s.projectId === project.id)
   const startNewChat = useChatStore((s) => s.startNewChat)
   // Sortable for the drop targets and keyboard moves only: nothing shifts while dragging.
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useSortable({ id: project.id })
-  const [newWorktree, setNewWorktree] = useState(false)
-  const main = sessions.filter((s) => s.workspace.kind === 'main')
-  const branches = [...new Set(sessions.flatMap((s) => (s.workspace.kind === 'isolated' ? [s.workspace.branch] : [])))]
+  const [runWorkflow, setRunWorkflow] = useState<PublishedWorkflow>()
   const Icon = project.samples ? FlaskConicalIcon : FolderIcon
 
   return (
@@ -241,17 +183,11 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id })}>
-                  <FolderIcon />
-                  在主目录新建对话
+                  <SquarePenIcon />
+                  新建对话
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => startNewChat({ projectId: project.id, workspace: { kind: 'new-worktree' } })}>
-                  <GitBranchPlusIcon />
-                  在新 worktree 中新建对话
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setNewWorktree(true)}>
-                  <PencilIcon />
-                  新建 worktree 并命名…
-                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <RunWorkflowSubmenu onPick={setRunWorkflow} />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -259,26 +195,14 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
         <CollapsibleContent>
           <div className="mt-0.5 mb-1 ml-[1.9rem] flex flex-col pl-2">
             {sessions.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">还没有会话</p>}
-            {main.map((s) => (
+            <ProjectRuns projectId={project.id} />
+            {sessions.map((s) => (
               <SessionRow key={s.id} session={s} />
-            ))}
-            {branches.map((branch) => (
-              <WorktreeGroup
-                key={branch}
-                branch={branch}
-                sessions={sessions.filter((s) => s.workspace.kind === 'isolated' && s.workspace.branch === branch)}
-                onNew={project.samples ? undefined : () => startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } })}
-              />
             ))}
           </div>
         </CollapsibleContent>
       </Collapsible>
-      <NewWorktreeDialog
-        open={newWorktree}
-        onOpenChange={setNewWorktree}
-        projectName={project.name}
-        onCreate={(branch) => (startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } }), setNewWorktree(false))}
-      />
+      <RunWorkflowDialog projectId={project.id} workflow={runWorkflow} onClose={() => setRunWorkflow(undefined)} />
     </section>
   )
 }
@@ -296,34 +220,8 @@ function LiftedProject({ project }: { project: Project }) {
   )
 }
 
-function WorktreeGroup({ branch, sessions, onNew }: { branch: string; sessions: Session[]; onNew?: () => void }) {
-  return (
-    <Collapsible defaultOpen aria-label={`worktree ${branch}`}>
-      <div className="group/wt flex h-7 items-center rounded-md pr-1 hover:bg-accent/60">
-        <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 px-1 text-left text-xs">
-          <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
-          <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <FadeText text={branch} className="font-mono" />
-        </CollapsibleTrigger>
-        {onNew && (
-          <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover/wt:opacity-100" aria-label={`在 ${branch} 新建对话`} onClick={onNew}>
-            <PlusIcon />
-          </Button>
-        )}
-      </div>
-      <CollapsibleContent>
-        <div className="ml-4 flex flex-col">
-          {sessions.map((s) => (
-            <SessionRow key={s.id} session={s} />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 function SessionRow({ session }: { session: Session }) {
-  const selected = useChatStore((s) => s.selectedId === session.id)
+  const selected = useChatStore((s) => s.selectedId === session.id && !s.selectedRunId)
   const responding = useChatStore((s) => isResponding(s.conversations[session.id] ?? emptyConversation))
   const unread = useChatStore((s) => !!s.unread[session.id])
   const { select, renameSession, deleteSession, replay } = useChatStore.getState()

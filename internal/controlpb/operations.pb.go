@@ -457,20 +457,26 @@ const (
 	DeferReason_DEFER_REASON_PLUGIN_EXECUTION_FAILED DeferReason = 7
 	// The Node could not tell the plugin execution's outcome; not retried automatically.
 	DeferReason_DEFER_REASON_PLUGIN_RESULT_UNKNOWN DeferReason = 8
+	// Continue waiting for the same clone execution; Cloud owns the one-second reclaim delay.
+	DeferReason_DEFER_REASON_CLONE_RESULT_PENDING DeferReason = 9
+	// No result within 1800 seconds of execution registration; late known results still resume it.
+	DeferReason_DEFER_REASON_CLONE_RESULT_TIMEOUT DeferReason = 10
 )
 
 // Enum value maps for DeferReason.
 var (
 	DeferReason_name = map[int32]string{
-		0: "DEFER_REASON_UNSPECIFIED",
-		1: "DEFER_REASON_SUBSTRATE_TIMEOUT",
-		2: "DEFER_REASON_TERMINATION_UNCONFIRMED",
-		3: "DEFER_REASON_NODE_UNAVAILABLE",
-		4: "DEFER_REASON_EXTERNAL_FAILURE",
-		5: "DEFER_REASON_CLONE_FAILED",
-		6: "DEFER_REASON_CLONE_RESULT_UNKNOWN",
-		7: "DEFER_REASON_PLUGIN_EXECUTION_FAILED",
-		8: "DEFER_REASON_PLUGIN_RESULT_UNKNOWN",
+		0:  "DEFER_REASON_UNSPECIFIED",
+		1:  "DEFER_REASON_SUBSTRATE_TIMEOUT",
+		2:  "DEFER_REASON_TERMINATION_UNCONFIRMED",
+		3:  "DEFER_REASON_NODE_UNAVAILABLE",
+		4:  "DEFER_REASON_EXTERNAL_FAILURE",
+		5:  "DEFER_REASON_CLONE_FAILED",
+		6:  "DEFER_REASON_CLONE_RESULT_UNKNOWN",
+		7:  "DEFER_REASON_PLUGIN_EXECUTION_FAILED",
+		8:  "DEFER_REASON_PLUGIN_RESULT_UNKNOWN",
+		9:  "DEFER_REASON_CLONE_RESULT_PENDING",
+		10: "DEFER_REASON_CLONE_RESULT_TIMEOUT",
 	}
 	DeferReason_value = map[string]int32{
 		"DEFER_REASON_UNSPECIFIED":             0,
@@ -482,6 +488,8 @@ var (
 		"DEFER_REASON_CLONE_RESULT_UNKNOWN":    6,
 		"DEFER_REASON_PLUGIN_EXECUTION_FAILED": 7,
 		"DEFER_REASON_PLUGIN_RESULT_UNKNOWN":   8,
+		"DEFER_REASON_CLONE_RESULT_PENDING":    9,
+		"DEFER_REASON_CLONE_RESULT_TIMEOUT":    10,
 	}
 )
 
@@ -636,8 +644,10 @@ type Operation struct {
 	// Epoch of the Controller that claimed it last.
 	ControllerEpoch *int64  `protobuf:"varint,8,opt,name=controller_epoch,json=controllerEpoch,proto3,oneof" json:"controller_epoch,omitempty"`
 	ErrorCode       *string `protobuf:"bytes,9,opt,name=error_code,json=errorCode,proto3,oneof" json:"error_code,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Consecutive Node-unavailable rounds; only a real step advance resets this count.
+	NodeUnavailableAttempts int64 `protobuf:"varint,10,opt,name=node_unavailable_attempts,json=nodeUnavailableAttempts,proto3" json:"node_unavailable_attempts,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *Operation) Reset() {
@@ -731,6 +741,13 @@ func (x *Operation) GetErrorCode() string {
 		return *x.ErrorCode
 	}
 	return ""
+}
+
+func (x *Operation) GetNodeUnavailableAttempts() int64 {
+	if x != nil {
+		return x.NodeUnavailableAttempts
+	}
+	return 0
 }
 
 // The Project an operation belongs to. Its external repository, branch and credential reference
@@ -2578,7 +2595,8 @@ type DeferOperationRequest struct {
 	Version      int64                  `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
 	State        DeferState             `protobuf:"varint,5,opt,name=state,proto3,enum=ora.cloud.internal.v1.DeferState" json:"state,omitempty"`
 	Reason       DeferReason            `protobuf:"varint,6,opt,name=reason,proto3,enum=ora.cloud.internal.v1.DeferReason" json:"reason,omitempty"`
-	// 1 to 3600 seconds.
+	// 1 to 3600 seconds for generic reasons. Ignored (including zero) for Node unavailable,
+	// clone pending and clone timeout: Cloud owns their retry policy and durable deadline.
 	RetrySeconds  uint32 `protobuf:"varint,7,opt,name=retry_seconds,json=retrySeconds,proto3" json:"retry_seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3072,7 +3090,7 @@ var File_ora_cloud_internal_v1_operations_proto protoreflect.FileDescriptor
 
 const file_ora_cloud_internal_v1_operations_proto_rawDesc = "" +
 	"\n" +
-	"&ora/cloud/internal/v1/operations.proto\x12\x15ora.cloud.internal.v1\x1a&ora/cloud/internal/v1/executions.proto\x1a!ora/cloud/internal/v1/nodes.proto\"\xb6\x03\n" +
+	"&ora/cloud/internal/v1/operations.proto\x12\x15ora.cloud.internal.v1\x1a&ora/cloud/internal/v1/executions.proto\x1a!ora/cloud/internal/v1/nodes.proto\"\xf2\x03\n" +
 	"\tOperation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x128\n" +
 	"\x04kind\x18\x02 \x01(\x0e2$.ora.cloud.internal.v1.OperationKindR\x04kind\x12;\n" +
@@ -3084,7 +3102,9 @@ const file_ora_cloud_internal_v1_operations_proto_rawDesc = "" +
 	"\aversion\x18\a \x01(\x03R\aversion\x12.\n" +
 	"\x10controller_epoch\x18\b \x01(\x03H\x01R\x0fcontrollerEpoch\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"error_code\x18\t \x01(\tH\x02R\terrorCode\x88\x01\x01B\x0f\n" +
+	"error_code\x18\t \x01(\tH\x02R\terrorCode\x88\x01\x01\x12:\n" +
+	"\x19node_unavailable_attempts\x18\n" +
+	" \x01(\x03R\x17nodeUnavailableAttemptsB\x0f\n" +
 	"\r_workspace_idB\x13\n" +
 	"\x11_controller_epochB\r\n" +
 	"\v_error_code\"d\n" +
@@ -3340,7 +3360,7 @@ const file_ora_cloud_internal_v1_operations_proto_rawDesc = "" +
 	"DeferState\x12\x1b\n" +
 	"\x17DEFER_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DEFER_STATE_RETRY_WAIT\x10\x01\x12\x17\n" +
-	"\x13DEFER_STATE_BLOCKED\x10\x02*\xd7\x02\n" +
+	"\x13DEFER_STATE_BLOCKED\x10\x02*\xa5\x03\n" +
 	"\vDeferReason\x12\x1c\n" +
 	"\x18DEFER_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDEFER_REASON_SUBSTRATE_TIMEOUT\x10\x01\x12(\n" +
@@ -3350,7 +3370,10 @@ const file_ora_cloud_internal_v1_operations_proto_rawDesc = "" +
 	"\x19DEFER_REASON_CLONE_FAILED\x10\x05\x12%\n" +
 	"!DEFER_REASON_CLONE_RESULT_UNKNOWN\x10\x06\x12(\n" +
 	"$DEFER_REASON_PLUGIN_EXECUTION_FAILED\x10\a\x12&\n" +
-	"\"DEFER_REASON_PLUGIN_RESULT_UNKNOWN\x10\b*\xcb\x01\n" +
+	"\"DEFER_REASON_PLUGIN_RESULT_UNKNOWN\x10\b\x12%\n" +
+	"!DEFER_REASON_CLONE_RESULT_PENDING\x10\t\x12%\n" +
+	"!DEFER_REASON_CLONE_RESULT_TIMEOUT\x10\n" +
+	"*\xcb\x01\n" +
 	"\x14ProvisioningFactKind\x12&\n" +
 	"\"PROVISIONING_FACT_KIND_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dPROVISIONING_FACT_KIND_EFFECT\x10\x01\x12 \n" +

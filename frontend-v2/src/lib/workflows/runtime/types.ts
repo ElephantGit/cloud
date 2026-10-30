@@ -1,0 +1,787 @@
+/** Node variants understood by the graph workflow execution contract, in canonical order. */
+export const WORKFLOW_NODE_KINDS = [
+  "start",
+  "agent",
+  "condition",
+  "aggregator",
+  "tool",
+  "junction",
+  "human",
+  "loop",
+  "loopExit",
+  "iteration",
+  "subflow",
+  "output",
+] as const;
+
+/** Node variants understood by the graph workflow execution contract. */
+export type WorkflowNodeKind = (typeof WORKFLOW_NODE_KINDS)[number];
+
+/** One Skill binding within an executable Agent node. */
+export interface WorkflowAgentSkillConfig {
+  skillId: string;
+  enabled: boolean;
+}
+
+/** One MCP binding within an executable Agent node. */
+export interface WorkflowAgentMcpConfig {
+  mcpId: string;
+  enabled: boolean;
+}
+
+/** Value types accepted by the workflow variable pool. */
+export type WorkflowVariableValueType =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "secret"
+  | "file"
+  | "object"
+  | "any"
+  | "array"
+  | "array[string]"
+  | "array[number]"
+  | "array[object]"
+  | "array[boolean]"
+  | "array[file]"
+  | "array[any]";
+
+/** One workflow-wide variable available independently of graph topology. */
+export interface WorkflowGlobalVariable {
+  name: string;
+  valueType: WorkflowVariableValueType;
+  value?: unknown;
+}
+
+/** Form controls supported by a Start node when collecting deployment-time input. */
+export type WorkflowInputFieldType =
+  | "text-input"
+  | "paragraph"
+  | "select"
+  | "number"
+  | "checkbox"
+  | "file"
+  | "file-list"
+  | "json";
+
+/** One typed input declared by the Start node. */
+export interface WorkflowInputVariable {
+  name: string;
+  /** Human-facing label shown when a deployed run collects this value. */
+  displayName?: string;
+  /** Presentation control; kept separate because several controls produce the same value type. */
+  fieldType?: WorkflowInputFieldType;
+  valueType: WorkflowVariableValueType;
+  /** Whether a deployed run must provide a non-empty value before execution. */
+  required?: boolean;
+  /** Choices presented by a select field. */
+  options?: string[];
+  /** Character limit for string-like values. */
+  maxLength?: number;
+  value?: unknown;
+}
+
+/** One rule inside a condition branch: a variable, a comparison operator, and an expected value. */
+export interface WorkflowConditionRule {
+  variable: string;
+  operator: string;
+  value: string;
+  /** When true, the rule is negated (NOT). */
+  negated?: boolean;
+}
+
+/** How the rules inside a branch combine: all of them (AND) or any of them (OR). */
+export type WorkflowConditionLogic = "and" | "or";
+
+/** One IF branch of a Condition node; the trailing "otherwise" path is implicit. */
+export interface WorkflowConditionBranch {
+  conditions: WorkflowConditionRule[];
+  logic?: WorkflowConditionLogic;
+}
+
+/**
+ * One comparison in the executable Condition format: a fully-qualified variable selector, a
+ * typed operator, and an optional expected value. Mirrors the backend's `data.cases` wire shape.
+ */
+export interface WorkflowConditionComparison {
+  /** Dify-style selector `["nodeId", "root", ...nestedPath]`. */
+  variableSelector: string[];
+  operator: string;
+  /** Expected value, omitted for operators such as `exists` / `empty`. */
+  value?: unknown;
+}
+
+/** One executable case of a Condition node; the trailing "else" path is implicit. */
+export interface WorkflowConditionCase {
+  id: string;
+  logic?: WorkflowConditionLogic;
+  conditions: WorkflowConditionComparison[];
+}
+
+/**
+ * Ordered variable selectors of an Aggregator node, mirroring the backend
+ * `data.aggregatorConfig` wire shape. Array order is the priority contract: the first
+ * assigned selector's value is passed through as `{agg}.output`.
+ */
+export interface WorkflowAggregatorConfig {
+  /** Dify-style root selectors `["nodeId", "root"]`; nested paths are not selectable. */
+  variables: string[][];
+}
+
+/** One named result an Output node exposes, resolved from the run variable pool at completion. */
+export interface WorkflowOutputBinding {
+  name: string;
+  /** Dify-style selector `["nodeId", "root", ...nestedPath]`. */
+  variableSelector: string[];
+}
+
+/** One carried Loop variable with its first-round value and simultaneous feedback source. */
+export interface WorkflowLoopVariable {
+  name: string;
+  valueType: WorkflowVariableValueType;
+  initial:
+    | { kind: "constant"; value: unknown }
+    | { kind: "variable"; selector: string[] };
+  feedback: string[];
+}
+
+/** Executable bounded Loop configuration shared with the Rust snapshot decoder. */
+export interface WorkflowLoopConfig {
+  maxIterations: number;
+  /** Missing in older snapshots; defaults to failing when the end condition is still false. */
+  maxIterationsBehavior?: "fail" | "succeed";
+  variables: WorkflowLoopVariable[];
+  until: {
+    logic: WorkflowConditionLogic;
+    conditions: WorkflowConditionComparison[];
+  };
+  outputs: WorkflowOutputBinding[];
+}
+
+/** How an Iteration node reacts when one round fails (backend `errorStrategy`). */
+export type WorkflowIterationErrorStrategy = "fail" | "continue";
+
+/** Executable configuration of an Iteration node (foreach composite runtime). */
+export interface WorkflowIterationConfig {
+  /** Dify-style selector of the array variable driving the rounds. */
+  iteratorSelector: string[];
+  /** Dify-style root-variable selector collected into `{iter}.output` each round. */
+  collectSelector: string[];
+  errorStrategy: WorkflowIterationErrorStrategy;
+  /** Safety ceiling; a longer source fails the node at the startup boundary. */
+  maxIterations: number;
+}
+
+/** Which branches a Junction node waits for before it may proceed. */
+export type WorkflowJunctionWaitStrategy = "all" | "any" | "count";
+
+/** How a Junction node reacts when one of its upstream branches fails. */
+export type WorkflowJunctionFailureStrategy = "fail" | "continue";
+
+/** One key/value call parameter passed to the selected Tool node. */
+export interface WorkflowToolParameter {
+  key: string;
+  value: string;
+}
+
+/** Optional structured output emitted alongside an Agent node's stable text `output`. */
+export interface WorkflowAgentOutputContract {
+  type: "structured";
+  /** JSON Schema the final assistant response must validate against. */
+  schema: Record<string, unknown>;
+}
+
+/**
+ * Automatic rerun of an Agent node after a retryable failure. Absent on a node means the default
+ * policy (`DEFAULT_WORKFLOW_AGENT_RETRY` in `@ora/workflow-mock`); when present every field is
+ * required and bounded as that package's `WORKFLOW_AGENT_RETRY_BOUNDS` describes.
+ */
+export interface WorkflowAgentRetryPolicy {
+  enabled: boolean;
+  /** Reruns after the first failed attempt. */
+  maxRetries: number;
+  /** Wait before the first rerun; each later wait doubles, capped by the engine. */
+  initialDelaySeconds: number;
+}
+
+/** Transport-neutral execution contract for an Agent node. */
+export interface WorkflowAgentConfig {
+  schemaVersion: 3;
+  executor: {
+    agentCli: string;
+    modelId: string;
+  };
+  roleId: string;
+  skills: WorkflowAgentSkillConfig[];
+  /** Optional MCP attachments; empty means the node uses no MCP servers. */
+  mcps: WorkflowAgentMcpConfig[];
+  prompt: string;
+  /** Opt the node into a persistent interactive session that pauses for human input. */
+  interactive?: boolean;
+  /** Silence handling for this node's prompts; absent or null keeps the default timeout. */
+  promptInactivity?: "timeout" | "wait" | null;
+  /**
+   * Whether the node's final assistant response becomes its run output. Absent defaults to
+   * `"none"`, so a node withholds its output unless opted in.
+   */
+  /** Optional structured parsing performed in addition to the stable raw output. */
+  outputContract?: WorkflowAgentOutputContract;
+  /** Automatic retry after retryable failures; absent means the default policy. */
+  retry?: WorkflowAgentRetryPolicy;
+}
+
+/** Serializable workflow node data shared by memory and future Rust adapters. */
+export interface WorkflowNodeData extends Record<string, unknown> {
+  kind: WorkflowNodeKind;
+  title: string;
+  description: string;
+  /** Start node: initial prompt used as the run's kickoff input. */
+  input?: string;
+  /** Human node: prompt shown to the reviewer. */
+  instruction?: string;
+  /** Legacy scheduling metadata; no current runtime consumes this value. */
+  trigger?: string;
+  /** Start node: variables the workflow receives on start. */
+  inputVariables?: WorkflowInputVariable[];
+  tool?: string;
+  condition?: string;
+  agentConfig?: WorkflowAgentConfig;
+  conditionBranches?: WorkflowConditionBranch[];
+  /** Legacy executable cases retained so existing saved graphs remain readable. */
+  conditionCases?: WorkflowConditionCase[];
+  /** Executable cases for Condition nodes, matching the backend `data.cases` wire format. */
+  cases?: WorkflowConditionCase[];
+  /** Aggregator node: ordered candidate selectors (backend `data.aggregatorConfig`). */
+  aggregatorConfig?: WorkflowAggregatorConfig;
+  /** Named result bindings of an Output node, resolved from the variable pool at completion. */
+  outputs?: WorkflowOutputBinding[];
+  /** Owning Loop id for one child node. */
+  containerId?: string;
+  /** Bounded feedback behavior for a Loop container. */
+  loopConfig?: WorkflowLoopConfig;
+  operation?: string;
+  toolParameters?: WorkflowToolParameter[];
+  waitStrategy?: WorkflowJunctionWaitStrategy;
+  waitCount?: number;
+  failureStrategy?: WorkflowJunctionFailureStrategy;
+  maxAttempts?: number;
+  exitCondition?: string;
+  /** Iteration node: foreach composite configuration (backend `data.iterationConfig`). */
+  iterationConfig?: WorkflowIterationConfig;
+  /** Iteration frame: presentation-only collapsed state; region members stay in the graph. */
+  collapsed?: boolean;
+  /** Iteration frame: derived member count for the collapsed summary badge. */
+  regionMemberCount?: number;
+  /** Fixture-only timing hint; the editor does not expose it as configuration. */
+  mockStepMs?: number;
+}
+
+export interface WorkflowPosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkflowViewport extends WorkflowPosition {
+  zoom: number;
+}
+
+/** Serializable node snapshot; React Flow runtime internals are intentionally excluded. */
+export interface WorkflowDefinitionNode {
+  id: string;
+  type: "workflow";
+  position: WorkflowPosition;
+  data: WorkflowNodeData;
+  /** React Flow layout parent; must match `data.containerId` for Loop children. */
+  parentId?: string;
+  deletable?: boolean;
+  initialWidth?: number;
+  initialHeight?: number;
+}
+
+/** Serializable execution edge with display text kept as plain data. */
+export interface WorkflowDefinitionEdge {
+  id: string;
+  source: string;
+  target: string;
+  type?: "workflow";
+  label?: string;
+  data?: Record<string, unknown>;
+  /** Source port of a Condition node selecting its branch: a case id or `else`. */
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+/** Frozen workflow definition shared across memory and future generated contracts. */
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  updatedAt: string;
+  viewport: WorkflowViewport;
+  globalVariables?: WorkflowGlobalVariable[];
+  nodes: WorkflowDefinitionNode[];
+  edges: WorkflowDefinitionEdge[];
+}
+
+/** Run-level lifecycle for a project-attached graph workflow execution. */
+export type GraphWorkflowRunStatus =
+  | "pending"
+  | "running"
+  | "awaiting_input"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+/**
+ * Per-node execution status overlaid on a frozen definition snapshot.
+ *
+ * `inactive` and `retry_waiting` are display states derived by the adapter: the backend stores a
+ * waiting retry as a `running` row with no start time, but that row has no session yet, so the
+ * run view must not treat it as live work.
+ */
+export type GraphWorkflowNodeStatus =
+  | "idle"
+  | "inactive"
+  | "running"
+  | "retry_waiting"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "awaiting_input";
+
+/** HITL timeout policy; MVP mock always waits (`wait`) until submit. */
+export type HitlTimeoutPolicy = "fail" | "skip" | "wait";
+
+/** Glanceable runtime I/O for Theater inspector (not raw wire frames). */
+export interface GraphWorkflowNodeIo {
+  /** One-line summary shown by default. */
+  summary: string;
+  /** Optional longer body (prompt, tool args, model reply, HITL answer…). */
+  detail?: string;
+}
+
+/** One file this node incrementally changed, recorded from the worktree git diff. */
+export interface WorkflowNodeFileChange {
+  /** Worktree-relative file path. */
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+/** One declared reason a parked interactive turn cannot complete without an explicit force. */
+export type WorkflowNodeCompletionBlockerKind =
+  | "turn_stopped"
+  | "turn_truncated"
+  | "turn_refused"
+  | "turn_unknown"
+  | "structured_invalid"
+  | "output_missing";
+
+/** One completion blocker with implementation detail the UI may present as a hint. */
+export interface WorkflowNodeCompletionBlocker {
+  kind: WorkflowNodeCompletionBlockerKind;
+  /** Blocker-specific detail; absent when the backend has none, never used for control flow. */
+  params: Record<string, unknown>;
+}
+
+/** Identity of one settled turn: its user message and the `TurnEnded` that closed it. */
+export interface WorkflowNodeTurnKey {
+  userSeq: number;
+  endedSeq: number;
+}
+
+/**
+ * Read-only completion preview persisted as `payload.completion` on a parked interactive node.
+ *
+ * `ready` is derived from the raw snapshot (`blockers` empty and not `provisional`) so the same
+ * gate can drive the trailing step card and the right-bottom advancement action. Older node runs
+ * have no snapshot at all; consumers must treat that as unknown rather than ready.
+ */
+export interface WorkflowNodeCompletion {
+  /** The user message that opened the last turn; absent when no history was readable. */
+  userSeq?: number;
+  /** Absent when the turn has no `TurnEnded`, which always blocks completion. */
+  turnKey?: WorkflowNodeTurnKey;
+  /** Snake-case ACP stop reason of the settled turn; absent when it did not settle. */
+  stopReason?: string;
+  blockers: WorkflowNodeCompletionBlocker[];
+  warnings: string[];
+  /** SHA-256 of the final assistant text; absent when the turn did not settle. */
+  outputDigest?: string;
+  /** Cleanup timed out before the actor settled; `prepare` may still repair this snapshot. */
+  provisional: boolean;
+  /** No blockers and not provisional; the node can advance without an explicit force. */
+  ready: boolean;
+}
+
+/** Structured failure persisted on a node run as `payload.error_detail`. */
+export interface WorkflowNodeErrorDetail {
+  kind: string;
+  message: string;
+  sourceChain: string[];
+  attempt: number;
+  resumable: boolean;
+  /**
+   * Whether a same-version resume tells the agent about this failure: the kind is injectable and
+   * the run was created with failure injection on. Absent on rows written before the backend
+   * recorded the field.
+   */
+  injectsPreviousFailure?: boolean;
+  /**
+   * Whether this kind of failure is retried automatically when the node's retry policy is on.
+   * Absent on rows the backend wrote before it recorded the field.
+   */
+  autoRetryable?: boolean;
+  recordedAt: number;
+}
+
+/** On-demand AI guess persisted on a node run as `payload.ai_diagnosis`. */
+export interface WorkflowNodeAiDiagnosis {
+  text: string;
+  agentCli: string;
+  model: string;
+  generatedAt: number;
+}
+
+/** Pending automatic retry persisted on a waiting node run as `payload.retry_wait`. */
+export interface WorkflowNodeRetryWait {
+  /** Attempt number the waiting row will run as (same numbering as `errorDetail.attempt`). */
+  attempt: number;
+  /** Last attempt number the current retry budget allows. */
+  maxAttempt: number;
+  /** Retry number within the current budget, 1-based. */
+  retry: number;
+  maxRetries: number;
+  delayMs: number;
+  /** Unix millis when the failed attempt was replaced by the waiting row. */
+  scheduledAt: number;
+  /** Unix millis at which the waiting attempt starts. */
+  dueAt: number;
+}
+
+/** Automatic retry that started a node run, persisted as `payload.auto_retry`. */
+export interface WorkflowNodeAutoRetry {
+  /** Retry number within the budget; the run was preceded by this many automatic retries. */
+  retry: number;
+  maxRetries: number;
+}
+
+/**
+ * What replaced an earlier failed attempt, when the run detail allows telling it.
+ * `automatic_retry_scheduled`: an automatic retry was scheduled but never started (it is still
+ * waiting, or the wait was cancelled, abandoned, or ended by an app restart).
+ */
+export type WorkflowNodeAttemptReplacement =
+  "automatic_retry" | "automatic_retry_scheduled" | "manual_resume";
+
+/** One earlier failed attempt of a node execution (same node, scope, and round). */
+export interface WorkflowNodeAttemptFailure {
+  nodeRunId: string;
+  attempt: number;
+  kind: string;
+  errorMessage: string;
+  /** `std::error::Error::source()` chain, outermost first; the last entry is the most specific. */
+  sourceChain: string[];
+  recordedAt: number;
+  startedAt?: string;
+  finishedAt?: string;
+  /** Session of that attempt; its transcript stays readable. */
+  sessionId?: string;
+  /** Composite-region round (0-based) for iteration rows. */
+  iteration?: number;
+  /** Loop round (0-based) for rows inside a Loop body. */
+  loopRoundIndex?: number;
+  /** Absent when the run detail cannot tell what replaced the attempt. */
+  replacedBy?: WorkflowNodeAttemptReplacement;
+  /** The attempt ran before the run was restarted from its start node. */
+  beforeRestart?: boolean;
+}
+
+export interface GraphWorkflowNodeState {
+  /** The branch committed for this exact node execution, not a global latest decision. */
+  selectedBranchId?: string;
+  status: GraphWorkflowNodeStatus;
+  /**
+   * Composite-region round this state belongs to; present only for region rows, where the
+   * same node holds one state per round.
+   */
+  iteration?: number;
+  /** Session bound to this node execution; opaque to the workflow UI. */
+  sessionId?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  errorMessage?: string;
+  /** Machine-readable failure detail parsed from `payload.error_detail`. */
+  errorDetail?: WorkflowNodeErrorDetail;
+  /** Snapshot id recorded when this node last ran, from `payload.snapshot_id`. */
+  snapshotId?: string;
+  /** Previous-failure block injected into this attempt's prompt, from `payload.injected_failure_context`. */
+  injectedFailureContext?: string;
+  /** On-demand AI guess stored as `payload.ai_diagnosis`; never used for scheduling or resume. */
+  aiDiagnosis?: WorkflowNodeAiDiagnosis;
+  /** Present only while the status is `retry_waiting`. */
+  retryWait?: WorkflowNodeRetryWait;
+  /**
+   * Present when an automatic retry scheduled this attempt (kept after it fails). The attempt
+   * itself only ran when `startedAt` is set; a wait that ended early leaves it unset.
+   */
+  autoRetry?: WorkflowNodeAutoRetry;
+  /** A waiting retry the run gave up on when it ended (`{"reason":"retry_abandoned"}`). */
+  retryAbandoned?: boolean;
+  /** Earlier failed attempts of this node execution, oldest first. */
+  failedAttempts?: WorkflowNodeAttemptFailure[];
+  /** ACP stop reason recorded in `payload.stop_reason` when the node succeeded. */
+  stopReason?: string;
+  /** Parked interactive completion gate from `payload.completion`; absent on older node runs. */
+  completion?: WorkflowNodeCompletion;
+  /** What this step received when it started (kickoff, upstream, schema…). */
+  input?: GraphWorkflowNodeIo;
+  /** What this step produced when it finished (or HITL answer summary). */
+  output?: GraphWorkflowNodeIo;
+  /** The node's own conversation, projected from its run output by the real adapter. */
+  conversation?: WorkflowNodeConversationItem[];
+  /** Incremental worktree changes recorded in `payload.file_changes`. */
+  fileChanges?: WorkflowNodeFileChange[];
+}
+
+/** One persisted Loop round with node states keyed inside that execution scope. */
+export interface GraphWorkflowRound {
+  id: string;
+  parentLoopNodeRunId: string;
+  parentLoopNodeId: string;
+  roundIndex: number;
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+  nodeStates: Record<string, GraphWorkflowNodeState>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Lifecycle state for one projected session item. */
+export type WorkflowNodeConversationItemStatus = "streaming" | "complete";
+
+/** Roles used by visible text messages in a node-bound session. */
+export type WorkflowNodeConversationMessageRole = "user" | "assistant";
+
+/** Kinds of secondary session activity that can be disclosed on demand. */
+export type WorkflowNodeConversationActivityKind = "thought" | "tool";
+
+interface WorkflowNodeConversationItemBase {
+  id: string;
+  runId: string;
+  nodeId: string;
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A user or Agent message approved for the compact node conversation. */
+export interface WorkflowNodeConversationMessage extends WorkflowNodeConversationItemBase {
+  kind: "message";
+  role: WorkflowNodeConversationMessageRole;
+  markdown: string;
+  status: WorkflowNodeConversationItemStatus;
+}
+
+/** A raw-session item retained for an explicitly expanded activity disclosure. */
+export interface WorkflowNodeConversationActivity extends WorkflowNodeConversationItemBase {
+  kind: "activity";
+  activityKind: WorkflowNodeConversationActivityKind;
+  summary: string;
+  detail?: string;
+  status: WorkflowNodeConversationItemStatus;
+}
+
+/**
+ * Filtered session projection used by workflow cards.
+ *
+ * Adapters may retain thoughts and tool calls as activity items, but the card
+ * renders them behind one collapsed disclosure while showing text messages in
+ * the same layout as the full chat surface.
+ */
+export type WorkflowNodeConversationItem =
+  WorkflowNodeConversationMessage | WorkflowNodeConversationActivity;
+
+/**
+ * A project-scoped execution of a mounted workflow definition.
+ */
+export interface GraphWorkflowRun {
+  id: string;
+  projectId: string;
+  definitionId: string;
+  definitionSnapshot: WorkflowDefinition;
+  name: string;
+  status: GraphWorkflowRunStatus;
+  kickoffInput?: string;
+  /** Committed workflow result, distinct from any intermediate node output. */
+  finalOutput?: string;
+  nodeStates: Record<string, GraphWorkflowNodeState>;
+  /** Complete Loop-round history; repeated child node ids remain isolated per round. */
+  rounds?: GraphWorkflowRound[];
+  /**
+   * Per-round states of composite-region nodes, grouped by `(nodeId, iteration)`. Region
+   * nodes hold one state per executed round; `nodeStates` keeps only each region node's
+   * latest round plus every outer node, so existing consumers stay unchanged while Theater
+   * and Overview can group rounds under the owning iteration node.
+   */
+  roundStates?: Record<string, GraphWorkflowNodeState[]>;
+  /** Open HITL gates (parallel prompts may all wait at once). Cleared on resolve / cancel. */
+  openHitls: HitlRequest[];
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  /** Snapshot this run currently points at; may differ from a node's payload.snapshot_id after a version switch. */
+  snapshotId?: string;
+}
+
+/**
+ * Pending-only overrides on a run's frozen node copy.
+ * Never written back to the mounted library definition.
+ */
+export interface GraphWorkflowSnapshotNodePatch {
+  input?: string;
+  instruction?: string;
+  description?: string;
+}
+
+/** Reference mount: many projects may point at the same definition id. */
+export interface ProjectWorkflowMount {
+  projectId: string;
+  definitionId: string;
+  definitionName: string;
+  mountedAt: string;
+}
+
+export type WorkflowRunEvent =
+  | { type: "run_started"; runId: string }
+  | { type: "node_started"; runId: string; nodeId: string }
+  | {
+      type: "node_finished";
+      runId: string;
+      nodeId: string;
+      status: GraphWorkflowNodeStatus;
+    }
+  | {
+      type: "artifact_added";
+      runId: string;
+      artifact: WorkflowArtifact;
+    }
+  | {
+      type: "node_conversation_item_upserted";
+      runId: string;
+      item: WorkflowNodeConversationItem;
+    }
+  | { type: "hitl_required"; runId: string; request: HitlRequest }
+  | {
+      type: "hitl_resolved";
+      runId: string;
+      requestId: string;
+      nodeId: string;
+      /** Submitted field values (keys = field.name). */
+      payload: Record<string, unknown>;
+    }
+  | { type: "run_finished"; runId: string; status: GraphWorkflowRunStatus };
+
+/** Opaque resume marker returned to a future Desktop channel adapter unchanged. */
+export type WorkflowEventCursor = string;
+
+/** Durable event metadata used for ordering, deduplication, and reconnect. */
+export type WorkflowRunEventEnvelope = WorkflowRunEvent & {
+  cursor: WorkflowEventCursor;
+  sequence: number;
+  occurredAt: string;
+};
+
+/** Consistent initial state paired with the cursor from which streaming resumes. */
+export interface WorkflowRunLiveSnapshot {
+  run: GraphWorkflowRun;
+  artifacts: WorkflowArtifact[];
+  /** Filtered node session projection; activity stays available for disclosure. */
+  conversation: WorkflowNodeConversationItem[];
+  cursor: WorkflowEventCursor | null;
+}
+
+export type WorkflowArtifactKind = "text" | "markdown" | "file" | "diff";
+
+export interface WorkflowArtifact {
+  id: string;
+  runId: string;
+  nodeId: string;
+  kind: WorkflowArtifactKind;
+  title: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Field types shared by HITL (and future Kickoff schema) forms. */
+export type HitlFieldType = "text" | "textarea" | "select";
+
+/**
+ * Why the engine paused for a human.
+ * - `approval` — permission / scope choice
+ * - `feedback` — free-form notes to continue
+ * - `clarify` — model/engine question the user must answer
+ */
+export type HitlGateKind = "approval" | "feedback" | "clarify";
+
+export interface HitlFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface HitlField {
+  name: string;
+  type: HitlFieldType;
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  options?: HitlFieldOption[];
+}
+
+export interface HitlSchema {
+  kind: HitlGateKind;
+  title?: string;
+  /** Model/engine question or instruction body (plain text). */
+  prompt?: string;
+  fields: HitlField[];
+}
+
+export interface HitlRequest {
+  id: string;
+  runId: string;
+  nodeId: string;
+  schema: HitlSchema;
+  /**
+   * When false, UI should not treat the run as modal-locked (browse OK).
+   * Mock engine still pauses scheduling for MVP when any blocking gate is open.
+   */
+  blocking: boolean;
+  timeoutAt?: string;
+  policy: HitlTimeoutPolicy;
+  status: "open" | "resolved" | "timed_out";
+  /** Local-time ISO when the gate opened (reconnect / ordering). */
+  createdAt: string;
+}
+
+/** Open gates still waiting for the user. */
+export function listOpenHitls(run: GraphWorkflowRun): HitlRequest[] {
+  return run.openHitls.filter((request) => request.status === "open");
+}
+
+/** Finds an open gate by id, or undefined when missing / already resolved. */
+export function findOpenHitl(
+  run: GraphWorkflowRun,
+  requestId: string,
+): HitlRequest | undefined {
+  return listOpenHitls(run).find((request) => request.id === requestId);
+}
+
+/** Finds an open gate for a node, if any. */
+export function findOpenHitlForNode(
+  run: GraphWorkflowRun,
+  nodeId: string,
+): HitlRequest | undefined {
+  return listOpenHitls(run).find((request) => request.nodeId === nodeId);
+}
+
+export type Unsubscribe = () => void;

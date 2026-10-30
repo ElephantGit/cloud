@@ -1,4 +1,4 @@
-import { BookmarkIcon, CpuIcon } from 'lucide-react'
+import { BookmarkIcon, CpuIcon, CircleStopIcon } from 'lucide-react'
 import { Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { isResponding } from '../model/conversation'
 import type { Conversation, Marker as MarkerData, Turn } from '../model/types'
 import { formatTokens } from './format'
-import { subtleScrollbar } from './scrollbar'
+import { subtleScrollbar } from '@/lib/scrollbar'
 import { AgentTurn, UserPrompt } from './turn'
 
 /** The conversation: each prompt anchors the scroll, so a new question settles near the top. */
@@ -56,7 +56,24 @@ function permissionsOf(conversation: Conversation, turn: Turn) {
   return conversation.permissions.filter((p) => tools.has(p.toolCall.toolCallId))
 }
 
+/** Why the conversation's session ended, said where it stops. */
+const sessionEnd: Record<Extract<MarkerData, { kind: 'session' }>['reason'], string> = {
+  stopped: '已停止',
+  deleted: '会话已结束',
+  interrupted: '服务重启，会话已中断',
+}
+
 function MarkerRow({ marker }: { marker: MarkerData }) {
+  if (marker.kind === 'session') {
+    return (
+      <Marker variant="separator">
+        <MarkerIcon>
+          <CircleStopIcon />
+        </MarkerIcon>
+        <MarkerContent>{sessionEnd[marker.reason]} · 这个对话已结束，不能继续追问</MarkerContent>
+      </Marker>
+    )
+  }
   if (marker.kind === 'model') {
     return (
       <Marker variant="separator">

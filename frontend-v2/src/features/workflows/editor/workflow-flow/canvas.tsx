@@ -1,0 +1,1022 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { useTranslation } from "react-i18next";
+import {
+  applyNodeChanges,
+  Background,
+  BackgroundVariant,
+  MarkerType,
+  ReactFlow,
+  useReactFlow,
+  ViewportPortal,
+  type Connection,
+  type DefaultEdgeOptions,
+  type Edge,
+  type FinalConnectionState,
+  type HandleType,
+  type NodeChange,
+  type OnConnectStartParams,
+  type Viewport,
+  type XYPosition,
+} from "@xyflow/react";
+import {
+  WORKFLOW_ITERATION_COLLAPSED_HEIGHT,
+  WORKFLOW_ITERATION_COLLAPSED_WIDTH,
+  type WorkflowNodeData,
+  type WorkflowNodeKind,
+} from "@/lib/workflows/mock";
+import { toast } from "@/lib/workflows/host/ui";
+import { WorkflowNodeCatalog } from "../workflow-node-catalog";
+import {
+  DEFAULT_WORKFLOW_PAN,
+  DEFAULT_WORKFLOW_ZOOM,
+  MAX_WORKFLOW_ZOOM,
+  MIN_WORKFLOW_ZOOM,
+} from "@/lib/workflows/node-chrome/viewport";
+import {
+  WORKFLOW_FLOW_EDGE_TYPE,
+  WORKFLOW_FLOW_NODE_TYPE,
+  WORKFLOW_SNAP_GRID,
+  containWorkflowCanvasNodes,
+  isNodeDragGestureActive,
+  nodePositionAt,
+  preserveLiveMeasurements,
+  snapNodePosition,
+  withoutExtentClampPositions,
+} from "./layout";
+import {
+  applyDragAlignment,
+  WORKFLOW_ALIGNMENT_SCREEN_PX,
+  type AlignmentGuide,
+} from "./alignment";
+import { WorkflowConnectionStateProvider } from "./connection-state";
+import { WorkflowConnectionLine } from "./connection-line";
+import {
+  WorkflowCanvasControls,
+  WorkflowCanvasInspectorRestore,
+} from "./controls";
+import { WorkflowFlowEdgeView } from "./edge";
+import { WorkflowFlowNodeView } from "./node";
+import { WorkflowFlowOverview } from "./overview";
+import {
+  WorkflowAnnotationActionsProvider,
+  WorkflowAnnotationView,
+} from "./annotation";
+import { WorkflowCanvasTools, type CanvasInteractionMode } from "./tools";
+import { WorkflowHistoryControls } from "./history-controls";
+import type { WorkflowCanvasNode, WorkflowCanvasProps } from "./types";
+import { WorkflowVersionHistory } from "./version-history";
+import {
+  iterationExpandedSize,
+  projectIterationEdges,
+} from "../workflow-iteration-graph";
+import { WorkflowIterationActionsProvider } from "./iteration-actions";
+import {
+  WorkflowEdgeHoverBridge,
+  WorkflowEdgeHoverProvider,
+} from "./workflow-edge-hover";
+import {
+  WORKFLOW_ANNOTATION_Z_INDEX,
+  WORKFLOW_NODE_Z_INDEX,
+  WORKFLOW_SELECTED_NODE_Z_INDEX,
+} from "./z-index";
+import {
+  connectionForCandidate,
+  reconnectDraft,
+  type ConnectionDraft,
+} from "./connection-gesture";
+import { isValidWorkflowConnection } from "./connection-validation";
+import "@xyflow/react/dist/style.css";
+import "./workflow-flow.css";
+
+const nodeTypes = {
+  [WORKFLOW_FLOW_NODE_TYPE]: WorkflowFlowNodeView,
+  annotation: WorkflowAnnotationView,
+};
+
+const edgeTypes = {
+  [WORKFLOW_FLOW_EDGE_TYPE]: WorkflowFlowEdgeView,
+};
+
+const DEFAULT_VIEWPORT: Viewport = {
+  x: DEFAULT_WORKFLOW_PAN.x,
+  y: DEFAULT_WORKFLOW_PAN.y,
+  zoom: DEFAULT_WORKFLOW_ZOOM,
+};
+const DEFAULT_EDGE_OPTIONS = {
+  type: WORKFLOW_FLOW_EDGE_TYPE,
+  reconnectable: true,
+  ariaRole: "button",
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+    width: 28,
+    height: 28,
+    markerUnits: "userSpaceOnUse",
+    color: "color-mix(in oklch, var(--foreground) 64%, transparent)",
+  },
+} satisfies DefaultEdgeOptions;
+const CONNECTION_LINE_STYLE = {
+  stroke: "var(--ring)",
+  strokeWidth: 2,
+  strokeDasharray: "5 4",
+} satisfies CSSProperties;
+const WORKFLOW_ANNOTATION_WIDTH = 240;
+const WORKFLOW_ANNOTATION_HEIGHT = 140;
+// Hoisted so React Flow's memoized internals are not invalidated every render.
+const WORKFLOW_DELETE_KEY_CODES = ["Backspace", "Delete"];
+const WORKFLOW_NO_KEY_CODES: string[] = [];
+const WORKFLOW_PAN_ON_DRAG_POINTER = [1];
+const WORKFLOW_PAN_ON_DRAG_HAND = [0, 1];
+
+/**
+ * Caches iteration presentation `data` across canvas projections. Module-scoped
+ * (not a render ref) so `useMemo` can reuse entries without `react-hooks/refs`.
+ */
+const iterationPresentationDataCache = new Map<
+  string,
+  {
+    source: WorkflowNodeData;
+    count: number;
+    data: WorkflowNodeData;
+  }
+>();
+
+/**
+ * Reuses projected RF node objects for undragged cards. Remapping `{...node}`
+ * every pointer move breaks `memo` on Agent/Start views.
+ */
+const projectedCanvasNodeCache = new Map<
+  string,
+  {
+    source: WorkflowCanvasNode;
+    data: WorkflowNodeData | WorkflowCanvasNode["data"];
+    extent: "parent" | undefined;
+    expandParent: boolean | undefined;
+    zIndex: number;
+    hidden: boolean;
+    projected: WorkflowCanvasNode;
+  }
+>();
+
+/** Finds the workflow card under a pointer so the whole card remains a forgiving drop zone. */
+function workflowNodeAtClientPoint(
+  clientX: number,
+  clientY: number,
+): string | null {
+  const element = document.elementFromPoint(clientX, clientY);
+  if (!(element instanceof Element)) {
+    return null;
+  }
+  return (
+    element.closest<HTMLElement>("[data-workflow-node-id]")?.dataset
+      .workflowNodeId ?? null
+  );
+}
+
+/** Normalizes mouse and touch releases for whole-card connection fallback. */
+function connectionEndClientPoint(
+  event: MouseEvent | TouchEvent,
+): XYPosition | null {
+  if ("changedTouches" in event) {
+    const touch = event.changedTouches.item(0);
+    return touch === null ? null : { x: touch.clientX, y: touch.clientY };
+  }
+  return { x: event.clientX, y: event.clientY };
+}
+
+/** Wraps the flow in a provider so catalog drop can convert screen coordinates. */
+export function WorkflowCanvas(props: WorkflowCanvasProps) {
+  return (
+    <WorkflowAnnotationActionsProvider
+      value={{
+        readOnly: props.readOnly,
+        update: props.onUpdateAnnotation,
+        remove: props.onDeleteAnnotation,
+      }}
+    >
+      <WorkflowCanvasInner {...props} />
+    </WorkflowAnnotationActionsProvider>
+  );
+}
+
+/** Renders and manipulates the node graph without coupling it to persistence or preview behavior. */
+function WorkflowCanvasInner({
+  capabilities,
+  nodes,
+  annotations,
+  edges,
+  initialViewport,
+  onNodesChange,
+  onEdgesChange,
+  onAddNode,
+  onInsertContainerNode,
+  onToggleIterationCollapsed,
+  onAddAnnotation,
+  onOrganize,
+  onConnect,
+  onReconnect,
+  onBeforeDelete,
+  onDelete,
+  onNodeDragStart,
+  onNodeDragStop,
+  canUndo,
+  canRedo,
+  historyPast,
+  historyFuture,
+  historyCurrentEvent,
+  historyCurrentMeta,
+  onUndo,
+  onRedo,
+  onHistoryJump,
+  onClearHistory,
+  inspectorCollapsed,
+  inspectorAvailable,
+  onExpandInspector,
+  onConfigureGlobalVariables,
+  versionHistory,
+  previewedVersion,
+  activeVersion,
+  draftUpdatedAt,
+  onPreviewVersion,
+  onActivateVersion,
+  onPublishDraft,
+  onDeleteVersion,
+  readOnly,
+}: WorkflowCanvasProps) {
+  const { t } = useTranslation();
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [interactionMode, setInteractionMode] =
+    useState<CanvasInteractionMode>("pointer");
+  const [connectionDraft, setConnectionDraft] =
+    useState<ConnectionDraft | null>(null);
+  const connectionCandidateFrameRef = useRef<number | null>(null);
+  const connectionCandidatePointRef = useRef<XYPosition | null>(null);
+  const connectionCandidateNodeIdRef = useRef<string | null>(null);
+  const [connectionCandidateNodeId, setConnectionCandidateNodeId] = useState<
+    string | null
+  >(null);
+  const {
+    deleteElements,
+    fitView,
+    screenToFlowPosition,
+    setViewport,
+    getInternalNode,
+    getViewport,
+  } = useReactFlow<WorkflowCanvasNode, Edge>();
+  // Collapsed iteration frames hide their region members: the members stay in the
+  // graph (the frozen structure is authoritative); only the canvas presentation folds.
+  const collapsedIterations = useMemo(() => {
+    const collapsed = new Set<string>();
+    for (const node of nodes) {
+      if (node.data.kind === "iteration" && node.data.collapsed === true) {
+        collapsed.add(node.id);
+      }
+    }
+    return collapsed;
+  }, [nodes]);
+  // Region member counts feed the iteration frames' collapsed summary badge.
+  const memberCountByIteration = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const node of nodes) {
+      if (node.parentId !== undefined) {
+        counts.set(node.parentId, (counts.get(node.parentId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [nodes]);
+  const canvasNodes = useMemo<WorkflowCanvasNode[]>(() => {
+    const iterationIds = new Set(
+      nodes
+        .filter((node) => node.data.kind === "iteration")
+        .map((node) => node.id),
+    );
+    const presentationCache = iterationPresentationDataCache;
+    const projectionCache = projectedCanvasNodeCache;
+    const liveIds = new Set<string>();
+    const executableNodes = containWorkflowCanvasNodes(nodes).map((node) => {
+      liveIds.add(node.id);
+      let data = node.data;
+      if (node.data.kind === "iteration") {
+        const count = memberCountByIteration.get(node.id) ?? 0;
+        const cachedData = presentationCache.get(node.id);
+        if (
+          cachedData !== undefined &&
+          cachedData.source === node.data &&
+          cachedData.count === count
+        ) {
+          data = cachedData.data;
+        } else {
+          data = { ...node.data, regionMemberCount: count };
+          presentationCache.set(node.id, {
+            source: node.data,
+            count,
+            data,
+          });
+        }
+      }
+      // parentId is persisted graph structure; React Flow constraints are presentation only.
+      // Loop bodies still use expandParent. Iteration members must not: frames already
+      // grow through expandIterationFrames, and stacking both on nested regions fights
+      // over parent size on every measurement and makes the canvas thrash.
+      const extent =
+        node.parentId !== undefined &&
+        (node.data.containerId !== undefined || iterationIds.has(node.parentId))
+          ? ("parent" as const)
+          : undefined;
+      const expandParent =
+        node.parentId !== undefined && node.data.containerId !== undefined
+          ? true
+          : undefined;
+      // Notes reserve the bottom layer, while selected executable nodes keep
+      // React Flow's usual elevation over their executable peers.
+      const zIndex =
+        node.data.kind === "loop"
+          ? 0
+          : node.selected
+            ? WORKFLOW_SELECTED_NODE_Z_INDEX
+            : WORKFLOW_NODE_Z_INDEX;
+      const hidden =
+        node.parentId !== undefined && collapsedIterations.has(node.parentId);
+      const cached = projectionCache.get(node.id);
+      if (
+        cached !== undefined &&
+        cached.source === node &&
+        cached.data === data &&
+        cached.extent === extent &&
+        cached.expandParent === expandParent &&
+        cached.zIndex === zIndex &&
+        cached.hidden === hidden
+      ) {
+        return cached.projected;
+      }
+      const projected: WorkflowCanvasNode = {
+        ...node,
+        data,
+        extent,
+        expandParent,
+        zIndex,
+        ...(hidden ? { hidden: true } : { hidden: undefined }),
+      };
+      projectionCache.set(node.id, {
+        source: node,
+        data,
+        extent,
+        expandParent,
+        zIndex,
+        hidden,
+        projected,
+      });
+      return projected;
+    });
+    for (const cachedId of presentationCache.keys()) {
+      if (!liveIds.has(cachedId)) {
+        presentationCache.delete(cachedId);
+      }
+    }
+    const projectedAnnotations = annotations.map((annotation) => {
+      liveIds.add(annotation.id);
+      const cached = projectionCache.get(annotation.id);
+      if (
+        cached !== undefined &&
+        cached.source === annotation &&
+        cached.zIndex === WORKFLOW_ANNOTATION_Z_INDEX &&
+        cached.hidden === false
+      ) {
+        return cached.projected;
+      }
+      const projected: WorkflowCanvasNode = {
+        ...annotation,
+        zIndex: WORKFLOW_ANNOTATION_Z_INDEX,
+      };
+      projectionCache.set(annotation.id, {
+        source: annotation,
+        data: annotation.data,
+        extent: undefined,
+        expandParent: undefined,
+        zIndex: WORKFLOW_ANNOTATION_Z_INDEX,
+        hidden: false,
+        projected,
+      });
+      return projected;
+    });
+    for (const cachedId of projectionCache.keys()) {
+      if (!liveIds.has(cachedId)) {
+        projectionCache.delete(cachedId);
+      }
+    }
+    return [
+      ...projectedAnnotations,
+      ...executableNodes.filter((node) => node.parentId === undefined),
+      ...executableNodes.filter((node) => node.parentId !== undefined),
+    ];
+  }, [annotations, nodes, collapsedIterations, memberCountByIteration]);
+  const canvasEdges = useMemo(
+    () => projectIterationEdges({ nodes, edges }, collapsedIterations),
+    [collapsedIterations, edges, nodes],
+  );
+  // React Flow only reports drag positions through `onNodesChange`; in this
+  // controlled setup a dragged card moves on screen only when the changes are
+  // applied back to the `nodes` prop. The editor deliberately keeps mid-drag
+  // ticks off its top-level state (re-rendering the whole editor per pointer
+  // move caused the drag jitter), so the canvas mirrors live drag geometry
+  // into this local overlay instead. It is discarded the moment the drop
+  // commit (or an aborted gesture) lands.
+  const [liveDragNodes, setLiveDragNodes] = useState<
+    WorkflowCanvasNode[] | null
+  >(null);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const renderedNodes = liveDragNodes ?? canvasNodes;
+  const reconnectingEdgeIdRef = useRef<string | null>(null);
+
+  /** Rejects self-loops, duplicate directed edges, and edges that cross an iteration
+   * region boundary in a direction the composite runtime cannot honor: a member's edge
+   * must stay inside its region, and only the owner's internal-start handle may enter. */
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge): boolean =>
+      isValidWorkflowConnection({
+        connection,
+        nodes,
+        edges,
+        reconnectingEdgeId: reconnectingEdgeIdRef.current,
+      }),
+    [nodes, edges],
+  );
+
+  const connectionState = useMemo(() => {
+    return {
+      connectionCandidateEndpoint:
+        connectionCandidateNodeId === null
+          ? null
+          : connectionDraft?.kind === "new"
+            ? ("target" as const)
+            : (connectionDraft?.endpoint ?? null),
+      connectionCandidateNodeId,
+    };
+  }, [connectionCandidateNodeId, connectionDraft]);
+
+  useEffect(
+    () => () => {
+      if (connectionCandidateFrameRef.current !== null) {
+        cancelAnimationFrame(connectionCandidateFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    // Version preview replaces the displayed graph without remounting the
+    // history popover, so the viewport follows the selected graph directly.
+    void setViewport(initialViewport);
+  }, [initialViewport, setViewport]);
+
+  /**
+   * Mirrors mid-drag position ticks into the local overlay so dragged cards
+   * track the pointer, while the editor records the same ticks on workflowRef
+   * and commits once on drop. The overlay applies the editor's exact filtered
+   * change set so what you see is what the drop will commit. Kept referentially
+   * stable so React Flow's memoized graph view skips re-rendering mid-drag.
+   */
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<WorkflowCanvasNode>[]): void => {
+      const appliedChanges = withoutExtentClampPositions(changes);
+      const dragMove = isNodeDragGestureActive(appliedChanges);
+      const dragStop = appliedChanges.some(
+        (change) => change.type === "position" && change.dragging === false,
+      );
+      if (dragMove || dragStop) {
+        const base = preserveLiveMeasurements(canvasNodes, getInternalNode);
+        const proposed = applyNodeChanges(appliedChanges, base);
+        const zoom = getViewport().zoom;
+        const aligned = applyDragAlignment(
+          appliedChanges,
+          proposed,
+          WORKFLOW_ALIGNMENT_SCREEN_PX / (zoom > 0 ? zoom : 1),
+        );
+        // applyNodeChanges and the editor both take a mutable change list.
+        const alignedChanges = [...aligned.changes];
+        if (dragMove) {
+          setLiveDragNodes(applyNodeChanges(alignedChanges, base));
+          setAlignmentGuides(aligned.guides);
+        } else {
+          // The final drop tick lands right before onNodeDragStop and also after
+          // an aborted gesture (e.g. the dragged node was deleted mid-drag), where
+          // no drag-stop callback follows. Never let the overlay linger stale.
+          setLiveDragNodes(null);
+          setAlignmentGuides([]);
+        }
+        onNodesChange(alignedChanges);
+        return;
+      }
+      onNodesChange(changes);
+    },
+    [canvasNodes, getInternalNode, getViewport, onNodesChange],
+  );
+
+  /** Drops the live drag overlay once the editor publishes the drop commit. */
+  const handleNodeDragStop = useCallback(
+    (
+      event: MouseEvent | TouchEvent,
+      node: WorkflowCanvasNode,
+      draggedNodes: WorkflowCanvasNode[],
+    ): void => {
+      setLiveDragNodes(null);
+      onNodeDragStop(event, node, draggedNodes);
+    },
+    [onNodeDragStop],
+  );
+
+  /** Updates candidate state only when the actual card changes. */
+  const commitConnectionCandidate = useCallback(
+    (candidateNodeId: string | null): void => {
+      if (connectionCandidateNodeIdRef.current === candidateNodeId) {
+        return;
+      }
+      connectionCandidateNodeIdRef.current = candidateNodeId;
+      setConnectionCandidateNodeId(candidateNodeId);
+    },
+    [],
+  );
+
+  /** Clears connection-only state after React Flow has completed or cancelled a gesture. */
+  const finishConnectionGesture = useCallback((): void => {
+    if (connectionCandidateFrameRef.current !== null) {
+      cancelAnimationFrame(connectionCandidateFrameRef.current);
+      connectionCandidateFrameRef.current = null;
+    }
+    connectionCandidatePointRef.current = null;
+    setConnectionDraft(null);
+    reconnectingEdgeIdRef.current = null;
+    commitConnectionCandidate(null);
+  }, [commitConnectionCandidate]);
+
+  /** Records a source drag so nearby cards can provide the original forgiving target. */
+  const startConnection = useCallback((params: OnConnectStartParams): void => {
+    // React Flow also emits the generic connection lifecycle while reconnecting.
+    // The reconnect draft must remain authoritative or a moved endpoint becomes
+    // an accidental new edge.
+    if (
+      reconnectingEdgeIdRef.current === null &&
+      params.nodeId !== null &&
+      params.handleType === "source"
+    ) {
+      setConnectionDraft({
+        kind: "new",
+        source: params.nodeId,
+        sourceHandle: params.handleId,
+      });
+    }
+  }, []);
+
+  /** Reopens a collapsed inspector for a workflow card click; drag-collapse keeps
+   * the node selected, so a same-node click is a no-op for React Flow selection. */
+  const handleNodeClick = useCallback(
+    (_event: unknown, node: WorkflowCanvasNode): void => {
+      if (
+        node.type === WORKFLOW_FLOW_NODE_TYPE &&
+        inspectorCollapsed &&
+        inspectorAvailable
+      ) {
+        onExpandInspector();
+      }
+    },
+    [inspectorCollapsed, inspectorAvailable, onExpandInspector],
+  );
+
+  /** Deletes an edge on double click through React Flow's own removal pipeline. */
+  const handleEdgeDoubleClick = useCallback(
+    (_event: unknown, edge: Edge): void => {
+      void deleteElements({ edges: [edge] });
+    },
+    [deleteElements],
+  );
+
+  /** Marks the reconnecting edge so the generic connect lifecycle cannot overtake it. */
+  const handleReconnectStart = useCallback(
+    (_event: unknown, edge: Edge, handleType: HandleType): void => {
+      reconnectingEdgeIdRef.current = edge.id;
+      setConnectionDraft(reconnectDraft(edge, handleType));
+    },
+    [],
+  );
+
+  /** Forwards React Flow's generic connect-start lifecycle to the draft tracker. */
+  const handleConnectStart = useCallback(
+    (_event: unknown, params: OnConnectStartParams): void => {
+      startConnection(params);
+    },
+    [startConnection],
+  );
+
+  /** Adds a note centered in the visible canvas rather than at the graph origin. */
+  function addAnnotationAtViewportCenter(): void {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (bounds === undefined) {
+      return;
+    }
+    const center = screenToFlowPosition({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    });
+    onAddAnnotation(
+      snapNodePosition({
+        x: center.x - WORKFLOW_ANNOTATION_WIDTH / 2,
+        y: center.y - WORKFLOW_ANNOTATION_HEIGHT / 2,
+      }),
+    );
+  }
+
+  /** Applies layout, then frames executable nodes after React Flow receives their positions. */
+  function organizeAndFrameNodes(): void {
+    onOrganize();
+    requestAnimationFrame(() => {
+      void fitView({
+        nodes: nodes.map((node) => ({ id: node.id })),
+        duration: 240,
+        maxZoom: 1,
+        minZoom: MIN_WORKFLOW_ZOOM,
+        padding: 0.16,
+      });
+    });
+  }
+
+  /**
+   * Coalesces whole-card hit testing to one check per animation frame so React
+   * Flow can update the preview endpoint before candidate detection does DOM work.
+   */
+  function updateConnectionCandidate(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ): void {
+    if (connectionDraft === null) {
+      return;
+    }
+    connectionCandidatePointRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+    if (connectionCandidateFrameRef.current !== null) {
+      return;
+    }
+    connectionCandidateFrameRef.current = requestAnimationFrame(() => {
+      connectionCandidateFrameRef.current = null;
+      const draft = connectionDraft;
+      const point = connectionCandidatePointRef.current;
+      if (draft === null || point === null) {
+        return;
+      }
+      const candidate = workflowNodeAtClientPoint(point.x, point.y);
+      const validCandidate =
+        candidate !== null &&
+        isValidConnection(connectionForCandidate(draft, candidate))
+          ? candidate
+          : null;
+      commitConnectionCandidate(validCandidate);
+    });
+  }
+
+  /** Commits a card drop when React Flow did not hit the card's smaller target handle. */
+  const finishNewConnection = useCallback(
+    (
+      event: MouseEvent | TouchEvent,
+      connectionState: FinalConnectionState,
+    ): void => {
+      const draft = connectionDraft;
+      // A reconnect has its own end callback. Clearing it from this generic
+      // callback makes the later reconnect end look like a cancelled gesture.
+      if (draft?.kind !== "new") {
+        return;
+      }
+      const point = connectionEndClientPoint(event);
+      if (connectionState.isValid !== true && point !== null) {
+        const candidate = workflowNodeAtClientPoint(point.x, point.y);
+        if (candidate !== null) {
+          const connection = connectionForCandidate(draft, candidate);
+          if (isValidConnection(connection)) {
+            onConnect(connection);
+          }
+        }
+      }
+      finishConnectionGesture();
+    },
+    [connectionDraft, isValidConnection, onConnect, finishConnectionGesture],
+  );
+
+  /** Commits a source or target reconnect when it is released anywhere on a valid card. */
+  const finishReconnect = useCallback(
+    (
+      event: MouseEvent | TouchEvent,
+      edge: Edge,
+      _handleType: HandleType,
+      connectionState: FinalConnectionState,
+    ): void => {
+      const draft = connectionDraft;
+      const point = connectionEndClientPoint(event);
+      if (
+        connectionState.isValid !== true &&
+        draft?.kind === "reconnect" &&
+        point !== null
+      ) {
+        const candidate = workflowNodeAtClientPoint(point.x, point.y);
+        if (candidate !== null) {
+          const connection = connectionForCandidate(draft, candidate);
+          if (isValidConnection(connection)) {
+            onReconnect(edge, connection);
+          }
+        }
+      }
+      finishConnectionGesture();
+    },
+    [connectionDraft, isValidConnection, onReconnect, finishConnectionGesture],
+  );
+
+  /** Adds a clicked catalog item to the center of the currently visible canvas. */
+  function addNodeAtViewportCenter(kind: WorkflowNodeKind): void {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (bounds === undefined) {
+      onAddNode(kind, nodePositionAt({ x: 0, y: 0 }));
+      return;
+    }
+    const point = screenToFlowPosition(
+      {
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      },
+      { snapToGrid: false },
+    );
+    onAddNode(kind, snapNodePosition(nodePositionAt(point)));
+  }
+
+  /** Adds a pointer-dragged catalog node only when it is released over this canvas. */
+  function dropNodeAtClientPosition(
+    kind: WorkflowNodeKind,
+    position: XYPosition,
+  ): void {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (
+      bounds === undefined ||
+      position.x < bounds.left ||
+      position.x > bounds.right ||
+      position.y < bounds.top ||
+      position.y > bounds.bottom
+    ) {
+      return;
+    }
+    const flowPoint = screenToFlowPosition(
+      { x: position.x, y: position.y },
+      { snapToGrid: false },
+    );
+    const droppedOverIteration = nodes.some((node) => {
+      if (node.data.kind !== "iteration") {
+        return false;
+      }
+      const size = iterationExpandedSize(node);
+      const width =
+        node.data.collapsed === true
+          ? WORKFLOW_ITERATION_COLLAPSED_WIDTH
+          : size.width;
+      const height =
+        node.data.collapsed === true
+          ? WORKFLOW_ITERATION_COLLAPSED_HEIGHT
+          : size.height;
+      return (
+        flowPoint.x >= node.position.x &&
+        flowPoint.x <= node.position.x + width &&
+        flowPoint.y >= node.position.y &&
+        flowPoint.y <= node.position.y + height
+      );
+    });
+    if (droppedOverIteration) {
+      toast.message(t("settings.workflow.iteration.useInternalAdd"));
+      return;
+    }
+    onAddNode(kind, snapNodePosition(nodePositionAt(flowPoint)));
+  }
+
+  /**
+   * Blocks pan starts in the thin horizontal strip where resizable panel
+   * handles overlap the canvas so a near-miss resize never becomes a pan.
+   */
+  function guardPanelResizeEdge(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ): void {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const nearestHorizontalEdge = Math.min(
+      event.clientX - bounds.left,
+      bounds.right - event.clientX,
+    );
+    if (bounds.width > 24 && nearestHorizontalEdge <= 12) {
+      event.stopPropagation();
+    }
+  }
+
+  return (
+    <div className="relative min-h-0 min-w-0 flex-1">
+      <div
+        ref={canvasRef}
+        className="absolute inset-0 touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-label={t("settings.workflow.canvas")}
+        data-workflow-edge-count={edges.length}
+        data-workflow-node-count={nodes.length}
+        onPointerDownCapture={guardPanelResizeEdge}
+        onPointerMoveCapture={updateConnectionCandidate}
+      >
+        <WorkflowConnectionStateProvider value={connectionState}>
+          <WorkflowIterationActionsProvider
+            capabilities={capabilities}
+            nodes={nodes}
+            edges={edges}
+            readOnly={readOnly}
+            onInsert={onInsertContainerNode}
+            onToggleCollapsed={onToggleIterationCollapsed}
+          >
+            <WorkflowEdgeHoverProvider>
+              <WorkflowEdgeHoverBridge>
+                {(edgeHover) => (
+                  <ReactFlow
+                    className="workflow-flow bg-muted/25"
+                    data-interaction-mode={interactionMode}
+                    nodes={renderedNodes}
+                    edges={canvasEdges}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    defaultViewport={initialViewport}
+                    minZoom={MIN_WORKFLOW_ZOOM}
+                    maxZoom={MAX_WORKFLOW_ZOOM}
+                    proOptions={{ hideAttribution: true }}
+                    nodesFocusable
+                    edgesFocusable
+                    nodesDraggable={!readOnly}
+                    nodesConnectable={!readOnly}
+                    elementsSelectable={!readOnly}
+                    elevateNodesOnSelect={false}
+                    edgesReconnectable={!readOnly}
+                    reconnectRadius={28}
+                    connectionRadius={24}
+                    deleteKeyCode={
+                      readOnly
+                        ? WORKFLOW_NO_KEY_CODES
+                        : WORKFLOW_DELETE_KEY_CODES
+                    }
+                    multiSelectionKeyCode={null}
+                    snapGrid={WORKFLOW_SNAP_GRID}
+                    snapToGrid
+                    // Auto-pan under a clamped iteration member moves the viewport while
+                    // the node sticks to the frame edge, so the card jitters relative to
+                    // the pointer. Users can still pan with the hand tool / middle drag.
+                    autoPanOnNodeDrag={false}
+                    panOnScroll={false}
+                    zoomOnScroll
+                    zoomOnPinch
+                    // Left-drag box-selects multiple nodes; middle-drag keeps panning.
+                    panOnDrag={
+                      interactionMode === "hand"
+                        ? WORKFLOW_PAN_ON_DRAG_HAND
+                        : WORKFLOW_PAN_ON_DRAG_POINTER
+                    }
+                    selectionOnDrag={!readOnly && interactionMode === "pointer"}
+                    selectNodesOnDrag={false}
+                    isValidConnection={isValidConnection}
+                    onNodesChange={handleNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onBeforeDelete={onBeforeDelete}
+                    onDelete={onDelete}
+                    onNodeDragStart={onNodeDragStart}
+                    onNodeDragStop={handleNodeDragStop}
+                    onNodeClick={handleNodeClick}
+                    onConnectStart={handleConnectStart}
+                    onConnect={onConnect}
+                    onConnectEnd={finishNewConnection}
+                    onReconnectStart={handleReconnectStart}
+                    onReconnect={onReconnect}
+                    onReconnectEnd={finishReconnect}
+                    onEdgeDoubleClick={handleEdgeDoubleClick}
+                    onEdgeMouseEnter={edgeHover.onEdgeMouseEnter}
+                    onEdgeMouseLeave={edgeHover.onEdgeMouseLeave}
+                    connectionLineComponent={WorkflowConnectionLine}
+                    elevateEdgesOnSelect
+                    defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                    connectionLineStyle={CONNECTION_LINE_STYLE}
+                  >
+                    <Background
+                      id="workflow-dots"
+                      variant={BackgroundVariant.Dots}
+                      gap={20}
+                      size={1}
+                      color="color-mix(in oklch, var(--foreground) 18%, transparent)"
+                    />
+                    <WorkflowAlignmentGuides guides={alignmentGuides} />
+                    <WorkflowFlowOverview nodeCount={nodes.length} />
+                  </ReactFlow>
+                )}
+              </WorkflowEdgeHoverBridge>
+            </WorkflowEdgeHoverProvider>
+          </WorkflowIterationActionsProvider>
+        </WorkflowConnectionStateProvider>
+
+        {/* Version state remains top-right while viewport controls stay independently bottom-right. */}
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-40 flex items-center gap-2">
+          {inspectorCollapsed && inspectorAvailable && (
+            <div className="pointer-events-auto">
+              <WorkflowCanvasInspectorRestore
+                onExpandInspector={onExpandInspector}
+              />
+            </div>
+          )}
+          <div className="pointer-events-auto ml-auto flex min-w-0 shrink-0 items-center gap-2">
+            <WorkflowVersionHistory
+              versions={versionHistory}
+              previewedVersion={previewedVersion}
+              activeVersion={activeVersion}
+              draftUpdatedAt={draftUpdatedAt}
+              onPreviewVersion={onPreviewVersion}
+              onActivateVersion={onActivateVersion}
+              onPublishDraft={onPublishDraft}
+              onDeleteVersion={onDeleteVersion}
+            />
+          </div>
+        </div>
+        <WorkflowCanvasControls defaultViewport={DEFAULT_VIEWPORT} />
+        <WorkflowCanvasTools
+          mode={interactionMode}
+          readOnly={readOnly}
+          onModeChange={setInteractionMode}
+          onConfigureGlobalVariables={onConfigureGlobalVariables}
+          onAddAnnotation={addAnnotationAtViewportCenter}
+          onOrganize={organizeAndFrameNodes}
+        />
+        <div className="absolute bottom-3 left-3 z-40">
+          <WorkflowHistoryControls
+            canUndo={canUndo}
+            canRedo={canRedo}
+            past={historyPast}
+            future={historyFuture}
+            currentEvent={historyCurrentEvent}
+            currentMeta={historyCurrentMeta}
+            readOnly={readOnly}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            onJump={onHistoryJump}
+            onClear={onClearHistory}
+          />
+        </div>
+      </div>
+
+      {!readOnly && (
+        <div
+          data-workflow-controls
+          className="absolute bottom-3 left-1/2 z-30 w-fit max-w-[calc(100%-6rem)] -translate-x-1/2"
+        >
+          <WorkflowNodeCatalog
+            capabilities={capabilities}
+            hasStartNode={nodes.some((node) => node.data.kind === "start")}
+            onAdd={addNodeAtViewportCenter}
+            onDrop={dropNodeAtClientPosition}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Draws alignment guides in flow space so they follow pan and zoom. */
+function WorkflowAlignmentGuides({ guides }: { guides: AlignmentGuide[] }) {
+  if (guides.length === 0) {
+    return null;
+  }
+  return (
+    <ViewportPortal>
+      <svg
+        className="pointer-events-none overflow-visible"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: 1,
+          height: 1,
+          overflow: "visible",
+          zIndex: 1000,
+        }}
+      >
+        {guides.map((guide) => (
+          <line
+            key={`${guide.orientation}:${guide.position}:${guide.start}:${guide.end}`}
+            data-workflow-alignment-guide={guide.orientation}
+            x1={guide.orientation === "vertical" ? guide.position : guide.start}
+            y1={guide.orientation === "vertical" ? guide.start : guide.position}
+            x2={guide.orientation === "vertical" ? guide.position : guide.end}
+            y2={guide.orientation === "vertical" ? guide.end : guide.position}
+            stroke="var(--ring)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+    </ViewportPortal>
+  );
+}

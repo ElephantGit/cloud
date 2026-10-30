@@ -102,10 +102,17 @@ export interface PermissionRequest {
   outcome?: { optionId: string } | { cancelled: true }
 }
 
-/** Something between turns: a model switch or a restorable checkpoint. */
+/** Why the Agent session behind a conversation ended; the conversation is read-only after. */
+export type SessionEndReason = 'stopped' | 'deleted' | 'interrupted'
+
+/**
+ * Something between turns: a model switch, a restorable checkpoint, or the end of the
+ * conversation's Agent session, after which it cannot continue.
+ */
 export type Marker =
   | { kind: 'model'; id: string; afterTurn: number; model: string }
   | { kind: 'checkpoint'; id: string; afterTurn: number; label: string }
+  | { kind: 'session'; id: string; afterTurn: number; reason: SessionEndReason }
 
 /** The context window as last reported by the agent; not part of the durable history. */
 export interface ContextUsage {

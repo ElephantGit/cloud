@@ -1,0 +1,249 @@
+import {
+  useWorkflowNodeUnused,
+  WorkflowUnusedBadge,
+} from "@/lib/workflows/node-chrome";
+import { createContext, memo, type ReactNode, useContext } from "react";
+import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
+import { useTranslation } from "react-i18next";
+import { IconSparkles } from "@tabler/icons-react";
+import { cn } from "@/lib/workflows/host/ui";
+import {
+  createMockWorkflowNodeType,
+  WORKFLOW_LOOP_NODE_HEIGHT,
+  WORKFLOW_LOOP_NODE_WIDTH,
+  WORKFLOW_NODE_ANCHOR_Y,
+  WORKFLOW_NODE_WIDTH,
+} from "@/lib/workflows/mock";
+import { formatRunClock } from "./run-format";
+import {
+  AgentExecutionModeMark,
+  WorkflowNodeCardShell,
+} from "@/lib/workflows/node-chrome";
+import { RunStatusBadge } from "./run-status-mark";
+import { isNodeWorking, runStatusTone } from "./run-status-style";
+import { resolveRunOverviewSourceHandleIds } from "./run-overview-handles";
+import { RunOverviewIterationNode } from "./run-overview-iteration-node";
+import { RunRetryWaitLabel } from "./run-retry-wait-label";
+import type {
+  GraphWorkflowNodeState,
+  WorkflowNodeData,
+} from "@/lib/workflows/runtime";
+import "./theater-motion.css";
+
+export type RunOverviewNodeData = WorkflowNodeData & {
+  runStatus: GraphWorkflowNodeState["status"];
+};
+
+interface RunOverviewStatusMap {
+  states: Record<string, GraphWorkflowNodeState>;
+  focusedNodeId: string | null;
+  activeNodeIds: string[];
+  /** Soft affordance: artifact count per node id. */
+  artifactCountByNode: Record<string, number>;
+}
+
+const RunOverviewStatusContext = createContext<RunOverviewStatusMap>({
+  states: {},
+  focusedNodeId: null,
+  activeNodeIds: [],
+  artifactCountByNode: {},
+});
+
+/** Provides live nodeStates to overview node renderers. */
+export function RunOverviewStatusProvider({
+  states,
+  focusedNodeId,
+  activeNodeIds,
+  artifactCountByNode,
+  children,
+}: RunOverviewStatusMap & { children: ReactNode }) {
+  return (
+    <RunOverviewStatusContext.Provider
+      value={{ states, focusedNodeId, activeNodeIds, artifactCountByNode }}
+    >
+      {children}
+    </RunOverviewStatusContext.Provider>
+  );
+}
+
+/**
+ * Read-only run graph card on shared chrome + execution status overlay.
+ */
+export const RunOverviewNode = memo(function RunOverviewNode({
+  id,
+  data,
+  selected,
+  width,
+  height,
+}: NodeProps<Node<RunOverviewNodeData, "workflow">>) {
+  const { i18n, t } = useTranslation();
+  const { states, focusedNodeId, activeNodeIds, artifactCountByNode } =
+    useContext(RunOverviewStatusContext);
+  const locale =
+    i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+  const state = states[id] ?? { status: "idle" as const };
+  const unused = useWorkflowNodeUnused(id);
+  const tone = runStatusTone(state.status);
+  const kindLabel = createMockWorkflowNodeType(data.kind, locale).label;
+  const focused = focusedNodeId === id || selected;
+  const peerActive = !focused && activeNodeIds.includes(id);
+  const artifactCount = artifactCountByNode[id] ?? 0;
+  const retryWait =
+    state.status === "retry_waiting" ? state.retryWait : undefined;
+  const startedLabel =
+    state.startedAt !== undefined
+      ? formatRunClock(state.startedAt, locale)
+      : null;
+  const finishedLabel =
+    state.finishedAt !== undefined
+      ? formatRunClock(state.finishedAt, locale)
+      : null;
+  const hasTiming = startedLabel !== null || finishedLabel !== null;
+
+  if (data.kind === "iteration") {
+    return (
+      <RunOverviewIterationNode
+        id={id}
+        data={data}
+        state={state}
+        focused={focused}
+        peerActive={peerActive}
+        kindLabel={kindLabel}
+        artifactCount={artifactCount}
+        startedLabel={startedLabel}
+        finishedLabel={finishedLabel}
+      />
+    );
+  }
+
+  const conditionSourceHandleIds = resolveRunOverviewSourceHandleIds(data);
+
+  return (
+    <WorkflowNodeCardShell
+      data-workflow-run-node=""
+      kind={data.kind}
+      title={data.title}
+      description={data.description}
+      kindLabel={kindLabel}
+      density="run"
+      selected={focused}
+      width={
+        data.kind === "loop"
+          ? (width ?? WORKFLOW_LOOP_NODE_WIDTH)
+          : WORKFLOW_NODE_WIDTH * 0.92
+      }
+      style={
+        data.kind === "loop"
+          ? { height: height ?? WORKFLOW_LOOP_NODE_HEIGHT }
+          : undefined
+      }
+      titleAccessory={
+        data.kind === "agent" ? (
+          <AgentExecutionModeMark
+            interactive={data.agentConfig?.interactive === true}
+          />
+        ) : undefined
+      }
+      ariaLabel={`${data.title}: ${t(unused ? "workflowNode.unused" : tone.labelKey)}`}
+      frameClassName={cn(
+        unused && "opacity-60",
+        tone.ring,
+        "ring-1 transition-[box-shadow,ring-color] duration-300",
+        state.status === "running" && "ring-sky-500/35 theater-live-breathe",
+        state.status === "awaiting_input" &&
+          "ring-amber-500/35 theater-live-breathe-amber",
+        // A waiting retry keeps its own orange ring instead of the sky peer cue.
+        peerActive &&
+          state.status !== "running" &&
+          state.status !== "awaiting_input" &&
+          state.status !== "retry_waiting" &&
+          "ring-sky-500/20",
+      )}
+      headerAccessory={
+        <div className="flex shrink-0 items-center gap-1">
+          {state.iteration !== undefined && (
+            <span
+              className="inline-flex items-center rounded bg-violet-500/12 px-1 py-0.5 text-[9px] font-medium tabular-nums text-violet-700 dark:text-violet-300"
+              title={t("workflowRun.overview.roundBadge", {
+                round: state.iteration + 1,
+              })}
+            >
+              R{state.iteration + 1}
+            </span>
+          )}
+          {artifactCount > 0 && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-medium text-muted-foreground"
+              title={t("workflowRun.artifacts.countBadge", {
+                count: artifactCount,
+              })}
+            >
+              <IconSparkles className="size-3" aria-hidden />
+              <span className="tabular-nums">{artifactCount}</span>
+            </span>
+          )}
+          {unused ? (
+            <WorkflowUnusedBadge />
+          ) : (
+            <RunStatusBadge
+              status={state.status}
+              live={isNodeWorking(state.status)}
+              className="px-1.5 py-0 text-[9px]"
+            />
+          )}
+        </div>
+      }
+      footer={
+        retryWait !== undefined ? (
+          <p className="text-[9px] font-medium tabular-nums text-orange-700 dark:text-orange-300">
+            <RunRetryWaitLabel wait={retryWait} />
+          </p>
+        ) : hasTiming ? (
+          <p className="font-mono text-[9px] tabular-nums text-muted-foreground">
+            {startedLabel ?? "—"}
+            {" — "}
+            {finishedLabel ?? "—"}
+          </p>
+        ) : undefined
+      }
+      targetHandle={
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!size-2 !border-0 !bg-transparent"
+          style={{ top: WORKFLOW_NODE_ANCHOR_Y * 0.92 }}
+          isConnectable={false}
+        />
+      }
+      sourceHandle={
+        conditionSourceHandleIds === null ? (
+          <Handle
+            type="source"
+            position={Position.Right}
+            className="!size-2 !border-0 !bg-transparent"
+            style={{ top: WORKFLOW_NODE_ANCHOR_Y * 0.92 }}
+            isConnectable={false}
+          />
+        ) : (
+          <>
+            {conditionSourceHandleIds.map((handleId, index) => (
+              <Handle
+                key={handleId}
+                id={handleId}
+                type="source"
+                position={Position.Right}
+                className="!size-2 !border-0 !bg-transparent"
+                style={{
+                  top: `${
+                    ((index + 1) / (conditionSourceHandleIds.length + 1)) * 100
+                  }%`,
+                }}
+                isConnectable={false}
+              />
+            ))}
+          </>
+        )
+      }
+    />
+  );
+});

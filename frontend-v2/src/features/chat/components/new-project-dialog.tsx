@@ -29,7 +29,7 @@ export function NewProjectDialog({
         >
           <DialogHeader>
             <DialogTitle>添加项目</DialogTitle>
-            <DialogDescription>填写项目主目录在云端机器上的路径，项目名取最后一级目录名。</DialogDescription>
+            <DialogDescription>填写项目在云端机器上的路径，项目名取最后一级目录名。</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
             <Input

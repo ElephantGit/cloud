@@ -21,19 +21,21 @@ describe('schedule rules', () => {
   })
 })
 describe('execution target boundaries', () => {
+  const data = { ...catalog, workflows: [{ id: 'release', name: '测试工作流', description: '', versions: ['v3'], fields: [{ key: 'branch', name: '分支', placeholder: '', required: true }, { key: 'focus', name: '关注', placeholder: '', required: false }] }] }
+
   it('allows unscoped chat but requires a project, publication and inputs for workflow', () => {
     const draft = { ...emptyDraft(), name: '简报', prompt: '汇总变化' }
     expect(validateDraft(draft)).toEqual({})
     expect(validateDraft({ ...draft, kind: 'workflow' })).toMatchObject({ workflow: expect.any(String), projectId: expect.any(String) })
     const flow = { ...draft, kind: 'workflow' as const, projectId: 'website', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main' } }
-    expect(validateDraft(flow)).toEqual({})
-    expect(validateDraft({ ...flow, snapshot: 'unpublished' })).toHaveProperty('workflow')
-    expect(validateDraft({ ...flow, inputs: {} })).toHaveProperty('branch')
-    expect(validateDraft(flow, { ...catalog, projects: [] })).toHaveProperty('projectId')
+    expect(validateDraft(flow, data)).toEqual({})
+    expect(validateDraft({ ...flow, snapshot: 'unpublished' }, data)).toHaveProperty('workflow')
+    expect(validateDraft({ ...flow, inputs: {} }, data)).toHaveProperty('input:branch')
+    expect(validateDraft(flow, { ...data, projects: [] })).toHaveProperty('projectId')
   })
   it('does not save inactive execution fields or another workflow’s inputs', () => {
     const draft = { ...emptyDraft(), kind: 'workflow' as const, workflowId: 'release', snapshot: 'v3', prompt: 'private chat text', inputs: { branch: 'main', audience: 'team' } }
-    expect(targetFromDraft(draft)).toEqual({ kind: 'workflow', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main', focus: '' } })
+    expect(targetFromDraft(draft, data)).toEqual({ kind: 'workflow', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main', focus: '' } })
     expect(targetFromDraft({ ...draft, kind: 'chat' })).not.toHaveProperty('workflowId')
   })
 })

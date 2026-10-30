@@ -1,0 +1,81 @@
+import { useTranslation } from "react-i18next";
+import { SelectGroup, SelectItem, SelectLabel } from "@/lib/workflows/host/ui";
+import type { WorkflowVariableCatalogEntry } from "@/lib/workflows/mock";
+import { groupWorkflowVariables } from "./workflow-variable-groups";
+
+/** Renders one variable row with stable semantic colors across hover and focus states. */
+export function WorkflowVariableRowContent({
+  variable,
+}: {
+  variable: WorkflowVariableCatalogEntry;
+}) {
+  return (
+    <span className="flex w-full min-w-0 items-center justify-between gap-3">
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          data-workflow-variable-part="variable-mark"
+          className="shrink-0 font-medium text-blue-600 dark:text-blue-400"
+        >
+          {"{x}"}
+        </span>
+        <span
+          data-workflow-variable-part="variable-name"
+          className="truncate font-medium text-foreground"
+        >
+          {variable.variableName}
+        </span>
+      </span>
+      <span
+        data-workflow-variable-part="variable-type"
+        className="shrink-0 text-[11px] capitalize text-muted-foreground"
+      >
+        {variable.valueType}
+      </span>
+    </span>
+  );
+}
+
+/** Renders a shadcn Select popover's structured groups for a node's selectable variables. */
+export function WorkflowVariableSelectGroups({
+  variables,
+  globalVariablesLabel,
+}: {
+  variables: WorkflowVariableCatalogEntry[];
+  globalVariablesLabel: string;
+}) {
+  const { t } = useTranslation();
+  const groups = groupWorkflowVariables(variables, globalVariablesLabel);
+  // An empty popup collapses to its border, which reads as a stray line under the trigger.
+  if (groups.length === 0) {
+    return (
+      <p className="px-2 py-2 text-xs text-muted-foreground">
+        {t("settings.workflow.variableSelect.empty")}
+      </p>
+    );
+  }
+  return (
+    <>
+      {groups.map((group) => (
+        <SelectGroup key={group.label}>
+          <SelectLabel className="px-2 pt-1.5 pb-0.5 text-[11px] font-medium text-muted-foreground">
+            {group.label}
+          </SelectLabel>
+          {group.variables.map((variable) => {
+            const selector = variable.selector.join(".");
+            return (
+              <SelectItem
+                key={selector}
+                value={selector}
+                aria-label={selector}
+                className="[&_[data-workflow-variable-part=variable-mark]]:text-blue-600! [&_[data-workflow-variable-part=variable-name]]:text-foreground! [&_[data-workflow-variable-part=variable-type]]:text-muted-foreground! dark:[&_[data-workflow-variable-part=variable-mark]]:text-blue-400!"
+              >
+                <WorkflowVariableRowContent variable={variable} />
+              </SelectItem>
+            );
+          })}
+        </SelectGroup>
+      ))}
+    </>
+  );
+}

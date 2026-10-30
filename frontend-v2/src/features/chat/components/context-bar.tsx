@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, FolderIcon, FolderPlusIcon, GitBranchIcon, GitBranchPlusIcon, LaptopIcon, PencilIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, FolderIcon, FolderPlusIcon, LaptopIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command'
@@ -11,9 +11,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { NewChat, NewChatWorkspace, Project } from '../store'
+import type { NewChat, Project } from '../store'
 import { NewProjectDialog } from './new-project-dialog'
-import { NewWorktreeDialog } from './new-worktree-dialog'
+import { SandboxLabel } from './sandbox-label'
 
 const tab =
   'group/context h-6 min-w-0 gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground data-popup-open:bg-muted/60 data-popup-open:text-foreground'
@@ -25,7 +25,7 @@ function TabChevron() {
   return <ChevronDownIcon className="size-3 opacity-50 transition-transform group-data-popup-open/context:rotate-180" aria-hidden />
 }
 
-/** A context tab whose menu searches its items, as desktop's project and branch tabs do. */
+/** A context tab whose menu searches its items, as desktop's project tab does. */
 function SearchTab({ label, trigger, placeholder, empty, children }: { label: string; trigger: ReactNode; placeholder: string; empty: string; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
@@ -48,30 +48,25 @@ function SearchTab({ label, trigger, placeholder, empty, children }: { label: st
 }
 
 /**
- * The row above a new chat's input, as in desktop: which project it starts in, whether in the
- * main checkout or a worktree, and where it runs. Only the cloud runs agents from the web.
+ * The row above a new chat's input, as in desktop: which project it starts in and where it runs.
+ * Only the cloud runs agents from the web, and it gives every conversation a sandbox of its own,
+ * which a label says.
  */
 export function ContextBar({
   value,
   projects,
-  branches,
   onChange,
   onCreateProject,
 }: {
   value: NewChat
   /** Projects a chat can start in. */
   projects: Project[]
-  /** The worktree branches the chosen project already has. */
-  branches: string[]
   onChange: (patch: Partial<NewChat>) => void
-  onCreateProject: (path: string) => void
+  /** Adds a project from a folder; the menu offers it only when given. */
+  onCreateProject?: (path: string) => void
 }) {
-  const [dialog, setDialog] = useState<'project' | 'worktree'>()
+  const [creating, setCreating] = useState(false)
   const project = projects.find((p) => p.id === value.projectId)
-  const isolated = value.workspace.kind === 'isolated' ? value.workspace.branch : undefined
-  const pending = value.workspace.kind === 'new-worktree'
-  const pick = (workspace: NewChatWorkspace) => onChange({ workspace })
-  const shown = isolated && !branches.includes(isolated) ? [...branches, isolated] : branches
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -95,74 +90,27 @@ export function ContextBar({
                   value={`${p.name} ${p.path ?? ''}`}
                   data-checked={p.id === value.projectId}
                   className={item}
-                  onSelect={() => (onChange({ projectId: p.id, workspace: { kind: 'main' } }), close())}
+                  onSelect={() => (onChange({ projectId: p.id }), close())}
                 >
                   <FolderIcon className={icon} />
                   <span className="truncate">{p.name}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup>
-              <CommandItem value="新建项目" className={item} onSelect={() => (close(), setDialog('project'))}>
-                <FolderPlusIcon className={icon} />
-                新建项目
-                <CommandShortcut>
-                  <ChevronRightIcon className="size-3.5" />
-                </CommandShortcut>
-              </CommandItem>
-            </CommandGroup>
-          </>
-        )}
-      </SearchTab>
-
-      <SearchTab
-        label="选择工作目录"
-        placeholder="搜索分支"
-        empty="未找到分支。"
-        trigger={
-          <>
-            {pending ? <GitBranchPlusIcon className="size-3.5" /> : isolated ? <GitBranchIcon className="size-3.5" /> : <FolderIcon className="size-3.5" />}
-            <span className={isolated ? 'max-w-28 min-w-0 truncate font-mono sm:max-w-40' : 'whitespace-nowrap'}>{pending ? '新 worktree' : (isolated ?? '主目录')}</span>
-          </>
-        }
-      >
-        {(close) => (
-          <>
-            <CommandGroup className={heading}>
-              <CommandItem value="主目录" data-checked={value.workspace.kind === 'main'} className={item} onSelect={() => (pick({ kind: 'main' }), close())}>
-                <FolderIcon className={icon} />
-                主目录
-              </CommandItem>
-            </CommandGroup>
-            {shown.length > 0 && (
-              <CommandGroup heading="Worktree" className={heading}>
-                {shown.map((branch) => (
-                  <CommandItem
-                    key={branch}
-                    value={branch}
-                    data-checked={branch === isolated}
-                    className={item}
-                    onSelect={() => (pick({ kind: 'isolated', branch }), close())}
-                  >
-                    <GitBranchIcon className={icon} />
-                    <span className="truncate font-mono">{branch}</span>
+            {onCreateProject && (
+              <>
+                <CommandSeparator />
+                <CommandGroup>
+                  <CommandItem value="新建项目" className={item} onSelect={() => (close(), setCreating(true))}>
+                    <FolderPlusIcon className={icon} />
+                    新建项目
+                    <CommandShortcut>
+                      <ChevronRightIcon className="size-3.5" />
+                    </CommandShortcut>
                   </CommandItem>
-                ))}
-              </CommandGroup>
+                </CommandGroup>
+              </>
             )}
-            <CommandSeparator />
-            <CommandGroup>
-              {/* The worktree gets its name from the first prompt, as agent tools name theirs. */}
-              <CommandItem value="在 worktree 中工作" data-checked={pending} className={item} onSelect={() => (pick({ kind: 'new-worktree' }), close())}>
-                <GitBranchPlusIcon className={icon} />
-                在 worktree 中工作
-              </CommandItem>
-              <CommandItem value="新建 worktree 并命名" className={item} onSelect={() => (close(), setDialog('worktree'))}>
-                <PencilIcon className={icon} />
-                新建 worktree 并命名…
-              </CommandItem>
-            </CommandGroup>
           </>
         )}
       </SearchTab>
@@ -189,14 +137,9 @@ export function ContextBar({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <SandboxLabel />
 
-      <NewProjectDialog open={dialog === 'project'} onOpenChange={(o) => setDialog(o ? 'project' : undefined)} onCreate={(path) => (onCreateProject(path), setDialog(undefined))} />
-      <NewWorktreeDialog
-        open={dialog === 'worktree'}
-        onOpenChange={(o) => setDialog(o ? 'worktree' : undefined)}
-        projectName={project?.name ?? ''}
-        onCreate={(branch) => (pick({ kind: 'isolated', branch }), setDialog(undefined))}
-      />
+      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreate={(path) => (onCreateProject?.(path), setCreating(false))} />
     </div>
   )
 }

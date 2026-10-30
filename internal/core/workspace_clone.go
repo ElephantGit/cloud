@@ -13,6 +13,7 @@ package core
 var deferCodes = map[string]bool{
 	"substrate_timeout": true, "termination_unconfirmed": true, "git_cleanup_failed": true, "node_unavailable": true,
 	"external_failure": true, "clone_failed": true, "clone_result_unknown": true,
+	"clone_result_pending": true, "clone_result_timeout": true,
 	"plugin_execution_failed": true, "plugin_result_unknown": true,
 }
 
@@ -159,10 +160,27 @@ func deferWorkspaceClone(t *transaction, o Object) {
 // definitive result. It never registers another clone or renews the frozen abandonment deadline.
 // The Controller still owns lifecycle advancement; a successful receipt alone opens no admission.
 func resumeKnownWorkspaceClone(t *transaction, o Object) bool {
+	policy := cloneRecoveryReady
+	if o.S("errorCode") == "clone_result_timeout" {
+		policy = cloneRecoveryTimeout
+	}
+	return resumeWorkspaceCloneResult(t, o, policy)
+}
+
+type cloneRecoveryPolicy uint8
+
+const (
+	cloneRecoveryReady cloneRecoveryPolicy = iota
+	cloneRecoveryTimeout
+)
+
+// cloneRecoveryTimeout accepts original execution facts without treating a stale heartbeat as a new
+// identity. Unknown recovery retains its existing readiness requirement.
+func resumeWorkspaceCloneResult(t *transaction, o Object, policy cloneRecoveryPolicy) bool {
 	if o == nil || o.S("step") != "clone" || (o.S("kind") != "create_project" && o.S("kind") != "create_workspace") {
 		return false
 	}
-	if o.S("state") != "running" && (o.S("state") != "blocked" || o.S("errorCode") != "clone_result_unknown") {
+	if o.S("state") != "running" && (o.S("state") != "blocked" || (o.S("errorCode") != "clone_result_unknown" && o.S("errorCode") != "clone_result_timeout")) {
 		return false
 	}
 	wid := o.S("workspaceId")
@@ -180,7 +198,18 @@ func resumeKnownWorkspaceClone(t *transaction, o Object) bool {
 		return false
 	}
 	e := t.one("SELECT * FROM clone_executions WHERE operation_id=$1 ORDER BY created_at DESC,execution_id DESC LIMIT 1", o.S("id"))
-	if e == nil || currentNode(t, wid).S("nodeId") != e.S("nodeId") {
+	if e == nil {
+		return false
+	}
+	if policy == cloneRecoveryTimeout {
+		// Timeout is only a scheduling decision. Accept the original live generation's late
+		// fact even if its heartbeat expired; actual advancement still requires readiness.
+		if t.one(`SELECT n.id FROM node_instances n JOIN sandbox_instances s ON s.id=n.sandbox_instance_id
+ JOIN workspaces w ON w.id=s.workspace_id WHERE w.id=$1 AND s.generation=w.runtime_generation
+ AND s.terminated_at IS NULL AND n.ended_at IS NULL AND n.node_id=$2`, wid, e.S("nodeId")) == nil {
+			return false
+		}
+	} else if currentNode(t, wid).S("nodeId") != e.S("nodeId") {
 		return false
 	}
 	switch e.O("result").S("outcome") {
@@ -202,7 +231,7 @@ func resumeKnownWorkspaceClone(t *transaction, o Object) bool {
 // handed back, a run Workspace takes its failure release and a failed create_project still leaves
 // the Project usable, so it can be repaired or deleted.
 func failWorkspaceClone(t *transaction, o Object, code string) {
-	t.exec("UPDATE operations SET state='failed',error_code=$2,retry_at=NULL,version=version+1,updated_at=now() WHERE id=$1", o.S("id"), code)
+	t.exec("UPDATE operations SET state='failed',error_code=$2,retry_at=NULL,node_unavailable_attempts=0,version=version+1,updated_at=now() WHERE id=$1", o.S("id"), code)
 	if o.S("kind") == "create_project" {
 		settleFailedProjectCreation(t, o.S("projectId"))
 	}

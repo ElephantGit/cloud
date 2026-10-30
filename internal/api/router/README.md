@@ -11,6 +11,7 @@
 - 默认请求体上限为 64 KiB；`ThreadMessagePath` 与 `TaskConversationMessagesPath` 单独使用 256 KiB，以容纳合法消息的 JSON 封装；正文仍由领域核心限制为 64 KiB。
 - JSON decoder 使用 `UseNumber`，拒绝未知字段、额外 JSON 值和非法类型；查询解析按对应读取入口约束。
 - 普通请求交给 `Store.Public`；归档、统计和外部服务核对等走专用 Store 方法。开发管理请求交给 `Store.Control`。
+- 旧开发管理 JSON 的 operation 响应保持原字段；持久调度计数仅通过生产 Controller gRPC 快照传递，HTTP 适配层移除它。
 - 领域错误通过 `core.ErrorCode` 映射为安全 Fault；未注册路径返回 `404 not_found`。
 
 任务对话新增 `GET/POST /issues/:iid/conversation`、显式 Agent 消息、待交接消息取消/重试、成功成果恢复与未交付成果显式放弃入口，使用同源成员鉴权和幂等键。URL 中的 `:mid` 只作为待交接消息身份，不由客户端指定作者或状态。`POST .../conversation/stop` 返回 202，原子请求取消并暂停后续队列；读取返回当前执行、最早未解决屏障、手动暂停及 `canStop`。历史详情的选择不会改变停止目标，恢复必须明确指向最早屏障。

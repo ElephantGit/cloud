@@ -146,10 +146,19 @@ func operationCommand(t *transaction, r *ControlRequest) Object {
 		require(state == "blocked" || state == "retry_wait", 400, "invalid_operation_state")
 		require(deferCodes[code], 400, "invalid_error_code")
 		delay := r.Body.N("retrySeconds")
-		require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		if code != "node_unavailable" && code != "clone_result_pending" && code != "clone_result_timeout" {
+			require(delay >= 1 && delay <= 3600, 400, "invalid_retry_delay")
+		}
 		// Result takeover may have committed just before this stale unknown observation. Continue
 		// from the original known result instead of parking a creation nobody can publicly retry.
 		if code == "clone_result_unknown" && resumeKnownWorkspaceClone(t, o) {
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
+		if deferCloneWait(t, o, code) {
+			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
+		}
+		if code == "node_unavailable" && state == "retry_wait" {
+			deferUnavailableNode(t, o)
 			return t.one("SELECT * FROM operations WHERE id=$1", o.S("id"))
 		}
 		if row := residualOperation(t, o); row != nil && (row.S("reclaimMode") == "owned_delete" || row.S("reclaimMode") == "controlled") && row["reclaimConflictedAt"] == nil {
@@ -542,7 +551,7 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 		reject(409, "invalid_step")
 	}
 	if next == "done" {
-		t.exec("UPDATE operations SET step='done',state='succeeded',error_code=NULL,retry_at=NULL,result=jsonb_build_object('resourceId',COALESCE(workspace_id,project_id)),version=version+1,updated_at=now() WHERE id=$1", o.S("id"))
+		t.exec("UPDATE operations SET step='done',state='succeeded',error_code=NULL,retry_at=NULL,node_unavailable_attempts=0,result=jsonb_build_object('resourceId',COALESCE(workspace_id,project_id)),version=version+1,updated_at=now() WHERE id=$1", o.S("id"))
 		finishRuntimeMaintenance(t, o.S("id"))
 		if w := t.one("SELECT issue_run_id, workflow_run_id FROM workspaces WHERE id=$1", nullable(wid)); w != nil {
 			// A Workspace belongs to at most one run of either kind (0039's XOR), so at most one binding
@@ -567,7 +576,7 @@ func advance(t *transaction, r *ControlRequest, o Object) Object {
 			}
 		}
 	} else {
-		t.exec("UPDATE operations SET step=$2,version=version+1,updated_at=now() WHERE id=$1", o.S("id"), next)
+		t.exec("UPDATE operations SET step=$2,node_unavailable_attempts=0,version=version+1,updated_at=now() WHERE id=$1", o.S("id"), next)
 		if next == "clone" {
 			// The step is frozen in the transaction that enters it; without a snapshot the operation
 			// leaves the Controller here, parked or failed, and returns through a later claim.

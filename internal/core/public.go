@@ -756,7 +756,9 @@ func newOperation(t *transaction, r *PublicRequest, uid, pid, wid, kind, step, h
 	if wid != "" && (kind == "create_project" || kind == "create_workspace") {
 		reserveRuntimeMaintenance(t, wid, id)
 	}
-	return t.one("SELECT * FROM operations WHERE id=$1", id)
+	o := t.one("SELECT * FROM operations WHERE id=$1", id)
+	delete(o, "nodeUnavailableAttempts")
+	return o
 }
 
 func checkActivities(t *transaction, w Object) {
@@ -836,6 +838,8 @@ func ownedOperation(t *transaction, r *PublicRequest, uid string) Object {
 	require(validID(r.OperationID), 404, "not_found")
 	o := t.one("SELECT o.* FROM operations o JOIN projects p ON p.id=o.project_id WHERE o.id=$1 AND o.tenant_id=$2 AND p.tenant_id=$2", r.OperationID, r.TenantID)
 	require(o != nil, 404, "not_found")
+	// Scheduling recovery state belongs only to the internal Controller snapshot.
+	delete(o, "nodeUnavailableAttempts")
 	if o.S("workspaceId") != "" {
 		workspace(t, r.TenantID, uid, o.S("workspaceId"), false)
 	} else {

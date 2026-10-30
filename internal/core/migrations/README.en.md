@@ -6,7 +6,7 @@ SQL is embedded in the binary through `embed.FS` in `core/store.go`. `Store.Migr
 
 ## File index
 
-There are currently 74 SQL files.
+There are currently 76 SQL files.
 
 | SQL file | Schema change |
 |---|---|
@@ -85,6 +85,7 @@ There are currently 74 SQL files.
 | [0071_scheduled_task_model.sql](0071_scheduled_task_model.sql) | Optional selected model on scheduled tasks |
 | [0072_scheduled_task_conversation_reasons.sql](0072_scheduled_task_conversation_reasons.sql) | Task-conversation rejection reasons for scheduled admission |
 | [0073_member_join_provenance.sql](0073_member_join_provenance.sql) | Link notes and member admission provenance without invented history |
+| [0074_node_unavailable_attempts.sql](0074_node_unavailable_attempts.sql) | Non-negative Node-unavailable attempt count on operations, defaulting to 0 |
 
 0050 copies no personal connection or key and backfills no historical run. Clearing configuration retains its revision; run options are stored separately from shared run input.
 
@@ -95,6 +96,8 @@ There are currently 74 SQL files.
 0071 adds a nullable `model` to `scheduled_tasks`. The upgrade never guesses a model for existing definitions; each admission resolves the selected value through the creator's then-usable connection and freezes that resolution into the new IssueRun. A null value continues to mean the creator's default model at admission. Upgrade and replay coverage is `TestMigration0071ScheduledTaskModelUpgradeAndReplay`.
 
 0072 only widens the `scheduled_task_occurrences.failure_reason` CHECK with `task_paused` and `task_handoff_pending`: when the bound issue's task conversation is paused, holds an unresolved failed message, or has a waiting message, admission records one of them and creates no run. Existing rows are not rewritten. Upgrade and replay coverage is `TestMigration0072ScheduledTaskConversationReasonsUpgradeAndReplay`.
+
+0074 adds `node_unavailable_attempts` to `operations` (bigint, NOT NULL, default 0), with `CHECK (node_unavailable_attempts >= 0)` rejecting negative values. Existing operations start at 0; historical attempts are not backfilled, and existing executions retain their Node ownership and results. `ADD COLUMN IF NOT EXISTS` makes the SQL re-applicable. Upgrade, repeated application, legacy execution preservation and negative-value rejection are covered by `TestOperationWaitMigrationPreservesLegacyExecutionAndDefaults` in [operation_wait_migration_test.go](../operation_wait_migration_test.go).
 
 - Never edit or rename applied SQL; corrections use new forward migrations. Repeated application skips applied files with matching checksums.
 - `CheckSchema` only reads and rejects missing migrations, checksum mismatches and unknown database versions. Production services do not run DDL; operators migrate through [cloudctl](../../../cmd/cloudctl/README.en.md).

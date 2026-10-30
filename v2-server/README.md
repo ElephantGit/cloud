@@ -76,3 +76,7 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 - 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查。
 - 小队权限把开发登录的 `owner` 角色也当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
 - 启动时直接建表，没有迁移。
+- 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
+  [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。
+  配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
+  本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。

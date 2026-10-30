@@ -31,15 +31,15 @@ import {
   WORKFLOW_ITERATION_COLLAPSED_WIDTH,
   type WorkflowNodeData,
   type WorkflowNodeKind,
-} from "../../mock";
-import { toast } from "../../host/ui";
+} from "@/lib/workflows/mock";
+import { toast } from "@/lib/workflows/host/ui";
 import { WorkflowNodeCatalog } from "../workflow-node-catalog";
 import {
   DEFAULT_WORKFLOW_PAN,
   DEFAULT_WORKFLOW_ZOOM,
   MAX_WORKFLOW_ZOOM,
   MIN_WORKFLOW_ZOOM,
-} from "../../node-chrome/viewport";
+} from "@/lib/workflows/node-chrome/viewport";
 import {
   WORKFLOW_FLOW_EDGE_TYPE,
   WORKFLOW_FLOW_NODE_TYPE,

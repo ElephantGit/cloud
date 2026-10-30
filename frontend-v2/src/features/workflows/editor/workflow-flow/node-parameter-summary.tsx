@@ -1,16 +1,16 @@
 import { useTranslation } from "react-i18next";
-import { type WorkflowNodeData } from "../../mock";
+import { type WorkflowNodeData } from "@/lib/workflows/mock";
 import {
   conditionBranchesSummary,
   createWorkflowSummaryLabels,
   junctionFailureStrategyLabel,
   junctionWaitStrategyLabel,
   type WorkflowSummaryLabels,
-} from "../../node-chrome";
-import { useAgents } from "../../data/catalog-hooks";
-import { useSkills } from "../../data/catalog-hooks";
-import { useInstalledPlugins } from "../../data/catalog-hooks";
-import { normalizeWorkflowAgentConfig } from "../../mock";
+} from "@/lib/workflows/node-chrome";
+import { useAgents } from "@/lib/workflows/data/catalog-hooks";
+import { useSkills } from "@/lib/workflows/data/catalog-hooks";
+import { useInstalledPlugins } from "@/lib/workflows/data/catalog-hooks";
+import { normalizeWorkflowAgentConfig } from "@/lib/workflows/mock";
 
 interface NodeParameter {
   label: string;

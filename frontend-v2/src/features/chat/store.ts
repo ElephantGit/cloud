@@ -98,10 +98,14 @@ interface State {
   /** Sessions whose recording (or stand-in reply) is still playing, including while it waits on an answer. */
   playing: Record<string, true>
   selectedId?: string
+  /** The workflow run shown instead of a session, picked from a project's runs. */
+  selectedRunId?: string
   /** The history column's width in pixels, and whether it is shown. */
   sidebar: SidebarLayout
   setSidebar: (sidebar: Partial<SidebarLayout>) => void
   select: (id: string) => void
+  /** Shows a workflow run in place of the session, as desktop's workspace does. */
+  selectRun: (id: string | undefined) => void
   /** What the new chat view starts; shown whenever no session is selected. */
   newChat: NewChat
   /**
@@ -271,12 +275,13 @@ export const useChatStore = create<State>()(
         select: (id) => {
           set((s) => {
             const { [id]: _, ...unread } = s.unread
-            return { selectedId: id, unread }
+            return { selectedId: id, selectedRunId: undefined, unread }
           })
           const session = get().sessions.find((x) => x.id === id)
           // A sample plays the first time it is opened, so picking it is enough to see it work.
           if (session?.scenarioId && !get().conversations[id] && !players.has(id)) get().replay(id)
         },
+        selectRun: (id) => set({ selectedRunId: id }),
         newChat: { projectId: demoProjects[0].id, workspace: { kind: 'main' }, ...defaultChoice },
         startNewChat: (scope) =>
           set((s) => {
@@ -287,7 +292,7 @@ export const useChatStore = create<State>()(
               : fromSelection
                 ? { projectId: fromSelection.projectId, workspace: fromSelection.workspace }
                 : {}
-            return { selectedId: undefined, newChat: { ...s.newChat, ...where } }
+            return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where } }
           }),
         setNewChat: (patch) => set((s) => ({ newChat: { ...s.newChat, ...patch } })),
         sendNewChat: (draft) => {
@@ -301,7 +306,7 @@ export const useChatStore = create<State>()(
         createSession: (projectId, workspace, choice = defaultChoice) => {
           const id = newId('session')
           const session: Session = { id, projectId, workspace, title: '新对话', ...choice, createdAt: Date.now() }
-          set((s) => ({ sessions: [...s.sessions, session], selectedId: id }))
+          set((s) => ({ sessions: [...s.sessions, session], selectedId: id, selectedRunId: undefined }))
           return id
         },
         renameSession: (id, title) =>
@@ -446,5 +451,6 @@ export function resetChatStore() {
     sidebar: defaultSidebar,
     newChat: { projectId: demoProjects[0].id, workspace: { kind: 'main' }, ...defaultChoice },
     selectedId: undefined,
+    selectedRunId: undefined,
   })
 }

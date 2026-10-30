@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { localizeContractError } from "../host/contract-error";
-import { useUiStore } from "../host/ui-store";
-import { useWorkflowLibrary } from "../data/workflows";
+import { localizeContractError } from "@/lib/workflows/host/contract-error";
+import { useUiStore } from "@/lib/workflows/host/ui-store";
+import { useWorkflowLibrary } from "@/lib/workflows/data/workflows";
 import { useWorkflowEditorStore } from "./workflow-editor-store";
 import { WorkflowManager } from "./workflow-manager";
 

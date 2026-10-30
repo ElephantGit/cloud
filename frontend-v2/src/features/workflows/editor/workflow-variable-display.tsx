@@ -2,8 +2,8 @@ import { IconVariable } from "@tabler/icons-react";
 import type {
   WorkflowNodeKind,
   WorkflowVariableCatalogEntry,
-} from "../mock";
-import { getNodeMetadata } from "../node-chrome";
+} from "@/lib/workflows/mock";
+import { getNodeMetadata } from "@/lib/workflows/node-chrome";
 
 /** A catalog entry carrying the optional producing-node kind the editor adds for display. */
 export type EditorWorkflowVariable = WorkflowVariableCatalogEntry & {

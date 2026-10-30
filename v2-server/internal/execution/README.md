@@ -1,114 +1,94 @@
 # 公共执行端口
 
-`execution.Service` 是 chat、工作流和定时任务共用的进程内 Go 接口草案。
-当前只有类型、文本输入校验和 `executiontest.Stub`；没有真实 runtime、SQL 或 HTTP 装配。
+`execution.Service` 是 chat、工作流和定时任务共用的进程内 Go 接口。
+本包只有类型、文本输入校验和 `executiontest.Stub`，真实执行、PostgreSQL 和入口装配由调用实现提供。
 替身默认返回 `ErrUnavailable`，不会生成“Agent 已完成”的结果。
 
 ## 两条执行路径
 
-- `Start`：有项目，选择预置 Project/Workspace 和 `ExecutorID`，经真实 Node 启动 Agent。
-- `StartModel`：无项目，直接通过 M2 provider 调模型，只有 `ModelID`，不启动 Agent、不创建 Workspace、不提供工具。
+- `Start`：选择 `ProjectID` 和 `ExecutorID`，后端从项目已保存的仓库 clone 对话目录，经真实 Node 启动 Agent。
+- `StartModel`：无项目，直接通过共享 provider 调模型，只需要 `ModelID`；不启动 Agent、不建目录、不提供工具。
 - 两者共用 `Append`、Ref、Result、会话订阅、取消和历史读取。Append 沿用 session 的模式和绑定。
-- `Prompt` 是 ACP ContentBlock 数组；首版只接 text，其他块明确返回 `ErrUnsupported`，空/畸形输入返回 `ErrInvalidRequest`。
-- `Catalog.ListExecutors/ListModels` 从 M2 的实际配置和已安装产物提供 ID/显示名，包含 fixture；不列虚假的可执行项。
-  M3 负责 Project/Workspace 的准备、契约列表/读取接口，以及会话内目标、执行器和模型的不可变快照。
-  清单更新不能改写历史选项，快照只含公开信息与绑定版本，永不含密钥。
+- `Prompt` 是 ACP ContentBlock 数组；首版只接 text，其他块返回 `ErrUnsupported`，空或畸形输入返回 `ErrInvalidRequest`。
+- `Catalog.ListExecutors/ListModels` 提供可运行的 ID 和显示名：默认 fixture，以及已配置的一个 OpenAI 兼容真实 provider。
+  Agent 与模型直连共用这份配置，凭据只留在后端。未配置的模型或不可用的 Agent 产物不能列为可运行项。
 
-## 身份、接收与忙碌
+项目由共享项目服务创建：同步 `clone --mirror` 仓库和指定分支，成功后保存项目及 snapshot ref。
+执行端口不接收原始仓库凭据或任意目录。Session 保留目标、执行器和模型的选择快照，清单更新不能改写历史。
 
-Scope 来自已认证的页面服务，或后台持久任务的归属；后台不要求浏览器在线，不保存 cookie。
-执行侧每次检查当前成员关系和资源归属。Caller 的 kind/ID/node/容器轮次路径/attempt 在 Scope 内定位一次调用。
-chat 的 ID 是 conversation，workflow 是 run，schedule 是 occurrence；轮次路径从外到内，含容器 ID 和零基轮次。
+## 身份与目录
 
-接收和 Workspace 排他是一个原子步骤；跨 chat/workflow/schedule 生效，只按 Workspace，不按整个 Project。
-先查询同身份：相同请求返回原 Ref，变更参数报 `ErrConflict`；之后才检查 Busy。
-`ErrWorkspaceBusy` 明确表示未接收、不会稍后自己启动，没有公共队列；等待策略由页面模块负责。
+Scope 来自登录会话或后台任务的持久归属，不从请求正文直接取值。首版沿用 dev 演示用户和演示团队；
+执行侧检查成员关系与资源归属，无权限的资源返回 `ErrNotFound`。
 
-已确认未接收的返回不得在后台迟到接收。提交前已停止接收的 context 取消返回 context 错误；接收先提交则返回 Ref。
-存储提交结果无法确定时返回 `ErrAdmissionUnknown`。只有业务仍允许启动时，才用完全相同的请求重试；
-若前一次确实未接收，这个重试可能首次接收，不能把它当成无副作用查询。不能换新 attempt 掩盖不确定性。
-`ReadAttempt` 是纯查询，它的一次未命中不能终结仍在途/结果未知的接收请求。业务显式重跑才用新 attempt。
+Caller 的 kind/ID/node/有序容器轮次/attempt 在 Scope 内定位一次调用。
+chat 的 ID 是 conversation，workflow 是 run，schedule 是 occurrence；容器轮次从外到内，索引从零开始。
+同一 attempt 重复提交相同请求只返回原 Ref；改换目标、执行器、session 或 prompt 返回 `ErrConflict`。
+显式重跑使用新的 attempt。
 
-### 恢复时确认未接收
+`Target` 只有 ProjectID，调用方不选择 Workspace。后端按以下粒度创建目录，并将生成的 WorkspaceID 记入 Session：
 
-重启后不允许补跑的调用方使用 `SealAttempt(scope, caller)`。它只接收 Scope 与完整 Caller，
-不接 prompt，不派发执行，也不取消已接收的执行。它是持久化操作：与 Start、StartModel、Append
-在同一身份上排定先后，返回以下已确认结果之一：
+- 每个 chat 会话一个目录；定时任务每次触发创建独立会话和目录。
+- 同一 Scope 下 `CallerWorkflow.ID` 相同的一次工作流运行共用目录，节点串行执行。
+- 不同对话和不同 workflow run 不争抢目录，即使它们属于同一个项目。
+- 模型直连的 Session.WorkspaceID 为空。
 
-| 结果 | 含义及消费方处理 |
-|---|---|
-| `accepted` + 原 Ref | 接收已提交；用 ReadAttempt/Subscribe 跟踪原执行，不能重新派发，也不能据此认为执行已停止 |
-| `not_admitted` + 空 Ref | 已持久化关闭该身份的接收资格；任何迟到或后续的同身份接收都报 `ErrAdmissionClosed`，调用方可结束本次触发的未知占位 |
-| 错误或零值 | 未建立确定结果，保留未知占位；可以按同身份再次 SealAttempt，不能推断未接收 |
+接收执行只用单进程内的锁和一次数据库写入，持久记录建立后返回 Ref。
+`ErrWorkspaceBusy` 仅表示同一 session 或同一次 workflow run 的上一轮尚未结束；页面自己排队，公共层不另设队列。
+Start/StartModel/Append 的 context 控制本次调用，调用返回或浏览器断开不停止已开始的执行。
+`ReadAttempt` 按完整 Caller 查询已有 Turn，不派发工作。
 
-已接收记录优先返回原 Ref；未接收闭锁不创建 Session、Turn、会话事件或 Workspace 占位。
-它不能释放别的执行所持有的 Workspace，不替代 Cancel/End 的停止确认。
-锁等待尚未结束、context 截止或提交结果不确定都不能返回 `not_admitted`；未知提交用 `ErrAdmissionUnknown`。
-恢复屏障尚未完成时保持不可用，不能趁旧执行尚未收尾把查询未命中包装成未接收。
+一个项目通常共用一个 Node 进程；必要时实现可改为每会话一个 Node，不改变接口。
+Agent 改动不 commit、不 push，也不写回项目的仓库文件夹。End 不删除目录；演示目录由独立清理命令管理。
 
-M3 的事务接缝：
+## 会话事件和完整结果
 
-- Scope 的 tenant/user 与 Caller 的 kind/ID/node/有序容器轮次/attempt 组成同一唯一身份；空 Rounds 统一表示无容器轮次。
-  三种接收方法与 SealAttempt 共用该唯一约束和原子互斥，不能分别先查后写。
-- 接收先赢时，完整请求、Ref、Turn 与所需的 Workspace 排他在同一事务提交；SealAttempt 返回原 Ref。
-  同身份改换接收方法、target、executor/model、session 或完整 prompt 仍为 `ErrConflict`，不能新增执行。
-- SealAttempt 先赢时，提交该身份的持久闭锁记录；全部接收路径在任何派发前检查它，返回 `ErrAdmissionClosed`。
-  闭锁跨重启保留，不通过 TTL 或删除记录重新允许迟到接收。
-- 每次操作检查当前 Scope 授权；无权限的 `ErrNotFound` 不能变成 `not_admitted`，也不能写入闭锁。
-  事务只处理数据库，不跨 Node/provider 调用持锁；先确认接收持久化，再产生执行副作用。
-- PostgreSQL/race 验收需覆盖两个获胜顺序、提交结果不确定后的重复核对、跨身份隔离、已接收请求参数冲突、
-  三条接收路径被闭锁阻止，以及重启恢复屏障与闭锁持久化。不得用内存替身证明这些义务。
+`Subscribe(sessionID, afterSequence)` 使用 session 内连续序号，先回放再跟随。
+Event.Ref.TurnID 对轮次外事件为空。固定 Node 的 `history_snapshot` 是当前可得历史的完整替换快照：
+Records 按历史位置排序，Data 保留 settled HistoryLine/preview 及可得元数据；同位置 settled 优先于 preview。
+页面整体替换快照，不将 preview 与最终文本重复追加，也不直接套用 ACP 增量归约器。
+HistoryRecord.Sequence 是 Node 历史位置，Event.Sequence 才是订阅游标。
 
-## 会话事件和用量
+快照 Incomplete 只说明过程信息缺失，不代表最终回答不完整。固定 Node 缺少原始 ACP、每轮 usage、上下文和
+mode/config 更新；页面留空或显示不可用，不填 0，不标称“完整过程”。模型直连使用 `text_delta`，
+不伪造 Agent 或工具活动；provider 明确报告的计数可映射为 ACP Usage，缺失时留空。
 
-`Subscribe(sessionID, afterSequence)` 用 session 内连续序号，先回放再跟随，没有交接空档。
-Event.Ref.TurnID 对轮次外事件为空。固定 Node 路线使用 `history_snapshot`：History 是当前可得历史的
-完整替换快照，Records 按历史位置排序，Data 保留 Node 的 settled HistoryLine/preview 对象及可得元数据。
-同一历史位置更新时替换；settled 优先于 preview，后来的 preview 不得覆盖已定稿记录。
-页面替换整个快照，不把 preview 和最终文本重复追加，不直接喂给 ACP 增量归约器。
-HistoryRecord.Sequence 不是 Event.Sequence，后者才是订阅/恢复游标。Preview 只作过程显示，不能构成最终回答。
-快照 Incomplete 表示过程信息有缺失，不代表最终回答的完整性；不标称“完整过程”。
+`Result.Answer` 只包含可见 assistant 文本，不混入 thought、tool 或停止原因。
+`AnswerComplete` 必须经过完整读取确认，completed 必须为 true；不能仅拼接有界 preview 或 visible_text。
+结果缺失、损坏或超限无法补全时，返回 failed、AnswerComplete=false 和明确 FailureCode。
+StopReason 与 FailureCode 分别保留，清理失败不能改写已持久化的回答。
 
-固定 Node 不提供原始 ACP 流、每轮 usage、上下文及 mode/config 更新，界面留空或显示不可用，不填 0。
-模型直连使用 `text_delta`，不伪造 ACP tool 或 Agent 活动；已报告的 provider 用量可转为 ACP Usage，没有则留空。
-`Result.AnswerComplete` 必须由完整结果读取确认；completed 必须为 true。不能只拼接 bounded visible_text 或 preview。
-记录缺失、损坏或结果超限无法补全时返回 failed、AnswerComplete=false 和明确 FailureCode，不冒充成功。
+`turn_ended` 不关闭会话订阅；后续快照和轮次仍可见。只有 `session_ended` 后返回 EOF，游标已确认它时直接 EOF。
+工作流和定时调用方按 TurnID 过滤，收到目标结果后可关闭观察流；Close 或订阅 context 取消都不停止执行。
+超出历史的游标报错，读取故障不能冒充 EOF。
 
-`turn_ended` 不关闭订阅，后续快照、其他轮次继续可见。只有 `session_ended` 后 EOF；游标已确认它时直接 EOF。
-工作流/定时调用方按 TurnID 过滤，收到目标 turn 终态后主动 Close 观察流，不等待 session EOF。
-关闭观察流或其 context 不取消执行；超出历史的游标报错，读取故障不能冒充 EOF。
-最终可见回答、停止原因、失败码、用量分别保存，thought/tool 输出不拼入 Answer。
+## Cancel、End 与重启
 
-## 停止、释放与恢复
+- 有项目的 Agent：`Cancel(ref)` 通过固定 Node 的停止命令结束整个活动会话，等待停止确认并保存真实终态；
+  后续 Append 返回 `ErrSessionEnded`，页面提示新开对话。不重放历史，不悄悄另起 Agent 冒充原会话。
+- 无项目模型直连：`Cancel(ref)` 只停止本轮 provider 请求，确认后会话仍可 Append。
+- 对已终态的 turn 重复 Cancel 返回实际结果，不误停之后的轮次；与自然完成竞争时也返回实际结果，
+  不能把发出 Cancel 请求本身当成 cancelled 的证明。
+- `End(sessionID)` 结束会话，停止活动轮次并等待确认；成功后不能 Append。重复 End 幂等，历史和目录保留。
+  它只影响这个 session，不能停止同项目 Node 上的其他会话。
+- 超时或 `ErrStopUnconfirmed` 不代表停止成功，调用方通过记录或事件读取实际状态。
+  定时任务和工作流用完 session 后主动 End，不用订阅 EOF 代替停止确认。
+- 后端重启先结束旧活 session，写入 EndedAt/session_ended，将未结束 turn 标为 interrupted/turn_ended，
+  再对外提供服务。不自动重放 prompt，不恢复旧会话；旧会话 Append 返回 `ErrSessionEnded`，历史仍可读。
 
-固定 Node 的活 session 在两轮之间仍持有 Workspace。自然完成的 turn 可以先发布结果，
-其他 session 的 Start 仍为 Busy；只有原 session 可以在空闲轮次间 Append。turn_ended 不证明目录已释放。
+首版只在 Linux/WSL 使用固定 Node 的完全访问模式，由 Node/Agent 管理权限；没有页面权限回应接口。
+附件、动态插件和模型热切换不在首版支持范围。页面拥有标题、排序、删除、业务队列及 HTTP/SSE，
+公共层负责执行和记录。
 
-取消正在运行的 Node turn 会结束整个 Agent session（固定 Node 无仅取消一轮的命令），
-Cancel 等停止、终态写入及清理确认后返回并释放目录。已终结的 turn 再 Cancel 为幂等只读，
-不停止它后来继续 Append 的轮次；自然完成竞争时返回实际结果，调用方仍主动 End 确认资源收尾。
-无项目 Cancel 只停止本轮 provider 请求，会话可继续 Append，不占目录。
-超时或 `ErrStopUnconfirmed` 都不能表示目录已释放，也不能据此派发后继执行。
-End 等本 session 停止访问目录及清理确认后释放；不能误停后来占用同目录的 session。
-定时任务和工作流收到目标轮次结果后主动 End，不以订阅 EOF 代替停止确认。
-清理失败单独返回，不改写已经持久化的回答或结果。
+## 验证边界
 
-End 后仍可读取 Session、Turns、Attempt 与事件。重启将旧活 session 设置 EndedAt/session_ended，
-活动 turn 写 interrupted/turn_ended，完成后才开放读取；启动前清理残留，清理未确认的 Workspace 不重新接收。
-不恢复旧活会话、不自动重放 prompt；对已结束 session 的 Append 返回 `ErrSessionEnded`。
+callback 替身用于消费方单元测试，不实现调度、幂等、持久化或进程生命周期。
+Cancel callback 的场景由测试明确配置：Agent 的会话结束和模型直连的仅停本轮不能混为同一种行为。
+本包验证文本输入的保真与拒绝，以及未配置替身的不可用结果。
+真实实现需用 PostgreSQL/race 验证重复 attempt、同会话及同 workflow run 的 Busy、Agent Cancel 后拒绝 Append、
+模型直连 Cancel 后可继续 Append、End 与重启后的历史读取，
+并经 M4 跑通真实 Node/Agent + fixture 的一轮对话和工具动作；真实 provider 单独验收。
 
-首版使用固定 Node 的完全访问模式，权限行为由 Node/Agent 管理，不提供页面权限回应接口。
-模型直连不提供工具。
-附件、动态插件、模型热切换、任意仓库导入和新建 worktree 不由本草案宣称已支持。
-页面拥有标题、排序、删除、业务队列及自己的 HTTP/SSE；公共层拥有运行和记录。
-
-## 测试边界
-
-callback 替身用于消费方测试，不实现调度、幂等、回放、持久化或进程生命周期。
-本包测试直接验证文本输入的保真与拒绝，以及未配置替身的不可用结果。
-上述运行约定必须由真实 runtime、PostgreSQL/race 与 Node+Agent+fixture 测试兑现；真实 provider 单独验收。
-
-固定 Node（desktop `cab59a3c`）的 IPC history 在 256 KiB 截断，visible_text 在 64 KiB 截断。
-完整结果需只读其本地 sessions JSONL，按历史位置去重/排序、验证指定 turnEnded 和完整性后入库，
-落库成功才 ACK 对应 Node 事件；此读取不能写 Node SQLite 或修改 Node 的历史文件。
-历史快照和完整结果的丢失/超限路径、跨阈值回答在 End/重启后的 PostgreSQL 读取都必须有直接测试。
+固定 Node 的 IPC history 在 256 KiB 截断，visible_text 在 64 KiB 截断。完整结果从本地 sessions JSONL 只读恢复，
+按历史位置去重、排序并核对指定 turnEnded，持久化成功后再 ACK。不能修改 Node SQLite 或历史文件。
+超过截断阈值的回答必须在 End 和重启后从 PostgreSQL 逐字读回，丢失和超限都不能报告完整成功。

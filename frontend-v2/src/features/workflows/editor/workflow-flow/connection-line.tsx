@@ -6,7 +6,7 @@ import {
 import {
   WORKFLOW_NODE_ANCHOR_Y,
   WORKFLOW_NODE_WIDTH,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 import { useWorkflowConnectionState } from "./use-connection-state";
 
 /** Uses the same soft curve for a connection preview as for a committed edge. */

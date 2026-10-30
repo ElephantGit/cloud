@@ -9,18 +9,16 @@ import (
 	"time"
 )
 
-// Stable errors let consumers distinguish admission failures from an admitted turn's result.
+// Stable errors distinguish a rejected call from an accepted turn's result.
 var (
-	ErrUnavailable      = errors.New("execution unavailable")
-	ErrNotFound         = errors.New("execution not found")
-	ErrInvalidRequest   = errors.New("invalid execution request")
-	ErrWorkspaceBusy    = errors.New("workspace busy")
-	ErrConflict         = errors.New("execution identity conflict")
-	ErrUnsupported      = errors.New("execution capability unsupported")
-	ErrStopUnconfirmed  = errors.New("execution stop not confirmed")
-	ErrSessionEnded     = errors.New("execution session ended")
-	ErrAdmissionUnknown = errors.New("execution admission outcome unknown")
-	ErrAdmissionClosed  = errors.New("execution admission closed")
+	ErrUnavailable     = errors.New("execution unavailable")
+	ErrNotFound        = errors.New("execution not found")
+	ErrInvalidRequest  = errors.New("invalid execution request")
+	ErrWorkspaceBusy   = errors.New("workspace busy")
+	ErrConflict        = errors.New("execution identity conflict")
+	ErrUnsupported     = errors.New("execution capability unsupported")
+	ErrStopUnconfirmed = errors.New("execution stop not confirmed")
+	ErrSessionEnded    = errors.New("execution session ended")
 )
 
 // Scope comes from the authenticated page service or persisted schedule owner, never directly
@@ -50,7 +48,7 @@ type Round struct {
 
 // Caller is an immutable attempt identity within Scope. ID is the chat conversation ID,
 // workflow run ID, or schedule occurrence ID, respectively. AttemptID identifies a single
-// prompt admission, including a chat turn. A retry after a terminal turn uses a NEW AttemptID.
+// turn, including a chat turn. An explicit rerun after termination uses a NEW AttemptID.
 // NodeID and Rounds apply only to workflow callers; all fields participate in identity.
 type Caller struct {
 	Kind      CallerKind
@@ -60,12 +58,10 @@ type Caller struct {
 	AttemptID string
 }
 
-// Target selects a prepared project and workspace. ProjectID is required in the first runtime.
-// An empty WorkspaceID selects that project's main workspace; a nonempty ID must belong to it.
-// Workspace provisioning and project lists belong to the shared project service, not each page.
+// Target selects a project. Start creates a conversation directory from its stored repository;
+// workflow callers share one directory within the same run. Callers never select a directory.
 type Target struct {
-	ProjectID   string
-	WorkspaceID string
+	ProjectID string
 }
 
 // StartRequest starts a session with its first turn. ExecutorID references a server-owned
@@ -85,7 +81,7 @@ type AppendRequest struct {
 	Prompt    Prompt
 }
 
-// Ref identifies an admitted turn. SessionID is stable across Append calls; TurnID is not.
+// Ref identifies an accepted turn. SessionID is stable across Append calls; TurnID is not.
 type Ref struct {
 	SessionID string
 	TurnID    string
@@ -118,7 +114,7 @@ type Result struct {
 	Usage json.RawMessage
 }
 
-// Turn is the readable record of one admitted prompt. Result is nil only while running.
+// Turn is the readable record of one accepted prompt. Result is nil only while running.
 type Turn struct {
 	Ref       Ref
 	Caller    Caller
@@ -134,14 +130,17 @@ type Session struct {
 	ID string
 	// Target/Executor are nil only for model-only sessions. Selection snapshots never
 	// change when the configured catalog changes; no credentials are retained here.
-	Target    *Target
-	Executor  *Executor
-	Model     Model
-	CreatedAt time.Time
-	EndedAt   *time.Time
+	Target   *Target
+	Executor *Executor
+	Model    Model
+	// WorkspaceID is a server-generated directory identity, empty for model-only sessions.
+	// Sessions belonging to the same workflow run share this identity.
+	WorkspaceID string
+	CreatedAt   time.Time
+	EndedAt     *time.Time
 }
 
-// TurnPage lists admitted turns in stable admission order. NextCursor is empty at the current
+// TurnPage lists accepted turns in stable creation order. NextCursor is empty at the current
 // end; cursors are opaque and scoped to the session. Events are read separately via Subscribe.
 type TurnPage struct {
 	Items      []Turn
@@ -161,7 +160,7 @@ const (
 // Event is immutable after publication. Sequence starts at 1 and increases without gaps within
 // SessionID. Ref.TurnID is empty outside a turn. History replaces the entire displayed Node
 // projection; it is never appended as ACP chunks. Result is set only on TurnEnded, which does
-// not prove session shutdown or Workspace release. Thought/tool text is not part of Answer.
+// not prove session shutdown. Thought/tool text is not part of Answer.
 type Event struct {
 	Ref        Ref
 	Sequence   uint64
@@ -201,19 +200,16 @@ type Stream interface {
 	Close() error
 }
 
-// Service is the shared execution port. It is a proposed contract, not an available runtime.
-// Start/StartModel/Append return after admission; contexts control admission, not execution.
+// Service is the shared execution port. This package defines the contract, not its runtime.
+// Start/StartModel/Append record a turn under a process-local mutex and a database write before
+// returning its Ref. Their contexts control this call, not the subsequent execution lifetime.
 // Within a scope, repeating an identical caller attempt and request returns the original Ref;
 // changing its target, executor, session or prompt returns ErrConflict without dispatching again.
-// An identity closed by SealAttempt instead returns ErrAdmissionClosed on every admission path.
-// This lookup precedes Busy checks. Admission is atomic across callers for a Workspace, not a
-// project. ErrWorkspaceBusy means not admitted and will never start later; there is no queue.
-// A confirmed rejection cannot admit later. Context errors are conclusive only when admission
-// stopped before commit; admission winning the race returns Ref. An ambiguous commit returns
-// ErrAdmissionUnknown. Retrying the SAME request may admit it if the previous call did not;
-// callers that must not start work use SealAttempt instead. ReadAttempt's ErrNotFound alone
-// cannot settle an overlapping or unknown admission. Never retry uncertainty with a new attempt.
+// ErrWorkspaceBusy means the previous turn in this session or workflow run is still active.
+// Different conversations and workflow runs do not compete for a directory, even in one project.
+// Pages own their queues; this service does not enqueue a rejected request.
 type Service interface {
+	// Start clones a directory for this conversation or reuses this workflow run's directory.
 	Start(context.Context, Scope, StartRequest) (Ref, error)
 	StartModel(context.Context, Scope, ModelStartRequest) (Ref, error)
 	// Append keeps the execution mode/binding; ended sessions return ErrSessionEnded.
@@ -226,45 +222,22 @@ type Service interface {
 
 	// Cancel waits for execution-side confirmation and durable terminal publication. It is
 	// idempotent for terminal turns and returns their actual result, including a racing success.
-	// For an active Node turn it ends the entire Agent session (no turn-only Node cancel),
-	// confirms cleanup, then releases the Workspace. A previously terminal turn is a no-op;
-	// its still-live session continues to hold the Workspace until End. Model-only cancellation
-	// stops the provider request without ending the conversation and holds no Workspace.
-	// A deadline or ErrStopUnconfirmed means stopping is NOT confirmed: consumers must not
-	// publish cancellation or start a replacement attempt on that basis. The stop request may
-	// still complete later; callers reconcile via ReadAttempt or Subscribe.
+	// Cancelling an active Agent turn ends the entire Node session; subsequent Append returns
+	// ErrSessionEnded. It must not replay history or silently replace the Agent to continue it.
+	// Model-only cancellation stops just the current provider call and permits later Append.
+	// A terminal turn is a no-op and cannot stop a later turn. A deadline or ErrStopUnconfirmed
+	// does not confirm stopping; callers observe the actual result through reads/events.
 	Cancel(context.Context, Scope, Ref) (Result, error)
 
-	// End closes only this session, cancelling its active turn and confirming cleanup. It
-	// cannot stop a later session sharing the Workspace. Successful End is idempotent and
-	// keeps history/replay. Cleanup failure cannot rewrite a persisted Result.
-	// A naturally completed turn may publish its Result while its session remains live and
-	// holds the Workspace between turns. Only that owner can Append; another Start stays Busy.
-	// Execution-side quiescence and cleanup precede Workspace release; a stop timeout never
-	// releases it. On restart old live sessions get EndedAt/session_ended and
-	// running turns get interrupted/turn_ended before reads open. Clean residue before admission.
+	// End closes only this session, stopping its active turn and waiting for confirmation.
+	// Successful End is idempotent, keeps history and leaves the directory on disk. It must
+	// not stop other sessions on the same project's Node or rewrite a persisted Result.
+	// Restart ends old live sessions and marks running turns interrupted before serving requests;
+	// it does not replay prompts. Append to any ended session returns ErrSessionEnded.
 	End(context.Context, Scope, string) error
 	ReadSession(context.Context, Scope, string) (Session, error)
 	// ReadTurns accepts a limit from 1 to 100; an empty cursor starts at the first turn.
 	ReadTurns(ctx context.Context, scope Scope, sessionID, cursor string, limit int) (TurnPage, error)
-	// ReadAttempt is a pure lookup of admitted turns. ErrNotFound is not proof that an
-	// overlapping/unknown request was never admitted, even after the caller restarts.
+	// ReadAttempt looks up a recorded turn by its complete caller identity without dispatching.
 	ReadAttempt(context.Context, Scope, Caller) (Turn, error)
-
-	// SealAttempt resolves admission without submitting a prompt or dispatching work. It
-	// serializes with Start, StartModel and Append using Scope and the complete Caller identity.
-	// If admission already committed, it returns AdmissionAccepted and the original Ref,
-	// without cancelling or changing that execution; ReadAttempt reads its latest result.
-	// Otherwise it durably closes admission for this identity before returning
-	// AdmissionNotAdmitted. Every overlapping or later admission of that identity must then
-	// return ErrAdmissionClosed. Closing an absent identity creates no Session, Turn or
-	// Workspace reservation. The closure survives restart and cannot expire into acceptance.
-	//
-	// This is a storage mutation, not a read-only query. Only a confirmed transaction outcome
-	// permits a successful resolution. Unknown commits, unfinished lock waits/cancellation and
-	// unavailable recovery barriers return errors (including ErrAdmissionUnknown/context errors); callers
-	// retain their unknown occupancy and may retry SealAttempt with the same identity. They
-	// must never interpret an error or zero-value resolution as proof of non-admission.
-	// Scope authorization and startup recovery gates are the same as for other operations.
-	SealAttempt(context.Context, Scope, Caller) (AdmissionResolution, error)
 }

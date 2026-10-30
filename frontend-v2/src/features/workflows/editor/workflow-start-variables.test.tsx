@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { WorkflowInputVariable } from "../mock";
-import { appI18n } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+import type { WorkflowInputVariable } from "@/lib/workflows/mock";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowStartVariables } from "./workflow-start-variables";
 
 /** The agent-authored declaration from the reported defect: JSON control, object type, array value. */

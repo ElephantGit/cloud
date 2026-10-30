@@ -9,11 +9,13 @@ import type { InstalledPlugin, Skill } from "../contracts";
 export interface DemoRole {
   id: string;
   name: string;
+  /** Shown under the role in a run's Agent configuration. */
+  description?: string;
 }
 
 export const demoRoles: DemoRole[] = [
-  { id: "role-reviewer", name: "代码审查" },
-  { id: "role-writer", name: "技术写作" },
+  { id: "role-reviewer", name: "代码审查", description: "检查改动的正确性、风险和测试覆盖" },
+  { id: "role-writer", name: "技术写作", description: "把结论整理成清楚的说明文档" },
 ];
 
 export const demoSkills: Skill[] = [

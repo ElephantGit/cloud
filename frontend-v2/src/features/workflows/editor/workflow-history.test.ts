@@ -1,5 +1,5 @@
 import type { Edge } from "@xyflow/react";
-import type { DemoWorkflow } from "../mock";
+import type { DemoWorkflow } from "@/lib/workflows/mock";
 import { describe, expect, it } from "vitest";
 import {
   captureWorkflowHistorySnapshot,

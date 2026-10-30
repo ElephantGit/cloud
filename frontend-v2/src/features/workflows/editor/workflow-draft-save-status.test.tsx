@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ComponentProps } from "react";
-import { AppI18nProvider } from "../test/i18n";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowDraftSaveStatusLabel } from "./workflow-draft-save-status";
 
 /** Renders the save-status label under the same i18n provider the editor uses. */

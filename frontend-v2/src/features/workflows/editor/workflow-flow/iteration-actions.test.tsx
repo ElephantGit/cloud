@@ -6,9 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMockWorkflowCapabilities,
   type WorkflowNodeData,
-} from "../../mock";
-import { AppI18nProvider } from "../../test/i18n";
-import { appI18n } from "../../test/i18n-instance";
+} from "@/lib/workflows/mock";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
 import {
   IterationInsertMenu,
   WorkflowIterationActionsProvider,

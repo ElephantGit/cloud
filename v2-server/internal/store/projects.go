@@ -23,6 +23,7 @@ type Project struct {
 }
 
 // CreateProject retains a prepared project after verifying current tenant membership.
+// Its ID must be a server-generated random identity, never a caller-selected ID.
 func (s *Store) CreateProject(ctx context.Context, scope execution.Scope, project Project) (Project, error) {
 	if err := s.CheckExecutionScope(ctx, scope); err != nil {
 		return Project{}, err
@@ -52,7 +53,7 @@ func (s *Store) GetProject(ctx context.Context, scope execution.Scope, id string
 		return Project{}, err
 	}
 	var raw []byte
-	if err := s.pool.QueryRow(ctx, `SELECT data FROM v2_projects WHERE id=$1 AND tenant_id::text=$2`, id, scope.TenantID).Scan(&raw); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT data FROM v2_projects WHERE id=$1 AND tenant_id=$2::uuid`, id, scope.TenantID).Scan(&raw); err != nil {
 		return Project{}, executionError(err)
 	}
 	var project Project
@@ -65,7 +66,7 @@ func (s *Store) ListProjects(ctx context.Context, scope execution.Scope) ([]Proj
 	if err := s.CheckExecutionScope(ctx, scope); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT data FROM v2_projects WHERE tenant_id::text=$1 ORDER BY data->>'Name',id`, scope.TenantID)
+	rows, err := s.pool.Query(ctx, `SELECT data FROM v2_projects WHERE tenant_id=$1::uuid ORDER BY data->>'Name',id`, scope.TenantID)
 	if err != nil {
 		return nil, err
 	}

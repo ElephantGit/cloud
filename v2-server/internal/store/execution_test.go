@@ -171,7 +171,7 @@ func TestExecutionReopenRecoveryAndPagination(t *testing.T) {
 		want   execution.Result
 	}{
 		{first.Caller, want}, {completed.Caller, kept},
-		{live.Caller, execution.Result{Status: execution.StatusInterrupted, Answer: "部分🙂", StopReason: "interrupted", FailureCode: "server_restarted"}},
+		{live.Caller, execution.Result{Status: execution.StatusInterrupted, Answer: "部分🙂", FailureCode: "server_restarted"}},
 	} {
 		turn, err := f.s.ReadExecutionAttempt(ctx, f.scope, tc.caller)
 		if err != nil || turn.Result == nil || !reflect.DeepEqual(*turn.Result, tc.want) || turn.EndedAt == nil || turn.StartedAt.IsZero() {
@@ -348,5 +348,58 @@ func TestExecutionConcurrentEventsAndTerminalResult(t *testing.T) {
 	var counters map[string]int
 	if err != nil || got.Result == nil || json.Unmarshal(got.Result.Usage, &counters) != nil || counters["totalTokens"] != 5 || got.Result.Answer != "🙂" {
 		t.Fatalf("usage round trip=%+v err=%v", got, err)
+	}
+}
+
+func TestExecutionAppendDistinguishesBusyFromCallerConflict(t *testing.T) {
+	f := executionDatabase(t)
+	ctx := t.Context()
+	first := executionTurn("busy", "first")
+	createExecution(t, f, "busy", first)
+	second := executionTurn("busy", "second")
+	if err := f.s.AppendExecutionTurn(ctx, f.scope, "busy", second); !errors.Is(err, execution.ErrWorkspaceBusy) {
+		t.Fatalf("append during active turn=%v", err)
+	}
+	finishExecution(t, f, first, "done")
+	duplicate := second
+	duplicate.Caller = first.Caller
+	if err := f.s.AppendExecutionTurn(ctx, f.scope, "busy", duplicate); !errors.Is(err, execution.ErrConflict) {
+		t.Fatalf("caller identity conflict=%v", err)
+	}
+	if err := f.s.AppendExecutionTurn(ctx, f.scope, "busy", second); err != nil {
+		t.Fatalf("append after first turn ended=%v", err)
+	}
+	page, err := f.s.ReadExecutionTurns(ctx, f.scope, "busy", "", 10)
+	if err != nil || len(page.Items) != 2 || page.Items[0].Ref != first.Ref || page.Items[1].Ref != second.Ref {
+		t.Fatalf("failed admissions left turns: %+v err=%v", page, err)
+	}
+}
+
+func TestExecutionEventsReadWhileWriterOwnsSessionLock(t *testing.T) {
+	f := executionDatabase(t)
+	ctx := t.Context()
+	turn := executionTurn("read", "turn")
+	createExecution(t, f, "read", turn)
+	if _, err := f.s.AppendExecutionEvent(ctx, f.scope, execution.Event{Ref: turn.Ref, Kind: execution.EventTextDelta, TextDelta: "committed"}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := f.admin.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	// Hold a real writer lock and an uncommitted counter change throughout the read.
+	// The timeout only bounds a regression that would wait for this lock forever.
+	if _, err := tx.Exec(ctx, `UPDATE v2_execution_sessions SET event_sequence=event_sequence+1 WHERE id='read'`); err != nil {
+		t.Fatal(err)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	events, err := f.s.ReadExecutionEvents(readCtx, f.scope, "read", 0, 10)
+	if err != nil || len(events) != 1 || events[0].Sequence != 1 || events[0].TextDelta != "committed" {
+		t.Fatalf("read waited for writer or observed uncommitted event: %+v err=%v", events, err)
+	}
+	if _, err := f.s.ReadExecutionEvents(readCtx, f.scope, "read", 2, 10); !errors.Is(err, execution.ErrInvalidRequest) {
+		t.Fatalf("accepted uncommitted cursor: %v", err)
 	}
 }

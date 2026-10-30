@@ -51,11 +51,12 @@ describe('chat page', () => {
     expect(screen.getByRole('button', { name: '选择启动模式' })).toHaveTextContent('云端')
   })
 
-  it('puts the cursor in the input when a project\'s + opens the chat it already shows', async () => {
+  it('puts the cursor in the input when a project\'s + menu opens the chat it already shows', async () => {
     await renderReady()
     const input = screen.getByRole('textbox', { name: '消息' })
     expect(input).not.toHaveFocus()
     await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '新建对话' }))
     expect(input).toHaveFocus()
   })
 
@@ -95,8 +96,9 @@ describe('chat page', () => {
   it('starts a conversation in a project with a text prompt, and shows the Agent\'s reply', async () => {
     await renderReady()
     await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/desktop 新建对话' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '新建对话' }))
     expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/desktop')
-    // Even when the new chat already shows, the + puts the cursor in its input.
+    // Even when the new chat already shows, 新建对话 in the + menu puts the cursor in its input.
     expect(screen.getByRole('textbox', { name: '消息' })).toHaveFocus()
     // The first version sends text only: no files or plugins.
     expect(screen.queryByRole('button', { name: '添加' })).not.toBeInTheDocument()

@@ -170,3 +170,13 @@ it('reports a version conflict when another change lands first', async () => {
   expect(await within(edit).findByRole('alert')).toHaveTextContent('小队已被其他人修改，请关闭后重新打开。')
   expect(within(edit).getByLabelText('小队名称')).toHaveValue('我的修改')
 })
+
+it('tells an archived squad apart from a version conflict', async () => {
+  vi.mocked(api.archiveSquad).mockRejectedValue({ isAxiosError: true, response: { status: 409, data: { code: 'squad_archived' } } })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '查看产品小队' }))
+  const dialog = await screen.findByRole('dialog')
+  await userEvent.click(within(dialog).getByRole('button', { name: '归档' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '确认归档' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('这个小队已归档，不能再修改。')
+})

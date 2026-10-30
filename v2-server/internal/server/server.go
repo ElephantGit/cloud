@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
@@ -34,6 +35,10 @@ type Options struct {
 	SessionTTL time.Duration
 	// DemoUser is the identity the development login signs in as.
 	DemoUser store.Identity
+	// Execution is the shared backend for page-owned conversations and runs.
+	Execution execution.Service
+	// Catalog exposes the executable Agent/model choices from that backend.
+	Catalog execution.Catalog
 }
 
 // New returns the handler for every route v2-server serves.

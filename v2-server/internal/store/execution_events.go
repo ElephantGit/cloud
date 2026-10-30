@@ -17,7 +17,7 @@ func (s *Store) ReadExecutionCursor(ctx context.Context, scope execution.Scope, 
 		return 0, err
 	}
 	var sequence uint64
-	err := s.pool.QueryRow(ctx, `SELECT event_sequence FROM v2_execution_sessions WHERE id=$1 AND tenant_id::text=$2 AND user_id::text=$3`, sid, scope.TenantID, scope.UserID).Scan(&sequence)
+	err := s.pool.QueryRow(ctx, `SELECT event_sequence FROM v2_execution_sessions WHERE id=$1 AND tenant_id=$2::uuid AND user_id=$3::uuid`, sid, scope.TenantID, scope.UserID).Scan(&sequence)
 	return sequence, executionError(err)
 }
 
@@ -28,9 +28,14 @@ func (s *Store) ReadExecutionEvents(ctx context.Context, scope execution.Scope, 
 	if after > math.MaxInt64 || limit < 1 || limit > 1000 {
 		return nil, execution.ErrInvalidRequest
 	}
-	err := s.executionSessionTransaction(ctx, scope, sid, func(tx pgx.Tx, _ execution.Session) error {
+	// A read-only snapshot keeps cursor validation and event rows consistent without
+	// taking the session lock needed by writers and terminal result commits.
+	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		if err := checkExecutionScope(ctx, tx, scope); err != nil {
+			return err
+		}
 		var current uint64
-		if err := tx.QueryRow(ctx, `SELECT event_sequence FROM v2_execution_sessions WHERE id=$1`, sid).Scan(&current); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT event_sequence FROM v2_execution_sessions WHERE id=$1 AND tenant_id=$2::uuid AND user_id=$3::uuid`, sid, scope.TenantID, scope.UserID).Scan(&current); err != nil {
 			return err
 		}
 		if after > current {
@@ -55,16 +60,17 @@ func (s *Store) ReadExecutionEvents(ctx context.Context, scope execution.Scope, 
 		}
 		return rows.Err()
 	})
-	return events, err
+	return events, executionError(err)
 }
 
 // AppendExecutionEvent retains a nonterminal event, assigning its gap-free session sequence.
 // Terminal events must use FinishExecutionTurn/EndExecutionSession to update state atomically.
+// This runtime write checks admitted ownership, even when current membership has been revoked.
 func (s *Store) AppendExecutionEvent(ctx context.Context, scope execution.Scope, event execution.Event) (execution.Event, error) {
 	if event.Result != nil || (event.Kind != execution.EventTextDelta && event.Kind != execution.EventHistorySnapshot) {
 		return execution.Event{}, execution.ErrInvalidRequest
 	}
-	err := s.executionSessionTransaction(ctx, scope, event.Ref.SessionID, func(tx pgx.Tx, session execution.Session) error {
+	err := s.executionRuntimeTransaction(ctx, scope, event.Ref.SessionID, func(tx pgx.Tx, session execution.Session) error {
 		if session.EndedAt != nil {
 			return execution.ErrSessionEnded
 		}
@@ -116,9 +122,10 @@ func insertExecutionEvent(ctx context.Context, tx pgx.Tx, event execution.Event)
 
 // FinishExecutionTurn commits a result and its terminal event together. The first terminal
 // result wins; cancellation or cleanup racing a completed result cannot rewrite it.
+// This runtime write checks admitted ownership, even when current membership has been revoked.
 func (s *Store) FinishExecutionTurn(ctx context.Context, scope execution.Scope, ref execution.Ref, result execution.Result) (execution.Result, error) {
 	var actual execution.Result
-	err := s.executionSessionTransaction(ctx, scope, ref.SessionID, func(tx pgx.Tx, _ execution.Session) error {
+	err := s.executionRuntimeTransaction(ctx, scope, ref.SessionID, func(tx pgx.Tx, _ execution.Session) error {
 		var err error
 		actual, err = finishExecutionTurn(ctx, tx, ref, result)
 		return err
@@ -162,8 +169,9 @@ func finishExecutionTurn(ctx context.Context, tx pgx.Tx, ref execution.Ref, resu
 
 // EndExecutionSession marks a quiescent session ended and retains its final event once.
 // The runtime must stop and finish active work first; SQL never claims execution has stopped.
+// This runtime write checks admitted ownership, even when current membership has been revoked.
 func (s *Store) EndExecutionSession(ctx context.Context, scope execution.Scope, sid string) error {
-	return s.executionSessionTransaction(ctx, scope, sid, func(tx pgx.Tx, session execution.Session) error {
+	return s.executionRuntimeTransaction(ctx, scope, sid, func(tx pgx.Tx, session execution.Session) error {
 		return endExecutionSession(ctx, tx, session)
 	})
 }
@@ -233,7 +241,8 @@ func (s *Store) RecoverExecutions(ctx context.Context) error {
 				if err := tx.QueryRow(ctx, `SELECT COALESCE(string_agg(data->>'TextDelta','' ORDER BY sequence),'') FROM v2_execution_events WHERE session_id=$1 AND data->>'Kind'='text_delta' AND data#>>'{Ref,TurnID}'=$2`, session.ID, tid).Scan(&partial); err != nil {
 					return err
 				}
-				result := execution.Result{Status: execution.StatusInterrupted, Answer: partial, StopReason: "interrupted", FailureCode: "server_restarted"}
+				// A server restart supplies no protocol stop reason.
+				result := execution.Result{Status: execution.StatusInterrupted, Answer: partial, FailureCode: "server_restarted"}
 				if _, err := finishExecutionTurn(ctx, tx, execution.Ref{SessionID: session.ID, TurnID: tid}, result); err != nil {
 					return err
 				}

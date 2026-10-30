@@ -21,7 +21,7 @@ import (
 
 type modelFixture struct {
 	records  *store.Store
-	adapter  *ModelAdapter
+	adapter  *ConversationAdapter
 	executor *executiontest.Stub
 	scope    execution.Scope
 	occ      store.Occurrence
@@ -29,6 +29,12 @@ type modelFixture struct {
 }
 
 func newModelFixture(t *testing.T, model string) *modelFixture {
+	t.Helper()
+	target, _ := json.Marshal(map[string]string{"kind": "chat", "prompt": "frozen prompt", "agent": "", "model": model})
+	return newConversationFixture(t, "", target)
+}
+
+func newConversationFixture(t *testing.T, project string, target json.RawMessage) *modelFixture {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -70,8 +76,7 @@ func newModelFixture(t *testing.T, model string) *modelFixture {
 		t.Fatal(err)
 	}
 	scope := execution.Scope{TenantID: tenants[0].ID, UserID: u.ID}
-	target, _ := json.Marshal(map[string]string{"kind": "chat", "prompt": "frozen prompt", "agent": "", "model": model})
-	saved, err := records.CreateScheduleConfig(ctx, scope.TenantID, scope.UserID, store.ScheduleInput{Name: "task", Target: target, Rule: json.RawMessage(`{"kind":"hours","hours":1,"timezone":"UTC"}`)})
+	saved, err := records.CreateScheduleConfig(ctx, scope.TenantID, scope.UserID, store.ScheduleInput{Name: "task", ProjectID: project, Target: target, Rule: json.RawMessage(`{"kind":"hours","hours":1,"timezone":"UTC"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +86,7 @@ func newModelFixture(t *testing.T, model string) *modelFixture {
 		t.Fatal(err)
 	}
 	executor := &executiontest.Stub{}
-	adapter, err := NewModelAdapter(records, executor)
+	adapter, err := NewConversationAdapter(records, executor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +389,7 @@ func TestModelLocalRejectionSurvivesCancellationAfterReservation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	records := &cancelAfterBeginRecords{RecordStore: f.records, cancel: cancel}
-	adapter, err := NewModelAdapter(records, f.executor)
+	adapter, err := NewConversationAdapter(records, f.executor)
 	if err != nil {
 		t.Fatal(err)
 	}

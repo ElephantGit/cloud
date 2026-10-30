@@ -12,42 +12,42 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
-// RecordStore is the durable occurrence state consumed by ModelAdapter.
+// RecordStore is the durable occurrence state consumed by ConversationAdapter.
 type RecordStore interface {
 	GetOccurrence(context.Context, string, string, string) (store.Occurrence, error)
 	ApplyOccurrenceEvidence(context.Context, string, string, string, int64, store.ExecutionEvidence) (store.Occurrence, error)
 }
 
-// ModelAdapter connects immutable schedule occurrences to the shared model-only interface.
+// ConversationAdapter routes immutable chat occurrences to shared model or Agent execution.
 // It owns no provider, execution history, polling goroutine, or automatic retry queue.
-type ModelAdapter struct {
+type ConversationAdapter struct {
 	records  RecordStore
 	executor execution.Service
 }
 
-// NewModelAdapter requires explicit dependencies; an unconfigured execution Stub remains unavailable.
-func NewModelAdapter(records RecordStore, executor execution.Service) (*ModelAdapter, error) {
+// NewConversationAdapter requires explicit dependencies; an unconfigured execution Stub remains unavailable.
+func NewConversationAdapter(records RecordStore, executor execution.Service) (*ConversationAdapter, error) {
 	if records == nil || executor == nil {
-		return nil, errors.New("schedule model adapter requires records and execution")
+		return nil, errors.New("schedule conversation adapter requires records and execution")
 	}
-	return &ModelAdapter{records: records, executor: executor}, nil
+	return &ConversationAdapter{records: records, executor: executor}, nil
 }
 
 func occurrenceCaller(o store.Occurrence) execution.Caller {
 	return execution.Caller{Kind: execution.CallerSchedule, ID: o.ID, AttemptID: o.ID}
 }
 
-func (a *ModelAdapter) get(ctx context.Context, scope execution.Scope, id string) (store.Occurrence, error) {
+func (a *ConversationAdapter) get(ctx context.Context, scope execution.Scope, id string) (store.Occurrence, error) {
 	return a.records.GetOccurrence(ctx, scope.TenantID, scope.UserID, id)
 }
 
-func (a *ModelAdapter) apply(ctx context.Context, scope execution.Scope, o store.Occurrence, event, ref, reason string) (store.Occurrence, error) {
+func (a *ConversationAdapter) apply(ctx context.Context, scope execution.Scope, o store.Occurrence, event, ref, reason string) (store.Occurrence, error) {
 	return a.records.ApplyOccurrenceEvidence(ctx, scope.TenantID, scope.UserID, o.ID, o.Version, store.ExecutionEvidence{Event: event, Ref: ref, Reason: reason})
 }
 
-// Dispatch reserves a recorded occurrence before issuing exactly one StartModel call.
+// Dispatch reserves a recorded occurrence before issuing one StartModel or Start call.
 // Duplicate dispatch attempts never issue a second admission, even after an ambiguous outcome.
-func (a *ModelAdapter) Dispatch(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+func (a *ConversationAdapter) Dispatch(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err
@@ -62,14 +62,26 @@ func (a *ModelAdapter) Dispatch(ctx context.Context, scope execution.Scope, occu
 	if o.Status != "starting" {
 		return nil
 	}
-	request, code := modelRequest(o)
+	var snapshot store.ScheduleConfig
+	_ = json.Unmarshal(o.Snapshot, &snapshot) // The request builders reject malformed snapshots.
+	var start func(context.Context) (execution.Ref, error)
+	var code string
+	if snapshot.ProjectID == "" {
+		var request execution.ModelStartRequest
+		request, code = modelRequest(o)
+		start = func(ctx context.Context) (execution.Ref, error) { return a.executor.StartModel(ctx, scope, request) }
+	} else {
+		var request execution.StartRequest
+		request, code = agentRequest(o)
+		start = func(ctx context.Context) (execution.Ref, error) { return a.executor.Start(ctx, scope, request) }
+	}
 	if code != "" {
 		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_, err = a.apply(writeCtx, scope, o, "rejected", "", code)
 		return err
 	}
-	ref, startErr := a.executor.StartModel(ctx, scope, request)
+	ref, startErr := start(ctx)
 	// Admission may win just before the request context ends. Persist the result with a
 	// bounded independent context; otherwise a cancelled observer could lose the binding.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -104,18 +116,42 @@ func modelRequest(o store.Occurrence) (execution.ModelStartRequest, string) {
 	if json.Unmarshal(o.Snapshot, &config) != nil {
 		return execution.ModelStartRequest{}, "invalid_snapshot"
 	}
-	var target struct{ Kind, Prompt, Model string }
+	var target struct{ Kind, Prompt, Model, ExecutorID string }
 	if json.Unmarshal(config.Target, &target) != nil || target.Kind != "chat" || config.ProjectID != "" {
 		return execution.ModelStartRequest{}, "unsupported_schedule_target"
 	}
 	if strings.TrimSpace(target.Model) == "" {
 		return execution.ModelStartRequest{}, "model_required"
 	}
+	if target.ExecutorID != "" {
+		return execution.ModelStartRequest{}, "project_required"
+	}
 	prompt := execution.TextPrompt(target.Prompt)
 	if _, err := prompt.Text(); err != nil {
 		return execution.ModelStartRequest{}, "invalid_prompt"
 	}
 	return execution.ModelStartRequest{Caller: occurrenceCaller(o), ModelID: target.Model, Prompt: prompt}, ""
+}
+
+// agentRequest requires a catalog executor ID, never a guessed binding of display names.
+// The shared service authorizes the selected project and resolves its main Workspace.
+func agentRequest(o store.Occurrence) (execution.StartRequest, string) {
+	var config store.ScheduleConfig
+	if json.Unmarshal(o.Snapshot, &config) != nil {
+		return execution.StartRequest{}, "invalid_snapshot"
+	}
+	var target struct{ Kind, Prompt, ExecutorID string }
+	if json.Unmarshal(config.Target, &target) != nil || target.Kind != "chat" || strings.TrimSpace(config.ProjectID) == "" {
+		return execution.StartRequest{}, "unsupported_schedule_target"
+	}
+	if strings.TrimSpace(target.ExecutorID) == "" {
+		return execution.StartRequest{}, "executor_required"
+	}
+	prompt := execution.TextPrompt(target.Prompt)
+	if _, err := prompt.Text(); err != nil {
+		return execution.StartRequest{}, "invalid_prompt"
+	}
+	return execution.StartRequest{Caller: occurrenceCaller(o), Target: execution.Target{ProjectID: config.ProjectID}, ExecutorID: target.ExecutorID, Prompt: prompt}, ""
 }
 
 func admissionFailure(err error) (string, string) {
@@ -155,7 +191,7 @@ func isResult(status string) bool {
 
 // Reconcile reads the original caller identity only. NotFound never proves non-admission.
 // A terminal result still requires End confirmation before the task's slot is released.
-func (a *ModelAdapter) Reconcile(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+func (a *ConversationAdapter) Reconcile(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err
@@ -212,7 +248,7 @@ func resultEvent(r execution.Result) (string, string, error) {
 	}
 }
 
-func (a *ModelAdapter) finish(ctx context.Context, scope execution.Scope, previous store.Occurrence, ref execution.Ref, result execution.Result) error {
+func (a *ConversationAdapter) finish(ctx context.Context, scope execution.Scope, previous store.Occurrence, ref execution.Ref, result execution.Result) error {
 	event, reason, err := resultEvent(result)
 	if err != nil {
 		return err
@@ -235,7 +271,7 @@ func (a *ModelAdapter) finish(ctx context.Context, scope execution.Scope, previo
 	return a.end(ctx, scope, o)
 }
 
-func (a *ModelAdapter) end(ctx context.Context, scope execution.Scope, o store.Occurrence) error {
+func (a *ConversationAdapter) end(ctx context.Context, scope execution.Scope, o store.Occurrence) error {
 	if o.Released {
 		return nil
 	}
@@ -263,7 +299,7 @@ func (a *ModelAdapter) end(ctx context.Context, scope execution.Scope, o store.O
 
 // Cancel retains the slot until both a terminal result and session cleanup are confirmed.
 // Unknown admission has no cancellable Ref: the caller must reconcile it, never replace it.
-func (a *ModelAdapter) Cancel(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
+func (a *ConversationAdapter) Cancel(ctx context.Context, scope execution.Scope, occurrence store.Occurrence) error {
 	o, err := a.get(ctx, scope, occurrence.ID)
 	if err != nil {
 		return err

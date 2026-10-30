@@ -19,11 +19,17 @@
 
 `Cancel(scope, occurrenceID)` 先经记录模块按当前身份读取，再交给执行适配；客户端不能直接传任意公共执行引用。取消请求/超时不构成停止或释放证明。
 
-## 无项目适配
+## 对话执行适配
 
-`ModelAdapter` 使用公共 `execution.Service`，不是新的 provider 或 Session/Turn 实现。它从冻结配置读无项目文本目标与模型 ID，以 occurrence ID 作为公共 Caller 的 ID 和 AttemptID；模型为空或目标不受支持时明确拒绝，不能从样例目录猜测绑定。
+`ConversationAdapter` 使用公共 `execution.Service`，不是新的 provider 或 Session/Turn 实现。从冻结配置读取执行目标，以 occurrence ID 作为公共 Caller 的 ID 和 AttemptID：
 
-已接收的执行结果通过公共记录读取。成功必须满足 `AnswerComplete`；完整性不足不能标 succeeded。结果写入定时领域状态后仍需 End 确认会话结束，之后才释放同任务占位。重启/接收未知只读原执行记录，一次 NotFound 不能证明原请求从未接收，也不应借此再 Start。
+- 无项目文本对话使用 `StartModel` 与明确的模型 ID，不创建 Agent 或 Workspace；不能同时携带项目执行器 ID。
+- 有项目文本对话使用 `Start`，传入冻结的 projectId 和 target.executorId（公共目录里的执行器绑定 ID），WorkspaceID 留空，由公共服务选择并授权该项目主 Workspace。执行器名称、agent/model 展示文字不能替代绑定 ID。
+- 任一路的接收错误都不会降级到另一路；缺少绑定、空提示词及工作流目标明确拒绝。工作流必须经自己的运行入口，不能在这里当作 Agent 对话运行。
+
+当前 HTTP 配置接口仍只允许无项目文本对话，项目/执行器目录尚未装配。上述有项目消费适配只供进程内集成，不表示用户界面已开放项目选择或能执行真实 Agent。
+
+两路共用结果、取消与释放流程。已接收的执行结果通过公共记录读取。成功必须满足 `AnswerComplete`；完整性不足不能标 succeeded。结果写入定时领域状态后仍需 End 确认会话结束，之后才释放同任务占位。重启/接收未知只读原执行记录，一次 NotFound 不能证明原请求从未接收，也不应借此再 Start。只有公共能力给出已终结接收竞态的明确未接收证据才能释放这种占位；当前适配不会推断或自行重发。
 
 ## 验证边界
 

@@ -11,7 +11,7 @@ import (
 
 // Real scheduling persistence and the actual adapter share a fake execution service.
 // This verifies cross-module effects rather than declaring Stub responses to be execution.
-func TestCoordinatorModelAdapterUnknownThroughCleanup(t *testing.T) {
+func TestCoordinatorConversationAdapterUnknownThroughCleanup(t *testing.T) {
 	f := newModelFixture(t, "fixture-model")
 	ctx := context.Background()
 	now := f.occ.ScheduledAt

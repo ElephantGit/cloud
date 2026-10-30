@@ -58,11 +58,11 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 ## 与正式 Cloud 的差异
 
-### 调度编排与无项目消费适配
+### 调度编排与对话消费适配
 
 [`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
 
-ModelAdapter 消费公共 StartModel/ReadAttempt/Cancel/End，不直接调用 provider，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，清理失败不释放占位。无项目配置必须指定真实模型 ID；尚未选择模型时明确拒绝，不猜测默认模型。
+ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId，使用该项目主 Workspace；两路不相互降级。HTTP/前端仍未开放项目绑定，公共项目和执行器目录就绪后才能接入。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，清理失败不释放占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
 
 此包没有接入 main、HTTP 或前端，也不创建后台 goroutine。生产自动扫描和真实派发仍关闭，公共 Service 实现与记录底座就绪后才能装配。测试通过公共 Stub 注入结果，配合实际 PostgreSQL 验证编排行为；这不是模型调用或生产链路验收。
 

@@ -274,7 +274,7 @@ func TestCoordinatorUnknownManualRetryKeepsTimeAndNeverRedispatches(t *testing.T
 	if e == nil {
 		t.Fatal("dispatch error hidden")
 	}
-	// ModelAdapter persists unknown admission before returning that error. This fixture
+	// ConversationAdapter persists unknown admission before returning that error. This fixture
 	// only models dispatch decisions, so install the durable state explicitly here.
 	unknown := f.items[first.ID]
 	unknown.Status, unknown.Released = "admission_unknown", false

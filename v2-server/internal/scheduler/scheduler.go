@@ -38,7 +38,7 @@ type Runner interface {
 }
 
 var _ CoordinatorStore = (*store.Store)(nil)
-var _ Runner = (*ModelAdapter)(nil)
+var _ Runner = (*ConversationAdapter)(nil)
 
 type scheduleCursor struct {
 	version int64

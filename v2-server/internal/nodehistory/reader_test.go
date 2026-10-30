@@ -99,6 +99,8 @@ func TestReaderFailsClosedForMissingCorruptGappedAndOversizedHistory(t *testing.
 		{"gap", []json.RawMessage{meta(), ended(2, "end_turn")}, ErrIncomplete},
 		{"gap_marker", []json.RawMessage{meta(), record(1, "gap", nil), ended(2, "end_turn")}, ErrIncomplete},
 		{"unknown_record", []json.RawMessage{meta(), record(1, "unknown", nil), ended(2, "end_turn")}, ErrDamaged},
+		{"missing_content_type", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"text": "lost answer"}}}), ended(2, "end_turn")}, ErrDamaged},
+		{"null_content", []json.RawMessage{meta(), record(1, "update", map[string]any{"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": nil}}), ended(2, "end_turn")}, ErrDamaged},
 		{"identity", []json.RawMessage{record(0, "meta", map[string]any{"sessionId": "other", "schemaVersion": 2}), update(1, "agent_message_chunk", "wrong"), ended(2, "end_turn")}, ErrIdentity},
 		{"oversized", []json.RawMessage{meta(), update(1, "agent_message_chunk", strings.Repeat("x", maxLineBytes)), ended(2, "end_turn")}, ErrLimit},
 	} {

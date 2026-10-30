@@ -283,7 +283,7 @@ func assistantText(raw json.RawMessage) (*string, error) {
 		Type string  `json:"type"`
 		Text *string `json:"text"`
 	}
-	if json.Unmarshal(update.Content, &content) != nil {
+	if json.Unmarshal(update.Content, &content) != nil || content.Type == "" {
 		return nil, ErrDamaged
 	}
 	if content.Type != "text" {

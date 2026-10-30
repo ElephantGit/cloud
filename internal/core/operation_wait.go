@@ -29,6 +29,8 @@ func deferCloneWait(t *transaction, o Object, code string) bool {
 	require(e != nil, 409, "clone_incomplete")
 	if len(e.O("result")) > 0 {
 		resumeWorkspaceCloneResult(t, o, cloneRecoveryTimeout)
+		// A refused takeover deliberately leaves the known result for the next round;
+		// consume this defer without replacing that result's operation with a timeout.
 		return true
 	}
 	if e.B("resultExpired") {

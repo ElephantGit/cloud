@@ -58,15 +58,25 @@ v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话�
 
 ### 运行工作流
 
-工作流的运行照 desktop 放在对话页里（`workflow-run/`）：项目行 `+` 菜单里的"运行工作流"列出已发布的工作流，选一个后给这次运行起名，创建出一次未开始的运行。运行和会话一起列在项目下面，带状态点；选中后右侧换成运行页，选会话或新建对话就换回来。运行页标题栏有"启动"（先填开始节点的变量和初始提示词）、"停止"、"再跑一次"（新建一次运行，旧的留在列表里）；左边是运行概览图，每个节点显示状态；右边是选中节点的输入、输出和节点对话，运行结束后顶部显示输出节点的结果。Agent 节点的对话只在这里看，不进聊天记录，desktop 也是这样。
+工作流的运行照 desktop 放在对话页里（`workflow-run/`）：项目行 `+` 菜单里的"运行工作流"列出已发布的工作流（顶部有搜索框，列表过长时滚动），选一个后给这次运行起名，创建出一次未开始的运行。运行和会话一起列在项目下面，带状态点；选中后右侧换成运行页，选会话或新建对话就换回来。
+
+运行页和 desktop 一样有两个视图，标题栏切换：
+
+- **舞台**：上方是执行路径，下方一次演一个节点的卡片，跟着正在执行的节点走；并行、条件、循环和迭代各有自己的展示。卡片右上角打开节点详情（Agent 配置、执行时间、成果、失败重试），右下角打开节点会话。运行结束后显示结果卡片。运行中进入运行页、或点"启动"后都先到舞台，Esc 回到全图。
+- **全图**：冻结的整张图，每个节点显示状态；点节点回到舞台并聚焦它。
+
+标题栏还有"启动"（先填开始节点的变量和初始提示词）、"停止"、"再跑一次"（新建一次运行，旧的留在列表里）。Agent 节点的对话只在运行页里看，不进聊天记录，desktop 也是这样。
 
 | 文件 | 来自 desktop `packages/app-shell/src/features/workflow-run` |
 |---|---|
-| `run-overview-*`、`run-status-*`、`run-retry-wait-label.tsx`、`retry-countdown.ts`、`loop-round-state.ts`、`run-focus.ts`、`theater-motion.css` | 同名文件，原样复制 |
+| `run-theater*`、`run-act-*`、`run-overview-*`、`run-status-*`、`run-loop-*`、`run-condition-stage.tsx`、`run-result-act.tsx`、`run-brief-popover.tsx`、`run-hitl-composer.tsx`、`use-theater-hitl.tsx`、`run-path-structure.ts`、`run-focus.ts`、`run-node-completion.ts` 和其余同名小文件 | 同名文件，只改了 import 路径 |
 | `workflow-run-start-dialog.tsx`、`translations.ts` | 同名文件 |
+| `run-node-session-chat.tsx` | 新写：desktop 在这里嵌入完整的聊天视图读取节点的真实会话；演示引擎只有节点的对话记录，改用对话页的消息样式显示它们，不能在里面接着发消息 |
+| `hitl-text-editor.tsx` | 新写：人工介入回答框，用纯文本输入框代替 desktop 的 TipTap 编辑器 |
+| `demo-host.ts` | 新写：Theater 调用的 desktop hook（保存启动输入、回答人工介入、错误提示等），同名同参数，背后是演示引擎 |
 | `run-pane.tsx`、`run-sidebar.tsx`、`demo-runs.ts` | 新写：desktop 的运行页、侧栏行和运行对话框的精简版 |
 
-后端还不能执行工作流，现在由 desktop 的内存运行时（`src/lib/workflows/runtime/memory-workflow-runtime.ts`、`mock-run-engine.ts`）在浏览器里代替：它冻结发布版本的图，按连线每 1.5 秒推进一个节点，条件节点选一条分支，Agent 节点生成演示对话。所以运行页标着"演示运行"。运行只存在当前页面里，刷新后清空。desktop 运行页的剧场视图、人工介入、从失败处恢复、AI 诊断、会话索引和文件变更都没有搬。接入真实执行后，把 `demo-runs.ts` 换成调接口的实现。
+后端还不能执行工作流，现在由 desktop 的内存运行时（`src/lib/workflows/runtime/memory-workflow-runtime.ts`、`mock-run-engine.ts`）在浏览器里代替：它冻结发布版本的图，按连线每 1.5 秒推进一个节点，条件节点选一条分支，Agent 节点生成演示对话和成果。所以运行页标着"演示运行"。运行只存在当前页面里，刷新后清空。人工介入的界面已经搬过来，但编辑器和 desktop 一样不提供人工确认节点，演示里不会出现；从失败处恢复、AI 诊断、会话索引和文件变更评审没有搬。接入真实执行后，把 `demo-runs.ts` 和 `demo-host.ts` 换成调接口的实现。
 
 ## 工作流
 

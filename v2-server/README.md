@@ -69,6 +69,12 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 
 小队与成员关系不授予私人模型、Git 凭据或运行时权限，也不触发 Agent 执行、leader 路由或自动委派。
 
+## 进程内 Agent 执行接口
+
+[`internal/execution`](internal/execution/README.md) 提供公共 Go 接口草案和显式测试替身，
+供页面服务编译和接口评审。当前没有真实执行实现，也未装配到服务启动路径；
+这不表示后端已能运行 Node、Agent 或保存其历史，不新增 HTTP 契约。
+
 ## 与正式 Cloud 的差异
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。

@@ -109,6 +109,11 @@ function ChatPane({ session }: { session?: Session }) {
           </Badge>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {import.meta.env.VITE_CHAT_DEMO === '1' && !local && (
+            <Badge variant="outline" className="text-muted-foreground" title="对话和回复由浏览器里的演示后端生成，不经过 v2-server，也不运行 Agent">
+              演示模式
+            </Badge>
+          )}
           <ContextUsage conversation={conversation} />
           {session && scenario && (
             <Button variant="ghost" size="sm" onClick={() => replay(session.id)}>

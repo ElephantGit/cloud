@@ -87,6 +87,8 @@ async function admit<T>(run: (headers: Record<string, string>) => Promise<T>): P
 export const remote = {
   /** Loads what the page needs; projects come from the Cloud contract, the rest from v2-server. */
   async load(tid: string): Promise<RemoteState> {
+    // `npm run dev:demo` swaps the backend for one that plays scripted replies in the browser.
+    if (import.meta.env.VITE_CHAT_DEMO === '1') (await import('./demo/backend')).installDemoBackend()
     const [executors, conversations, projects, order] = await Promise.all([
       listChatExecutors(tid),
       listChatConversations(tid),

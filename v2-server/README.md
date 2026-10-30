@@ -50,6 +50,12 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
+## 进程内 Agent 执行接口
+
+[`internal/execution`](internal/execution/README.md) 提供公共 Go 接口草案和显式测试替身，
+供页面服务编译和接口评审。当前没有真实执行实现，也未装配到服务启动路径；
+这不表示后端已能运行 Node、Agent 或保存其历史，不新增 HTTP 契约。
+
 ## 与正式 Cloud 的差异
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。

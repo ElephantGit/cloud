@@ -14,7 +14,7 @@ import {
   undoWorkflowHistory,
   workflowHistoryFingerprint,
 } from "./workflow-history";
-import type { DemoWorkflow } from "../mock";
+import type { DemoWorkflow } from "@/lib/workflows/mock";
 
 interface PendingWorkflowTransaction {
   before: WorkflowHistorySnapshot;

@@ -9,7 +9,7 @@ import {
 } from "@xyflow/react";
 import { useTranslation } from "react-i18next";
 import { IconTrash } from "@tabler/icons-react";
-import { cn } from "../../host/ui";
+import { cn } from "@/lib/workflows/host/ui";
 import {
   createMockWorkflowCapabilities,
   createMockWorkflowNodeType,
@@ -20,13 +20,13 @@ import {
   WORKFLOW_NODE_ANCHOR_Y,
   WORKFLOW_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 import {
   AgentExecutionModeMark,
   WorkflowNodeCardShell,
   useWorkflowNodeUnused,
   WorkflowUnusedBadge,
-} from "../../node-chrome";
+} from "@/lib/workflows/node-chrome";
 import { useWorkflowConnectionState } from "./use-connection-state";
 import { WorkflowNodeParameterSummary } from "./node-parameter-summary";
 import { IterationInsertMenu } from "./iteration-actions";

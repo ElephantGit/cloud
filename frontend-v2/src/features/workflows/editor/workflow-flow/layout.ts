@@ -12,8 +12,8 @@ import {
   WORKFLOW_NODE_INITIAL_HEIGHT,
   WORKFLOW_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../../mock";
-import { workflowContainerNodes } from "../../runtime";
+} from "@/lib/workflows/mock";
+import { workflowContainerNodes } from "@/lib/workflows/runtime";
 import {
   compactIterationFrames,
   iterationExpandedSize,

@@ -5,8 +5,8 @@ import {
   excludedWorkflowNodeIds,
   unrecognizedWorkflowKinds,
   useWorkflowAnalysis,
-} from "../data/workflow-analysis";
-import { WorkflowMembershipProvider } from "../node-chrome";
+} from "@/lib/workflows/data/workflow-analysis";
+import { WorkflowMembershipProvider } from "@/lib/workflows/node-chrome";
 import {
   useCallback,
   useEffect,
@@ -54,10 +54,10 @@ import {
   ResizablePanelGroup,
   toast,
   type ResizablePanelHandle,
-} from "../host/ui";
-import { DragRegion } from "../host/window-chrome";
-import { WindowControls } from "../host/window-chrome";
-import { useUiStore } from "../host/ui-store";
+} from "@/lib/workflows/host/ui";
+import { DragRegion } from "@/lib/workflows/host/window-chrome";
+import { WindowControls } from "@/lib/workflows/host/window-chrome";
+import { useUiStore } from "@/lib/workflows/host/ui-store";
 import {
   createMockWorkflowCapabilities,
   createMockWorkflowLoopGroup,
@@ -74,7 +74,7 @@ import {
   type WorkflowAnnotationNode,
   type WorkflowNodeData,
   type WorkflowNodeKind,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   normalizeWorkflowDocument,
   parseWorkflowGraph,
@@ -82,14 +82,14 @@ import {
   serializeWorkflowGraph,
   workflowTimestampToIso,
   type WorkflowGraphParseResult,
-} from "../runtime";
+} from "@/lib/workflows/runtime";
 import type { EditorWorkflowVariable } from "./workflow-variable-display";
-import { usePlatform } from "../host/platform";
-import { useContractsClient } from "../data/contracts-client";
-import { useAgents } from "../data/catalog-hooks";
-import { availableSkills, useSkills } from "../data/catalog-hooks";
-import { useWorkflowAgentModels } from "../data/catalog-hooks";
-import { localizeContractError } from "../host/contract-error";
+import { usePlatform } from "@/lib/workflows/host/platform";
+import { useContractsClient } from "@/lib/workflows/data/contracts-client";
+import { useAgents } from "@/lib/workflows/data/catalog-hooks";
+import { availableSkills, useSkills } from "@/lib/workflows/data/catalog-hooks";
+import { useWorkflowAgentModels } from "@/lib/workflows/data/catalog-hooks";
+import { localizeContractError } from "@/lib/workflows/host/contract-error";
 import { WorkflowCanvas } from "./workflow-canvas";
 import {
   authoredWorkflowNodesEqual,
@@ -112,7 +112,7 @@ import {
 } from "./workflow-iteration-graph";
 import { WorkflowGlobalVariablesDialog } from "./workflow-global-variables-dialog";
 import { workflowMcpChoices } from "./mcp-catalog";
-import { useInstalledPlugins } from "../data/catalog-hooks";
+import { useInstalledPlugins } from "@/lib/workflows/data/catalog-hooks";
 import {
   useWorkflowEditorStore,
   type WorkflowEditorLibraryActions,
@@ -130,7 +130,7 @@ import {
   useWorkflowLibrary,
   useWorkflowVersionSnapshot,
   useWorkflowVersions,
-} from "../data/workflows";
+} from "@/lib/workflows/data/workflows";
 import { WorkflowDraftSaveStatusLabel } from "./workflow-draft-save-status";
 import { WorkflowHeaderDescription } from "./workflow-header-description";
 import {
@@ -145,7 +145,7 @@ import {
   importPublishVersion,
   parseWorkflowImportFile,
   workflowExportDocument,
-} from "./workflow-transfer";
+} from "@/lib/workflows/editor/workflow-transfer";
 import { useWorkflowDraftAutosave } from "./use-workflow-draft-autosave";
 import { useWorkflowHistory } from "./use-workflow-history";
 import {
@@ -157,7 +157,7 @@ import {
 import {
   animatePanelWidth as animateWorkflowPanel,
   cancelPanelWidthAnimation as cancelWorkflowPanelAnimation,
-} from "../host/panel-motion";
+} from "@/lib/workflows/host/panel-motion";
 
 const DEFAULT_WORKFLOW_INSPECTOR_WIDTH = 320;
 const MIN_WORKFLOW_INSPECTOR_WIDTH = 240;

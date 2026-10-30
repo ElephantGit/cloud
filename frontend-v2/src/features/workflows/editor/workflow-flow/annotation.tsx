@@ -14,7 +14,7 @@ import {
   type WorkflowAnnotationData,
   type WorkflowAnnotationNode,
   type WorkflowAnnotationTheme,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 
 interface WorkflowAnnotationActions {
   readOnly: boolean;

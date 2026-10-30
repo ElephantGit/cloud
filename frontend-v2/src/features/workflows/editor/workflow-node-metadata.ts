@@ -2,4 +2,4 @@
 export {
   getNodeMetadata,
   type WorkflowNodeMetadata,
-} from "../node-chrome";
+} from "@/lib/workflows/node-chrome";

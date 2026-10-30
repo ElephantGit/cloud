@@ -1,4 +1,4 @@
-import type { WorkflowVariableCatalogEntry } from "../mock";
+import type { WorkflowVariableCatalogEntry } from "@/lib/workflows/mock";
 
 /** One group in the unified variable list: a heading plus its variables. */
 export interface WorkflowVariableMenuGroup {

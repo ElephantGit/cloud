@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import TaskPreview from './task-preview'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { statusOf } from '@/lib/api-client'
@@ -20,6 +21,11 @@ type Panel = { kind: 'create' } | { kind: 'edit'; id: string } | { kind: 'detail
 
 /** Persistent schedule configuration; execution is not yet connected. */
 export default function Page() {
+  return new URLSearchParams(window.location.search).get('preview') === 'task' ? <TaskPreview /> : <PersistentPage />
+}
+
+function PersistentPage() {
+  const closeForm = useRef<() => void>(() => setPanel(null))
   const tenants = useGetApiV1MeTenants()
   const tenantId = tenants.data?.items[0]?.id ?? ''
   const client = useQueryClient()
@@ -63,7 +69,7 @@ export default function Page() {
     <div className="sp-content">
       <header className="sp-page-header">
         <div><h1>定时任务<Badge variant="secondary" aria-hidden="true">{tasks.length}</Badge></h1><p>保存任务配置；自动执行尚未接入。</p></div>
-        <Button disabled={!tenantId || configs.isLoading || configs.isError} onClick={openCreate}><Plus data-icon="inline-start" />新建任务</Button>
+        <a className="text-sm underline" href="/schedules?preview=task">体验新功能</a><Button disabled={!tenantId || configs.isLoading || configs.isError} onClick={openCreate}><Plus data-icon="inline-start" />新建任务</Button>
       </header>
 
       <div className="sp-summary-strip" aria-label="任务概览">
@@ -90,8 +96,8 @@ export default function Page() {
     </div>
 
     {toast && <div className="sp-toast" role="status"><Check size={16} />{toast}</div>}
-    {panel && <ScheduleDrawer title={panel.kind === 'create' ? '新建定时任务' : panel.kind === 'edit' ? '编辑定时任务' : panelTask?.name ?? '任务详情'} subtitle={panel.kind === 'detail' ? '查看任务配置与每次运行的结果。' : '配置执行内容、项目与时间安排。'} onClose={() => setPanel(null)}>
-      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm data={{ projects: [], workflows: [] }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail key={`${panelTask.id}-${panel.tab}`} task={panelTask} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
+    {panel && <ScheduleDrawer title={panel.kind === 'create' ? '新建定时任务' : panel.kind === 'edit' ? '编辑定时任务' : panelTask?.name ?? '任务详情'} subtitle={panel.kind === 'detail' ? '查看任务配置与每次运行的结果。' : '配置执行内容、项目与时间安排。'} onClose={() => panel.kind === 'detail' ? setPanel(null) : closeForm.current()}>
+      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm onCloseReady={fn => { closeForm.current = fn }} data={{ projects: [], workflows: [] }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail key={`${panelTask.id}-${panel.tab}`} task={panelTask} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
     </ScheduleDrawer>}
   </div>
 }

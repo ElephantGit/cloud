@@ -209,14 +209,31 @@ func (s *Store) RecordChatTurn(ctx context.Context, conversationID, sessionID, a
 	return nil
 }
 
-// EndChatSession records why a session ended. The first recorded end wins, so a later sweep
-// cannot relabel a stop as idle.
+// EndChatSession records that a session ended. A reason marked while ending wins over `reason`,
+// and the first recorded end wins over later ones, so a sweep cannot relabel a stop as idle.
 func (s *Store) EndChatSession(ctx context.Context, sessionID, reason string, at time.Time) error {
 	_, e := s.pool.Exec(ctx, `
-		UPDATE v2_chat_sessions SET ended_at = $3, end_reason = $2
+		UPDATE v2_chat_sessions SET ended_at = $3, end_reason = COALESCE(NULLIF(end_reason, ''), $2)
 		WHERE session_id = $1 AND ended_at IS NULL`, sessionID, reason, at)
 	if e != nil {
 		return fmt.Errorf("end chat session: %w", e)
+	}
+	return nil
+}
+
+// MarkChatSessionEnding records why chat is about to end a live session, before it asks the
+// execution port to, so the reason is readable as soon as the session_ended event is.
+func (s *Store) MarkChatSessionEnding(ctx context.Context, sessionID, reason string) error {
+	if _, e := s.pool.Exec(ctx, `UPDATE v2_chat_sessions SET end_reason = $2 WHERE session_id = $1 AND ended_at IS NULL`, sessionID, reason); e != nil {
+		return fmt.Errorf("mark chat session ending: %w", e)
+	}
+	return nil
+}
+
+// ClearChatSessionEnding withdraws an end reason when the port did not end the session.
+func (s *Store) ClearChatSessionEnding(ctx context.Context, sessionID string) error {
+	if _, e := s.pool.Exec(ctx, `UPDATE v2_chat_sessions SET end_reason = '' WHERE session_id = $1 AND ended_at IS NULL`, sessionID); e != nil {
+		return fmt.Errorf("clear chat session ending: %w", e)
 	}
 	return nil
 }

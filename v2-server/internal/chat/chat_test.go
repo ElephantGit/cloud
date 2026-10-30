@@ -28,6 +28,8 @@ type port struct {
 	endErr error
 	// startErr, when set, fails the next Start.
 	startErr error
+	// onEnd runs inside End, before it returns.
+	onEnd func()
 }
 
 type fakeSession struct {
@@ -91,6 +93,11 @@ func (p *port) runtime() *executiontest.Stub {
 			defer p.mu.Unlock()
 			if p.endErr != nil {
 				return p.endErr
+			}
+			if p.onEnd != nil {
+				p.mu.Unlock()
+				p.onEnd()
+				p.mu.Lock()
 			}
 			p.sessions[sid].ended = true
 			p.ended = append(p.ended, sid)
@@ -251,6 +258,25 @@ func TestStopThenSendStartsNewSession(t *testing.T) {
 	}
 }
 
+func TestEndReasonIsReadableBeforeTheSessionEnds(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	c, ref := f.create(t, "k1", "")
+	f.port.finish(ref.TurnID, f.clock.now())
+	// What a page reading the conversation on session_ended would see, mid-End.
+	var during string
+	f.port.onEnd = func() {
+		list, _ := f.svc.Conversations(ctx, f.scope)
+		during = list[0].Sessions[0].EndReason
+	}
+	if _, e := f.svc.Release(ctx, f.scope, c.ID); e != nil {
+		t.Fatal(e)
+	}
+	if during != store.EndReleased {
+		t.Fatalf("end reason during End = %q", during)
+	}
+}
+
 func TestReleaseFreesWorkspace(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -315,8 +341,8 @@ func TestDeleteEndsSessionFirst(t *testing.T) {
 	if e := f.svc.Delete(ctx, f.scope, c.ID); !errors.Is(e, execution.ErrStopUnconfirmed) {
 		t.Fatalf("delete with unconfirmed end = %v", e)
 	}
-	if list, _ := f.svc.Conversations(ctx, f.scope); len(list) != 1 {
-		t.Fatal("a conversation whose session may still hold the workspace must stay")
+	if list, _ := f.svc.Conversations(ctx, f.scope); len(list) != 1 || list[0].Sessions[0].EndReason != "" {
+		t.Fatalf("a conversation whose session may still hold the workspace must stay, with no end reason: %+v", list)
 	}
 	f.port.endErr = nil
 	if e := f.svc.Delete(ctx, f.scope, c.ID); e != nil {

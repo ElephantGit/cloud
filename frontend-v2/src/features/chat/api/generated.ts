@@ -46,7 +46,7 @@ export interface ChatExecutorList {
 }
 
 /**
- * Why chat ended the session; empty with endedAt set never happens, and empty with endedAt null means chat treats it as live.
+ * Why chat ended the session (empty when it ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives.
  */
 export type ChatSessionEndReason = typeof ChatSessionEndReason[keyof typeof ChatSessionEndReason];
 
@@ -66,7 +66,7 @@ export interface ChatSession {
   startedAt: string;
   /** @nullable */
   endedAt: string | null;
-  /** Why chat ended the session; empty with endedAt set never happens, and empty with endedAt null means chat treats it as live. */
+  /** Why chat ended the session (empty when it ended outside chat, as on a restart). Set with endedAt still null while chat is ending it, so it is readable as soon as session_ended arrives. */
   endReason: ChatSessionEndReason;
 }
 

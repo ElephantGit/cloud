@@ -41,6 +41,8 @@ type Store interface {
 	DeleteChatConversation(ctx context.Context, tenant, user, id string) error
 	RecordChatTurn(ctx context.Context, conversationID, sessionID, attemptID, turnID string, at time.Time) error
 	EndChatSession(ctx context.Context, sessionID, reason string, at time.Time) error
+	MarkChatSessionEnding(ctx context.Context, sessionID, reason string) error
+	ClearChatSessionEnding(ctx context.Context, sessionID string) error
 	IdleChatSessions(ctx context.Context, before time.Time) ([]store.IdleChatSession, error)
 	ChatWorkspaceOccupant(ctx context.Context, tenant, user, project, workspace string) (store.ChatConversation, error)
 }
@@ -174,6 +176,18 @@ func (s *Service) Send(ctx context.Context, scope execution.Scope, conversationI
 	return c, ref, e
 }
 
+// ending runs a call that may end the live session, with the reason recorded first so a page
+// reading the conversation on session_ended sees why. A failed call withdraws the reason.
+func (s *Service) ending(ctx context.Context, sessionID, reason string, call func() error) error {
+	if e := s.store.MarkChatSessionEnding(ctx, sessionID, reason); e != nil {
+		return e
+	}
+	if e := call(); e != nil {
+		return errors.Join(e, s.store.ClearChatSessionEnding(context.WithoutCancel(ctx), sessionID))
+	}
+	return nil
+}
+
 // start admits a prompt in a new session at the conversation's target. The caller holds the lock.
 func (s *Service) start(ctx context.Context, scope execution.Scope, c store.ChatConversation, key, prompt string) (execution.Ref, error) {
 	ref, e := s.runtime.Start(ctx, scope, execution.StartRequest{
@@ -209,20 +223,26 @@ func (s *Service) Stop(ctx context.Context, scope execution.Scope, conversationI
 	if !ok {
 		return execution.Result{}, ErrNoActiveTurn
 	}
-	result, e := s.runtime.Cancel(ctx, scope, execution.Ref{SessionID: live.ID, TurnID: live.LastTurnID})
+	var result execution.Result
+	var session execution.Session
+	e = s.ending(ctx, live.ID, store.EndStopped, func() error {
+		var e error
+		if result, e = s.runtime.Cancel(ctx, scope, execution.Ref{SessionID: live.ID, TurnID: live.LastTurnID}); e != nil {
+			return e
+		}
+		if session, e = s.runtime.ReadSession(ctx, scope, live.ID); e != nil {
+			return fmt.Errorf("read stopped session: %w", e)
+		}
+		return nil
+	})
 	if e != nil {
 		return result, e
 	}
-	session, e := s.runtime.ReadSession(ctx, scope, live.ID)
-	if e != nil {
-		return result, fmt.Errorf("read stopped session: %w", e)
+	if session.EndedAt == nil {
+		// The turn had already finished, so cancelling it ended nothing: the session stays live.
+		return result, s.store.ClearChatSessionEnding(ctx, live.ID)
 	}
-	if session.EndedAt != nil {
-		if e := s.store.EndChatSession(ctx, live.ID, store.EndStopped, s.now()); e != nil {
-			return result, e
-		}
-	}
-	return result, nil
+	return result, s.store.EndChatSession(ctx, live.ID, store.EndStopped, s.now())
 }
 
 // Release ends the live session between turns, so another conversation can use its workspace.
@@ -237,7 +257,7 @@ func (s *Service) Release(ctx context.Context, scope execution.Scope, conversati
 	if !ok {
 		return c, ErrNoActiveTurn
 	}
-	if e := s.runtime.End(ctx, scope, live.ID); e != nil {
+	if e := s.ending(ctx, live.ID, store.EndReleased, func() error { return s.runtime.End(ctx, scope, live.ID) }); e != nil {
 		return c, fmt.Errorf("end session: %w", e)
 	}
 	if e := s.store.EndChatSession(ctx, live.ID, store.EndReleased, s.now()); e != nil {
@@ -264,7 +284,7 @@ func (s *Service) Delete(ctx context.Context, scope execution.Scope, conversatio
 		return e
 	}
 	if live, ok := c.Live(); ok {
-		if e := s.runtime.End(ctx, scope, live.ID); e != nil {
+		if e := s.ending(ctx, live.ID, store.EndDeleted, func() error { return s.runtime.End(ctx, scope, live.ID) }); e != nil {
 			return fmt.Errorf("end session: %w", e)
 		}
 	}

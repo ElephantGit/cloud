@@ -56,7 +56,7 @@ func (s *Service) reclaim(ctx context.Context, x store.IdleChatSession, cutoff t
 	if turn.Result == nil || turn.EndedAt == nil || !turn.EndedAt.Before(cutoff) {
 		return false, nil
 	}
-	if e := s.runtime.End(ctx, scope, live.ID); e != nil {
+	if e := s.ending(ctx, live.ID, store.EndIdle, func() error { return s.runtime.End(ctx, scope, live.ID) }); e != nil {
 		return false, fmt.Errorf("end idle session: %w", e)
 	}
 	return true, s.store.EndChatSession(ctx, live.ID, store.EndIdle, s.now())

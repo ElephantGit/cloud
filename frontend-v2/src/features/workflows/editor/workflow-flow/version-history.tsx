@@ -23,8 +23,8 @@ import {
   PopoverContent,
   PopoverTrigger,
   cn,
-} from "../../host/ui";
-import type { MockWorkflowVersion } from "../../mock";
+} from "@/lib/workflows/host/ui";
+import type { MockWorkflowVersion } from "@/lib/workflows/mock";
 
 interface WorkflowVersionHistoryProps {
   versions: MockWorkflowVersion[];

@@ -41,6 +41,8 @@ import { type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
 import { NewWorktreeDialog } from './new-worktree-dialog'
+import type { PublishedWorkflow } from '../workflow-run/demo-runs'
+import { ProjectRuns, RunWorkflowDialog, RunWorkflowSubmenu } from '../workflow-run/run-sidebar'
 import { subtleScrollbar } from '@/lib/scrollbar'
 
 /** A dragged project moves only up and down. */
@@ -64,7 +66,7 @@ const pointerFirst: CollisionDetection = (args) => {
 export function Sidebar() {
   const projects = useChatStore((s) => s.projects)
   const sidebar = useChatStore((s) => s.sidebar)
-  const newChatOpen = useChatStore((s) => !s.selectedId)
+  const newChatOpen = useChatStore((s) => !s.selectedId && !s.selectedRunId)
   const { moveProject, setSidebar, startNewChat } = useChatStore.getState()
   const [activeId, setActiveId] = useState<string>()
   const [overId, setOverId] = useState<string>()
@@ -154,6 +156,7 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
   // Sortable for the drop targets and keyboard moves only: nothing shifts while dragging.
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useSortable({ id: project.id })
   const [newWorktree, setNewWorktree] = useState(false)
+  const [runWorkflow, setRunWorkflow] = useState<PublishedWorkflow>()
   const main = sessions.filter((s) => s.workspace.kind === 'main')
   const branches = [...new Set(sessions.flatMap((s) => (s.workspace.kind === 'isolated' ? [s.workspace.branch] : [])))]
   const Icon = project.samples ? FlaskConicalIcon : FolderIcon
@@ -198,6 +201,8 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
                   <PencilIcon />
                   新建 worktree 并命名…
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <RunWorkflowSubmenu onPick={setRunWorkflow} />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -205,6 +210,7 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
         <CollapsibleContent>
           <div className="mt-0.5 mb-1 ml-[1.9rem] flex flex-col pl-2">
             {sessions.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">还没有会话</p>}
+            <ProjectRuns projectId={project.id} />
             {main.map((s) => (
               <SessionRow key={s.id} session={s} />
             ))}
@@ -225,6 +231,7 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
         projectName={project.name}
         onCreate={(branch) => (startNewChat({ projectId: project.id, workspace: { kind: 'isolated', branch } }), setNewWorktree(false))}
       />
+      <RunWorkflowDialog projectId={project.id} workflow={runWorkflow} onClose={() => setRunWorkflow(undefined)} />
     </section>
   )
 }
@@ -269,7 +276,7 @@ function WorktreeGroup({ branch, sessions, onNew }: { branch: string; sessions: 
 }
 
 function SessionRow({ session }: { session: Session }) {
-  const selected = useChatStore((s) => s.selectedId === session.id)
+  const selected = useChatStore((s) => s.selectedId === session.id && !s.selectedRunId)
   const responding = useChatStore((s) => isResponding(s.conversations[session.id] ?? emptyConversation))
   const unread = useChatStore((s) => !!s.unread[session.id])
   const { select, renameSession, deleteSession, replay } = useChatStore.getState()

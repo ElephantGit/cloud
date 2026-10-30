@@ -1,5 +1,5 @@
 import type { Edge, Node, XYPosition } from "@xyflow/react";
-import type { WorkflowNodeData } from "../mock";
+import type { WorkflowNodeData } from "@/lib/workflows/mock";
 
 export interface CanvasGraph {
   nodes: Node<WorkflowNodeData, "workflow">[];

@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// ErrConflict indicates a stale configuration version.
-var ErrConflict = errors.New("configuration conflict")
+// ErrConflict indicates a stale resource version.
+var ErrConflict = errors.New("version conflict")
 
 // ScheduleConfig is a saved configuration; it does not imply execution is available.
 type ScheduleConfig struct {

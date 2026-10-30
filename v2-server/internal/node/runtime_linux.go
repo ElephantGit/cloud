@@ -40,7 +40,8 @@ type child struct {
 }
 
 // Runtime owns Node, process host, its IPC client and a cross-process Workspace lock.
-// A process exit closes Done; consumers mark affected work interrupted, never replay it.
+// A process exit or IPC failure closes Done; consumers mark affected work interrupted, never
+// replay it.
 // Stop terminates the runtime, so callers normally EndSession first to retain its final events.
 type Runtime struct {
 	Client     *Client
@@ -124,6 +125,7 @@ func StartRuntime(ctx context.Context, opts RuntimeOptions) (_ *Runtime, resultE
 		select {
 		case <-r.node.done:
 		case <-r.host.done:
+		case <-r.Client.done:
 		case <-r.watchStop:
 		}
 		_ = r.Client.Close()
@@ -132,7 +134,8 @@ func StartRuntime(ctx context.Context, opts RuntimeOptions) (_ *Runtime, resultE
 	return r, nil
 }
 
-// Done closes when either child exits or Stop completes its transport shutdown.
+// Done closes when either child exits, the IPC transport fails, or Stop completes its shutdown.
+// A failed transport is never redialled; callers Stop and start the runtime again.
 func (r *Runtime) Done() <-chan struct{} { return r.done }
 
 // Stop is retryable after failure, and unlocks the Workspace only after owned processes have

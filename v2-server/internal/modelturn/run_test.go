@@ -246,9 +246,12 @@ func TestInvalidAndIncompleteResponses(t *testing.T) {
 		{"truncated event", "text/event-stream", chunk("partial", nil) + `data: {"choices":`, ErrIncomplete, ""},
 		{"damaged event", "text/event-stream", "data: {broken}\n\n", ErrInvalidResponse, ""},
 		{"sse unpaired surrogate", "text/event-stream", strings.Replace(chunk("text", "stop"), "text", `\udfff`, 1) + done, ErrInvalidResponse, ""},
-		{"sse missing delta", "text/event-stream", `data: {"choices":[{"index":0,"finish_reason":"stop"}]}` + "\n\n" + done, ErrInvalidResponse, ""},
+		{"sse missing delta and content", "text/event-stream", `data: {"choices":[{"index":0,"finish_reason":"stop"}]}` + "\n\n" + done, ErrIncomplete, ""},
 		{"sse missing content", "text/event-stream", `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n" + done, ErrIncomplete, ""},
-		{"sse unknown delta", "text/event-stream", strings.Replace(chunk("text", "stop"), `"role":"assistant"`, `"role":"assistant","unknown_block":{}`, 1) + done, ErrInvalidResponse, ""},
+		{"sse empty finish", "text/event-stream", chunk("partial", "") + done, ErrIncomplete, ""},
+		{"sse only metadata", "text/event-stream", `data: {"choices":[],"prompt_filter_results":[]}` + "\n\n" + done, ErrIncomplete, ""},
+		{"sse metadata error", "text/event-stream", `data: {"choices":[],"error":{"message":"secret provider error"}}` + "\n\n" + chunk("text", "stop") + done, ErrInvalidResponse, ""},
+		{"sse reasoning without answer", "text/event-stream", `data: {"choices":[{"index":0,"delta":{"reasoning_content":"private thought"},"finish_reason":"stop"}]}` + "\n\n" + done, ErrIncomplete, ""},
 		{"empty stream", "text/event-stream", "", ErrIncomplete, ""},
 	}
 	for _, test := range tests {
@@ -287,7 +290,13 @@ func TestPlainTextMetadataJSONAndSSE(t *testing.T) {
 		{"actual audio", `,"audio":{"id":"audio-id","data":"encoded audio","transcript":"spoken text"}`, ErrUnsupported},
 		{"empty audio object", `,"audio":{}`, ErrUnsupported},
 		{"malformed annotations", `,"annotations":{}`, ErrInvalidResponse},
-		{"unknown metadata", `,"unknown_block":null`, ErrInvalidResponse},
+		{"unknown null metadata", `,"unknown_block":null`, nil},
+		{"unknown object metadata", `,"unknown_block":{"text":"not answer"}`, nil},
+		{"null reasoning", `,"reasoning_content":null,"reasoning":null`, nil},
+		{"reasoning text", `,"reasoning_content":"private thought","reasoning":"more private thought"`, nil},
+		{"invalid known content type", `,"content":123`, ErrInvalidResponse},
+		{"invalid known role type", `,"role":123`, ErrInvalidResponse},
+		{"invalid known refusal type", `,"refusal":123`, ErrInvalidResponse},
 	}
 	for _, stream := range []bool{false, true} {
 		for _, test := range tests {

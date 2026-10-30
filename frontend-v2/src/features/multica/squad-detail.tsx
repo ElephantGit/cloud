@@ -1,24 +1,30 @@
 import { useState } from 'react'
-import { Bot, Pencil, UserRound } from 'lucide-react'
+import { Bot, Pencil, UserPlus, UserRound, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { SquadDetail } from './api/generated'
+import type { SquadDetail, SquadMember } from './api/generated'
 import { activeMembers, endedMembers, formatTime, leaderName } from './squad-model'
 
 /**
- * Read-only view of one squad with its maintainer actions. Membership changes belong to the
- * member operations; this view only edits the squad's own text and archives it.
+ * Read-only view of one squad with its maintainer actions: edit the squad's own text, add an
+ * existing workspace member, remove a live member, or archive. Removing a member ends only the
+ * squad membership; the workspace membership is untouched.
  */
-export function SquadDetailView({ squad, canMaintain, archiving, error, onEdit, onArchive }: {
+export function SquadDetailView({ squad, canMaintain, archiving, removing, error, onEdit, onArchive, onAddMembers, onRemove }: {
   squad: SquadDetail
   canMaintain: boolean
   archiving: boolean
-  /** Error from the last archive attempt. */
+  /** Membership id currently being removed, or '' when none. */
+  removing: string
+  /** Error from the last archive or membership attempt. */
   error: string
   onEdit: () => void
   onArchive: () => void
+  onAddMembers: () => void
+  onRemove: (member: SquadMember) => void
 }) {
   const [confirming, setConfirming] = useState(false)
+  const [removingMember, setRemovingMember] = useState('')
   const live = activeMembers(squad)
   const ended = endedMembers(squad)
   const leader = leaderName(squad)
@@ -53,6 +59,12 @@ export function SquadDetailView({ squad, canMaintain, archiving, error, onEdit, 
               {member.spaceAgentId !== null && member.spaceAgentId === squad.leaderAgentId && <Badge variant="outline">leader</Badge>}
             </span>
             <span className="mc-member-role">{member.role || '未填写职责'}</span>
+            {canMaintain && !archived && (removingMember === member.id
+              ? <>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setRemovingMember('')} disabled={removing === member.id}><X size={14} />取消</Button>
+                <Button type="button" variant="destructive" size="sm" onClick={() => { setRemovingMember(''); onRemove(member) }} disabled={removing === member.id}>{removing === member.id ? '移除中…' : '确认移除'}</Button>
+              </>
+              : <Button type="button" variant="ghost" size="sm" aria-label={`移除${member.displayName}`} onClick={() => setRemovingMember(member.id)}><X size={14} />移除</Button>)}
           </li>)}</ul>}
       </section>
 
@@ -80,6 +92,7 @@ export function SquadDetailView({ squad, canMaintain, archiving, error, onEdit, 
           : <>
             {!canMaintain && <span className="mc-muted">只有本队人类维护者或工作区管理员可以修改。</span>}
             <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(true)} disabled={!canMaintain}>归档</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onAddMembers} disabled={!canMaintain}><UserPlus size={14} />添加成员</Button>
             <Button type="button" variant="outline" size="sm" onClick={onEdit} disabled={!canMaintain}><Pencil size={14} />编辑</Button>
           </>}
     </footer>

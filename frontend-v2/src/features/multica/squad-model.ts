@@ -15,13 +15,16 @@ export function leaderName(squad: SquadDetail): string | null {
   return activeMembers(squad).find(m => m.spaceAgentId === squad.leaderAgentId)?.displayName ?? null
 }
 
+/** Workspace roles that may edit any squad; they mirror the server's administrator check. */
+export const isWorkspaceAdministrator = (role: string | undefined): boolean => role === 'owner' || role === 'admin'
+
 /**
- * Whether the signed-in user may edit this squad. Workspace administrators may edit any squad,
- * but the frontend cannot tell an administrator from a member, so only live human maintainers are
- * recognized here; the server remains the authority and answers 403 otherwise.
+ * Whether the signed-in user may edit this squad: workspace administrators may edit any squad,
+ * everyone else must be a live human maintainer. The server remains the authority and answers 403
+ * otherwise, so the two checks must stay in step.
  */
-export const canMaintain = (squad: SquadDetail, userId: string): boolean =>
-  activeMembers(squad).some(m => m.userId === userId && m.maintainer)
+export const canMaintain = (squad: SquadDetail, userId: string, workspaceRole?: string): boolean =>
+  isWorkspaceAdministrator(workspaceRole) || activeMembers(squad).some(m => m.userId === userId && m.maintainer)
 
 /** Live totals across the listed squads; archived squads are not listed. */
 export function squadTotals(squads: SquadSummary[]) {

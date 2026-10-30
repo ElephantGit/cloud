@@ -3,13 +3,18 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
-import type { User } from '@/api/generated.schemas'
+import type { MemberListItem, User } from '@/api/generated.schemas'
 import Page from './page'
 import * as api from './api/generated'
 import type { SquadDetail, SquadSummary } from './api/generated'
 
+const roster = vi.hoisted(() => ({ items: [] as MemberListItem[] }))
 vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant' }] }, isLoading: false, isError: false }) }))
-vi.mock('./api/generated', () => ({ listSquads: vi.fn(), getSquad: vi.fn(), createSquad: vi.fn(), updateSquad: vi.fn(), archiveSquad: vi.fn() }))
+vi.mock('@/api/members/members', () => ({ useGetApiV1TenantsTidMembers: () => ({ data: roster, isLoading: false, isError: false }) }))
+vi.mock('./api/generated', () => ({
+  listSquads: vi.fn(), getSquad: vi.fn(), createSquad: vi.fn(), updateSquad: vi.fn(), archiveSquad: vi.fn(),
+  addSquadMember: vi.fn(), removeSquadMember: vi.fn(),
+}))
 
 const me: User = { id: 'user-me', displayName: '演示用户', status: 'active', version: 1, createdAt: '2026-10-01T00:00:00Z', deletedAt: null }
 const summary: SquadSummary = {
@@ -29,10 +34,15 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><UserContext.Provider value={me}><Page /></UserContext.Provider></QueryClientProvider>)
 }
 
+const third: MemberListItem = {
+  id: 'user-3', tenantId: 'tenant', userId: 'user-3', displayName: '第三人', role: 'member', status: 'active', version: 1,
+}
+
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   vi.clearAllMocks()
+  roster.items = [third]
   vi.mocked(api.listSquads).mockResolvedValue({ items: [summary], nextCursor: '' })
   vi.mocked(api.getSquad).mockResolvedValue(detail)
 })
@@ -83,7 +93,51 @@ it('keeps a non-maintainer read-only with a reason', async () => {
   await userEvent.click(await screen.findByRole('button', { name: '查看产品小队' }))
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByRole('button', { name: '编辑' })).toBeDisabled()
+  expect(within(dialog).getByRole('button', { name: '添加成员' })).toBeDisabled()
+  expect(within(dialog).queryByRole('button', { name: '移除演示用户' })).not.toBeInTheDocument()
   expect(within(dialog).getByText('只有本队人类维护者或工作区管理员可以修改。')).toBeInTheDocument()
+})
+
+it('adds a workspace member who is not in the squad yet', async () => {
+  const joined: SquadDetail = {
+    ...detail, version: 2, humanCount: 3, maintainerCount: 1,
+    members: [...detail.members, { id: 'm4', type: 'human', userId: 'user-3', spaceAgentId: null, displayName: '第三人', role: '评审', maintainer: false, joinedAt: '2026-10-04T00:00:00Z', endedAt: null }],
+  }
+  vi.mocked(api.addSquadMember).mockResolvedValue(joined)
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '查看产品小队' }))
+  await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '添加成员' }))
+
+  // Only accounts outside the live squad are offered, and the role field travels with the add.
+  const picker = await screen.findByRole('dialog')
+  expect(within(picker).getByText('第三人')).toBeInTheDocument()
+  expect(within(picker).queryByText('演示用户')).not.toBeInTheDocument()
+  fireEvent.change(within(picker).getByLabelText('职责（可选）'), { target: { value: '  评审  ' } })
+  await userEvent.click(within(picker).getByRole('button', { name: '加入' }))
+  await waitFor(() => expect(api.addSquadMember).toHaveBeenCalledWith('tenant', 'squad-1', { type: 'human', userId: 'user-3', role: '评审', maintainer: false, version: 1 }))
+  expect(await screen.findByText('已加入 第三人')).toBeInTheDocument()
+  // The new member is no longer a candidate, and the detail behind the picker shows them.
+  expect(within(picker).queryByRole('button', { name: '加入' })).not.toBeInTheDocument()
+  await userEvent.click(within(picker).getByRole('button', { name: '完成' }))
+  const after = await screen.findByRole('dialog')
+  expect(within(after).getByText('第三人')).toBeInTheDocument()
+})
+
+it('removes a live member only after confirmation and keeps the history', async () => {
+  const removed: SquadDetail = {
+    ...detail, version: 2, humanCount: 1,
+    members: detail.members.map(m => (m.id === 'm2' ? { ...m, maintainer: false, endedAt: '2026-10-30T00:00:00Z' } : m)),
+  }
+  vi.mocked(api.removeSquadMember).mockResolvedValue(removed)
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '查看产品小队' }))
+  const dialog = await screen.findByRole('dialog')
+  await userEvent.click(within(dialog).getByRole('button', { name: '移除第二人' }))
+  expect(api.removeSquadMember).not.toHaveBeenCalled()
+  await userEvent.click(within(dialog).getByRole('button', { name: '确认移除' }))
+  await waitFor(() => expect(api.removeSquadMember).toHaveBeenCalledWith('tenant', 'squad-1', 'm2', { version: 1 }))
+  expect(await screen.findByText('已移除 第二人')).toBeInTheDocument()
+  expect(within(dialog).getByText('已退出 1')).toBeInTheDocument()
 })
 
 it('archives only after confirmation and then shows read-only history', async () => {
@@ -115,4 +169,14 @@ it('reports a version conflict when another change lands first', async () => {
   await userEvent.click(within(edit).getByRole('button', { name: '保存修改' }))
   expect(await within(edit).findByRole('alert')).toHaveTextContent('小队已被其他人修改，请关闭后重新打开。')
   expect(within(edit).getByLabelText('小队名称')).toHaveValue('我的修改')
+})
+
+it('tells an archived squad apart from a version conflict', async () => {
+  vi.mocked(api.archiveSquad).mockRejectedValue({ isAxiosError: true, response: { status: 409, data: { code: 'squad_archived' } } })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '查看产品小队' }))
+  const dialog = await screen.findByRole('dialog')
+  await userEvent.click(within(dialog).getByRole('button', { name: '归档' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '确认归档' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('这个小队已归档，不能再修改。')
 })

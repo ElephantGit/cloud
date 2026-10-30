@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, FlaskConical, Plus, Users } from 'lucide-react'
 import { useGetApiV1MeTenants } from '@/api/me/me'
+import type { MemberListItem } from '@/api/generated.schemas'
 import { useUser } from '@/app/auth/user'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { statusOf } from '@/lib/api-client'
-import { archiveSquad, createSquad, getSquad, listSquads, updateSquad, type SquadDetail } from './api/generated'
+import { codeOf, statusOf } from '@/lib/api-client'
+import { archiveSquad, addSquadMember, createSquad, getSquad, listSquads, removeSquadMember, updateSquad, type SquadDetail, type SquadMember } from './api/generated'
+import { MemberPicker } from './member-picker'
 import { SquadCard } from './squad-card'
 import { SquadDetailView } from './squad-detail'
 import { SquadDialog } from './squad-dialog'
@@ -15,7 +17,7 @@ import { SquadForm, type SquadDraft } from './squad-form'
 import { canMaintain, squadTotals } from './squad-model'
 import './multica.css'
 
-type Panel = { kind: 'create' } | { kind: 'detail'; id: string } | { kind: 'edit'; id: string } | null
+type Panel = { kind: 'create' } | { kind: 'detail'; id: string } | { kind: 'edit'; id: string } | { kind: 'members'; id: string } | null
 
 /**
  * Squads in the current workspace: the list, one squad's detail, and the maintainer's edits.
@@ -25,6 +27,7 @@ export default function Page() {
   const me = useUser()
   const tenants = useGetApiV1MeTenants()
   const tenantId = tenants.data?.items[0]?.id ?? ''
+  const workspaceRole = tenants.data?.items[0]?.role
   const client = useQueryClient()
   const [panel, setPanel] = useState<Panel>(null)
   const [error, setError] = useState('')
@@ -59,6 +62,19 @@ export default function Page() {
     onSuccess: updated => settle(updated, '小队已归档'),
     onError: e => setError(messageFor(e)),
   })
+  const add = useMutation({
+    mutationFn: ({ member, role, target }: { member: MemberListItem; role: string; target: SquadDetail }) =>
+      addSquadMember(tenantId, target.id, { type: 'human', userId: member.userId, role: role.trim(), maintainer: false, version: target.version }),
+    onSuccess: (updated, v) => settle(updated, `已加入 ${v.member.displayName}`),
+    onError: e => setError(messageFor(e)),
+  })
+  const remove = useMutation({
+    mutationFn: ({ member, target }: { member: SquadMember; target: SquadDetail }) =>
+      removeSquadMember(tenantId, target.id, member.id, { version: target.version }),
+    onSuccess: (updated, v) => settle(updated, `已移除 ${v.member.displayName}`),
+    onError: e => setError(messageFor(e)),
+  })
+  const removing = remove.isPending ? remove.variables?.member.id ?? '' : ''
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3500); return () => clearTimeout(timer) }, [toast])
   const openCreate = () => { setError(''); setPanel({ kind: 'create' }) }
   const openSquad = (id: string) => { setError(''); setPanel({ kind: 'detail', id }) }
@@ -118,7 +134,13 @@ export default function Page() {
         ? <p role="status" className="mc-dialog-status">正在加载小队…</p>
         : detail.isError
           ? <p role="alert" className="mc-dialog-status">小队加载失败，请关闭后重试。</p>
-          : squad && <SquadDetailView squad={squad} canMaintain={canMaintain(squad, me.id)} archiving={archive.isPending} error={error} onEdit={() => { setError(''); setPanel({ kind: 'edit', id: squad.id }) }} onArchive={() => archive.mutate(squad)} />}
+          : squad && <SquadDetailView squad={squad} canMaintain={canMaintain(squad, me.id, workspaceRole)} archiving={archive.isPending} removing={removing} error={error} onEdit={() => { setError(''); setPanel({ kind: 'edit', id: squad.id }) }} onArchive={() => archive.mutate(squad)} onAddMembers={() => { setError(''); setPanel({ kind: 'members', id: squad.id }) }} onRemove={member => { setError(''); remove.mutate({ member, target: squad }) }} />}
+    </SquadDialog>}
+
+    {panel?.kind === 'members' && squad && <SquadDialog title={`添加成员到 ${squad.name}`} subtitle="只能加入当前工作区的有效成员；移出小队不影响工作区成员资格。" onClose={close}>
+      <MemberPicker squad={squad} tenantId={tenantId} adding={add.isPending} error={error}
+        onAdd={(member, role) => { setError(''); add.mutate({ member, role, target: squad }) }}
+        onClose={() => { setError(''); setPanel({ kind: 'detail', id: squad.id }) }} />
     </SquadDialog>}
   </div>
 }
@@ -128,7 +150,9 @@ function messageFor(error: unknown): string {
   switch (statusOf(error)) {
     case 403: return '只有工作区管理员或本队维护者可以修改小队。'
     case 404: return '小队不存在或你已无权查看。'
-    case 409: return '小队已被其他人修改，请关闭后重新打开。'
+    case 409: return codeOf(error) === 'squad_archived'
+      ? '这个小队已归档，不能再修改。'
+      : '小队已被其他人修改，请关闭后重新打开。'
     default: return '操作失败，请重试。'
   }
 }

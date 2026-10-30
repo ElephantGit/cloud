@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { subtleScrollbar } from '@/lib/scrollbar'
 import { cn } from '@/lib/utils'
 import type { GraphWorkflowRun } from '@/lib/workflows/runtime'
 import { FadeText } from '../components/fade-text'
@@ -21,8 +22,8 @@ import { createDemoRun, deleteDemoRun, listPublishedWorkflows, type PublishedWor
 import { isNodeWorking, runStatusLabel, runStatusTone } from './run-status-style'
 
 /**
- * The "运行工作流" submenu of a project's +, as in desktop: published workflows only, with a
- * search box once there are several. Picking one opens the run dialog.
+ * The "运行工作流" submenu of a project's +, as in desktop: published workflows only, under a
+ * search box, in a list that scrolls once it is long. Picking one opens the run dialog.
  */
 export function RunWorkflowSubmenu({ onPick }: { onPick: (workflow: PublishedWorkflow) => void }) {
   const [workflows, setWorkflows] = useState<PublishedWorkflow[]>([])
@@ -35,27 +36,28 @@ export function RunWorkflowSubmenu({ onPick }: { onPick: (workflow: PublishedWor
         <WorkflowIcon />
         运行工作流
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-60">
-        {workflows.length > 5 && (
-          <div className="flex items-center gap-1.5 px-2 pb-1">
-            <SearchIcon className="size-3.5 text-muted-foreground" />
-            <input
-              aria-label="搜索工作流"
-              placeholder="搜索工作流"
-              className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none"
-              value={query}
-              onChange={(e) => setQuery(e.currentTarget.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-        {shown.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">{workflows.length ? '没有匹配的工作流' : '还没有已发布的工作流'}</p>}
-        {shown.map((w) => (
-          <DropdownMenuItem key={w.id} onClick={() => onPick(w)}>
-            <FadeText text={w.name} className="flex-1" />
-            <span className="text-xs text-muted-foreground">{w.version}</span>
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuSubContent className="flex w-72 flex-col p-0">
+        <div className="flex items-center gap-1.5 border-b px-2.5">
+          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            aria-label="搜索工作流"
+            placeholder="搜索工作流"
+            className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            // Typing must not drive the menu's type-ahead or close it.
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+        </div>
+        <div role="group" aria-label="已发布的工作流" className={cn('max-h-72 overflow-y-auto p-1', subtleScrollbar)}>
+          {shown.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">{workflows.length ? '没有匹配的工作流' : '还没有已发布的工作流'}</p>}
+          {shown.map((w) => (
+            <DropdownMenuItem key={w.id} title={w.name} onClick={() => onPick(w)}>
+              <FadeText text={w.name} className="flex-1" />
+              <span className="text-xs text-muted-foreground">{w.version}</span>
+            </DropdownMenuItem>
+          ))}
+        </div>
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   )

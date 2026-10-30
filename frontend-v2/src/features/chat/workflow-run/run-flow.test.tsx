@@ -64,6 +64,20 @@ describe('workflow runs in chat', () => {
     // jsdom re-renders the canvas on every node step, so the whole run takes seconds here.
   }, 30_000)
 
+  it('searches the published workflows in the + menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(within(project()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
+    await user.click(await screen.findByRole('menuitem', { name: '运行工作流' }))
+    const list = await screen.findByRole('group', { name: '已发布的工作流' })
+    expect(within(list).getByRole('menuitem', { name: /示例：逐段翻译/ })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索工作流' }), { target: { value: '审查' } })
+    expect(within(list).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['示例：代码审查v1'])
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索工作流' }), { target: { value: '没有这个' } })
+    expect(within(list).getByText('没有匹配的工作流')).toBeInTheDocument()
+  })
+
   it('goes back to the chat when a session is picked', async () => {
     const user = userEvent.setup()
     renderPage()

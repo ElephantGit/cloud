@@ -21,7 +21,6 @@ type Stub struct {
 	ReadSessionFunc   func(context.Context, execution.Scope, string) (execution.Session, error)
 	ReadTurnsFunc     func(context.Context, execution.Scope, string, string, int) (execution.TurnPage, error)
 	ReadAttemptFunc   func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error)
-	SealAttemptFunc   func(context.Context, execution.Scope, execution.Caller) (execution.AdmissionResolution, error)
 	ListExecutorsFunc func(context.Context, execution.Scope) ([]execution.Executor, error)
 	ListModelsFunc    func(context.Context, execution.Scope) ([]execution.Model, error)
 }
@@ -29,7 +28,7 @@ type Stub struct {
 var _ execution.Service = (*Stub)(nil)
 var _ execution.Catalog = (*Stub)(nil)
 
-// StartModel delegates model-only admission to StartModelFunc.
+// StartModel delegates model-only execution to StartModelFunc.
 func (s *Stub) StartModel(ctx context.Context, scope execution.Scope, req execution.ModelStartRequest) (execution.Ref, error) {
 	if s.StartModelFunc == nil {
 		return execution.Ref{}, execution.ErrUnavailable
@@ -53,7 +52,7 @@ func (s *Stub) ListModels(ctx context.Context, scope execution.Scope) ([]executi
 	return s.ListModelsFunc(ctx, scope)
 }
 
-// Start delegates admission to StartFunc.
+// Start delegates a new Agent session to StartFunc.
 func (s *Stub) Start(ctx context.Context, scope execution.Scope, req execution.StartRequest) (execution.Ref, error) {
 	if s.StartFunc == nil {
 		return execution.Ref{}, execution.ErrUnavailable
@@ -61,7 +60,7 @@ func (s *Stub) Start(ctx context.Context, scope execution.Scope, req execution.S
 	return s.StartFunc(ctx, scope, req)
 }
 
-// Append delegates admission to AppendFunc.
+// Append delegates the next turn to AppendFunc.
 func (s *Stub) Append(ctx context.Context, scope execution.Scope, req execution.AppendRequest) (execution.Ref, error) {
 	if s.AppendFunc == nil {
 		return execution.Ref{}, execution.ErrUnavailable
@@ -85,7 +84,7 @@ func (s *Stub) Cancel(ctx context.Context, scope execution.Scope, ref execution.
 	return s.CancelFunc(ctx, scope, ref)
 }
 
-// End delegates cleanup confirmation to EndFunc.
+// End delegates session stop confirmation to EndFunc.
 func (s *Stub) End(ctx context.Context, scope execution.Scope, sessionID string) error {
 	if s.EndFunc == nil {
 		return execution.ErrUnavailable
@@ -115,13 +114,4 @@ func (s *Stub) ReadAttempt(ctx context.Context, scope execution.Scope, caller ex
 		return execution.Turn{}, execution.ErrUnavailable
 	}
 	return s.ReadAttemptFunc(ctx, scope, caller)
-}
-
-// SealAttempt delegates admission resolution to SealAttemptFunc. An unconfigured double must
-// not claim durable non-admission, which would let a recovering caller drop its occupancy.
-func (s *Stub) SealAttempt(ctx context.Context, scope execution.Scope, caller execution.Caller) (execution.AdmissionResolution, error) {
-	if s.SealAttemptFunc == nil {
-		return execution.AdmissionResolution{}, execution.ErrUnavailable
-	}
-	return s.SealAttemptFunc(ctx, scope, caller)
 }

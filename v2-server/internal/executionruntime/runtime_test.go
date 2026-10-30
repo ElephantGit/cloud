@@ -508,8 +508,11 @@ func TestRuntimeScopeIsolation(t *testing.T) {
 			t.Fatalf("scope check %d=%v", i, err)
 		}
 	}
-	if _, err := f.service.ListModels(f.ctx, execution.Scope{TenantID: f.scope.TenantID, UserID: "missing"}); !errors.Is(err, execution.ErrNotFound) {
+	if _, err := f.service.ListModels(f.ctx, execution.Scope{TenantID: f.scope.TenantID, UserID: "00000000-0000-0000-0000-000000000001"}); !errors.Is(err, execution.ErrNotFound) {
 		t.Fatalf("untrusted catalog scope=%v", err)
+	}
+	if _, err := f.service.ListModels(f.ctx, execution.Scope{TenantID: f.scope.TenantID, UserID: "missing"}); !errors.Is(err, execution.ErrInvalidRequest) {
+		t.Fatalf("malformed catalog scope=%v", err)
 	}
 }
 

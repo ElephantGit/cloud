@@ -83,6 +83,19 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 
 小队与成员关系不授予私人模型、Git 凭据或运行时权限，也不触发 Agent 执行、leader 路由或自动委派。
 
+### 项目仓库
+
+项目使用独立同步候选契约 [`projects.openapi.json`](internal/projectrepos/projects.openapi.json)：
+`GET/POST /api/v2/tenants/{tid}/projects` 与 `GET /api/v2/tenants/{tid}/projects/{pid}`。
+创建只接受匿名 HTTPS 仓库 URL 与分支，完成一次 mirror clone、验证分支并固定 snapshot 后才写入
+已有的 PostgreSQL 项目记录；clone 或分支检查失败不创建项目。之后不 fetch，也不向上游 commit/push。
+列表按 ID 升序分页，读取要求当前租户成员关系；创建者来自登录身份。响应不暴露 mirror 路径、凭据或 snapshot ref。
+
+[`projectrepos.New`](internal/projectrepos/README.md) 通过 `server.Options.Projects` 注入。
+`main` 尚未装配该依赖，当前启动的项目接口返回 503 `projects_unavailable`。
+内部 `SeedDemo` 可创建或复用带真实 Git mirror 的演示项目，但构造服务和 HTTP 请求不会自动调用它。
+本接口不伪造正式 v1 创建契约中的 Space、Workspace 或异步 Operation，也不创建执行目录。
+
 ## 进程内 Agent 执行接口
 
 [`internal/execution`](internal/execution/README.md) 的公共 Go 接口由

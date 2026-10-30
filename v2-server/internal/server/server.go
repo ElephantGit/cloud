@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/execution"
+	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
@@ -34,6 +36,11 @@ type Options struct {
 	SessionTTL time.Duration
 	// DemoUser is the identity the development login signs in as.
 	DemoUser store.Identity
+	// Projects prepares fixed repository mirrors; nil leaves project operations unavailable.
+	Projects *projectrepos.Service
+	// Execution and Catalog are shared by page adapters and catalog routes.
+	Execution execution.Service
+	Catalog   execution.Catalog
 }
 
 // New returns the handler for every route v2-server serves.
@@ -46,6 +53,11 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("POST /auth/logout", h.logout)
 	mux.HandleFunc("GET /api/v1/me", h.authed(h.me))
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/execution/models", h.authed(h.models))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/execution/executors", h.authed(h.executors))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects", h.authed(h.projects))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/projects", h.authed(h.projects))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects/{pid}", h.authed(h.projects))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/schedule-configs/{id}", h.authed(h.scheduleConfigs))

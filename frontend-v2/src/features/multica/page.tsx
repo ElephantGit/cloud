@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, FlaskConical, Plus, Users } from 'lucide-react'
 import { useGetApiV1MeTenants } from '@/api/me/me'
-import type { MemberListItem } from '@/api/generated.schemas'
+import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
 import { useUser } from '@/app/auth/user'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,6 +66,12 @@ export default function Page() {
     mutationFn: ({ member, role, target }: { member: MemberListItem; role: string; target: SquadDetail }) =>
       addSquadMember(tenantId, target.id, { type: 'human', userId: member.userId, role: role.trim(), maintainer: false, version: target.version }),
     onSuccess: (updated, v) => settle(updated, `已加入 ${v.member.displayName}`),
+    onError: e => setError(messageFor(e)),
+  })
+  const addAgent = useMutation({
+    mutationFn: ({ plugin, role, target }: { plugin: SpacePlugin; role: string; target: SquadDetail }) =>
+      addSquadMember(tenantId, target.id, { type: 'agent', spaceAgentId: plugin.id, role: role.trim(), maintainer: false, version: target.version }),
+    onSuccess: (updated, v) => settle(updated, `已加入 ${v.plugin.identifier}`),
     onError: e => setError(messageFor(e)),
   })
   const remove = useMutation({
@@ -137,9 +143,10 @@ export default function Page() {
           : squad && <SquadDetailView squad={squad} canMaintain={canMaintain(squad, me.id, workspaceRole)} archiving={archive.isPending} removing={removing} error={error} onEdit={() => { setError(''); setPanel({ kind: 'edit', id: squad.id }) }} onArchive={() => archive.mutate(squad)} onAddMembers={() => { setError(''); setPanel({ kind: 'members', id: squad.id }) }} onRemove={member => { setError(''); remove.mutate({ member, target: squad }) }} />}
     </SquadDialog>}
 
-    {panel?.kind === 'members' && squad && <SquadDialog title={`添加成员到 ${squad.name}`} subtitle="只能加入当前工作区的有效成员；移出小队不影响工作区成员资格。" onClose={close}>
-      <MemberPicker squad={squad} tenantId={tenantId} adding={add.isPending} error={error}
+    {panel?.kind === 'members' && squad && <SquadDialog title={`添加成员到 ${squad.name}`} subtitle="可以加入当前工作区的有效成员或已安装的 Agent；移出小队不影响工作区成员资格。" onClose={close}>
+      <MemberPicker squad={squad} tenantId={tenantId} adding={add.isPending || addAgent.isPending} error={error}
         onAdd={(member, role) => { setError(''); add.mutate({ member, role, target: squad }) }}
+        onAddAgent={(plugin, role) => { setError(''); addAgent.mutate({ plugin, role, target: squad }) }}
         onClose={() => { setError(''); setPanel({ kind: 'detail', id: squad.id }) }} />
     </SquadDialog>}
   </div>

@@ -1,4 +1,4 @@
-import type { MemberListItem } from '@/api/generated.schemas'
+import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
 import type { SquadDetail } from './api/generated'
 import { activeMembers } from './squad-model'
 
@@ -10,6 +10,24 @@ import { activeMembers } from './squad-model'
 export function candidatesFor(squad: SquadDetail, roster: readonly MemberListItem[]): MemberListItem[] {
   const joined = new Set(activeMembers(squad).flatMap(member => (member.userId === null ? [] : [member.userId])))
   return roster.filter(member => member.status === 'active' && !joined.has(member.userId))
+}
+
+/**
+ * Installed agent plugins a squad may still add: only an agent observed as installed in the
+ * workspace's space qualifies, and each Space Agent holds at most one live membership.
+ */
+export function agentCandidatesFor(squad: SquadDetail, plugins: readonly SpacePlugin[]): SpacePlugin[] {
+  const joined = new Set(activeMembers(squad).flatMap(member => (member.spaceAgentId === null ? [] : [member.spaceAgentId])))
+  return plugins.filter(plugin => plugin.kind === 'agent' && plugin.observedState === 'installed' && !joined.has(plugin.id))
+}
+
+/** The install identifier people recognize an agent plugin by, such as official/ora-space.opencode. */
+export const pluginLabel = (plugin: SpacePlugin): string => `${plugin.sourceNamespace}/${plugin.identifier}`
+
+/** Filters agent plugins by identifier; an empty query leaves the list unchanged. */
+export function matchingPlugins(plugins: readonly SpacePlugin[], query: string): SpacePlugin[] {
+  const needle = query.trim().toLowerCase()
+  return needle ? plugins.filter(plugin => pluginLabel(plugin).toLowerCase().includes(needle)) : [...plugins]
 }
 
 /** Filters candidates by display name; an empty query leaves the list unchanged. */

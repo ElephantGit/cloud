@@ -32,11 +32,23 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   await page.screenshot({ path: test.info().outputPath('picker.png'), fullPage: true })
   await picker.getByRole('listitem').filter({ hasText: colleague }).getByRole('button', { name: '加入' }).click()
   await expect(page.getByText(`已加入 ${colleague}`)).toBeVisible()
+
+  // The space's installed agent joins as an agent member; joining only stores the grouping.
+  const agents = picker.getByRole('region', { name: '可加入的空间 Agent' })
+  await expect(agents.getByText('official/ora-space.opencode')).toBeVisible()
+  await expect(agents.getByText('已安装 0.6.11')).toBeVisible()
+  await picker.getByLabel('职责（可选）').fill('实现')
+  await page.screenshot({ path: test.info().outputPath('picker-agents.png'), fullPage: true })
+  await agents.getByRole('button', { name: '加入' }).click()
+  await expect(page.getByText('已加入 ora-space.opencode')).toBeVisible()
   await picker.getByRole('button', { name: '完成' }).click()
   const detail = page.getByRole('dialog')
   await expect(detail.getByText(colleague)).toBeVisible()
   await expect(detail.getByText('外部协作')).toBeVisible()
+  await expect(detail.getByText('OpenCode')).toBeVisible()
+  await expect(detail.getByText('实现')).toBeVisible()
   await expect(detail.getByText(/人类\s*2/)).toBeVisible()
+  await expect(detail.getByText(/Agent\s*1/)).toBeVisible()
   await expect(detail.getByText(/不授予私人模型、Git 凭据或运行时权限/)).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('detail.png'), fullPage: true })
   await page.keyboard.press('Escape')
@@ -46,6 +58,7 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   const card = page.getByRole('button', { name: `查看${name}` })
   await expect(card).toBeVisible()
   await expect(card).toContainText('人类 2')
+  await expect(card).toContainText('Agent 1')
   await expect(card).toContainText('维护者 1')
   await page.screenshot({ path: test.info().outputPath('list.png'), fullPage: true })
   await card.click()
@@ -57,6 +70,9 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   await expect(page.getByText(`已移除 ${colleague}`)).toBeVisible()
   await expect(detail.getByText('已退出 1')).toBeVisible()
   await expect(detail.getByText(/人类\s*1/)).toBeVisible()
+  // The agent membership is untouched by the human removal.
+  await expect(detail.getByText(/Agent\s*1/)).toBeVisible()
+  await expect(detail.getByText('OpenCode')).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('members.png'), fullPage: true })
 
   // Archiving needs confirmation, ends the live membership and keeps the history read-only.

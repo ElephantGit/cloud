@@ -14,8 +14,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "../host/ui";
-import type { WorkflowVariableCatalogEntry } from "../mock";
+} from "@/lib/workflows/host/ui";
+import type { WorkflowVariableCatalogEntry } from "@/lib/workflows/mock";
 import {
   ComposerEditor,
   type ComposerEditorHandle,

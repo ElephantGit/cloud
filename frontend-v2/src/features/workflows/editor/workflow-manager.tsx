@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
   Input,
   cn,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import { subtleScrollbar } from "@/lib/scrollbar";
 /** Sidebar row identity; the canvas hydrates the full graph separately. */
 export interface WorkflowLibraryItem {

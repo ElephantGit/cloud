@@ -13,7 +13,7 @@ import {
   type WorkflowCapabilities,
   type WorkflowNodeData,
   type WorkflowNodeKind,
-} from "../../mock";
+} from "@/lib/workflows/mock";
 import {
   Button,
   cn,
@@ -21,7 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../../host/ui";
+} from "@/lib/workflows/host/ui";
 import type { WorkflowContainerInsertion } from "../workflow-container-insertion";
 import { WORKFLOW_CANVAS_NODE_KINDS } from "../workflow-canvas-node-kinds";
 import { getNodeMetadata } from "../workflow-node-metadata";

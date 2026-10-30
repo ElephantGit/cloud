@@ -13,8 +13,8 @@ import {
   supportsWorkflowNodeScope,
   type WorkflowCapabilities,
   type WorkflowNodeKind,
-} from "../mock";
-import { cn } from "../host/ui";
+} from "@/lib/workflows/mock";
+import { cn } from "@/lib/workflows/host/ui";
 import { useTranslation } from "react-i18next";
 import { WORKFLOW_CANVAS_NODE_KINDS } from "./workflow-canvas-node-kinds";
 import { getNodeMetadata } from "./workflow-node-metadata";

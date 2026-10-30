@@ -70,14 +70,25 @@ export const workflowTranslationResources = {
   },
 };
 
-/** Builds an isolated i18next instance over the workflow bundles, as desktop's `appI18n` is. */
-export function createWorkflowI18n(locales: readonly WorkflowLocale[]) {
+/**
+ * Builds an isolated i18next instance over the workflow bundles, as desktop's `appI18n` is.
+ * `extra` adds a page's own bundle, such as the run view's.
+ */
+export function createWorkflowI18n(
+  locales: readonly WorkflowLocale[],
+  extra: Partial<Record<WorkflowLocale, Record<string, string>>> = {},
+) {
   const instance = createInstance();
   void instance.use(initReactI18next).init({
     resources: Object.fromEntries(
       locales.map((locale) => [
         locale,
-        { translation: workflowTranslationResources[locale] },
+        {
+          translation: {
+            ...workflowTranslationResources[locale],
+            ...extra[locale],
+          },
+        },
       ]),
     ),
     lng: "zh-CN",

@@ -5,8 +5,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../host/ui";
-import type { WorkflowAgentConfig } from "../mock";
+} from "@/lib/workflows/host/ui";
+import type { WorkflowAgentConfig } from "@/lib/workflows/mock";
 import { InspectorField } from "./workflow-node-details";
 
 /** Edits silence handling independently of node failure retries, including interactive nodes. */

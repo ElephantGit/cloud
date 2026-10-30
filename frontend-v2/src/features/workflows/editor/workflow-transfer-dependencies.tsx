@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { cn } from "../host/ui";
-import { useUiStore } from "../host/ui-store";
+import { cn } from "@/lib/workflows/host/ui";
+import { useUiStore } from "@/lib/workflows/host/ui-store";
 import type {
   WorkflowDependency,
   WorkflowDependencyFix,
   WorkflowDependencyStatus,
-} from "./workflow-transfer";
+} from "@/lib/workflows/editor/workflow-transfer";
 
 const FIX_LABELS: Record<WorkflowDependencyFix, string> = {
   install: "settings.workflow.transfer.goInstall",

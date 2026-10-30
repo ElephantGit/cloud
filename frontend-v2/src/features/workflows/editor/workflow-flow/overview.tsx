@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { MiniMap, type Node } from "@xyflow/react";
-import type { WorkflowNodeData } from "../../mock";
+import type { WorkflowNodeData } from "@/lib/workflows/mock";
 
 /** Resolves minimap node color without allocating a new callback on canvas renders. */
 function workflowOverviewNodeColor(node: Node<WorkflowNodeData>): string {

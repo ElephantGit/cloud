@@ -180,11 +180,46 @@ func TestExecutionStateRules(t *testing.T) {
 	}
 	cancel = apply(cancel, "cancelled", "ref-3")
 	cancel = apply(cancel, "released", "ref-3")
+	queued := record("query-unsent")
+	got, e := s.GetOccurrence(ctx, tid, u.ID, queued.ID)
+	if e != nil || got.ID != queued.ID {
+		t.Fatalf("single query %v %v", got, e)
+	}
+	got, e = s.FindManualOccurrence(ctx, tid, u.ID, config.ID, "query-unsent")
+	if e != nil || !got.ScheduledAt.Equal(queued.ScheduledAt) {
+		t.Fatalf("manual retry lookup %v %v", got, e)
+	}
+	if _, e = s.FindManualOccurrence(ctx, tid, u.ID, config.ID, "missing"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("missing manual identity")
+	}
+	recoverable, e := s.RecoverableOccurrences(ctx, tid, u.ID)
+	if e != nil || len(recoverable) != 1 || recoverable[0].ID != queued.ID {
+		t.Fatalf("recoverable %v %v", recoverable, e)
+	}
+	queued = apply(queued, "begin", "")
+	activeRows, e := s.ActiveOccurrences(ctx, tid, u.ID)
+	if e != nil || len(activeRows) != 1 || activeRows[0].ID != queued.ID {
+		t.Fatalf("active %v %v", activeRows, e)
+	}
+	queued, e = s.ApplyOccurrenceEvidence(ctx, tid, u.ID, queued.ID, queued.Version, store.ExecutionEvidence{Event: "rejected", Reason: "invalid_model"})
+	if e != nil || !queued.Released || queued.Reason != "invalid_model" {
+		t.Fatalf("definite rejection %v %v", queued, e)
+	}
 	other, e := s.Login(ctx, store.Identity{Source: "test", Subject: "other", DisplayName: "Other"}, time.Hour)
 	if e != nil {
 		t.Fatal(e)
 	}
 	v, _ := s.SessionUser(ctx, other)
+	if _, e = s.GetOccurrence(ctx, tid, v.ID, queued.ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("foreign get")
+	}
+	if _, e = s.FindManualOccurrence(ctx, tid, v.ID, config.ID, "query-unsent"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("foreign lookup")
+	}
+	foreign, e := s.RecoverableOccurrences(ctx, tid, v.ID)
+	if e != nil || len(foreign) != 0 {
+		t.Fatalf("foreign recovery %v %v", foreign, e)
+	}
 	if _, e = s.ApplyOccurrenceEvidence(ctx, tid, v.ID, cancel.ID, cancel.Version, store.ExecutionEvidence{Event: "recover"}); !errors.Is(e, store.ErrNotFound) {
 		t.Fatal("foreign transition")
 	}

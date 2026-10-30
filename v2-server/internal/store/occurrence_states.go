@@ -70,6 +70,13 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 				return ErrIneligible
 			}
 			o.Status, o.Reason, o.Released = "skipped", "workspace_busy", true
+		case "rejected":
+			// Only a definitive admission refusal is evidence. Conflicts and ambiguous
+			// outcomes may conceal an existing execution and must retain their slot.
+			if o.Status != "starting" || proof.Reason == "" {
+				return ErrIneligible
+			}
+			o.Status, o.Reason, o.Released = "skipped", proof.Reason, true
 		case "unknown":
 			if o.Status != "starting" {
 				return ErrIneligible

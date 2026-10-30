@@ -22,6 +22,7 @@ export {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 export { TooltipContent } from "./tooltip";
+export { Spinner } from "./spinner";
 export { Toaster } from "@/components/ui/sonner";
 export { toast } from "sonner";
 export {

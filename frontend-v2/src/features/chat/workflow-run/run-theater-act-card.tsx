@@ -1,0 +1,474 @@
+import { useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  IconLayoutSidebarRightCollapse,
+  IconLayoutSidebarRightExpand,
+} from "@tabler/icons-react";
+import { Badge, Button, cn } from "@/lib/workflows/host/ui";
+import { createMockWorkflowNodeType } from "@/lib/workflows/mock";
+import { formatRunClock } from "./run-format";
+import { formatWorkflowNodeOutput } from "./format-node-output";
+import { useAgentCatalog } from "./demo-host";
+import {
+  AgentExecutionModeMark,
+  WorkflowNodeCardShell,
+} from "@/lib/workflows/node-chrome";
+import {
+  resolveTheaterActDetail,
+  resolveTheaterActInstruction,
+} from "./agent-config-display";
+import {
+  RunActSessionDock,
+  type ActSessionDockTone,
+} from "./run-act-session-dock";
+import { RunBriefPopover } from "./run-brief-popover";
+import { RunStatusBadge } from "./run-status-mark";
+import { isNodeWorking, runStatusTone } from "./run-status-style";
+import { RunNodeSessionChat } from "./run-node-session-chat";
+import { RunRetryWaitLabel } from "./run-retry-wait-label";
+import { shouldPreviewBrief } from "./should-preview-brief";
+import type {
+  GraphWorkflowNodeState,
+  WorkflowNodeConversationItem,
+  WorkflowNodeData,
+} from "@/lib/workflows/runtime";
+import "./theater-motion.css";
+import { RunConditionStage } from "./run-condition-stage";
+
+interface RunTheaterActCardProps {
+  /** Loop history displays only committed output; token streams remain inside the session dock. */
+  showCompletedOutput?: boolean;
+  data: WorkflowNodeData;
+  state: GraphWorkflowNodeState;
+  /** Run identifier used by an interactive node's explicit completion action. */
+  runId?: string;
+  /** Node identifier used by an interactive node's explicit completion action. */
+  nodeId?: string;
+  /** Soft emphasis when this act is live (running / awaiting). */
+  live: boolean;
+  /** Glanceable outcome count; detail lives in the act inspector. */
+  artifactCount?: number;
+  /** Large primary stage vs secondary parallel card. */
+  variant?: "stage" | "compact";
+  /** Whether the companion inspector is currently expanded. */
+  inspectorOpen?: boolean;
+  /** Toggles the companion inspector from the dedicated header control. */
+  onToggleInspector?: () => void;
+  /** Stronger stage presence when this card is the focused parallel act. */
+  emphasized?: boolean;
+  /**
+   * HITL surface for this act. Prefer the render form so the session dock can
+   * live inside HITL chrome; a plain node falls back to a shared action strip.
+   */
+  interaction?:
+    ReactNode | ((slots: { accessory: ReactNode | null }) => ReactNode);
+  /** Filtered node session items; secondary activity is disclosed in-place. */
+  conversation?: WorkflowNodeConversationItem[];
+  /** Parallel peers opt in only for the focused card to keep carousel gestures stable. */
+  conversationEnabled?: boolean;
+  /** Controlled session-dock open state (workspace lifts this across view remounts). */
+  conversationOpen?: boolean;
+  onConversationOpenChange?: (open: boolean) => void;
+  /** Lets the workspace move an open session dock after interactive completion. */
+  onNodeCompleted?: (nodeId: string) => void;
+  /** Direct successor titles shown by the parked step card in the session dock. */
+  nextNodeTitles?: string[];
+}
+
+/**
+ * Theater act card: instruction + metrics on the stage surface.
+ * A dedicated header control opens the companion inspector so nested session
+ * interactions never compete with a whole-card click target.
+ */
+export function RunTheaterActCard({
+  data,
+  state,
+  runId,
+  nodeId,
+  live,
+  artifactCount = 0,
+  variant = "stage",
+  inspectorOpen = false,
+  onToggleInspector,
+  emphasized = true,
+  interaction,
+  conversation = [],
+  conversationEnabled = true,
+  conversationOpen: conversationOpenProp,
+  onConversationOpenChange,
+  showCompletedOutput = false,
+  nextNodeTitles = [],
+}: RunTheaterActCardProps) {
+  const { i18n, t } = useTranslation();
+  const locale =
+    i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+  const agentCatalog = useAgentCatalog();
+  const kindLabel = createMockWorkflowNodeType(data.kind, locale).label;
+  const tone = runStatusTone(state.status);
+  const detail = resolveTheaterActDetail(data, agentCatalog);
+  const instruction = resolveTheaterActInstruction(data);
+  const compact = variant === "compact";
+  const [uncontrolledConversationOpen, setUncontrolledConversationOpen] =
+    useState(false);
+  const conversationOpen = conversationOpenProp ?? uncontrolledConversationOpen;
+  const setConversationOpen =
+    onConversationOpenChange ?? setUncontrolledConversationOpen;
+  const conversationMessageCount = useMemo(
+    () =>
+      conversation.reduce(
+        (count, item) => (item.kind === "message" ? count + 1 : count),
+        0,
+      ),
+    [conversation],
+  );
+  // Keep the session dock available during HITL so readers can inspect prior
+  // node messages before answering a permission or clarify gate.
+  // Only Agent nodes own sessions. Giving control nodes a dock produces a misleading
+  // session placeholder because those nodes can never receive a session id.
+  const canUseConversation =
+    data.kind === "agent" && !compact && conversationEnabled;
+  const isConversationOpen = conversationOpen && canUseConversation;
+  const sessionChatIdentity =
+    isConversationOpen && state.sessionId != null
+      ? { sessionId: state.sessionId }
+      : null;
+  const interactive = data.agentConfig?.interactive === true;
+  // A parked interactive turn without a settled completion preview is paused: the previous turn
+  // did not settle normally, or an older node run has no snapshot yet. A provisional snapshot is
+  // not paused: the step card invites the ordinary completion and the backend re-checks it, so the
+  // act card must not label the same state differently.
+  const paused =
+    interactive &&
+    state.status === "awaiting_input" &&
+    state.completion?.ready !== true &&
+    state.completion?.provisional !== true;
+  const sessionInteraction =
+    sessionChatIdentity !== null &&
+    interactive &&
+    runId !== undefined &&
+    nodeId !== undefined
+      ? {
+          runId,
+          nodeId,
+          ...(state.completion !== undefined
+            ? { completion: state.completion }
+            : {}),
+          nextNodeTitles,
+        }
+      : undefined;
+  const hasHitl = interaction !== undefined;
+  const retryWait =
+    state.status === "retry_waiting" ? state.retryWait : undefined;
+  // A waiting retry has not started, so its countdown replaces the time range.
+  const timingRange =
+    state.status !== "retry_waiting" &&
+    (state.startedAt !== undefined || state.finishedAt !== undefined)
+      ? [
+          state.startedAt !== undefined
+            ? formatRunClock(state.startedAt, locale)
+            : "—",
+          state.finishedAt !== undefined
+            ? formatRunClock(state.finishedAt, locale)
+            : "—",
+        ].join(" — ")
+      : null;
+
+  const metrics = (
+    <div className="space-y-2.5">
+      {retryWait !== undefined && (
+        <p className="text-[11px] font-medium tabular-nums text-orange-700 dark:text-orange-300">
+          <RunRetryWaitLabel wait={retryWait} />
+        </p>
+      )}
+      {timingRange !== null && (
+        <p className="text-[10px] tabular-nums text-muted-foreground/65">
+          {timingRange}
+        </p>
+      )}
+    </div>
+  );
+
+  function renderSessionDock(dockTone: ActSessionDockTone): ReactNode {
+    if (!canUseConversation) {
+      return null;
+    }
+    return (
+      <RunActSessionDock
+        open={isConversationOpen}
+        messageCount={conversationMessageCount}
+        onOpenChange={setConversationOpen}
+        tone={dockTone}
+      />
+    );
+  }
+
+  const stageDock = renderSessionDock("stage");
+  const hitlDock = renderSessionDock("hitl");
+
+  const hitlFooter = (() => {
+    if (!hasHitl) {
+      return undefined;
+    }
+    const accessory = hitlDock;
+    const body =
+      typeof interaction === "function" ? (
+        interaction({ accessory })
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-amber-500/25 bg-amber-500/[0.04]">
+          <div className="flex items-center justify-between gap-2 border-b border-amber-500/15 px-2.5 py-1.5">
+            <p className="truncate text-[11px] font-medium text-amber-950/75 dark:text-amber-100/75">
+              {t("workflowRun.hitl.panelLabel")}
+            </p>
+            {accessory}
+          </div>
+          <div className="p-2.5 pt-2">{interaction}</div>
+        </div>
+      );
+    return (
+      <div
+        className="pt-1"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {body}
+      </div>
+    );
+  })();
+
+  return (
+    <WorkflowNodeCardShell
+      kind={data.kind}
+      title={data.title}
+      description={data.description}
+      kindLabel={kindLabel}
+      density={compact ? "compact" : "stage"}
+      titleAccessory={
+        data.kind === "agent" ? (
+          <AgentExecutionModeMark
+            interactive={data.agentConfig?.interactive === true}
+          />
+        ) : undefined
+      }
+      className={cn(
+        compact
+          ? "w-full"
+          : isConversationOpen
+            ? "flex h-full min-h-0 w-full max-w-none flex-col overflow-hidden"
+            : "mx-auto w-full max-w-xl",
+        "transition-[border-color,box-shadow] duration-200 ease-out motion-reduce:transition-none",
+        emphasized &&
+          live &&
+          state.status === "running" &&
+          "theater-live-breathe",
+        emphasized &&
+          live &&
+          state.status === "awaiting_input" &&
+          "theater-live-breathe-amber",
+      )}
+      ariaLabel={`${data.title}: ${t(tone.labelKey)}`}
+      aria-live={compact ? undefined : "polite"}
+      frameClassName={cn(
+        tone.ring,
+        "ring-1 transition-[box-shadow,ring-color] duration-300",
+        live && state.status === "running" && "ring-sky-500/35",
+        live && state.status === "awaiting_input" && "ring-amber-500/35",
+      )}
+      detailsClassName={
+        isConversationOpen ? "min-h-0 flex-1 overflow-hidden" : undefined
+      }
+      headerAccessory={
+        <div className="flex items-center gap-1.5">
+          {artifactCount > 0 && (
+            <Badge variant="secondary" className="tabular-nums text-[10px]">
+              {t("workflowRun.artifacts.countBadge", { count: artifactCount })}
+            </Badge>
+          )}
+          <RunStatusBadge
+            status={state.status}
+            live={emphasized && isNodeWorking(state.status)}
+            {...(paused
+              ? { labelKey: "workflowRun.stepCard.pausedBadge" }
+              : {})}
+          />
+          {state.stopReason === "loop_exit" && (
+            <span className="text-[10px] text-muted-foreground">
+              {t("workflowRun.loopExit.completed")}
+            </span>
+          )}
+          {state.stopReason === "loop_max_iterations" && (
+            <span className="text-[10px] text-muted-foreground">
+              {t("workflowRun.loopView.maxIterations")}
+            </span>
+          )}
+        </div>
+      }
+      headerEnd={
+        onToggleInspector !== undefined ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              "size-9 shrink-0 rounded-full border shadow-sm",
+              inspectorOpen
+                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                : "border-border/80 bg-background hover:border-primary/30 hover:bg-primary/5",
+            )}
+            aria-label={t(
+              inspectorOpen
+                ? "workflowRun.inspector.collapse"
+                : "workflowRun.theater.openInspector",
+            )}
+            title={t(
+              inspectorOpen
+                ? "workflowRun.inspector.collapse"
+                : "workflowRun.theater.openInspector",
+            )}
+            aria-pressed={inspectorOpen}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onToggleInspector}
+          >
+            {inspectorOpen ? (
+              <IconLayoutSidebarRightCollapse className="size-4" />
+            ) : (
+              <IconLayoutSidebarRightExpand className="size-4" />
+            )}
+          </Button>
+        ) : undefined
+      }
+      body={
+        isConversationOpen ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {t("workflowRun.conversation.sessionMode")}
+          </p>
+        ) : compact ? (
+          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+            {data.description}
+          </p>
+        ) : data.kind === "condition" ? (
+          <RunConditionStage data={data} state={state} />
+        ) : data.kind === "output" ? (
+          <div className="mt-5 rounded-xl border border-border/80 bg-muted/30 px-4 py-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+              {t("workflowRun.inspector.output")}
+            </p>
+            {state.output?.summary !== undefined ? (
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground/90">
+                {formatWorkflowNodeOutput(state.output.summary)}
+              </pre>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("workflowRun.theater.outputPending")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {data.description}
+            </p>
+            <div className="mt-5 rounded-xl border border-border/80 bg-muted/30 px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                {t("workflowRun.theater.instruction")}
+              </p>
+              {shouldPreviewBrief(instruction) ? (
+                <div className="mt-1.5">
+                  <RunBriefPopover
+                    title={t("workflowRun.theater.instruction")}
+                    body={instruction}
+                    openLabel={t("workflowRun.inspector.textOpen", {
+                      field: t("workflowRun.theater.instruction"),
+                    })}
+                    side="bottom"
+                    stopPropagation
+                    className="border-border/60 bg-background/70 hover:bg-background/90"
+                  >
+                    <span className="line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-foreground/90">
+                      {instruction}
+                    </span>
+                  </RunBriefPopover>
+                </div>
+              ) : (
+                <p className="mt-1.5 line-clamp-4 text-sm leading-6 text-foreground/90">
+                  {instruction === "" ? "—" : instruction}
+                </p>
+              )}
+              {detail !== undefined && (
+                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+                  {detail}
+                </p>
+              )}
+            </div>
+            {showCompletedOutput && (
+              <div className="mt-3 rounded-xl border border-border/80 bg-muted/30 px-4 py-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("workflowRun.inspector.output")}
+                </p>
+                {state.status === "succeeded" &&
+                state.output?.summary !== undefined ? (
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">
+                    {formatWorkflowNodeOutput(state.output.summary)}
+                  </pre>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {t(
+                      state.status === "inactive"
+                        ? "workflowRun.theater.notRunThisRound"
+                        : "workflowRun.loopView.outputPending",
+                    )}
+                  </p>
+                )}
+                {state.errorMessage && (
+                  <p className="mt-2 text-sm text-destructive">
+                    {state.errorMessage}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )
+      }
+      details={
+        isConversationOpen ? (
+          <div
+            className="flex h-full min-h-0 flex-col px-3 pb-1 pt-2 animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {/* The demo engine keeps each node's conversation items, not a live session. */}
+            {conversation.length > 0 ? (
+              <RunNodeSessionChat
+                conversation={conversation}
+                sessionActions={hitlFooter === undefined ? stageDock : undefined}
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                {t(
+                  state.status === "retry_waiting"
+                    ? "workflowRun.retryWait.sessionPending"
+                    : isNodeWorking(state.status)
+                      ? "workflowRun.conversation.waiting"
+                      : "workflowRun.conversation.idle",
+                )}
+              </div>
+            )}
+          </div>
+        ) : undefined
+      }
+      footer={
+        sessionInteraction !== undefined ? undefined : hitlFooter !==
+          undefined ? (
+          hitlFooter
+        ) : isConversationOpen && conversation.length > 0 ? undefined : isConversationOpen ? (
+          <div className="flex items-center">{stageDock}</div>
+        ) : (
+          <div className="flex items-end gap-3">
+            <div className="min-w-0 flex-1">{metrics}</div>
+            {stageDock}
+          </div>
+        )
+      }
+    />
+  );
+}

@@ -73,9 +73,14 @@ v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent �
 
 ## 进程内 Agent 执行接口
 
-[`internal/execution`](internal/execution/README.md) 提供公共 Go 接口草案和显式测试替身，
-供页面服务编译和接口评审。当前没有真实执行实现，也未装配到服务启动路径；
-这不表示后端已能运行 Node、Agent 或保存其历史，不新增 HTTP 契约。
+[`internal/execution`](internal/execution/README.md) 的公共 Go 接口由
+`server.Options.Execution`（`execution.Service`）与 `server.Options.Catalog`（`execution.Catalog`）
+统一注入，页面 handler 通过保存的 Options 使用同一个执行后端。页面服务测试可注入显式 callback Stub，
+不必各自创建执行实现或修改启动入口。
+
+`main` 目前给这两个字段传入同一个未配置的 `executiontest.Stub`，所有执行、读取与目录调用均返回
+`execution.ErrUnavailable`；它不会伪造运行、清单或持久历史。替换为真实执行服务只改变启动装配，
+页面继续依赖同一接口。本注入点不新增 HTTP 契约。
 
 ## 与正式 Cloud 的差异
 

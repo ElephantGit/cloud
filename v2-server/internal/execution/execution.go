@@ -222,9 +222,11 @@ type Service interface {
 
 	// Cancel waits for execution-side confirmation and durable terminal publication. It is
 	// idempotent for terminal turns and returns their actual result, including a racing success.
-	// It stops only the identified turn, leaving the conversation available for Append. A
-	// terminal turn is a no-op and cannot stop a later turn. A deadline or ErrStopUnconfirmed
-	// does not confirm cancellation; callers observe the actual result through reads/events.
+	// Cancelling an active Agent turn ends the entire Node session; subsequent Append returns
+	// ErrSessionEnded. It must not replay history or silently replace the Agent to continue it.
+	// Model-only cancellation stops just the current provider call and permits later Append.
+	// A terminal turn is a no-op and cannot stop a later turn. A deadline or ErrStopUnconfirmed
+	// does not confirm stopping; callers observe the actual result through reads/events.
 	Cancel(context.Context, Scope, Ref) (Result, error)
 
 	// End closes only this session, stopping its active turn and waiting for confirmation.

@@ -26,7 +26,7 @@ type Observation struct {
 }
 
 // Consume converts one thread_event/preview into a complete replacement projection and, for
-// turnEnded, the full authoritative result. It leaves event cursors, persistence and ACK to M3.
+// turnEnded, the full authoritative result. It leaves event cursors, persistence and ACK to its caller.
 func (p *Projection) Consume(ctx context.Context, message node.Message) (Observation, error) {
 	if message.ExecutionID != p.execution {
 		return Observation{}, ErrIdentity

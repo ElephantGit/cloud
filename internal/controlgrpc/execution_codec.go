@@ -527,6 +527,7 @@ func storedMessage(o core.Object) *controlpb.StoredObject {
 
 func record(row core.Object) *controlpb.ExecutionRecord {
 	out := &controlpb.ExecutionRecord{OperationId: row.S("operationId"), NodeOperationId: row.S("nodeOperationId"), ExecutionId: row.S("executionId"), NodeId: row.S("nodeId"), Input: input(row.O("input"))}
+	out.CreatedAt = optionalString(row, "createdAt")
 	if res := row.O("result"); len(res) > 0 {
 		out.Result = result(res)
 	}

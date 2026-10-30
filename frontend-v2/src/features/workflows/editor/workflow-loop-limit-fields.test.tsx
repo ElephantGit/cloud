@@ -6,14 +6,14 @@ import {
   createMockWorkflowCapabilities,
   createMockWorkflowLoopGroup,
   type WorkflowNodeData,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   parseWorkflowGraph,
   serializeWorkflowGraph,
-} from "../runtime";
+} from "@/lib/workflows/runtime";
 import type { Node } from "@xyflow/react";
-import { appI18n } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowInspector } from "./workflow-inspector";
 
 describe("Loop round limit policy", () => {

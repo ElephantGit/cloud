@@ -1,3 +1,5 @@
+import { ScheduleWorkflowProvider } from './workflow-provider'
+import { useWorkflowLibrary } from '@/lib/workflows/data/workflows'
 import { useUser } from '@/app/auth/user'
 import { useTaskScheduleDemo, emptyDemoSchedules } from './task-demo-store'
 import { useEffect, useRef, useState } from 'react'
@@ -11,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { catalog, formatTime, nextTimes, type Draft, type Task } from './schedule-model'
+import { catalog, formatTime, nextTimes, type Catalog, type Draft, type Task } from './schedule-model'
 import { ScheduleDrawer } from './schedule-drawer'
 import { ScheduleForm } from './schedule-form'
 import { ScheduleDetail } from './schedule-detail'
@@ -22,6 +24,10 @@ type Panel = { kind: 'create' } | { kind: 'edit'; id: string } | { kind: 'detail
 
 /** Persistent schedule configuration; execution is not yet connected. */
 export default function Page() {
+  return <ScheduleWorkflowProvider><SchedulePageContext /></ScheduleWorkflowProvider>
+}
+
+function SchedulePageContext() {
   const tenants = useGetApiV1MeTenants()
   const user = useUser()
   const tenantId = tenants.data?.items[0]?.id ?? ''
@@ -31,6 +37,8 @@ export default function Page() {
 
 function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tenantId: string; scope: string; tenantsLoading: boolean; tenantsError: boolean }) {
   const closeForm = useRef<() => void>(() => setPanel(null))
+  const library = useWorkflowLibrary()
+  const workflowCatalog: Catalog = { ...catalog, workflows: (library.data ?? []).map(w => ({ id: w.id, name: w.name, description: '', versions: w.publishedVersion ? [w.publishedVersion] : [], fields: [] })) }
   const sources = useTaskScheduleDemo(s => s.sources)
   const demos = useTaskScheduleDemo(s => s.schedules[scope] ?? emptyDemoSchedules)
   const client = useQueryClient()
@@ -62,11 +70,11 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const enabled = tasks.filter(t => t.enabled).length
   const nearest = tasks.filter(t => t.enabled).flatMap(t => nextTimes(t.rule, now, new Date(t.createdAt)).slice(0, 1).map(date => ({ task: t, date }))).sort((a, b) => a.date.getTime() - b.date.getTime())[0]
   const open = (task: Task, tab?: 'config' | 'history') => setPanel({ kind: 'detail', id: task.id, tab })
-  const saved = (draft: Draft) => {
+  const saved = (draft: Draft, data: Catalog) => {
     setSaveError('')
     if (draft.kind !== 'chat') {
-      const id = useTaskScheduleDemo.getState().save(scope, draft, panel?.kind === 'edit' ? panel.id : undefined)
-      if (!id) { setSaveError('来源任务已不可用，请重新选择。'); return }
+      const id = useTaskScheduleDemo.getState().save(scope, draft, panel?.kind === 'edit' ? panel.id : undefined, data)
+      if (!id) { setSaveError('任务或工作流配置已不可用，请重新选择。'); return }
       setPanel({ kind: 'detail', id }); setToast('演示配置已保存，刷新后清除'); return
     }
     if (editTask && editTask.target.kind !== 'chat') { setSaveError('请新建直接对话配置。'); return }
@@ -102,7 +110,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
           </div>
         </div>
 
-        {tenantsLoading || configs.isLoading ? <p role="status">正在加载任务…</p> : tenantsError || configs.isError ? <p role="alert">加载失败，请刷新重试。</p> : !tenantId ? <p role="alert">没有可用的工作空间。</p> : filtered.length ? <ScheduleTable sources={sources} tasks={filtered} now={now} onOpen={open} onToggle={toggleTask} /> : <Empty className="min-h-72 border">
+        {tenantsLoading || configs.isLoading ? <p role="status">正在加载任务…</p> : tenantsError || configs.isError ? <p role="alert">加载失败，请刷新重试。</p> : !tenantId ? <p role="alert">没有可用的工作空间。</p> : filtered.length ? <ScheduleTable data={workflowCatalog} sources={sources} tasks={filtered} now={now} onOpen={open} onToggle={toggleTask} /> : <Empty className="min-h-72 border">
           <EmptyHeader><EmptyMedia variant="icon"><CalendarClock /></EmptyMedia><EmptyTitle>{tasks.length ? '没有匹配的任务' : '安排第一个定时任务'}</EmptyTitle><EmptyDescription>{tasks.length ? '调整关键词或筛选条件，再试一次。' : '从每日简报或每周项目检查开始。'}</EmptyDescription></EmptyHeader>
           <EmptyContent><Button variant="outline" onClick={() => tasks.length ? clearFilters() : openCreate()}>{tasks.length ? '清除筛选' : '新建任务'}</Button></EmptyContent>
         </Empty>}
@@ -112,7 +120,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
 
     {toast && <div className="sp-toast" role="status"><Check size={16} />{toast}</div>}
     {panel && <ScheduleDrawer title={panel.kind === 'create' ? '新建定时任务' : panel.kind === 'edit' ? '编辑定时任务' : panelTask?.name ?? '任务详情'} subtitle={panel.kind === 'detail' ? '查看任务配置与每次运行的结果。' : '配置执行内容、项目与时间安排。'} onClose={() => panel.kind === 'detail' ? setPanel(null) : closeForm.current()}>
-      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm onCloseReady={fn => { closeForm.current = fn }} data={{ ...catalog, tasks: sources }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail key={`${panelTask.id}-${panel.tab}`} task={panelTask} sources={sources} initialTab={panel.tab} onSimulate={panelTask.target.kind === 'task' ? fail => useTaskScheduleDemo.getState().run(scope, panelTask.id, fail) : undefined} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
+      {panel.kind === 'create' || panel.kind === 'edit' ? <ScheduleForm onCloseReady={fn => { closeForm.current = fn }} data={{ ...catalog, tasks: sources }} saving={saveMutation.isPending} blocked={conflict} saveError={saveError} key={panel.kind === 'edit' ? panel.id : 'create'} task={panel.kind === 'edit' ? editTask : undefined} onSave={saved} onCancel={() => setPanel(null)} /> : panelTask && <ScheduleDetail data={workflowCatalog} key={`${panelTask.id}-${panel.tab}`} task={panelTask} sources={sources} initialTab={panel.tab} onSimulate={panelTask.target.kind === 'task' ? fail => useTaskScheduleDemo.getState().run(scope, panelTask.id, fail) : undefined} onEdit={() => { setEditTask(structuredClone(panelTask)); setConflict(false); setSaveError(''); setPanel({ kind: 'edit', id: panelTask.id }) }} onToggle={() => toggleTask(panelTask)} />}
     </ScheduleDrawer>}
   </div>
 }

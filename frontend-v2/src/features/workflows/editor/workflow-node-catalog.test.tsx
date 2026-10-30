@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMockWorkflowCapabilities } from "../mock";
-import { appI18n } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+import { createMockWorkflowCapabilities } from "@/lib/workflows/mock";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import { WorkflowNodeCatalog } from "./workflow-node-catalog";
 
 const capabilities = createMockWorkflowCapabilities("en-US");

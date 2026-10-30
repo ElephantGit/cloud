@@ -25,12 +25,12 @@ import {
   WORKFLOW_ITERATION_NODE_HEIGHT,
   WORKFLOW_ITERATION_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../../mock";
-import { cn } from "../../host/ui";
+} from "@/lib/workflows/mock";
+import { cn } from "@/lib/workflows/host/ui";
 import {
   useWorkflowNodeUnused,
   WorkflowUnusedBadge,
-} from "../../node-chrome";
+} from "@/lib/workflows/node-chrome";
 import { IterationInsertMenu } from "./iteration-actions";
 import { useWorkflowIterationActions } from "./iteration-actions-context";
 

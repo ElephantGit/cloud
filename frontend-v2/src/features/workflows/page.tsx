@@ -3,14 +3,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
 import "@xyflow/react/dist/style.css";
 import { Toaster } from "@/components/ui/sonner";
-import { createLocalContractsClient } from "./data/contracts-client";
-import { ContractsClientProvider } from "./data/contracts-client-provider";
-import { LocalWorkflowBackend } from "./data/local-workflow-backend";
-import { createWorkflowQueryClient } from "./data/query-client";
+import { createLocalContractsClient } from "@/lib/workflows/data/contracts-client";
+import { ContractsClientProvider } from "@/lib/workflows/data/contracts-client-provider";
+import { LocalWorkflowBackend } from "@/lib/workflows/data/local-workflow-backend";
+import { createWorkflowQueryClient } from "@/lib/workflows/data/query-client";
 import { WorkflowEditor } from "./editor/workflow-editor";
-import { workflowI18n } from "./host/i18n";
-import { useDarkTheme } from "./host/theme";
-import { seedSampleWorkflows } from "./samples/seed";
+import { workflowI18n } from "@/lib/workflows/host/i18n";
+import { useDarkTheme } from "@/lib/workflows/host/theme";
+import { seedSampleWorkflows } from "@/lib/workflows/samples/seed";
 import { WorkflowSidebar } from "./workflow-sidebar";
 
 /**

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { catalog, targetFromDraft, validateDraft, type Draft, type Run, type SourceTask, type Task } from './schedule-model'
+import { catalog, targetFromDraft, validateDraft, type Catalog, type Draft, type Run, type SourceTask, type Task } from './schedule-model'
 
 /** Sample task catalog until Cloud v2 exposes its task directory. These are never presented as live records. */
 export const demoSources: SourceTask[] = [
@@ -42,7 +42,7 @@ export const emptyDemoSchedules: Task[] = []
 type State = {
   sources: SourceTask[]
   schedules: Record<string, Task[]>
-  save: (scope: string, draft: Draft, id?: string) => string | undefined
+  save: (scope: string, draft: Draft, id?: string, data?: Catalog) => string | undefined
   toggle: (scope: string, id: string) => void
   run: (scope: string, id: string, fail?: boolean) => void
   reset: () => void
@@ -53,7 +53,7 @@ const timers = new Set<ReturnType<typeof setTimeout>>()
 export const useTaskScheduleDemo = create<State>((set, get) => ({
   sources: structuredClone(demoSources),
   schedules: {},
-  save: (scope, draft, id) => {
+  save: (scope, draft, id, data = catalog) => {
     const { sources, schedules } = get()
     const source = sources.find((s) => s.id === draft.sourceTaskId)
     const existing = schedules[scope]?.find((t) => t.id === id)
@@ -61,14 +61,14 @@ export const useTaskScheduleDemo = create<State>((set, get) => ({
       draft.kind === 'chat' ||
       (draft.kind === 'task' && !source) ||
       (id && !existing) ||
-      Object.keys(validateDraft(draft, { ...catalog, tasks: sources })).length
+      Object.keys(validateDraft(draft, { ...data, tasks: sources })).length
     )
       return
     const task: Task = {
       id: id ?? `demo-${crypto.randomUUID()}`,
       name: draft.name.trim(),
       projectId: draft.kind === 'task' ? source!.projectId : draft.projectId,
-      target: targetFromDraft(draft),
+      target: targetFromDraft(draft, data),
       rule: structuredClone(draft.rule),
       enabled: existing?.enabled ?? true,
       createdAt: existing?.createdAt ?? new Date().toISOString(),

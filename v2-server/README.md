@@ -11,6 +11,8 @@ docker compose -p cloud up -d --wait   # 在仓库根目录
 go run .                               # 监听 127.0.0.1:8090
 ```
 
+使用本地 Node 配套服务时，自签证书从服务创建起有效 24 小时，不会自动轮换。连续运行超过一天需重启后端以重新生成证书；长时间演示应在证书到期前安排重启。
+
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `V2_ADDR` | `127.0.0.1:8090` | 监听地址 |
@@ -57,10 +59,55 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 引用型创建/编辑需要宿主通过 `server.Options.ScheduleTargets` 注入共享资源模块实现的 `ScheduleTargetResolver`。它按当前租户和用户鉴权，校验工作流发布快照、参数及项目，或读取可访问任务的最新项目。无法访问的引用返回 `store.ErrNotFound`；模块未就绪返回 `ErrScheduleResourcesUnavailable`。已有任务的 projectId 由解析结果规范化，工作流解析出的项目必须与选择一致。接口成功返回只表示配置可保存，不表示执行已经接收。
 
 当前 `main.go` 未注入该解析器：引用型写入返回 `503 schedule_resources_unavailable`，没有任何内置示例目录或 permissive fallback。已经保存的引用型配置仍可读取，配置开关也可管理；将来每次派发必须重新校验当前权限、来源内容和项目，不能把保存时校验当执行授权。前端目前仍保留明确标注的内存演示，真实目录、执行编排装配与结果接入等待其所属模块交付后联调。
+小队协作使用独立候选契约 [`squads.openapi.json`](squads.openapi.json)。正式 Cloud 尚无小队接口（P1 真实编组由 circus#750 承接），本批不修改 `api/openapi.json`；#750 合入后按正式契约收口。
+
+| 路由 | 行为 |
+|---|---|
+| `GET /api/v2/tenants/{tid}/squads` | 列出未归档小队及实时人类/Agent/维护者计数 |
+| `POST /api/v2/tenants/{tid}/squads` | 创建小队，并在同一事务加入创建者为人类维护者 |
+| `GET /api/v2/tenants/{tid}/squads/{sid}` | 小队详情，包含已结束的编组历史 |
+| `PUT /api/v2/tenants/{tid}/squads/{sid}` | 编辑名称、简介、协作说明与 leader，携带 version |
+| `POST /api/v2/tenants/{tid}/squads/{sid}/archive` | 归档，结束全部有效编组并清除 leader |
+| `POST /api/v2/tenants/{tid}/squads/{sid}/members` | 加入人类或 Agent 成员，携带 version |
+| `PUT /api/v2/tenants/{tid}/squads/{sid}/members/{mid}` | 修改职责文本与维护者标记，携带 version |
+| `DELETE /api/v2/tenants/{tid}/squads/{sid}/members/{mid}?version=N` | 结束编组并保留历史 |
+
+成员是显式类型化引用：人类引用 user 身份，Agent 引用 Space Agent 身份，不使用裸 memberId。人类必须是当前有效的租户成员；Agent 必须是同工作区的活动 Space Agent。当前工作区成员可读取小队与成员；编辑、增员与归档只限工作区管理员或本队有效人类维护者，Agent 不能成为维护者。写操作按小队 version 做乐观校验：过期返回 409 `version_conflict`，缺 version 返回 428，归档后返回 409 `squad_archived`。归档结束全部有效编组、保留历史且不提供恢复；移除现任 leader 会在同一事务清除 leader 配置。
+
+v2-server 还没有 Space Agent 目录接口：`v2_space_agents` 只是 Agent 引用的校验接缝，没有 HTTP 读写；Agent 目录仍应由共享的 Space Agent 读取提供，本批不另造目录 API，也不使用虚构 Agent。
+
+小队与成员关系不授予私人模型、Git 凭据或运行时权限，也不触发 Agent 执行、leader 路由或自动委派。
+
+## 进程内 Agent 执行接口
+
+[`internal/execution`](internal/execution/README.md) 的公共 Go 接口由
+`server.Options.Execution`（`execution.Service`）与 `server.Options.Catalog`（`execution.Catalog`）
+统一注入，页面 handler 通过保存的 Options 使用同一个执行后端。页面服务测试可注入显式 callback Stub，
+不必各自创建执行实现或修改启动入口。
+
+`server.New` 将未配置的 Execution/Catalog 字段默认设为同一个未配置 Stub；显式传入的依赖保留不变。
+这两个字段分别配置：即使 Execution 同时实现 Catalog，省略 Catalog 仍表示该清单不可用。
+
+`main` 目前给这两个字段传入同一个未配置的 `executiontest.Stub`，所有执行、读取与目录调用均返回
+`execution.ErrUnavailable`；它不会伪造运行、清单或持久历史。替换为真实执行服务只改变启动装配，
+页面继续依赖同一接口。本注入点不新增 HTTP 契约。
+
+[`internal/modelturn`](internal/modelturn/README.md) 提供无项目的纯文本单轮执行器，
+通过配置的 provider 解析 JSON / SSE，返回完整答案、停止原因和实际可得的 usage。
+取消会停止上游调用；截断、损坏或缺少终态的响应明确失败。该组件尚未装配到公共执行服务，
+admission、会话和事件持久化、重启恢复仍由调用方负责。
 
 ## 与正式 Cloud 的差异
 
 - 登录：没有外部 provider，也没有 attempt 和 PKCE；dev 登录固定为一个演示用户。
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
-- 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置更新单独使用乐观版本检查。
+- 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查。
+- 小队权限把开发登录的 `owner` 角色也当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
 - 启动时直接建表，没有迁移。
+- 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
+  [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。
+  配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
+  本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。
+- [`internal/nodehistory`](internal/nodehistory/README.md) 将固定 Node 的历史转换为替换快照，
+  只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL
+  的超长回答验证，但尚未接入页面 Session/Turn 存储、公共执行服务或 HTTP 路由。

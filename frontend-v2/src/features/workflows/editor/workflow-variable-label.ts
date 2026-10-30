@@ -1,4 +1,4 @@
-import type { WorkflowVariableCatalogEntry } from "../mock";
+import type { WorkflowVariableCatalogEntry } from "@/lib/workflows/mock";
 
 /** Formats a variable using only its stable fully qualified selector. */
 export function workflowVariableLabel(

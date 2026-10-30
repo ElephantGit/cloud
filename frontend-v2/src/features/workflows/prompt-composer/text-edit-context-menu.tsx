@@ -14,7 +14,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
   cn,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 
 interface TextEditContextMenuProps {
   children: ReactNode;

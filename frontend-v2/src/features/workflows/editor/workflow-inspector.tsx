@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
   Switch,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import {
   DEFAULT_WORKFLOW_STRUCTURED_OUTPUT_SCHEMA,
   type WorkflowAgentConfig,
@@ -43,14 +43,14 @@ import {
   type WorkflowGlobalVariable,
   normalizeWorkflowAgentConfig,
   workflowAgentRetryApplies,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import type { Node } from "@xyflow/react";
 import {
   agentLabel,
   type AgentEntry,
-} from "../data/use-agent-catalog";
-import { PluginLogoMark } from "../host/plugin-logo";
-import type { WorkflowAgentCliStatus } from "../data/catalog-hooks";
+} from "@/lib/workflows/data/use-agent-catalog";
+import { PluginLogoMark } from "@/lib/workflows/host/plugin-logo";
+import type { WorkflowAgentCliStatus } from "@/lib/workflows/data/catalog-hooks";
 import {
   InspectorField,
   WorkflowNodeDetailsHeader,

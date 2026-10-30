@@ -7,7 +7,7 @@ import {
   WORKFLOW_NODE_INITIAL_HEIGHT,
   WORKFLOW_NODE_WIDTH,
   type WorkflowNodeData,
-} from "../mock";
+} from "@/lib/workflows/mock";
 
 export interface IterationGraph {
   nodes: Node<WorkflowNodeData, "workflow">[];

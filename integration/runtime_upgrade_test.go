@@ -74,9 +74,16 @@ func TestRuntimeUpgradeOnlyBackfillsUniqueCreationEvidenceAndKeepsUnknownReferen
 		}
 	}
 	var afterOperations, attribution, availability, secret, secretState, oldRef, owner string
-	must(t, pool.QueryRow("SELECT jsonb_agg(to_jsonb(o) ORDER BY id)::text FROM operations o").Scan(&afterOperations))
+	// 0074 adds a zero-valued scheduling counter; every preexisting operation field remains
+	// byte-for-byte equal in the JSON history comparison, and the new field is asserted separately.
+	must(t, pool.QueryRow("SELECT jsonb_agg(to_jsonb(o)-'node_unavailable_attempts' ORDER BY id)::text FROM operations o").Scan(&afterOperations))
 	if afterOperations != originalOperations {
 		t.Fatal("migration rewrote operation history")
+	}
+	var zeroUnavailableAttempts bool
+	must(t, pool.QueryRow("SELECT NOT EXISTS(SELECT 1 FROM operations WHERE node_unavailable_attempts<>0)").Scan(&zeroUnavailableAttempts))
+	if !zeroUnavailableAttempts {
+		t.Fatal("migration invented historical Node-unavailable attempts")
 	}
 	must(t, pool.QueryRow("SELECT c.attribution,c.availability,c.secret_ref,c.secret_state,b.credential_ref_id::text,p.owner_user_id::text FROM credential_refs c JOIN repository_bindings b ON b.credential_ref_id=c.id JOIN projects p ON p.id=b.project_id WHERE c.id=$1", ref).Scan(&attribution, &availability, &secret, &secretState, &oldRef, &owner))
 	// The external line's switch keeps the historical row but can never redeem it: a

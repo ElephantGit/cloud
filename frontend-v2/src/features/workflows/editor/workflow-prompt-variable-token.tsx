@@ -1,6 +1,6 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import type { PromptTokenKind } from "../composer-core/composer";
-import type { WorkflowNodeKind } from "../mock";
+import type { WorkflowNodeKind } from "@/lib/workflows/mock";
 import { WorkflowVariableDisplay } from "./workflow-variable-display";
 
 /** JSON payload stored on a variable token so its NodeView can render Dify-style. */

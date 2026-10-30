@@ -22,7 +22,7 @@ import {
   type WorkflowGlobalVariable,
   deriveWorkflowVariableCatalog,
   normalizeWorkflowGlobalVariables,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   Button,
   Input,
@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
   Textarea,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import type { Node } from "@xyflow/react";
 import { getNodeMetadata } from "./workflow-node-metadata";
 import { WorkflowVariableDisplay } from "./workflow-variable-display";

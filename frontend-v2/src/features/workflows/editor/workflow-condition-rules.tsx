@@ -8,7 +8,7 @@ import type {
   WorkflowConditionLogic,
   WorkflowVariableCatalogEntry,
   WorkflowVariableValueType,
-} from "../mock";
+} from "@/lib/workflows/mock";
 import {
   Button,
   Select,
@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
   cn,
-} from "../host/ui";
+} from "@/lib/workflows/host/ui";
 import { WorkflowVariableDisplay } from "./workflow-variable-display";
 import { WorkflowVariableSelectGroups } from "./workflow-variable-list";
 import { WorkflowPromptEditor } from "./workflow-prompt-editor";

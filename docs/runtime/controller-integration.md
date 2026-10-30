@@ -143,6 +143,20 @@ gRPC 状态码是主分类，`ErrorDetail{ErrorCode}` 作为 `google.rpc.Status`
 
 **`RuntimeControlService`** 送达运行时控制绑定、签发执行和 effect 许可、执行强停，见 [运行时控制](runtime-control.md)。
 
+## 普通操作的有限等待
+
+Cloud 持久保存连续 `node_unavailable` 轮次数，并在同一事务用数据库时间计算 5/10/20/40/60 秒、此后封顶
+60 秒的退避。重新领取、Controller 换手或手动 retry 不清零；真实步骤推进或完成才清零。Controller 给出的
+延后秒数不能覆盖该规则。领取仍按 `created_at,id`，未来 `retry_at` 的等待项不参与领取。
+
+clone 的 `clone_result_pending` 使用 Cloud 时间 1 秒后的 `retry_at`，保持原执行与尝试预算；原执行登记的
+`created_at` 通过内部执行记录传递，总窗口为 1800 秒。Cloud 持久化 timeout 前重新读取原结果与数据库时间。
+到期没有结果时保存 `blocked/clone_result_timeout`；晚到的原执行已知成功自动重新排队，由 Controller 在对账后
+推进，已知失败沿原三次尝试及 5/10 秒退避处理。恢复不要求人工 retry 或再次领取 blocked 项。timeout 的
+结果接管只核对原存活沙盒代次与 Node 身份，不要求心跳仍新鲜；实际推进继续核对就绪证据。
+Node Unknown 仍是独立的 `blocked/clone_result_unknown`，单纯经过时间、重连或重启不会解除它。
+依据见[已批准决策](https://github.com/ora-space/specs/blob/main/decisions/controller/node-management/20261028-defer-unavailable-node-operations.md)。
+
 ## 修改契约
 
 - `buf.yaml` 使用 `STANDARD` lint 和 `FILE` 级 breaking 检查：`v1` 只接受非破坏性修改，破坏性变更用并列的 `v2` package 表达。

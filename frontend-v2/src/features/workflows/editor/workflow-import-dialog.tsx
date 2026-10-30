@@ -25,16 +25,16 @@ import {
   DialogTitle,
   Input,
   cn,
-} from "../host/ui";
-import type { DemoWorkflow } from "../mock";
-import { useOptionalPlatform } from "../host/platform";
+} from "@/lib/workflows/host/ui";
+import type { DemoWorkflow } from "@/lib/workflows/mock";
+import { useOptionalPlatform } from "@/lib/workflows/host/platform";
 import {
   formatWorkflowFileSize,
   isValidPublishVersion,
   summarizeWorkflowTransfer,
   type WorkflowDependency,
   type WorkflowImportFailure,
-} from "./workflow-transfer";
+} from "@/lib/workflows/editor/workflow-transfer";
 import { WorkflowTransferDependencies } from "./workflow-transfer-dependencies";
 
 /** Name and size of the selected file, shown under the dialog title. */

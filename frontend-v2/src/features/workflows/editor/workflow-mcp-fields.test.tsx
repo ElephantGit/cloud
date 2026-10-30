@@ -2,14 +2,14 @@ import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { InstalledPlugin } from "../contracts";
+import type { InstalledPlugin } from "@/lib/workflows/contracts";
 import {
   createMockWorkflowCapabilities,
   type WorkflowAgentConfig,
   type WorkflowMcpChoice,
-} from "../mock";
-import { appI18n } from "../test/i18n-instance";
-import { AppI18nProvider } from "../test/i18n";
+} from "@/lib/workflows/mock";
+import { appI18n } from "@/lib/workflows/test/i18n-instance";
+import { AppI18nProvider } from "@/lib/workflows/test/i18n";
 import {
   workflowMcpChoices,
   type WorkflowMcpCatalogStatus,

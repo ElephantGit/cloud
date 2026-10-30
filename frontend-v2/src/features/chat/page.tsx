@@ -1,5 +1,5 @@
 import { FlaskConicalIcon, FolderIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useCallback, useLayoutEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -14,21 +14,36 @@ import { emptyConversation } from './model/types'
 import { scenarios } from './samples/scenarios'
 import { agents, emptyDraft, newChatKey, plugins, type Session, useChatStore } from './store'
 
+/** The run view brings the graph canvas, so it loads only once a run is opened. */
+const RunPane = lazy(() => import('./workflow-run/run-pane'))
+
 /** Shared so a session with nothing queued keeps a stable selector result. */
 const noQueue: string[] = []
 
 /** How the input slides from the middle of the page to the bottom when the first prompt goes out. */
 const slide = { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
 
-/** Chat: history on the left; on the right the selected session, or a new chat when none is. */
+/**
+ * Chat: history on the left; on the right the selected session, a picked workflow run, or a new
+ * chat when neither is.
+ */
 export default function Page() {
   const session = useChatStore((s) => s.sessions.find((x) => x.id === s.selectedId))
+  const runId = useChatStore((s) => s.selectedRunId)
   return (
     <div className="flex min-h-0 flex-1">
       <Sidebar />
-      <section className="flex min-w-0 flex-1 flex-col" aria-label="会话">
-        <ChatPane session={session} />
-      </section>
+      {runId ? (
+        <section className="flex min-w-0 flex-1 flex-col" aria-label="工作流运行">
+          <Suspense>
+            <RunPane runId={runId} />
+          </Suspense>
+        </section>
+      ) : (
+        <section className="flex min-w-0 flex-1 flex-col" aria-label="会话">
+          <ChatPane session={session} />
+        </section>
+      )}
     </div>
   )
 }

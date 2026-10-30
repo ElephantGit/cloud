@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/jackc/pgx/v5 v5.6.0
+	golang.org/x/sys v0.47.0
 )
 
 require (

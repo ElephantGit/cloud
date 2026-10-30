@@ -1,8 +1,9 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { WorkflowNodeSession } from '@/api/generated.schemas'
 import { RunNodeSession } from '@/features/workflows/run/run-node-session'
+import { activeLocale, setLocale } from '@/i18n/i18n-instance'
 import { server } from '@/test/msw-server'
 import { renderWithProviders } from '@/test/render'
 
@@ -61,7 +62,47 @@ function renderPanel() {
   )
 }
 
+/** Switches the shared i18n instance and returns once components render in `locale`. */
+async function useLocale(locale: 'zh-CN' | 'en-US') {
+  setLocale(locale)
+  await waitFor(() => expect(activeLocale()).toBe(locale))
+}
+
 describe('RunNodeSession', () => {
+  afterEach(async () => {
+    await useLocale('zh-CN')
+  })
+
+  it.each([
+    ['zh-CN', '已加载 5 条记录'],
+    ['en-US', '5 records loaded'],
+  ] as const)(
+    'counts the loaded records in %s instead of printing the placeholder',
+    async (locale, copy) => {
+      await useLocale(locale)
+      installSession(() =>
+        HttpResponse.json(
+          session({
+            records: [
+              chunk(1, '一'),
+              chunk(2, '二'),
+              chunk(3, '三'),
+              chunk(4, '四'),
+              chunk(5, '五'),
+            ],
+          }),
+        ),
+      )
+      renderPanel()
+
+      const region = await screen.findByRole('region', {
+        name: locale === 'zh-CN' ? '会话' : 'Session',
+      })
+      expect(await within(region).findByText(copy)).toBeInTheDocument()
+      expect(within(region).queryByText(/\{\{/u)).not.toBeInTheDocument()
+    },
+  )
+
   it('shows the attempt, its records oldest first and the end reason on its own row', async () => {
     installSession(() =>
       HttpResponse.json(

@@ -147,9 +147,16 @@ func TestSquadLifecycle(t *testing.T) {
 		t.Fatalf("after agent add = %+v", withAgent)
 	}
 
-	// Agents cannot be maintainers, and retired agents cannot join.
+	// Agents cannot be maintainers, and retired or not-installed agents cannot join.
 	if _, e := f.store.AddSquadMember(ctx, f.tenant, owner, created.ID, store.SquadMemberInput{Type: store.MemberAgent, SpaceAgentID: f.agent(t, "退役", "retired"), Version: 3}); !errors.Is(e, store.ErrAgentUnavailable) {
 		t.Fatalf("retired agent = %v", e)
+	}
+	var failed string
+	if e := f.db.QueryRow(ctx, `INSERT INTO v2_space_agents (tenant_id, name, observed_state) VALUES ($1, '安装失败', 'failed') RETURNING id`, f.tenant).Scan(&failed); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.store.AddSquadMember(ctx, f.tenant, owner, created.ID, store.SquadMemberInput{Type: store.MemberAgent, SpaceAgentID: failed, Version: 3}); !errors.Is(e, store.ErrAgentUnavailable) {
+		t.Fatalf("agent not installed = %v", e)
 	}
 
 	detail, e := f.store.Squad(ctx, f.tenant, created.ID)

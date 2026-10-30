@@ -29,3 +29,10 @@ export type BodyType<B> = B
 
 /** HTTP status of a failed request, if it reached the server. */
 export const statusOf = (error: unknown): number | undefined => (isAxiosError(error) ? error.response?.status : undefined)
+
+/** Stable server error code from a failed request's fault body, such as `squad_archived`. */
+export const codeOf = (error: unknown): string | undefined => {
+  if (!isAxiosError(error)) return undefined
+  const code = (error.response?.data as { code?: unknown } | undefined)?.code
+  return typeof code === 'string' ? code : undefined
+}

@@ -1,0 +1,131 @@
+import { statusOf } from '@/lib/api-client'
+import { isAxiosError } from 'axios'
+import {
+  type ChatConversation,
+  type ChatEvent,
+  type ChatExecutor,
+  createChatConversation,
+  deleteChatConversation,
+  getChatProjectOrder,
+  listChatConversations,
+  listChatExecutors,
+  renameChatConversation,
+  sendChatMessage,
+  setChatProjectOrder,
+  stopChatConversation,
+} from './api/generated'
+import { getApiV2TenantsTidProjects } from './projects-api/generated'
+
+/** A project the backend can run chats in; each conversation gets its own directory of it. */
+export interface RemoteProject {
+  id: string
+  name: string
+}
+
+/** Everything the chat page loads once it knows the tenant. */
+export interface RemoteState {
+  executors: ChatExecutor[]
+  conversations: ChatConversation[]
+  projects: RemoteProject[]
+  projectOrder: string[]
+}
+
+/**
+ * Why a request failed, in the terms the page shows: the previous turn is still running (the
+ * prompt waits in the queue), the conversation has ended and is read-only, the backend cannot run
+ * Agents yet, or something else went wrong.
+ */
+export type Failure = { kind: 'running' } | { kind: 'ended' } | { kind: 'unavailable' } | { kind: 'error'; message: string }
+
+/** Reads every page of the tenant's projects. */
+async function allProjects(tid: string): Promise<RemoteProject[]> {
+  const all: RemoteProject[] = []
+  let after: string | undefined
+  do {
+    const page = await getApiV2TenantsTidProjects(tid, { limit: 100, after })
+    all.push(...page.items.map((p) => ({ id: p.id, name: p.name })))
+    after = page.nextCursor || undefined
+  } while (after)
+  return all
+}
+
+/** Turns a failed request into a {@link Failure}. */
+export function failureOf(error: unknown): Failure {
+  const status = statusOf(error)
+  const body = isAxiosError(error) ? (error.response?.data as { code?: string } | undefined) : undefined
+  if (status === 409 && body?.code === 'turn_running') return { kind: 'running' }
+  if (status === 409 && body?.code === 'conversation_ended') return { kind: 'ended' }
+  if (status === 503 && body?.code === 'execution_unavailable') return { kind: 'unavailable' }
+  if (status === 503 && body?.code === 'stop_unconfirmed') return { kind: 'error', message: '还没确认停下，请稍后再试。' }
+  if (status === 400 && body?.code === 'unsupported_content') return { kind: 'error', message: '首版只能发送文字消息。' }
+  return { kind: 'error', message: '请求失败，请重试。' }
+}
+
+/** Whether a request's outcome is unknown and must be retried with the same idempotency key. */
+const uncertain = (error: unknown) => {
+  const body = isAxiosError(error) ? (error.response?.data as { code?: string } | undefined) : undefined
+  return statusOf(error) === 503 && body?.code === 'outcome_unknown'
+}
+
+/**
+ * Sends a prompt with one idempotency key, retrying while the backend says its outcome is
+ * unknown: the same key settles it without running the prompt twice.
+ */
+async function once<T>(run: (headers: Record<string, string>) => Promise<T>): Promise<T> {
+  const headers = { 'Idempotency-Key': crypto.randomUUID() }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run(headers)
+    } catch (error) {
+      if (!uncertain(error) || attempt >= 3) throw error
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+    }
+  }
+}
+
+/**
+ * The chat backend the store talks to. Conversations and their live event streams are client
+ * state driven by Server-Sent Events, so the store owns them instead of TanStack Query; every
+ * call still goes through the generated client.
+ */
+export const remote = {
+  /** Loads what the page needs, all from v2-server's candidate routes. */
+  async load(tid: string): Promise<RemoteState> {
+    // `npm run dev:demo` swaps the backend for one that plays scripted replies in the browser.
+    if (import.meta.env.VITE_CHAT_DEMO === '1') (await import('./demo/backend')).installDemoBackend()
+    const [executors, conversations, projects, order] = await Promise.all([
+      listChatExecutors(tid),
+      listChatConversations(tid),
+      allProjects(tid),
+      getChatProjectOrder(tid),
+    ])
+    return {
+      executors: executors.items,
+      conversations: conversations.items,
+      projects,
+      projectOrder: order.projectIds,
+    }
+  },
+  create: (tid: string, input: { projectId: string; executorId: string; prompt: string }) => once((headers) => createChatConversation(tid, input, { headers })),
+  send: (tid: string, cid: string, prompt: string) => once((headers) => sendChatMessage(tid, cid, { prompt }, { headers })),
+  conversations: async (tid: string) => (await listChatConversations(tid)).items,
+  stop: (tid: string, cid: string) => stopChatConversation(tid, cid),
+  rename: (tid: string, cid: string, title: string) => renameChatConversation(tid, cid, { title }),
+  remove: (tid: string, cid: string) => deleteChatConversation(tid, cid),
+  saveOrder: (tid: string, projectIds: string[]) => setChatProjectOrder(tid, { projectIds }),
+
+  /**
+   * Follows a conversation's session events. The browser's EventSource resumes after the last
+   * event id on its own; `end` closes the stream when the session has ended and `failure` when
+   * the backend cannot continue it. Returns the function that stops following.
+   */
+  follow(tid: string, cid: string, after: number, on: { event: (e: ChatEvent) => void; end: () => void; failure: () => void }): () => void {
+    const source = remote.eventSource(`/api/v2/tenants/${tid}/chat/conversations/${cid}/events${after ? `?after=${after}` : ''}`)
+    source.onmessage = (m: MessageEvent<string>) => on.event(JSON.parse(m.data) as ChatEvent)
+    source.addEventListener('end', () => (source.close(), on.end()))
+    source.addEventListener('failure', () => (source.close(), on.failure()))
+    return () => source.close()
+  },
+  /** Opens an event stream; the demo backend replaces it with its own. */
+  eventSource: (url: string): EventSource => new EventSource(url),
+}

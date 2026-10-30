@@ -9,18 +9,12 @@ import { type Failure, failureOf, remote, type RemoteState } from './remote'
 import { scenarios } from './samples/scenarios'
 import { script, type Step } from './samples/script'
 
-/** Where a session's agent works: the project's main checkout, or one of its worktrees. */
-export type Workspace = { kind: 'main' } | { kind: 'isolated'; branch: string }
-
-/** Where a new chat will work: like a session, or in a worktree its first prompt will name. */
-export type NewChatWorkspace = Workspace | { kind: 'new-worktree' }
-
 /**
  * What the first version of the chat backend can do. The input and the history hide what it
- * cannot, rather than offering something that would fail. Each backend conversation gets its own
- * directory, so a new chat picks only the project, never a workspace.
+ * cannot, rather than offering something that would fail. Each backend conversation runs in a
+ * sandbox of its own, cloned from the project's repository, so a new chat picks only the project.
  */
-export const backendSupports = { newProject: false, chooseWorkspace: false, newWorktree: false, attachments: false, plugins: false }
+export const backendSupports = { newProject: false, attachments: false, plugins: false }
 
 export interface Project {
   id: string
@@ -34,7 +28,6 @@ export interface Project {
 export interface Session {
   id: string
   projectId: string
-  workspace: Workspace
   title: string
   /** The agent's id in the selector, and the model it runs with. */
   agent: string
@@ -58,7 +51,6 @@ export const emptyDraft: Draft = { text: '', attachments: [], plugins: [] }
 /** Where a chat that has not been sent yet will start: the session is created by its first prompt. */
 export interface NewChat {
   projectId: string
-  workspace: NewChatWorkspace
   agent: string
   model: string
 }
@@ -151,10 +143,10 @@ interface State {
   /** What the new chat view starts; shown whenever no session is selected. */
   newChat: NewChat
   /**
-   * Opens the new chat view. Without a scope it starts where the selected session works, so
-   * "new chat" from inside a worktree stays in that worktree.
+   * Opens the new chat view. Without a scope it starts in the selected backend conversation's
+   * project, so "new chat" from inside a project stays there.
    */
-  startNewChat: (scope?: { projectId: string; workspace?: NewChatWorkspace }) => void
+  startNewChat: (scope?: { projectId: string }) => void
   setNewChat: (patch: Partial<NewChat>) => void
   /** Creates the conversation the new chat describes with its first prompt, and selects it. */
   sendNewChat: (draft: Draft) => Promise<void>
@@ -180,7 +172,6 @@ const sampleProject: Project = { id: 'samples', name: '示例', samples: true }
 const sampleSessions: Session[] = scenarios.map((s, i) => ({
   id: `sample-${s.id}`,
   projectId: sampleProject.id,
-  workspace: { kind: 'main' },
   title: s.title,
   ...defaultChoice,
   scenarioId: s.id,
@@ -230,7 +221,6 @@ function sessionOf(c: ChatConversation, executors: ChatExecutor[]): Session {
   return {
     id: c.id,
     projectId: c.projectId,
-    workspace: { kind: 'main' },
     title: c.title,
     agent: executor?.agentName ?? c.executorId,
     model: executor?.modelName ?? '',
@@ -494,7 +484,6 @@ export const useChatStore = create<State>()(
             views: Object.fromEntries(loaded.conversations.map((c) => [c.id, viewsOf(c)])),
             newChat: {
               projectId: projects[0]?.id ?? '',
-              workspace: { kind: 'main' },
               agent: first?.agentName ?? '',
               model: first?.modelName ?? '',
             },
@@ -519,17 +508,13 @@ export const useChatStore = create<State>()(
           if (session?.remote) follow(id)
         },
         selectRun: (id) => set({ selectedRunId: id }),
-        newChat: { projectId: '', workspace: { kind: 'main' }, agent: '', model: '' },
+        newChat: { projectId: '', agent: '', model: '' },
         startNewChat: (scope) => {
           const previous = get().selectedId
           set((s) => {
             const current = s.sessions.find((x) => x.id === s.selectedId)
             const fromSelection = current?.remote ? current : undefined
-            const where = scope
-              ? { projectId: scope.projectId, workspace: scope.workspace ?? { kind: 'main' as const } }
-              : fromSelection
-                ? { projectId: fromSelection.projectId, workspace: fromSelection.workspace }
-                : {}
+            const where = scope ? { projectId: scope.projectId } : fromSelection ? { projectId: fromSelection.projectId } : {}
             return { selectedId: undefined, selectedRunId: undefined, newChat: { ...s.newChat, ...where } }
           })
           if (previous) prune(previous)
@@ -547,7 +532,7 @@ export const useChatStore = create<State>()(
           // placeholder holds the prompt, so the input slides down at once as in desktop.
           const placeholder = newId('pending')
           set((s) => ({
-            sessions: [...s.sessions, { id: placeholder, projectId: project.id, workspace: { kind: 'main' }, title: draft.text.slice(0, 24), agent: newChat.agent, model: newChat.model, createdAt: Date.now() }],
+            sessions: [...s.sessions, { id: placeholder, projectId: project.id, title: draft.text.slice(0, 24), agent: newChat.agent, model: newChat.model, createdAt: Date.now() }],
             selectedId: placeholder,
             drafts: { ...s.drafts, [newChatKey]: emptyDraft },
             conversations: { ...s.conversations, [placeholder]: applyEvent(emptyConversation, { type: 'prompt', turnId: 'pending', text: draft.text }, Date.now()) },
@@ -763,7 +748,7 @@ export function resetChatStore() {
     views: {},
     pending: {},
     notices: {},
-    newChat: { projectId: '', workspace: { kind: 'main' }, agent: '', model: '' },
+    newChat: { projectId: '', agent: '', model: '' },
     selectedId: undefined,
     selectedRunId: undefined,
   })

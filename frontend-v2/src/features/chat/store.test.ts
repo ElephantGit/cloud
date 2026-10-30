@@ -136,8 +136,8 @@ describe('chat store: backend conversations', () => {
   it('loads projects, executors and conversations', () => {
     expect(state().backend).toBe('ready')
     expect(state().projects.map((p) => p.name)).toEqual(['示例', 'ora-space/cloud', 'ora-space/desktop'])
-    expect(state().sessions.find((s) => s.id === 'c-style')).toMatchObject({ projectId: 'p-cloud', workspace: { kind: 'main' }, agent: 'OpenCode', model: 'Fixture' })
-    expect(state().newChat).toEqual({ projectId: 'p-cloud', workspace: { kind: 'main' }, agent: 'OpenCode', model: 'Fixture' })
+    expect(state().sessions.find((s) => s.id === 'c-style')).toMatchObject({ projectId: 'p-cloud', agent: 'OpenCode', model: 'Fixture' })
+    expect(state().newChat).toEqual({ projectId: 'p-cloud', agent: 'OpenCode', model: 'Fixture' })
   })
 
   it('follows a conversation once it is opened and shows each snapshot whole', () => {

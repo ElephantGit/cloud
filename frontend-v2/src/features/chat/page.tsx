@@ -10,7 +10,7 @@ import { FadeText } from './components/fade-text'
 import { subtleScrollbar } from '@/lib/scrollbar'
 import { ShowSidebarButton, Sidebar } from './components/sidebar'
 import { Notice } from './components/notice'
-import { WorktreeLabel } from './components/worktree-label'
+import { SandboxLabel } from './components/sandbox-label'
 import { ContextUsage, LandingHeading, Thread } from './components/thread'
 import { isResponding } from './model/conversation'
 import { emptyConversation } from './model/types'
@@ -102,7 +102,7 @@ function ChatPane({ session }: { session?: Session }) {
         <h2 className="flex min-w-0 text-sm font-medium">
           <FadeText text={session?.title ?? '新对话'} />
         </h2>
-        {session && <WorktreeLabel />}
+        {session && !session.scenarioId && <SandboxLabel />}
         {scenario && (
           <Badge variant="outline" className="gap-1 text-muted-foreground">
             <FlaskConicalIcon />
@@ -181,7 +181,7 @@ function ChatPane({ session }: { session?: Session }) {
               onChoose={(agent, model) => (session ? setAgentModel(session.id, agent, model) : setNewChat({ agent, model }))}
               plugins={samplePlugins}
               textOnly={!local}
-              context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} branches={[]} onChange={setNewChat} />}
+              context={!session && <ContextBar value={newChat} projects={projects.filter((p) => !p.samples)} onChange={setNewChat} />}
             />
             )}
           </div>

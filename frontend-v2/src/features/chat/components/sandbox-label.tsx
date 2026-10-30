@@ -1,11 +1,11 @@
-import { GitBranchIcon } from 'lucide-react'
+import { BoxIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 /**
- * Says that a chat always works in a worktree of its own, as desktop's input marks worktree mode:
- * the backend makes a new directory from the project's repository for every conversation.
+ * Says that a chat runs in a sandbox of its own: the backend clones the project's repository
+ * into a new directory for every conversation, and nothing there is written back.
  */
-export function WorktreeLabel() {
+export function SandboxLabel() {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -16,10 +16,10 @@ export function WorktreeLabel() {
           />
         }
       >
-        <GitBranchIcon className="size-3.5" />
-        Worktree
+        <BoxIcon className="size-3.5" />
+        沙盒
       </TooltipTrigger>
-      <TooltipContent>每个对话都在新建的 worktree 里工作</TooltipContent>
+      <TooltipContent>每个对话在独立的沙盒中运行，代码从项目仓库 clone 而来，改动不会写回</TooltipContent>
     </Tooltip>
   )
 }

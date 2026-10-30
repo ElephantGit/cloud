@@ -236,9 +236,9 @@ function okInstall(s: ReturnType<typeof script>) {
     .end()
 }
 
-const worktree = script()
+const changes = script()
   .user('给对话页加暗色模式')
-  .say('我在 `feat/dark-mode` 分支上改，主目录不受影响。')
+  .say('我在这个对话的沙盒里改，项目仓库不受影响。')
   .tool({ id: 'w-e1', title: '编辑 src/index.css', kind: 'edit', locations: [{ path: 'src/index.css' }] })
   .done(
     'w-e1',
@@ -285,7 +285,7 @@ const worktree = script()
     },
     500,
   )
-  .say('暗色模式已加上：图标栏底部有切换按钮。改动都在这个对话自己的 worktree 里，不影响其他对话。')
+  .say('暗色模式已加上：图标栏底部有切换按钮。改动都在这个对话自己的沙盒里，不会写回项目仓库，也不影响其他对话。')
   .end()
 
 const failures = script()
@@ -411,5 +411,5 @@ export const scenarios: Scenario[] = [
   { id: 'context', title: '上下文、模型切换与检查点', covers: 'Context、Model Selector、Checkpoint', steps: context.steps },
   { id: 'interrupted', title: '中断与失败', covers: '取消、出错', steps: interrupted.steps },
   { id: 'attachments', title: '附件与插件', covers: 'Prompt Input、Attachment', steps: attachments.steps },
-  { id: 'worktree', title: '改代码与改动文件', covers: 'File Tree', steps: worktree.steps },
+  { id: 'changes', title: '改代码与改动文件', covers: 'File Tree', steps: changes.steps },
 ]

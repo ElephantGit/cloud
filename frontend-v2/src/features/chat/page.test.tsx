@@ -46,7 +46,7 @@ describe('chat page', () => {
     expect(screen.getByRole('heading', { level: 2, name: '新对话' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
-    // Every conversation gets its own directory: there is no workspace to choose.
+    // Every conversation runs in a sandbox of its own: there is nowhere else to choose.
     expect(screen.queryByRole('button', { name: '选择工作目录' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择启动模式' })).toHaveTextContent('云端')
   })
@@ -156,14 +156,14 @@ describe('chat page', () => {
     expect(await screen.findByText(/后端还不能运行 Agent/)).toHaveRole('status')
   })
 
-  it('labels every chat as working in a worktree of its own, explained on hover', async () => {
+  it('labels every chat as running in a sandbox of its own, explained on hover', async () => {
     await renderReady()
-    const label = screen.getByText('Worktree')
+    const label = screen.getByText('沙盒')
     await userEvent.hover(label)
-    expect(await screen.findByText('每个对话都在新建的 worktree 里工作')).toBeInTheDocument()
+    expect(await screen.findByText('每个对话在独立的沙盒中运行，代码从项目仓库 clone 而来，改动不会写回')).toBeInTheDocument()
     await userEvent.unhover(label)
     await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
-    expect(within(screen.getByRole('banner')).getByText('Worktree')).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).getByText('沙盒')).toBeInTheDocument()
   })
 
   it('renames a conversation by double-clicking it', async () => {

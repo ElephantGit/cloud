@@ -33,7 +33,7 @@ test('workflow runs: start a published workflow from chat and follow it to the r
   await pane.getByRole('button', { name: '全图', exact: true }).click()
   await pane.getByLabel('工作流全图俯瞰').getByText('Agent：审查改动', { exact: true }).click()
   await pane.getByRole('button', { name: '查看节点会话' }).click()
-  await expect(pane.getByLabel('Agent 回复').first()).toBeVisible()
+  await expect(pane.getByRole('heading', { name: 'Mock 结论' })).toBeVisible()
 
   // A session takes the main area back; the run stays in the list.
   await cloud.getByRole('button', { name: '梳理 v2 接口缺口', exact: true }).click()

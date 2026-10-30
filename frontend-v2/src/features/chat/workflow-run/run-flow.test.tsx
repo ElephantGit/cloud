@@ -63,11 +63,11 @@ describe('workflow runs in chat', () => {
     expect(await within(pane).findByText('运行完成')).toBeInTheDocument()
     expect(within(pane).getByRole('button', { name: '再跑一次' })).toBeInTheDocument()
 
-    // An Agent's act keeps what it was sent and what it answered.
+    // An Agent's act keeps what it was sent and what it answered, drawn as a chat thread.
     await user.click(within(pane).getByRole('button', { name: /Agent：审查改动/ }))
     await user.click(await within(pane).findByRole('button', { name: '查看节点会话' }))
-    expect(within(pane).getAllByLabelText('发给 Agent 的内容')).not.toHaveLength(0)
-    expect(within(pane).getAllByLabelText('Agent 回复')).not.toHaveLength(0)
+    expect(within(pane).getByText(/分支相对 main 的改动。/, { selector: '[data-slot="bubble-content"]' })).toBeInTheDocument()
+    expect(within(pane).getByRole('heading', { name: 'Mock 结论' })).toBeInTheDocument()
     // jsdom re-renders the canvas on every node step, so the whole run takes seconds here.
   }, 30_000)
 

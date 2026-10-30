@@ -71,7 +71,7 @@ v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话�
 |---|---|
 | `run-theater*`、`run-act-*`、`run-overview-*`、`run-status-*`、`run-loop-*`、`run-condition-stage.tsx`、`run-result-act.tsx`、`run-brief-popover.tsx`、`run-hitl-composer.tsx`、`use-theater-hitl.tsx`、`run-path-structure.ts`、`run-focus.ts`、`run-node-completion.ts` 和其余同名小文件 | 同名文件，只改了 import 路径 |
 | `workflow-run-start-dialog.tsx`、`translations.ts` | 同名文件 |
-| `run-node-session-chat.tsx` | 新写：desktop 在这里嵌入完整的聊天视图读取节点的真实会话；演示引擎只有节点的对话记录，改用对话页的消息样式显示它们，不能在里面接着发消息 |
+| `run-node-session-chat.tsx`、`conversation-turns.ts` | 新写：desktop 在这里嵌入完整的聊天视图读取节点的真实会话；演示引擎只有节点的对话记录，`conversation-turns.ts` 把它们转成对话页的轮次（发给 Agent 的消息开启一轮，之后的回复、思考和工具调用归入这一轮），再交给对话页的 `Thread` 渲染，所以节点会话和对话页的样式一致；不能在里面接着发消息 |
 | `hitl-text-editor.tsx` | 新写：人工介入回答框，用纯文本输入框代替 desktop 的 TipTap 编辑器 |
 | `demo-host.ts` | 新写：Theater 调用的 desktop hook（保存启动输入、回答人工介入、错误提示等），同名同参数，背后是演示引擎 |
 | `run-pane.tsx`、`run-sidebar.tsx`、`demo-runs.ts` | 新写：desktop 的运行页、侧栏行和运行对话框的精简版 |

@@ -440,6 +440,8 @@ export function RunTheaterActCard({
             {conversation.length > 0 ? (
               <RunNodeSessionChat
                 conversation={conversation}
+                status={state.status}
+                errorMessage={state.errorMessage}
                 sessionActions={hitlFooter === undefined ? stageDock : undefined}
               />
             ) : (

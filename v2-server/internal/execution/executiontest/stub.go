@@ -21,6 +21,7 @@ type Stub struct {
 	ReadSessionFunc   func(context.Context, execution.Scope, string) (execution.Session, error)
 	ReadTurnsFunc     func(context.Context, execution.Scope, string, string, int) (execution.TurnPage, error)
 	ReadAttemptFunc   func(context.Context, execution.Scope, execution.Caller) (execution.Turn, error)
+	SealAttemptFunc   func(context.Context, execution.Scope, execution.Caller) (execution.AdmissionResolution, error)
 	ListExecutorsFunc func(context.Context, execution.Scope) ([]execution.Executor, error)
 	ListModelsFunc    func(context.Context, execution.Scope) ([]execution.Model, error)
 }
@@ -114,4 +115,13 @@ func (s *Stub) ReadAttempt(ctx context.Context, scope execution.Scope, caller ex
 		return execution.Turn{}, execution.ErrUnavailable
 	}
 	return s.ReadAttemptFunc(ctx, scope, caller)
+}
+
+// SealAttempt delegates admission resolution to SealAttemptFunc. An unconfigured double must
+// not claim durable non-admission, which would let a recovering caller drop its occupancy.
+func (s *Stub) SealAttempt(ctx context.Context, scope execution.Scope, caller execution.Caller) (execution.AdmissionResolution, error) {
+	if s.SealAttemptFunc == nil {
+		return execution.AdmissionResolution{}, execution.ErrUnavailable
+	}
+	return s.SealAttemptFunc(ctx, scope, caller)
 }

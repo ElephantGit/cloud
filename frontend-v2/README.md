@@ -101,6 +101,12 @@ v2-server 还不能运行 Agent，也没有会话接口：现在非示例会话�
 
 v2-server 还没有工作流接口，现在由 `lib/workflows/data/local-workflow-backend.ts` 在浏览器 localStorage 里代替 desktop 的后端，规则照搬 desktop 的 Rust 实现：名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；版本名不能叫 `draft`，也不能含 `/`、`\`、控制字符；不能删除草稿和当前生效的版本；发布时检查图能否从开始节点投影成可执行图（多余节点不阻塞发布）；analyze 标出未参与运行的节点和不认识的节点类型。desktop 引擎对每个节点配置的检查没有搬过来。Agent、模型、角色、Skill 和 MCP 清单是 `data/demo-catalog.ts` 里的演示数据。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。接入 v2-server 后，只需把 `data/contracts-client.ts` 换成调生成的客户端。
 
+## 设置
+
+主导航的「设置」包含成员、模型连接、主题、Plugins、Skills 五个独立子页面，默认进入成员页。主题真实作用于整个 V2；其余管理页使用清楚标注、按登录用户隔离的本机演示数据。没有真实成员写入、API Key、模型调用或插件下载，也不改变聊天和工作流的资源。详情见 [`src/features/settings/README.md`](src/features/settings/README.md)。
+
+端到端测试可通过 `E2E_WEB_PORT`、`E2E_SERVER_PORT` 指定独立端口，默认仍为 5174、8091。与其他应用共用机器时选择空闲端口；测试不会复用已启动的服务。
+
 ## 登录
 
 和正式 Cloud 一样，以 `GET /api/v1/me` 判断是否登录：`401` 时在当前位置显示登录页，登录后回到原页面；`403` 表示账号已停用。登录页按 `GET /auth/providers` 为每种登录方式显示一个按钮，`POST /auth/login` 后跳转到返回的地址。v2-server 只提供开发者登录，接入正式 Gateway 时前端不用改。

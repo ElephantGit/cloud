@@ -193,8 +193,11 @@ type observedRead struct {
 }
 
 func (c *observedRead) Read(p []byte) (int, error) {
-	c.once.Do(func() { close(c.started) })
-	return c.Conn.Read(p)
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.once.Do(func() { close(c.started) })
+	}
+	return n, err
 }
 
 func TestCancellationClosesPartialFrame(t *testing.T) {
@@ -220,14 +223,21 @@ func TestCancellationClosesPartialFrame(t *testing.T) {
 	}
 	defer client.Close()
 	// Do not replace the shared connection while heartbeat could use it: use a separate
-	// one-shot client with the same wire reader to observe entry into blocking I/O.
+	// one-shot client with the same wire reader. Wait until it consumes the partial frame,
+	// so cancellation cannot race the fixture's write and only test closing an empty stream.
 	started := make(chan struct{})
 	reader := &Client{conn: &observedRead{Conn: client.conn, started: started}, options: opts, done: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := make(chan error, 1)
 	go func() { _, err := reader.read(ctx); result <- err }()
-	<-started
+	select {
+	case <-started:
+	case err := <-result:
+		t.Fatalf("read ended before consuming partial frame: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("partial frame was not consumed")
+	}
 	cancel()
 	select {
 	case err := <-result:

@@ -3,18 +3,21 @@
 package scheduler_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +28,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/executionruntime"
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
+	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
@@ -232,32 +236,119 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 			t.Error(err)
 		}
 	}()
+	var clock atomic.Int64
 	now := time.Now().UTC().Add(time.Minute)
+	if phase == "read" {
+		now = now.Add(48 * time.Hour)
+	}
 	observed := &observeCancellation{Service: svc, t: t, agent: mode == "agent"}
-	c, err := server.NewScheduleCoordinator(db, server.Options{Execution: observed, Catalog: svc}, func() time.Time { return now })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = c.Recover(ctx, saved.Scope); err != nil {
-		t.Fatal(err)
-	}
+	var cfg store.ScheduleConfig
 	if phase == "execute" {
 		target := json.RawMessage(`{"kind":"chat","model":"fixture","prompt":"hello fixture"}`)
 		if mode == "agent" {
 			target = json.RawMessage(`{"kind":"chat","executorId":"opencode:fixture","prompt":"Read README and write the requested fixture marker using the shell tool."}`)
 		}
-		cfg, err := db.CreateScheduleConfig(ctx, saved.Scope.TenantID, saved.Scope.UserID, store.ScheduleInput{Name: "runtime", ProjectID: projectID, Target: target, Rule: json.RawMessage(`{"kind":"hours","hours":1,"timezone":"UTC"}`)})
+		cfg, err = db.CreateScheduleConfig(ctx, saved.Scope.TenantID, saved.Scope.UserID, store.ScheduleInput{Name: "runtime", ProjectID: projectID, Target: target, Rule: json.RawMessage(`{"kind":"hours","hours":1,"timezone":"UTC"}`)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		now = cfg.CreatedAt.Add(time.Minute)
-		if err = c.Tick(ctx, saved.Scope); err != nil {
-			t.Fatal(err)
+	}
+	clock.Store(now.UnixNano())
+	options := server.Options{Execution: observed, Catalog: svc}
+	c, err := server.NewScheduleCoordinator(db, options, func() time.Time { return time.Unix(0, clock.Load()) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := scheduler.NewHost(db, c, svc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostCtx, stopHost := context.WithCancel(ctx)
+	ticks := time.NewTicker(10 * time.Millisecond)
+	done := make(chan error, 1)
+	go func() { done <- host.Run(hostCtx, ticks.C) }()
+	defer func() {
+		stopHost()
+		ticks.Stop()
+		if err := <-done; err != nil {
+			t.Error(err)
 		}
-		now = cfg.CreatedAt.Add(time.Hour)
-		if err = c.Tick(ctx, saved.Scope); err != nil {
-			t.Fatal(err)
+	}()
+	select {
+	case <-host.Ready():
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	options.Schedules = host
+	httpServer := httptest.NewServer(server.New(db, options))
+	defer httpServer.Close()
+	token, err := db.Login(ctx, store.Identity{Source: "test", Subject: "runtime-schedule", DisplayName: "Owner"}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := func(path string, input any) string {
+		t.Helper()
+		body, _ := json.Marshal(input)
+		for {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, httpServer.URL+path, bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(&http.Cookie{Name: server.SessionCookie, Value: token})
+			res, err := httpServer.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out struct {
+				ID   string `json:"id"`
+				Code string `json:"code"`
+			}
+			err = json.NewDecoder(res.Body).Decode(&out)
+			res.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A scan may own this exact occurrence. Retry only the declared transient
+			// conflict, preserving the request key/URL; never create a replacement run.
+			if res.StatusCode == 409 && out.Code == "operation_in_progress" {
+				timer := time.NewTimer(10 * time.Millisecond)
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+					t.Fatal(ctx.Err())
+				}
+				continue
+			}
+			if res.StatusCode != 200 || out.ID == "" {
+				t.Fatalf("HTTP action %d %+v", res.StatusCode, out)
+			}
+			return out.ID
 		}
+	}
+	waitFor := func(check func() bool) {
+		t.Helper()
+		poll := time.NewTicker(10 * time.Millisecond)
+		defer poll.Stop()
+		for {
+			if check() {
+				return
+			}
+			select {
+			case <-poll.C:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		}
+	}
+	if phase == "execute" {
+		clock.Store(cfg.CreatedAt.Add(time.Hour).UnixNano())
+		waitFor(func() bool {
+			items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, "", 100)
+			return err == nil && len(items) == 1 && items[0].ExecutionRef != ""
+		})
 		items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, "", 100)
 		if err != nil || len(items) != 1 || items[0].Kind != "scheduled" {
 			t.Fatalf("scheduled trigger: %+v %v", items, err)
@@ -287,9 +378,10 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 				break
 			}
 		}
-		if err = c.Tick(ctx, saved.Scope); err != nil {
-			t.Fatal(err)
-		}
+		waitFor(func() bool {
+			item, err := db.GetOccurrence(ctx, saved.Scope.TenantID, saved.Scope.UserID, o.ID)
+			return err == nil && item.Released
+		})
 		first, err := db.GetOccurrence(ctx, saved.Scope.TenantID, saved.Scope.UserID, o.ID)
 		if err != nil || first.Status != "succeeded" || !first.Released {
 			t.Fatalf("End did not release: %+v %v", first, err)
@@ -297,7 +389,12 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 		gate.mu.Lock()
 		gate.block = true
 		gate.mu.Unlock()
-		second, err := c.Manual(ctx, saved.Scope, cfg.ID, "cancel-second")
+		base := fmt.Sprintf("/api/v2/tenants/%s/schedule-configs/%s", saved.Scope.TenantID, cfg.ID)
+		secondID := action(base+"/run", map[string]string{"requestId": "cancel-second"})
+		if retry := action(base+"/run", map[string]string{"requestId": "cancel-second"}); retry != secondID {
+			t.Fatal("HTTP retry created another run")
+		}
+		second, err := db.GetOccurrence(ctx, saved.Scope.TenantID, saved.Scope.UserID, secondID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -309,8 +406,8 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
-		if err = c.Cancel(ctx, saved.Scope, second.ID); err != nil {
-			t.Fatal(err)
+		if id := action(base+"/runs/"+second.ID+"/cancel", map[string]any{}); id != second.ID {
+			t.Fatal("wrong cancelled record")
 		}
 		second, err = db.GetOccurrence(ctx, saved.Scope.TenantID, saved.Scope.UserID, second.ID)
 		if err != nil || second.Status != "cancelled" || !second.Released {
@@ -356,10 +453,6 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 	} else {
-		now = now.Add(48 * time.Hour)
-		if err = c.Tick(ctx, saved.Scope); err != nil {
-			t.Fatal(err)
-		}
 		for _, expected := range saved.Records {
 			o, err := db.GetOccurrence(ctx, saved.Scope.TenantID, saved.Scope.UserID, expected.Occurrence.ID)
 			if err != nil || !sameRuntimeValue(o, expected.Occurrence) {

@@ -1,6 +1,8 @@
 # 定时任务编排
 
-本包将配置、服务端时间计算、触发记录和执行适配连接起来。当前没有在 `main.go`、HTTP 路由或前端安装，没有后台定时器和真实模型派发。宿主需要显式注入记录模块、执行适配和时钟。
+本包将配置、服务端时间计算、触发记录和执行适配连接起来。`main.go` 使用一个 Host 和一秒 ticker 驱动协调器，HTTP 的立即运行/取消接同一 Host。前端操作按钮尚未接入；main 当前的公共执行 Stub 明确不可用，不能把入口已安装当作真实执行已上线。
+
+`NewHost(records, coordinator, catalog)` 不启动 goroutine；进程在公共执行完成启动恢复后运行 `Run(ctx, ticks)`，首次扫描完成时 `Ready()` 关闭。Run 只允许一次，扫描发现持久配置的有效创建者，暂停的配置也保留收尾机会。每个 Scope 先读公共模型目录确认可用，再 Recover/Tick；目录不可用时不创建或改写 occurrence，不猜测默认模型。HTTP 操作也经过这道门禁。停止时取消 Run、等待扫描及已进入的 HTTP 操作，然后才关闭公共服务和数据库；HTTP 调用同时受请求取消、宿主退出和 30 秒调用上限约束，该上限不是已接收执行的运行时限。
 
 ## 调用顺序
 
@@ -52,4 +54,4 @@ TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./inter
 V2_NODE_ASSETS_DIR=... TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/scheduler -run '^TestScheduledAgentRuntimeRestart$' -v
 ```
 
-每项测试先在子进程中经统一 Options 创建协调器，按时触发真实 fixture 执行、保存完整结果并确认 End；新手动触发使用独立会话，在实际 provider 边界暂停后验证 Cancel 的模式差异及 End。该进程退出后，第二个独立进程重新打开 PostgreSQL、Service 和协调器，核对两条原记录、完整结果与已结束会话，验证旧会话不可 Append、停机不补跑。Agent 路径还验证真实 shell 工具写出的文件在 End/重启后仍存在。默认 fixture 不需要凭据，这不是远端真实模型 provider 验收。
+每项测试先在子进程中经统一 Options 创建协调器和 Host，由真正运行的 ticker 扫描冻结时钟的到期配置，触发真实 fixture 执行、保存完整结果并确认 End；再经带登录 cookie 的 HTTP 立即运行（含同键重试）和取消入口，在实际 provider 边界暂停后验证 Cancel 的模式差异及 End。该进程退出后，第二个独立进程重新打开 PostgreSQL、Service 和 Host，核对两条原记录、完整结果与已结束会话，验证旧会话不可 Append、停机不补跑。Agent 路径还验证真实 shell 工具写出的文件在 End/重启后仍存在。测试配置使用已验证的持久绑定，项目配置表单仍待接入。默认 fixture 不需要凭据，这不是远端真实模型 provider 或浏览器页面验收。

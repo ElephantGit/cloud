@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ func (h *handler) scheduleAction(w http.ResponseWriter, r *http.Request, u store
 	}
 	// Authorize the exact configuration before exposing execution readiness or attempting a stop.
 	if _, err := s.GetScheduleConfig(r.Context(), tid, u.ID, id); err != nil {
-		scheduleActionError(w, err, "")
+		scheduleActionError(w, "schedule action config", err, "")
 		return
 	}
 	var old store.Occurrence
@@ -60,7 +61,7 @@ func (h *handler) scheduleAction(w http.ResponseWriter, r *http.Request, u store
 		var err error
 		old, err = s.GetOccurrence(r.Context(), tid, u.ID, oid)
 		if err != nil {
-			scheduleActionError(w, err, "")
+			scheduleActionError(w, "schedule action occurrence", err, "")
 			return
 		}
 		if old.ScheduleID != id {
@@ -99,29 +100,35 @@ func (h *handler) scheduleAction(w http.ResponseWriter, r *http.Request, u store
 	if oid == "" {
 		o, err := h.opts.Schedules.Manual(r.Context(), scope, id, key)
 		if err != nil {
-			scheduleActionError(w, err, o.ID)
+			scheduleActionError(w, "schedule manual run", err, o.ID)
 			return
 		}
 		writeJSON(w, 200, receipt(o))
 		return
 	}
 	if err := h.opts.Schedules.Cancel(r.Context(), scope, old.ID); err != nil {
-		scheduleActionError(w, err, old.ID)
+		scheduleActionError(w, "schedule cancel run", err, old.ID)
 		return
 	}
 	o, err := s.GetOccurrence(r.Context(), tid, u.ID, old.ID)
 	if err != nil {
-		scheduleActionError(w, err, old.ID)
+		scheduleActionError(w, "schedule reload occurrence", err, old.ID)
 		return
 	}
 	writeJSON(w, 200, receipt(o))
 }
 
-func scheduleActionError(w http.ResponseWriter, err error, id string) {
+func scheduleActionError(w http.ResponseWriter, op string, err error, id string) {
 	status, code := 500, "internal"
 	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, execution.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound):
 		status, code = 404, "not_found"
+	case errors.Is(err, execution.ErrNotFound):
+		if id != "" {
+			status, code = 409, "execution_target_unavailable"
+		} else {
+			status, code = 404, "not_found"
+		}
 	case errors.Is(err, execution.ErrUnavailable), errors.Is(err, scheduler.ErrRecoveryRequired):
 		status, code = 503, "schedule_execution_unavailable"
 	case errors.Is(err, scheduler.ErrOperationInProgress):
@@ -138,6 +145,9 @@ func scheduleActionError(w http.ResponseWriter, err error, id string) {
 		status, code = 400, "invalid_execution_request"
 	case errors.Is(err, execution.ErrUnsupported):
 		status, code = 400, "execution_unsupported"
+	}
+	if status == 500 {
+		slog.Error(op, "error", err)
 	}
 	params := map[string]string{}
 	if id != "" && status != 404 {

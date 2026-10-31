@@ -342,6 +342,28 @@ func TestScheduleActionAuthorizationValidationAndUnavailable(t *testing.T) {
 	if code, _ := nilCall(base+"/run", map[string]string{"requestId": "nil-host"}, f.token); code != 503 {
 		t.Fatal(code)
 	}
+
+	// Missing model during StartModel marks the occurrence skipped and returns 409 with occurrenceId (not 404).
+	missingModelStub := &executiontest.Stub{
+		ListModelsFunc: func(context.Context, execution.Scope) ([]execution.Model, error) {
+			return []execution.Model{{ID: "other"}}, nil
+		},
+		StartModelFunc: func(context.Context, execution.Scope, execution.ModelStartRequest) (execution.Ref, error) {
+			return execution.Ref{}, execution.ErrNotFound
+		},
+	}
+	mh, _, _ := f.host(t, missingModelStub)
+	missingCall := actionClient(t, f, mh)
+	code, out := missingCall(base+"/run", map[string]string{"requestId": "missing-model"}, f.token)
+	params, _ := out["params"].(map[string]any)
+	occID, _ := params["occurrenceId"].(string)
+	if code != 409 || out["code"] != "execution_target_unavailable" || occID == "" {
+		t.Fatalf("missing target error: %d %v", code, out)
+	}
+	persisted, err := f.db.GetOccurrence(t.Context(), f.scope.TenantID, f.scope.UserID, occID)
+	if err != nil || persisted.Status != "skipped" || persisted.Reason != "execution_target_unavailable" || !persisted.Released {
+		t.Fatalf("persisted skipped occurrence: %+v %v", persisted, err)
+	}
 }
 
 func TestScheduleHostShutdownCancelsAndJoinsAdmission(t *testing.T) {

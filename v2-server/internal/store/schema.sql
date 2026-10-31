@@ -42,6 +42,20 @@ CREATE TABLE IF NOT EXISTS v2_schedule_configs (
 );
 CREATE INDEX IF NOT EXISTS v2_schedule_configs_owner ON v2_schedule_configs(tenant_id,user_id);
 
+CREATE TABLE IF NOT EXISTS v2_schedule_occurrences (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ schedule_id uuid NOT NULL REFERENCES v2_schedule_configs(id),
+ kind text NOT NULL CHECK(kind IN ('scheduled','manual')),
+ trigger_key text NOT NULL,
+ scheduled_at timestamptz NOT NULL,
+ config_version bigint NOT NULL CHECK(config_version>0),
+ snapshot jsonb NOT NULL,
+ status text NOT NULL DEFAULT 'recorded' CHECK(status='recorded'),
+ recorded_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(schedule_id,kind,trigger_key)
+);
+CREATE INDEX IF NOT EXISTS v2_schedule_occurrences_history ON v2_schedule_occurrences(schedule_id,recorded_at DESC,id DESC);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash bytea PRIMARY KEY,
 	user_id    uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,

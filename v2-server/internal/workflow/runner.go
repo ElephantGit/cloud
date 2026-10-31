@@ -58,6 +58,12 @@ func Run(ctx context.Context, runtime execution.Service, scope execution.Scope, 
 			}
 			continue
 		}
+		// Cancellation may arrive while the durable intent is being written. Do
+		// not call Start after that write if the worker was stopped meanwhile.
+		if ctx.Err() != nil {
+			m.Interrupt(errors.Is(context.Cause(ctx), ErrUserCancelled))
+			return commitTerminal(ctx, m, commit)
+		}
 		ref, err := runtime.Start(ctx, scope, execution.StartRequest{Caller: attempt.Caller, Target: execution.Target{ProjectID: def.ProjectID}, ExecutorID: attempt.ExecutorID, Prompt: execution.TextPrompt(attempt.Prompt)})
 		if err != nil {
 			// Start can commit before its response is lost. Resolve that SAME identity;

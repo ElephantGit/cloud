@@ -18,6 +18,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/workflow"
 )
 
 // SessionCookie is the Gateway's development cookie name, so the frontend sees the same session.
@@ -51,6 +52,9 @@ type Options struct {
 	Catalog execution.Catalog
 	// Schedules is the same host used by the process's periodic scanner. Nil disables commands.
 	Schedules ScheduleActions
+	// Workflows is process-owned and uses the same Execution service. HTTP run
+	// admission will resolve catalog bindings before calling its Launch method.
+	Workflows *workflow.Host
 }
 
 // New returns the handler for every route v2-server serves.

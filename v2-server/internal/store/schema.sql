@@ -274,3 +274,34 @@ CREATE TABLE IF NOT EXISTS v2_workflow_requests (
  response jsonb,
  PRIMARY KEY (tenant_id,user_id,key)
 );
+
+-- Run ownership is separate from the tenant-shared document. Only workflow
+-- checkpoints and attempt receipts live here; execution history is not copied.
+CREATE TABLE IF NOT EXISTS v2_workflow_runs (
+ id uuid PRIMARY KEY,
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ user_id uuid NOT NULL REFERENCES users(id),
+ workflow_id uuid NOT NULL,
+ snapshot_id uuid NOT NULL REFERENCES v2_workflow_snapshots(id),
+ definition jsonb NOT NULL,
+ checkpoint jsonb NOT NULL,
+ revision bigint NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_at timestamptz NOT NULL,
+ updated_at timestamptz NOT NULL,
+ finished_at timestamptz,
+ cancel_requested_at timestamptz,
+ FOREIGN KEY (tenant_id,workflow_id) REFERENCES v2_workflows(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS v2_workflow_runs_owner
+ ON v2_workflow_runs(tenant_id,user_id,workflow_id,id);
+CREATE TABLE IF NOT EXISTS v2_workflow_attempts (
+ run_id uuid NOT NULL REFERENCES v2_workflow_runs(id),
+ sequence bigint NOT NULL CHECK (sequence>0),
+ caller jsonb NOT NULL,
+ attempt jsonb NOT NULL,
+ receipt jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ settled_at timestamptz,
+ PRIMARY KEY(run_id,sequence),
+ UNIQUE(run_id,caller)
+);

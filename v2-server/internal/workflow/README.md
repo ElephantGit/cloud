@@ -4,7 +4,9 @@
 `execution.Service` 执行。它不依赖正式 Cloud 的数据库、分布式调度或 Node 控制平面，也不自行
 创建第二个 execution runtime。包本身不注册 HTTP 路由；SQL、身份校验、资源目录解析和后台
 worker 生命周期由调用方负责。定义和发布快照已由 `internal/store/workflows.go` 持久化，
-`internal/server/workflows.go` 提供对应 HTTP 接口；运行 worker 的持久化装配尚未接入。
+`internal/server/workflows.go` 提供对应 HTTP 接口。`Host` 与 `internal/store/workflow_runs.go`
+接通运行/attempt 持久化；`main` 在公共执行层恢复之后创建 Host，并在关闭执行层前等待其退出。
+运行准入的 HTTP、目录绑定解析和前端数据适配仍待接入，尚不能从页面启动真实运行。
 
 ## 代码复用来源
 
@@ -68,3 +70,24 @@ interrupted；本包没有从 checkpoint 自动重放的入口。
 新增用例覆盖两个 Agent 串行传值、先持久化后执行、session 停止确认、取消、断流、响应丢失和
 不完整回答拒绝。这些测试使用明确的 `executiontest.Stub`，不能替代真实 Node/PostgreSQL 集成验证。
 仓库发布门禁仍是带 `TEST_DATABASE_URL` 的 `go vet ./...` 和 `go test -race ./...`。
+
+## 运行记录与 worker
+
+`Admission` 是应用内部的命令，调用方必须先从公共目录解析 executor 和角色快照，不能把它当作
+HTTP body 直接解码。存储只从指定已发布快照加载图，并检查项目属于当前租户；它复用定义接口
+的幂等事务。`Record` 也不是正式 API 的响应 DTO：它包括内部冻结定义、检查点和写入版本。
+运行内容按发起者隔离，与公共执行接口的会话归属一致；共享工作流文档不扩大会话访问权限。
+
+`Host.Launch` 先读取持久运行并原子领取 pending 行。幂等创建返回的是原始响应，不能据此重建
+运行中的 Machine。worker context 属于进程，HTTP 断开不会取消已接收的运行。每次检查点按
+revision 比较更新，旧 worker 不能覆盖新状态；终态只读。每个 attempt 在 Start 前保留完整
+Caller，收到 Ref 后只能补写同一引用，清空 Active 也不删除历史；事件和回答不另建存储通道。
+
+取消只先记录请求时间，不把“请求已接受”当作“执行已停止”，也不改变 worker revision。
+停止未确认时保留 running 和 receipt；后续取消可按同一 Caller 核对并确认 End，再结算图状态。
+启动恢复只在公共运行时完成全局恢复后执行，包含失去成员身份的旧运行。未完成运行按既有
+failed/interrupted 语义结算，已请求取消的记为 cancelled；从不重放 prompt。缺失响应的历史仍
+保留 Caller，可经公共 ReadAttempt 找回，不能据此生成替代 attempt。
+
+Host 的 PostgreSQL 集成用例覆盖并发 Launch、请求断开、串行传值、收据分页、关闭等待和
+停止未确认后的核对。这些用例的执行端口仍是替身，不代表真实 Node/工具产物链路已验收。

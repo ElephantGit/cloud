@@ -45,6 +45,36 @@ var testScope = execution.Scope{TenantID: "tenant", UserID: "owner"}
 
 func discardCheckpoint(context.Context, Checkpoint) error { return nil }
 
+func TestRunnerCancellationDuringIntentCommitDoesNotStart(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	runtime := &executiontest.Stub{StartFunc: func(context.Context, execution.Scope, execution.StartRequest) (execution.Ref, error) {
+		t.Fatal("Start called after cancellation committed")
+		return execution.Ref{}, execution.ErrInvalidRequest
+	}}
+	state, err := Run(ctx, runtime, testScope, twoAgentDefinition(), func(ctx context.Context, c Checkpoint) error {
+		if c.Active != nil {
+			cancel(ErrUserCancelled)
+		}
+		return ctx.Err()
+	})
+	// The intent write above returns cancellation, so no effect can be dispatched.
+	if err == nil || state.Status != "running" {
+		t.Fatalf("failed persistence changed state: %+v %v", state, err)
+	}
+	ctx, cancel = context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	state, err = Run(ctx, runtime, testScope, twoAgentDefinition(), func(_ context.Context, c Checkpoint) error {
+		if c.Active != nil {
+			cancel(ErrUserCancelled)
+		}
+		return nil
+	})
+	if err != nil || state.Status != "cancelled" {
+		t.Fatalf("durable intent cancellation: %+v %v", state, err)
+	}
+}
+
 func TestRunnerSerialAgentsUseFinalAnswerAndDrainBeforeNextStart(t *testing.T) {
 	def := twoAgentDefinition()
 	var calls []string

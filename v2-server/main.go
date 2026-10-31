@@ -27,6 +27,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/workflow"
 	"golang.org/x/sys/unix"
 )
 
@@ -135,12 +136,18 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		return checkFixture(ctx, runtime, scope, demo.ID, filepath.Join(base, "nodes"))
 	}
 
+	workflows, e := workflow.NewHost(ctx, db, runtime)
+	if e != nil {
+		return e
+	}
+	defer workflows.Close() // Join workflow workers before execution and PostgreSQL close.
 	options := server.Options{
 		SessionTTL: 7 * 24 * time.Hour,
 		DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
 		Projects:   projects,
 		Execution:  runtime,
 		Catalog:    runtime,
+		Workflows:  workflows,
 	}
 	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
 	if e != nil {

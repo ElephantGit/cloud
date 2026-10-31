@@ -46,3 +46,22 @@ func TestOnlyNormalTurnEndCanComplete(t *testing.T) {
 		t.Fatalf("normal result: %+v", result)
 	}
 }
+
+func TestSessionEndPreservesExplicitFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		reason string
+		status execution.Status
+		code   string
+	}{
+		{"agent_failed", execution.StatusFailed, "agent_failed"},
+		{"interrupted", execution.StatusInterrupted, "interrupted"},
+		{"idle_timeout", execution.StatusFailed, "agent_ended_before_turn"},
+		{"cancelled", execution.StatusCancelled, ""},
+		{"user_ended", execution.StatusCancelled, ""},
+	} {
+		result := sessionEndedResult(tc.reason)
+		if result.Status != tc.status || result.FailureCode != tc.code || result.AnswerComplete {
+			t.Fatalf("%s: %+v", tc.reason, result)
+		}
+	}
+}

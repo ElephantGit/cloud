@@ -313,10 +313,7 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 		}
 		var outcome *turnOutcome
 		if call != nil {
-			result := failed("agent_ended_before_turn")
-			if ended.Result.Reason == "cancelled" || ended.Result.Reason == "user_ended" {
-				result = execution.Result{Status: execution.StatusCancelled, StopReason: "cancelled"}
-			}
+			result := sessionEndedResult(ended.Result.Reason)
 			if !publicationFailed && a.publish(execution.Event{Ref: execution.Ref{TurnID: call.id}, Kind: execution.EventTurnEnded, Result: &result}) == nil {
 				outcome = &turnOutcome{call.id, result, nil}
 			} else {
@@ -381,6 +378,21 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 		return nil, false
 	}
 	return &turnOutcome{turnID, result, nil}, true
+}
+
+// Retain Node's explicit failure classification for callers' retry policies.
+// A process interruption or idle expiry is not evidence of an Agent failure.
+func sessionEndedResult(reason string) execution.Result {
+	switch reason {
+	case "cancelled", "user_ended":
+		return execution.Result{Status: execution.StatusCancelled, StopReason: "cancelled"}
+	case "agent_failed":
+		return failed("agent_failed")
+	case "interrupted":
+		return execution.Result{Status: execution.StatusInterrupted, FailureCode: "interrupted"}
+	default:
+		return failed("agent_ended_before_turn")
+	}
 }
 
 func turnResult(turn *nodehistory.Turn) execution.Result {

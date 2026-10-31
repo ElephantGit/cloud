@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS v2_schedule_occurrences (
  recorded_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(schedule_id,kind,trigger_key)
 );
+CREATE INDEX IF NOT EXISTS v2_schedule_occurrences_history ON v2_schedule_occurrences(schedule_id,recorded_at DESC,id DESC);
 
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash bytea PRIMARY KEY,

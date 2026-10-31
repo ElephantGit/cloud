@@ -20,7 +20,7 @@
 
 接口原样返回当前 occurrence 底座的 `recorded`、`starting`、`reconciling`、`running`、`cancelling`、`succeeded`、`failed`、`cancelled`、`interrupted`、`skipped`。`reconciling` 表示需按原 Caller 核对，原因是 `lookup_required` 或 `server_restarted`，不是待重派队列。新底座将旧 `admission_unknown` 升级为该状态；旧 `workspace_busy/admission_not_accepted` 原因分别升级为 `execution_busy/execution_not_started`。`execution_busy` 仅表示同会话或运行的上一轮未完成；同任务重叠仍记录 `previous_unfinished`。升级保留身份、冻结配置、引用与占位，HTTP 只读升级后的值。`recorded` 仅表示触发已记录；`released` 表示该记录不再占用同任务执行资格，不能当作成功证据，也不代表目录已删除。结果终态仍可能是 `released=false`，需等待执行侧停止/结束确认。跳过原因与状态分开提供。
 
-读取不会调用 Start、StartModel、Append、Cancel、End、Subscribe 或任何状态写入。配置接口的 `runs` 字段仍为空，历史需通过本接口单独读取。没有新增前端、立即运行或取消入口，生产扫描与真实派发仍未装配。
+读取不会调用 Start、StartModel、Append、Cancel、End、Subscribe 或任何状态写入。配置接口的 `runs` 字段仍为空，历史需通过本接口单独读取。
 
 ## 公共结果
 
@@ -34,7 +34,7 @@
 
 真实 PostgreSQL HTTP 测试校验候选契约、全部既有状态及释放标记、分页/游标隔离、当前权限撤销、服务不可用和错误脱敏。公共 Stub 测试另验证完整长答案、Caller/Ref 错配、部分结果、两种 Cancel 会话边界、结束后读取和 GET 零写入；Stub 不证明真实执行或公共持久化。
 
-有公共 `internal/executionruntime` 与 M3 实现的 Linux 组合源码可显式运行纯模型跨进程验收；Agent 路径还需要公共 `agentruntime`、`projectrepos`、Node 恢复代码和准备好的固定资产：
+有公共 `internal/executionruntime` 与调度编排实现的 Linux 组合源码可显式运行纯模型跨进程验收；Agent 路径还需要公共 `agentruntime`、`projectrepos`、Node 恢复代码和准备好的固定资产：
 
 ```sh
 TEST_DATABASE_URL=... go test -race -count=1 -tags execution_integration ./internal/server -run '^TestScheduleResultRuntimeRestart$' -v

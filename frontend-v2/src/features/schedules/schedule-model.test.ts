@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalog, emptyDraft, nextTimes, targetFromDraft, validateDraft } from './schedule-model'
+import { emptyDraft, nextTimes, targetFromDraft, validateDraft } from './schedule-model'
 
 describe('schedule rules', () => {
   it('uses task timezone, skips an elapsed time, and rolls the year over', () => {
@@ -20,22 +20,14 @@ describe('schedule rules', () => {
     expect(nextTimes(rule, new Date('2026-10-29T08:30:00Z'), new Date('2026-10-29T01:00:00Z')).map(d => d.toISOString())).toEqual(['2026-10-29T13:00:00.000Z', '2026-10-29T19:00:00.000Z', '2026-10-30T01:00:00.000Z'])
   })
 })
-describe('execution target boundaries', () => {
-  const data = { ...catalog, workflows: [{ id: 'release', name: '测试工作流', description: '', versions: ['v3'], fields: [{ key: 'branch', name: '分支', placeholder: '', required: true }, { key: 'focus', name: '关注', placeholder: '', required: false }] }] }
-
-  it('allows unscoped chat but requires a project, publication and inputs for workflow', () => {
-    const draft = { ...emptyDraft(), name: '简报', prompt: '汇总变化' }
-    expect(validateDraft(draft)).toEqual({})
-    expect(validateDraft({ ...draft, kind: 'workflow' })).toMatchObject({ workflow: expect.any(String), projectId: expect.any(String) })
-    const flow = { ...draft, kind: 'workflow' as const, projectId: 'website', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main' } }
-    expect(validateDraft(flow, data)).toEqual({})
-    expect(validateDraft({ ...flow, snapshot: 'unpublished' }, data)).toHaveProperty('workflow')
-    expect(validateDraft({ ...flow, inputs: {} }, data)).toHaveProperty('input:branch')
-    expect(validateDraft(flow, { ...data, projects: [] })).toHaveProperty('projectId')
-  })
-  it('does not save inactive execution fields or another workflow’s inputs', () => {
-    const draft = { ...emptyDraft(), kind: 'workflow' as const, workflowId: 'release', snapshot: 'v3', prompt: 'private chat text', inputs: { branch: 'main', audience: 'team' } }
-    expect(targetFromDraft(draft, data)).toEqual({ kind: 'workflow', workflowId: 'release', snapshot: 'v3', inputs: { branch: 'main', focus: '' } })
-    expect(targetFromDraft({ ...draft, kind: 'chat' })).not.toHaveProperty('workflowId')
-  })
+describe('execution target boundaries',()=>{
+ it('builds only conversation requests and rejects legacy references without interpreting their parameters',()=>{
+  const draft={...emptyDraft(),name:'简报',prompt:'汇总变化'}
+  expect(validateDraft(draft)).toEqual({})
+  expect(targetFromDraft(draft)).toEqual({kind:'chat',prompt:'汇总变化',agent:'',model:''})
+  for(const kind of ['workflow','task'] as const){
+   expect(validateDraft({...draft,kind})).toHaveProperty('target')
+   expect(()=>targetFromDraft({...draft,kind})).toThrow('引用目标只读')
+  }
+ })
 })

@@ -42,7 +42,7 @@ func validateSchedule(in *store.ScheduleInput) string {
 		raw  json.RawMessage
 		keys []string
 	}{
-		{in.Target, []string{"kind", "prompt", "agent", "model"}},
+
 		{in.Rule, []string{"kind", "time", "days", "hours", "timezone"}},
 	} {
 		var fields map[string]json.RawMessage
@@ -59,19 +59,12 @@ func validateSchedule(in *store.ScheduleInput) string {
 	if in.Name == "" || len(in.Name) > 200 {
 		return "invalid_name"
 	}
-	var target struct {
-		Kind   string `json:"kind"`
-		Prompt string `json:"prompt"`
-		Agent  string `json:"agent"`
-		Model  string `json:"model"`
+	target, code := decodeScheduleChat(in.Target)
+	if code != "" {
+		return code
 	}
-	d := json.NewDecoder(strings.NewReader(string(in.Target)))
-	d.DisallowUnknownFields()
-	if d.Decode(&target) != nil || target.Kind != "chat" || strings.TrimSpace(target.Prompt) == "" || len(target.Prompt) > 32000 {
-		return "invalid_target"
-	}
-	if in.ProjectID != "" {
-		return "project_execution_unavailable"
+	if target.Kind == "chat" && in.ProjectID != "" && (!scheduleUUID.MatchString(in.ProjectID) || target.ExecutorID == "") {
+		return "invalid_project_executor"
 	}
 	var rule struct {
 		Kind     string `json:"kind"`
@@ -80,7 +73,7 @@ func validateSchedule(in *store.ScheduleInput) string {
 		Hours    int    `json:"hours"`
 		Timezone string `json:"timezone"`
 	}
-	d = json.NewDecoder(strings.NewReader(string(in.Rule)))
+	d := json.NewDecoder(strings.NewReader(string(in.Rule)))
 	d.DisallowUnknownFields()
 	if d.Decode(&rule) != nil {
 		return "invalid_rule"
@@ -167,7 +160,23 @@ func (h *handler) scheduleConfigs(w http.ResponseWriter, r *http.Request, u stor
 			return
 		}
 		if code := validateSchedule(&in); code != "" {
-			fault(w, 400, code)
+			status := 400
+			if code == "schedule_target_unavailable" {
+				status = 503
+			}
+			fault(w, status, code)
+			return
+		}
+		target, _ := decodeScheduleChat(in.Target)
+		if err := h.resolveScheduleChat(r.Context(), tenant, u.ID, &in, target); err != nil {
+			switch {
+			case errors.Is(err, ErrScheduleResourcesUnavailable):
+				fault(w, 503, "schedule_resources_unavailable")
+			case errors.Is(err, store.ErrNotFound):
+				fault(w, 404, "not_found")
+			default:
+				internal(w, "resolve schedule target", err)
+			}
 			return
 		}
 	}

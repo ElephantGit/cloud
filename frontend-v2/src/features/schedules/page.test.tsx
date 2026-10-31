@@ -1,97 +1,169 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Page from './page'
 import * as api from './api/generated'
-import { useTaskScheduleDemo } from './task-demo-store'
+import * as actions from './api/actions/generated'
+import * as history from './api/history/generated'
+import { compareOccurrences, compareTimestampsDesc, emptyResources } from './runtime'
 
-vi.mock('@/app/auth/user', () => ({ useUser: () => ({ id: 'user' }) }))
-
-vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant' }] }, isLoading: false, isError: false }) }))
-vi.mock('./api/generated', () => ({ listScheduleConfigs: vi.fn(), createScheduleConfig: vi.fn(), updateScheduleConfig: vi.fn(), setScheduleConfigEnabled: vi.fn() }))
-const item = { id: 'task-1', name: '早报', projectId: '', target: { kind: 'chat' as const, prompt: '摘要', agent: 'a', model: 'm' }, rule: { kind: 'daily' as const, time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' }, enabled: true, version: 1, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', runs: [] }
-function renderPage() { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); return render(<QueryClientProvider client={client}><Page /></QueryClientProvider>) }
-beforeEach(() => { localStorage.clear(); useTaskScheduleDemo.getState().reset(); HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }; HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }; vi.clearAllMocks(); vi.mocked(api.listScheduleConfigs).mockResolvedValue({ items: [item], nextCursor: '' }) })
-it('loads persistent configurations and disables unimplemented execution', async () => { renderPage(); expect(await screen.findByText('早报')).toBeInTheDocument(); expect(api.listScheduleConfigs).toHaveBeenCalledWith('tenant'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); expect(screen.getByText(/立即运行和运行历史尚未接入/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: /模拟运行/ })).not.toBeInTheDocument() })
-it('creates a text configuration through the generated client', async () => { vi.mocked(api.createScheduleConfig).mockResolvedValue({ ...item, name: '新任务' }); renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: '新建任务' })); fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '新任务' } }); fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '摘要' } }); await userEvent.click(screen.getByRole('button', { name: '创建并启用' })); await waitFor(() => expect(api.createScheduleConfig).toHaveBeenCalledWith('tenant', expect.objectContaining({ name: '新任务', projectId: '', target: expect.objectContaining({ kind: 'chat', prompt: '摘要' }) }))) })
-it('shows a load failure instead of sample tasks', async () => { vi.mocked(api.listScheduleConfigs).mockRejectedValue(new Error('offline')); renderPage(); expect(await screen.findByRole('alert')).toHaveTextContent('加载失败'); expect(screen.queryByText('早报')).not.toBeInTheDocument() })
-it('preserves edit input and blocks resubmission after version conflict', async () => {
-  vi.mocked(api.updateScheduleConfig).mockRejectedValue({ isAxiosError: true, response: { status: 409 } })
-  renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); await userEvent.click(screen.getByRole('button', { name: '编辑' }));
-  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '我的修改' } }); await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('已被其他操作修改'); expect(screen.getByLabelText('任务名称')).toHaveValue('我的修改'); expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled(); expect(api.updateScheduleConfig).toHaveBeenCalledWith('tenant', 'task-1', expect.objectContaining({ version: 1 }))
+vi.mock('@/app/auth/user',()=>({useUser:()=>({id:'user'})}))
+vi.mock('@/api/me/me',()=>({useGetApiV1MeTenants:()=>({data:{items:[{id:'tenant'}]},isLoading:false,isError:false})}))
+vi.mock('./api/generated',()=>({listScheduleConfigs:vi.fn(),createScheduleConfig:vi.fn(),updateScheduleConfig:vi.fn(),setScheduleConfigEnabled:vi.fn(),getScheduleResources:vi.fn()}))
+vi.mock('./api/actions/generated',()=>({runScheduleNow:vi.fn(),cancelScheduleRun:vi.fn()}))
+vi.mock('./api/history/generated',()=>({listScheduleHistory:vi.fn(),getScheduleHistoryItem:vi.fn(),getScheduleExecutionResult:vi.fn()}))
+const resources={projects:[{id:'project-id',name:'真实项目',description:''}],models:[{id:'fixture',name:'固定模型'}],executors:[{id:'executor-id',name:'项目执行器',agentName:'Agent',modelId:'fixture'}],available:{projects:true,models:true,executors:true}}
+const item={id:'task-1',name:'早报',projectId:'',target:{kind:'chat' as const,prompt:'摘要',agent:'',model:'fixture'},rule:{kind:'daily' as const,time:'09:00',days:[1],hours:6,timezone:'Asia/Shanghai'},enabled:true,version:1,createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z',runs:[]}
+const occurrence:history.Occurrence={id:'run-1',scheduleId:item.id,key:'key',kind:'manual',status:'running',reason:'',executionRef:'ref',scheduledAt:item.createdAt,recordedAt:item.createdAt,configVersion:1,snapshot:{},released:false,version:1}
+function mount(client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}})){return render(<QueryClientProvider client={client}><Page/></QueryClientProvider>)}
+async function detail(){await screen.findByText('早报');await userEvent.click(screen.getByRole('button',{name:'查看早报'}));return screen.getByRole('dialog')}
+beforeEach(()=>{
+ sessionStorage.clear();vi.resetAllMocks()
+ HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','')};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open')}
+ vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[item],nextCursor:''})
+ vi.mocked(api.getScheduleResources).mockResolvedValue(resources)
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[],nextCursor:''})
+ vi.mocked(history.getScheduleHistoryItem).mockResolvedValue({...occurrence,executionRef:''})
 })
 
-it('clears a previous edit conflict when opening a new task', async () => {
-  vi.mocked(api.updateScheduleConfig).mockRejectedValue({ isAxiosError: true, response: { status: 409 } })
-  renderPage(); await screen.findByText('早报'); await userEvent.click(screen.getByRole('button', { name: /查看早报/ })); await userEvent.click(screen.getByRole('button', { name: '编辑' }));
-  await userEvent.click(screen.getByRole('button', { name: '保存修改' })); await screen.findByRole('alert'); await userEvent.click(screen.getByRole('button', { name: '关闭面板' }));
-  await userEvent.click(screen.getByRole('button', { name: '新建任务' })); expect(screen.getByRole('button', { name: '创建并启用' })).toBeEnabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+it('uses shared real IDs and persists the project/model/executor binding',async()=>{
+ vi.mocked(api.createScheduleConfig).mockResolvedValue({...item,name:'项目任务',projectId:'project-id'})
+ mount();await screen.findByText('早报');await userEvent.click(screen.getByRole('button',{name:'新建任务'}))
+ fireEvent.change(screen.getByLabelText('任务名称'),{target:{value:'项目任务'}});fireEvent.change(screen.getByLabelText('任务指令'),{target:{value:'检查代码'}})
+ await userEvent.selectOptions(screen.getByLabelText('关联项目'),'project-id');await userEvent.selectOptions(screen.getByLabelText('模型'),'fixture');await userEvent.selectOptions(screen.getByLabelText('执行器'),'executor-id')
+ await userEvent.click(screen.getByRole('button',{name:'创建并启用'}))
+ await waitFor(()=>expect(api.createScheduleConfig).toHaveBeenCalledWith('tenant',expect.objectContaining({projectId:'project-id',target:{kind:'chat',prompt:'检查代码',model:'fixture',agent:'Agent',executorId:'executor-id'}})))
+ expect(screen.queryByRole('option',{name:'Ora 官网'})).not.toBeInTheDocument()
 })
 
-it('adds existing tasks through the original drawer and table without changing persistent records', async () => {
-  renderPage(); await screen.findByText('早报')
-  expect(screen.queryByText('体验新功能')).not.toBeInTheDocument()
-  for (const name of ['任务名称', '执行方式', '关联项目', '时间安排', '最近运行', '启用']) expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: '新建任务' }))
-  fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '保留原对话草稿' } })
-  await userEvent.click(screen.getByRole('button', { name: /已有任务/ }))
-  await userEvent.click(screen.getByRole('button', { name: /官网上线检查 CLOUD-128/ }))
-  expect(screen.getByLabelText('任务名称')).toHaveValue('官网上线检查 · 定时执行')
-  expect(screen.getByLabelText('关联项目')).toHaveValue('Ora 官网')
-  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '我的计划' } })
-  fireEvent.change(screen.getByLabelText('补充说明（可选）'), { target: { value: '我的补充说明' } })
-  await userEvent.click(screen.getByRole('button', { name: '更换任务' }))
-  await userEvent.click(screen.getByRole('button', { name: /项目依赖检查 CLOUD-142/ }))
-  expect(screen.getByLabelText('任务名称')).toHaveValue('我的计划')
-  expect(screen.getByLabelText('补充说明（可选）')).toHaveValue('我的补充说明')
-  await userEvent.click(screen.getByRole('button', { name: /直接对话/ }))
-  expect(screen.getByLabelText('任务指令')).toHaveValue('保留原对话草稿')
-  await userEvent.click(screen.getByRole('button', { name: /已有任务/ }))
-  await userEvent.click(screen.getByRole('button', { name: '创建并启用' }))
-  await userEvent.click(screen.getByRole('button', { name: '关闭面板' }))
-  expect(screen.getByRole('button', { name: '查看我的计划' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '查看早报' })).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('switch', { name: '我的计划启用状态' }))
-  expect(screen.getByRole('switch', { name: '我的计划启用状态' })).not.toBeChecked()
-  await userEvent.selectOptions(screen.getByLabelText('执行方式筛选'), 'task')
-  expect(screen.queryByRole('button', { name: '查看早报' })).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '查看我的计划' })).toBeInTheDocument()
-  expect(api.createScheduleConfig).not.toHaveBeenCalled()
-  expect(api.updateScheduleConfig).not.toHaveBeenCalled()
-  expect(api.setScheduleConfigEnabled).not.toHaveBeenCalled()
+it('shows unavailable resources, keeps reference modes disabled and allows unbound text configuration',async()=>{
+ vi.mocked(api.getScheduleResources).mockResolvedValue(emptyResources)
+ vi.mocked(api.createScheduleConfig).mockResolvedValue({...item,target:{...item.target,model:''}})
+ mount();const dialog=await detail();expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeDisabled()
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));await userEvent.click(screen.getByRole('button',{name:'新建任务'}))
+ expect(screen.getByRole('button',{name:/运行工作流/})).toBeDisabled();expect(screen.getByRole('button',{name:/已有任务/})).toBeDisabled()
+ expect(screen.getByLabelText('模型')).toBeDisabled();expect(screen.getByLabelText('执行器')).toBeDisabled()
+ fireEvent.change(screen.getByLabelText('任务名称'),{target:{value:'稍后配置'}});fireEvent.change(screen.getByLabelText('任务指令'),{target:{value:'摘要'}})
+ await userEvent.click(screen.getByRole('button',{name:'创建并启用'}));await waitFor(()=>expect(api.createScheduleConfig).toHaveBeenCalledWith('tenant',expect.objectContaining({projectId:'',target:expect.objectContaining({model:''})})))
+ expect(actions.runScheduleNow).not.toHaveBeenCalled()
 })
 
-it('keeps selection edits on close and displays missing sources and empty searches', async () => {
-  renderPage(); await screen.findByText('早报')
-  await userEvent.click(screen.getByRole('button', { name: '新建任务' }))
-  await userEvent.click(screen.getByRole('button', { name: /已有任务/ }))
-  fireEvent.change(screen.getByLabelText('选择任务'), { target: { value: 'no-match' } })
-  expect(screen.getByText(/没有匹配的任务/)).toBeInTheDocument()
-  fireEvent.change(screen.getByLabelText('选择任务'), { target: { value: '142' } })
-  await userEvent.click(screen.getByRole('button', { name: /CLOUD-142/ }))
-  await userEvent.click(screen.getByRole('button', { name: '关闭面板' }))
-  expect(screen.getByText('放弃未保存的修改？')).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: '继续编辑' }))
-  expect(screen.getByLabelText('任务名称')).toHaveValue('项目依赖检查 · 定时执行')
-  await userEvent.click(screen.getByRole('button', { name: '清除选择' }))
-  expect(screen.getByRole('button', { name: '创建并启用' })).toBeDisabled()
+it('preserves the request identity across a network failure and reopening the drawer',async()=>{
+ vi.mocked(actions.runScheduleNow).mockRejectedValueOnce({isAxiosError:true}).mockResolvedValueOnce({id:'run-1',scheduleId:item.id,kind:'manual',status:'running',reason:'',released:false,version:1,scheduledAt:item.createdAt})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'立即运行'}));expect(await screen.findByRole('alert')).toHaveTextContent('网络连接中断')
+ const key=vi.mocked(actions.runScheduleNow).mock.calls[0][2].requestId
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));await detail();await userEvent.click(screen.getByRole('button',{name:'立即运行'}))
+ await waitFor(()=>expect(actions.runScheduleNow).toHaveBeenCalledTimes(2))
+ expect(vi.mocked(actions.runScheduleNow).mock.calls[1][2].requestId).toBe(key)
+ await waitFor(()=>expect(sessionStorage.getItem('ora.schedule.request:user:tenant:task-1')).toBeNull())
 })
 
-it('opens workflow configuration, requires its project and inputs, and saves only a demo', async () => {
-  renderPage(); await screen.findByText('早报')
-  await userEvent.click(screen.getByRole('button', { name: '新建任务' }))
-  await userEvent.click(screen.getByRole('button', { name: /运行工作流/ }))
-  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '定时发布检查' } })
-  await userEvent.click(await screen.findByRole('button', { name: /示例：代码审查.*v1/ }))
-  await userEvent.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(screen.getByText('运行工作流需要项目，请选择运行环境')).toBeInTheDocument()
-  await userEvent.selectOptions(screen.getByLabelText('关联项目'), 'website')
-  fireEvent.change(await screen.findByLabelText('分支 *'), { target: { value: 'main' } })
-  await userEvent.click(screen.getByRole('button', { name: '创建并启用' }))
-  expect(screen.getByText(/工作流配置为前端演示，刷新后清除/)).toBeInTheDocument()
-  expect(api.createScheduleConfig).not.toHaveBeenCalled()
-  await userEvent.click(screen.getByRole('button', { name: '编辑' }))
-  expect(await screen.findByLabelText('分支 *')).toHaveValue('main')
+it('does not claim cancellation when stopping is unconfirmed and shows incomplete output honestly',async()=>{
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[occurrence],nextCursor:''})
+ vi.mocked(history.getScheduleExecutionResult).mockResolvedValue({sessionId:'s',turnId:'t',mode:'model',workspaceId:'',sessionEndedAt:null,startedAt:item.createdAt,endedAt:null,result:{status:'failed',answer:'只有部分内容',answerComplete:false,stopReason:'',failureCode:'result_incomplete',usage:null}})
+ vi.mocked(actions.cancelScheduleRun).mockRejectedValue({isAxiosError:true,response:{status:503,data:{code:'stop_unconfirmed'}}})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'运行历史'}))
+ expect(await screen.findByText('部分结果或未完成结果')).toBeInTheDocument();expect(screen.getByText('只有部分内容')).toBeInTheDocument()
+ await userEvent.click(screen.getByRole('button',{name:'取消此次运行'}));expect(await screen.findByRole('alert')).toHaveTextContent('停止尚未确认')
+ expect(screen.getByRole('button',{name:'取消此次运行'})).toBeEnabled();expect(screen.queryByText('已取消')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'立即运行'})).toBeDisabled()
+})
+
+it('keeps edits on version conflict and resets the conflict for a new task',async()=>{
+ vi.mocked(api.updateScheduleConfig).mockRejectedValue({isAxiosError:true,response:{status:409,data:{code:'version_conflict'}}})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'编辑'}));fireEvent.change(screen.getByLabelText('任务名称'),{target:{value:'我的修改'}})
+ await userEvent.click(screen.getByRole('button',{name:'保存修改'}));expect(await screen.findByRole('alert')).toHaveTextContent('已被其他操作修改');expect(screen.getByLabelText('任务名称')).toHaveValue('我的修改');expect(screen.getByRole('button',{name:'保存修改'})).toBeDisabled()
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));await userEvent.click(screen.getByRole('button',{name:'放弃修改'}));await userEvent.click(screen.getByRole('button',{name:'新建任务'}));expect(screen.getByRole('button',{name:'创建并启用'})).toBeEnabled()
+})
+
+it('shows config and history failures instead of sample records or fake success',async()=>{
+ vi.mocked(history.listScheduleHistory).mockRejectedValue({isAxiosError:true,response:{status:404}})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'运行历史'}));expect(await screen.findByRole('alert')).toHaveTextContent('资源或接口当前不可用');expect(screen.queryByText('尚无运行记录。')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'模拟运行'})).not.toBeInTheDocument()
+})
+
+it('refreshes current status and consumes opaque history pagination',async()=>{
+ const finished={...occurrence,status:'succeeded' as const,released:true,executionRef:''}
+ vi.mocked(history.listScheduleHistory).mockImplementation(async(_tid,_id,params)=>params?.cursor?{items:[{...finished,id:'older'}],nextCursor:''}:{items:[finished],nextCursor:'opaque-page'})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'运行历史'}));await userEvent.click(await screen.findByRole('button',{name:'加载更多记录'}))
+ await waitFor(()=>expect(history.listScheduleHistory).toHaveBeenCalledWith('tenant','task-1',{limit:20,cursor:'opaque-page'},undefined,expect.any(AbortSignal)))
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[{...finished,status:'interrupted',reason:'server_restarted',version:2}],nextCursor:''})
+ await userEvent.click(screen.getByRole('button',{name:'刷新状态'}));expect(await screen.findByText('服务重启，本次不补跑')).toBeInTheDocument()
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}))
+ expect(within(screen.getByRole('row',{name:/早报/})).getByText('已中断')).toBeInTheDocument()
+})
+
+it('does not leave a running acknowledgement after a completed response is read',async()=>{
+ const finished={...occurrence,status:'succeeded' as const,released:true,version:4}
+ vi.mocked(actions.runScheduleNow).mockResolvedValue({...occurrence,status:'running'})
+ vi.mocked(history.getScheduleHistoryItem).mockResolvedValue(finished)
+ vi.mocked(history.getScheduleExecutionResult).mockResolvedValue({sessionId:'s',turnId:'t',mode:'model',workspaceId:'',startedAt:item.createdAt,endedAt:item.createdAt,sessionEndedAt:item.createdAt,result:{status:'completed',answer:'真实结果',answerComplete:true,stopReason:'stop',failureCode:'',usage:null}})
+ mount();await detail();await userEvent.click(screen.getByRole('button',{name:'立即运行'}));expect(await screen.findByText('完整结果')).toBeInTheDocument()
+ expect(screen.getByRole('status')).toHaveTextContent('运行请求已记录，当前状态见运行历史。');expect(screen.getByRole('status')).not.toHaveTextContent('进行中')
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));expect(within(screen.getByRole('row',{name:/早报/})).getByText('成功')).toBeInTheDocument()
+})
+
+it('orders multi-page history by (recordedAt DESC, id DESC) including fractional RFC3339 timestamps',async()=>{
+ expect(compareTimestampsDesc('2026-10-01T09:00:00.5Z','2026-10-01T09:00:00Z')).toBeLessThan(0)
+ expect(compareTimestampsDesc('2026-10-01T09:00:00.000002Z','2026-10-01T09:00:00.000001Z')).toBeLessThan(0)
+ expect(compareOccurrences({recordedAt:'2026-10-01T09:00:00Z',id:'00000000-0000-4000-8000-00000000000f'},{recordedAt:'2026-10-01T09:00:00Z',id:'00000000-0000-4000-8000-000000000002'})).toBeLessThan(0)
+ const baseRun={...occurrence,released:true,executionRef:''}
+ const page1=[
+  {...baseRun,id:'00000000-0000-4000-8000-000000000001',status:'succeeded' as const,scheduledAt:'2026-10-01T09:00:00.5Z',recordedAt:'2026-10-01T09:00:00.5Z'},
+  {...baseRun,id:'00000000-0000-4000-8000-00000000000f',status:'failed' as const,scheduledAt:'2026-10-01T09:00:00Z',recordedAt:'2026-10-01T09:00:00Z'},
+ ]
+ const page2=[
+  {...baseRun,id:'00000000-0000-4000-8000-000000000002',status:'cancelled' as const,scheduledAt:'2026-10-01T09:00:00Z',recordedAt:'2026-10-01T09:00:00Z'},
+ ]
+ vi.mocked(history.listScheduleHistory).mockImplementation(async(_tid,_id,params)=>params?.cursor?{items:page2,nextCursor:''}:{items:page1,nextCursor:'composite-cursor'})
+ mount();const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
+ await userEvent.click(await within(dialog).findByRole('button',{name:'加载更多记录'}))
+ await waitFor(()=>{
+  const labels=[...dialog.querySelectorAll('.sp-history-list button > span:first-child')].map(el=>el.textContent)
+  expect(labels).toEqual(['成功','失败','已取消'])
+ })
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}))
+ expect(within(screen.getByRole('row',{name:/早报/})).getByText('成功')).toBeInTheDocument()
+})
+
+it('retains loaded tasks, resources and active history occupancy across poll errors, and maps action error codes',async()=>{
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}})
+ vi.mocked(history.getScheduleExecutionResult).mockResolvedValue({sessionId:'s',turnId:'t',mode:'model',workspaceId:'',startedAt:item.createdAt,endedAt:null,sessionEndedAt:null,result:null})
+ vi.mocked(history.listScheduleHistory).mockResolvedValueOnce({items:[occurrence],nextCursor:''}).mockRejectedValueOnce({isAxiosError:true,response:{status:503}})
+ mount(client);const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
+ const activeItem=await within(dialog).findByRole('button',{name:/进行中/})
+ expect(activeItem).toHaveAttribute('aria-pressed','true')
+ expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeDisabled()
+
+ vi.mocked(api.listScheduleConfigs).mockRejectedValueOnce({isAxiosError:true,response:{status:503}})
+ await client.invalidateQueries({queryKey:['schedule-configs','user:tenant']})
+ expect(await screen.findByText('列表刷新失败，当前继续显示已有任务。')).toBeInTheDocument()
+ expect(screen.getByRole('row',{name:/早报/})).toBeInTheDocument()
+
+ vi.mocked(api.getScheduleResources).mockRejectedValueOnce({isAxiosError:true,response:{status:503}})
+ await userEvent.click(screen.getByRole('button',{name:'刷新资源'}))
+ expect(await screen.findByText(/当前继续使用上次读取的资源/)).toBeInTheDocument()
+
+ await userEvent.click(within(dialog).getByRole('button',{name:'刷新状态'}))
+ expect(await within(dialog).findByText(/既有记录未被清除/)).toBeInTheDocument()
+ expect(within(dialog).getByRole('button',{name:/进行中/})).toBeInTheDocument()
+ expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeDisabled()
+
+ const unboundActive={...occurrence,id:'run-unbound',executionRef:''}
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[unboundActive],nextCursor:''})
+ vi.mocked(actions.cancelScheduleRun).mockResolvedValue({id:unboundActive.id,scheduleId:item.id,kind:'manual',status:'cancelled',reason:'',released:true,version:2,scheduledAt:item.createdAt})
+ await userEvent.click(within(dialog).getByRole('button',{name:'刷新状态'}))
+ await waitFor(()=>expect(within(dialog).queryByText(/既有记录未被清除/)).not.toBeInTheDocument())
+ vi.mocked(history.getScheduleExecutionResult).mockClear()
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[{...unboundActive,status:'cancelled',released:true,version:2}],nextCursor:''})
+ await userEvent.click(within(dialog).getByRole('button',{name:'取消此次运行'}))
+ await waitFor(()=>expect(actions.cancelScheduleRun).toHaveBeenCalledWith('tenant','task-1','run-unbound',{}))
+ expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
+ await waitFor(()=>expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeEnabled())
+
+ const skippedTarget={...occurrence,id:'run-skipped-target',status:'skipped' as const,reason:'execution_target_unavailable',executionRef:'',released:true}
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[skippedTarget],nextCursor:''})
+ vi.mocked(actions.runScheduleNow).mockRejectedValueOnce({isAxiosError:true,response:{status:409,data:{code:'execution_target_unavailable',params:{occurrenceId:'run-skipped-target'}}}})
+ await userEvent.click(within(dialog).getByRole('button',{name:'立即运行'}))
+ expect(await within(dialog).findByText(/所选模型或项目当前不可用/)).toBeInTheDocument()
+ expect(await within(dialog).findByText('执行目标已不可用')).toBeInTheDocument()
 })

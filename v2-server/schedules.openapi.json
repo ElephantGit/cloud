@@ -448,36 +448,86 @@
           }
         }
       }
+    },
+    "/api/v2/tenants/{tid}/schedule-resources": {
+      "get": {
+        "operationId": "getScheduleResources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared execution resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResources"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
       "ScheduleTarget": {
-        "type": "object",
-        "required": [
-          "kind",
-          "prompt",
-          "agent",
-          "model"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "chat"
-            ]
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
-          "prompt": {
-            "type": "string"
-          },
-          "agent": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
+          {
+            "$ref": "#/components/schemas/ScheduleLegacyTarget"
           }
-        }
+        ]
       },
       "ScheduleRule": {
         "type": "object",
@@ -535,7 +585,7 @@
             "type": "string"
           },
           "target": {
-            "$ref": "#/components/schemas/ScheduleTarget"
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
           "rule": {
             "$ref": "#/components/schemas/ScheduleRule"
@@ -560,7 +610,7 @@
             "type": "string"
           },
           "target": {
-            "$ref": "#/components/schemas/ScheduleTarget"
+            "$ref": "#/components/schemas/ScheduleChatTarget"
           },
           "rule": {
             "$ref": "#/components/schemas/ScheduleRule"
@@ -677,6 +727,154 @@
             "type": "string"
           }
         }
+      },
+      "ScheduleChatTarget": {
+        "type": "object",
+        "required": [
+          "kind",
+          "prompt",
+          "agent",
+          "model"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "executorId": {
+            "type": "string"
+          }
+        }
+      },
+      "ScheduleResources": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "projects",
+          "models",
+          "executors",
+          "available"
+        ],
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "description"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "executors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "agentName",
+                "modelId"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "agentName": {
+                  "type": "string"
+                },
+                "modelId": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "projects",
+              "models",
+              "executors"
+            ],
+            "properties": {
+              "projects": {
+                "type": "boolean"
+              },
+              "models": {
+                "type": "boolean"
+              },
+              "executors": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "ScheduleLegacyTarget": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "workflow",
+              "task"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "description": "Read-only compatibility for previously stored references. Provider fields are preserved without interpretation; no write API is defined."
       }
     }
   }

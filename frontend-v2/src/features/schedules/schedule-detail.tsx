@@ -1,45 +1,81 @@
-import { useState } from 'react'
-import { Check, Clock3, FlaskConical, ListTodo, Pause, Pencil, Play, TriangleAlert } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { Check, Clock3, Pause, Pencil, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { catalog, type Catalog, formatTime, nextTimes, projectName, workflowName, ruleText, type Run, type SourceTask, type Task } from './schedule-model'
+import { listScheduleHistory, getScheduleHistoryItem, getScheduleExecutionResult } from './api/history/generated'
+import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
+import type { ScheduleActionReceipt } from './api/actions/generated'
+import type { ScheduleResources } from './api/generated'
+import { type Catalog, formatTime, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
+import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isTerminalActionRejection, manualRequestKey, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
-export function RunStatus({ run }: { run?: Run }) {
-  const Icon = run?.status === 'success' ? Check : run?.status === 'failed' ? TriangleAlert : Clock3
-  return <span className={`sp-run-status ${run?.status ?? 'none'}`}><Icon size={13} />{!run ? '尚未运行' : run.status === 'running' ? '进行中' : run.status === 'success' ? '成功' : '失败'}</span>
+export function RunStatus({run}:{run?:Run}) {
+ const success=run?.status==='succeeded'||run?.status==='success'
+ const Icon=success?Check:run?.status==='failed'?TriangleAlert:Clock3
+ return <span className={`sp-run-status ${success?'success':run?.status??'none'}`}><Icon size={13}/>{run?runLabels[run.status]:'查看记录'}</span>
 }
 
-export function ScheduleDetail({ data = catalog, task, sources = [], initialTab = 'config', onEdit, onToggle, onSimulate }: { data?: Catalog; task: Task; sources?: SourceTask[]; initialTab?: 'config' | 'history'; onEdit: () => void; onToggle: () => void; onSimulate?: (fail?: boolean) => void }) {
-  const [now] = useState(() => new Date())
-  const [tab, setTab] = useState(initialTab)
-  const [runId, setRunId] = useState('')
-  const target = task.target
-  const source = target.kind === 'task' ? sources.find(s => s.id === target.sourceTaskId) : undefined
-  const sourceError = target.kind === 'task' ? (!source ? '来源任务不可用，请重新选择。' : source.unavailable) : undefined
-  const history = task.runs.find(r => r.id === runId) ?? task.runs[0]
-  const running = task.runs.some(r => r.status === 'running')
-  const simulate = (fail = false) => { onSimulate?.(fail); setRunId(''); setTab('history') }
-  return <div className="sp-detail">
-    <div className="sp-detail-toolbar"><span className={`sp-enabled ${task.enabled ? '' : 'paused'}`}>{task.enabled ? '已启用' : '已暂停'}</span>{target.kind !== 'chat' && <Badge variant="outline"><FlaskConical data-icon="inline-start" />演示</Badge>}<span className="sp-footer-spacer" /><Button variant="outline" size="sm" onClick={onEdit}><Pencil size={14} />编辑</Button></div>
-    {target.kind === 'task' && <div className="sp-tabs" aria-label="详情视图"><button aria-pressed={tab === 'config'} onClick={() => setTab('config')}>任务配置</button><button aria-pressed={tab === 'history'} onClick={() => setTab('history')}>运行历史 <span>{task.runs.length}</span></button></div>}
-    <div className="sp-detail-scroll">{target.kind === 'task' && tab === 'history' ? <>
-      <p className="sp-helper">每次独立运行，当次内容保留快照；演示结果不会出现在普通对话中。</p>
-      {!history ? <p className="sp-empty-small">尚无运行记录，可点击「模拟运行」查看效果。</p> : <>
-        <div className="sp-history-list">{task.runs.map(r => <button key={r.id} className={history.id === r.id ? 'active' : ''} aria-pressed={history.id === r.id} onClick={() => setRunId(r.id)}><RunStatus run={r} /><span>{formatTime(r.startedAt, task.rule.timezone)}</span><small>演示</small></button>)}</div>
-        <div className="sp-config-heading">当次任务内容</div><strong>{history.source?.title}</strong><p className="sp-helper">{history.source?.id} · {history.projectName}</p><p className="sp-prompt-preview">{history.source?.description}</p>
-        {history.target.kind === 'task' && history.target.supplementalInstruction && <><div className="sp-config-heading">当次补充说明</div><p className="sp-prompt-preview">{history.target.supplementalInstruction}</p></>}
-        <div className="sp-config-heading">运行结果（演示）</div><p className="sp-prompt-preview" role="status">{history.status === 'running' ? '正在模拟运行…' : history.output}</p>
-      </>}
-    </> : <>
-      <div className="sp-config-heading">执行内容</div>
-      {target.kind === 'task' ? <><div className="sp-target-title"><ListTodo size={17} /><strong>{source?.title ?? '来源任务不可用'}</strong><Badge variant="outline">已有任务</Badge></div><p className="sp-helper">{target.sourceTaskId} · {source?.status}</p>{source && <p className="sp-prompt-preview">{source.description}</p>}{target.supplementalInstruction && <><div className="sp-config-heading">补充说明</div><p className="sp-prompt-preview">{target.supplementalInstruction}</p></>}</> : <><strong>{target.kind === 'chat' ? '直接对话' : '工作流'}</strong>{target.kind === 'chat' ? <p className="sp-prompt-preview">{target.prompt}</p> : <><p>{workflowName(target.workflowId, data)} · {target.snapshot}</p><dl className="sp-key-values">{Object.entries(target.inputs).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value || '未填写'}</dd></div>)}</dl></>}</>}
-      <div className="sp-config-heading">运行环境</div><dl className="sp-key-values"><div><dt>关联项目</dt><dd>{target.kind === 'task' ? source?.projectName ?? '来源不可用' : projectName(task.projectId)}</dd></div><div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div></dl>
-      <div className="sp-time-preview"><div><Clock3 size={15} /><strong>预计时间</strong></div>{nextTimes(task.rule, now, new Date(task.createdAt)).map((date, i) => <p key={date.toISOString()}><span>{i + 1}</span>{formatTime(date, task.rule.timezone)}</p>)}</div>
-      <p className="sp-helper">{target.kind === 'task' ? '前端演示，刷新后清除。每次使用最新任务描述与项目，不读取历史对话；原任务完成不会暂停此安排。' : target.kind === 'workflow' ? '工作流配置为前端演示，刷新后清除。真实执行与运行历史尚未接入。' : '配置已保存。自动执行、立即运行和运行历史尚未接入。'}</p>
+export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='config',onEdit,onToggle,toggling=false,onObserved}:{data:Catalog;resources:ScheduleResources;tenantId:string;scope:string;task:Task;initialTab?:'config'|'history';onEdit:()=>void;onToggle:()=>void;toggling?:boolean;onObserved?:(record:ScheduleActionReceipt)=>void}) {
+ const [tab,setTab]=useState(initialTab)
+ const [runId,setRunId]=useState('')
+ const [operationError,setOperationError]=useState('')
+ const [notice,setNotice]=useState('')
+ const [now]=useState(()=>new Date())
+ const history=useInfiniteQuery({queryKey:['schedule-history',scope,task.id],initialPageParam:'',queryFn:({pageParam,signal})=>listScheduleHistory(tenantId,task.id,{limit:20,...(pageParam?{cursor:pageParam}:{})},undefined,signal),getNextPageParam:page=>page.nextCursor||undefined,retry:false,refetchInterval:3000})
+ const hasHistory=history.data!==undefined
+ const rows=[...new Map((history.data?.pages.flatMap(p=>p.items)??[]).map(r=>[r.id,r])).values()].sort(compareOccurrences)
+ const exact=useQuery({queryKey:['schedule-history-item',scope,task.id,runId],queryFn:({signal})=>getScheduleHistoryItem(tenantId,task.id,runId,undefined,signal),enabled:!!runId&&!rows.some(r=>r.id===runId),retry:false,refetchInterval:3000})
+ const selected=runId?(rows.find(r=>r.id===runId)??(exact.isError?undefined:exact.data)):rows[0]
+ const freshExact=!exact.isError&&exact.data&&!rows.some(r=>r.id===exact.data!.id)?exact.data:undefined
+ const observed=[rows[0],freshExact].filter(r=>!!r).sort((a,b)=>compareTimestampsDesc(a.scheduledAt,b.scheduledAt)||compareOccurrences(a,b))[0]
+ useEffect(()=>{if(observed)onObserved?.(observed)},[observed,onObserved])
+ const output=useQuery({queryKey:['schedule-result',scope,task.id,selected?.id],queryFn:({signal})=>getScheduleExecutionResult(tenantId,task.id,selected!.id,undefined,signal),enabled:tab==='history'&&!!selected?.executionRef,retry:false,refetchInterval:selected&&!selected.released?2000:false})
+ const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{const oid=errorOccurrenceId(error);if(oid)setRunId(oid);if(isTerminalActionRejection(error))finishManualRequest(scope,task.id);setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
+ const cancel=useMutation({mutationFn:(id:string)=>cancelScheduleRun(tenantId,task.id,id,{}),retry:false,onSuccess:receipt=>{onObserved?.(receipt);setOperationError('');setNotice('取消请求已处理，当前状态见运行历史。');void history.refetch();if(selected?.executionRef)void output.refetch()},onError:error=>{setOperationError(scheduleError(error,'取消失败，运行状态未确认，请稍后重试。'));void history.refetch()}})
+ const busy=run.isPending||cancel.isPending
+ const occupied=rows.some(r=>!r.released)||!!selected&&!selected.released
+ const available=runnable(task,resources)
+ const target=task.target
+ const canCancel=!!selected&&!selected.released&&['running','cancelling','succeeded','failed','cancelled','interrupted'].includes(selected.status)
+ const cleanup=!!selected&&['succeeded','failed','cancelled','interrupted'].includes(selected.status)
+ return <div className="sp-detail">
+  <div className="sp-detail-toolbar"><span className={`sp-enabled ${task.enabled?'':'paused'}`}>{task.enabled?'已启用':'已暂停'}</span><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy} onClick={onEdit}><Pencil data-icon="inline-start"/>编辑</Button></div>
+  <div className="sp-tabs" aria-label="详情视图"><button aria-pressed={tab==='config'} onClick={()=>setTab('config')}>任务配置</button><button aria-pressed={tab==='history'} onClick={()=>setTab('history')}>运行历史</button></div>
+  <div className="sp-detail-scroll">
+   {tab==='config'?<>
+    <div className="sp-config-heading">执行内容</div><strong>{target.kind==='chat'?'直接对话':target.kind==='workflow'?'工作流（待接入）':'已有任务（待接入）'}</strong>
+    {target.kind==='chat'?<p className="sp-prompt-preview">{target.prompt}</p>:<p className="sp-helper">此类型的真实目录和执行入口尚未就绪，已有配置已保留。</p>}
+    <div className="sp-config-heading">运行环境</div><dl className="sp-key-values">
+     <div><dt>关联项目</dt><dd>{projectName(task.projectId,data)}</dd></div>
+     {target.kind==='chat'&&<><div><dt>模型</dt><dd>{resources.models.find(m=>m.id===target.model)?.name??(target.model?'原模型暂不可用':'尚未选择模型')}</dd></div><div><dt>执行器</dt><dd>{!task.projectId?'无需执行器':resources.executors.find(e=>e.id===target.executorId)?.name??'原执行器暂不可用'}</dd></div></>}
+     <div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div>
+    </dl>
+    <div className="sp-time-preview"><div><Clock3 size={15}/><strong>预计触发时间</strong></div>{nextTimes(task.rule,now,new Date(task.createdAt)).map((date,i)=><p key={date.toISOString()}><span>{i+1}</span>{formatTime(date,task.rule.timezone)}</p>)}</div>
+    <p className="sp-helper">每次独立执行，结果保存在本任务的运行历史。计划暂停不停止已开始的运行。</p>
+   </>:<>
+    <div className="sp-detail-toolbar"><strong>运行记录</strong><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={history.isFetching} onClick={()=>void history.refetch()}><RefreshCw data-icon="inline-start"/>刷新状态</Button></div>
+    {history.isError&&hasHistory&&<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>}
+    {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError&&!hasHistory?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')}</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
+     <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><span>{runLabels[r.status]}</span><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small></button>)}</div>
+     {history.hasNextPage&&<Button variant="outline" disabled={history.isFetchingNextPage} onClick={()=>void history.fetchNextPage()}>{history.isFetchingNextPage?'加载中…':'加载更多记录'}</Button>}
+     <p className="sp-helper">记录按记录时间倒序分页读取。停留在详情时自动刷新。</p>
+     {selected&&<section aria-label="选中运行的结果">
+      <div className="sp-config-heading">{runLabels[selected.status]}{!selected.released?' · 等待结束确认':''}</div>
+      {selected.reason&&<p className="sp-helper">{reasonText(selected.reason)}</p>}
+      {!selected.executionRef?<p className="sp-helper">此次运行尚无可读取的执行结果。</p>:output.isPending?<p role="status">正在读取结果…</p>:output.isError?<p role="alert">{scheduleError(output.error,'完整结果暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void output.refetch()}>重试读取结果</Button></p>:output.data?.result?<>
+       <div className="sp-config-heading">{completeResult(output.data)?'完整结果':'部分结果或未完成结果'}</div>
+       <pre className="sp-prompt-preview" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{output.data.result.answer||'未返回文本回答'}</pre>
+       {output.data.result.failureCode&&<p>{reasonText(output.data.result.failureCode)}</p>}
+      </>:<p role="status">执行尚未返回最终结果。</p>}
+      {canCancel&&<Button variant="outline" disabled={busy} onClick={()=>cancel.mutate(selected.id)}><Square data-icon="inline-start"/>{cancel.isPending?'正在请求…':cleanup?'重试收尾':'取消此次运行'}</Button>}
+     </section>}
     </>}
-      {sourceError && <p className="sp-helper" role="alert">{sourceError} 既有历史仍可查看。</p>}
-      {target.kind === 'task' && onSimulate && <details className="sp-demo-options"><summary>演示选项</summary><p>仅模拟界面状态，不调用模型或后端执行。</p><Button size="sm" variant="outline" disabled={!!sourceError || running} onClick={() => simulate(true)}>模拟失败</Button></details>}
-    </div>
-    <footer className="sp-detail-footer">{target.kind === 'task' && onSimulate && <Button size="sm" disabled={!!sourceError || running} onClick={() => simulate()}><Play data-icon="inline-start" />{running ? '模拟运行中…' : '模拟运行'}</Button>}<span className="sp-footer-spacer" /><Button variant="outline" size="sm" onClick={onToggle}>{task.enabled ? <Pause size={14} /> : <Play size={14} />}{task.enabled ? '暂停任务' : '恢复任务'}</Button></footer>
+   </>}
+   {!available&&<p className="sp-helper">执行资源尚未就绪或已失效，请刷新目录并编辑配置后再运行。</p>}
+   {exact.isError&&runId&&<p role="alert">{scheduleError(exact.error,'本次运行记录暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void exact.refetch()}>核对本次运行</Button></p>}
+   {operationError&&<p role="alert">{operationError}</p>}
+   {notice&&!operationError&&<p role="status">{notice}</p>}
   </div>
+  <footer className="sp-detail-footer"><Button size="sm" disabled={!available||busy||occupied} onClick={()=>{setNotice('');run.mutate()}}><Play data-icon="inline-start"/>{run.isPending?'正在提交…':run.isError&&!isTerminalActionRejection(run.error)?'重试运行请求':'立即运行'}</Button><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy||toggling} onClick={onToggle}>{task.enabled?<Pause data-icon="inline-start"/>:<Play data-icon="inline-start"/>}{task.enabled?'暂停任务':'恢复任务'}</Button></footer>
+ </div>
 }

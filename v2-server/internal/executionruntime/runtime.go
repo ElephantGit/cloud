@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -78,7 +80,7 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	}
 	models := make(map[string]ModelChoice, len(cfg.Models))
 	for id, choice := range cfg.Models {
-		if id == "" || choice.Model.ID != id || choice.Model.Name == "" || choice.Model.BindingVersion == "" || choice.Binding.Provider == nil {
+		if id == "" || choice.Model.ID != id || choice.Model.Name == "" || choice.Model.BindingVersion == "" || choice.Binding.Provider == nil || (choice.Binding.Protocol != nodeservices.OpenAICompletions && choice.Binding.Protocol != nodeservices.AnthropicMessages) {
 			return nil, execution.ErrInvalidRequest
 		}
 		models[id] = choice
@@ -141,12 +143,14 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 		if _, err := s.db.GetProject(ctx, scope, target.ProjectID); err != nil {
 			return execution.Ref{}, publicError(err)
 		}
+	search:
 		for id, choice := range s.models {
-			e := executorFor(choice.Model)
-			if e.ID == executorID {
-				modelID = id
-				executor = &e
-				break
+			for _, a := range agentExecutors {
+				if e, ok := executorFor(a, choice); ok && e.ID == executorID {
+					modelID = id
+					executor = &e
+					break search
+				}
 			}
 		}
 		if executor == nil {
@@ -154,7 +158,8 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 		}
 	}
 	choice, ok := s.models[modelID]
-	if !ok {
+	// A direct model turn speaks OpenAI chat completions; Messages bindings serve Agents only.
+	if !ok || (target == nil && choice.Binding.Protocol != nodeservices.OpenAICompletions) {
 		return execution.Ref{}, execution.ErrNotFound
 	}
 	session := execution.Session{ID: newID(), Target: target, Executor: executor, Model: choice.Model, CreatedAt: time.Now().UTC()}
@@ -546,26 +551,32 @@ func (s *Service) ListModels(ctx context.Context, scope execution.Scope) ([]exec
 	}
 	items := make([]execution.Model, 0, len(s.models))
 	for _, c := range s.models {
-		items = append(items, c.Model)
+		if c.Binding.Protocol == nodeservices.OpenAICompletions {
+			items = append(items, c.Model)
+		}
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
 }
 func (s *Service) ListExecutors(ctx context.Context, scope execution.Scope) ([]execution.Executor, error) {
-	models, err := s.ListModels(ctx, scope)
-	if err != nil {
+	// ListModels supplies the scope and readiness checks; Messages bindings are not in it.
+	if _, err := s.ListModels(ctx, scope); err != nil {
 		return nil, err
 	}
 	items := []execution.Executor{}
-	if s.agent != nil {
-		for _, m := range models {
-			items = append(items, executorFor(m))
+	if s.agent == nil {
+		return items, nil
+	}
+	ids := slices.Sorted(maps.Keys(s.models))
+	// OpenCode stays first, so pages that preselect the first executor keep their default.
+	for _, a := range agentExecutors {
+		for _, id := range ids {
+			if e, ok := executorFor(a, s.models[id]); ok {
+				items = append(items, e)
+			}
 		}
 	}
 	return items, nil
-}
-func executorFor(m execution.Model) execution.Executor {
-	return execution.Executor{ID: "opencode:" + m.ID, Name: "OpenCode / " + m.Name, AgentID: "official/ora-space.opencode", AgentName: "OpenCode", PluginVersion: "0.6.11", Model: m}
 }
 func groupKey(scope execution.Scope, caller execution.Caller) string {
 	return scope.TenantID + "/" + scope.UserID + "/" + string(caller.Kind) + "/" + caller.ID

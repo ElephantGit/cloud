@@ -100,7 +100,7 @@ func TestNewFailsClosedOnUnknownRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "unowned"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := New(Options{Root: root, AssetsDirectory: "/assets", GitBackend: "/git", Bindings: map[string]nodeservices.Binding{"fixture": {Model: nodeservices.Model{ID: "fixture"}, Provider: nodeservices.FixtureProvider{}}}, ResolveProject: func(context.Context, execution.Scope, string) (Project, error) { return Project{}, nil }})
+	_, err := New(Options{Root: root, AssetsDirectory: "/assets", GitBackend: "/git", Bindings: map[string]nodeservices.Binding{"fixture": {Model: nodeservices.Model{ID: "fixture"}, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}}, ResolveProject: func(context.Context, execution.Scope, string) (Project, error) { return Project{}, nil }})
 	if err == nil {
 		t.Fatal("New ignored unknown runtime ownership")
 	}
@@ -111,7 +111,7 @@ func TestNewFailsClosedOnUnknownRoot(t *testing.T) {
 
 func TestNewRejectsLongGuardianSocketPathBeforeStarting(t *testing.T) {
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", 80))
-	_, err := New(Options{Root: root, AssetsDirectory: "/assets", GitBackend: "/git", Bindings: map[string]nodeservices.Binding{"fixture": {Model: nodeservices.Model{ID: "fixture"}, Provider: nodeservices.FixtureProvider{}}}, ResolveProject: func(context.Context, execution.Scope, string) (Project, error) { return Project{}, nil }})
+	_, err := New(Options{Root: root, AssetsDirectory: "/assets", GitBackend: "/git", Bindings: map[string]nodeservices.Binding{"fixture": {Model: nodeservices.Model{ID: "fixture"}, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}}, ResolveProject: func(context.Context, execution.Scope, string) (Project, error) { return Project{}, nil }})
 	if err == nil || !strings.Contains(err.Error(), "V2_DATA_DIR") {
 		t.Fatalf("missing actionable path error: %v", err)
 	}

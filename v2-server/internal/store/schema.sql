@@ -42,6 +42,28 @@ CREATE TABLE IF NOT EXISTS v2_schedule_configs (
 );
 CREATE INDEX IF NOT EXISTS v2_schedule_configs_owner ON v2_schedule_configs(tenant_id,user_id);
 
+CREATE TABLE IF NOT EXISTS v2_schedule_occurrences (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ schedule_id uuid NOT NULL REFERENCES v2_schedule_configs(id),
+ kind text NOT NULL CHECK(kind IN ('scheduled','manual')),
+ trigger_key text NOT NULL,
+ scheduled_at timestamptz NOT NULL,
+ config_version bigint NOT NULL CHECK(config_version>0),
+ snapshot jsonb NOT NULL,
+ status text NOT NULL DEFAULT 'recorded',
+ recorded_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(schedule_id,kind,trigger_key)
+);
+CREATE INDEX IF NOT EXISTS v2_schedule_occurrences_history ON v2_schedule_occurrences(schedule_id,recorded_at DESC,id DESC);
+
+ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT '';
+ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS execution_ref text NOT NULL DEFAULT '';
+ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS released boolean NOT NULL DEFAULT true;
+ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE v2_schedule_occurrences DROP CONSTRAINT IF EXISTS v2_schedule_occurrences_status_check;
+ALTER TABLE v2_schedule_occurrences ADD CONSTRAINT v2_schedule_occurrences_status_check CHECK(status IN ('recorded','starting','reconciling','running','cancelling','succeeded','failed','cancelled','interrupted','skipped'));
+CREATE UNIQUE INDEX IF NOT EXISTS v2_schedule_active_occurrence ON v2_schedule_occurrences(schedule_id) WHERE NOT released;
+
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash bytea PRIMARY KEY,
 	user_id    uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,

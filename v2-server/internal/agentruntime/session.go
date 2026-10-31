@@ -104,8 +104,14 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			}
 			p.owners[session.WorkspaceID] = session.ID
 			p.mu.Unlock()
+			// Run has checked the executor names a known plugin; its install overlaps the clone.
+			plugin, _ := findPlugin(session.Executor.AgentID, session.Executor.PluginVersion)
+			installed := p.install(plugin)
 			a.checkout, a.prepareErr = p.prepareCheckout(prepare, session.WorkspaceID, config)
 			if a.prepareErr != nil {
+				return
+			}
+			if a.prepareErr = installed.wait(prepare, p); a.prepareErr != nil {
 				return
 			}
 			a.projection = nodehistory.NewProjection(p.reader, a.execution)
@@ -155,15 +161,25 @@ func (a *agentSession) begin(turn string, emit Emit) (*activeTurn, bool, error) 
 func (a *agentSession) submit(turn, text string, fresh bool) error {
 	content := []any{map[string]string{"type": "text", "text": text}}
 	if fresh {
+		// Run has already checked that the executor names a known plugin and binding.
+		plugin, _ := findPlugin(a.frozen.Executor.AgentID, a.frozen.Executor.PluginVersion)
+		configuration, err := plugin.agentConfiguration(a.project.driver.opts.Bindings[a.frozen.Executor.Model.ID].Model)
+		if err != nil {
+			return execution.ErrUnavailable
+		}
 		if err := a.project.services.Permit(a.execution, a.frozen.Executor.Model.ID); err != nil {
 			return execution.ErrUnavailable
 		}
-		return a.project.send("start_agent_session", a.execution, map[string]any{"spec": map[string]any{
-			"node_id": a.project.nodeID(), "agent_plugin_id": pluginID, "agent_plugin_version": pluginVersion,
+		spec := map[string]any{
+			"node_id": a.project.nodeID(), "agent_plugin_id": plugin.id, "agent_plugin_version": plugin.version,
 			"checkout_execution_id": a.checkout.id, "model_binding_id": a.frozen.Executor.Model.ID,
 			"git_identity": map[string]string{"name": "V2", "email": "v2@example.test"},
 			"initial_turn": map[string]any{"turn_id": turn, "content": content},
-		}})
+		}
+		if configuration != nil {
+			spec["agent_configuration"] = configuration
+		}
+		return a.project.send("start_agent_session", a.execution, map[string]any{"spec": spec})
 	}
 	return a.project.send("submit_user_turn", a.execution, map[string]any{"node_id": a.project.nodeID(), "command_id": "turn-" + digest(turn), "turn": map[string]any{"turn_id": turn, "content": content}})
 }

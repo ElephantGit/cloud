@@ -16,11 +16,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
 
-// Model describes a frozen OpenAI-compatible model, never a credential.
+// Model describes a frozen model, never a credential.
 type Model struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -34,61 +36,89 @@ type Provider interface {
 	Complete(http.ResponseWriter, *http.Request, Model)
 }
 
+// Protocol is the model wire protocol a binding serves, spelled as Node and plugins spell it.
+type Protocol string
+
+const (
+	// OpenAICompletions is OpenAI chat completions, served under /runtime/openai/v1.
+	OpenAICompletions Protocol = "openai-completions"
+	// AnthropicMessages is the Anthropic Messages API, served under /runtime/anthropic/v1.
+	AnthropicMessages Protocol = "anthropic-messages"
+)
+
+// proxyPath is the fixed data route Node requires for each protocol's grant.
+var proxyPath = map[Protocol]string{OpenAICompletions: "/runtime/openai/v1", AnthropicMessages: "/runtime/anthropic/v1"}
+
 // Binding is trusted backend configuration; the caller cannot supply a provider or credential.
+// Its grant token works only on the route of its Protocol.
 type Binding struct {
 	Model    Model
+	Protocol Protocol
 	Provider Provider
 }
 
-// Options selects one local bare repository and a preverified package. The service creates
+// Package is one preverified plugin archive, served to Node at PackageURLs[Name].
+type Package struct {
+	Name   string
+	Path   string
+	SHA256 string
+}
+
+// Options selects one local bare repository and preverified packages. The service creates
 // a private ephemeral TLS directory beneath StateDirectory, outside all Agent checkouts.
 type Options struct {
 	StateDirectory string
 	Repository     string
 	GitBackend     string
-	PackagePath    string
-	PackageSHA256  string
+	Packages       []Package
 	Bindings       map[string]Binding
+}
+
+type servedPackage struct {
+	file    *os.File
+	size    int64
+	modTime time.Time
 }
 
 // Service owns listeners, ephemeral credentials and execution-scoped model grants. Instantiate
 // one per Workspace so its Node identity cannot access another Workspace's repository/grants.
 type Service struct {
-	URL             string
-	PackageURL      string
-	TLS             TLSFiles
-	opts            Options
-	directory       string
-	packageFile     *os.File
-	https, packages *http.Server
-	workers         sync.WaitGroup
-	handlers        sync.WaitGroup
-	closeMu         sync.Mutex
-	mu              sync.Mutex
-	permits         map[string]string
-	grants          map[string]*grant
-	closed          bool
+	URL          string
+	PackageURLs  map[string]string
+	TLS          TLSFiles
+	opts         Options
+	directory    string
+	packages     map[string]servedPackage
+	https, files *http.Server
+	workers      sync.WaitGroup
+	handlers     sync.WaitGroup
+	closeMu      sync.Mutex
+	mu           sync.Mutex
+	permits      map[string]string
+	grants       map[string]*grant
+	closed       bool
 }
 
 // Start binds only IPv4 loopback. Git and grant endpoints require this instance's mTLS
-// identity; Agent completions require a renewable token. Package bytes are digest pinned.
+// identity; Agent model calls require a renewable token. Package bytes are digest pinned.
 func Start(opts Options) (_ *Service, resultErr error) {
-	if !filepath.IsAbs(opts.StateDirectory) || !filepath.IsAbs(opts.Repository) || !filepath.IsAbs(opts.GitBackend) || !filepath.IsAbs(opts.PackagePath) || len(opts.Bindings) == 0 {
+	if !filepath.IsAbs(opts.StateDirectory) || !filepath.IsAbs(opts.Repository) || !filepath.IsAbs(opts.GitBackend) || len(opts.Packages) == 0 || len(opts.Bindings) == 0 {
 		return nil, errors.New("invalid local Node service options")
 	}
 	bindings := make(map[string]Binding, len(opts.Bindings))
 	for id, b := range opts.Bindings {
-		if id == "" || b.Provider == nil || b.Model.ID == "" || b.Model.Name == "" || b.Model.MaxTokens == 0 || b.Model.ContextWindow == 0 {
+		if id == "" || b.Provider == nil || proxyPath[b.Protocol] == "" || b.Model.ID == "" || b.Model.Name == "" || b.Model.MaxTokens == 0 || b.Model.ContextWindow == 0 {
 			return nil, errors.New("invalid model binding")
 		}
 		bindings[id] = b
 	}
 	opts.Bindings = bindings
+	opts.Packages = slices.Clone(opts.Packages)
 	dir, err := os.MkdirTemp(opts.StateDirectory, "services-")
 	if err != nil {
 		return nil, err
 	}
-	s := &Service{opts: opts, directory: dir, permits: map[string]string{}, grants: map[string]*grant{}}
+	s := &Service{opts: opts, directory: dir, packages: map[string]servedPackage{}, PackageURLs: map[string]string{}, permits: map[string]string{}, grants: map[string]*grant{}}
 	defer func() {
 		if resultErr != nil {
 			_ = s.Close()
@@ -99,25 +129,10 @@ func Start(opts Options) (_ *Service, resultErr error) {
 		return nil, err
 	}
 	s.TLS = files
-	source, err := os.Open(opts.PackagePath)
-	if err != nil {
-		return nil, err
-	}
-	defer source.Close()
-	stat, err := source.Stat()
-	if err != nil || !stat.Mode().IsRegular() {
-		return nil, errors.New("package must be a regular file")
-	}
-	h := sha256.New()
-	s.packageFile, err = os.OpenFile(filepath.Join(dir, "agent.orax"), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(io.MultiWriter(h, s.packageFile), source); err != nil {
-		return nil, err
-	}
-	if hex.EncodeToString(h.Sum(nil)) != opts.PackageSHA256 {
-		return nil, errors.New("package SHA-256 mismatch")
+	for _, p := range opts.Packages {
+		if err := s.copyPackage(p); err != nil {
+			return nil, err
+		}
 	}
 	secure, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -133,19 +148,56 @@ func Start(opts Options) (_ *Service, resultErr error) {
 		return nil, err
 	}
 	s.URL = "https://" + secure.Addr().String()
-	s.PackageURL = "http://" + plain.Addr().String() + "/agent.orax"
+	for name := range s.packages {
+		s.PackageURLs[name] = "http://" + plain.Addr().String() + "/" + name + ".orax"
+	}
 	s.https = &http.Server{Handler: s.track(s.serve), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024, ErrorLog: log.New(io.Discard, "", 0)}
-	s.packages = &http.Server{Handler: s.track(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/agent.orax" || (r.Method != "GET" && r.Method != "HEAD") {
+	s.files = &http.Server{Handler: s.track(func(w http.ResponseWriter, r *http.Request) {
+		name, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/"), ".orax")
+		p, found := s.packages[name]
+		if !ok || !found || (r.Method != "GET" && r.Method != "HEAD") {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeContent(w, r, "agent.orax", stat.ModTime(), io.NewSectionReader(s.packageFile, 0, stat.Size()))
+		http.ServeContent(w, r, name+".orax", p.modTime, io.NewSectionReader(p.file, 0, p.size))
 	}), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); _ = s.https.Serve(tls.NewListener(secure, config)) }()
-	go func() { defer s.workers.Done(); _ = s.packages.Serve(plain) }()
+	go func() { defer s.workers.Done(); _ = s.files.Serve(plain) }()
 	return s, nil
+}
+
+// copyPackage snapshots one archive into the private directory and verifies the snapshot, so a
+// later change to the prepared asset cannot change the bytes Node is served.
+func (s *Service) copyPackage(p Package) error {
+	if p.Name == "" || strings.ContainsAny(p.Name, "/.") || !filepath.IsAbs(p.Path) {
+		return errors.New("invalid package")
+	}
+	if _, exists := s.packages[p.Name]; exists {
+		return errors.New("duplicate package")
+	}
+	source, err := os.Open(p.Path)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	stat, err := source.Stat()
+	if err != nil || !stat.Mode().IsRegular() {
+		return errors.New("package must be a regular file")
+	}
+	file, err := os.OpenFile(filepath.Join(s.directory, p.Name+".orax"), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	s.packages[p.Name] = servedPackage{file: file, size: stat.Size(), modTime: stat.ModTime()}
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(h, file), source); err != nil {
+		return err
+	}
+	if hex.EncodeToString(h.Sum(nil)) != p.SHA256 {
+		return errors.New("package SHA-256 mismatch")
+	}
+	return nil
 }
 
 // Permit authorizes an admitted execution before its Node command is sent. The same execution
@@ -203,13 +255,13 @@ func (s *Service) Close() error {
 	if s.https != nil {
 		err = errors.Join(err, s.https.Close())
 	}
-	if s.packages != nil {
-		err = errors.Join(err, s.packages.Close())
+	if s.files != nil {
+		err = errors.Join(err, s.files.Close())
 	}
 	s.workers.Wait()
 	s.handlers.Wait()
-	if s.packageFile != nil {
-		err = errors.Join(err, s.packageFile.Close())
+	for _, p := range s.packages {
+		err = errors.Join(err, p.file.Close())
 	}
 	return errors.Join(err, os.RemoveAll(s.directory))
 }
@@ -232,7 +284,11 @@ func (s *Service) track(next http.HandlerFunc) http.Handler {
 func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/runtime/openai/v1/chat/completions":
-		s.completion(w, r)
+		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		s.model(w, r, OpenAICompletions, token)
+	case r.URL.Path == "/runtime/anthropic/v1/messages":
+		// Claude Code also sends a placeholder bearer; only x-api-key carries the grant token.
+		s.model(w, r, AnthropicMessages, r.Header.Get("X-Api-Key"))
 	case r.TLS == nil || len(r.TLS.VerifiedChains) == 0:
 		fault(w, http.StatusUnauthorized, "node_identity_required")
 	case r.URL.Path == "/repo.git/info/refs" || r.URL.Path == "/repo.git/git-upload-pack":

@@ -14,15 +14,18 @@ const (
 	DemoSpaceSlug = "demo"
 )
 
-// The real Agent plugin this demo installs in that space. The artifact is the one
+// DemoAgent is a real Agent plugin this demo installs in that space. Each artifact is one
 // scripts/prepare-node.sh downloads and verifies by SHA-256, and the same one the chat, workflow
-// and schedule runtimes load, so the space lists an installed plugin rather than a made-up Agent.
-const (
-	DemoAgentName       = "OpenCode"
-	DemoAgentNamespace  = "official"
-	DemoAgentIdentifier = "ora-space.opencode"
-	DemoAgentVersion    = "0.6.11"
-)
+// and schedule runtimes load, so the space lists installed plugins rather than made-up Agents.
+type DemoAgent struct {
+	Name, Namespace, Identifier, Version string
+}
+
+// DemoAgents lists the demo space's plugins; the space lists them by name.
+var DemoAgents = []DemoAgent{
+	{Name: "OpenCode", Namespace: "official", Identifier: "ora-space.opencode", Version: "0.6.11"},
+	{Name: "Claude Code", Namespace: "official", Identifier: "ora-space.claude", Version: "0.4.5"},
+}
 
 // Space mirrors the contract's SpaceListItem. v2 has no space members or settings beyond the
 // tenant's membership, so Role repeats the caller's workspace role.
@@ -134,10 +137,10 @@ func (s *Store) SpaceAgentPlugins(ctx context.Context, tenant, space, caller str
 	return items, nil
 }
 
-// ensureDemoSpace gives a demo tenant its space and the installed agent plugin the runtimes use.
+// ensureDemoSpace gives a demo tenant its space and the installed agent plugins the runtimes use.
 // It runs inside the login transaction and is idempotent, so repeated logins keep one space and
-// one plugin row. A conflicting insert keeps the existing row, which is what a real install would
-// leave behind.
+// one row per plugin, and a database seeded before a plugin existed gains its row. A conflicting
+// insert keeps the existing row, which is what a real install would leave behind.
 func ensureDemoSpace(ctx context.Context, tx pgx.Tx, tenant, user string) error {
 	if _, e := tx.Exec(ctx, `
 		INSERT INTO v2_spaces (tenant_id, name, slug, description, created_by)
@@ -151,13 +154,15 @@ func ensureDemoSpace(ctx context.Context, tx pgx.Tx, tenant, user string) error 
 		SELECT id FROM v2_spaces WHERE tenant_id = $1 AND slug = $2`, tenant, DemoSpaceSlug).Scan(&space); e != nil {
 		return fmt.Errorf("read demo space: %w", e)
 	}
-	if _, e := tx.Exec(ctx, `
-		INSERT INTO v2_space_agents (tenant_id, space_id, name, source_namespace, identifier,
-			desired_version, observed_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)
-		ON CONFLICT (space_id, source_namespace, identifier) DO NOTHING`,
-		tenant, space, DemoAgentName, DemoAgentNamespace, DemoAgentIdentifier, DemoAgentVersion); e != nil {
-		return fmt.Errorf("register demo agent: %w", e)
+	for _, a := range DemoAgents {
+		if _, e := tx.Exec(ctx, `
+			INSERT INTO v2_space_agents (tenant_id, space_id, name, source_namespace, identifier,
+				desired_version, observed_version)
+			VALUES ($1, $2, $3, $4, $5, $6, $6)
+			ON CONFLICT (space_id, source_namespace, identifier) DO NOTHING`,
+			tenant, space, a.Name, a.Namespace, a.Identifier, a.Version); e != nil {
+			return fmt.Errorf("register demo agent %s: %w", a.Identifier, e)
+		}
 	}
 	return nil
 }

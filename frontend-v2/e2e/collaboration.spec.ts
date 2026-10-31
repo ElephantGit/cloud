@@ -6,9 +6,9 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   const suffix = crypto.randomUUID().slice(0, 8)
   const name = `演示小队-${suffix}`
   const colleague = `同事-${suffix}`
-  await page.goto('/multica')
+  await page.goto('/collaboration')
   await page.getByRole('button', { name: '开发者登录' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Multica' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: '协作' })).toBeVisible()
   // The demo login creates the workspace; the second human has to exist before the picker opens.
   await seedWorkspaceMember(colleague)
 
@@ -33,13 +33,14 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   await picker.getByRole('listitem').filter({ hasText: colleague }).getByRole('button', { name: '加入' }).click()
   await expect(page.getByText(`已加入 ${colleague}`)).toBeVisible()
 
-  // The space's installed agent joins as an agent member; joining only stores the grouping.
+  // The space's installed agents join as agent members; joining only stores the grouping.
   const agents = picker.getByRole('region', { name: '可加入的空间 Agent' })
-  await expect(agents.getByText('official/ora-space.opencode')).toBeVisible()
-  await expect(agents.getByText('已安装 0.6.11')).toBeVisible()
+  const openCode = agents.getByRole('listitem').filter({ hasText: 'official/ora-space.opencode' })
+  await expect(openCode.getByText('已安装 0.6.11')).toBeVisible()
+  await expect(agents.getByRole('listitem').filter({ hasText: 'official/ora-space.claude' }).getByText('已安装 0.4.5')).toBeVisible()
   await picker.getByLabel('职责（可选）').fill('实现')
   await page.screenshot({ path: test.info().outputPath('picker-agents.png'), fullPage: true })
-  await agents.getByRole('button', { name: '加入' }).click()
+  await openCode.getByRole('button', { name: '加入' }).click()
   await expect(page.getByText('已加入 ora-space.opencode')).toBeVisible()
   await picker.getByRole('button', { name: '完成' }).click()
   const detail = page.getByRole('dialog')

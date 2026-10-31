@@ -16,7 +16,7 @@
     "api:generate:schedules": "orval --config orval.schedules.config.ts",
     "api:check:schedules": "npm run api:generate:schedules && git diff --exit-code -- src/features/schedules/api",
     "api:generate:squads": "orval --config orval.squads.config.ts",
-    "api:check:squads": "npm run api:generate:squads && git diff --exit-code -- src/features/multica/api",
+    "api:check:squads": "npm run api:generate:squads && git diff --exit-code -- src/features/collaboration/api",
     "api:generate:chat": "orval --config orval.chat.config.ts",
     "api:check:chat": "npm run api:generate:chat && git diff --exit-code -- src/features/chat/api src/features/chat/projects-api",
     "e2e": "playwright test"

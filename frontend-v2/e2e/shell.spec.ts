@@ -11,7 +11,7 @@ test('log in, switch pages, log out', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name: '工作流' })).toBeVisible()
   await expect(page.getByRole('img', { name: '演示用户' })).toBeVisible()
 
-  for (const title of ['对话', 'Multica', '定时任务', '仪表盘']) {
+  for (const title of ['对话', '协作', '定时任务', '仪表盘']) {
     await page.getByRole('link', { name: title }).click()
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible()
   }

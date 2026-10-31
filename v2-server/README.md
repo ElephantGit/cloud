@@ -4,7 +4,7 @@ Cloud v2 的**临时**单体后端：一个进程、一个 PostgreSQL 库，实�
 
 ## 运行
 
-需要 Go（版本见 `go.mod`）和 PostgreSQL。仓库根目录的 `compose.yaml` 提供本地 PostgreSQL（127.0.0.1:55432）。v2-server 默认连接其中的 `ora_v2` 库，库不存在时自动创建，启动时建表。
+需要 Linux/WSL、Git、Go（版本见 `go.mod`）和 PostgreSQL。仓库根目录的 `compose.yaml` 提供本地 PostgreSQL（127.0.0.1:55432）。v2-server 默认连接其中的 `ora_v2` 库，库不存在时自动创建，启动时建表。Node 数据目录放在 Linux 原生文件系统。
 
 ```sh
 docker compose -p cloud up -d --wait   # 在仓库根目录
@@ -13,10 +13,15 @@ go run .                               # 监听 127.0.0.1:8090
 
 使用本地 Node 配套服务时，自签证书从服务创建起有效 24 小时，不会自动轮换。连续运行超过一天需重启后端以重新生成证书；长时间演示应在证书到期前安排重启。
 
+收到 SIGTERM 或中断信号时，进程会取消 HTTP 请求上下文，让保持打开的对话 SSE 关闭观察并等待其读取协程退出，再结束 HTTP、公共执行服务和数据库。关闭浏览器或单条 SSE 只停止对应观察者，不取消执行 worker；进程退出时的执行停止与完整终态保存仍由公共执行服务负责。
+
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `V2_ADDR` | `127.0.0.1:8090` | 监听地址 |
 | `V2_DATABASE_URL` | `postgres://ora:ora-local@127.0.0.1:55432/ora_v2?sslmode=disable` | PostgreSQL |
+| `V2_DATA_DIR` | `$HOME/.ora-v2` | 仓库 mirror、Node 与对话目录；同一目录只允许一个进程持有，使用短路径以满足 Unix socket 长度限制 |
+| `V2_NODE_ASSETS_DIR` | 未设置 | `task v2:node:prepare` 生成的固定 Node、host、guardian、Deno 和 OpenCode 资源；未设置时只启用纯模型路径 |
+| `V2_MODEL_BASE_URL` / `V2_MODEL_API_KEY` / `V2_MODEL_NAME` | 未设置 | 可选的一组 HTTPS OpenAI 兼容 provider；必须同时设置，Agent 与纯模型共用，清单只公开模型名称与版本 |
 
 测试需要 `TEST_DATABASE_URL`（任意可建 schema 的库），每个测试用独立的 schema：
 
@@ -58,7 +63,7 @@ TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable'
 
 资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/模型/执行器在每次保存时重检，真正执行时仍由公共服务再次鉴权。
 
-配置响应中的 `runs` 保留兼容空列表。前端另消费执行操作和历史领域的独立候选契约 `schedule-actions.openapi.json` / `schedule-history.openapi.json`；这两份契约在本线是提供方快照，不代表相应路由已装配。公开执行 Service、调度 Host 和历史后端就绪后再联调，缺少时页面明确显示不可用，不生成模拟结果。
+配置响应中的 `runs` 保留兼容空列表。前端另消费执行操作和历史领域的独立候选契约 `schedule-actions.openapi.json` / `schedule-history.openapi.json`；这两份契约在本线是提供方快照，不代表相应路由已装配。公开执行 Service 已在启动入口装配；调度 Host 和历史后端合入后即可完整联调，缺少对应路由时页面明确显示不可用，不生成模拟结果。
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
@@ -98,9 +103,20 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 列表按 ID 升序分页，读取要求当前租户成员关系；创建者来自登录身份。响应不暴露 mirror 路径、凭据或 snapshot ref。
 
 [`projectrepos.New`](internal/projectrepos/README.md) 通过 `server.Options.Projects` 注入。
-`main` 尚未装配该依赖，当前启动的项目接口返回 503 `projects_unavailable`。
-内部 `SeedDemo` 可创建或复用带真实 Git mirror 的演示项目，但构造服务和 HTTP 请求不会自动调用它。
+`main` 装配该依赖，普通启动为开发登录的演示团队创建或复用真实 `fixture://demo` 项目，
+带本地 Git mirror 和固定 snapshot；清单读取同一 PostgreSQL 记录，重启不重复创建。
+内部 `SeedDemo` 不接收浏览器路径，构造服务和 HTTP 请求不会自行调用它，HTTP 创建仍禁止 fixture/file scheme。
+演示环境信任租户成员，创建项目会让服务器访问成员给出的任意 HTTPS 地址，包括私网与 loopback；
+完整目标地址信任模型见 [`projectrepos/README.md`](internal/projectrepos/README.md)。
 本接口不伪造正式 v1 创建契约中的 Space、Workspace 或异步 Operation，也不创建执行目录。
+
+### 执行目录
+
+[`catalog.openapi.json`](internal/server/catalog.openapi.json) 定义
+`GET /api/v2/tenants/{tid}/execution/models` 和 `GET /api/v2/tenants/{tid}/execution/executors`。
+两者要求登录和当前成员关系，响应为 `{ "items": [...] }`，不返回 provider URL、凭据或磁盘路径。
+始终提供免密钥 `fixture` 模型；有 Node 资源时提供 `opencode:fixture` 执行器；
+完整 provider 配置再提供 `configured` 模型和 `opencode:configured` 执行器，无 Node 资源时执行器清单为空。
 
 ### 对话
 
@@ -145,14 +161,30 @@ HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，向注入点传入
 `server.New` 将未配置的 Execution/Catalog 字段默认设为同一个未配置 Stub；显式传入的依赖保留不变。
 这两个字段分别配置：即使 Execution 同时实现 Catalog，省略 Catalog 仍表示该清单不可用。
 
-`main` 目前给这两个字段传入同一个未配置的 `executiontest.Stub`，所有执行、读取与目录调用均返回
-`execution.ErrUnavailable`；它不会伪造运行、清单或持久历史。替换为真实执行服务只改变启动装配，
-页面继续依赖同一接口。本注入点不新增 HTTP 契约。
+`main` 将 [`internal/executionruntime`](internal/executionruntime/README.md) 的同一个 Service 注入这两个字段。
+Session、Turn、连续事件、完整结果和 Caller attempt 保存在 PostgreSQL；worker 不依赖 HTTP 观察者。
+有项目的调用经过每项目 Node 与独立 checkout，无项目 `StartModel` 直接使用
+[`internal/modelturn`](internal/modelturn/README.md)，不创建目录。同一 Caller attempt 返回原 Ref；
+同一对话或 workflow run 还在执行时拒绝新轮次。
 
-[`internal/modelturn`](internal/modelturn/README.md) 提供无项目的纯文本单轮执行器，
-通过配置的 provider 解析 JSON / SSE，返回完整答案、停止原因和实际可得的 usage。
-取消会停止上游调用；截断、损坏或缺少终态的响应明确失败。该组件尚未装配到公共执行服务，
-admission、会话和事件持久化、重启恢复仍由调用方负责。
+有项目 Cancel 会结束整个物理会话，确认停止后后续 Append 返回 `ErrSessionEnded`；
+纯模型 Cancel 只停止当前轮，之后可继续。取消已经结束的旧轮只返回原结果，不停止后来的轮次。
+End 确认停止后持久化会话结束，历史仍可读。启动先恢复并停止旧 Node，再把未完成轮记为 interrupted、
+将旧会话全部结束；不重放 prompt 或恢复 Agent 上下文。页面领域继续通过同一执行接口接入。
+
+fixture 只替代模型，Git、Node、OpenCode 与 shell 工具都实际执行：
+
+```sh
+# 在仓库根目录准备资源，随后到 v2-server；资源和数据目录均使用 Linux 原生磁盘。
+task v2:node:prepare
+V2_NODE_ASSETS_DIR=/absolute/path/to/assets go run . -fixture-check
+# 公共 Service 的真实工具写入、End 和 PostgreSQL 重启读取
+V2_NODE_ASSETS_DIR=/absolute/path/to/assets TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable' go test -race -count=1 -run TestReal -v ./internal/executionruntime
+```
+
+End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删除确认停止后的登记 Node 与对话目录，
+保留项目 mirror 和数据库历史；命令拒绝与持有同一数据目录的服务并行运行。
+外部 provider 的显式验收入口与配置见执行服务包 README；默认 skip 不代表外部 provider 验收通过。
 
 ## 与正式 Cloud 的差异
 
@@ -164,9 +196,9 @@ admission、会话和事件持久化、重启恢复仍由调用方负责。
 - 成员列表：`memberships` 没有成员 id、版本和加入来源，所以 `id` 直接用 user id、`version` 恒为 1、`status` 取用户状态，`joinMethod` / `joinedAt` / `actorDisplayName` 恒为空；分页参数被忽略，一页返回全部。切到正式 Cloud 的成员接口时替换。
 - 启动时直接建表，没有迁移。
 - 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
-  [`internal/nodeservices`](internal/nodeservices/README.md)，尚未接入此服务入口。
+  [`internal/nodeservices`](internal/nodeservices/README.md)，通过项目 Agent driver 接入服务入口。
   配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
   本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。
 - [`internal/nodehistory`](internal/nodehistory/README.md) 将固定 Node 的历史转换为替换快照，
   只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL
-  的超长回答验证，但尚未接入页面 Session/Turn 存储、公共执行服务或 HTTP 路由。
+  的超长回答验证；公共执行服务在 PostgreSQL 保存历史快照与终态后才 ACK Node。

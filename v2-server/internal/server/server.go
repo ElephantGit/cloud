@@ -67,6 +67,8 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/projects", h.authed(h.projects))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/projects/{pid}", h.authed(h.projects))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/execution/models", h.authed(h.models))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/execution/executors", h.authed(h.executors))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/schedule-resources", h.authed(h.scheduleResources))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/schedule-configs", h.authed(h.scheduleConfigs))

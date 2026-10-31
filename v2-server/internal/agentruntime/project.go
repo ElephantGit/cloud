@@ -22,11 +22,6 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 )
 
-const (
-	pluginID      = "official/ora-space.opencode"
-	pluginVersion = "0.6.11"
-)
-
 type controlWait struct {
 	kind string
 	done chan node.Message
@@ -36,6 +31,12 @@ type checkout struct {
 	id, path string
 	ready    chan struct{}
 	err      error
+}
+
+// installation is one plugin's install on this Node incarnation, shared by its sessions.
+type installation struct {
+	ready chan struct{}
+	err   error
 }
 
 // The dispatcher owns Receive; control and session workers may send concurrently.
@@ -79,6 +80,7 @@ type projectRuntime struct {
 	controls       map[string]*controlWait
 	agents         map[string]*agentSession
 	checkouts      map[string]*checkout
+	installs       map[string]*installation
 	owners         map[string]string
 	acknowledged   map[string]uint64
 }
@@ -112,7 +114,7 @@ func (d *Driver) project(ctx context.Context, id string, config Project) (*proje
 			lifetime, cancel := context.WithCancel(context.Background())
 			p = &projectRuntime{driver: d, id: id, root: filepath.Join(d.opts.Root, digest(id)[:16]), configuration: config,
 				ready: make(chan struct{}), ctx: lifetime, cancel: cancel, loopDone: make(chan struct{}), dead: make(chan struct{}),
-				controls: map[string]*controlWait{}, agents: map[string]*agentSession{}, checkouts: map[string]*checkout{}, owners: map[string]string{}, acknowledged: map[string]uint64{}}
+				controls: map[string]*controlWait{}, agents: map[string]*agentSession{}, checkouts: map[string]*checkout{}, installs: map[string]*installation{}, owners: map[string]string{}, acknowledged: map[string]uint64{}}
 			d.projects[id] = p
 			go p.initialize()
 		}
@@ -175,12 +177,17 @@ func (p *projectRuntime) start() error {
 		return err
 	}
 	p.registered = true
-	pkg, err := nodeservices.HostOpenCodePackage()
-	if err != nil {
-		return err
+	packages := make([]nodeservices.Package, len(agentPlugins))
+	for i, plugin := range agentPlugins {
+		pkg, err := plugin.pkg()
+		if err != nil {
+			return err
+		}
+		packages[i] = nodeservices.Package{Name: plugin.name, Path: filepath.Join(opts.AssetsDirectory, plugin.file), SHA256: pkg.SHA256}
 	}
+	var err error
 	p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: p.configuration.MirrorPath, GitBackend: opts.GitBackend,
-		PackagePath: filepath.Join(opts.AssetsDirectory, "opencode-0.6.11.orax"), PackageSHA256: pkg.SHA256, Bindings: opts.Bindings})
+		Packages: packages, Bindings: opts.Bindings})
 	if err != nil {
 		return err
 	}
@@ -219,23 +226,6 @@ func (p *projectRuntime) start() error {
 	}
 	p.receiveStarted = true
 	go p.receive()
-	download := map[string]string{"url": p.services.PackageURL, "sha256": pkg.SHA256}
-	release := map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": pkg.Target, "download": download}}}
-	plugin := map[string]any{"plugin_id": pluginID, "version": pluginVersion, "release": release}
-	input := map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "plugins": []any{plugin}}}
-	message, err := p.control(p.ctx, p.driver.nextID("i"), "install_plugins", "plugins_result", input)
-	if err != nil {
-		return err
-	}
-	var installed struct {
-		Kind   string
-		Result struct {
-			Items []struct{ Outcome struct{ Kind string } }
-		}
-	}
-	if json.Unmarshal(message.Payload, &installed) != nil || installed.Kind != "plugins_completed" || len(installed.Result.Items) != 1 || installed.Result.Items[0].Outcome.Kind != "installed" {
-		return execution.ErrUnavailable
-	}
 	return nil
 }
 
@@ -291,6 +281,62 @@ func (p *projectRuntime) control(ctx context.Context, id, command, expected stri
 		// Retire the entire incarnation before allowing another preparation attempt.
 		p.transportFailed()
 		return node.Message{}, execution.ErrUnavailable
+	}
+}
+
+// install starts installing plugin on first use. A first Claude Code install unpacks a few
+// hundred megabytes, so a project that only runs OpenCode never pays for it. Node keeps its
+// installed plugins in the project's home, so a later incarnation reinstalls in about a second.
+func (p *projectRuntime) install(plugin agentPlugin) *installation {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.installs[plugin.name]; entry != nil {
+		return entry
+	}
+	entry := &installation{ready: make(chan struct{})}
+	p.installs[plugin.name] = entry
+	go func() {
+		defer func() {
+			p.mu.Lock()
+			if entry.err != nil && p.installs[plugin.name] == entry {
+				delete(p.installs, plugin.name)
+			}
+			p.mu.Unlock()
+			close(entry.ready)
+		}()
+		pkg, err := plugin.pkg()
+		if err != nil {
+			entry.err = execution.ErrUnavailable
+			return
+		}
+		input := map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "plugins": []any{plugin.installSpec(pkg, p.services.PackageURLs[plugin.name])}}}
+		// A timeout inside control retires the incarnation: the install may still be running.
+		message, err := p.control(p.ctx, p.driver.nextID("i"), "install_plugins", "plugins_result", input)
+		if err != nil {
+			entry.err = execution.ErrUnavailable
+			return
+		}
+		var installed struct {
+			Kind   string
+			Result struct {
+				Items []struct{ Outcome struct{ Kind string } }
+			}
+		}
+		if json.Unmarshal(message.Payload, &installed) != nil || installed.Kind != "plugins_completed" || len(installed.Result.Items) != 1 || installed.Result.Items[0].Outcome.Kind != "installed" {
+			entry.err = execution.ErrUnavailable
+		}
+	}()
+	return entry
+}
+
+func (i *installation) wait(ctx context.Context, p *projectRuntime) error {
+	select {
+	case <-i.ready:
+		return i.err
+	case <-p.dead:
+		return execution.ErrUnavailable
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

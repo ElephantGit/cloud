@@ -52,7 +52,7 @@ func (s *Service) issue(w http.ResponseWriter, r *http.Request) {
 	s.grants[id] = g
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"grantId": id, "token": token, "expiresAt": g.expires, "protocol": "openai-completions", "proxyBaseUrl": s.URL + "/runtime/openai/v1", "model": s.opts.Bindings[g.binding].Model})
+	_ = json.NewEncoder(w).Encode(map[string]any{"grantId": id, "token": token, "expiresAt": g.expires, "protocol": s.opts.Bindings[g.binding].Protocol, "proxyBaseUrl": s.URL + proxyPath[s.opts.Bindings[g.binding].Protocol], "model": s.opts.Bindings[g.binding].Model})
 }
 
 func (s *Service) changeGrant(w http.ResponseWriter, r *http.Request) {
@@ -98,17 +98,17 @@ func (s *Service) changeGrant(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"expiresAt": g.expires})
 }
 
-func (s *Service) completion(w http.ResponseWriter, r *http.Request) {
+// model runs one Agent model call on its grant's binding. A token is accepted only on the
+// route of its binding's protocol, so a Messages grant cannot reach an OpenAI provider.
+func (s *Service) model(w http.ResponseWriter, r *http.Request, protocol Protocol, token string) {
 	if r.Method != "POST" {
 		fault(w, 405, "method_not_allowed")
 		return
 	}
-	header := r.Header.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") {
+	if token == "" {
 		fault(w, 401, "invalid_model_token")
 		return
 	}
-	token := strings.TrimPrefix(header, "Bearer ")
 	s.mu.Lock()
 	var selected *grant
 	for _, g := range s.grants {
@@ -117,7 +117,7 @@ func (s *Service) completion(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if selected == nil || s.closed {
+	if selected == nil || s.closed || s.opts.Bindings[selected.binding].Protocol != protocol {
 		s.mu.Unlock()
 		fault(w, 401, "invalid_model_token")
 		return

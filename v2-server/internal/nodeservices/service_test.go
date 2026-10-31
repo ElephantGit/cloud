@@ -55,6 +55,11 @@ func seedRepository(t *testing.T, root string) (string, string, string) {
 
 func testService(t *testing.T, provider Provider) *Service {
 	t.Helper()
+	return testServiceWith(t, map[string]Binding{"binding": {Model: testModel, Protocol: OpenAICompletions, Provider: provider}})
+}
+
+func testServiceWith(t *testing.T, bindings map[string]Binding) *Service {
+	t.Helper()
 	root := t.TempDir()
 	bare, _, _ := seedRepository(t, root)
 	file := filepath.Join(root, "fixture.orax")
@@ -63,7 +68,7 @@ func testService(t *testing.T, provider Provider) *Service {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(data)
-	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), PackagePath: file, PackageSHA256: hex.EncodeToString(sum[:]), Bindings: map[string]Binding{"binding": {testModel, provider}}})
+	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), Packages: []Package{{Name: "agent", Path: file, SHA256: hex.EncodeToString(sum[:])}}, Bindings: bindings})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +176,7 @@ func TestServicesRequireIdentityAdmissionAndLiveGrant(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("git discovery=%d", status)
 	}
-	resp, err := public.Get(s.PackageURL)
+	resp, err := public.Get(s.PackageURLs["agent"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,10 +336,10 @@ func TestGrantReplacementExpiryIsolationAndPackageSnapshot(t *testing.T) {
 	if status != 403 {
 		t.Fatalf("expired renew=%d", status)
 	}
-	if err := os.WriteFile(s.opts.PackagePath, []byte("modified source package"), 0600); err != nil {
+	if err := os.WriteFile(s.opts.Packages[0].Path, []byte("modified source package"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := c.Get(s.PackageURL)
+	resp, err := c.Get(s.PackageURLs["agent"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +349,7 @@ func TestGrantReplacementExpiryIsolationAndPackageSnapshot(t *testing.T) {
 		t.Fatalf("served changed package=%q", data)
 	}
 	opts := s.opts
-	opts.PackageSHA256 = strings.Repeat("0", 64)
+	opts.Packages = []Package{{Name: "agent", Path: s.opts.Packages[0].Path, SHA256: strings.Repeat("0", 64)}}
 	if broken, err := Start(opts); err == nil {
 		broken.Close()
 		t.Fatal("accepted bad package digest")

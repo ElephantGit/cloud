@@ -28,8 +28,12 @@ Agent Cancel 使用固定 Node 的 EndSession，因此会结束整个物理会�
 停止或终态写入无法确认时保留目录、阻止后续接收，返回 StopUnconfirmed 或 Unavailable。
 Close 取消并 join worker，再关闭 Agent driver，必须在数据库关闭前完成。
 
-fixture 模型始终可用，可选 provider 由 `ModelsFromEnvironment` 从一组部署环境配置创建。
-无 driver 时执行器清单为空，Agent Start 返回 Unavailable；纯模型仍可执行。
+`ModelsFromEnvironment` 始终提供两个 fixture 绑定：OpenAI 协议的 `fixture` 和 Messages 协议的
+`messages-fixture`；`V2_MODEL_*` 和 `V2_ANTHROPIC_MODEL_*` 各可再加一个配置的 provider
+（`configured` / `messages-configured`），每组三个值必须同时设置。执行器按 Agent 的协议配对绑定：
+OpenCode 得到 `opencode:fixture` / `opencode:configured`，Claude Code 得到去掉 `messages-` 前缀的
+`claude:fixture` / `claude:configured`；OpenCode 排在前面。Messages 绑定不进模型清单，纯模型 Start 选它
+返回 NotFound。无 driver 时执行器清单为空，Agent Start 返回 Unavailable；纯模型仍可执行。
 公开清单只有模型名/绑定版本和执行器选择，不返回 provider 地址、密钥或本地路径。
 服务关闭、后台持久化失败或停止未确认时，清单也返回 Unavailable，供消费侧阻止新触发。
 
@@ -39,6 +43,8 @@ fixture 模型始终可用，可选 provider 由 `ModelsFromEnvironment` 从一�
 取消、停止失败门禁、撤权后的公开控制拒绝与内部终态结算、关闭重开后的完整历史。
 `TestRealServiceAgentPostgresRestartAndConcurrentConversations` 在显式配置 `V2_NODE_ASSETS_DIR` 后
 通过真实固定 Node/OpenCode 与 fixture 模型验证 shell 文件、双 checkout、End 和重启读回。
+`TestRealClaudeCodeRunsTheMessagesFixture` 用同样的资产让固定 Claude Code 走 Messages fixture：
+冻结 agent 配置、Messages grant、Bash 工具写 marker，再在同一会话上 Append 一轮。
 缺资产会明确 skip，不能将普通测试或编译通过称作真实 Agent 验收。
 
 ## 外部 provider 验收
@@ -53,6 +59,11 @@ schema、`SeedDemo` 的独立 Git 项目，以及固定 Node/OpenCode。它验�
 `TEST_DATABASE_URL` 或 `V2_NODE_ASSETS_DIR` 都直接失败，不退回 fixture 或跳过。
 provider 必须是 `ModelsFromEnvironment` 支持的 HTTPS OpenAI 兼容接口，并支持固定 OpenCode 的
 工具调用。配置应由本地安全环境注入，不把密钥写入命令、提交或验收记录。
+
+`TestConfiguredMessagesProviderRunsClaudeCode` 是 `claude:configured` 的同类验收：
+`V2_REAL_MESSAGES_PROVIDER_TEST=1` 才发真实请求，要求三个 `V2_ANTHROPIC_MODEL_*`、`TEST_DATABASE_URL`
+和 `V2_NODE_ASSETS_DIR`，由真实 Claude Code 用 Bash 工具写 marker 并给出回答。默认 skip，表示外部
+Messages provider 未验收。
 
 在仓库根目录运行 `task v2:node:prepare` 准备已校验资源。需要原生 Linux/WSL x86_64 或 aarch64、Git、
 `git-http-backend`、Go（版本见 `go.mod`）、可创建/删除 schema 的测试 PostgreSQL，以及可直连

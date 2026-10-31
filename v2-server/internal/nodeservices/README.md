@@ -1,8 +1,8 @@
 # Node 本地配套服务
 
 `Start` 为一个 Workspace 建立两个随机 loopback 监听器：HTTPS Git/模型服务和 HTTP
-插件下载。传入部署配置中的 bare Git 仓库、`git-http-backend`、固定包路径及 SHA-256、
-模型 binding/provider；页面请求不能指定这些输入。固定资产由 `task v2:node:prepare` 准备。
+插件下载。传入部署配置中的 bare Git 仓库、`git-http-backend`、若干固定包（名称、路径、SHA-256，
+分别在 `/<名称>.orax` 提供）、模型 binding/provider；页面请求不能指定这些输入。固定资产由 `task v2:node:prepare` 准备。
 
 每个实例生成独立 CA 和 Node 客户端证书，私钥只写到 StateDirectory 下新建的 0700 临时目录，
 文件为 0600；Git 和 grant 端点要求该身份的 mTLS。Agent 只获得公开 CA 和短期 token。
@@ -26,12 +26,19 @@ renew 必须匹配原 execution，过期后不能续期。binding 和 Model 快�
 崩溃恢复时创建新的服务实例和凭据，不重放用户 prompt。`Close` 取消 provider、关闭监听器、
 等待 HTTP handler 退出并只删除其凭据目录；实现 Provider 时必须遵守 request context。
 
+每个 binding 声明一种协议：`openai-completions` 的 grant 指向 `/runtime/openai/v1`，token 放在
+`Authorization: Bearer`；`anthropic-messages` 的 grant 指向 `/runtime/anthropic/v1`，token 放在
+`x-api-key`（Claude Code 另带的占位 bearer 被忽略）。token 只在自己协议的路由上有效。
+
 `FixtureProvider` 只替代模型：收到 shell 工具定义时返回固定工具调用，实际读取 README.md（兼容 README）和
 写入 `ora-v2-result.txt` 由未修改的 Agent 执行；无工具请求返回普通 fixture 回答。
-`RemoteProvider` 支持 OpenAI chat completions 的 JSON/SSE，强制使用已选模型，保留成功响应的
+`MessagesFixtureProvider` 是同样行为的 Messages 版本：看到 `Bash` 工具时返回 `tool_use`，
+收到 `tool_result` 后给出同一个回答，支持 JSON 和 SSE。
+`NewRemoteProvider` 转发 OpenAI chat completions，`NewRemoteMessagesProvider` 转发 Anthropic
+Messages（后端 key 放在 `x-api-key`，只透传 `anthropic-version` / `anthropic-beta`）；两者都支持 JSON/SSE，强制使用已选模型，保留成功响应的
 usage 等字段。真实 API key 留在后端内存，不转发 Agent token、调用者自定义 header 或上游错误正文；
 禁止 HTTP 和重定向。请求取消、grant 撤销/到期均会取消上游请求；单次远端请求上限 5 分钟。
-不支持 Anthropic 协议、运行时模型切换或任何隐式环境变量凭据读取。
+不支持运行时模型切换或任何隐式环境变量凭据读取。
 
 ## 验证
 

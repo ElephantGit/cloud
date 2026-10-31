@@ -2,6 +2,7 @@ package nodeservices
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,16 +13,28 @@ import (
 	"time"
 )
 
-// RemoteProvider forwards OpenAI chat completions to one configured HTTPS provider. The API
+// RemoteProvider forwards one protocol's model calls to one configured HTTPS provider. The API
 // key stays in backend memory, redirects are forbidden, and upstream error bodies are discarded.
 type RemoteProvider struct {
 	endpoint, key string
+	protocol      Protocol
 	client        *http.Client
 }
 
-// NewRemoteProvider accepts a trusted deployment base URL ending in the provider's API prefix
-// (usually /v1), never a URL supplied by a page. transport may provide a private trusted CA.
+// NewRemoteProvider forwards OpenAI chat completions. baseURL is a trusted deployment URL
+// ending in the provider's API prefix (usually /v1), never a URL supplied by a page.
+// transport may provide a private trusted CA.
 func NewRemoteProvider(baseURL, apiKey string, transport http.RoundTripper) (*RemoteProvider, error) {
+	return newRemoteProvider(OpenAICompletions, baseURL, "/chat/completions", apiKey, transport)
+}
+
+// NewRemoteMessagesProvider forwards Anthropic Messages calls; baseURL is as for
+// NewRemoteProvider, and the key is sent as x-api-key.
+func NewRemoteMessagesProvider(baseURL, apiKey string, transport http.RoundTripper) (*RemoteProvider, error) {
+	return newRemoteProvider(AnthropicMessages, baseURL, "/messages", apiKey, transport)
+}
+
+func newRemoteProvider(protocol Protocol, baseURL, path, apiKey string, transport http.RoundTripper) (*RemoteProvider, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.TrimSpace(apiKey) == "" {
 		return nil, errors.New("invalid model provider configuration")
@@ -29,11 +42,11 @@ func NewRemoteProvider(baseURL, apiKey string, transport http.RoundTripper) (*Re
 	if transport == nil {
 		transport = &http.Transport{Proxy: nil, ForceAttemptHTTP2: true, MaxIdleConns: 16, MaxIdleConnsPerHost: 8, IdleConnTimeout: time.Minute, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second}
 	}
-	return &RemoteProvider{endpoint: strings.TrimRight(baseURL, "/") + "/chat/completions", key: apiKey, client: &http.Client{Transport: transport, Timeout: 5 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &RemoteProvider{endpoint: strings.TrimRight(baseURL, "/") + path, key: apiKey, protocol: protocol, client: &http.Client{Transport: transport, Timeout: 5 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
-// Complete preserves successful JSON/SSE payloads and usage fields. Only selected content
-// headers cross the boundary, and the Agent's token is never forwarded to the real provider.
+// Complete preserves successful JSON/SSE payloads and usage fields. Only selected content and
+// protocol headers cross the boundary, and the Agent's token is never forwarded to the provider.
 func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model Model) {
 	var body map[string]json.RawMessage
 	d := json.NewDecoder(r.Body)
@@ -52,7 +65,16 @@ func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model 
 		fault(w, 502, "provider_unavailable")
 		return
 	}
-	req.Header.Set("Authorization", "Bearer "+p.key)
+	if p.protocol == AnthropicMessages {
+		req.Header.Set("X-Api-Key", p.key)
+		// The API version and beta features are part of the request's meaning, never a credential.
+		req.Header.Set("Anthropic-Version", cmp.Or(r.Header.Get("Anthropic-Version"), "2023-06-01"))
+		if beta := r.Header.Get("Anthropic-Beta"); beta != "" {
+			req.Header.Set("Anthropic-Beta", beta)
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+p.key)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -127,7 +149,7 @@ func (FixtureProvider) Complete(w http.ResponseWriter, r *http.Request, model Mo
 	}
 	message := map[string]any{"role": "assistant", "content": answer}
 	if tool != "" {
-		args, _ := json.Marshal(map[string]string{"command": "(cat README.md 2>/dev/null || cat README) >/dev/null && printf '%s\\n' 'v2 fixture tool executed' > ora-v2-result.txt", "description": "Read README and write the v2 fixture marker"})
+		args, _ := json.Marshal(fixtureCommand())
 		message["content"] = nil
 		message["tool_calls"] = []any{map[string]any{"index": 0, "id": "call_v2_fixture", "type": "function", "function": map[string]string{"name": tool, "arguments": string(args)}}}
 		finish = "tool_calls"

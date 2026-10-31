@@ -47,7 +47,7 @@ func runRealAgent(t *testing.T, longAnswer string) {
 		t.Fatal(err)
 	}
 	provider := &pausingFixture{started: make(chan struct{}), stopped: make(chan struct{}), longAnswer: longAnswer}
-	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), PackagePath: filepath.Join(assets, "opencode-0.6.11.orax"), PackageSHA256: pkg.SHA256, Bindings: map[string]Binding{"binding": {testModel, provider}}})
+	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), Packages: []Package{{Name: "opencode", Path: filepath.Join(assets, "opencode-0.6.11.orax"), SHA256: pkg.SHA256}}, Bindings: map[string]Binding{"binding": {Model: testModel, Protocol: OpenAICompletions, Provider: provider}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func runRealAgent(t *testing.T, longAnswer string) {
 		t.Fatalf("clone escaped runtime: %s", clone.Result.Path)
 	}
 	t.Log("HTTPS clone matched snapshot commit")
-	send("install_plugins", "install", map[string]any{"spec": map[string]any{"node_id": "node", "plugins": []any{map[string]any{"plugin_id": "official/ora-space.opencode", "version": "0.6.11", "release": map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": pkg.Target, "download": map[string]string{"url": s.PackageURL, "sha256": s.opts.PackageSHA256}}}}}}}})
+	send("install_plugins", "install", map[string]any{"spec": map[string]any{"node_id": "node", "plugins": []any{map[string]any{"plugin_id": "official/ora-space.opencode", "version": "0.6.11", "release": map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": pkg.Target, "download": map[string]string{"url": s.PackageURLs["opencode"], "sha256": pkg.SHA256}}}}}}}})
 	installed := await("plugins_result", "install")
 	var plugins struct {
 		Kind   string

@@ -172,8 +172,7 @@ func TestSchemaReopenPreservesIdentityAndOccupancy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
-	_, err = conn.Exec(ctx, `ALTER TABLE v2_schedule_occurrences DROP CONSTRAINT v2_schedule_occurrences_status_check;
-UPDATE v2_schedule_occurrences SET status='admission_unknown',reason='admission_unknown',released=false,version=3`)
+	_, err = conn.Exec(ctx, `UPDATE v2_schedule_occurrences SET status='reconciling',reason='lookup_required',released=false,version=3`)
 	if err != nil {
 		t.Fatal(err)
 	}

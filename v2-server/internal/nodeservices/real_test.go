@@ -42,8 +42,12 @@ func runRealAgent(t *testing.T, longAnswer string) {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	bare, commit, snapshot := seedRepository(t, root)
+	pkg, err := HostOpenCodePackage()
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider := &pausingFixture{started: make(chan struct{}), stopped: make(chan struct{}), longAnswer: longAnswer}
-	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), PackagePath: filepath.Join(assets, "opencode-0.6.11.orax"), PackageSHA256: "88c00f81997fc7fe892f2d58a686f535678e562c7e000d33eb7ee3b1d0f754b5", Bindings: map[string]Binding{"binding": {testModel, provider}}})
+	s, err := Start(Options{StateDirectory: root, Repository: bare, GitBackend: filepath.Join(gitCommand(t, root, "--exec-path"), "git-http-backend"), PackagePath: filepath.Join(assets, "opencode-0.6.11.orax"), PackageSHA256: pkg.SHA256, Bindings: map[string]Binding{"binding": {testModel, provider}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +178,7 @@ func runRealAgent(t *testing.T, longAnswer string) {
 		t.Fatalf("clone escaped runtime: %s", clone.Result.Path)
 	}
 	t.Log("HTTPS clone matched snapshot commit")
-	send("install_plugins", "install", map[string]any{"spec": map[string]any{"node_id": "node", "plugins": []any{map[string]any{"plugin_id": "official/ora-space.opencode", "version": "0.6.11", "release": map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": "x86_64-unknown-linux-gnu", "download": map[string]string{"url": s.PackageURL, "sha256": s.opts.PackageSHA256}}}}}}}})
+	send("install_plugins", "install", map[string]any{"spec": map[string]any{"node_id": "node", "plugins": []any{map[string]any{"plugin_id": "official/ora-space.opencode", "version": "0.6.11", "release": map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": pkg.Target, "download": map[string]string{"url": s.PackageURL, "sha256": s.opts.PackageSHA256}}}}}}}})
 	installed := await("plugins_result", "install")
 	var plugins struct {
 		Kind   string

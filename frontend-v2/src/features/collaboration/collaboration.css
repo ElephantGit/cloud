@@ -1,5 +1,5 @@
 /* Feature-local tokens keep the shared Ora shell and other features untouched. */
-.multica-feature {
+.collaboration-feature {
   --background: #fff; --foreground: #27272d; --primary: #27272d; --primary-foreground: #fff;
   --secondary: #f3f3f6; --secondary-foreground: #555561; --muted: #f5f5f8; --muted-foreground: #676976;
   --accent: #f1f1f6; --accent-foreground: #27272d; --border: #e5e5eb; --input: #d6d6df; --ring: #8580cd;
@@ -8,10 +8,10 @@
   --mc-maintainer: #2f8a5f; --mc-danger: #bd433d; --mc-scrim: #20202a30; --mc-shadow: #16162216;
   color: var(--foreground); background: var(--background); font-size: 14px; line-height: 1.6;
 }
-.multica-feature button { cursor: pointer; touch-action: manipulation; }
-.multica-feature button:disabled { cursor: not-allowed; }
-.multica-feature button:focus-visible, .multica-feature summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-.multica-feature h1, .multica-feature h2, .multica-feature h3, .multica-feature p { margin: 0; }
+.collaboration-feature button { cursor: pointer; touch-action: manipulation; }
+.collaboration-feature button:disabled { cursor: not-allowed; }
+.collaboration-feature button:focus-visible, .collaboration-feature summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.collaboration-feature h1, .collaboration-feature h2, .collaboration-feature h3, .collaboration-feature p { margin: 0; }
 
 .mc-page { min-width: 0; min-height: 100%; }
 .mc-workspace-bar { height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 32px; border-bottom: 1px solid var(--mc-line); }

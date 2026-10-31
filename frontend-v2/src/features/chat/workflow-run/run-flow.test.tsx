@@ -1,18 +1,25 @@
 import '@/lib/workflows/test/dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Page from '../page'
 import { resetChatStore } from '../store'
+import { chatBackend } from '../test-backend'
 import { demoRunClock, resetDemoRuns } from './demo-runs'
 
-const renderPage = () =>
+/** Renders the page and waits until it has loaded the backend's projects. */
+const renderPage = async () => {
   render(
-    <TooltipProvider>
-      <Page />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <TooltipProvider>
+        <Page />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
+  await within(sidebar()).findByRole('region', { name: '项目 ora-space/cloud' })
+}
 const sidebar = () => screen.getByRole('complementary', { name: '聊天记录' })
 const project = () => within(sidebar()).getByRole('region', { name: '项目 ora-space/cloud' })
 
@@ -33,6 +40,7 @@ describe('workflow runs in chat', () => {
   beforeEach(() => {
     window.localStorage.clear()
     resetChatStore()
+    chatBackend()
     resetDemoRuns()
     demoRunClock.nodeStepMs = 5
   })
@@ -43,7 +51,7 @@ describe('workflow runs in chat', () => {
 
   it('runs a published workflow from a project and plays it on the Theater', async () => {
     const user = userEvent.setup()
-    renderPage()
+    await renderPage()
     await createRun(user, '审查 cloud#210')
 
     // The run opens pending on its Overview and is listed with the project's sessions.
@@ -73,7 +81,7 @@ describe('workflow runs in chat', () => {
 
   it('searches the published workflows in the + menu', async () => {
     const user = userEvent.setup()
-    renderPage()
+    await renderPage()
     await user.click(within(project()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
     await user.click(await screen.findByRole('menuitem', { name: '运行工作流' }))
     const list = await screen.findByRole('group', { name: '已发布的工作流' })
@@ -87,7 +95,7 @@ describe('workflow runs in chat', () => {
 
   it('goes back to the chat when a session is picked', async () => {
     const user = userEvent.setup()
-    renderPage()
+    await renderPage()
     await createRun(user, '临时运行')
     await within(await screen.findByRole('region', { name: '工作流运行' })).findByRole('heading', { level: 2, name: '临时运行' }, { timeout: 10_000 })
 

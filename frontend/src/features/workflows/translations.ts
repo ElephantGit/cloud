@@ -399,7 +399,7 @@ export const workflowTranslations = {
     'workflows.run.session.endReason': '结束原因',
     'workflows.run.session.userInput': '用户输入',
     'workflows.run.session.records': '会话记录',
-    'workflows.run.session.loaded': '已加载 {{records}} 条记录',
+    'workflows.run.session.loaded': '已加载 {{count}} 条记录',
     'workflows.run.session.loadEarlier': '加载更早的记录',
     'workflows.run.session.empty': '这次尝试没有可显示的会话记录。',
     'workflows.run.session.notApplicable': '该节点不建立会话，没有会话记录可读。',
@@ -805,7 +805,7 @@ export const workflowTranslations = {
     'workflows.run.session.endReason': 'End reason',
     'workflows.run.session.userInput': 'User input',
     'workflows.run.session.records': 'Session records',
-    'workflows.run.session.loaded': '{{records}} records loaded',
+    'workflows.run.session.loaded': '{{count}} records loaded',
     'workflows.run.session.loadEarlier': 'Load earlier records',
     'workflows.run.session.empty': 'This attempt has no session records to show.',
     'workflows.run.session.notApplicable':

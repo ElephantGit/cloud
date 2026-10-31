@@ -21,7 +21,7 @@ result, err := modelturn.Run(ctx, binding, []modelturn.Message{
 
 JSON 必须是一个完整对象，只有一个 `index: 0` choice，明确包含 assistant 字符串 content 和 `finish_reason: "stop"`。SSE 支持跨写入分片、CR / LF / CRLF、多个 data 行及 Unicode；每个 data 事件必须完整闭合。只在整个流开头忽略一次 UTF-8 BOM，包括 BOM 自身跨写入分片的情况；重复、错位或损坏的 BOM 不能使 data 字段被静默忽略。SSE 行须为有效 UTF-8，字段名限定 ASCII，正文中的 U+FEFF 保持原样。整个流必须明确提供至少一次字符串 content，正常 finish 后再收到完整 `[DONE]` 事件才可成功。
 
-SSE 接受 role-only、空终态 delta、仅有 finish_reason 的收尾 choice，以及任何位置不带 error 的空 `choices` 元数据块（例如 Azure 首块过滤信息、usage-only chunk）。空字符串 finish_reason 与 null 一样表示尚未结束；它不能替代正常 stop。已收到的终态后新 choice、同次写入中 DONE 后的新 data 仍失败；完成收尾后停止继续读取上游。明确提供 `content:""` 并正常结束时，空回答算完整；只有 role、reasoning 或元数据而没有字符串 content 时不算完成。
+SSE 接受 role-only、空终态 delta、仅有 finish_reason 的收尾 choice，以及任何位置不带 error 的空 `choices` 元数据块（例如 Azure 首块过滤信息、usage-only chunk）。空字符串 finish_reason 与 null 一样表示尚未结束；它不能替代正常 stop。正常 stop 后，仅允许携带完整基础 usage 计数的单个 `index:0` 元数据 choice 重复同一 stop；delta 可缺省、null 或为空，role 可缺省、null、空字符串或 assistant，不能新增答案、推理、工具、拒绝、音频或 annotations。普通重复 choice、变化的终态及同次写入中 DONE 后的新 data 仍失败；完成收尾后停止继续读取上游。明确提供 `content:""` 并正常结束时，空回答算完整；只有 role、reasoning 或元数据而没有字符串 content 时不算完成。
 
 JSON / SSE payload 经 `strictjson.Valid` 验证，拒绝无效 UTF-8、孤立 UTF-16 surrogate、损坏 JSON。合法 surrogate pair、实际 U+FFFD 和普通反斜杠文本保持原样。未知的 message / delta 扩展字段会被忽略，包括 `reasoning_content` 和 `reasoning`；只有 `content` 会发布为答案，推理文本不能补足缺失的答案。已支持字段仍校验类型；工具调用、拒绝、非文本内容与未知停止原因均不能被当作完整文本回答。上游非 2xx、错误 envelope 与未知响应格式只产生固定错误码，不发布原始错误正文。
 
@@ -47,4 +47,4 @@ JSON / SSE payload 经 `strictjson.Valid` 验证，拒绝无效 UTF-8、孤立 U
 
 ## 验证
 
-`go test -race ./internal/modelturn` 覆盖 FixtureProvider、真实 `httptest` TLS + RemoteProvider 的 JSON / SSE、推理扩展与过滤元数据、finish-only 收尾、usage 兼容、DONE 后连接不关闭时的主动取消和 join、上下文取消和 Emit 失败、Unicode / 任意字节分片、多 data 行、缺 DONE、损坏或超限响应、工具 / 拒绝及凭据 / 错误正文不泄漏。取消测试通过 channel 同步证据，不依赖 sleep；测试不会调用外部付费模型或启动数据库。
+`go test -race ./internal/modelturn` 覆盖 FixtureProvider、真实 `httptest` TLS + RemoteProvider 的 JSON / SSE、推理扩展与过滤元数据、finish-only 收尾、usage 兼容、脱敏的重复终态 usage 响应及坏变体、DONE 后连接不关闭时的主动取消和 join、上下文取消和 Emit 失败、Unicode / 任意字节分片、多 data 行、缺 DONE、损坏或超限响应、工具 / 拒绝及凭据 / 错误正文不泄漏。取消测试通过 channel 同步证据，不依赖 sleep；测试不会调用外部付费模型或启动数据库。

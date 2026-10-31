@@ -3,7 +3,9 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +33,7 @@ type Host struct {
 }
 
 // NewHost creates no goroutine. An unavailable Catalog prevents new occurrences
-// and recovery mutations while main still injects the unavailable execution Stub.
+// and recovery mutations when no execution runtime is configured.
 func NewHost(records ScopeSource, coordinator *Coordinator, catalog execution.Catalog) (*Host, error) {
 	if records == nil || coordinator == nil || catalog == nil {
 		return nil, errors.New("schedule host requires records, coordinator and catalog")
@@ -109,17 +111,60 @@ func (h *Host) scan(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		op, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := h.prepare(op, scope)
+		prepCtx, cancelPrep := context.WithTimeout(ctx, 30*time.Second)
+		err := h.prepare(prepCtx, scope)
+		cancelPrep()
 		if err == nil {
-			err = h.coordinator.Tick(op, scope)
+			err = h.coordinator.Tick(ctx, scope)
 		}
-		cancel()
-		// Unconfigured execution is expected until the shared runtime is installed.
-		if err != nil && ctx.Err() == nil && !errors.Is(err, execution.ErrUnavailable) && !errors.Is(err, execution.ErrNotFound) && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, ErrOperationInProgress) {
-			slog.Warn("schedule scan failed", "tenant", scope.TenantID, "user", scope.UserID, "error", err)
+		if report := reportableScanError(err); report != nil && ctx.Err() == nil {
+			slog.Warn("schedule scan failed", "tenant", scope.TenantID, "user", scope.UserID, "error", report)
 		}
 	}
+}
+
+// reportableScanError strips expected availability/concurrency/missing-attempt leaves from joined
+// batch errors so one benign item never silences real persistence or dispatch failures in the same scan.
+func reportableScanError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var leaves []error
+	collectScanErrors("", err, &leaves)
+	return errors.Join(leaves...)
+}
+
+func collectScanErrors(prefix string, err error, dst *[]error) {
+	if err == nil {
+		return
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range multi.Unwrap() {
+			collectScanErrors(prefix, child, dst)
+		}
+		return
+	}
+	if single, ok := err.(interface{ Unwrap() error }); ok {
+		inner := single.Unwrap()
+		if _, isMulti := inner.(interface{ Unwrap() []error }); isMulti {
+			p := strings.TrimSuffix(strings.TrimSuffix(err.Error(), inner.Error()), ": ")
+			if prefix != "" && p != "" {
+				p = prefix + ": " + p
+			} else if prefix != "" {
+				p = prefix
+			}
+			collectScanErrors(p, inner, dst)
+			return
+		}
+	}
+	if errors.Is(err, execution.ErrUnavailable) || errors.Is(err, execution.ErrNotFound) || errors.Is(err, store.ErrNotFound) || errors.Is(err, ErrOperationInProgress) {
+		return
+	}
+	if prefix != "" {
+		*dst = append(*dst, fmt.Errorf("%s: %w", prefix, err))
+		return
+	}
+	*dst = append(*dst, err)
 }
 
 // Manual accepts a stable request key and never trusts caller-supplied execution references.

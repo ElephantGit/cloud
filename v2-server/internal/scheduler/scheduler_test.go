@@ -112,13 +112,18 @@ func (f *coordFixture) ApplyOccurrenceEvidence(_ context.Context, tenant, user, 
 	if o.Version != version {
 		return o, store.ErrConflict
 	}
-	if e.Event != "recover" {
+	if e.Event == "recover" {
+		if o.Status == "recorded" {
+			o.Status, o.Reason = "skipped", "server_restarted"
+		} else if !o.Released {
+			o.Status = "reconciling"
+		}
+	} else if e.Event == "begin" && o.Status == "recorded" {
+		o.Status, o.Released = "starting", false
+	} else if e.Event == "not_accepted" && o.Status == "starting" && o.ExecutionRef == "" {
+		o.Status, o.Reason, o.Released = "skipped", "execution_not_started", true
+	} else {
 		return o, errors.New("unexpected evidence")
-	}
-	if o.Status == "recorded" {
-		o.Status, o.Reason = "skipped", "server_restarted"
-	} else if !o.Released {
-		o.Status = "reconciling"
 	}
 	o.Version++
 	f.items[id] = o
@@ -346,6 +351,63 @@ func TestCoordinatorDispatchFailureDoesNotRepeatSameScheduledRun(t *testing.T) {
 	}
 	if len(f.dispatched) != 1 || len(f.items) != 1 {
 		t.Fatal("same failed trigger redispatched")
+	}
+	if got := f.items["occ-1"]; got.Status != "skipped" || got.Reason != "execution_not_started" || !got.Released {
+		t.Fatalf("failed pre-begin scheduled record stayed recorded: %+v", got)
+	}
+}
+
+func TestCoordinatorNextTickClosesStrandedScheduledRecordWithoutTouchingManual(t *testing.T) {
+	ctx := context.Background()
+	f := newCoordFixture()
+	f.configs[coordScope] = []store.ScheduleConfig{coordConfig("one")}
+	clock := coordTime("2026-10-29T08:30:00Z")
+	c := coordService(t, f, &clock)
+	_ = c.Recover(ctx, coordScope)
+	_ = c.Tick(ctx, coordScope)
+	manualUnsent, err := f.RecordOccurrence(ctx, coordScope.TenantID, coordScope.UserID, "one", store.Trigger{Kind: "manual", Key: "retry-me", At: clock, Version: 1}, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = coordTime("2026-10-29T09:00:00Z")
+	f.dispatchErr = errors.New("transient db timeout before begin")
+	f.recoveryErr = errors.New("cleanup write also failed")
+	if e := c.Tick(ctx, coordScope); e == nil {
+		t.Fatal("expected dispatch/cleanup error")
+	}
+	if f.items["occ-2"].Status != "recorded" {
+		t.Fatalf("expected stranded recorded before DB recovers: %+v", f.items["occ-2"])
+	}
+	f.recoveryErr = nil
+	if e := c.Tick(ctx, coordScope); e != nil {
+		t.Fatalf("next tick failed to close stranded scheduled record: %v", e)
+	}
+	if got := f.items["occ-2"]; got.Status != "skipped" || got.Reason != "execution_not_started" || !got.Released {
+		t.Fatalf("stranded scheduled record not settled on next tick: %+v", got)
+	}
+	if got := f.items[manualUnsent.ID]; got.Status != "recorded" {
+		t.Fatalf("manual recorded item should remain retryable: %+v", got)
+	}
+}
+
+func TestReportableScanErrorUnwrapsJoinedLeaves(t *testing.T) {
+	realDB := errors.New("connection reset")
+	benign := errors.Join(
+		fmt.Errorf("reconcile a: %w", execution.ErrNotFound),
+		fmt.Errorf("reconcile b: %w", ErrOperationInProgress),
+		fmt.Errorf("prepare c: %w", execution.ErrUnavailable),
+		fmt.Errorf("get d: %w", store.ErrNotFound),
+	)
+	if got := reportableScanError(benign); got != nil {
+		t.Fatalf("expected nil for purely benign batch errors, got %v", got)
+	}
+	mixed := errors.Join(
+		fmt.Errorf("reconcile bound: %w", execution.ErrNotFound),
+		fmt.Errorf("dispatch occ-9: %w", errors.Join(execution.ErrNotFound, realDB)),
+	)
+	got := reportableScanError(mixed)
+	if !errors.Is(got, realDB) || errors.Is(got, execution.ErrNotFound) {
+		t.Fatalf("reportableScanError swallowed real error or retained benign leaf: %v", got)
 	}
 }
 

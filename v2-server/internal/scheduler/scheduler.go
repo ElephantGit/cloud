@@ -138,20 +138,33 @@ func (c *Coordinator) Tick(ctx context.Context, scope execution.Scope) error {
 	if now.IsZero() {
 		return errors.New("scheduler clock returned zero")
 	}
-	configs, err := c.records.ScheduleConfigs(ctx, scope.TenantID, scope.UserID)
+	queryCtx, cancelQuery := context.WithTimeout(ctx, 30*time.Second)
+	configs, err := c.records.ScheduleConfigs(queryCtx, scope.TenantID, scope.UserID)
 	if err != nil {
+		cancelQuery()
 		return err
 	}
-	active, err := c.records.ActiveOccurrences(ctx, scope.TenantID, scope.UserID)
+	pending, err := c.records.RecoverableOccurrences(queryCtx, scope.TenantID, scope.UserID)
+	cancelQuery()
 	if err != nil {
 		return err
 	}
 	var failures []error
-	for _, item := range active {
-		if err := c.runner.Reconcile(ctx, scope, item); err != nil {
-			failures = append(failures, fmt.Errorf("reconcile %s: %w", item.ID, err))
+	reconcileCtx, cancelReconcile := context.WithTimeout(ctx, 30*time.Second)
+	for _, item := range pending {
+		if !item.Released {
+			if err := c.runner.Reconcile(reconcileCtx, scope, item); err != nil {
+				failures = append(failures, fmt.Errorf("reconcile %s: %w", item.ID, err))
+			}
+			continue
+		}
+		if item.Kind == "scheduled" && item.Status == "recorded" {
+			if err := c.abandonScheduledRecord(reconcileCtx, scope, item.ID); err != nil {
+				failures = append(failures, fmt.Errorf("abandon unsent %s: %w", item.ID, err))
+			}
 		}
 	}
+	cancelReconcile()
 	seen := make(map[string]bool, len(configs))
 	for _, config := range configs {
 		seen[config.ID] = true
@@ -186,16 +199,22 @@ func (c *Coordinator) Tick(ctx context.Context, scope execution.Scope) error {
 			continue
 		}
 		s.tasks[config.ID] = scheduleCursor{version: config.Version, enabled: true, next: future[0]}
-		item, err := c.records.RecordOccurrence(ctx, scope.TenantID, scope.UserID, config.ID, store.Trigger{Kind: "scheduled", At: due, Version: config.Version}, now)
+		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, 30*time.Second)
+		item, err := c.records.RecordOccurrence(dispatchCtx, scope.TenantID, scope.UserID, config.ID, store.Trigger{Kind: "scheduled", At: due, Version: config.Version}, now)
 		if err != nil {
+			cancelDispatch()
 			failures = append(failures, fmt.Errorf("record %s: %w", config.ID, err))
 			continue
 		}
 		if item.Status == "recorded" {
-			if err := c.runner.Dispatch(ctx, scope, item); err != nil {
-				failures = append(failures, fmt.Errorf("dispatch %s: %w", item.ID, err))
+			if err := c.runner.Dispatch(dispatchCtx, scope, item); err != nil {
+				cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				abandonErr := c.abandonScheduledRecord(cleanupCtx, scope, item.ID)
+				cancelCleanup()
+				failures = append(failures, fmt.Errorf("dispatch %s: %w", item.ID, errors.Join(err, abandonErr)))
 			}
 		}
+		cancelDispatch()
 	}
 	for id := range s.tasks {
 		if !seen[id] {
@@ -203,6 +222,24 @@ func (c *Coordinator) Tick(ctx context.Context, scope execution.Scope) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// abandonScheduledRecord closes an automatic trigger whose cursor already advanced but whose
+// Dispatch failed before atomic begin. Manual recorded triggers are left intact for same-key retries.
+func (c *Coordinator) abandonScheduledRecord(ctx context.Context, scope execution.Scope, id string) error {
+	o, err := c.records.GetOccurrence(ctx, scope.TenantID, scope.UserID, id)
+	if err != nil {
+		return err
+	}
+	if o.Kind != "scheduled" || o.Status != "recorded" {
+		return nil
+	}
+	o, err = c.records.ApplyOccurrenceEvidence(ctx, scope.TenantID, scope.UserID, o.ID, o.Version, store.ExecutionEvidence{Event: "begin"})
+	if err != nil || o.Status != "starting" {
+		return err
+	}
+	_, err = c.records.ApplyOccurrenceEvidence(ctx, scope.TenantID, scope.UserID, o.ID, o.Version, store.ExecutionEvidence{Event: "not_accepted"})
+	return err
 }
 
 func mostRecentDue(rule schedule.Rule, created, first, now time.Time) (time.Time, error) {

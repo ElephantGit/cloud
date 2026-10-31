@@ -1,6 +1,6 @@
 # 定时任务编排
 
-本包将配置、服务端时间计算、触发记录和执行适配连接起来。`main.go` 使用一个 Host 和一秒 ticker 驱动协调器，HTTP 的立即运行/取消接同一 Host。前端操作按钮尚未接入；main 当前的公共执行 Stub 明确不可用，不能把入口已安装当作真实执行已上线。
+本包将配置、服务端时间计算、触发记录和执行适配连接起来。`main.go` 将公共 `executionruntime.Service` 注入协调器与 `Host`，用一秒 ticker 驱动周期扫描，HTTP 的立即运行/取消共用同一 `Host`；未注入执行服务时由不可用 `Catalog` 门禁阻断。
 
 `NewHost(records, coordinator, catalog)` 不启动 goroutine；进程在公共执行完成启动恢复后运行 `Run(ctx, ticks)`，首次扫描完成时 `Ready()` 关闭。Run 只允许一次，扫描发现持久配置的有效创建者，暂停的配置也保留收尾机会。每个 Scope 先读公共模型目录确认可用，再 Recover/Tick；目录不可用时不创建或改写 occurrence，不猜测默认模型。HTTP 操作也经过这道门禁。停止时取消 Run、等待扫描及已进入的 HTTP 操作，然后才关闭公共服务和数据库；HTTP 调用同时受请求取消、宿主退出和 30 秒调用上限约束，该上限不是已接收执行的运行时限。
 

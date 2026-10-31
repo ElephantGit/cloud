@@ -74,6 +74,9 @@ func TestExecutionStateRules(t *testing.T) {
 		if e != nil {
 			t.Fatalf("%s from %s: %v", event, o.Status, e)
 		}
+		if r.ID != o.ID || !r.RecordedAt.Equal(o.RecordedAt) {
+			t.Fatalf("%s mutated cursor identity (%v,%s) -> (%v,%s)", event, o.RecordedAt, o.ID, r.RecordedAt, r.ID)
+		}
 		return r
 	}
 	a, bRun := record("one"), record("two")

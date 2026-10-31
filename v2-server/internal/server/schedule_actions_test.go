@@ -205,7 +205,7 @@ func TestScheduleActionsAndAutomaticScanShareCoordinator(t *testing.T) {
 			t.Fatal("scan blocked")
 		}
 	}
-	items, err := f.db.Occurrences(t.Context(), f.scope.TenantID, f.scope.UserID, f.config.ID, "", 10)
+	items, err := f.db.Occurrences(t.Context(), f.scope.TenantID, f.scope.UserID, f.config.ID, store.OccurrenceCursor{}, 10)
 	if err != nil || len(items) != 1 || items[0].Kind != "scheduled" || items[0].Status != "running" {
 		t.Fatalf("automatic: %+v %v", items, err)
 	}
@@ -316,7 +316,7 @@ func TestScheduleActionAuthorizationValidationAndUnavailable(t *testing.T) {
 			t.Fatal("scan blocked")
 		}
 	}
-	items, err := f.db.Occurrences(t.Context(), f.scope.TenantID, f.scope.UserID, f.config.ID, "", 10)
+	items, err := f.db.Occurrences(t.Context(), f.scope.TenantID, f.scope.UserID, f.config.ID, store.OccurrenceCursor{}, 10)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("unavailable created records: %+v %v", items, err)
 	}

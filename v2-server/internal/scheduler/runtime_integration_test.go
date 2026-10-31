@@ -346,10 +346,10 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 	if phase == "execute" {
 		clock.Store(cfg.CreatedAt.Add(time.Hour).UnixNano())
 		waitFor(func() bool {
-			items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, "", 100)
+			items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, store.OccurrenceCursor{}, 100)
 			return err == nil && len(items) == 1 && items[0].ExecutionRef != ""
 		})
-		items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, "", 100)
+		items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, cfg.ID, store.OccurrenceCursor{}, 100)
 		if err != nil || len(items) != 1 || items[0].Kind != "scheduled" {
 			t.Fatalf("scheduled trigger: %+v %v", items, err)
 		}
@@ -472,7 +472,7 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, saved.Records[0].Occurrence.ScheduleID, "", 100)
+		items, err := db.Occurrences(ctx, saved.Scope.TenantID, saved.Scope.UserID, saved.Records[0].Occurrence.ScheduleID, store.OccurrenceCursor{}, 100)
 		if err != nil || len(items) != 2 {
 			t.Fatalf("restart backfilled triggers: %+v %v", items, err)
 		}

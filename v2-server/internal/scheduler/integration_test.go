@@ -50,7 +50,7 @@ func TestCoordinatorConversationAdapterLookupThroughCleanup(t *testing.T) {
 	if e = c.Tick(ctx, f.scope); !errors.Is(e, execution.ErrUnavailable) {
 		t.Fatalf("missing outcome %v", e)
 	}
-	items, e := f.records.Occurrences(ctx, f.scope.TenantID, f.scope.UserID, f.occ.ScheduleID, "", 100)
+	items, e := f.records.Occurrences(ctx, f.scope.TenantID, f.scope.UserID, f.occ.ScheduleID, store.OccurrenceCursor{}, 100)
 	if e != nil {
 		t.Fatal(e)
 	}

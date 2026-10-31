@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -105,7 +106,11 @@ func newIPCHarness(t *testing.T, hook func(*fakeNodeIPC, node.Message) bool) *ip
 	t.Helper()
 	root := t.TempDir()
 	config := Project{MirrorPath: filepath.Join(root, "mirror.git"), Commit: "0123456789012345678901234567890123456789", SnapshotRef: "refs/snapshots/demo"}
-	bindings := map[string]nodeservices.Binding{"fixture": {Model: nodeservices.Model{ID: "fixture", Name: "Fixture", ContextWindow: 4096, MaxTokens: 256}, Provider: nodeservices.FixtureProvider{}}}
+	model := nodeservices.Model{ID: "fixture", Name: "Fixture", ContextWindow: 4096, MaxTokens: 256}
+	bindings := map[string]nodeservices.Binding{
+		"fixture":          {Model: model, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}},
+		"messages-fixture": {Model: model, Protocol: nodeservices.AnthropicMessages, Provider: nodeservices.MessagesFixtureProvider{}},
+	}
 	h := &ipcHarness{created: make(chan *fakeNodeIPC, 16), config: config, scope: execution.Scope{TenantID: "tenant", UserID: "user"}}
 	d := &Driver{opts: Options{Root: filepath.Join(root, "projects"), Bindings: bindings, ResolveProject: func(context.Context, execution.Scope, string) (Project, error) { return config, nil }}, boot: "fake", projects: map[string]*projectRuntime{}, sessions: map[string]*agentSession{}, controlTimeout: time.Second}
 	h.driver = d
@@ -120,7 +125,7 @@ func newIPCHarness(t *testing.T, hook func(*fakeNodeIPC, node.Message) bool) *ip
 		}
 		sum := sha256.Sum256(data)
 		var err error
-		p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: config.MirrorPath, GitBackend: "/bin/false", PackagePath: packagePath, PackageSHA256: hex.EncodeToString(sum[:]), Bindings: bindings})
+		p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: config.MirrorPath, GitBackend: "/bin/false", Packages: []nodeservices.Package{{Name: "test", Path: packagePath, SHA256: hex.EncodeToString(sum[:])}}, Bindings: bindings})
 		if err != nil {
 			return err
 		}
@@ -310,6 +315,75 @@ func TestDriverIPCFullTurnPublicationAppendAndEnd(t *testing.T) {
 	}
 	if err := h.driver.End(ctx, session.ID); err != nil {
 		t.Fatalf("End is not idempotent: %v", err)
+	}
+}
+
+// Claude Code is installed on first use with its declaration binding, and its session carries
+// the frozen configuration Node re-proves before granting Messages access.
+func TestDriverIPCClaudeSessionInstallsAndFreezesItsConfiguration(t *testing.T) {
+	h := newIPCHarness(t, nil)
+	ctx := ipcContext(t)
+	claude := h.session("claude", "workspace")
+	claude.Executor.AgentID, claude.Executor.PluginVersion = "official/ora-space.claude", "0.4.5"
+	mismatched := claude
+	mismatched.ID, mismatched.WorkspaceID = "mismatched", "other"
+	if got := receiveIPC(t, startIPCRun(h, ctx, mismatched, "first", discardIPCEvent)); !errors.Is(got.err, execution.ErrUnsupported) {
+		t.Fatalf("Claude Code on an OpenAI binding=%+v", got)
+	}
+	executor := *claude.Executor
+	executor.Model.ID = "messages-fixture"
+	claude.Executor = &executor
+	done := startIPCRun(h, ctx, claude, "first", discardIPCEvent)
+	f := receiveIPC(t, h.created)
+	pkg, err := nodeservices.HostClaudePackage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var install struct {
+		Spec struct {
+			Plugins []struct {
+				PluginID           string `json:"plugin_id"`
+				Version            string
+				AgentConfiguration map[string]any `json:"agent_configuration"`
+			}
+		}
+	}
+	for {
+		m := nextIPCCommand(t, f, "install_plugins")
+		if err := json.Unmarshal(m.Payload, &install); err != nil {
+			t.Fatal(err)
+		}
+		// The harness installs its own synthetic package first.
+		if len(install.Spec.Plugins) == 1 && install.Spec.Plugins[0].PluginID == "official/ora-space.claude" {
+			break
+		}
+	}
+	if got, want := install.Spec.Plugins[0].AgentConfiguration, map[string]any{"schema_version": 2.0, "declaration_sha256": nodeservices.ClaudeDeclarationSHA256}; install.Spec.Plugins[0].Version != "0.4.5" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Claude Code install=%+v", install.Spec.Plugins[0])
+	}
+	command := nextIPCCommand(t, f, "start_agent_session")
+	var start struct {
+		Spec struct {
+			PluginID           string         `json:"agent_plugin_id"`
+			Binding            string         `json:"model_binding_id"`
+			AgentConfiguration map[string]any `json:"agent_configuration"`
+		}
+	}
+	if err := json.Unmarshal(command.Payload, &start); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"plugin_id": "official/ora-space.claude", "plugin_version": "0.4.5", "target": pkg.Target, "package_sha256": pkg.SHA256,
+		"schema_version": 2.0, "declaration_fingerprint": nodeservices.ClaudeDeclarationSHA256, "adapter_version": 1.0, "configuration_revision": 0.0,
+		"settings_json": "{}", "protocol": "anthropic-messages",
+		"model": map[string]any{"id": "fixture", "name": "Fixture", "context_window": 4096.0, "max_tokens": 256.0},
+	}
+	if start.Spec.PluginID != "official/ora-space.claude" || start.Spec.Binding != "messages-fixture" || !reflect.DeepEqual(start.Spec.AgentConfiguration, want) {
+		t.Fatalf("Claude Code start=%+v", start.Spec)
+	}
+	f.finishTurn(t, command, "first", "claude answer")
+	if got := receiveIPC(t, done); got.err != nil || got.result.Answer != "claude answer" {
+		t.Fatalf("Claude Code turn=%+v", got)
 	}
 }
 

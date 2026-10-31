@@ -52,22 +52,25 @@ func TestSpaceAgentPlugins(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(items) != 1 {
+	// Listed by name: Claude Code, then OpenCode.
+	if len(items) != 2 || items[0].Identifier != store.DemoAgents[1].Identifier || items[1].Identifier != store.DemoAgents[0].Identifier {
 		t.Fatalf("plugins = %+v", items)
 	}
-	p := items[0]
-	if p.SpaceID != space || p.TenantID != f.tenant || p.Kind != "agent" {
-		t.Fatalf("plugin scope = %+v", p)
-	}
-	if p.SourceNamespace != store.DemoAgentNamespace || p.Identifier != store.DemoAgentIdentifier {
-		t.Fatalf("plugin identity = %+v", p)
-	}
-	if p.DesiredState != "installed" || p.ObservedState != "installed" ||
-		p.DesiredVersion != store.DemoAgentVersion || p.ObservedVersion != store.DemoAgentVersion {
-		t.Fatalf("plugin state = %+v", p)
-	}
-	if p.InstallError != nil || p.RequestedByUserID != nil {
-		t.Fatalf("plugin extras = %+v", p)
+	for i, p := range items {
+		want := store.DemoAgents[1-i]
+		if p.SpaceID != space || p.TenantID != f.tenant || p.Kind != "agent" {
+			t.Fatalf("plugin scope = %+v", p)
+		}
+		if p.SourceNamespace != want.Namespace || p.Identifier != want.Identifier {
+			t.Fatalf("plugin identity = %+v", p)
+		}
+		if p.DesiredState != "installed" || p.ObservedState != "installed" ||
+			p.DesiredVersion != want.Version || p.ObservedVersion != want.Version {
+			t.Fatalf("plugin state = %+v", p)
+		}
+		if p.InstallError != nil || p.RequestedByUserID != nil {
+			t.Fatalf("plugin extras = %+v", p)
+		}
 	}
 
 	// A plugin that is not observed as installed is not offered as a member candidate.
@@ -75,7 +78,7 @@ func TestSpaceAgentPlugins(t *testing.T) {
 		VALUES ($1, $2, '失败的 Agent', 'broken', 'failed')`, f.tenant, space); e != nil {
 		t.Fatal(e)
 	}
-	if items, e = f.store.SpaceAgentPlugins(ctx, f.tenant, space, owner); e != nil || len(items) != 1 {
+	if items, e = f.store.SpaceAgentPlugins(ctx, f.tenant, space, owner); e != nil || len(items) != 2 {
 		t.Fatalf("plugins after failed install = %+v %v", items, e)
 	}
 

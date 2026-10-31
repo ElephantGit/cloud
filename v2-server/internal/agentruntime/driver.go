@@ -58,8 +58,10 @@ func New(opts Options) (*Driver, error) {
 	if !filepath.IsAbs(opts.Root) || !filepath.IsAbs(opts.AssetsDirectory) || !filepath.IsAbs(opts.GitBackend) || opts.ResolveProject == nil || len(opts.Bindings) == 0 {
 		return nil, errors.New("invalid Agent runtime configuration")
 	}
-	if _, err := nodeservices.HostOpenCodePackage(); err != nil {
-		return nil, err
+	for _, plugin := range agentPlugins {
+		if _, err := plugin.pkg(); err != nil {
+			return nil, err
+		}
 	}
 	guardianSocket := filepath.Join(opts.Root, "0000000000000000", "w", "h", "scopes", "00000000-0000-0000-0000-000000000001", "control.sock")
 	if filepath.Clean(opts.Root) != opts.Root || len(guardianSocket) >= 108 {
@@ -100,11 +102,16 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 	if err != nil || len(text) > 64*1024 {
 		return failed("agent_request_invalid"), execution.ErrInvalidRequest
 	}
-	if session.Executor.AgentID != pluginID || session.Executor.PluginVersion != pluginVersion {
+	plugin, ok := findPlugin(session.Executor.AgentID, session.Executor.PluginVersion)
+	if !ok {
 		return failed("agent_executor_unsupported"), execution.ErrUnsupported
 	}
-	if _, ok := d.opts.Bindings[session.Executor.Model.ID]; !ok {
+	binding, ok := d.opts.Bindings[session.Executor.Model.ID]
+	if !ok {
 		return failed("agent_model_unavailable"), execution.ErrUnavailable
+	}
+	if binding.Protocol != plugin.protocol {
+		return failed("agent_executor_unsupported"), execution.ErrUnsupported
 	}
 	project, err := d.opts.ResolveProject(ctx, scope, session.Target.ProjectID)
 	if err != nil {

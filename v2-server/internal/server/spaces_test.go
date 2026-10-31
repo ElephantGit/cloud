@@ -35,18 +35,20 @@ func TestSpacesRoute(t *testing.T) {
 		t.Fatalf("plugins = %d %v", status, body)
 	}
 	items, _ = body["items"].([]any)
-	if len(items) != 1 {
+	if len(items) != 2 {
 		t.Fatalf("plugins = %v", body)
 	}
-	plugin := items[0].(map[string]any)
-	if plugin["spaceId"] != spaceID || plugin["tenantId"] != tenant || plugin["kind"] != "agent" {
-		t.Fatalf("plugin scope = %v", plugin)
-	}
-	if plugin["sourceNamespace"] != "official" || plugin["identifier"] != "ora-space.opencode" {
-		t.Fatalf("plugin identity = %v", plugin)
-	}
-	if plugin["observedState"] != "installed" || plugin["observedVersion"] != "0.6.11" {
-		t.Fatalf("plugin state = %v", plugin)
+	for i, want := range []struct{ identifier, version string }{{"ora-space.claude", "0.4.5"}, {"ora-space.opencode", "0.6.11"}} {
+		plugin := items[i].(map[string]any)
+		if plugin["spaceId"] != spaceID || plugin["tenantId"] != tenant || plugin["kind"] != "agent" {
+			t.Fatalf("plugin scope = %v", plugin)
+		}
+		if plugin["sourceNamespace"] != "official" || plugin["identifier"] != want.identifier {
+			t.Fatalf("plugin identity = %v", plugin)
+		}
+		if plugin["observedState"] != "installed" || plugin["observedVersion"] != want.version {
+			t.Fatalf("plugin state = %v", plugin)
+		}
 	}
 
 	// A space outside the caller's workspace answers forbidden, like an unknown one.

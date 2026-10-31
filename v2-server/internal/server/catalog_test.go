@@ -26,7 +26,7 @@ import (
 func TestExecutionCatalogHTTP(t *testing.T) {
 	s := openStore(t)
 	runtime, err := executionruntime.New(t.Context(), executionruntime.Config{Store: s, Models: map[string]executionruntime.ModelChoice{
-		"fixture": {Model: execution.Model{ID: "fixture", Name: "Fixture", BindingVersion: "fixture-v1"}, Binding: nodeservices.Binding{Model: nodeservices.Model{ID: "private-upstream-model", Name: "Private configuration", MaxTokens: 1024}, Provider: nodeservices.FixtureProvider{}}},
+		"fixture": {Model: execution.Model{ID: "fixture", Name: "Fixture", BindingVersion: "fixture-v1"}, Binding: nodeservices.Binding{Model: nodeservices.Model{ID: "private-upstream-model", Name: "Private configuration", MaxTokens: 1024}, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}},
 	}})
 	if err != nil {
 		t.Fatal(err)

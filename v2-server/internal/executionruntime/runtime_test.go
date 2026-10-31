@@ -598,6 +598,52 @@ func nextAgentCall(t *testing.T, f *runtimeFixture, a *orchestrationAgent) *agen
 	}
 }
 
+// Each Agent runs only the bindings of its protocol: Claude Code gets the Messages bindings under
+// the same slots OpenCode uses, and a direct model turn can never select a Messages binding.
+func TestRuntimeExecutorDirectoryPairsAgentsWithTheirProtocol(t *testing.T) {
+	f := runtimeDatabase(t, nil)
+	if err := f.service.Close(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	a := &orchestrationAgent{started: make(chan *agentCall, 8), ended: make(chan string, 8)}
+	var err error
+	f.service, err = New(f.ctx, Config{Store: f.db, Models: f.models, Agent: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executors, err := f.service.ListExecutors(f.ctx, f.scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []execution.Executor{
+		{ID: "opencode:fixture", Name: "OpenCode / Fixture", AgentID: "official/ora-space.opencode", AgentName: "OpenCode", PluginVersion: "0.6.11", Model: f.models["fixture"].Model},
+		{ID: "claude:fixture", Name: "Claude Code / Fixture", AgentID: "official/ora-space.claude", AgentName: "Claude Code", PluginVersion: "0.4.5", Model: f.models["messages-fixture"].Model},
+	}
+	if !reflect.DeepEqual(executors, want) {
+		t.Fatalf("executors=%+v\nwant %+v", executors, want)
+	}
+	if models, err := f.service.ListModels(f.ctx, f.scope); err != nil || len(models) != 1 || models[0].ID != "fixture" {
+		t.Fatalf("direct model catalog exposed a Messages binding: %+v %v", models, err)
+	}
+	direct := modelRequest("direct", "first", "hello")
+	direct.ModelID = "messages-fixture"
+	if _, err := f.service.StartModel(f.ctx, f.scope, direct); !errors.Is(err, execution.ErrNotFound) {
+		t.Fatalf("direct model turn selected a Messages binding: %v", err)
+	}
+	if _, err := f.db.CreateProject(f.ctx, f.scope, store.Project{ID: "project", Name: "Demo", RepositoryURL: "https://example.com/demo.git", Commit: "fixed", MirrorPath: "/fake/unused"}); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := f.service.Start(f.ctx, f.scope, execution.StartRequest{Caller: modelRequest("claude", "first", "").Caller, Target: execution.Target{ProjectID: "project"}, ExecutorID: "claude:fixture", Prompt: execution.TextPrompt("run")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := nextAgentCall(t, f, a)
+	if call.session.ID != ref.SessionID || call.session.Executor == nil || !reflect.DeepEqual(*call.session.Executor, want[1]) {
+		t.Fatalf("Claude session executor=%+v", call.session.Executor)
+	}
+	call.unblock()
+}
+
 func TestRuntimeAgentOrchestrationSeparatesConversationsAndReusesWorkflowDirectory(t *testing.T) {
 	f := runtimeDatabase(t, nil)
 	if err := f.service.Close(f.ctx); err != nil {
@@ -749,6 +795,8 @@ func TestModelsFromEnvironmentRejectsPartialConfigurationWithoutSecrets(t *testi
 		{"V2_MODEL_API_KEY": "secret-key"},
 		{"V2_MODEL_BASE_URL": "https://provider.example/v1", "V2_MODEL_API_KEY": "secret-key"},
 		{"V2_MODEL_BASE_URL": "http://provider.example/v1", "V2_MODEL_API_KEY": "secret-key", "V2_MODEL_NAME": "model"},
+		{"V2_ANTHROPIC_MODEL_API_KEY": "secret-key", "V2_ANTHROPIC_MODEL_NAME": "model"},
+		{"V2_ANTHROPIC_MODEL_BASE_URL": "http://provider.example/v1", "V2_ANTHROPIC_MODEL_API_KEY": "secret-key", "V2_ANTHROPIC_MODEL_NAME": "model"},
 	} {
 		models, err := ModelsFromEnvironment(func(name string) string { return values[name] })
 		if err == nil || models != nil || strings.Contains(err.Error(), "secret-key") {
@@ -756,7 +804,12 @@ func TestModelsFromEnvironmentRejectsPartialConfigurationWithoutSecrets(t *testi
 		}
 	}
 	models, err := ModelsFromEnvironment(func(string) string { return "" })
-	if err != nil || len(models) != 1 || models["fixture"].Model.ID != "fixture" {
-		t.Fatalf("fixture=%v err=%v", models, err)
+	if err != nil || len(models) != 2 || models["fixture"].Binding.Protocol != nodeservices.OpenAICompletions || models["messages-fixture"].Binding.Protocol != nodeservices.AnthropicMessages {
+		t.Fatalf("fixtures=%v err=%v", models, err)
+	}
+	env := map[string]string{"V2_ANTHROPIC_MODEL_BASE_URL": "https://provider.example/v1", "V2_ANTHROPIC_MODEL_API_KEY": "secret-key", "V2_ANTHROPIC_MODEL_NAME": "claude-model"}
+	models, err = ModelsFromEnvironment(func(name string) string { return env[name] })
+	if c := models["messages-configured"]; err != nil || len(models) != 3 || c.Binding.Protocol != nodeservices.AnthropicMessages || c.Binding.Model.ID != "claude-model" || c.Model.Name != "claude-model" {
+		t.Fatalf("configured Messages provider=%v err=%v", models, err)
 	}
 }

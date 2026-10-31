@@ -20,8 +20,9 @@ go run .                               # 监听 127.0.0.1:8090
 | `V2_ADDR` | `127.0.0.1:8090` | 监听地址 |
 | `V2_DATABASE_URL` | `postgres://ora:ora-local@127.0.0.1:55432/ora_v2?sslmode=disable` | PostgreSQL |
 | `V2_DATA_DIR` | `$HOME/.ora-v2` | 仓库 mirror、Node 与对话目录；同一目录只允许一个进程持有，使用短路径以满足 Unix socket 长度限制 |
-| `V2_NODE_ASSETS_DIR` | 未设置 | `task v2:node:prepare` 生成的固定 Node、host、guardian、Deno 和 OpenCode 资源；未设置时只启用纯模型路径 |
-| `V2_MODEL_BASE_URL` / `V2_MODEL_API_KEY` / `V2_MODEL_NAME` | 未设置 | 可选的一组 HTTPS OpenAI 兼容 provider；必须同时设置，Agent 与纯模型共用，清单只公开模型名称与版本 |
+| `V2_NODE_ASSETS_DIR` | 未设置 | `task v2:node:prepare` 生成的固定 Node、host、guardian、Deno、OpenCode 和 Claude Code 资源；未设置时只启用纯模型路径 |
+| `V2_MODEL_BASE_URL` / `V2_MODEL_API_KEY` / `V2_MODEL_NAME` | 未设置 | 可选的一组 HTTPS OpenAI 兼容 provider；必须同时设置，OpenCode 与纯模型共用，清单只公开模型名称与版本 |
+| `V2_ANTHROPIC_MODEL_BASE_URL` / `V2_ANTHROPIC_MODEL_API_KEY` / `V2_ANTHROPIC_MODEL_NAME` | 未设置 | 可选的一组 HTTPS Anthropic 兼容 provider（Messages API，base URL 写到 `/v1`，如 `https://api.anthropic.com/v1`）；必须同时设置，只供 Claude Code 使用 |
 
 测试需要 `TEST_DATABASE_URL`（任意可建 schema 的库），每个测试用独立的 schema：
 
@@ -106,8 +107,11 @@ Agent 成员引用 `v2_space_agents` 里观测为已安装的插件，候选由�
 [`catalog.openapi.json`](internal/server/catalog.openapi.json) 定义
 `GET /api/v2/tenants/{tid}/execution/models` 和 `GET /api/v2/tenants/{tid}/execution/executors`。
 两者要求登录和当前成员关系，响应为 `{ "items": [...] }`，不返回 provider URL、凭据或磁盘路径。
-始终提供免密钥 `fixture` 模型；有 Node 资源时提供 `opencode:fixture` 执行器；
-完整 provider 配置再提供 `configured` 模型和 `opencode:configured` 执行器，无 Node 资源时执行器清单为空。
+始终提供免密钥 `fixture` 模型；有 Node 资源时提供 `opencode:fixture` 和 `claude:fixture` 执行器；
+完整 OpenAI 兼容 provider 配置再提供 `configured` 模型和 `opencode:configured` 执行器，
+完整 Anthropic 兼容 provider 配置再提供 `claude:configured` 执行器，无 Node 资源时执行器清单为空。
+每个 Agent 只用自己协议的绑定：OpenCode 走 OpenAI chat completions，Claude Code 走 Anthropic Messages；
+Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不能选它。清单里 OpenCode 排在前面，默认选择不变。
 
 ### 对话
 
@@ -163,7 +167,7 @@ Session、Turn、连续事件、完整结果和 Caller attempt 保存在 Postgre
 End 确认停止后持久化会话结束，历史仍可读。启动先恢复并停止旧 Node，再把未完成轮记为 interrupted、
 将旧会话全部结束；不重放 prompt 或恢复 Agent 上下文。页面领域继续通过同一执行接口接入。
 
-fixture 只替代模型，Git、Node、OpenCode 与 shell 工具都实际执行：
+fixture 只替代模型，Git、Node、OpenCode / Claude Code 与 shell 工具都实际执行：
 
 ```sh
 # 在仓库根目录准备资源，随后到 v2-server；资源和数据目录均使用 Linux 原生磁盘。
@@ -172,6 +176,10 @@ V2_NODE_ASSETS_DIR=/absolute/path/to/assets go run . -fixture-check
 # 公共 Service 的真实工具写入、End 和 PostgreSQL 重启读取
 V2_NODE_ASSETS_DIR=/absolute/path/to/assets TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable' go test -race -count=1 -run TestReal -v ./internal/executionruntime
 ```
+
+每个项目的 Node 在某个插件第一次被用到时才安装它。Claude Code 包约 190 MB，解压后约 400 MB，
+用 debug 构建的 Node 首次安装约需一分钟；安装结果留在 `V2_DATA_DIR` 的项目 Node 目录里，
+之后重启服务再用只需约一秒。演示前先在每个演示项目里跑一轮 Claude Code，可避开这次等待。
 
 End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删除确认停止后的登记 Node 与对话目录，
 保留项目 mirror 和数据库历史；命令拒绝与持有同一数据目录的服务并行运行。
@@ -198,12 +206,13 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
 - 写请求不检查 `Idempotency-Key`，没有执行代次隔离；定时任务配置与小队更新使用乐观版本检查，对话的创建和发消息把 `Idempotency-Key` 用作执行的 attempt ID。
 - 小队权限把开发登录的 `owner` 角色也当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
-- 空间与插件：每个租户固定一个「演示空间」，开发登录时自动创建；里面只登记一个真实安装的 Agent 插件——`official/ora-space.opencode@0.6.11`，即 [`scripts/prepare-node.sh`](scripts/prepare-node.sh) 校验 SHA 后准备、chat、工作流与定时任务真正加载的那个。没有安装、卸载写入接口，`kind` 恒为 `agent`，安装计数与请求者不记录；`SpaceAgentPlugins` 的读法在 `#774` 的 `Catalog.ListExecutors` 装配好后可以换成真实来源，契约形状不变。
+- 空间与插件：每个租户固定一个「演示空间」，开发登录时自动创建；里面登记两个真实安装的 Agent 插件——`official/ora-space.opencode@0.6.11` 和 `official/ora-space.claude@0.4.5`，即 [`scripts/prepare-node.sh`](scripts/prepare-node.sh) 校验 SHA 后准备、chat、工作流与定时任务真正加载的那两个；已有演示库在下次登录时补上 Claude Code 一行。没有安装、卸载写入接口，`kind` 恒为 `agent`，安装计数与请求者不记录；`SpaceAgentPlugins` 的读法在 `#774` 的 `Catalog.ListExecutors` 装配好后可以换成真实来源，契约形状不变。
 - 成员列表：`memberships` 没有成员 id、版本和加入来源，所以 `id` 直接用 user id、`version` 恒为 1、`status` 取用户状态，`joinMethod` / `joinedAt` / `actorDisplayName` 恒为空；分页参数被忽略，一页返回全部。切到正式 Cloud 的成员接口时替换。
 - 启动时直接建表，没有迁移。
 - 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
   [`internal/nodeservices`](internal/nodeservices/README.md)，通过项目 Agent driver 接入服务入口。
-  配套服务只支持演示仓库的只读 Git、固定 OpenCode 包、fixture 或配置的 OpenAI 兼容 provider；
+  配套服务只支持演示仓库的只读 Git、固定 OpenCode / Claude Code 包、各协议的 fixture，以及配置的 OpenAI / Anthropic 兼容 provider；
+  Claude Code 的冻结配置没有个人 Settings（`settings_json` 为 `{}`、revision 为 0）；
   本地证书有效 24 小时，关闭后撤销凭据，无正式 Cloud 的身份、Git 交付或证书轮换机制。
 - [`internal/nodehistory`](internal/nodehistory/README.md) 将固定 Node 的历史转换为替换快照，
   只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL

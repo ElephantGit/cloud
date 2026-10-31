@@ -133,11 +133,11 @@ func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t
 			}
 			var rule schedule.Rule
 			if e = json.Unmarshal(config.Rule, &rule); e != nil {
-				return e
+				return ErrIneligible
 			}
 			next, e := schedule.Next(rule, config.CreatedAt, t.At.Add(-time.Nanosecond), 1)
 			if e != nil {
-				return e
+				return ErrIneligible
 			}
 			if !next[0].Equal(t.At) {
 				return ErrIneligible

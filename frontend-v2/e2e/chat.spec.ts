@@ -7,10 +7,10 @@ test('chat: replay a sample, say the backend cannot run Agents yet, resize the c
   await page.getByRole('button', { name: '开发者登录' }).click()
   await expect(page.getByRole('heading', { name: '今天想构建什么？' })).toBeVisible()
 
-  // v2-server has no execution runtime wired yet, so its chat routes answer 503 and the new chat
-  // says so instead of offering projects it cannot run.
+  // The runtime seeds a real demo project. CI has no Node assets, so the executor list remains
+  // empty and a new Agent conversation stays explicitly unavailable.
   await expect(page.getByRole('status').filter({ hasText: /后端还不能运行 Agent/ })).toBeVisible()
-  expect(await projects(page).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['项目 示例'])
+  expect(await projects(page).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['项目 示例', '项目 Demo'])
 
   // A sample replays its recording: tool calls stream in, then fold into a summary.
   await projects(page).filter({ hasText: '示例' }).getByRole('button', { name: '工具调用：读、搜、改、执行', exact: true }).click()

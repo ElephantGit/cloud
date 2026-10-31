@@ -234,3 +234,43 @@ CREATE TABLE IF NOT EXISTS v2_chat_project_order (
 	project_ids text[] NOT NULL,
 	PRIMARY KEY (tenant_id, user_id)
 );
+
+-- Tenant-owned authored documents and immutable published graphs. Archiving the
+-- document hides its snapshots and frees its name, without destroying history.
+CREATE TABLE IF NOT EXISTS v2_workflows (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ name text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 200),
+ description text NOT NULL DEFAULT '',
+ graph jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(graph)='object'),
+ version bigint NOT NULL DEFAULT 1 CHECK (version>0),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ deleted_at timestamptz,
+ UNIQUE (tenant_id,id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_workflows_live_name
+ ON v2_workflows(tenant_id,name) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS v2_workflows_live_page
+ ON v2_workflows(tenant_id,id) WHERE deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS v2_workflow_snapshots (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ workflow_id uuid NOT NULL,
+ version bigint NOT NULL CHECK (version>0),
+ name text NOT NULL,
+ graph jsonb NOT NULL CHECK (jsonb_typeof(graph)='object'),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (tenant_id,workflow_id) REFERENCES v2_workflows(tenant_id,id),
+ UNIQUE (tenant_id,workflow_id,version)
+);
+CREATE INDEX IF NOT EXISTS v2_workflow_snapshots_page
+ ON v2_workflow_snapshots(tenant_id,workflow_id,id);
+CREATE TABLE IF NOT EXISTS v2_workflow_requests (
+ tenant_id uuid NOT NULL REFERENCES tenants(id),
+ user_id uuid NOT NULL REFERENCES users(id),
+ key text NOT NULL CHECK (length(key) BETWEEN 1 AND 200),
+ fingerprint bytea NOT NULL,
+ response jsonb,
+ PRIMARY KEY (tenant_id,user_id,key)
+);

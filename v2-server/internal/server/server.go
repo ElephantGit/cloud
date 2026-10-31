@@ -90,6 +90,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("PUT /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.updateSquadMember))
 	mux.HandleFunc("DELETE /api/v2/tenants/{tid}/squads/{sid}/members/{mid}", h.authed(h.removeSquadMember))
 	h.chatRoutes(mux)
+	h.workflowRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }

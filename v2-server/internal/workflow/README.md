@@ -3,7 +3,8 @@
 本包接收冻结的图、输入、每个 Agent 节点的 executor 映射和角色提示词快照，通过应用现有的
 `execution.Service` 执行。它不依赖正式 Cloud 的数据库、分布式调度或 Node 控制平面，也不自行
 创建第二个 execution runtime。包本身不注册 HTTP 路由；SQL、身份校验、资源目录解析和后台
-worker 生命周期由调用方负责。
+worker 生命周期由调用方负责。定义和发布快照已由 `internal/store/workflows.go` 持久化，
+`internal/server/workflows.go` 提供对应 HTTP 接口；运行 worker 的持久化装配尚未接入。
 
 ## 代码复用来源
 
@@ -45,7 +46,23 @@ interrupted；本包没有从 checkpoint 自动重放的入口。
 循环最多 100 轮，不支持嵌套复合容器。内核限制 256 个节点、2048 条边，并对无容器图也施加
 总状态大小上限。执行结果超过预算时拒绝该次状态写入，不保留过大的回答。
 
+## 定义与发布快照
+
+定义和快照继续使用 `api/openapi.json` 中的创建、读取、更新、归档、发布、历史和恢复接口，
+认证沿用 v2 的 `ora_session`。草稿可以不完整，发布才使用本包的图校验与文件变量规范化。
+存储图文档保留 JSON 数字精度；不会把编辑器注释或视口字段投影掉。发布不修改草稿，恢复
+只替换草稿图并递增文档版本；快照版本按工作流独立递增。
+
+存储适配沿用 `internal/core/workflow.go` 的领域行为。原文件绑定正式 `transaction` 和
+`PublicRequest`，因此这里改接现有 pgx 连接池及成员校验。更新、恢复、归档、发布共享行锁，
+并发修改用文档版本拒绝覆盖；活跃名称唯一约束在归档后释放名称。创建、发布和归档的幂等键
+与完整响应在同一事务提交，重放前重新鉴权，之后才判断资源/版本。同键异参返回冲突。
+
 ## 验证
+
+`go test ./internal/store ./internal/server` 包含真实 PostgreSQL 的并发、权限撤销、归档、
+快照隔离和关闭重开验证，以及正式 OpenAPI 响应验证；必须设置 `TEST_DATABASE_URL` 才会
+执行数据库用例。未配置数据库时跳过这些用例，不能据此判断持久化验证通过。
 
 `go test ./internal/workflow` 执行迁移用例和 execution port 的适配回归测试。
 新增用例覆盖两个 Agent 串行传值、先持久化后执行、session 停止确认、取消、断流、响应丢失和

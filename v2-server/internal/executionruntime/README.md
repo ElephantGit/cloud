@@ -54,7 +54,7 @@ schema、`SeedDemo` 的独立 Git 项目，以及固定 Node/OpenCode。它验�
 provider 必须是 `ModelsFromEnvironment` 支持的 HTTPS OpenAI 兼容接口，并支持固定 OpenCode 的
 工具调用。配置应由本地安全环境注入，不把密钥写入命令、提交或验收记录。
 
-在仓库根目录运行 `task v2:node:prepare` 准备已校验资源。需要原生 Linux/WSL x86_64、Git、
+在仓库根目录运行 `task v2:node:prepare` 准备已校验资源。需要原生 Linux/WSL x86_64 或 aarch64、Git、
 `git-http-backend`、Go（版本见 `go.mod`）、可创建/删除 schema 的测试 PostgreSQL，以及可直连
 provider 的网络；当前 RemoteProvider 不使用环境代理。HOME 必须位于原生 ext4/xfs/btrfs
 短路径，不能使用 Windows 挂载或容器 overlay。测试资源目录和执行目录的约束见

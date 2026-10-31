@@ -7,7 +7,7 @@ import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import type { ScheduleResources } from './api/generated'
 import { type Catalog, formatTime, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
-import { completeResult, finishManualRequest, manualRequestKey, reasonText, runLabels, runnable, scheduleError } from './runtime'
+import { compareOccurrences, compareTimestampsDesc, completeResult, finishManualRequest, manualRequestKey, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
 export function RunStatus({run}:{run?:Run}) {
  const success=run?.status==='succeeded'||run?.status==='success'
@@ -22,10 +22,10 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const [notice,setNotice]=useState('')
  const [now]=useState(()=>new Date())
  const history=useInfiniteQuery({queryKey:['schedule-history',scope,task.id],initialPageParam:'',queryFn:({pageParam,signal})=>listScheduleHistory(tenantId,task.id,{limit:20,...(pageParam?{cursor:pageParam}:{})},undefined,signal),getNextPageParam:page=>page.nextCursor||undefined,retry:false,refetchInterval:3000})
- const rows=history.isError?[]:[...new Map((history.data?.pages.flatMap(p=>p.items)??[]).map(r=>[r.id,r])).values()].sort((a,b)=>b.recordedAt.localeCompare(a.recordedAt))
+ const rows=history.isError?[]:[...new Map((history.data?.pages.flatMap(p=>p.items)??[]).map(r=>[r.id,r])).values()].sort(compareOccurrences)
  const exact=useQuery({queryKey:['schedule-history-item',scope,task.id,runId],queryFn:({signal})=>getScheduleHistoryItem(tenantId,task.id,runId,undefined,signal),enabled:!!runId&&!rows.some(r=>r.id===runId)&&!history.isError,retry:false,refetchInterval:3000})
  const selected=runId?(rows.find(r=>r.id===runId)??(exact.isError?undefined:exact.data)):rows[0]
- const observed=history.isError?undefined:[rows[0],exact.isError?undefined:exact.data].filter(r=>!!r).sort((a,b)=>b.scheduledAt.localeCompare(a.scheduledAt))[0]
+ const observed=history.isError?undefined:[rows[0],exact.isError?undefined:exact.data].filter(r=>!!r).sort((a,b)=>compareTimestampsDesc(a.scheduledAt,b.scheduledAt)||compareOccurrences(a,b))[0]
  useEffect(()=>{if(observed)onObserved?.(observed)},[observed,onObserved])
  const output=useQuery({queryKey:['schedule-result',scope,task.id,selected?.id],queryFn:({signal})=>getScheduleExecutionResult(tenantId,task.id,selected!.id,undefined,signal),enabled:tab==='history'&&!!selected?.executionRef&&!history.isError,retry:false,refetchInterval:selected&&!selected.released?2000:false})
  const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
@@ -55,7 +55,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
      <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><span>{runLabels[r.status]}</span><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small></button>)}</div>
      {history.hasNextPage&&<Button variant="outline" disabled={history.isFetchingNextPage} onClick={()=>void history.fetchNextPage()}>{history.isFetchingNextPage?'加载中…':'加载更多记录'}</Button>}
-     <p className="sp-helper">记录分页读取，本页按记录时间排列。停留在详情时自动刷新。</p>
+     <p className="sp-helper">记录按记录时间倒序分页读取。停留在详情时自动刷新。</p>
      {selected&&<section aria-label="选中运行的结果">
       <div className="sp-config-heading">{runLabels[selected.status]}{!selected.released?' · 等待结束确认':''}</div>
       {selected.reason&&<p className="sp-helper">{reasonText(selected.reason)}</p>}

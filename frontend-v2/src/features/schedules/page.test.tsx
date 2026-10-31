@@ -6,7 +6,7 @@ import Page from './page'
 import * as api from './api/generated'
 import * as actions from './api/actions/generated'
 import * as history from './api/history/generated'
-import { emptyResources } from './runtime'
+import { compareOccurrences, compareTimestampsDesc, emptyResources } from './runtime'
 
 vi.mock('@/app/auth/user',()=>({useUser:()=>({id:'user'})}))
 vi.mock('@/api/me/me',()=>({useGetApiV1MeTenants:()=>({data:{items:[{id:'tenant'}]},isLoading:false,isError:false})}))
@@ -100,4 +100,27 @@ it('does not leave a running acknowledgement after a completed response is read'
  mount();await detail();await userEvent.click(screen.getByRole('button',{name:'立即运行'}));expect(await screen.findByText('完整结果')).toBeInTheDocument()
  expect(screen.getByRole('status')).toHaveTextContent('运行请求已记录，当前状态见运行历史。');expect(screen.getByRole('status')).not.toHaveTextContent('进行中')
  await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));expect(within(screen.getByRole('row',{name:/早报/})).getByText('成功')).toBeInTheDocument()
+})
+
+it('orders multi-page history by (recordedAt DESC, id DESC) including fractional RFC3339 timestamps',async()=>{
+ expect(compareTimestampsDesc('2026-10-01T09:00:00.5Z','2026-10-01T09:00:00Z')).toBeLessThan(0)
+ expect(compareTimestampsDesc('2026-10-01T09:00:00.000002Z','2026-10-01T09:00:00.000001Z')).toBeLessThan(0)
+ expect(compareOccurrences({recordedAt:'2026-10-01T09:00:00Z',id:'00000000-0000-4000-8000-00000000000f'},{recordedAt:'2026-10-01T09:00:00Z',id:'00000000-0000-4000-8000-000000000002'})).toBeLessThan(0)
+ const baseRun={...occurrence,released:true,executionRef:''}
+ const page1=[
+  {...baseRun,id:'00000000-0000-4000-8000-000000000001',status:'succeeded' as const,scheduledAt:'2026-10-01T09:00:00.5Z',recordedAt:'2026-10-01T09:00:00.5Z'},
+  {...baseRun,id:'00000000-0000-4000-8000-00000000000f',status:'failed' as const,scheduledAt:'2026-10-01T09:00:00Z',recordedAt:'2026-10-01T09:00:00Z'},
+ ]
+ const page2=[
+  {...baseRun,id:'00000000-0000-4000-8000-000000000002',status:'cancelled' as const,scheduledAt:'2026-10-01T09:00:00Z',recordedAt:'2026-10-01T09:00:00Z'},
+ ]
+ vi.mocked(history.listScheduleHistory).mockImplementation(async(_tid,_id,params)=>params?.cursor?{items:page2,nextCursor:''}:{items:page1,nextCursor:'composite-cursor'})
+ mount();const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
+ await userEvent.click(await within(dialog).findByRole('button',{name:'加载更多记录'}))
+ await waitFor(()=>{
+  const labels=[...dialog.querySelectorAll('.sp-history-list button > span:first-child')].map(el=>el.textContent)
+  expect(labels).toEqual(['成功','失败','已取消'])
+ })
+ await userEvent.click(screen.getByRole('button',{name:'关闭面板'}))
+ expect(within(screen.getByRole('row',{name:/早报/})).getByText('成功')).toBeInTheDocument()
 })

@@ -53,6 +53,10 @@ Stop 按 Node、host、guardian 顺序定向停止。残留清理用 Linux pidfd
 确认进程退出后只删除 Node/host 下的 socket，数据库和仓库内容保留；清理失败可重试，成功后才释放独占锁。
 依赖 `golang.org/x/sys/unix` 的 pidfd；不支持 pidfd 的系统不能假称完成残留回收。
 
+`RecoverRuntime(ctx, root, grace)` 使用同一独占锁和进程归属检查，在不启动新 Node 的情况下确认旧进程
+退出；保留 checkout、历史和数据库，完成后释放锁。上层必须先完成此恢复，再对外发布重启后的业务状态。
+活动 runtime 持有锁时恢复会拒绝，不接管其他服务的运行目录。
+
 真实测试覆盖双 Workspace 独立运行、重复监督拒绝、停止一个不影响另一个、正常重启保留文件，
 以及杀死监督进程后由新监督进程清理残留 Node/host 再恢复。
 尚未装配到 v2-server；clone/插件/Agent 编排、Git/模型服务、数据库 ACK 顺序和 M4 适配继续由后续实现承接。

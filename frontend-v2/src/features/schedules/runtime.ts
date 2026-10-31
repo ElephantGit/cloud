@@ -34,6 +34,37 @@ export function runnable(task: Task, r: ScheduleResources) {
 export function occurrenceRun(o: Occurrence, task: Task): Run { return { id:o.id, startedAt:o.scheduledAt,status:o.status,target:task.target,projectName:'',output:'',reason:o.reason,released:o.released } }
 export function completeResult(result: ExecutionResult | undefined) { return result?.result?.status === 'completed' && result.result.answerComplete }
 
+const rfc3339Instant = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/i
+
+function epochNanos(value: string): bigint | null {
+  const match = rfc3339Instant.exec(value)
+  if (!match) {
+    const ms = Date.parse(value)
+    return Number.isNaN(ms) ? null : BigInt(ms) * 1_000_000n
+  }
+  const wholeMs = Date.parse(`${match[1]}${match[3]}`)
+  if (Number.isNaN(wholeMs)) return null
+  const subsecNanos = BigInt((match[2] ?? '').padEnd(9, '0'))
+  return BigInt(wholeMs) * 1_000_000n + subsecNanos
+}
+
+/** Compare RFC3339 timestamps in descending instant order without losing sub-millisecond precision. */
+export function compareTimestampsDesc(a: string, b: string): number {
+  const na = epochNanos(a)
+  const nb = epochNanos(b)
+  if (na !== null && nb !== null) return nb > na ? 1 : nb < na ? -1 : 0
+  return b > a ? 1 : b < a ? -1 : 0
+}
+
+/** Order schedule occurrences by (recordedAt DESC, id DESC) matching the server composite cursor. */
+export function compareOccurrences(a: Pick<Occurrence, 'recordedAt' | 'id'>, b: Pick<Occurrence, 'recordedAt' | 'id'>): number {
+  const byRecorded = compareTimestampsDesc(a.recordedAt, b.recordedAt)
+  if (byRecorded !== 0) return byRecorded
+  const aId = a.id.toLowerCase()
+  const bId = b.id.toLowerCase()
+  return bId > aId ? 1 : bId < aId ? -1 : 0
+}
+
 /** Keep a network retry identity across drawer changes and tab reloads, scoped to the user. */
 export function manualRequestKey(scope:string,id:string) {
   const key=`ora.schedule.request:${scope}:${id}`

@@ -15,7 +15,7 @@ import { ScheduleDrawer } from './schedule-drawer'
 import { ScheduleForm } from './schedule-form'
 import { ScheduleDetail } from './schedule-detail'
 import { ScheduleTable } from './schedule-table'
-import { emptyResources, resourceCatalog, scheduleError } from './runtime'
+import { compareTimestampsDesc, emptyResources, resourceCatalog, scheduleError } from './runtime'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import './schedules.css'
 
@@ -45,7 +45,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const onObserved=useCallback((record:ScheduleActionReceipt)=>{
     client.setQueryData<Record<string,ScheduleActionReceipt>>(['schedule-observed',scope],old=>{
       const previous=old?.[record.scheduleId]
-      if(previous&&(previous.scheduledAt>record.scheduledAt||(previous.id===record.id&&previous.version>=record.version)))return old
+      if(previous&&(compareTimestampsDesc(previous.scheduledAt,record.scheduledAt)<0||(previous.id===record.id&&previous.version>=record.version)))return old
       return {...old,[record.scheduleId]:record}
     })
   },[client,scope])

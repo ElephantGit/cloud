@@ -190,48 +190,81 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 	return turn.Ref, nil
 }
 
-// Append continues a live logical session. A server restart never reconstructs old workers.
+// Append continues a live logical session. A durable terminal event may precede driver cleanup;
+// the next turn waits for that worker without releasing its directory or requiring another event.
+// A server restart never reconstructs old workers.
 func (s *Service) Append(ctx context.Context, scope execution.Scope, req execution.AppendRequest) (execution.Ref, error) {
 	if err := validate(req.Caller, req.Prompt); err != nil {
 		return execution.Ref{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || s.failed || s.ctx.Err() != nil {
-		return execution.Ref{}, execution.ErrUnavailable
-	}
-	session, err := s.db.ReadExecutionSession(ctx, scope, req.SessionID)
-	if err != nil {
-		return execution.Ref{}, publicError(err)
-	}
-	if old, e := s.db.ReadExecutionAttempt(ctx, scope, req.Caller); e == nil {
-		if old.Ref.SessionID != req.SessionID || !sameJSON(old.Prompt, req.Prompt) {
+	for {
+		if s.closed || s.failed || s.ctx.Err() != nil {
+			return execution.Ref{}, execution.ErrUnavailable
+		}
+		session, err := s.db.ReadExecutionSession(ctx, scope, req.SessionID)
+		if err != nil {
+			return execution.Ref{}, publicError(err)
+		}
+		if old, e := s.db.ReadExecutionAttempt(ctx, scope, req.Caller); e == nil {
+			if old.Ref.SessionID != req.SessionID || !sameJSON(old.Prompt, req.Prompt) {
+				return execution.Ref{}, execution.ErrConflict
+			}
+			return old.Ref, nil
+		} else if !errors.Is(e, execution.ErrNotFound) {
+			return execution.Ref{}, publicError(e)
+		}
+		if session.EndedAt != nil || s.ending[session.ID] {
+			return execution.Ref{}, execution.ErrSessionEnded
+		}
+		first, err := s.db.ReadExecutionTurns(ctx, scope, session.ID, "", 1)
+		if err != nil {
+			return execution.Ref{}, publicError(err)
+		}
+		if len(first.Items) != 1 || first.Items[0].Caller.Kind != req.Caller.Kind || first.Items[0].Caller.ID != req.Caller.ID {
 			return execution.Ref{}, execution.ErrConflict
 		}
-		return old.Ref, nil
-	} else if !errors.Is(e, execution.ErrNotFound) {
-		return execution.Ref{}, publicError(e)
+		group := groupKey(scope, req.Caller)
+		if active := s.groups[group]; active != "" {
+			prior := s.workers[active]
+			if prior == nil {
+				return execution.Ref{}, execution.ErrWorkspaceBusy
+			}
+			retained, err := s.readTurn(ctx, scope, prior.ref)
+			if err != nil {
+				return execution.Ref{}, err
+			}
+			if retained.Result == nil {
+				return execution.Ref{}, execution.ErrWorkspaceBusy
+			}
+			// Publication precedes the Node ACK and worker cleanup. Keep ownership
+			// intact, but do not tell an observer of that terminal event to wait for
+			// a second event that will never arrive. Cleanup itself needs this mutex.
+			s.mu.Unlock()
+			var waitErr error
+			select {
+			case <-ctx.Done():
+				waitErr = ctx.Err()
+			case <-s.ctx.Done():
+				waitErr = execution.ErrUnavailable
+			case <-prior.done:
+			}
+			s.mu.Lock()
+			if waitErr != nil {
+				return execution.Ref{}, waitErr
+			}
+			// Another Append, End, Close or permission change may have won while
+			// unlocked. Recheck admission and attempt identity before writing anything.
+			continue
+		}
+		turn := execution.Turn{Ref: execution.Ref{SessionID: session.ID, TurnID: newID()}, Caller: req.Caller, Prompt: copyPrompt(req.Prompt), StartedAt: time.Now().UTC()}
+		if err := s.db.AppendExecutionTurn(ctx, scope, session.ID, turn); err != nil {
+			return execution.Ref{}, publicError(err)
+		}
+		s.launch(scope, session, turn, group)
+		return turn.Ref, nil
 	}
-	if session.EndedAt != nil || s.ending[session.ID] {
-		return execution.Ref{}, execution.ErrSessionEnded
-	}
-	first, err := s.db.ReadExecutionTurns(ctx, scope, session.ID, "", 1)
-	if err != nil {
-		return execution.Ref{}, publicError(err)
-	}
-	if len(first.Items) != 1 || first.Items[0].Caller.Kind != req.Caller.Kind || first.Items[0].Caller.ID != req.Caller.ID {
-		return execution.Ref{}, execution.ErrConflict
-	}
-	group := groupKey(scope, req.Caller)
-	if s.groups[group] != "" {
-		return execution.Ref{}, execution.ErrWorkspaceBusy
-	}
-	turn := execution.Turn{Ref: execution.Ref{SessionID: session.ID, TurnID: newID()}, Caller: req.Caller, Prompt: copyPrompt(req.Prompt), StartedAt: time.Now().UTC()}
-	if err := s.db.AppendExecutionTurn(ctx, scope, session.ID, turn); err != nil {
-		return execution.Ref{}, publicError(err)
-	}
-	s.launch(scope, session, turn, group)
-	return turn.Ref, nil
 }
 
 // launch is called under mu; workers use the backend's lifetime, never an HTTP request context.

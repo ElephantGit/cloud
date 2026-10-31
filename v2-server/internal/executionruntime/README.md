@@ -12,6 +12,9 @@
 
 Start/StartModel/Append 以当前成员关系和 Caller attempt 接收，记录原始 prompt 后启动服务自有 worker。
 同一个 attempt 同参数返回同一 Ref，参数改变返回 Conflict；同一 Caller 的轮次串行，忙时拒绝。
+观察者已收到持久化的 turn_ended、但原 worker 尚在 ACK/收尾时，Append 等待该 worker 退出后
+重新检查授权、会话和 attempt，再接收下一轮；等待遵从请求 context，不提前释放目录或重叠派发。
+原轮尚无持久终态时仍立即返回 Busy，已存在的同 attempt 重试仍直接返回原 Ref。
 不同对话、定时触发各有自己的 checkout；同一 workflow run 复用一个 checkout，换节点前先 End 旧会话。
 只支持文本 prompt；附件、权限询问、运行中切换模型尚不支持。
 

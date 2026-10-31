@@ -24,6 +24,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/executionruntime"
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
+	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 	"golang.org/x/sys/unix"
@@ -134,13 +135,33 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		return checkFixture(ctx, runtime, scope, demo.ID, filepath.Join(base, "nodes"))
 	}
 
-	srv := newHTTPServer(ctx, addr, server.New(db, server.Options{
+	options := server.Options{
 		SessionTTL: 7 * 24 * time.Hour,
 		DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
 		Projects:   projects,
 		Execution:  runtime,
 		Catalog:    runtime,
-	}))
+	}
+	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
+	if e != nil {
+		return e
+	}
+	schedules, e := scheduler.NewHost(db, coordinator, options.Catalog)
+	if e != nil {
+		return e
+	}
+	scheduleCtx, cancelSchedules := context.WithCancel(ctx)
+	ticks := time.NewTicker(time.Second)
+	scheduleDone := make(chan error, 1)
+	go func() { scheduleDone <- schedules.Run(scheduleCtx, ticks.C) }()
+	defer func() {
+		cancelSchedules()
+		ticks.Stop()
+		<-scheduleDone // Join scans and admitted HTTP commands before closing the execution runtime and database.
+	}()
+	<-schedules.Ready()
+	options.Schedules = schedules
+	srv := newHTTPServer(ctx, addr, server.New(db, options))
 	errs := make(chan error, 1)
 	go func() { errs <- srv.ListenAndServe() }()
 	slog.Info("v2-server listening", "addr", addr)
@@ -150,6 +171,9 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		return e
 	case <-ctx.Done():
 	}
+	// Cancel periodic scans and in-flight schedule commands before HTTP's 5s drain window.
+	cancelSchedules()
+	ticks.Stop()
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if e := srv.Shutdown(shutdown); e != nil {

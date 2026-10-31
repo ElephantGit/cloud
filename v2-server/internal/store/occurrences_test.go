@@ -308,3 +308,72 @@ func TestOccurrencesTimeDescendingPagination(t *testing.T) {
 		}
 	}
 }
+
+func TestOccurrenceInvalidRuleIsIneligible(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	admin, e := pgx.Connect(ctx, url)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer admin.Close(ctx)
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	schema := "occurrence_" + hex.EncodeToString(b[:])
+	if _, e = admin.Exec(ctx, "CREATE SCHEMA "+schema); e != nil {
+		t.Fatal(e)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	config, e := pgxpool.ParseConfig(url)
+	if e != nil {
+		t.Fatal(e)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
+	s, e := store.OpenConfig(ctx, config)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { s.Close() }()
+	token, e := s.Login(ctx, store.Identity{Source: "test", Subject: "owner", DisplayName: "Owner"}, time.Hour)
+	if e != nil {
+		t.Fatal(e)
+	}
+	u, e := s.SessionUser(ctx, token)
+	if e != nil {
+		t.Fatal(e)
+	}
+	tenants, e := s.Tenants(ctx, u.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	tid := tenants[0].ID
+	in := store.ScheduleInput{Name: "original", Target: json.RawMessage(`{"kind":"chat","prompt":"original prompt","agent":"","model":""}`), Rule: json.RawMessage(`{"kind":"hours","time":"09:00","days":[],"hours":1,"timezone":"UTC"}`)}
+	cfg, e := s.CreateScheduleConfig(ctx, tid, u.ID, in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	at := cfg.CreatedAt.Add(time.Hour)
+	conn, err := pgx.ConnectConfig(ctx, config.ConnConfig.Copy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	for _, rule := range []string{`{"kind":123}`, `{"kind":"hours","hours":0,"timezone":"UTC"}`, `{"kind":"daily","time":"09:00","timezone":"Invalid/Zone"}`} {
+		t.Run(rule, func(t *testing.T) {
+			if _, err := conn.Exec(ctx, `UPDATE v2_schedule_configs SET rule=$1::jsonb WHERE id=$2`, rule, cfg.ID); err != nil {
+				t.Fatal(err)
+			}
+			_, err := s.RecordOccurrence(ctx, tid, u.ID, cfg.ID, store.Trigger{Kind: "scheduled", At: at, Version: 1}, at)
+			if !errors.Is(err, store.ErrIneligible) {
+				t.Fatalf("expected ineligible, got %v", err)
+			}
+			var count int
+			if err := conn.QueryRow(ctx, `SELECT count(*) FROM v2_schedule_occurrences WHERE schedule_id=$1`, cfg.ID).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("invalid rule persisted occurrence: count=%d err=%v", count, err)
+			}
+		})
+	}
+}

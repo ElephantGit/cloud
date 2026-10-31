@@ -70,7 +70,22 @@ task v2:deepseek                           # PostgreSQL、v2-server、frontend-v
 
 接口要求登录 cookie、有效成员关系及创建者归属。无权限资源返回 404，过期版本返回 409，缺失更新版本返回 428；每次修改递增版本。配置持久存储于 PostgreSQL，服务重新启动后保留。请求大小限制 64 KiB，拒绝未知字段，并校验时间、时区、星期和间隔。
 
-本阶段仅保存无项目的文本对话配置，尚未消费下述公共项目、执行器和模型目录，不接受项目关联；执行器/模型文字仅为待接入配置，不能表示可执行绑定。`enabled` 表示保存的计划开关，不代表已部署定时器。配置响应中的 `runs` 仍为空，持久触发记录由独立历史接口读取；不提供模拟运行、删除或重试入口。真实接入时还需对接公共目录并校验执行选择。
+配置接口仅保存无项目的文本对话配置。公共项目、工作流、执行器和模型目录尚未接入表单，不接受项目关联；执行器/模型文字不能替代公共目录里的绑定 ID。配置响应中的 `runs` 仍为空，独立历史读取由历史接口承接，不在配置列表拼接完整结果。执行入口见下节；没有模拟执行或删除入口。
+
+### 定时执行操作
+
+独立候选契约为 [`schedule-actions.openapi.json`](schedule-actions.openapi.json)，不修改正式 Cloud 契约或配置生成客户端。
+
+| 路由 | 请求与行为 |
+|---|---|
+| `POST /api/v2/tenants/{tid}/schedule-configs/{id}/run` | `{"requestId":"稳定请求键"}`；同键重试找回同一次手动运行，显式重跑用新键。暂停任务可手动运行，同任务防重叠仍生效 |
+| `POST /api/v2/tenants/{tid}/schedule-configs/{id}/runs/{oid}/cancel` | `{}`；只取消当前用户创建、属于路径中任务的运行。取消未确认返回 `503 stop_unconfirmed`，不伪造终态或释放占位 |
+
+先检查当前登录、成员/用户/租户有效性和创建者归属，再检查执行可用性；隐藏资源统一 404。正文不能指定用户、触发时间、状态或执行引用。成功响应是运行回执（ID、状态、原因、占位、版本、计划时间），不带 prompt/配置快照/公共 Ref；HTTP 200 只表示操作完成，不表示运行成功。并发操作返回 `409 operation_in_progress`，可以用相同请求键或同一个取消 URL 重试。请求超时等返回 `503 operation_incomplete`；已保存记录的错误响应带 `params.occurrenceId`，客户端不能因此换键自动再跑。
+
+main 创建一个共用协调器/Host，用一秒 ticker 发现持久配置的当前有效创建者，不需要浏览器保持打开。首次扫描/恢复只安排未来时刻，暂停配置仍参与已接收运行的收尾。每个 Scope 先经公共 Catalog 可用性检查，再做一次协调器恢复；未配置执行时不恢复/写入新 occurrence，操作返回 `503 schedule_execution_unavailable`。Catalog 只是可用性门禁，真正的资源选择和授权由公共 Service 在 Start 时检查。
+
+公共 Service 必须先完成启动恢复，再启动 Host。扫描器、立即运行和取消共用同一个 `Options.Schedules`；main 将公共 `executionruntime.Service` 注入 `Options.Execution`/`Catalog`，完成启动恢复后沿用同一接线启动 Host，不另造 provider。退出时停止 ticker、取消并等待扫描和已进入的 HTTP 操作，之后才关闭公共执行及数据库；退出不伪造成功，未完成运行下次由公共恢复和原身份核对处理。项目 Agent 的公开配置/目录仍需配置工作线接入，工作流不走对话适配器。
 
 专用 HTTP 集成测试按此候选 OpenAPI 验证响应，并覆盖创建编辑、暂停恢复、服务替换、归属隔离及错误输入；数据库测试覆盖连接池关闭重开和并发版本冲突。
 
@@ -198,9 +213,19 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 
 ## 与正式 Cloud 的差异
 
+### 调度编排与对话消费适配
+
+[`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
+
+ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。HTTP/前端仍未开放项目绑定，公共项目和执行器目录就绪后才能接入。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
+
+协调器本身不创建 goroutine；main 的 Host 接入周期扫描和上述 HTTP 操作，前端按钮尚未接入。main 注入公共 `executionruntime.Service` 驱动实际派发；普通测试通过公共 Stub 和实际 PostgreSQL 验证编排、HTTP 和生命周期，opt-in 测试另组合真实公共 Service。
+
+`server.NewScheduleCoordinator(records, options, now)` 使用页面统一的 `Options.Execution`，不另建执行服务；宿主在公共启动恢复完成后调用 Recover，再驱动 Tick/Manual。Start 与同记录的核对/取消不会并行。启动错误或本地引用未保存时只按原 Caller 读取；无引用且确定没有进行中的 Start，查询未命中可记 skipped/execution_not_started。读取错误或已有引用但缺失记录时保留占位，不重放 prompt。Agent Cancel 结束会话，model-only Cancel 只停当前轮；定时对话两路都随后确认 End，保留历史与目录。详细状态、原因及 released 含义见 [状态说明](internal/store/occurrence-states.md)。
+
 ### 定时触发记录基础
 
-`internal/schedule.Next` 提供服务端时间计算；`Store.RecordOccurrence` 在事务内锁定配置、检查创建者与当前成员关系，并写入 `v2_schedule_occurrences`。尚未安装周期扫描器、自动派发器或 HTTP 触发入口，不调用执行模块。配置页面仍不会触发真实运行。
+`internal/schedule.Next` 提供服务端时间计算；`Store.RecordOccurrence` 在事务内锁定配置、检查创建者与当前成员关系，并写入 `v2_schedule_occurrences`。记录层自身不调用执行模块；扫描和操作入口由 Host/协调器承担。配置页面尚未连接运行操作。
 
 - 自动触发身份为配置 ID + scheduled + UTC 计划时刻，服务端从时刻生成键；同一时刻不因配置版本变化重复生成。
 - 手动触发使用配置 ID + manual + 稳定请求键；同键同版本同请求时刻返回原记录，变更参数返回冲突；显式重跑使用新键。暂停配置允许明确的手动记录，但仍不执行。
@@ -209,7 +234,7 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 - 配置行锁串行化创建触发与编辑，数据库 UNIQUE 约束兜底防重复。跨租户/用户读写不可用。`Occurrences` 是内部有界分页接口（1–100条），按 `recorded_at DESC, id DESC` 时间倒序排列，游标携带上一页末项的 `(recorded_at, id)`。
 - 时间统一为 PostgreSQL 支持的微秒精度；固定间隔沿创建时间锚点，日历规则跳过 DST 空缺，同一本地时刻回拨时仅记录第一次。
 
-这一层接受显式计划时刻，不替调用方选择停机期间哪些时刻应记录。内部状态接口现已实现忙即跳过、同任务占位与基于证据的重启恢复规则，详见 [状态说明](internal/store/occurrence-states.md)；尚未装配真实执行或启动恢复扫描。明确 Busy 且未接收时记为 skipped；接收未知仍按原身份核对。结果终态与资源释放分开，未确认释放前继续阻止重叠。记录防重复不等于外部执行恰好一次，公共 Session/Turn/事件仍由公共执行模块保存。
+这一层接受显式计划时刻，不替调用方选择停机期间哪些时刻应记录。Host 保留同任务占位与重启不补跑，真实执行取决于注入的公共服务。公共 Busy 仅表示同会话/运行的上一轮仍活动，定时消费保留明确拒绝的 skipped/execution_busy，不做跨任务目录竞争或等待。结果终态与任务占位释放分开，未确认 End 前继续阻止重叠。记录防重复不等于外部执行恰好一次，公共 Session/Turn/事件仍由公共执行模块保存。
 
 真实 PostgreSQL 测试覆盖八个并发请求返回同一个触发、不同触发各自存在、编辑后的快照不变、暂停/版本/时刻拒绝、手动重试身份、按时间倒序与同时间戳并列时的复合游标分页隔离，以及关闭数据库连接后重新读取。
 
@@ -229,4 +254,4 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
   只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL
   的超长回答验证；公共执行服务在 PostgreSQL 保存历史快照与终态后才 ACK Node。
 
-定时运行的内部状态与只读核对查询见 [状态说明](internal/store/occurrence-states.md)。采用同步接收后的原身份核对：reconciling 不重派，execution_busy 不表示跨任务争抢目录，只有 End 确认后释放同任务占位。schema 保留旧草稿的身份、快照与引用并升级旧状态；本层不启动执行或定时器。
+定时运行的内部状态与只读核对查询见 [状态说明](internal/store/occurrence-states.md)。采用同步接收后的原身份核对：reconciling 不重派，execution_busy 不表示跨任务争抢目录，只有 End 确认后释放同任务占位。schema 只接受当前状态枚举；本层不启动执行或定时器。

@@ -61,10 +61,6 @@ ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS execution_ref text 
 ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS released boolean NOT NULL DEFAULT true;
 ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 ALTER TABLE v2_schedule_occurrences DROP CONSTRAINT IF EXISTS v2_schedule_occurrences_status_check;
--- Upgrade earlier draft records without dropping their identity or task occupancy.
-UPDATE v2_schedule_occurrences SET status='reconciling',reason='lookup_required',version=version+1 WHERE status='admission_unknown';
-UPDATE v2_schedule_occurrences SET reason='execution_busy' WHERE reason='workspace_busy';
-UPDATE v2_schedule_occurrences SET reason='execution_not_started' WHERE reason='admission_not_accepted';
 ALTER TABLE v2_schedule_occurrences ADD CONSTRAINT v2_schedule_occurrences_status_check CHECK(status IN ('recorded','starting','reconciling','running','cancelling','succeeded','failed','cancelled','interrupted','skipped'));
 CREATE UNIQUE INDEX IF NOT EXISTS v2_schedule_active_occurrence ON v2_schedule_occurrences(schedule_id) WHERE NOT released;
 

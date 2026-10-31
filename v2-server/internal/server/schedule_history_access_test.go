@@ -154,17 +154,16 @@ func TestHistoryRevocationAndUnavailable(t *testing.T) {
 	exec("UPDATE users SET status='disabled' WHERE id=$1", user.ID)
 	check(s, 404)
 	exec("UPDATE users SET status='active' WHERE id=$1", user.ID)
-	// Upgrade prior draft data, then read it through HTTP twice with pool reopening.
+	// Read current states through HTTP twice with pool reopening.
 	for _, tc := range []struct {
-		oldStatus, oldReason, status, reason string
-		version                              int64
+		status, reason string
+		version        int64
 	}{
-		{"admission_unknown", "admission_unknown", "reconciling", "lookup_required", 11},
-		{"skipped", "workspace_busy", "skipped", "execution_busy", 10},
-		{"skipped", "admission_not_accepted", "skipped", "execution_not_started", 10},
+		{"reconciling", "lookup_required", 10},
+		{"skipped", "execution_busy", 10},
+		{"skipped", "execution_not_started", 10},
 	} {
-		exec("ALTER TABLE v2_schedule_occurrences DROP CONSTRAINT v2_schedule_occurrences_status_check")
-		exec("UPDATE v2_schedule_occurrences SET status=$2,reason=$3,version=10 WHERE id=$1", o.ID, tc.oldStatus, tc.oldReason)
+		exec("UPDATE v2_schedule_occurrences SET status=$2,reason=$3,version=10 WHERE id=$1", o.ID, tc.status, tc.reason)
 		for repeat := 0; repeat < 2; repeat++ {
 			s.Close()
 			s, e = store.OpenConfig(ctx, config)
@@ -186,7 +185,7 @@ func TestHistoryRevocationAndUnavailable(t *testing.T) {
 			json.Unmarshal(o.Snapshot, &beforeSnapshot)
 			json.Unmarshal(got.Snapshot, &afterSnapshot)
 			if e != nil || res.StatusCode != 200 || got.Status != tc.status || got.Reason != tc.reason || got.Version != tc.version || got.ID != o.ID || got.ExecutionRef != o.ExecutionRef || got.Released != o.Released || !reflect.DeepEqual(beforeSnapshot, afterSnapshot) {
-				t.Fatalf("upgrade %d: %+v err=%v", repeat, got, e)
+				t.Fatalf("reopen %d: %+v err=%v", repeat, got, e)
 			}
 		}
 	}

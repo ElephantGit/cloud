@@ -19,7 +19,7 @@ export function SquadDialog({ title, subtitle, onClose, children }: { title: str
       queueMicrotask(() => { if (trigger?.isConnected) trigger.focus() })
     }
   }, [])
-  return <dialog ref={ref} className="mc-dialog multica-feature" aria-labelledby="mc-dialog-title" onCancel={event => { event.preventDefault(); onClose() }}>
+  return <dialog ref={ref} className="mc-dialog collaboration-feature" aria-labelledby="mc-dialog-title" onCancel={event => { event.preventDefault(); onClose() }}>
     <header className="mc-dialog-header">
       <div>
         <span className="mc-eyebrow"><Users size={14} />小队</span>

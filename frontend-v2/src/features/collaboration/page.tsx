@@ -15,7 +15,7 @@ import { SquadDetailView } from './squad-detail'
 import { SquadDialog } from './squad-dialog'
 import { SquadForm, type SquadDraft } from './squad-form'
 import { canMaintain, squadTotals } from './squad-model'
-import './multica.css'
+import './collaboration.css'
 
 type Panel = { kind: 'create' } | { kind: 'detail'; id: string } | { kind: 'edit'; id: string } | { kind: 'members'; id: string } | null
 
@@ -85,7 +85,7 @@ export default function Page() {
   const openCreate = () => { setError(''); setPanel({ kind: 'create' }) }
   const openSquad = (id: string) => { setError(''); setPanel({ kind: 'detail', id }) }
 
-  return <div className="multica-feature mc-page">
+  return <div className="collaboration-feature mc-page">
     <div className="mc-workspace-bar">
       <span className="mc-breadcrumb">工作空间<ChevronRight size={13} />协作</span>
       <Badge variant="outline"><FlaskConical data-icon="inline-start" />编组演示</Badge>
@@ -93,7 +93,7 @@ export default function Page() {
     <div className="mc-content">
       <header className="mc-page-header">
         <div>
-          <h1>Multica<Badge variant="secondary" aria-hidden="true">{items.length}</Badge></h1>
+          <h1>协作<Badge variant="secondary" aria-hidden="true">{items.length}</Badge></h1>
           <p>小队把人和 Agent 编在一起承接工作；自动委派与 leader 路由尚未支持。</p>
         </div>
         <Button onClick={openCreate} disabled={!tenantId || list.isLoading || list.isError}><Plus data-icon="inline-start" />新建小队</Button>

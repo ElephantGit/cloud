@@ -30,7 +30,7 @@ npm run e2e           # 端到端测试，自己拉起 v2-server（:8091）和�
 ```text
 src/
   app/          外壳：Provider、路由、布局、左侧图标栏、登录（auth/）
-  features/     每个页面一个目录：chat、multica、workflows、schedules、dashboard
+  features/     每个页面一个目录：chat、collaboration、workflows、schedules、dashboard
   api/          orval 生成的客户端，不手改
   components/   跨页面共用的组件：左栏拖宽手柄（sidebar-resize-handle）；ui/ 是 shadcn 生成的组件，不手改
   lib/          跨页面共用：HTTP 实例（api-client）、登录接口（auth-api）、代码高亮（highlighter，shadcn 生成）、细滚动条样式（scrollbar）

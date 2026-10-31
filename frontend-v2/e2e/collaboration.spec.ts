@@ -6,9 +6,9 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   const suffix = crypto.randomUUID().slice(0, 8)
   const name = `演示小队-${suffix}`
   const colleague = `同事-${suffix}`
-  await page.goto('/multica')
+  await page.goto('/collaboration')
   await page.getByRole('button', { name: '开发者登录' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Multica' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: '协作' })).toBeVisible()
   // The demo login creates the workspace; the second human has to exist before the picker opens.
   await seedWorkspaceMember(colleague)
 

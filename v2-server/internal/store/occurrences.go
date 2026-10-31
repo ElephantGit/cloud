@@ -58,13 +58,17 @@ type Occurrence struct {
 	Snapshot      json.RawMessage `json:"snapshot"`
 	Status        string          `json:"status"`
 	RecordedAt    time.Time       `json:"recordedAt"`
+	Reason        string          `json:"reason"`
+	ExecutionRef  string          `json:"executionRef"`
+	Released      bool            `json:"released"`
+	Version       int64           `json:"version"`
 }
 
-const occurrenceColumns = `id,schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,recorded_at`
+const occurrenceColumns = `id,schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,recorded_at,reason,execution_ref,released,version`
 
 func scanOccurrence(row pgx.Row) (Occurrence, error) {
 	var o Occurrence
-	e := row.Scan(&o.ID, &o.ScheduleID, &o.Kind, &o.Key, &o.ScheduledAt, &o.ConfigVersion, &o.Snapshot, &o.Status, &o.RecordedAt)
+	e := row.Scan(&o.ID, &o.ScheduleID, &o.Kind, &o.Key, &o.ScheduledAt, &o.ConfigVersion, &o.Snapshot, &o.Status, &o.RecordedAt, &o.Reason, &o.ExecutionRef, &o.Released, &o.Version)
 	if errors.Is(e, pgx.ErrNoRows) {
 		e = ErrNotFound
 	}
@@ -143,7 +147,15 @@ func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t
 		if e != nil {
 			return e
 		}
-		out, e = scanOccurrence(tx.QueryRow(ctx, `INSERT INTO v2_schedule_occurrences(schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,recorded_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING `+occurrenceColumns, id, t.Kind, t.Key, t.At, t.Version, snapshot, now))
+		var activeRun bool
+		if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM v2_schedule_occurrences WHERE schedule_id=$1 AND NOT released)`, id).Scan(&activeRun); e != nil {
+			return e
+		}
+		status, reason := "recorded", ""
+		if activeRun {
+			status, reason = "skipped", "previous_unfinished"
+		}
+		out, e = scanOccurrence(tx.QueryRow(ctx, `INSERT INTO v2_schedule_occurrences(schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,reason,recorded_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+occurrenceColumns, id, t.Kind, t.Key, t.At, t.Version, snapshot, status, reason, now))
 		return e
 	})
 	return out, err

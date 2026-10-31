@@ -24,7 +24,7 @@ import (
 
 type brokenHistory struct{ *store.Store }
 
-func (b brokenHistory) ScheduleHistory(context.Context, string, string, string, string, int) ([]store.Occurrence, error) {
+func (b brokenHistory) ScheduleHistory(context.Context, string, string, string, store.OccurrenceCursor, int) ([]store.Occurrence, error) {
 	return nil, errors.New("private database credentials")
 }
 func (b brokenHistory) ScheduleHistoryItem(context.Context, string, string, string, string) (store.Occurrence, error) {

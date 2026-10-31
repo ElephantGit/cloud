@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -156,11 +157,37 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 		}
 		call(path+"/"+o.ID, token, 404)
 	}
-	for i := 0; i < 5; i++ {
-		at := cfg.CreatedAt.Add(time.Duration(i+1) * time.Hour)
-		o, e := s.RecordOccurrence(ctx, tenant, user.ID, cfg.ID, store.Trigger{Kind: "manual", Key: fmt.Sprint(i), Version: 1, At: at}, at)
+	base := cfg.CreatedAt.UTC().Truncate(time.Microsecond)
+	specs := []struct {
+		key        string
+		recordedAt time.Time
+		advance    bool
+	}{
+		{"0", base.Add(1 * time.Hour), false},
+		{"1", base.Add(2 * time.Hour), false},
+		{"2a", base.Add(3 * time.Hour), false},
+		{"2b", base.Add(3 * time.Hour), true},
+		{"2c", base.Add(3 * time.Hour), false},
+		{"3", base.Add(3*time.Hour + 500*time.Millisecond), false},
+		{"4", base.Add(4 * time.Hour), false},
+	}
+	for _, sp := range specs {
+		o, e := s.RecordOccurrence(ctx, tenant, user.ID, cfg.ID, store.Trigger{Kind: "manual", Key: sp.key, Version: 1, At: base.Add(time.Minute)}, sp.recordedAt)
 		if e != nil {
 			t.Fatal(e)
+		}
+		if sp.advance {
+			for _, ev := range []store.ExecutionEvidence{
+				{Event: "begin"},
+				{Event: "accepted", Ref: "stable-ref"},
+				{Event: "completed", Ref: "stable-ref"},
+				{Event: "released", Ref: "stable-ref"},
+			} {
+				o, e = s.ApplyOccurrenceEvidence(ctx, tenant, user.ID, o.ID, o.Version, ev)
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
 		}
 		expected[o.ID] = o
 	}
@@ -170,15 +197,25 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 		t.Fatal("missing next cursor")
 	}
 	seen := map[string]bool{}
+	var prevRecorded time.Time
 	previous := ""
 	page := first
 	for {
 		for _, item := range page["items"].([]any) {
-			id := item.(map[string]any)["id"].(string)
-			if seen[id] || expected[id].ID == "" || (previous != "" && id >= previous) {
-				t.Fatal("duplicate, foreign or unordered item")
+			row := item.(map[string]any)
+			id := row["id"].(string)
+			rec, e := time.Parse(time.RFC3339Nano, row["recordedAt"].(string))
+			if e != nil {
+				t.Fatal(e)
+			}
+			if seen[id] || expected[id].ID == "" || !rec.Equal(expected[id].RecordedAt) {
+				t.Fatalf("duplicate, foreign or mutated item: %v", row)
+			}
+			if previous != "" && (prevRecorded.Before(rec) || (prevRecorded.Equal(rec) && previous <= id)) {
+				t.Fatalf("unordered item: prev=(%v,%s) curr=(%v,%s)", prevRecorded, previous, rec, id)
 			}
 			seen[id] = true
+			prevRecorded = rec
 			previous = id
 		}
 		next := page["nextCursor"].(string)
@@ -187,10 +224,24 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 		}
 		page = call(path+"?limit=2&cursor="+url.QueryEscape(next), token, 200)
 	}
-	if len(seen) != 5 {
-		t.Fatal(seen)
+	if len(seen) != len(specs) || !prevRecorded.Equal(specs[0].recordedAt) {
+		t.Fatalf("seen=%d tail=%v", len(seen), prevRecorded)
 	}
 	call(emptyPath+"?cursor="+cursor, token, 400)
+	encodeCursor := func(v any) string {
+		raw, _ := json.Marshal(v)
+		return base64.RawURLEncoding.EncodeToString(raw)
+	}
+	badCursors := []string{
+		encodeCursor(map[string]any{"Tenant": tenant, "User": user.ID, "Schedule": cfg.ID, "Before": previous}),
+		encodeCursor(map[string]any{"tenant": tenant, "user": user.ID, "schedule": cfg.ID, "id": previous}),
+		encodeCursor(map[string]any{"tenant": tenant, "user": user.ID, "schedule": cfg.ID, "recordedAt": prevRecorded.Format(time.RFC3339Nano)}),
+		encodeCursor(map[string]any{"tenant": tenant, "user": user.ID, "schedule": cfg.ID, "recordedAt": prevRecorded.Add(500 * time.Nanosecond).Format(time.RFC3339Nano), "id": previous}),
+		encodeCursor(map[string]any{"tenant": tenant, "user": user.ID, "schedule": cfg.ID, "recordedAt": prevRecorded.Format(time.RFC3339Nano), "id": previous, "extra": 1}),
+	}
+	for _, bc := range badCursors {
+		call(path+"?cursor="+url.QueryEscape(bc), token, 400)
+	}
 	for _, q := range []string{"limit=0", "limit=101", "limit=-1", "limit=x", "limit=1&limit=2", "cursor=bad", "cursor=a&cursor=b", "userId=forged", "limit="} {
 		call(path+"?"+q, token, 400)
 	}
@@ -211,7 +262,7 @@ func TestScheduleHistoryHTTP(t *testing.T) {
 	}
 	srv.Close()
 	srv = httptest.NewServer(server.New(s, server.Options{}))
-	replay := call(path+"?limit=2&cursor="+cursor, token, 200)
+	replay := call(path+"?limit=2&cursor="+url.QueryEscape(cursor), token, 200)
 	if len(replay["items"].([]any)) != 2 {
 		t.Fatal(replay)
 	}

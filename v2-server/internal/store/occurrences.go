@@ -4,13 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"strings"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/wanglongan587/cloud/v2-server/internal/schedule"
-	"time"
 )
 
 // ErrIneligible means a new automatic trigger is paused, future, or outside its saved rule.
 var ErrIneligible = errors.New("trigger ineligible")
+
+var occurrenceUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Trigger identifies a scheduled instant or an explicitly requested manual occurrence.
 // Key is a caller-generated stable manual request ID; automatic keys are derived internally.
@@ -18,6 +23,27 @@ type Trigger struct {
 	Kind, Key string
 	At        time.Time
 	Version   int64
+}
+
+// OccurrenceCursor identifies the last seen row in descending (recorded_at, id) order.
+// A zero value starts from the newest occurrence.
+type OccurrenceCursor struct {
+	RecordedAt time.Time
+	ID         string
+}
+
+func normalizeOccurrenceCursor(before OccurrenceCursor) (OccurrenceCursor, bool) {
+	if before.RecordedAt.IsZero() && before.ID == "" {
+		return OccurrenceCursor{}, true
+	}
+	if before.RecordedAt.IsZero() || !occurrenceUUID.MatchString(before.ID) {
+		return OccurrenceCursor{}, false
+	}
+	utc := before.RecordedAt.UTC()
+	if !utc.Equal(utc.Truncate(time.Microsecond)) {
+		return OccurrenceCursor{}, false
+	}
+	return OccurrenceCursor{RecordedAt: utc, ID: strings.ToLower(before.ID)}, true
 }
 
 // Occurrence is a frozen domain record, not proof that any execution started.
@@ -54,6 +80,7 @@ func scanOccurrence(row pgx.Row) (Occurrence, error) {
 func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t Trigger, now time.Time) (Occurrence, error) {
 	var out Occurrence
 	t.At = t.At.UTC().Truncate(time.Microsecond)
+	now = now.UTC().Truncate(time.Microsecond)
 	if t.At.IsZero() || now.IsZero() || t.Version < 1 || t.At.After(now) {
 		return out, ErrIneligible
 	}
@@ -128,15 +155,19 @@ func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t
 		if activeRun {
 			status, reason = "skipped", "previous_unfinished"
 		}
-		out, e = scanOccurrence(tx.QueryRow(ctx, `INSERT INTO v2_schedule_occurrences(schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING `+occurrenceColumns, id, t.Kind, t.Key, t.At, t.Version, snapshot, status, reason))
+		out, e = scanOccurrence(tx.QueryRow(ctx, `INSERT INTO v2_schedule_occurrences(schedule_id,kind,trigger_key,scheduled_at,config_version,snapshot,status,reason,recorded_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+occurrenceColumns, id, t.Kind, t.Key, t.At, t.Version, snapshot, status, reason, now))
 		return e
 	})
 	return out, err
 }
 
-// Occurrences reads a bounded page in descending immutable ID order within caller ownership.
-func (s *Store) Occurrences(ctx context.Context, tenant, user, id string, before string, limit int) ([]Occurrence, error) {
+// Occurrences reads a bounded page in descending (recorded_at, id) order within caller ownership.
+func (s *Store) Occurrences(ctx context.Context, tenant, user, id string, before OccurrenceCursor, limit int) ([]Occurrence, error) {
 	if limit < 1 || limit > 100 {
+		return nil, ErrIneligible
+	}
+	cursor, ok := normalizeOccurrenceCursor(before)
+	if !ok {
 		return nil, ErrIneligible
 	}
 	ok, e := s.ScheduleMember(ctx, tenant, user)
@@ -154,7 +185,12 @@ func (s *Store) Occurrences(ctx context.Context, tenant, user, id string, before
 	if !found {
 		return nil, ErrNotFound
 	}
-	rows, e := s.pool.Query(ctx, `SELECT `+occurrenceColumns+` FROM v2_schedule_occurrences WHERE schedule_id=$1 AND ($2='' OR id<NULLIF($2,'')::uuid) ORDER BY id DESC LIMIT $3`, id, before, limit)
+	var rows pgx.Rows
+	if cursor.ID == "" {
+		rows, e = s.pool.Query(ctx, `SELECT `+occurrenceColumns+` FROM v2_schedule_occurrences WHERE schedule_id=$1 ORDER BY recorded_at DESC,id DESC LIMIT $2`, id, limit)
+	} else {
+		rows, e = s.pool.Query(ctx, `SELECT `+occurrenceColumns+` FROM v2_schedule_occurrences WHERE schedule_id=$1 AND (recorded_at,id)<($2::timestamptz,$3::uuid) ORDER BY recorded_at DESC,id DESC LIMIT $4`, id, cursor.RecordedAt, cursor.ID, limit)
+	}
 	if e != nil {
 		return nil, e
 	}

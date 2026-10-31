@@ -56,6 +56,19 @@ tasks:
   demo:both:
     internal: true
     deps: [server, demo:web]
+  deepseek:
+    desc: 'Cloud v2 against DeepSeek Flash with the key from v2-server/.env (see .env.example); open http://localhost:5173'
+    cmds:
+      # Validate the key before starting anything, so a missing key never leaves half the stack running.
+      - bash scripts/deepseek.sh --check
+      - task: db
+      - task: deepseek:both
+  deepseek:both:
+    internal: true
+    deps: [deepseek:server, web]
+  deepseek:server:
+    internal: true
+    cmds: [bash scripts/deepseek.sh]
   demo:web:
     internal: true
     dir: ../frontend-v2

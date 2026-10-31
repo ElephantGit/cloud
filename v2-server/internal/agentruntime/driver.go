@@ -58,6 +58,9 @@ func New(opts Options) (*Driver, error) {
 	if !filepath.IsAbs(opts.Root) || !filepath.IsAbs(opts.AssetsDirectory) || !filepath.IsAbs(opts.GitBackend) || opts.ResolveProject == nil || len(opts.Bindings) == 0 {
 		return nil, errors.New("invalid Agent runtime configuration")
 	}
+	if _, err := nodeservices.HostOpenCodePackage(); err != nil {
+		return nil, err
+	}
 	guardianSocket := filepath.Join(opts.Root, "0000000000000000", "w", "h", "scopes", "00000000-0000-0000-0000-000000000001", "control.sock")
 	if filepath.Clean(opts.Root) != opts.Root || len(guardianSocket) >= 108 {
 		return nil, errors.New("Agent runtime root exceeds the Unix socket path limit; choose a shorter, clean V2_DATA_DIR")

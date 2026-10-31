@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test'
 
-test('unavailable target kinds stay disabled and no sample project is presented as executable', async ({ page }) => {
+test('unwired target kinds stay disabled, real Fixture model is selectable, and no sample project is presented', async ({ page }) => {
   await page.goto('/schedules')
   await page.getByRole('button', { name: '开发者登录' }).click()
   await page.locator('header').getByRole('button', { name: '新建任务', exact: true }).click()
@@ -27,5 +27,5 @@ test('unavailable target kinds stay disabled and no sample project is presented 
   await dialog.getByRole('button', { name: '继续编辑' }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: test.info().outputPath('resources-unavailable-mobile.png'), fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('schedule-form-resources-mobile.png'), fullPage: true })
 })

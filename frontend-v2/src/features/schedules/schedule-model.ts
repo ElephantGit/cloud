@@ -3,7 +3,7 @@ export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: stri
 export type ChatTarget = { kind: 'chat'; prompt: string; agent: string; model: string; executorId?: string }
 export type LegacyTarget = { kind: 'workflow' | 'task'; [key:string]:unknown }
 export type Target = ChatTarget | LegacyTarget
-export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; target: Target; projectName: string; output: string; reason?:string;released?:boolean }
+export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; reason?:string;released?:boolean }
 export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
 export type Draft = { name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;model:string;executorId?:string;rule:Rule }
 export type Catalog = { projects:{id:string;name:string;description:string}[];models?:{id:string;name:string}[];executors?:{id:string;name:string;agentName:string;modelId:string}[];available?:{projects:boolean;models:boolean;executors:boolean} }
@@ -77,17 +77,4 @@ export function nextTimes(rule: Rule, now = new Date(), anchor = now): Date[] {
 }
 export function formatTime(value: Date | string, timezone = 'Asia/Shanghai') {
   return new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value))
-}
-export function sampleTasks(now = new Date()): Task[] {
-  const ago = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString()
-  const chat: Target = { kind: 'chat', prompt: '整理过去 24 小时的重要 AI 产品动态。选出 5 条值得关注的消息，附来源和一句话解读。', agent: 'Ora Assistant', model: '演示默认模型' }
-  const base = emptyDraft().rule
-  const items: Task[] = [
-    { id: 'morning', name: '每日 AI 简报', projectId: '', target: chat, rule: base, enabled: true, createdAt: ago(168), runs: [] },
-    { id: 'summary', name: '研发进展日报', projectId: 'product', target: { ...chat, prompt: '总结今天的研发进展、未解决的问题和下一步计划。请分点列出。' }, rule: { ...base, kind: 'weekdays', time: '18:00' }, enabled: true, createdAt: ago(96), runs: [] },
-  ]
-  return items.map((t, i) => ({ ...t, runs: [{ id: `sample-${i}`, startedAt: ago(i === 3 ? 20 : i + 2), status: i === 3 ? 'failed' : 'success', target: structuredClone(t.target), projectName: projectName(t.projectId), output: i === 3 ? '演示失败：数据源暂时不可用。检查项目资料后可再次模拟运行。' : sampleOutput(t.target) }] }))
-}
-export function sampleOutput(target: Target) {
-  return target.kind === 'chat' ? '本次任务已完成。\n\n01  重点信息已整理\n已根据任务指令汇总关键变化，保留后续需要跟进的事项。\n\n02  值得关注\n有两项内容建议进一步核对原始资料。\n\n03  下一步\n查看项目进展，并在下一次运行时重新检查。\n\n这是一份预设演示结果，未调用模型或读取真实资料。' : '检查完成，结果已汇总。\n\n✓ 输入参数已接收\n✓ 项目内容检查完成（模拟）\n✓ 结果摘要已生成\n\n建议：发布前确认变更范围与文档同步情况。\n\n这是预设工作流演示，未运行代码或访问项目文件。'
 }

@@ -4,15 +4,18 @@
 Root 是后端配置，不接浏览器目录。`Create(ctx, scope, Input)` 检查成员关系后同步执行一次
 `git clone --mirror`，验证指定分支，创建固定 snapshot ref，最后写入 Project。
 `SnapshotRef(projectID, commit)` 与固定 Node 的 clone 协议匹配；镜像路径、snapshot ref 和 commit
-供后续执行装配读取，本模块不创建 Node 或对话目录。`main` 尚未注入 Projects；未配置时 HTTP 返回
+供执行装配读取，本模块不创建 Node 或对话目录。`main` 将本服务注入 Projects；显式未配置时 HTTP 返回
 503 `projects_unavailable`。
 
 内部 `SeedDemo(ctx, scope)` 为可信调用方准备本地演示仓库：在 Root 下生成私有临时源，
 git init、提交 README、clone --mirror，按同一流程固定 snapshot 并保存 `fixture://demo` 项目。
-同租户重复调用复用已有项目，不接受调用者指定的源路径；构造服务与 HTTP 请求不会自动 seed，
-HTTP 仍禁止 fixture/file scheme。
+同租户重复调用复用已有项目，不接受调用者指定的源路径；普通启动为开发登录的演示团队调用一次，
+构造服务和 HTTP 请求不会自行 seed，HTTP 仍禁止 fixture/file scheme。
 
 默认只接受无 userinfo、query、fragment 的 HTTPS 仓库地址，不接受 SSH、本地路径或凭据引用。
+v2 的信任模型是本机或可信网络中的演示环境，租户成员可信。创建项目会让服务器访问成员给出的
+任意 HTTPS 地址；HTTPS 不限制 host，包括私网与 loopback，DNS 也可能解析到这些地址。
+当前没有连接层的目标地址隔离，不能将此服务作为面向不可信成员的仓库抓取代理。
 Git 不继承用户配置、HOME、代理、SSH、askpass 或凭据 helper；不执行 hooks，不跟随 HTTP 重定向。
 命令有两分钟期限、有限输出、不经 shell；错误不返回 Git stderr。测试可显式启用 AllowLoopbackHTTP，
 仅允许数字 loopback HTTP 地址，生产不能启用。
@@ -20,6 +23,7 @@ Git 不继承用户配置、HOME、代理、SSH、askpass 或凭据 helper；不
 创建后删除 mirror 的 origin 配置，后续不 fetch。上游变化不会改变 Project.Commit 或 snapshot ref。
 clone/分支失败不写项目并清理准备目录。数据库返回错误后保留已准备的镜像，避免连接中断时删除可能已被记录引用的目录；
 这些镜像保留供管理员核对。本模块不提供删除、执行目录清理或 Agent 改动回写；重新构造服务不删除仓库。
+启动入口的 `-cleanup` 只删除确认停止后的登记 Node/对话目录，保留这里的仓库 mirror。
 
 ## 契约之外
 

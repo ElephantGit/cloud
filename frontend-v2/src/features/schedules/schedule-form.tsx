@@ -21,7 +21,7 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
  const control=(name:string)=>({id:`schedule-${name}`,'aria-invalid':!!errors[name],'aria-describedby':errors[name]?`error-${name}`:undefined})
  const models=data.models??[]
  const executors=(data.executors??[]).filter(e=>!draft.model||e.modelId===draft.model)
- const unavailable=resourcesLoading||!!resourcesError
+ const unavailable=resourcesLoading||(!!resourcesError&&!data.available?.models&&!data.available?.projects)
  function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault()
   if(saving||blocked||resourcesLoading||draft.kind!=='chat')return

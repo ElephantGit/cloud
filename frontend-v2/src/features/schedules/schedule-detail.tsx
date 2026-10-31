@@ -7,7 +7,7 @@ import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import type { ScheduleResources } from './api/generated'
 import { type Catalog, formatTime, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
-import { compareOccurrences, compareTimestampsDesc, completeResult, finishManualRequest, manualRequestKey, reasonText, runLabels, runnable, scheduleError } from './runtime'
+import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isTerminalActionRejection, manualRequestKey, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
 export function RunStatus({run}:{run?:Run}) {
  const success=run?.status==='succeeded'||run?.status==='success'
@@ -22,14 +22,16 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const [notice,setNotice]=useState('')
  const [now]=useState(()=>new Date())
  const history=useInfiniteQuery({queryKey:['schedule-history',scope,task.id],initialPageParam:'',queryFn:({pageParam,signal})=>listScheduleHistory(tenantId,task.id,{limit:20,...(pageParam?{cursor:pageParam}:{})},undefined,signal),getNextPageParam:page=>page.nextCursor||undefined,retry:false,refetchInterval:3000})
- const rows=history.isError?[]:[...new Map((history.data?.pages.flatMap(p=>p.items)??[]).map(r=>[r.id,r])).values()].sort(compareOccurrences)
- const exact=useQuery({queryKey:['schedule-history-item',scope,task.id,runId],queryFn:({signal})=>getScheduleHistoryItem(tenantId,task.id,runId,undefined,signal),enabled:!!runId&&!rows.some(r=>r.id===runId)&&!history.isError,retry:false,refetchInterval:3000})
+ const hasHistory=history.data!==undefined
+ const rows=[...new Map((history.data?.pages.flatMap(p=>p.items)??[]).map(r=>[r.id,r])).values()].sort(compareOccurrences)
+ const exact=useQuery({queryKey:['schedule-history-item',scope,task.id,runId],queryFn:({signal})=>getScheduleHistoryItem(tenantId,task.id,runId,undefined,signal),enabled:!!runId&&!rows.some(r=>r.id===runId),retry:false,refetchInterval:3000})
  const selected=runId?(rows.find(r=>r.id===runId)??(exact.isError?undefined:exact.data)):rows[0]
- const observed=history.isError?undefined:[rows[0],exact.isError?undefined:exact.data].filter(r=>!!r).sort((a,b)=>compareTimestampsDesc(a.scheduledAt,b.scheduledAt)||compareOccurrences(a,b))[0]
+ const freshExact=!exact.isError&&exact.data&&!rows.some(r=>r.id===exact.data!.id)?exact.data:undefined
+ const observed=[rows[0],freshExact].filter(r=>!!r).sort((a,b)=>compareTimestampsDesc(a.scheduledAt,b.scheduledAt)||compareOccurrences(a,b))[0]
  useEffect(()=>{if(observed)onObserved?.(observed)},[observed,onObserved])
- const output=useQuery({queryKey:['schedule-result',scope,task.id,selected?.id],queryFn:({signal})=>getScheduleExecutionResult(tenantId,task.id,selected!.id,undefined,signal),enabled:tab==='history'&&!!selected?.executionRef&&!history.isError,retry:false,refetchInterval:selected&&!selected.released?2000:false})
- const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
- const cancel=useMutation({mutationFn:(id:string)=>cancelScheduleRun(tenantId,task.id,id,{}),retry:false,onSuccess:receipt=>{onObserved?.(receipt);setOperationError('');setNotice('取消请求已处理，当前状态见运行历史。');void history.refetch();void output.refetch()},onError:error=>{setOperationError(scheduleError(error,'取消失败，运行状态未确认，请稍后重试。'));void history.refetch()}})
+ const output=useQuery({queryKey:['schedule-result',scope,task.id,selected?.id],queryFn:({signal})=>getScheduleExecutionResult(tenantId,task.id,selected!.id,undefined,signal),enabled:tab==='history'&&!!selected?.executionRef,retry:false,refetchInterval:selected&&!selected.released?2000:false})
+ const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{const oid=errorOccurrenceId(error);if(oid)setRunId(oid);if(isTerminalActionRejection(error))finishManualRequest(scope,task.id);setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
+ const cancel=useMutation({mutationFn:(id:string)=>cancelScheduleRun(tenantId,task.id,id,{}),retry:false,onSuccess:receipt=>{onObserved?.(receipt);setOperationError('');setNotice('取消请求已处理，当前状态见运行历史。');void history.refetch();if(selected?.executionRef)void output.refetch()},onError:error=>{setOperationError(scheduleError(error,'取消失败，运行状态未确认，请稍后重试。'));void history.refetch()}})
  const busy=run.isPending||cancel.isPending
  const occupied=rows.some(r=>!r.released)||!!selected&&!selected.released
  const available=runnable(task,resources)
@@ -52,7 +54,8 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     <p className="sp-helper">每次独立执行，结果保存在本任务的运行历史。计划暂停不停止已开始的运行。</p>
    </>:<>
     <div className="sp-detail-toolbar"><strong>运行记录</strong><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={history.isFetching} onClick={()=>void history.refetch()}><RefreshCw data-icon="inline-start"/>刷新状态</Button></div>
-    {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
+    {history.isError&&hasHistory&&<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>}
+    {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError&&!hasHistory?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')}</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
      <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><span>{runLabels[r.status]}</span><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small></button>)}</div>
      {history.hasNextPage&&<Button variant="outline" disabled={history.isFetchingNextPage} onClick={()=>void history.fetchNextPage()}>{history.isFetchingNextPage?'加载中…':'加载更多记录'}</Button>}
      <p className="sp-helper">记录按记录时间倒序分页读取。停留在详情时自动刷新。</p>
@@ -73,6 +76,6 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
    {operationError&&<p role="alert">{operationError}</p>}
    {notice&&!operationError&&<p role="status">{notice}</p>}
   </div>
-  <footer className="sp-detail-footer"><Button size="sm" disabled={!available||busy||occupied} onClick={()=>{setNotice('');run.mutate()}}><Play data-icon="inline-start"/>{run.isPending?'正在提交…':run.isError?'重试运行请求':'立即运行'}</Button><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy||toggling} onClick={onToggle}>{task.enabled?<Pause data-icon="inline-start"/>:<Play data-icon="inline-start"/>}{task.enabled?'暂停任务':'恢复任务'}</Button></footer>
+  <footer className="sp-detail-footer"><Button size="sm" disabled={!available||busy||occupied} onClick={()=>{setNotice('');run.mutate()}}><Play data-icon="inline-start"/>{run.isPending?'正在提交…':run.isError&&!isTerminalActionRejection(run.error)?'重试运行请求':'立即运行'}</Button><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy||toggling} onClick={onToggle}>{task.enabled?<Pause data-icon="inline-start"/>:<Play data-icon="inline-start"/>}{task.enabled?'暂停任务':'恢复任务'}</Button></footer>
  </div>
 }

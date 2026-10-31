@@ -39,7 +39,8 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const client = useQueryClient()
   const configs = useQuery({ queryKey: ['schedule-configs', scope], queryFn: ({signal}) => listScheduleConfigs(tenantId,undefined,signal), enabled: !!tenantId, retry:false })
   const resourceQuery = useQuery({ queryKey:['schedule-resources',scope],queryFn:({signal})=>getScheduleResources(tenantId,undefined,signal),enabled:!!tenantId,retry:false,refetchInterval:30_000 })
-  const resources = resourceQuery.isError?emptyResources:resourceQuery.data??emptyResources
+  const hasResources = resourceQuery.data !== undefined
+  const resources = resourceQuery.data ?? emptyResources
   const data=resourceCatalog(resources)
   const observed=useQuery<Record<string,ScheduleActionReceipt>>({queryKey:['schedule-observed',scope],queryFn:()=>({}),enabled:false,initialData:{}})
   const onObserved=useCallback((record:ScheduleActionReceipt)=>{
@@ -49,7 +50,8 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
       return {...old,[record.scheduleId]:record}
     })
   },[client,scope])
-  const tasks: Task[] = (configs.isError?[]:configs.data?.items??[]).map(item=>{const run=observed.data[item.id];return {...item,runs:run?[{id:run.id,startedAt:run.scheduledAt,status:run.status,target:item.target,projectName:'',output:'',released:run.released,reason:run.reason}]:[]}})
+  const hasConfigs = configs.data !== undefined
+  const tasks: Task[] = (configs.data?.items??[]).map(item=>{const run=observed.data[item.id];return {...item,runs:run?[{id:run.id,startedAt:run.scheduledAt,status:run.status,released:run.released,reason:run.reason}]:[]}})
   const refresh=()=>client.invalidateQueries({queryKey:['schedule-configs',scope]})
   const [saveError, setSaveError] = useState('')
   const [conflict, setConflict] = useState(false)
@@ -88,11 +90,11 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
     <div className="sp-content">
       <header className="sp-page-header">
         <div><h1>定时任务<Badge variant="secondary" aria-hidden="true">{tasks.length}</Badge></h1><p>配置执行内容与时间，在任务历史中查看真实运行结果。</p></div>
-        <Button disabled={!tenantId || configs.isLoading || configs.isError} onClick={openCreate}><Plus data-icon="inline-start" />新建任务</Button>
+        <Button disabled={!tenantId || configs.isLoading || (configs.isError && !hasConfigs)} onClick={openCreate}><Plus data-icon="inline-start" />新建任务</Button>
       </header>
 
       <div className="sp-resource-status" aria-live="polite">
-        {resourceQuery.isPending?'正在读取执行资源…':resourceQuery.isError?scheduleError(resourceQuery.error,'执行资源加载失败。'):!resources.available.models?'执行服务尚未就绪，当前可保存未绑定模型的配置。':'项目、模型与执行器来自当前工作空间；执行以运行记录为准。'}
+        {resourceQuery.isPending?'正在读取执行资源…':resourceQuery.isError?`${scheduleError(resourceQuery.error,'执行资源加载失败。')}${hasResources?' 当前继续使用上次读取的资源。':''}`:!resources.available.models?'执行服务尚未就绪，当前可保存未绑定模型的配置。':'项目、模型与执行器来自当前工作空间；执行以运行记录为准。'}
         <Button variant="outline" size="sm" disabled={resourceQuery.isFetching} onClick={()=>void resourceQuery.refetch()}>刷新资源</Button>
       </div>
       <div className="sp-summary-strip" aria-label="任务概览">
@@ -110,7 +112,8 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
           </div>
         </div>
 
-        {tenantsLoading || configs.isLoading ? <p role="status">正在加载任务…</p> : tenantsError || configs.isError ? <p role="alert">加载失败，请刷新重试。</p> : !tenantId ? <p role="alert">没有可用的工作空间。</p> : filtered.length ? <ScheduleTable data={data} tasks={filtered} now={now} onOpen={open} onToggle={toggleTask} toggling={toggleMutation.isPending} /> : <Empty className="min-h-72 border">
+        {configs.isError && hasConfigs && <p role="alert" className="sp-helper">列表刷新失败，当前继续显示已有任务。</p>}
+        {tenantsLoading || configs.isLoading ? <p role="status">正在加载任务…</p> : (tenantsError || configs.isError) && !hasConfigs ? <p role="alert">加载失败，请刷新重试。</p> : !tenantId ? <p role="alert">没有可用的工作空间。</p> : filtered.length ? <ScheduleTable data={data} tasks={filtered} now={now} onOpen={open} onToggle={toggleTask} toggling={toggleMutation.isPending} /> : <Empty className="min-h-72 border">
           <EmptyHeader><EmptyMedia variant="icon"><CalendarClock /></EmptyMedia><EmptyTitle>{tasks.length ? '没有匹配的任务' : '安排第一个定时任务'}</EmptyTitle><EmptyDescription>{tasks.length ? '调整关键词或筛选条件，再试一次。' : '从每日简报或每周项目检查开始。'}</EmptyDescription></EmptyHeader>
           <EmptyContent><Button variant="outline" onClick={() => tasks.length ? clearFilters() : openCreate()}>{tasks.length ? '清除筛选' : '新建任务'}</Button></EmptyContent>
         </Empty>}

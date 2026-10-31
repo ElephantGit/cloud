@@ -17,6 +17,8 @@ export function scheduleError(error: unknown, fallback: string) {
     schedule_execution_unavailable: '执行服务尚未就绪，请稍后重试。', schedule_resources_unavailable: '模型或执行资源尚未就绪，配置未保存。',
     stop_unconfirmed: '停止尚未确认，任务仍可能运行。请刷新状态或再次取消。', operation_in_progress: '此运行正在处理，请稍后重试同一操作。', operation_incomplete: '操作结果尚未确认，请重试同一请求，不要另建任务。',
     version_conflict: '任务已被其他操作修改，请关闭后重新打开。', execution_conflict: '运行状态已变化，请刷新后重试。', invalid_project_executor: '请选择该项目可用的执行器。',
+    execution_busy: '执行器正忙，本次请求已跳过。', execution_target_unavailable: '所选模型或项目当前不可用，本次请求已跳过。',
+    invalid_execution_request: '运行配置无效，请检查任务设置后重试。', execution_unsupported: '当前执行方式不受支持，请修改配置后重试。',
   }
   if (messages[code]) return messages[code]
   if (error.response?.status === 401) return '登录已失效，请重新登录。'
@@ -25,13 +27,23 @@ export function scheduleError(error: unknown, fallback: string) {
   if (!error.response) return '网络连接中断，结果尚未确认。请重试同一操作。'
   return fallback
 }
+export function errorOccurrenceId(error: unknown) {
+  if (!isAxiosError(error)) return ''
+  const id = error.response?.data?.params?.occurrenceId
+  return typeof id === 'string' ? id : ''
+}
+export function isTerminalActionRejection(error: unknown) {
+  if (!isAxiosError(error)) return false
+  const code: string = error.response?.data?.code ?? ''
+  return error.response?.status === 400 || code === 'execution_busy' || code === 'execution_target_unavailable'
+}
 export function runnable(task: Task, r: ScheduleResources) {
   const target=task.target
   if(target.kind!=='chat')return false
   if(!task.projectId)return r.available.models&&r.models.some(m=>m.id===target.model)
   return r.available.projects&&r.available.executors&&r.projects.some(p=>p.id===task.projectId)&&r.executors.some(e=>e.id===target.executorId&&e.modelId===target.model)
 }
-export function occurrenceRun(o: Occurrence, task: Task): Run { return { id:o.id, startedAt:o.scheduledAt,status:o.status,target:task.target,projectName:'',output:'',reason:o.reason,released:o.released } }
+export function occurrenceRun(o: Occurrence): Run { return { id:o.id, startedAt:o.scheduledAt,status:o.status,reason:o.reason,released:o.released } }
 export function completeResult(result: ExecutionResult | undefined) { return result?.result?.status === 'completed' && result.result.answerComplete }
 
 const rfc3339Instant = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/i

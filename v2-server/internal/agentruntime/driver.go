@@ -175,12 +175,13 @@ func (d *Driver) End(ctx context.Context, sid string) error {
 	case <-ctx.Done():
 		return execution.ErrStopUnconfirmed
 	case <-a.project.dead:
-		select {
-		case <-a.stopped:
-			return nil
-		default:
+		// A disconnected Node cannot acknowledge End. Retire its entire incarnation
+		// and require the supervisor's process-tree proof before releasing any owner.
+		if err := a.project.close(ctx); err != nil {
 			return execution.ErrStopUnconfirmed
 		}
+		d.dropProject(a.project)
+		return nil
 	}
 }
 

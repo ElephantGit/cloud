@@ -18,7 +18,7 @@ err = driver.Close(ctx)
 
 每项目一个 Node、一组 Git/插件/模型服务和一个 IPC Receive dispatcher。不同 `WorkspaceID` 对应不同 clone 执行和 checkout；同 workflow run 由上层给相同 WorkspaceID。Node 可并发接收 clone，实际 Git 步骤串行；不同 checkout 的 Agent session 可以同时运行。相同 checkout 的前一 session 必须 End 后才可交给下一 session，不能把两者同时派发到同一目录。
 
-每个逻辑 session 只有一个物理 Agent execution。首次 Run 安装一次项目插件、准备 checkout 后 Start；正常 Append 使用 `submit_user_turn`，保留原 Agent 上下文。Agent 失败或结束后不会自动创建新 execution。共享 Node 进程仅由 Close 停止，单会话 End 不终止同项目其他会话。
+每个逻辑 session 只有一个物理 Agent execution。首次 Run 安装一次项目插件、准备 checkout 后 Start；正常 Append 使用 `submit_user_turn`，保留原 Agent 上下文。Agent 失败或结束后不会自动创建新 execution。共享 Node 健康时，单会话 End 不终止同项目其他会话；Node 已不可用时，End 会请求 supervisor 停止整个旧 incarnation。
 
 项目初始化或 checkout 准备失败不永久缓存；尚未派发 Start 的失败 session 会撤销目录占用并从准备缓存移除，同一逻辑 session 可以重新准备。控制命令（包括插件安装与 clone）各自最多等待两分钟，单帧发送另有十秒上限；一次准备等待最多三分钟，失败后的停止确认另受清理调用的 context 约束。每次尝试使用新的控制 execution ID，迟到回复不会被后一次尝试接收。已收到明确失败的 clone 可重试；超时或传输断开属于执行结果不确定，整个 Node incarnation 会变为不可用，不能把它当作目录忙或只重发 clone。
 
@@ -32,7 +32,7 @@ err = driver.Close(ctx)
 
 所有带 sequence 的原始 envelope 先写入项目内 `node-events.jsonl` 并 fsync；Agent 历史和轮次终态还必须等 `emit` 成功才 ACK。`emit(TurnEnded)` 须在一个事务中保留结果和终态。回调失败后不 ACK 该 session 的后续消息，并请求停止它；错误正文不外泄。日志只是原始证据，业务真相仍在 PostgreSQL。
 
-End 等待当前 Node incarnation 的有效 `agent_session_ended`；缺字段、未知原因、错 Node / incarnation 或传输断开不能当成停止确认。超时返回 `ErrStopUnconfirmed`，上层不能释放目录或派发后继。Close 最后通过已有 Node supervisor 确认所有自有进程退出；失败可重试。目录和工具写入在正常 End/Close 后保留。
+End 等待当前 Node incarnation 的有效 `agent_session_ended`；缺字段、未知原因、错 Node / incarnation 或传输断开不能当成停止确认。项目已 dead/fatal 时，End 使用调用方 context 走 supervisor 清理；确认旧进程树停止并完成关闭后移除原项目条目，不需要另一个 Run 触发回收。停止失败或超时返回 `ErrStopUnconfirmed`，保留原项目，供后续 End 重试；上层不能释放目录或派发后继。Close 最后通过已有 Node supervisor 确认所有自有进程退出；失败可重试。目录和工具写入在正常 End/Close 后保留。
 
 ## 恢复与清理
 

@@ -427,6 +427,99 @@ func TestDriverIPCDisconnectRequiresStopProofBeforeRebuild(t *testing.T) {
 	}
 }
 
+func TestDriverIPCEndDisconnectedSessionStopsProjectBeforeWorkspaceReuse(t *testing.T) {
+	h := newIPCHarness(t, nil)
+	ctx := ipcContext(t)
+	session := h.session("first", "workspace")
+	done := startIPCRun(h, ctx, session, "turn", discardIPCEvent)
+	old := receiveIPC(t, h.created)
+	nextIPCCommand(t, old, "start_agent_session")
+	old.stopOK.Store(false)
+	t.Cleanup(func() { old.stopOK.Store(true) })
+	old.Close()
+	if got := receiveIPC(t, done); got.result.FailureCode != "agent_transport_closed" || got.err == nil {
+		t.Fatalf("disconnect result: %+v", got)
+	}
+	if err := h.driver.End(ctx, session.ID); !errors.Is(err, execution.ErrStopUnconfirmed) {
+		t.Fatalf("End without supervisor proof: %v", err)
+	}
+	if old.stops.Load() != 1 {
+		t.Fatalf("End did not request supervisor stop: calls=%d", old.stops.Load())
+	}
+	h.driver.mu.Lock()
+	retained := h.driver.projects["project"] == old.project
+	a := h.driver.sessions[session.ID]
+	h.driver.mu.Unlock()
+	old.project.mu.Lock()
+	owner := old.project.owners[session.WorkspaceID]
+	old.project.mu.Unlock()
+	if !retained || owner != session.ID {
+		t.Fatalf("unconfirmed End released project or workspace: retained=%v owner=%q", retained, owner)
+	}
+	select {
+	case <-a.stopped:
+		t.Fatal("unconfirmed End marked physical session stopped")
+	default:
+	}
+
+	// End alone must recover: no other Run or Driver.Close supplies the stop proof.
+	old.stopOK.Store(true)
+	ended := make(chan error, 2)
+	for range 2 {
+		go func() { ended <- h.driver.End(ctx, session.ID) }()
+	}
+	for range 2 {
+		if err := receiveIPC(t, ended); err != nil {
+			t.Fatalf("End retry after stop became available: %v", err)
+		}
+	}
+	h.driver.mu.Lock()
+	remaining := h.driver.projects["project"]
+	h.driver.mu.Unlock()
+	if remaining != nil {
+		t.Fatal("confirmed End retained the dead project")
+	}
+	if err := h.driver.End(ctx, session.ID); err != nil || old.stops.Load() != 2 {
+		t.Fatalf("End was not idempotent: err=%v supervisorCalls=%d", err, old.stops.Load())
+	}
+	done = startIPCRun(h, ctx, h.session("next", "workspace"), "next-turn", discardIPCEvent)
+	f := receiveIPC(t, h.created)
+	if f.id == old.id {
+		t.Fatal("next session reused the stopped incarnation")
+	}
+	command := nextIPCCommand(t, f, "start_agent_session")
+	f.finishTurn(t, command, "next-turn", "workspace reused")
+	if got := receiveIPC(t, done); got.err != nil || got.result.Answer != "workspace reused" {
+		t.Fatalf("same workspace did not recover after End: %+v", got)
+	}
+}
+
+func TestDriverIPCEndDisconnectedSessionHonorsCloseWaitContext(t *testing.T) {
+	h := newIPCHarness(t, nil)
+	ctx := ipcContext(t)
+	session := h.session("session", "workspace")
+	done := startIPCRun(h, ctx, session, "turn", discardIPCEvent)
+	f := receiveIPC(t, h.created)
+	nextIPCCommand(t, f, "start_agent_session")
+	f.Close()
+	receiveIPC(t, done)
+	if err := f.project.lockClose(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(f.project.unlockClose)
+	ending, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if err := h.driver.End(ending, session.ID); !errors.Is(err, execution.ErrStopUnconfirmed) {
+		t.Fatalf("End while another stop owns the gate: %v", err)
+	}
+	if !errors.Is(ending.Err(), context.DeadlineExceeded) {
+		t.Fatal("End did not wait for supervisor proof until the caller's deadline")
+	}
+	if f.stops.Load() != 0 {
+		t.Fatalf("End bypassed another stop's gate: calls=%d", f.stops.Load())
+	}
+}
+
 func TestDriverIPCControlTimeoutRetiresIncarnation(t *testing.T) {
 	var clones atomic.Int32
 	h := newIPCHarness(t, func(_ *fakeNodeIPC, m node.Message) bool {

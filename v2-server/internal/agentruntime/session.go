@@ -168,7 +168,7 @@ func (a *agentSession) submit(turn, text string, fresh bool) error {
 	return a.project.send("submit_user_turn", a.execution, map[string]any{"node_id": a.project.nodeID(), "command_id": "turn-" + digest(turn), "turn": map[string]any{"turn_id": turn, "content": content}})
 }
 
-// requestEnd never takes down the project's shared Node. Only Close may stop that process tree.
+// requestEnd never takes down the project's shared Node. The Driver owns process-tree retirement.
 func (a *agentSession) requestEnd() {
 	a.mu.Lock()
 	if a.ended || a.ending {

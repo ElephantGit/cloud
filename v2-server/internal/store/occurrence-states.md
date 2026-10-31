@@ -27,6 +27,8 @@
 
 宿主先完成公共 Service 的启动恢复，再创建单个 Coordinator/ConversationAdapter 并调用 Recover。旧轮次的 interrupted 以公共持久记录为准；本地不会重放 prompt。适配层按 occurrence 串行处理 Start、核对与取消，尚在 Start 中的记录不能提前用 NotFound 收尾。读取错误、Caller/Ref 不匹配、已绑定记录查询缺失均保留占位；结果已保存但 End 未确认只重试 End。
 
-schema 幂等升级早期草稿：旧 admission_unknown 转 reconciling/lookup_required，保留触发身份、快照、引用、占位并递增 version；旧 workspace_busy、admission_not_accepted 原因规范为 execution_busy、execution_not_started。重复打开数据库不再改写已升级的记录。状态检查不再接受旧枚举。
+已知限制：状态写入和恢复查询要求创建者当前仍是租户有效成员。创建者在运行中被移出租户时，适配层无法写入终态和 released，记录会持续占用同任务执行资格；当前没有自动解除该占位的机制。
 
 没有10分钟等待、自动重试执行或停机补跑。跳过和手动运行均不改变原计划锚点。PostgreSQL 测试证明本层状态和占位，Stub 只证明公共接口消费行为，不能替代真实执行/目录/完整历史验收。
+
+取消恢复前提：cancelling 经 recover 转为 reconciling 后不保留取消意图。本流程依赖公共执行在服务重启时将旧轮次结算为 interrupted，且宿主须先完成公共恢复再恢复调度；否则核对到仍运行的轮次可能回到 running。

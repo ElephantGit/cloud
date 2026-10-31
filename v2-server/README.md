@@ -230,4 +230,4 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
   只读其本地 JSONL 恢复完整结果；历史缺失、损坏或超限明确失败。提供真实 Node + PostgreSQL
   的超长回答验证；公共执行服务在 PostgreSQL 保存历史快照与终态后才 ACK Node。
 
-定时运行的内部状态与只读核对查询见 [状态说明](internal/store/occurrence-states.md)。采用同步接收后的原身份核对：reconciling 不重派，execution_busy 不表示跨任务争抢目录，只有 End 确认后释放同任务占位。schema 保留旧草稿的身份、快照与引用并升级旧状态；本层不启动执行或定时器。
+定时运行的内部状态与只读核对查询见 [状态说明](internal/store/occurrence-states.md)。采用同步接收后的原身份核对：reconciling 不重派，execution_busy 不表示跨任务争抢目录，只有 End 确认后释放同任务占位。schema 只接受当前状态枚举；本层不启动执行或定时器。

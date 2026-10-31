@@ -164,7 +164,7 @@ func TestBoundMissingAttemptKeepsSlot(t *testing.T) {
 	}
 }
 
-func TestDraftStateUpgradePreservesIdentityAndOccupancy(t *testing.T) {
+func TestSchemaReopenPreservesIdentityAndOccupancy(t *testing.T) {
 	f := newModelFixture(t, "fixture-model")
 	ctx := context.Background()
 	conn, err := pgx.ConnectConfig(ctx, f.config.ConnConfig.Copy())
@@ -185,8 +185,8 @@ UPDATE v2_schedule_occurrences SET status='admission_unknown',reason='admission_
 		}
 		f.records = reopened
 		o := f.read(t)
-		if o.ID != f.occ.ID || o.Key != f.occ.Key || string(o.Snapshot) != string(f.occ.Snapshot) || o.Status != "reconciling" || o.Reason != "lookup_required" || o.Released || o.Version != 4 {
-			t.Fatalf("upgrade lost evidence: %+v", o)
+		if o.ID != f.occ.ID || o.Key != f.occ.Key || string(o.Snapshot) != string(f.occ.Snapshot) || o.Status != "reconciling" || o.Reason != "lookup_required" || o.Released || o.Version != 3 {
+			t.Fatalf("reopen lost evidence: %+v", o)
 		}
 		if _, err = conn.Exec(ctx, `UPDATE v2_schedule_occurrences SET status='admission_unknown'`); err == nil {
 			t.Fatal("obsolete state still accepted")

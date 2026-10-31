@@ -57,7 +57,7 @@ tasks:
     internal: true
     deps: [server, demo:web]
   deepseek:
-    desc: 'Cloud v2 against DeepSeek Flash with the key from v2-server/.env (see .env.example); open http://localhost:5173'
+    desc: 'Cloud v2 against DeepSeek Flash with the key from ~/ora-demo/.env (see v2-server/.env.example); open http://localhost:5173'
     cmds:
       # Validate the key before starting anything, so a missing key never leaves half the stack running.
       - bash scripts/deepseek.sh --check

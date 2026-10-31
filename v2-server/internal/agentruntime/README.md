@@ -20,6 +20,10 @@ err = driver.Close(ctx)
 
 每个逻辑 session 只有一个物理 Agent execution。首次 Run 安装一次项目插件、准备 checkout 后 Start；正常 Append 使用 `submit_user_turn`，保留原 Agent 上下文。Agent 失败或结束后不会自动创建新 execution。共享 Node 进程仅由 Close 停止，单会话 End 不终止同项目其他会话。
 
+项目初始化或 checkout 准备失败不永久缓存；尚未派发 Start 的失败 session 会撤销目录占用并从准备缓存移除，同一逻辑 session 可以重新准备。控制命令（包括插件安装与 clone）各自最多等待两分钟，单帧发送另有十秒上限；一次准备等待最多三分钟，失败后的停止确认另受清理调用的 context 约束。每次尝试使用新的控制 execution ID，迟到回复不会被后一次尝试接收。已收到明确失败的 clone 可重试；超时或传输断开属于执行结果不确定，整个 Node incarnation 会变为不可用，不能把它当作目录忙或只重发 clone。
+
+后续请求在重建项目 Node 前，必须先由原 supervisor 确认旧进程树停止，并关闭旧接缝；停止未确认时保留原项目条目，返回 `ErrUnavailable`，不派发新 incarnation。确认停止后才从缓存移除原项目并按需重建，保留已有 checkout 和文件。已派发过的 Agent 不自动重放或恢复上下文；新会话可以使用重建后的 Node。正常结束的 session/Agent 与成功 checkout 条目当前保留到 Driver 关闭或进程重启，仍用于 End 幂等和 checkout 复用。
+
 固定 Node 没有逐轮取消命令：本包的 Run context 取消会发送 EndSession，确认物理会话结束后返回；此后不能继续该物理会话。公共层调用方须据此结束有项目 session；无项目模型调用的逐轮取消属于 `modelturn`。自然完成与取消竞争时保留已经确认的实际轮次结果。
 
 ## 输出和停止确认
@@ -39,6 +43,8 @@ End 等待当前 Node incarnation 的有效 `agent_session_ended`；缺字段、
 ## 验证
 
 包级 `go vet` / `go test -race` 验证登记恢复、拒绝未知路径和 symlink、保留工作文件、runtime 锁及无效终态不能确认停止。
+
+fake IPC 测试通过同一个 Receive dispatcher 覆盖控制回复、Start/Append、事件持久化与 ACK、End 终态、传输断开及准备失败重试；它不启动真实 Node 进程，不能替代下述组合验收。
 
 本包提供 Driver 与项目解析接缝，不装配公共 Service、PostgreSQL 写入或 HTTP 入口。真实工具调用、
 End 与重启后的 SQL 读回、同项目双 checkout 并发、结束一个会话后另一会话继续 Append 等组合验收，

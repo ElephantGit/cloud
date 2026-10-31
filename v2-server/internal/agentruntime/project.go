@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,33 +39,49 @@ type checkout struct {
 	err      error
 }
 
+// The dispatcher owns Receive; control and session workers may send concurrently.
+type nodeClient interface {
+	Identity() node.Identity
+	Send(context.Context, node.Message) error
+	Receive(context.Context) (node.Message, error)
+	Ack(context.Context, node.Message) error
+	Close() error
+}
+
 // One reader owns all projections. Control replies and sessions are dispatched by execution ID;
 // no per-turn goroutine may call Client.Receive or close the project's shared transport.
 type projectRuntime struct {
-	driver        *Driver
-	id, root      string
-	configuration Project
-	ready         chan struct{}
-	initErr       error
-	ctx           context.Context
-	cancel        context.CancelFunc
-	runtime       *node.Runtime
-	services      *nodeservices.Service
-	reader        *nodehistory.Reader
-	journal       *os.File
-	loopDone      chan struct{}
-	dead          chan struct{}
-	deadOnce      sync.Once
-	closeMu       sync.Mutex
-	closed        bool
-	registered    bool
-	mu            sync.Mutex
-	fatal         bool
-	controls      map[string]*controlWait
-	agents        map[string]*agentSession
-	checkouts     map[string]*checkout
-	owners        map[string]string
-	acknowledged  map[string]uint64
+	driver         *Driver
+	id, root       string
+	configuration  Project
+	ready          chan struct{}
+	initErr        error
+	ctx            context.Context
+	cancel         context.CancelFunc
+	runtime        *node.Runtime
+	client         nodeClient
+	stop           func(context.Context) error
+	receiveStarted bool
+	services       *nodeservices.Service
+	reader         *nodehistory.Reader
+	journal        *os.File
+	loopDone       chan struct{}
+	dead           chan struct{}
+	deadOnce       sync.Once
+	closeGate      chan struct{}
+	closeGateOnce  sync.Once
+	closed         bool
+	serviceClosed  bool
+	readerClosed   bool
+	journalClosed  bool
+	registered     bool
+	mu             sync.Mutex
+	fatal          bool
+	controls       map[string]*controlWait
+	agents         map[string]*agentSession
+	checkouts      map[string]*checkout
+	owners         map[string]string
+	acknowledged   map[string]uint64
 }
 
 func digest(value string) string {
@@ -72,50 +89,82 @@ func digest(value string) string {
 	return hex.EncodeToString(hash[:16])
 }
 
-func (d *Driver) project(id string, config Project) *projectRuntime {
+func (d *Driver) nextID(prefix string) string {
+	return fmt.Sprintf("%s-%s-%x", prefix, d.boot, d.serial.Add(1))
+}
+
+func (d *Driver) dropProject(p *projectRuntime) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.closed {
-		return nil
+	if d.projects[p.id] == p {
+		delete(d.projects, p.id)
 	}
-	if p := d.projects[id]; p != nil {
-		return p
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	p := &projectRuntime{driver: d, id: id, root: filepath.Join(d.opts.Root, digest(id)[:16]), configuration: config,
-		ready: make(chan struct{}), ctx: ctx, cancel: cancel, loopDone: make(chan struct{}), dead: make(chan struct{}),
-		controls: map[string]*controlWait{}, agents: map[string]*agentSession{}, checkouts: map[string]*checkout{}, owners: map[string]string{}, acknowledged: map[string]uint64{}}
-	d.projects[id] = p
-	go func() {
-		p.initErr = p.start()
-		if p.initErr != nil {
-			p.cancel()
-			cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			var cleanupErr error
-			if p.runtime != nil {
-				cleanupErr = p.runtime.Stop(cleanup)
-				<-p.loopDone
-			} else if p.registered {
-				cleanupErr = node.RecoverRuntime(cleanup, filepath.Join(p.root, "w"), 3*time.Second)
-			}
-			if p.reader != nil {
-				cleanupErr = errors.Join(cleanupErr, p.reader.Close())
-				p.reader = nil
-			}
-			if p.journal != nil {
-				cleanupErr = errors.Join(cleanupErr, p.journal.Close())
-				p.journal = nil
-			}
-			if p.services != nil {
-				cleanupErr = errors.Join(cleanupErr, p.services.Close())
-			}
-			p.closed = cleanupErr == nil
-			p.deadOnce.Do(func() { close(p.dead) })
+	d.mu.Unlock()
+}
+
+func (d *Driver) project(ctx context.Context, id string, config Project) (*projectRuntime, error) {
+	for {
+		d.mu.Lock()
+		if d.closed {
+			d.mu.Unlock()
+			return nil, execution.ErrUnavailable
 		}
-		close(p.ready)
-	}()
-	return p
+		p := d.projects[id]
+		if p == nil {
+			lifetime, cancel := context.WithCancel(context.Background())
+			p = &projectRuntime{driver: d, id: id, root: filepath.Join(d.opts.Root, digest(id)[:16]), configuration: config,
+				ready: make(chan struct{}), ctx: lifetime, cancel: cancel, loopDone: make(chan struct{}), dead: make(chan struct{}),
+				controls: map[string]*controlWait{}, agents: map[string]*agentSession{}, checkouts: map[string]*checkout{}, owners: map[string]string{}, acknowledged: map[string]uint64{}}
+			d.projects[id] = p
+			go p.initialize()
+		}
+		d.mu.Unlock()
+		select {
+		case <-p.ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if p.initErr != nil {
+			// The failed initializer has already attempted cleanup. A later caller may retry
+			// cleanup, but must never spawn another incarnation without stop confirmation.
+			if p.close(ctx) == nil {
+				d.dropProject(p)
+			}
+			return nil, execution.ErrUnavailable
+		}
+		p.mu.Lock()
+		fatal := p.fatal
+		p.mu.Unlock()
+		if !fatal {
+			return p, nil
+		}
+		if p.close(ctx) != nil {
+			return nil, execution.ErrUnavailable
+		}
+		d.dropProject(p)
+	}
+}
+
+func (p *projectRuntime) initialize() {
+	start := p.driver.startProject
+	if start == nil {
+		start = (*projectRuntime).start
+	}
+	p.initErr = start(p)
+	if p.initErr != nil {
+		p.mu.Lock()
+		p.fatal = true
+		p.mu.Unlock()
+		p.deadOnce.Do(func() { close(p.dead) })
+		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if p.lockClose(cleanup) == nil {
+			if p.closeResources(cleanup) == nil {
+				p.driver.dropProject(p)
+			}
+			p.unlockClose()
+		}
+		cancel()
+	}
+	close(p.ready)
 }
 
 func (p *projectRuntime) start() error {
@@ -156,23 +205,23 @@ func (p *projectRuntime) start() error {
 	if err != nil {
 		return err
 	}
+	p.client, p.stop = p.runtime.Client, p.runtime.Stop
 	// Start the receiver before any control wait. It also drains terminal events during cleanup.
 	p.journal, err = os.OpenFile(filepath.Join(p.root, "node-events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		close(p.loopDone)
 		return err
 	}
 	p.reader, err = nodehistory.Open(filepath.Join(p.root, "w", "n"))
 	if err != nil {
-		close(p.loopDone)
 		return err
 	}
+	p.receiveStarted = true
 	go p.receive()
 	download := map[string]string{"url": p.services.PackageURL, "sha256": packageSHA}
 	release := map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": "x86_64-unknown-linux-gnu", "download": download}}}
 	plugin := map[string]any{"plugin_id": pluginID, "version": pluginVersion, "release": release}
 	input := map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "plugins": []any{plugin}}}
-	message, err := p.control(p.ctx, "i-"+p.driver.boot, "install_plugins", "plugins_result", input)
+	message, err := p.control(p.ctx, p.driver.nextID("i"), "install_plugins", "plugins_result", input)
 	if err != nil {
 		return err
 	}
@@ -188,28 +237,46 @@ func (p *projectRuntime) start() error {
 	return nil
 }
 
-func (p *projectRuntime) nodeID() string { return p.runtime.Client.Identity().NodeID }
+func (p *projectRuntime) ipc() nodeClient {
+	if p.client != nil {
+		return p.client
+	}
+	return p.runtime.Client
+}
+
+func (p *projectRuntime) nodeID() string { return p.ipc().Identity().NodeID }
 
 func (p *projectRuntime) send(kind, id string, payload any) error {
+	return p.sendContext(p.ctx, kind, id, payload)
+}
+
+func (p *projectRuntime) sendContext(parent context.Context, kind, id string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return execution.ErrInvalidRequest
 	}
-	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
-	if err := p.runtime.Client.Send(ctx, node.Message{Type: kind, Version: 1, OperationID: "op-" + id, ExecutionID: id, Payload: data}); err != nil {
+	if err := p.ipc().Send(ctx, node.Message{Type: kind, Version: 1, OperationID: "op-" + id, ExecutionID: id, Payload: data}); err != nil {
 		return execution.ErrUnavailable
 	}
 	return nil
 }
 
 func (p *projectRuntime) control(ctx context.Context, id, command, expected string, payload any) (node.Message, error) {
+	timeout := p.driver.controlTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	wait := &controlWait{kind: expected, done: make(chan node.Message, 1)}
 	p.mu.Lock()
 	p.controls[id] = wait
 	p.mu.Unlock()
 	defer func() { p.mu.Lock(); delete(p.controls, id); p.mu.Unlock() }()
-	if err := p.send(command, id, payload); err != nil {
+	if err := p.sendContext(ctx, command, id, payload); err != nil {
+		p.transportFailed()
 		return node.Message{}, err
 	}
 	select {
@@ -218,21 +285,31 @@ func (p *projectRuntime) control(ctx context.Context, id, command, expected stri
 	case <-p.dead:
 		return node.Message{}, execution.ErrUnavailable
 	case <-ctx.Done():
-		return node.Message{}, ctx.Err()
+		// Completion is ambiguous: a timed-out clone may still mutate its checkout.
+		// Retire the entire incarnation before allowing another preparation attempt.
+		p.transportFailed()
+		return node.Message{}, execution.ErrUnavailable
 	}
 }
 
-func (p *projectRuntime) prepareCheckout(workspace string, config Project) (*checkout, error) {
+func (p *projectRuntime) prepareCheckout(ctx context.Context, workspace string, config Project) (*checkout, error) {
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
-		entry = &checkout{id: "c-" + p.driver.boot + "-" + digest(workspace), ready: make(chan struct{})}
+		entry = &checkout{id: p.driver.nextID("c") + "-" + digest(workspace), ready: make(chan struct{})}
 		p.checkouts[workspace] = entry
 		go func() {
-			defer close(entry.ready)
+			defer func() {
+				p.mu.Lock()
+				if entry.err != nil && p.checkouts[workspace] == entry {
+					delete(p.checkouts, workspace)
+				}
+				p.mu.Unlock()
+				close(entry.ready)
+			}()
 			ref := digest(workspace)
 			workspaceID := ref[:8] + "-" + ref[8:12] + "-4" + ref[13:16] + "-8" + ref[17:20] + "-" + ref[20:]
-			message, err := p.control(p.ctx, entry.id, "clone_repository", "clone_result", map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "repository_url": p.services.URL + "/repo.git", "snapshot_ref": config.SnapshotRef, "base_commit": config.Commit, "workspace_ref": "refs/heads/workspaces/" + workspaceID + "/main"}})
+			message, err := p.control(ctx, entry.id, "clone_repository", "clone_result", map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "repository_url": p.services.URL + "/repo.git", "snapshot_ref": config.SnapshotRef, "base_commit": config.Commit, "workspace_ref": "refs/heads/workspaces/" + workspaceID + "/main"}})
 			if err != nil {
 				entry.err = execution.ErrUnavailable
 				return
@@ -259,6 +336,9 @@ func (p *projectRuntime) prepareCheckout(workspace string, config Project) (*che
 		return entry, entry.err
 	case <-p.dead:
 		return nil, execution.ErrUnavailable
+	case <-ctx.Done():
+		p.transportFailed()
+		return nil, ctx.Err()
 	}
 }
 
@@ -268,7 +348,7 @@ func (p *projectRuntime) receive() {
 	defer close(p.loopDone)
 	defer p.transportFailed()
 	for {
-		message, err := p.runtime.Client.Receive(p.ctx)
+		message, err := p.ipc().Receive(p.ctx)
 		if err != nil {
 			return
 		}
@@ -277,7 +357,7 @@ func (p *projectRuntime) receive() {
 				return
 			}
 			if last, exists := p.acknowledged[message.ExecutionID]; exists && *message.Sequence <= last {
-				if p.runtime.Client.Ack(p.ctx, message) != nil {
+				if p.ipc().Ack(p.ctx, message) != nil {
 					return
 				}
 				continue
@@ -292,7 +372,7 @@ func (p *projectRuntime) receive() {
 			outcome, ack = agent.observe(message)
 		}
 		if message.Sequence != nil && ack {
-			if p.runtime.Client.Ack(p.ctx, message) != nil {
+			if p.ipc().Ack(p.ctx, message) != nil {
 				if outcome != nil {
 					agent.complete(*outcome)
 				}
@@ -313,7 +393,7 @@ func (p *projectRuntime) receive() {
 }
 
 func (p *projectRuntime) transportFailed() {
-	_ = p.runtime.Client.Close()
+	_ = p.ipc().Close()
 	p.mu.Lock()
 	p.fatal = true
 	agents := make([]*agentSession, 0, len(p.agents))
@@ -328,29 +408,38 @@ func (p *projectRuntime) transportFailed() {
 }
 
 func (p *projectRuntime) close(ctx context.Context) error {
-	p.closeMu.Lock()
-	defer p.closeMu.Unlock()
 	select {
 	case <-p.ready:
 	case <-ctx.Done():
 		p.cancel()
 		return execution.ErrStopUnconfirmed
 	}
-	if p.closed {
+	if err := p.lockClose(ctx); err != nil {
+		return err
+	}
+	defer p.unlockClose()
+	return p.closeResources(ctx)
+}
+
+// A bounded caller must not wait indefinitely behind another shutdown attempt.
+func (p *projectRuntime) lockClose(ctx context.Context) error {
+	p.closeGateOnce.Do(func() {
+		p.closeGate = make(chan struct{}, 1)
+		p.closeGate <- struct{}{}
+	})
+	select {
+	case <-ctx.Done():
+		return execution.ErrStopUnconfirmed
+	case <-p.closeGate:
 		return nil
 	}
-	if p.initErr != nil {
-		if p.runtime != nil {
-			if p.runtime.Stop(ctx) != nil {
-				return execution.ErrStopUnconfirmed
-			}
-		} else if p.registered && node.RecoverRuntime(ctx, filepath.Join(p.root, "w"), 3*time.Second) != nil {
-			return execution.ErrStopUnconfirmed
-		}
-		if p.services != nil && p.services.Close() != nil {
-			return execution.ErrStopUnconfirmed
-		}
-		p.closed = true
+}
+
+func (p *projectRuntime) unlockClose() { p.closeGate <- struct{}{} }
+
+// Caller holds closeGate. It may run before ready only in the initialization worker.
+func (p *projectRuntime) closeResources(ctx context.Context) error {
+	if p.closed {
 		return nil
 	}
 	p.mu.Lock()
@@ -363,18 +452,44 @@ func (p *projectRuntime) close(ctx context.Context) error {
 		a.requestEnd()
 	}
 	// Stop supplies the final process-tree proof even when transport or cooperative End failed.
-	if err := p.runtime.Stop(ctx); err != nil {
+	if p.stop != nil {
+		if p.stop(ctx) != nil {
+			return execution.ErrStopUnconfirmed
+		}
+	} else if p.runtime != nil {
+		if p.runtime.Stop(ctx) != nil {
+			return execution.ErrStopUnconfirmed
+		}
+	} else if p.registered && node.RecoverRuntime(ctx, filepath.Join(p.root, "w"), 3*time.Second) != nil {
 		return execution.ErrStopUnconfirmed
 	}
 	p.cancel()
-	<-p.loopDone
+	if p.receiveStarted {
+		select {
+		case <-p.loopDone:
+		case <-ctx.Done():
+			return execution.ErrStopUnconfirmed
+		}
+	}
 	for _, a := range agents {
 		a.markStopped()
 	}
-	if err := p.services.Close(); err != nil {
-		return execution.ErrStopUnconfirmed
+	if p.services != nil && !p.serviceClosed {
+		if p.services.Close() != nil {
+			return execution.ErrStopUnconfirmed
+		}
+		p.serviceClosed = true
 	}
-	if err := errors.Join(p.reader.Close(), p.journal.Close()); err != nil {
+	var result error
+	if p.reader != nil && !p.readerClosed {
+		result = errors.Join(result, p.reader.Close())
+		p.readerClosed = true
+	}
+	if p.journal != nil && !p.journalClosed {
+		result = errors.Join(result, p.journal.Close())
+		p.journalClosed = true
+	}
+	if result != nil {
 		return execution.ErrStopUnconfirmed
 	}
 	p.closed = true

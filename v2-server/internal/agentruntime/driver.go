@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
@@ -41,12 +42,15 @@ type Emit func(context.Context, execution.Event) error
 
 // Driver owns one Node per project and one physical Agent execution per logical session.
 type Driver struct {
-	opts     Options
-	boot     string
-	mu       sync.Mutex
-	closed   bool
-	projects map[string]*projectRuntime
-	sessions map[string]*agentSession
+	opts           Options
+	boot           string
+	mu             sync.Mutex
+	closed         bool
+	projects       map[string]*projectRuntime
+	sessions       map[string]*agentSession
+	serial         atomic.Uint64
+	controlTimeout time.Duration
+	startProject   func(*projectRuntime) error
 }
 
 // New validates deployment wiring. Processes start lazily for an already-admitted project turn.
@@ -78,7 +82,7 @@ func New(opts Options) (*Driver, error) {
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, execution.ErrUnavailable
 	}
-	return &Driver{opts: opts, boot: hex.EncodeToString(nonce[:]), projects: map[string]*projectRuntime{}, sessions: map[string]*agentSession{}}, nil
+	return &Driver{opts: opts, boot: hex.EncodeToString(nonce[:]), projects: map[string]*projectRuntime{}, sessions: map[string]*agentSession{}, controlTimeout: 2 * time.Minute}, nil
 }
 
 // Run executes the admitted turn. Normal Append reuses its original live Agent conversation.

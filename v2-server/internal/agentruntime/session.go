@@ -63,32 +63,48 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 	if a == nil {
 		target, executor := *session.Target, *session.Executor
 		session.Target, session.Executor = &target, &executor
-		a = &agentSession{frozen: session, scope: scope, execution: "a-" + d.boot + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
+		a = &agentSession{frozen: session, scope: scope, execution: d.nextID("a") + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
 		d.sessions[session.ID] = a
 		go func() {
-			defer close(a.ready)
-			p := d.project(session.Target.ProjectID, config)
+			defer func() {
+				if a.prepareErr != nil {
+					// Preparation has not sent Start: there is no physical Agent to retain.
+					// Release only this reservation; another attempt may already own the map key.
+					a.markStopped()
+					d.mu.Lock()
+					if d.sessions[session.ID] == a {
+						delete(d.sessions, session.ID)
+					}
+					d.mu.Unlock()
+				}
+				close(a.ready)
+			}()
+			prepare, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			p, err := d.project(prepare, session.Target.ProjectID, config)
 			a.project = p
-			if p == nil {
-				a.prepareErr = execution.ErrUnavailable
-				a.markStopped()
+			if err != nil {
+				a.prepareErr = err
 				return
 			}
-			<-p.ready
-			if p.initErr != nil || p.configuration.MirrorPath != config.MirrorPath {
+			if p.configuration.MirrorPath != config.MirrorPath {
 				a.prepareErr = execution.ErrUnavailable
 				return
 			}
 			p.mu.Lock()
-			if p.fatal || (p.owners[session.WorkspaceID] != "" && p.owners[session.WorkspaceID] != session.ID) {
+			if p.fatal {
+				p.mu.Unlock()
+				a.prepareErr = execution.ErrUnavailable
+				return
+			}
+			if p.owners[session.WorkspaceID] != "" && p.owners[session.WorkspaceID] != session.ID {
 				p.mu.Unlock()
 				a.prepareErr = execution.ErrWorkspaceBusy
-				a.markStopped()
 				return
 			}
 			p.owners[session.WorkspaceID] = session.ID
 			p.mu.Unlock()
-			a.checkout, a.prepareErr = p.prepareCheckout(session.WorkspaceID, config)
+			a.checkout, a.prepareErr = p.prepareCheckout(prepare, session.WorkspaceID, config)
 			if a.prepareErr != nil {
 				return
 			}
@@ -97,7 +113,6 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			if p.fatal {
 				p.mu.Unlock()
 				a.prepareErr = execution.ErrUnavailable
-				a.markStopped()
 				return
 			}
 			p.agents[a.execution] = a
@@ -276,7 +291,7 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 				return false
 			}
 		}
-		if json.Unmarshal(message.Payload, &ended) != nil || ended.Kind != "agent_session_ended" || !validReason(ended.Result.Reason) || ended.Result.Node.NodeID == "" || ended.Result.Node != a.project.runtime.Client.Identity() {
+		if json.Unmarshal(message.Payload, &ended) != nil || ended.Kind != "agent_session_ended" || !validReason(ended.Result.Reason) || ended.Result.Node.NodeID == "" || ended.Result.Node != a.project.ipc().Identity() {
 			a.fail("agent_terminal_invalid", execution.ErrUnavailable)
 			return nil, false
 		}

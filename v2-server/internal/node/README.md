@@ -14,14 +14,14 @@ Node 执行流序号与页面的 session 事件序号是两种坐标，后续持
 
 ## 验证
 
-在 Linux/WSL 的原生文件系统中准备固定资产（需要 Rust 1.95.0、Deno 2.9.5、Python 3.11+、curl）：
+在 Linux/WSL（x86_64 或 aarch64）的原生文件系统中准备固定资产（需要 Rust 1.95.0、本机架构的 Deno 2.9.5、Python 3.11+、curl）：
 
 ```sh
 DESKTOP_REPOSITORY=/path/to/desktop task v2:node:prepare
 V2_NODE_TEST_BIN_DIR="$HOME/.cache/ora-v2-node/bin" task v2:node:test
 ```
 
-准备命令从固定 commit 导出源码，不改原 checkout，预构建三个二进制并校验固定 OpenCode 0.6.11 包摘要。
+准备命令从固定 commit 导出源码，不改原 checkout，预构建三个二进制，并按本机架构下载、校验固定 OpenCode 0.6.11 包摘要。资源目录只对准备它的架构有效。
 `V2_NODE_ASSETS_DIR` 可指定缓存；`V2_DENO_PATH` 可指定可信的本机 Deno 安装。
 assets.json 记录来源版本和所有产物摘要；本地编译结果和 Deno 的摘要是本机生成，不能当作官方发布签名。
 运行热路径没有编译或下载；`RuntimeOptions` 的 Asset 均要求路径和预期 SHA-256。

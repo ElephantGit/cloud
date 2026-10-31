@@ -25,7 +25,6 @@ import (
 const (
 	pluginID      = "official/ora-space.opencode"
 	pluginVersion = "0.6.11"
-	packageSHA    = "88c00f81997fc7fe892f2d58a686f535678e562c7e000d33eb7ee3b1d0f754b5"
 )
 
 type controlWait struct {
@@ -176,9 +175,12 @@ func (p *projectRuntime) start() error {
 		return err
 	}
 	p.registered = true
-	var err error
+	pkg, err := nodeservices.HostOpenCodePackage()
+	if err != nil {
+		return err
+	}
 	p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: p.configuration.MirrorPath, GitBackend: opts.GitBackend,
-		PackagePath: filepath.Join(opts.AssetsDirectory, "opencode-0.6.11.orax"), PackageSHA256: packageSHA, Bindings: opts.Bindings})
+		PackagePath: filepath.Join(opts.AssetsDirectory, "opencode-0.6.11.orax"), PackageSHA256: pkg.SHA256, Bindings: opts.Bindings})
 	if err != nil {
 		return err
 	}
@@ -217,8 +219,8 @@ func (p *projectRuntime) start() error {
 	}
 	p.receiveStarted = true
 	go p.receive()
-	download := map[string]string{"url": p.services.PackageURL, "sha256": packageSHA}
-	release := map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": "x86_64-unknown-linux-gnu", "download": download}}}
+	download := map[string]string{"url": p.services.PackageURL, "sha256": pkg.SHA256}
+	release := map[string]any{"kind": "targets", "targets": []any{map[string]any{"target": pkg.Target, "download": download}}}
 	plugin := map[string]any{"plugin_id": pluginID, "version": pluginVersion, "release": release}
 	input := map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "plugins": []any{plugin}}}
 	message, err := p.control(p.ctx, p.driver.nextID("i"), "install_plugins", "plugins_result", input)

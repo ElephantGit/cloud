@@ -12,7 +12,7 @@ err = driver.End(ctx, session.ID)
 err = driver.Close(ctx)
 ```
 
-`ResolveProject` 返回可信镜像路径、已固定 commit 和 snapshot ref，且检查当前 Scope 的访问权。固定执行器是 `official/ora-space.opencode@0.6.11`，`Executor.Model.ID` 对应 `Bindings` 的 key。AssetsDirectory 必须是部署已校验的原生 Linux x86_64 Node、host、guardian、Deno 和固定 OpenCode 包目录；复制可执行文件时再次校验读取的摘要，插件包另以固定 SHA-256 验证。
+`ResolveProject` 返回可信镜像路径、已固定 commit 和 snapshot ref，且检查当前 Scope 的访问权。固定执行器是 `official/ora-space.opencode@0.6.11`，`Executor.Model.ID` 对应 `Bindings` 的 key。AssetsDirectory 必须是部署已校验的原生 Linux（x86_64 或 aarch64）Node、host、guardian、Deno 和固定 OpenCode 包目录，架构与当前进程一致；复制可执行文件时再次校验读取的摘要，插件包按当前架构的固定 SHA-256（`nodeservices.HostOpenCodePackage`）验证。
 
 ## 项目与会话
 

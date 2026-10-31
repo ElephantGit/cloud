@@ -134,17 +134,13 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		return checkFixture(ctx, runtime, scope, demo.ID, filepath.Join(base, "nodes"))
 	}
 
-	srv := &http.Server{
-		Addr: addr,
-		Handler: server.New(db, server.Options{
-			SessionTTL: 7 * 24 * time.Hour,
-			DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
-			Projects:   projects,
-			Execution:  runtime,
-			Catalog:    runtime,
-		}),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := newHTTPServer(ctx, addr, server.New(db, server.Options{
+		SessionTTL: 7 * 24 * time.Hour,
+		DemoUser:   store.Identity{Source: "dev", Subject: "demo", DisplayName: "演示用户"},
+		Projects:   projects,
+		Execution:  runtime,
+		Catalog:    runtime,
+	}))
 	errs := make(chan error, 1)
 	go func() { errs <- srv.ListenAndServe() }()
 	slog.Info("v2-server listening", "addr", addr)
@@ -157,7 +153,9 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if e := srv.Shutdown(shutdown); e != nil {
-		return e
+		// Cancelled handlers can still be blocked writing to a slow client. Release
+		// their connections before closing the execution service and database.
+		return errors.Join(e, srv.Close())
 	}
 	if e := <-errs; !errors.Is(e, http.ErrServerClosed) {
 		return e

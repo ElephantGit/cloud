@@ -161,6 +161,12 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}` | 携带 version 修改标题、描述与所属项目 |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态 |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}/assignment` | 携带 version 指派或清除指派人，显式 `null` 表示清除 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/timeline` | 任务的运行与评论，各按时间先后 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行任务所指派 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；任务没指派给 Agent 是 409 `not_agent_task` |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs` | 必须带 `Idempotency-Key`；`{executorId?, note?}` 用调用者身份开一次新运行，返回 201。见下文「任务运行」 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop` | 结束一次活着的运行：正在执行的一轮先取消，空闲的会话直接结束；任何成员都可以停 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events` | 运行会话的 SSE，形状与对话事件流相同；工作区任何成员都能读 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/comments` | 必须带 `Idempotency-Key`；`{body, mentions?, toAgent?, executorId?}` 记一条评论，`toAgent` 同时发给 Agent |
 
 任务归属于一个工作区项目，`projectId` 必须在同一工作区内，否则 400 `invalid_project`。指派人显式类型化，
 与小队成员一致：`human` 引用当前有效的租户成员，`agent` 引用同工作区活动且可执行的预装 Space Agent，
@@ -172,14 +178,43 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 终结且不能重开；跳过验收是 400 `invalid_transition`，不是版本冲突。同一函数
 [`store.CanTransitionTask`](internal/store/tasks.go) 供人工推进和执行服务共用，执行服务经
 `TransitionTaskStatus(ctx, tenant, id, from, to)` 在运行开始与结束时移动任务，`from` 防止过期运行覆盖人工修改。
+运行按 [`store.CanRunTransitionTask`](internal/store/tasks.go) 移动任务：开始或追问进入 `running`（从 `pending`
+或 `review`），一轮结束（成功或失败）进入 `review`，被停止或中断回到 `pending`；后两种人不能手动做。
+Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 
 当前工作区任意成员都可读写、指派与推进任务：v2 没有任务级归属，谁来改由版本号防止互相覆盖。
 过期 version 返回 409 `version_conflict`，缺 version 返回 428 `version_required`；跨租户的任务与项目
 一律按不存在处理（404 或 400 `invalid_project`）。请求大小限制 64 KiB，拒绝未知字段与多余的 JSON 值。
-任务评论、附件与运行记录属于后续批次，本期不提供。
+附件不提供。
+
+#### 任务运行
+
+任务运行（[`internal/taskrun`](internal/taskrun/taskrun.go)，表 `v2_task_runs`）是任务所指派 Agent 的一次执行会话，
+经公共执行服务以调用方类型 `task` 运行，Caller ID 是运行 ID。和对话不同，它属于团队：
+
+- **身份归发起人**：会话在点「开始执行」的人的 scope 下运行。工作区任何成员都能读运行和它的事件流
+  （服务端校验读者是成员后，用发起人的 scope 读），但只有发起人能发下一轮：别人代发，等于用发起人的身份（以后是他的模型凭据）跑。
+  其他成员发给 Agent 是 409 `run_owned`，他们可以重新执行，用自己的身份开一次新运行。
+- **一个任务最多一个活着的运行**：重新执行会先结束空闲的旧会话（`endReason = replaced`）；正在执行一轮时是 409 `run_active`，要先停。
+  页面不排队，追问在一轮执行中同样是 409 `run_active`。
+- **停止即结束这次运行**：固定 Node 上取消一轮会结束整个会话，之后只能重新执行。任务完成或取消时结束空闲会话（`closed`）。
+- **重启**：进程启动前把上一个进程留下的活运行记为 `interrupted`，正在执行的任务回到 `pending`；不重放、不恢复。
+- **执行器**：`executorId` 必须是任务所指派 Agent 的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
+- **列表**：任务带 `activeRun`（活着的运行的发起人、执行器与 `running`/`idle`），列表不用逐个读时间线就能显示谁在干活。
+
+评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的
+Space Agent），写入时解析名字；正文里手打的「@名字」不路由。`toAgent` 把评论作为一轮发给 Agent：调用者自己的活运行就追加到同一会话，
+没有活运行就用调用者身份开新运行。
 
 HTTP 集成测试按此候选 OpenAPI 校验每一次响应，并覆盖创建、编辑、合法与非法状态迁移、三种指派、
-版本冲突和越权读取；数据库测试另覆盖跨租户隔离与执行服务的推进。
+版本冲突和越权读取，以及开始、停止、评论、@、时间线和事件流；数据库测试另覆盖跨租户隔离与执行服务的推进；
+`internal/taskrun` 用内存执行端口和真实 PostgreSQL 覆盖发起人身份、追问权限、停止、重新执行、关闭任务与重启中断。
+
+### 协作 @ 目录
+
+`GET /api/v1/tenants/{tid}/collaboration/targets` 按正式契约实现子集：`user`（工作区有效成员，交互 `mention`）与
+`agent`（预装且已安装的 Space Agent，交互 `task`，`description` 是插件标识）。正式契约里的 `team` 与 `workflow` 不返回：
+v2 不向小队自动派发，工作流在自己的页面运行。
 
 ### 项目仓库
 

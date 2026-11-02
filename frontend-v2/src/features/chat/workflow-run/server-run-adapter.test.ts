@@ -218,7 +218,7 @@ describe('toGraphWorkflowRun', () => {
         failedAttempts: [
           failed('a-1', 'a', 1),
           failed('a-2', 'a', 2, { sessionId: null, startedAt: null }),
-          // Rounds are not mapped yet; neither are their attempts.
+          // v2 does not replace container attempts; compatibility history stays root-only.
           failed('r-1', 'a', 1, { iteration: 0 }),
           failed('l-1', 'a', 1, { scopeId: 'loop-round' }),
           failed('gone', 'not-in-graph', 1),
@@ -231,6 +231,27 @@ describe('toGraphWorkflowRun', () => {
       { nodeRunId: 'a-2', attempt: 2, kind: 'session', errorMessage: '第 2 次失败', sourceChain: ['boom'], recordedAt: 2, finishedAt: new Date(2_000).toISOString() },
     ])
     expect(run.nodeStates.out!.failedAttempts).toBeUndefined()
+  })
+
+  it('overlays kickoff values only on the root Start, preserving Loop entry values', () => {
+    const root = graphNode('start', 'start')
+    root.data.inputVariables = [{ name: 'topic', valueType: 'string', value: '默认主题' }]
+    const entries = [graphNode('entry-parent', 'start', 'loop'), graphNode('entry-container', 'start', undefined, 'loop')]
+    for (const entry of entries) {
+      entry.data.input = '轮内输入'
+      entry.data.inputVariables = [{ name: 'topic', valueType: 'string', value: '轮内主题' }]
+    }
+    const graph = normalizeWorkflowDefinition({ ...definition, nodes: [root, graphNode('loop', 'loop'), ...entries], edges: [] })
+    const run = toGraphWorkflowRun({ ...detail({ input: '本次根输入' }, []), variables: [
+      { selector: ['start', 'topic'], sourceNodeId: 'start', valueType: 'string', value: '本次根主题' },
+      // A root catalog entry must never be used as a Loop scope's start values.
+      { selector: ['entry-parent', 'topic'], sourceNodeId: 'entry-parent', valueType: 'string', value: '错误的根值' },
+    ] }, graph)
+    expect(run.definitionSnapshot.nodes[0]!.data).toMatchObject({ input: '本次根输入', inputVariables: [{ value: '本次根主题' }] })
+    for (const id of entries.map((entry) => entry.id)) {
+      expect(run.definitionSnapshot.nodes.find((node) => node.id === id)!.data).toMatchObject({ input: '轮内输入', inputVariables: [{ value: '轮内主题' }] })
+    }
+    expect(graph.nodes[0]!.data.inputVariables?.[0]?.value).toBe('默认主题')
   })
 
   it('shows an Agent without an answer yet, and malformed payloads, without inventing anything', () => {

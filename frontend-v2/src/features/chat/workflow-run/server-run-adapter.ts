@@ -153,7 +153,7 @@ function withRunStartValues(definition: WorkflowDefinition, detail: WorkflowRunD
   return {
     ...definition,
     nodes: definition.nodes.map((node) => {
-      if (node.data.kind !== 'start') return node
+      if (node.data.kind !== 'start' || node.parentId || node.data.containerId) return node
       const data = { ...node.data }
       if (input !== null) data.input = input
       if (node.data.inputVariables) {

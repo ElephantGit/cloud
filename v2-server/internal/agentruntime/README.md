@@ -30,7 +30,7 @@ err = driver.Close(ctx)
 
 ## 输出和停止确认
 
-每个 Node execution 的 `nodehistory.Projection` 只由 dispatcher 更新。历史输出为替换式 `history_snapshot`；从完整本地 JSONL 验证指定 turnEnded 后才产生 `TurnEnded` / `Result`。缺失、损坏、超限或未知停止原因明确失败，preview、截断 visible_text、thought/tool 输出都不能冒充最终答案。Node 路径不提供 usage，保持 nil。
+每个 Node execution 的 `nodehistory.Projection` 只由 dispatcher 更新。历史输出为替换式 `history_snapshot`；Hello 协商 `thread_previews` 后，Node 的 `thread_preview` 变为只含 pending 记录的 `history_preview`：不 ACK，每会话最多每 250ms 保留一条（只留最新一份，停顿前的最后一份仍会写出），内容不变时不写，写失败只丢弃这一份；定型快照照常立即写出并取代排队中的 preview。从完整本地 JSONL 验证指定 turnEnded 后才产生 `TurnEnded` / `Result`。缺失、损坏、超限或未知停止原因明确失败，preview、截断 visible_text、thought/tool 输出都不能冒充最终答案。Node 路径不提供 usage，保持 nil。
 
 所有带 sequence 的原始 envelope 先写入项目内 `node-events.jsonl` 并 fsync；Agent 历史和轮次终态还必须等 `emit` 成功才 ACK。`emit(TurnEnded)` 须在一个事务中保留结果和终态。回调失败后不 ACK 该 session 的后续消息，并请求停止它；错误正文不外泄。日志只是原始证据，业务真相仍在 PostgreSQL。
 

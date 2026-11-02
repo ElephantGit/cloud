@@ -19,8 +19,11 @@ type Snapshot struct {
 // Observation is ready to retain atomically with the source envelope and caller's session/turn
 // coordinates. Only after that durable write may the consumer ACK a sequenced Node message.
 // A read error must become an explicit failed/incomplete result; never store a preview as success.
+// For a thread_preview, Preview is set and Snapshot holds only the pending records: it replaces
+// the pending part of the last full snapshot, not the whole projection.
 type Observation struct {
 	Snapshot Snapshot
+	Preview  bool
 	TurnID   string
 	Turn     *Turn
 }
@@ -39,7 +42,7 @@ func (p *Projection) Consume(ctx context.Context, message node.Message) (Observa
 		if err := p.Preview(message.Payload); err != nil {
 			return Observation{}, err
 		}
-		return Observation{Snapshot: p.Snapshot()}, nil
+		return Observation{Snapshot: p.Pending(), Preview: true}, nil
 	case "thread_event":
 		if message.Sequence == nil || message.OperationID == "" {
 			return Observation{}, ErrIdentity
@@ -79,7 +82,9 @@ func (p *Projection) Consume(ctx context.Context, message node.Message) (Observa
 }
 
 // Projection has one owner per execution. Settled records take precedence over previews;
-// a newer preview replaces the entire pending set, including removing vanished pending items.
+// a newer preview replaces the pending records it carries. Node stops previewing a record once
+// it is written, before its thread_event arrives, so a record a preview no longer carries stays
+// pending until it settles or the turn ends; dropping it would blank the page in between.
 type Projection struct {
 	reader           *Reader
 	execution        string
@@ -123,6 +128,11 @@ func (p *Projection) Preview(payload json.RawMessage) error {
 		seen[*b.Sequence] = true
 		if _, settled := p.settled[*b.Sequence]; !settled {
 			next[*b.Sequence] = Record{*b.Sequence, bytes.Clone(b.Record), true}
+		}
+	}
+	for sequence, record := range p.pending {
+		if _, carried := next[sequence]; !carried {
+			next[sequence] = record
 		}
 	}
 	p.pending = next
@@ -179,6 +189,11 @@ func (p *Projection) Snapshot() Snapshot {
 		all[k] = v
 	}
 	return Snapshot{Records: ordered(all), Incomplete: p.incomplete}
+}
+
+// Pending returns independent copies of only the pending records, none of which is settled.
+func (p *Projection) Pending() Snapshot {
+	return Snapshot{Records: ordered(p.pending), Incomplete: p.incomplete}
 }
 
 // FailureCode maps a failed authoritative read to a bounded public reason. A caller must store

@@ -254,3 +254,81 @@ func TestCancellationClosesPartialFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// previewGreeting answers Hello as a Node that grants previews exactly when they were requested,
+// unless grant forces an answer, and reports the request it saw.
+func previewGreeting(conn net.Conn, grant *bool, requested chan<- bool) error {
+	m, err := readFrame(conn)
+	if err != nil {
+		return err
+	}
+	var hello struct {
+		Previews bool `json:"thread_previews"`
+	}
+	if m.Type != "hello" || json.Unmarshal(m.Payload, &hello) != nil {
+		return errors.New("missing hello")
+	}
+	requested <- hello.Previews
+	granted := hello.Previews
+	if grant != nil {
+		granted = *grant
+	}
+	payload, _ := json.Marshal(map[string]any{"selected_version": 1, "node": Identity{NodeID: "node", IncarnationID: "incarnation"}, "capabilities": []string{"agent_session"}, "thread_previews": granted})
+	frame, _ := encode(Message{Type: "hello_accepted", Version: 1, Payload: payload})
+	return writeAll(conn, frame)
+}
+
+func TestDialNegotiatesThreadPreviews(t *testing.T) {
+	for _, want := range []bool{false, true} {
+		requested := make(chan bool, 1)
+		opts, done := fixture(t, func(conn net.Conn) error {
+			if err := previewGreeting(conn, nil, requested); err != nil {
+				return err
+			}
+			// A preview Node sends without negotiation must never reach the caller.
+			for _, kind := range []string{"thread_preview", "agent_session_ended"} {
+				frame, _ := encode(Message{Type: kind, Version: 1, OperationID: "op", ExecutionID: "exec", Payload: json.RawMessage(`{}`)})
+				if err := writeAll(conn, frame); err != nil {
+					return err
+				}
+			}
+			_, _ = readFrame(conn)
+			return nil
+		})
+		opts.ThreadPreviews = want
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		client, err := Dial(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if <-requested != want || client.ThreadPreviews() != want {
+			t.Fatalf("previews requested/negotiated mismatch for %v", want)
+		}
+		m, err := client.Receive(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wantType := map[bool]string{false: "agent_session_ended", true: "thread_preview"}[want]; m.Type != wantType {
+			t.Fatalf("previews=%v received %q", want, m.Type)
+		}
+		client.Close()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestDialRejectsUnrequestedThreadPreviews(t *testing.T) {
+	granted := true
+	requested := make(chan bool, 1)
+	opts, done := fixture(t, func(conn net.Conn) error { return previewGreeting(conn, &granted, requested) })
+	client, err := Dial(context.Background(), opts)
+	if err == nil {
+		client.Close()
+		t.Fatal("accepted previews the Controller did not ask for")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

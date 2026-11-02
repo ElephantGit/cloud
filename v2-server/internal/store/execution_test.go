@@ -332,6 +332,10 @@ func TestExecutionConcurrentEventsAndTerminalResult(t *testing.T) {
 	if _, err := f.s.AppendExecutionEvent(ctx, f.scope, execution.Event{Ref: turn.Ref, Kind: execution.EventTextDelta, TextDelta: "late"}); !errors.Is(err, execution.ErrConflict) {
 		t.Fatalf("late delta=%v", err)
 	}
+	// A preview racing the result only replaces pending display records; it cannot change the answer.
+	if _, err := f.s.AppendExecutionEvent(ctx, f.scope, execution.Event{Ref: turn.Ref, Kind: execution.EventHistoryPreview, History: &execution.HistorySnapshot{}}); err != nil {
+		t.Fatalf("late preview=%v", err)
+	}
 	if _, err := f.s.AppendExecutionEvent(ctx, f.scope, execution.Event{Ref: turn.Ref, Kind: execution.EventTurnEnded, Result: &a.result}); !errors.Is(err, execution.ErrInvalidRequest) {
 		t.Fatalf("non-atomic terminal event=%v", err)
 	}

@@ -3,6 +3,7 @@
 package agentruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,10 @@ import (
 )
 
 var errEventStore = errors.New("agent_event_write_failed")
+
+// previewInterval bounds how often Node previews become retained history_preview events. Node
+// sends up to ten a second; every retained event is stored and replayed when a page loads.
+var previewInterval = 250 * time.Millisecond
 
 type turnOutcome struct {
 	turnID string
@@ -47,6 +52,12 @@ type agentSession struct {
 	publicationFailed bool
 	active            *activeTurn
 	emit              Emit
+	// publishMu orders history publications, so a preview never lands after a newer snapshot.
+	publishMu     sync.Mutex
+	preview       *execution.HistorySnapshot // latest pending set not yet published
+	previewQueued bool
+	previewAt     time.Time // when the last preview flush ran
+	previewSent   []byte    // the pending set the page last received
 }
 
 func (d *Driver) session(ctx context.Context, scope execution.Scope, session execution.Session, config Project) (*agentSession, error) {
@@ -355,15 +366,28 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 		}
 		return &turnOutcome{call.id, result, errors.New(result.FailureCode)}, true
 	}
-	snapshot := &execution.HistorySnapshot{Incomplete: observation.Snapshot.Incomplete}
-	for _, record := range observation.Snapshot.Records {
-		snapshot.Records = append(snapshot.Records, execution.HistoryRecord{Sequence: record.Sequence, Data: record.Data, Preview: record.Preview})
+	snapshot := historyOf(observation.Snapshot)
+	if observation.Preview {
+		a.queuePreview(snapshot)
+		return nil, true
 	}
 	turnID := observation.TurnID
 	if turnID == "" && call != nil {
 		turnID = call.id
 	}
-	if a.publish(execution.Event{Ref: execution.Ref{TurnID: turnID}, Kind: execution.EventHistorySnapshot, History: snapshot}) != nil {
+	// A full snapshot carries the current pending records too and supersedes any queued preview.
+	a.publishMu.Lock()
+	a.mu.Lock()
+	a.preview = nil
+	a.mu.Unlock()
+	err = a.publish(execution.Event{Ref: execution.Ref{TurnID: turnID}, Kind: execution.EventHistorySnapshot, History: snapshot})
+	if err == nil {
+		a.mu.Lock()
+		a.previewSent = pendingKey(snapshot)
+		a.mu.Unlock()
+	}
+	a.publishMu.Unlock()
+	if err != nil {
 		a.fail("agent_event_write_failed", errEventStore)
 		a.requestEnd()
 		return nil, false
@@ -383,6 +407,68 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 		return nil, false
 	}
 	return &turnOutcome{turnID, result, nil}, true
+}
+
+func historyOf(projected nodehistory.Snapshot) *execution.HistorySnapshot {
+	snapshot := &execution.HistorySnapshot{Incomplete: projected.Incomplete}
+	for _, record := range projected.Records {
+		snapshot.Records = append(snapshot.Records, execution.HistoryRecord{Sequence: record.Sequence, Data: record.Data, Preview: record.Preview})
+	}
+	return snapshot
+}
+
+// pendingKey identifies the pending part of a snapshot, so an unchanged preview is not retained.
+func pendingKey(snapshot *execution.HistorySnapshot) []byte {
+	pending := execution.HistorySnapshot{Incomplete: snapshot.Incomplete}
+	for _, record := range snapshot.Records {
+		if record.Preview {
+			pending.Records = append(pending.Records, record)
+		}
+	}
+	key, _ := json.Marshal(pending)
+	return key
+}
+
+// queuePreview keeps only the newest pending set and schedules one flush per previewInterval;
+// the trailing flush still publishes the last preview before a pause, such as a running tool.
+func (a *agentSession) queuePreview(pending *execution.HistorySnapshot) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.emit == nil || a.ended {
+		return
+	}
+	a.preview = pending
+	if a.previewQueued {
+		return
+	}
+	a.previewQueued = true
+	time.AfterFunc(time.Until(a.previewAt.Add(previewInterval)), a.flushPreview)
+}
+
+// flushPreview publishes the queued pending set. Previews are best effort and never ACKed or
+// treated as an answer: a lost one is replaced by the next preview or by settled history.
+func (a *agentSession) flushPreview() {
+	a.publishMu.Lock()
+	defer a.publishMu.Unlock()
+	a.mu.Lock()
+	preview, emit, call := a.preview, a.emit, a.active
+	a.preview, a.previewQueued, a.previewAt = nil, false, time.Now()
+	if preview == nil || a.broken || a.ended || bytes.Equal(pendingKey(preview), a.previewSent) {
+		a.mu.Unlock()
+		return
+	}
+	a.mu.Unlock()
+	ref := execution.Ref{SessionID: a.frozen.ID}
+	if call != nil {
+		ref.TurnID = call.id
+	}
+	ctx, cancel := context.WithTimeout(a.project.ctx, 10*time.Second)
+	defer cancel()
+	if emit(ctx, execution.Event{Ref: ref, OccurredAt: time.Now().UTC(), Kind: execution.EventHistoryPreview, History: preview}) == nil {
+		a.mu.Lock()
+		a.previewSent = pendingKey(preview)
+		a.mu.Unlock()
+	}
 }
 
 func turnResult(turn *nodehistory.Turn) execution.Result {

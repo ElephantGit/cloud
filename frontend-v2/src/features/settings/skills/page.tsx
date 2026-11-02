@@ -182,7 +182,7 @@ export default function SkillsPage() {
     <section>
       <PageHeader
         title="Skills"
-        description="管理能复用的说明文档；市场技能随来源插件安装，自建技能仍是本地演示。"
+        description="管理能复用的说明文档；市场技能随来源插件安装，自建技能保存在当前浏览器。"
         count={skills.length}
         actions={
           <Button
@@ -275,7 +275,7 @@ export default function SkillsPage() {
                   <span className="settings-resource-meta">
                     <span>
                       {skill.source.kind === 'local'
-                        ? '自建技能 · 本机演示'
+                        ? '自建技能'
                         : '市场技能 · 只读'}
                     </span>
                     <span aria-hidden="true">·</span>
@@ -330,7 +330,7 @@ export default function SkillsPage() {
             onSave={(draft) =>
               local.save(
                 (data) => saveSkill(data, draft),
-                '演示技能已保存',
+                '技能已保存',
                 () => setPanel(null),
               )
             }
@@ -340,7 +340,7 @@ export default function SkillsPage() {
       {selected && panel?.kind === 'edit' && (
         <DetailPanel
           title={`编辑 ${selected.name}`}
-          description="修改只保存在此浏览器的演示空间。"
+          description="修改只保存在当前浏览器。"
           onClose={() => setPanel(null)}
         >
           <SkillForm
@@ -352,7 +352,7 @@ export default function SkillsPage() {
             onSave={(draft) =>
               local.save(
                 (data) => saveSkill(data, draft, selected.id),
-                '演示技能已保存',
+                '技能已保存',
                 () => setPanel({ kind: 'detail', id: selected.id }),
               )
             }
@@ -368,7 +368,7 @@ export default function SkillsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Badge variant="secondary">
               {selected.source.kind === 'local'
-                ? '自建技能 · 本机演示'
+                ? '自建技能'
                 : '市场技能 · 只读'}
             </Badge>
             {selected.source.kind === 'local' ? (
@@ -401,7 +401,7 @@ export default function SkillsPage() {
             <dt>来源</dt>
             <dd>
               {selected.source.kind === 'local' ? (
-                '当前用户的本机演示空间'
+                '当前浏览器'
               ) : (
                 <Link
                   className="underline underline-offset-4"
@@ -432,7 +432,7 @@ export default function SkillsPage() {
           onConfirm={() =>
             local.save(
               (data) => deleteSkill(data, removing.skill.id),
-              '演示技能已删除',
+              '技能已删除',
               () => {
                 setRemoving(undefined)
                 setPanel(null)

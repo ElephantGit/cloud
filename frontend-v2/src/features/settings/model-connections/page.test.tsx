@@ -5,7 +5,7 @@ import { renderSettingsPage } from '../test-utils'
 import ModelConnectionsPage from './page'
 
 beforeEach(() => localStorage.clear())
-it('creates model metadata, simulates credential readiness and saves a default without a key field', async () => {
+it('creates model metadata, marks credential readiness and saves a default without a key field', async () => {
   const user = userEvent.setup()
   renderSettingsPage(<ModelConnectionsPage />)
   await screen.findByRole('article', { name: '团队日常模型 · 示例' })
@@ -20,9 +20,9 @@ it('creates model metadata, simulates credential readiness and saves a default w
   await user.click(screen.getByRole('button', { name: '保存连接' }))
   const row = await screen.findByRole('article', { name: '新连接' })
   expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument()
-  await user.click(within(row).getByRole('button', { name: '模拟配置凭据' }))
+  await user.click(within(row).getByRole('button', { name: '标记凭据可用' }))
   await waitFor(() =>
-    expect(within(row).getByText('演示凭据已配置')).toBeInTheDocument(),
+    expect(within(row).getByText('凭据已配置')).toBeInTheDocument(),
   )
   await user.selectOptions(
     screen.getByLabelText('默认模型'),
@@ -34,7 +34,7 @@ it('creates model metadata, simulates credential readiness and saves a default w
   )
   await user.click(within(row).getByRole('switch'))
   await screen.findByText(
-    '当前默认选择不可用。请配置演示凭据、启用连接后重新选择。',
+    '当前默认选择不可用。请标记凭据、启用连接后重新选择。',
   )
 })
 it('keeps the connection when deletion is cancelled', async () => {

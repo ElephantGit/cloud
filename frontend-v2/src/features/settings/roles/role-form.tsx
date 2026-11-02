@@ -78,8 +78,8 @@ export function RoleForm({
       </FieldGroup>
       <ActionError error={error} />
       <p className="text-xs leading-relaxed text-muted-foreground">
-        角色只保存在本浏览器的演示空间。工作流节点可以选择它，但 v2
-        执行仍不会注入角色内容。
+        角色只保存在当前浏览器。工作流节点可以选择它，但 v2 执行仍不会
+        注入角色内容。
       </p>
       <div className="settings-form-actions">
         <Button

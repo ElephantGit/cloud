@@ -1,7 +1,7 @@
 import type { PluginCatalogEntry } from '@/api/generated.schemas'
 
 const DEMO_INDEXED_AT = '2026-11-02T00:00:00Z'
-const DEMO_SOURCE_URL = '本地演示'
+const DEMO_SOURCE_URL = '本地'
 
 function demoEntry(
   identifier: string,
@@ -35,14 +35,14 @@ export const demoMcpEntry = demoEntry(
   'sample-mcp',
   'mcp',
   '示例 MCP 工具',
-  '演示 MCP 插件的安装与卸载，不会连接外部服务。',
+  'MCP 插件的安装与卸载不会连接外部服务。',
 )
 
 export const demoHookEntry = demoEntry(
   'sample-hooks',
   'hook',
   '示例 Hooks',
-  '演示生命周期 Hook 的安装与卸载，不会执行自动化脚本。',
+  '生命周期 Hook 的安装与卸载不会执行自动化脚本。',
 )
 
 export function demoPlugin(entry: Pick<PluginCatalogEntry, 'kind'>) {

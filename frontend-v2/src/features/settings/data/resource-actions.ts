@@ -195,7 +195,7 @@ export function setModelDefault(
         c.models.some((m) => m.id === modelId),
     )
   )
-    throw new Error('请选择已启用且配置了演示凭据的连接与模型。')
+    throw new Error('请选择已启用且标记了凭据的连接与模型。')
   data.modelDefault = {
     connectionId,
     modelId,

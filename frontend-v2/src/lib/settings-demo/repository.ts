@@ -30,7 +30,7 @@ export class DemoRepository {
     try {
       raw = this.storage().getItem(this.key)
     } catch {
-      throw new Error('无法读取浏览器演示数据，请检查存储权限后重试。')
+      throw new Error('无法读取本地设置，请检查存储权限后重试。')
     }
     if (raw === null) {
       const initial = seed()
@@ -48,7 +48,7 @@ export class DemoRepository {
       throw new Error('invalid snapshot')
     } catch {
       throw new Error(
-        '演示数据无法读取。请重试，或通过“重置演示”恢复示例；重置会清除本机演示修改。',
+        '本地设置无法读取。请重试，或清除此站点数据后重新加载；这会移除当前浏览器中的设置修改。',
       )
     }
   }
@@ -58,7 +58,7 @@ export class DemoRepository {
   ): Promise<Snapshot> {
     const latest = this.readNow()
     if (latest.revision !== revision)
-      throw new Error('演示数据已在其他操作中更新，请核对最新数据后重试。')
+      throw new Error('本地设置已在其他操作中更新，请核对最新数据后重试。')
     change(latest)
     latest.revision += 1
     this.write(latest)

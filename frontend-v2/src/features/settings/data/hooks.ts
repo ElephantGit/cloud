@@ -35,13 +35,6 @@ export function useSettingsData() {
       void client.invalidateQueries({ queryKey })
     },
   })
-  const reset = useMutation({
-    mutationFn: () => repository.reset(),
-    onSuccess: (data) => {
-      client.setQueryData(queryKey, data)
-      toast.success('演示数据已重置')
-    },
-  })
   const save = (
     change: (data: Snapshot) => void,
     message: string,
@@ -59,5 +52,5 @@ export function useSettingsData() {
     )
   }
   const actor = { id: user.id, displayName: user.displayName, role: role ?? 'member' }
-  return { user: actor, repository, queryKey, query, mutation, reset, save, canManage: role === 'owner' }
+  return { user: actor, repository, queryKey, query, mutation, save, canManage: role === 'owner' }
 }

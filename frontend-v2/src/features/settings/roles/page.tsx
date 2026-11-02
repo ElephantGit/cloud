@@ -109,7 +109,7 @@ export default function RolesPage() {
                     {role.description || '暂无描述'}
                   </span>
                   <span className="settings-resource-meta">
-                    <span>本地角色 · 本机演示</span>
+                    <span>本地角色</span>
                     <span aria-hidden="true">·</span>
                     <span>{role.namespace}</span>
                   </span>
@@ -161,7 +161,7 @@ export default function RolesPage() {
       {selected && panel?.kind === 'edit' && (
         <DetailPanel
           title={`编辑 ${selected.name}`}
-          description="修改只保存在此浏览器的演示空间。"
+          description="修改只保存在当前浏览器。"
           onClose={() => setPanel(null)}
         >
           <RoleForm
@@ -181,7 +181,7 @@ export default function RolesPage() {
           onClose={() => setPanel(null)}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Badge variant="secondary">本地角色 · 本机演示</Badge>
+            <Badge variant="secondary">本地角色</Badge>
             <div className="flex gap-2">
               <Button
                 variant="outline"

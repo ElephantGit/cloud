@@ -87,7 +87,7 @@ describe('settings demo persistence', () => {
     )
     await other.read()
     values.set(repo.key, '{"schema":1,"skills":null}')
-    await expect(repo.read()).rejects.toThrow('重置')
+    await expect(repo.read()).rejects.toThrow('本地设置无法读取')
     expect(values.get(repo.key)).toBe('{"schema":1,"skills":null}')
     await repo.reset()
     expect((await repo.read()).skills.length).toBeGreaterThan(0)
@@ -245,7 +245,7 @@ describe('model metadata without credentials', () => {
       repo.update(state.revision, (data) =>
         setModelDefault(data, connection.id, 'org/model'),
       ),
-    ).rejects.toThrow('演示凭据')
+    ).rejects.toThrow('凭据')
     state = await repo.update(state.revision, (data) =>
       changeConnection(data, connection.id, 'credential'),
     )

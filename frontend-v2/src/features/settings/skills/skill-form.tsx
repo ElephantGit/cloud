@@ -76,7 +76,7 @@ export function SkillForm({
       </FieldGroup>
       <ActionError error={error} />
       <p className="text-xs leading-relaxed text-muted-foreground">
-        文档只保存在本浏览器的演示空间，不会注入真实会话。
+        文档只保存在当前浏览器，不会注入真实会话。
       </p>
       <div className="settings-form-actions">
         <Button

@@ -1415,7 +1415,7 @@ func description(r router.Route) string {
 	if strings.Contains(r.Path, "/scheduled-tasks") && (r.Method == "PATCH" || r.Method == "POST" && strings.HasSuffix(r.Path, "/scheduled-tasks")) {
 		// The definition name's own fault, stated here rather than in the shared per-status
 		// descriptions that unrelated routes also carry.
-		base += "A task name is unique among the caller's scheduled tasks on the same issue, deleted tasks included: a create or rename that repeats one answers 409 name_conflict. "
+		base += "A task name is unique among the caller's live scheduled tasks on the same issue; deleting a task frees its name. A create or rename that repeats a live name answers 409 name_conflict. "
 	}
 	if strings.Contains(r.Path, "/workflows") {
 		base += "Workflows are tenant-owned graph documents. `graph` is the authored document (nodes, edges, viewport, editor annotations, global variables), stored and returned whole — the editor is its only reader, so no field inside it is validated or indexed here. A live workflow name is unique per tenant; archiving one frees its name. "

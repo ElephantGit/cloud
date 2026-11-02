@@ -213,7 +213,7 @@ describe('ScheduledTasksPage', () => {
     await fillCreation(user, '每日同步', '同步仓库')
     await user.click(screen.getByRole('button', { name: '创建' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '同一 issue 下你已有同名定时任务（已删除的也算），请换一个名称',
+      '同一 issue 下你已有同名定时任务，请换一个名称',
     )
     expect(screen.getByRole('dialog', { name: '新建定时任务' })).toBeInTheDocument()
 

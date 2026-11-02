@@ -4,7 +4,7 @@
 
 ## 数据边界
 
-成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
+成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。旧 `dev/demo` 账号和启动配置 `retired` 里的旧预置成员会被软删除，不出现在名册中；它们的历史引用保留。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
 
 成员、Plugins、市场技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
 契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 与 Hook 没有 v2 执行器，安装和卸载是明确标注的浏览器本地演示，不会调用安装 API 或伪造服务端成功；目录缺少对应类型时提供演示条目。模型连接与自建技能同样仍是明确标注的浏览器演示。所有演示写入按登录用户隔离，其中 MCP/Hook 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。

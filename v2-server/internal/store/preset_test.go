@@ -14,12 +14,14 @@ func TestParsePresetValidatesAccounts(t *testing.T) {
 		want string // empty means the preset is valid
 	}{
 		{name: "minimum", raw: `{"users":[{"email":"Owner@Demo.test","displayName":"","role":"owner"}]}`},
+		{name: "retired presets", raw: `{"users":[{"email":"Owner@Demo.test","role":"owner"}],"retired":[{"email":"Old@Demo.test"}]}`},
 		{name: "empty", raw: `{"users":[]}`, want: "no users"},
 		{name: "missing users", raw: `{}`, want: "no users"},
 		{name: "no owner", raw: `{"users":[{"email":"a@demo.test","displayName":"A","role":"member"}]}`, want: "no owner"},
 		{name: "unknown role", raw: `{"users":[{"email":"a@demo.test","role":"admin"}]}`, want: "is not owner or member"},
 		{name: "bad email", raw: `{"users":[{"email":"a@","role":"owner"}]}`, want: "invalid email"},
 		{name: "duplicate", raw: `{"users":[{"email":"a@demo.test","role":"owner"},{"email":"A@demo.test","role":"member"}]}`, want: "duplicate email"},
+		{name: "retired overlaps a user", raw: `{"users":[{"email":"a@demo.test","role":"owner"}],"retired":[{"email":"A@demo.test"}]}`, want: "duplicate email"},
 		{name: "unknown field", raw: `{"users":[{"email":"a@demo.test","role":"owner","password":"x"}]}`, want: "unknown field"},
 	}
 	for _, c := range cases {

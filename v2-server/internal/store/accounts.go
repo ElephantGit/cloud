@@ -23,6 +23,73 @@ func (s *Store) SeedUsers(ctx context.Context, p Preset) error {
 	return nil
 }
 
+// RetireUsers soft-deletes accounts retired from the startup preset. The cleanup marker makes it
+// one-time: if the same address is invited later, a later restart must not remove that invitation.
+func (s *Store) RetireUsers(ctx context.Context, retired []RetiredUser) error {
+	if len(retired) == 0 {
+		return nil
+	}
+	const cleanup = "retired-preset-users-v1"
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var applied bool
+		if e := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM v2_data_cleanups WHERE name = $1)`, cleanup).Scan(&applied); e != nil {
+			return fmt.Errorf("read preset cleanup marker: %w", e)
+		}
+		if applied {
+			return nil
+		}
+		for _, u := range retired {
+			email, e := NormalizeEmail(u.Email)
+			if e != nil {
+				return e
+			}
+			var userID string
+			e = tx.QueryRow(ctx, `
+				UPDATE users
+				SET status = 'disabled', deleted_at = COALESCE(deleted_at, now()), version = version + 1
+				WHERE source = $1 AND subject = $2 AND deleted_at IS NULL
+				RETURNING id::text`, EmailSource, email).Scan(&userID)
+			if errors.Is(e, pgx.ErrNoRows) {
+				continue
+			}
+			if e != nil {
+				return fmt.Errorf("retire preset user %s: %w", email, e)
+			}
+			if _, e := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); e != nil {
+				return fmt.Errorf("delete retired preset sessions: %w", e)
+			}
+		}
+		if _, e := tx.Exec(ctx, `INSERT INTO v2_data_cleanups (name) VALUES ($1)`, cleanup); e != nil {
+			return fmt.Errorf("record preset cleanup: %w", e)
+		}
+		return nil
+	})
+}
+
+// RetireLegacyDemoUser hides the fixed account created by the removed development login. Its
+// memberships and authored rows stay in place so historical references remain intact.
+func (s *Store) RetireLegacyDemoUser(ctx context.Context) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var userID string
+		e := tx.QueryRow(ctx, `
+			UPDATE users
+			SET status = 'disabled', deleted_at = COALESCE(deleted_at, now()), version = version + 1
+			WHERE source = 'dev' AND subject = 'demo' AND deleted_at IS NULL
+			RETURNING id::text`).Scan(&userID)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return nil
+		}
+		if e != nil {
+			return fmt.Errorf("retire legacy demo user: %w", e)
+		}
+		if _, e := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); e != nil {
+			return fmt.Errorf("delete legacy demo sessions: %w", e)
+		}
+		return nil
+	})
+}
+
 // UpsertUser creates or updates one account and its demo-team membership, returning the user id.
 // It is the write behind both the startup preset and the test fixtures; browsers never reach it.
 func (s *Store) UpsertUser(ctx context.Context, in PresetUser) (string, error) {

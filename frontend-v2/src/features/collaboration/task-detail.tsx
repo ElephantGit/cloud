@@ -73,7 +73,7 @@ export function TaskDetailView({ task, projectName, squads, busy, error, run, on
           <div className="mc-actions">
             <Button type="button" size="sm" disabled={running || run.starting || run.executors.length === 0} onClick={run.onStart}>
               {run.hasRuns ? <RotateCcw data-icon="inline-start" /> : <CirclePlay data-icon="inline-start" />}
-              {run.starting ? '正在启动…' : run.hasRuns ? '重新执行' : '开始执行'}
+              {run.starting ? '正在启动…' : run.hasRuns ? '重新执行' : '开始处理'}
             </Button>
             {task.activeRun && <Button type="button" size="sm" variant="outline" disabled={run.stopping} onClick={run.onStop}>
               <CircleStop data-icon="inline-start" />{running ? '停止' : '结束会话'}

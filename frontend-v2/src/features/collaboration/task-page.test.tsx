@@ -72,10 +72,11 @@ it('starts the Agent with the configured model and shows the run being prepared'
   vi.mocked(api.getTaskTimeline).mockImplementation(async () => (started ? { runs: [run()], comments: [] } : empty))
   renderPage()
   expect(await screen.findByText(/还没有运行/)).toBeInTheDocument()
-  // An Agent task enters 进行中 by running, not by hand.
-  expect(screen.queryByRole('button', { name: '开始处理' })).not.toBeInTheDocument()
+  // An Agent task enters 进行中 by running, not by hand: its one 开始处理 starts the Agent.
   await waitFor(() => expect(screen.getByLabelText('执行模型')).toHaveValue('claude:configured'))
-  await userEvent.click(screen.getByRole('button', { name: '开始执行' }))
+  expect(screen.getAllByRole('button', { name: '开始处理' })).toHaveLength(1)
+  expect(within(screen.getByLabelText('执行')).getByRole('button', { name: '开始处理' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '开始处理' }))
   await waitFor(() => expect(api.startTaskRun).toHaveBeenCalledWith('tenant', 'task-1', { executorId: 'claude:configured' }, expect.objectContaining({ headers: expect.anything() })))
 
   expect(await screen.findByText(/正在准备 Agent/)).toBeInTheDocument()
@@ -145,6 +146,6 @@ it('keeps another member to comments while someone else owns the run', async () 
 it('says why a refused start failed instead of retrying', async () => {
   vi.mocked(api.startTaskRun).mockRejectedValue({ isAxiosError: true, response: { status: 409, data: { code: 'run_active' } } })
   renderPage()
-  await userEvent.click(await screen.findByRole('button', { name: '开始执行' }))
+  await userEvent.click(await screen.findByRole('button', { name: '开始处理' }))
   expect(await screen.findByText('Agent 正在执行，等这一轮结束或先停止。')).toBeInTheDocument()
 })

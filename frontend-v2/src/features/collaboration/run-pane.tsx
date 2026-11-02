@@ -23,7 +23,7 @@ export function RunPane({ tenantId, taskId, runs, selected, onSelect }: {
   if (!selected) {
     return <div className="mc-run-empty">
       <Bot size={22} aria-hidden="true" />
-      <p>还没有运行。把任务指派给 Agent 后点「开始执行」，或在下面的输入框 @ 它。</p>
+      <p>还没有运行。把任务指派给 Agent 后点「开始处理」，或在下面的输入框 @ 它。</p>
     </div>
   }
   return <div className="mc-run-pane">

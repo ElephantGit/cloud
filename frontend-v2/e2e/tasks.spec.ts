@@ -76,7 +76,7 @@ test('an Agent runs a task, the team watches, only the starter follows up', asyn
 
   // The owner starts it on the fixture model; the run is theirs, the task enters 进行中.
   await side.getByLabel('执行模型').selectOption({ label: 'OpenCode / Fixture' })
-  await side.getByRole('button', { name: '开始执行' }).click()
+  await side.getByRole('button', { name: '开始处理' }).click()
   await expect(page.getByRole('region', { name: '运行与讨论' }).getByText(answer)).toBeVisible({ timeout: 300_000 })
   // A finished turn hands the task to review by itself.
   await expect(page.locator('.mc-task-bar .mc-status')).toHaveText('待验收', { timeout: 30_000 })

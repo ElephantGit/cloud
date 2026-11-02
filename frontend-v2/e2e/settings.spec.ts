@@ -139,9 +139,9 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   await page.goto('/settings/plugins')
   const tavily = page.getByRole('article', { name: 'Tavily' })
   await tavily.getByRole('button', { name: '安装' }).click()
-  await expect(tavily.getByText('已安装（演示）', { exact: true })).toBeVisible()
+  await expect(tavily.getByText('已安装', { exact: true })).toBeVisible()
   await page.reload()
-  await expect(tavily.getByText('已安装（演示）', { exact: true })).toBeVisible()
+  await expect(tavily.getByText('已安装', { exact: true })).toBeVisible()
   await tavily.getByRole('button', { name: '移除' }).click()
   await page
     .getByRole('alertdialog')
@@ -152,9 +152,9 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   const hooks = page.getByRole('article', { name: '示例 Hooks' })
   await expect(page.getByRole('heading', { name: 'Hooks' })).toBeVisible()
   await hooks.getByRole('button', { name: '安装' }).click()
-  await expect(hooks.getByText('已安装（演示）', { exact: true })).toBeVisible()
+  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
   await page.reload()
-  await expect(hooks.getByText('已安装（演示）', { exact: true })).toBeVisible()
+  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
 })
 
 test('Agent cards install and remove while preinstalled Agents stay read-only', async ({
@@ -382,7 +382,7 @@ test('five desktop pages and keyboard-accessible details', async ({
       }
       await expect(
         page.getByRole('article', { name: 'Tavily' }).getByText(
-          '已安装（演示）',
+          '已安装',
           { exact: true },
         ),
       ).toBeVisible()

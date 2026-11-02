@@ -123,6 +123,11 @@ func TestTaskRunHTTP(t *testing.T) {
 		t.Fatalf("squad mention = %d %v", status, body)
 	}
 
+	// Mentioning oneself waits on nobody.
+	if status, body := c.do("GET", "/api/v2/tenants/"+tid+"/task-mentions", nil); status != 200 || len(body["items"].([]any)) != 0 {
+		t.Fatalf("pending mentions = %d %v", status, body)
+	}
+
 	status, timeline := c.do("GET", one+"/timeline", nil)
 	if status != 200 || len(timeline["runs"].([]any)) != 1 || len(timeline["comments"].([]any)) != 1 {
 		t.Fatalf("timeline = %d %v", status, timeline)

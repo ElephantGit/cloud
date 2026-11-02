@@ -1260,6 +1260,77 @@
           }
         }
       }
+    },
+    "/api/v2/tenants/{tid}/task-mentions": {
+      "get": {
+        "operationId": "listPendingMentions",
+        "tags": [
+          "tasks"
+        ],
+        "description": "The caller's mentions still waiting on their reply, one per open task: the latest comment by someone else that @-mentioned them, on a task they have not commented on since.",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingMentionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1851,6 +1922,50 @@
           "executorId": {
             "type": "string",
             "maxLength": 200
+          }
+        }
+      },
+      "PendingMention": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "commentId",
+          "authorId",
+          "authorName",
+          "createdAt"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "commentId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PendingMentionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingMention"
+            }
           }
         }
       }

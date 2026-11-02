@@ -405,3 +405,44 @@ func (s *Store) CollaborationAgents(ctx context.Context, tenant, caller string) 
 	}
 	return out, rows.Err()
 }
+
+// PendingMention is the latest comment that @-mentioned someone on an open task they have not
+// commented on since. It is how a mention reaches a person: the task waits on them until they reply.
+type PendingMention struct {
+	TaskID     string    `json:"taskId"`
+	CommentID  string    `json:"commentId"`
+	AuthorID   string    `json:"authorId"`
+	AuthorName string    `json:"authorName"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// PendingMentions lists, one per task, the mentions of the caller still waiting on their reply.
+// A mention of oneself, and mentions on done or cancelled tasks, wait on nobody.
+func (s *Store) PendingMentions(ctx context.Context, tenant, caller string) ([]PendingMention, error) {
+	if _, e := tenantRole(ctx, s.pool, tenant, caller); e != nil {
+		return nil, e
+	}
+	rows, e := s.pool.Query(ctx, `
+		SELECT DISTINCT ON (c.task_id) c.task_id, c.id, c.author_id::text, u.display_name, c.created_at
+		FROM v2_task_comments c
+		JOIN v2_tasks t ON t.id = c.task_id
+		JOIN users u ON u.id = c.author_id
+		WHERE c.tenant_id = $1 AND t.status NOT IN ('done', 'cancelled') AND c.author_id <> $2::uuid
+			AND c.mentions @> jsonb_build_array(jsonb_build_object('type', 'user', 'id', $2::text))
+			AND NOT EXISTS (SELECT 1 FROM v2_task_comments r
+				WHERE r.task_id = c.task_id AND r.author_id = $2::uuid AND r.created_at > c.created_at)
+		ORDER BY c.task_id, c.created_at DESC, c.id DESC`, tenant, caller)
+	if e != nil {
+		return nil, fmt.Errorf("list pending mentions: %w", e)
+	}
+	defer rows.Close()
+	out := []PendingMention{}
+	for rows.Next() {
+		var m PendingMention
+		if e := rows.Scan(&m.TaskID, &m.CommentID, &m.AuthorID, &m.AuthorName, &m.CreatedAt); e != nil {
+			return nil, e
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

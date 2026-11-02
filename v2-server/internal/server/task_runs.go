@@ -16,6 +16,7 @@ import (
 type taskRunStore interface {
 	TaskTimeline(ctx context.Context, tenant, caller, taskID string) ([]store.TaskRun, []store.TaskComment, error)
 	CollaborationAgents(ctx context.Context, tenant, caller string) ([]store.TaskAssignee, error)
+	PendingMentions(ctx context.Context, tenant, caller string) ([]store.PendingMention, error)
 }
 
 // maxCommentBody bounds a comment like a task description: a prompt-sized brief, not a document.
@@ -30,6 +31,31 @@ func (h *handler) taskRunRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+base+"/runs/{rid}/events", h.authed(h.taskRunEvents))
 	mux.HandleFunc("POST "+base+"/comments", h.authed(h.createTaskComment))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/collaboration/targets", h.authed(h.collaborationTargets))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/task-mentions", h.authed(h.pendingMentions))
+}
+
+// pendingMentions lists the caller's mentions still waiting on their reply, one per open task.
+func (h *handler) pendingMentions(w http.ResponseWriter, r *http.Request, u store.User) {
+	s, ok := h.store.(taskRunStore)
+	tenant := r.PathValue("tid")
+	if !ok {
+		fault(w, http.StatusServiceUnavailable, "task_unavailable")
+		return
+	}
+	if !taskUUID.MatchString(tenant) {
+		fault(w, http.StatusNotFound, "not_found")
+		return
+	}
+	items, e := s.PendingMentions(r.Context(), tenant, u.ID)
+	if errors.Is(e, store.ErrNotFound) {
+		fault(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if e != nil {
+		internal(w, "pending mentions", e)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // taskRunScope checks the path ids and that task runs are wired; the host checks membership.

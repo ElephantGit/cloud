@@ -167,6 +167,7 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop` | 结束一次活着的运行：正在执行的一轮先取消，空闲的会话直接结束；任何成员都可以停 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events` | 运行会话的 SSE，形状与对话事件流相同；工作区任何成员都能读 |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/comments` | 必须带 `Idempotency-Key`；`{body, mentions?, toAgent?, executorId?}` 记一条评论，`toAgent` 同时发给 Agent |
+| `GET /api/v2/tenants/{tid}/task-mentions` | 调用者还没回复的 @：每个未结束任务一条，取别人最近一次 @ 调用者、且调用者此后没在该任务评论过的那条 |
 
 任务归属于一个工作区项目，`projectId` 必须在同一工作区内，否则 400 `invalid_project`。指派人显式类型化，
 与小队成员一致：`human` 引用当前有效的租户成员，`agent` 引用同工作区活动且可执行的预装 Space Agent，
@@ -204,7 +205,8 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 
 评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的
 Space Agent），写入时解析名字；正文里手打的「@名字」不路由。`toAgent` 把评论作为一轮发给 Agent：调用者自己的活运行就追加到同一会话，
-没有活运行就用调用者身份开新运行。
+没有活运行就用调用者身份开新运行。v2 没有通知渠道，@ 靠 `task-mentions` 送达：被 @ 的人在任务里评论一次就算回复，
+自己 @ 自己和已完成、已取消任务上的 @ 不算。
 
 HTTP 集成测试按此候选 OpenAPI 校验每一次响应，并覆盖创建、编辑、合法与非法状态迁移、三种指派、
 版本冲突和越权读取，以及开始、停止、评论、@、时间线和事件流；数据库测试另覆盖跨租户隔离与执行服务的推进；

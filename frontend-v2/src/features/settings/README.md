@@ -19,7 +19,9 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 - 插件复用生成的 `PluginCatalogEntry` 与 `SpacePlugin`；目录、安装和卸载全部走
   `frontend-v2/src/api` 的生成客户端。以 `sourceNamespace/identifier` 对应，写入带
   `Idempotency-Key` 和当前选择 version。Skill 与市场 Agent 可安装/移除；Agent 只保存空间
-  选择，不触发下载或执行。系统预装的 OpenCode、Claude Code 显示“运行时预装”且只读。
+  选择，不触发下载或执行。所有安装操作都显示 1–5 秒随机等待；系统预装的 OpenCode、
+  Claude Code 显示“运行时预装”，也可点击“安装”走同一演示等待，但不写服务端，不改变
+  运行时。等待逻辑在 `plugins/install-delay.ts`，不占用 v2-server 事务。
   合集暂不可安装。目录来自 v2-server 对
   `ora-space/marketplace` 的真实 Git 同步，而不是前端内置数据。目录把来源发布的明暗主题
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
@@ -60,4 +62,4 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 `e2e/multiuser.spec.ts` 覆盖 owner 邀请（含邀请入队）、被邀请者登录、未邀请邮箱被拒与
 member 被服务端拒绝。模型连接和角色的资源操作仍是本机演示。
 
-插件市场区分空间选择与项目实际结果。来源管理使用临时市场契约生成的客户端；空间选择供插件和技能页面共享。当前会进入项目运行时的市场类型是 Skill；Agent 选择只保存空间状态，可执行 Agent 仍只有系统预装的 OpenCode 和 Claude Code；MCP 与 Hook 只在浏览器演示安装/卸载。插件详情列出各项目等待、成功或失败的状态。移除市场仅隐藏可安装目录，不移除空间中已有选择。
+插件市场区分空间选择与项目实际结果。来源管理使用临时市场契约生成的客户端；空间选择供插件和技能页面共享。当前会进入项目运行时的市场类型是 Skill；Agent 选择只保存空间状态，可执行 Agent 仍只有系统预装的 OpenCode 和 Claude Code；MCP、Hook 与预装 Agent 的安装动作只在浏览器演示，不写服务端。插件详情列出各项目等待、成功或失败的状态。移除市场仅隐藏可安装目录，不移除空间中已有选择。

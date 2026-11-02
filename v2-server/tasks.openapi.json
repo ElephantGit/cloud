@@ -652,6 +652,614 @@
           }
         }
       }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/timeline": {
+      "get": {
+        "operationId": "getTaskTimeline",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTimeline"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/executors": {
+      "get": {
+        "operationId": "listTaskExecutors",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "The executors that can run the task's Agent",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutorList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/runs": {
+      "post": {
+        "operationId": "startTaskRun",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Start a run of the task's Agent under the caller's identity",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "The turn's attempt identity: a retry with the same key never starts the Agent twice."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRunStart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop": {
+      "post": {
+        "operationId": "stopTaskRun",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "End a live run; a running turn is cancelled",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRun"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events": {
+      "get": {
+        "operationId": "streamTaskRunEvents",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Follow the run's session events as Server-Sent Events",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Resume after this sequence; Last-Event-ID takes precedence."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An event stream in the chat stream's shape: each message's id is its sequence and its data a chat event; an 'end' event follows session_ended, and 'failure' (data {code}) reports a broken stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/comments": {
+      "post": {
+        "operationId": "createTaskComment",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Comment on the task, optionally sending the comment to its Agent",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "The turn's attempt identity: a retry with the same key never starts the Agent twice."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCommentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskComment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -711,7 +1319,8 @@
           "createdByName",
           "version",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "activeRun"
         ],
         "additionalProperties": false,
         "properties": {
@@ -786,6 +1395,15 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "activeRun": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskRunSummary"
+              }
+            ],
+            "nullable": true,
+            "description": "The task's live Agent run; null when none is live."
           }
         }
       },
@@ -914,6 +1532,325 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        }
+      },
+      "TaskRunSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "startedBy",
+          "startedByName",
+          "executorName"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "idle",
+              "ended"
+            ],
+            "description": "running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns."
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "startedByName": {
+            "type": "string"
+          },
+          "executorName": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "One execution session of the task's Agent. The whole workspace reads it; only startedBy can send it another turn.",
+        "required": [
+          "id",
+          "taskId",
+          "startedBy",
+          "startedByName",
+          "executorId",
+          "executorName",
+          "state",
+          "lastResult",
+          "failureCode",
+          "endReason",
+          "createdAt",
+          "endedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "startedByName": {
+            "type": "string"
+          },
+          "executorId": {
+            "type": "string"
+          },
+          "executorName": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "idle",
+              "ended"
+            ],
+            "description": "running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns."
+          },
+          "lastResult": {
+            "type": "string",
+            "enum": [
+              "",
+              "completed",
+              "cancelled",
+              "failed",
+              "interrupted"
+            ],
+            "description": "The latest ended turn's status; empty while the first turn runs."
+          },
+          "failureCode": {
+            "type": "string"
+          },
+          "endReason": {
+            "type": "string",
+            "enum": [
+              "",
+              "stopped",
+              "replaced",
+              "closed",
+              "interrupted"
+            ],
+            "description": "Why the session ended: a person stopped it, a rerun replaced it, the task was closed, or the server restarted."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TaskMention": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id",
+          "displayName"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskMentionRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskComment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "authorId",
+          "authorName",
+          "body",
+          "mentions",
+          "runId",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskMention"
+            }
+          },
+          "runId": {
+            "type": "string",
+            "description": "The run the comment was sent to as a turn; empty for a plain comment."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TaskTimeline": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runs",
+          "comments"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskRun"
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskComment"
+            }
+          }
+        }
+      },
+      "TaskExecutor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "agentId",
+          "agentName",
+          "modelId",
+          "modelName"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskExecutorList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskExecutor"
+            }
+          }
+        }
+      },
+      "TaskRunStart": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "executorId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Empty for the Agent's default executor."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Added to the task's brief."
+          }
+        }
+      },
+      "TaskCommentCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "mentions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/TaskMentionRef"
+            }
+          },
+          "toAgent": {
+            "type": "boolean",
+            "description": "Send the comment to the task's Agent: the caller's own live run, or a new run when none is live."
+          },
+          "executorId": {
+            "type": "string",
+            "maxLength": 200
           }
         }
       }

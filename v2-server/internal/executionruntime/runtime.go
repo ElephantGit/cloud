@@ -582,7 +582,7 @@ func groupKey(scope execution.Scope, caller execution.Caller) string {
 	return scope.TenantID + "/" + scope.UserID + "/" + string(caller.Kind) + "/" + caller.ID
 }
 func validate(c execution.Caller, p execution.Prompt) error {
-	if c.ID == "" || c.AttemptID == "" || (c.Kind != execution.CallerChat && c.Kind != execution.CallerWorkflow && c.Kind != execution.CallerSchedule) {
+	if c.ID == "" || c.AttemptID == "" || (c.Kind != execution.CallerChat && c.Kind != execution.CallerWorkflow && c.Kind != execution.CallerSchedule && c.Kind != execution.CallerTask) {
 		return execution.ErrInvalidRequest
 	}
 	if c.Kind != execution.CallerWorkflow && (c.NodeID != "" || len(c.Rounds) != 0) {

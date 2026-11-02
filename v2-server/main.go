@@ -28,6 +28,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 	"github.com/wanglongan587/cloud/v2-server/internal/workflowhost"
 	"golang.org/x/sys/unix"
 )
@@ -206,12 +207,19 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 	if e := workflowRuns.Interrupt(ctx); e != nil {
 		return e
 	}
+	// Task runs, likewise, end what the previous process left live before serving.
+	taskRuns := taskrun.New(db, runtime, runtime, nil)
+	defer taskRuns.Close()
+	if e := taskRuns.Interrupt(ctx); e != nil {
+		return e
+	}
 	options := withWorkflowDomain(server.Options{
 		RefreshOfficial: func(ctx context.Context) error { return market.Refresh(ctx, db, time.Now()) },
 		SessionTTL:      7 * 24 * time.Hour,
 		Projects:        projects,
 		Execution:       runtime,
 		Catalog:         runtime,
+		TaskRuns:        taskRuns,
 	}, workflowRuns)
 	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
 	if e != nil {

@@ -103,9 +103,7 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
   renderSettingsPage(<PluginsPage />)
   const row = await screen.findByRole('article', { name: 'GitHub 工具' })
   await user.click(within(row).getByRole('button', { name: '安装' }))
-  expect(
-    within(row).getByText('已安装（演示）', { exact: true }),
-  ).toBeInTheDocument()
+  expect(within(row).getByText('已安装', { exact: true })).toBeInTheDocument()
   await user.click(within(row).getByRole('button', { name: '移除' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(dialog).toHaveTextContent('不会卸载真实插件包')
@@ -115,9 +113,7 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
   const hook = screen.getByRole('article', { name: '示例 Hooks' })
   expect(screen.getByRole('heading', { name: 'Hooks' })).toBeInTheDocument()
   await user.click(within(hook).getByRole('button', { name: '安装' }))
-  expect(
-    within(hook).getByText('已安装（演示）', { exact: true }),
-  ).toBeInTheDocument()
+  expect(within(hook).getByText('已安装', { exact: true })).toBeInTheDocument()
   expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
     'demo/sample-hooks',
   )

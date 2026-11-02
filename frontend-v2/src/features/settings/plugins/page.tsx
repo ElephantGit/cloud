@@ -51,7 +51,7 @@ function StateBadge({
   selection?: SpacePlugin
   demoSelected: boolean
 }) {
-  if (demoSelected) return <Badge variant="secondary">已安装（演示）</Badge>
+  if (demoSelected) return <Badge variant="secondary">已安装</Badge>
   const state = selection?.observedState ?? 'removed'
   const label =
     selection?.kind !== 'skill' &&
@@ -214,7 +214,7 @@ export default function PluginsPage() {
     market.resetErrors()
     if (demoPlugin(entry)) {
       setDemoSelected(demoScope, pluginKey(entry), true)
-      toast.success(`已安装 ${entry.title}（演示）`)
+      toast.success(`已安装 ${entry.title}`)
       return
     }
     void market
@@ -236,7 +236,7 @@ export default function PluginsPage() {
     if (!removing) return
     if (removing.demo) {
       setDemoSelected(demoScope, pluginKey(removing.entry), false)
-      toast.success(`已卸载 ${removing.entry.title}（演示）`)
+      toast.success(`已卸载 ${removing.entry.title}`)
       setRemoving(undefined)
       return
     }

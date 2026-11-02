@@ -48,7 +48,7 @@ func TestSkillProjectsRequireEveryBoundNode(t *testing.T) {
 		if !ok || e != nil {
 			t.Fatal(e)
 		}
-		if e := f.store.FinishSkillJob(f.ctx, j, outcome); e != nil {
+		if e := f.store.FinishSkillJob(f.ctx, j, outcome, ""); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -128,7 +128,7 @@ func TestTransientSkillFailureRetriesWithBackoff(t *testing.T) {
 	if ok, e := f.store.StartSkillJob(f.ctx, job); !ok || e != nil {
 		t.Fatal(ok, e)
 	}
-	if e := f.store.FinishSkillJob(f.ctx, job, store.SkillJobRetry); e != nil {
+	if e := f.store.FinishSkillJob(f.ctx, job, store.SkillJobRetry, ""); e != nil {
 		t.Fatal(e)
 	}
 	if e := f.store.RefreshSkillStates(f.ctx); e != nil {
@@ -160,7 +160,7 @@ func TestTransientSkillFailureRetriesWithBackoff(t *testing.T) {
 	if ok, e := f.store.StartSkillJob(f.ctx, jobs[0]); !ok || e != nil {
 		t.Fatal(ok, e)
 	}
-	if e := f.store.FinishSkillJob(f.ctx, jobs[0], store.SkillJobSucceeded); e != nil {
+	if e := f.store.FinishSkillJob(f.ctx, jobs[0], store.SkillJobSucceeded, ""); e != nil {
 		t.Fatal(e)
 	}
 	if e := f.store.RefreshSkillStates(f.ctx); e != nil {

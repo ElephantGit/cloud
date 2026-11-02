@@ -19,6 +19,12 @@ import (
 
 var ErrSource = errors.New("invalid public HTTPS marketplace source")
 
+// Local proxy DNS servers commonly answer public hostnames with an address from this
+// benchmarking range and route the connection through their own tunnel. Treating the pinned
+// address as the destination still proves the URL hostname during TLS, while literal addresses in
+// the same range remain rejected.
+var syntheticDNSRange = netip.MustParsePrefix("198.18.0.0/15")
+
 func ValidatePublicSource(raw, branch string) (*url.URL, error) {
 	u, e := url.Parse(raw)
 	if e != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || u.Port() != "" && u.Port() != "443" || u.RawQuery != "" || u.Fragment != "" || u.Path == "" || !ValidBranch(branch) {
@@ -61,6 +67,27 @@ func publicIP(ip netip.Addr) bool {
 	return ip.Is4() || netip.MustParsePrefix("2000::/3").Contains(ip)
 }
 
+// selectDialAddress applies the public-address policy once for both Git and package HTTP
+// connections. A hostname may resolve through a local proxy's synthetic DNS range; a literal
+// address in that range is still rejected.
+func selectDialAddress(host string, ips []netip.Addr) (netip.Addr, error) {
+	if len(ips) == 0 {
+		return netip.Addr{}, ErrSource
+	}
+	_, hostErr := netip.ParseAddr(host)
+	literal := hostErr == nil
+	for _, ip := range ips {
+		if publicIP(ip) {
+			continue
+		}
+		if !literal && syntheticDNSRange.Contains(ip.Unmap()) {
+			continue
+		}
+		return netip.Addr{}, ErrSource
+	}
+	return ips[0].Unmap(), nil
+}
+
 // Pin the resolved address for the entire clone. Never inherit host git configuration,
 // credential helpers or proxy settings for a repository chosen by a space owner.
 func ReadPublic(ctx context.Context, source Source, useProxy bool) ([]Entry, error) {
@@ -74,12 +101,11 @@ func ReadPublic(ctx context.Context, source Source, useProxy bool) ([]Entry, err
 	if e != nil || len(ips) == 0 {
 		return nil, ErrSource
 	}
-	for _, ip := range ips {
-		if !publicIP(ip) {
-			return nil, ErrSource
-		}
+	dialIP, e := selectDialAddress(u.Hostname(), ips)
+	if e != nil {
+		return nil, e
 	}
-	address := net.JoinHostPort(ips[0].Unmap().String(), "443")
+	address := net.JoinHostPort(dialIP.String(), "443")
 	tmp, e := os.MkdirTemp("", "ora-market-")
 	if e != nil {
 		return nil, e

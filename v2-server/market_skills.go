@@ -42,7 +42,21 @@ func reconcileSkills(ctx context.Context, db *store.Store, driver *agentruntime.
 			if errors.Is(e, agentruntime.ErrOfflineSkillNode) {
 				continue
 			}
-			if err := db.FinishSkillJob(ctx, j, skillJobOutcome(e)); err != nil {
+			outcome := skillJobOutcome(e)
+			failure := skillFailureDetail(e)
+			if e != nil {
+				slog.Warn("skill job failed",
+					"project", j.Project,
+					"selection", j.Selection,
+					"plugin", j.Namespace+"/"+j.Identifier,
+					"version", j.Version,
+					"desired", j.Desired,
+					"outcome", outcome,
+					"failure", failure,
+					"error", e,
+				)
+			}
+			if err := db.FinishSkillJob(ctx, j, outcome, failure); err != nil {
 				return err
 			}
 		}
@@ -58,6 +72,23 @@ func skillJobOutcome(e error) store.SkillJobOutcome {
 		return store.SkillJobRetry
 	default:
 		return store.SkillJobFailed
+	}
+}
+
+func skillFailureDetail(e error) string {
+	switch {
+	case e == nil:
+		return ""
+	case errors.Is(e, pluginmarket.ErrSource):
+		return "技能包下载地址没有通过公网 HTTPS 校验。请检查市场来源或本机 DNS 代理设置。"
+	case errors.Is(e, pluginmarket.ErrPackage):
+		return "技能包下载失败或完整性校验未通过，请重新应用。"
+	case errors.Is(e, pluginmarket.ErrCredentials):
+		return "市场来源凭据不可用，请由 owner 重新配置来源。"
+	case errors.Is(e, agentruntime.ErrNodeRejected):
+		return "项目节点拒绝或未确认技能包操作，请查看服务日志后重试。"
+	default:
+		return "项目节点未确认操作，请查看服务日志后重试。"
 	}
 }
 

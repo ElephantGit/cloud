@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
 )
@@ -37,7 +38,11 @@ func (d *Driver) OnlineSkillProjects() []string {
 	return ids
 }
 
-var ErrOfflineSkillNode = errors.New("project node offline")
+var (
+	ErrOfflineSkillNode = errors.New("project node offline")
+	// ErrNodeRejected reports a Node receipt that did not confirm the requested plugin operation.
+	ErrNodeRejected = errors.New("node rejected plugin operation")
+)
 
 func (d *Driver) ApplySkill(ctx context.Context, project, id, version, file, digest string, remove bool) error {
 	d.mu.Lock()
@@ -93,16 +98,24 @@ func (d *Driver) ApplySkill(ctx context.Context, project, id, version, file, dig
 		Result struct {
 			Items []struct {
 				ID      string `json:"plugin_id"`
-				Outcome struct{ Kind, Version string }
+				Outcome struct {
+					Kind    string
+					Version string
+					Failure string
+				}
 			}
 		}
 	}
 	if json.Unmarshal(msg.Payload, &response) != nil || response.Kind != "plugins_completed" || len(response.Result.Items) != 1 {
-		return errors.New("node did not confirm plugin operation")
+		return fmt.Errorf("%w: node did not confirm plugin operation", ErrNodeRejected)
 	}
 	result := response.Result.Items[0]
 	if result.ID != id || result.Outcome.Kind != outcome || !remove && result.Outcome.Version != version {
-		return errors.New("node rejected plugin operation")
+		failure := result.Outcome.Failure
+		if failure == "" {
+			failure = "unspecified"
+		}
+		return fmt.Errorf("%w: %s", ErrNodeRejected, failure)
 	}
 	return p.publishSkills(id, version, remove)
 }

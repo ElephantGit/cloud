@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import { isAxiosError } from "axios";
+import { listChatExecutors } from "@/features/chat/api/generated";
 import {
   activateWorkflow,
   analyzeWorkflow,
@@ -55,7 +56,6 @@ import type {
 } from "../contracts";
 import { ContractError } from "../contracts";
 import {
-  demoAgentModels,
   demoPlugins,
   demoRoles,
   demoSkills,
@@ -169,14 +169,15 @@ export function createHttpWorkflowContracts(tenantId: string): WorkflowContracts
 /**
  * The client every copied workflow query and mutation hook calls: the definition operations, and
  * the catalogs the Agent node's pickers read. v2-server reports no Roles, Skills or MCP servers
- * yet, so the catalogs are still the demo entries.
+ * yet, so those catalogs retain demo entries. Executors come from Chat's real catalog.
  */
-export function createContractsClient(workflow: WorkflowContracts) {
+export function createContractsClient(workflow: WorkflowContracts, tenantId: string) {
   const answer =
     <Request, Response>(operation: (request: Request) => Response) =>
     async (request: Request, _options?: Options) =>
       operation(request);
   return {
+    tenantId,
     workflow,
     agent: {
       list: answer((_request: Record<string, never>) => ({ agents: demoRoles })),
@@ -189,10 +190,8 @@ export function createContractsClient(workflow: WorkflowContracts) {
         plugins: demoPlugins,
       })),
     },
-    agentRuntime: {
-      listModels: answer((request: { agentRef: string }) => ({
-        models: demoAgentModels[request.agentRef] ?? [],
-      })),
+    executors: {
+      list: () => listChatExecutors(tenantId),
     },
   };
 }

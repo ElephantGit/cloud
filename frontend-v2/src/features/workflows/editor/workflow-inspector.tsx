@@ -717,6 +717,11 @@ function AgentConfigurationFields({
             </Command>
           </PopoverContent>
         </Popover>
+        {!modelsLoading && !modelsError && configuredModel === undefined && (
+          <p role="status" className="mt-1 text-xs text-muted-foreground">
+            {t("settings.workflow.selectAvailableAgentModel")}
+          </p>
+        )}
       </InspectorField>
       <InspectorField
         label={t("settings.workflow.field.prompt")}

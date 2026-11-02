@@ -80,7 +80,9 @@ type chatExecutor struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	AgentName string `json:"agentName"`
+	AgentID   string `json:"agentId"`
 	ModelName string `json:"modelName"`
+	ModelID   string `json:"modelId"`
 }
 
 func (h *handler) chatExecutors(w http.ResponseWriter, r *http.Request, c chatRequest) {
@@ -91,7 +93,7 @@ func (h *handler) chatExecutors(w http.ResponseWriter, r *http.Request, c chatRe
 	}
 	items := make([]chatExecutor, 0, len(list))
 	for _, x := range list {
-		items = append(items, chatExecutor{ID: x.ID, Name: x.Name, AgentName: x.AgentName, ModelName: x.Model.Name})
+		items = append(items, chatExecutor{ID: x.ID, Name: x.Name, AgentID: x.AgentID, AgentName: x.AgentName, ModelID: x.Model.ID, ModelName: x.Model.Name})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

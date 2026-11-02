@@ -46,7 +46,7 @@ export default function Page() {
 
 function TenantWorkflows({ tenantId }: { tenantId: string }) {
   const [client] = useState(() =>
-    createContractsClient(createHttpWorkflowContracts(tenantId)),
+    createContractsClient(createHttpWorkflowContracts(tenantId), tenantId),
   );
   const [queryClient] = useState(createWorkflowQueryClient);
   return (

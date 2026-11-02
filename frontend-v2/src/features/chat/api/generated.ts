@@ -38,6 +38,8 @@ export interface ChatExecutor {
   id: string;
   name: string;
   agentName: string;
+  agentId: string;
+  modelId: string;
   modelName: string;
 }
 

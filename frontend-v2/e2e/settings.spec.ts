@@ -19,11 +19,48 @@ async function resetScroll(page: Page) {
 }
 const titles = [
   ['members', '成员'],
+  ['roles', '角色'],
   ['model-connections', '模型连接'],
   ['theme', '主题'],
   ['plugins', 'Plugins'],
   ['skills', 'Skills'],
 ] as const
+
+test('roles are user-managed, persistent and importable', async ({ page }) => {
+  await login(page, '/settings/roles')
+  await expect(page.getByRole('article', { name: '代码审查' })).toBeVisible()
+  await page.getByRole('button', { name: '新建角色' }).click()
+  await page.getByLabel('标题').fill('发布检查')
+  await page.getByLabel('描述').fill('发布前核对版本和说明')
+  await page
+    .getByLabel('内容（Markdown）')
+    .fill('# 发布检查\n\n核对版本。')
+  await page.getByRole('button', { name: '保存角色' }).click()
+  await expect(
+    page.getByRole('article', { name: '发布检查' }),
+  ).toBeVisible()
+  await page.reload()
+  await expect(
+    page.getByRole('article', { name: '发布检查' }),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: '导入角色' }).click()
+  await page.getByLabel('角色 Markdown 文件').setInputFiles({
+    name: 'reviewer.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(`---
+name: 代码审查
+description: 导入的审查说明
+---
+导入的审查内容`),
+  })
+  await expect(page.getByText('现有描述：')).toBeVisible()
+  await page.getByRole('button', { name: '覆盖' }).click()
+  await page.getByRole('button', { name: '确认导入' }).click()
+  await expect(
+    page.getByRole('article', { name: '代码审查' }),
+  ).toContainText('导入的审查说明')
+})
 
 test('settings subroutes, refresh, history and the existing shell remain navigable', async ({
   page,
@@ -359,7 +396,7 @@ test('theme survives reload and follows system changes across existing pages', a
   await expect(page.locator('html')).not.toHaveClass(/dark/)
 })
 
-test('five desktop pages and keyboard-accessible details', async ({
+test('six settings pages and keyboard-accessible details', async ({
   page,
 }, info) => {
   const errors: string[] = []
@@ -405,11 +442,11 @@ test('five desktop pages and keyboard-accessible details', async ({
   expect(errors).toEqual([])
 })
 
-test('dark plugin and skill screenshots', async ({ page }, info) => {
+test('dark settings screenshots', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await login(page, '/settings/theme')
   await theme(page, '深色')
-  for (const path of ['plugins', 'skills']) {
+  for (const path of ['roles', 'plugins', 'skills']) {
     await page.goto('/settings/' + path)
     await expect(page.getByRole('article').first()).toBeVisible()
     await resetScroll(page)
@@ -448,7 +485,7 @@ test('Agent plugin screenshots', async ({ page }, info) => {
 })
 
 for (const width of [768, 375]) {
-  test(`five settings pages at ${width}px keep the active link visible`, async ({
+  test(`six settings pages at ${width}px keep the active link visible`, async ({
     page,
   }, info) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -473,7 +510,10 @@ for (const width of [768, 375]) {
       const nav = page.getByRole('navigation', { name: '设置导航' })
       const active = nav.getByRole('link', { name: title, exact: true })
       await expect(active).toBeInViewport({ ratio: 1 })
-      if (width === 375 && ['plugins', 'skills'].includes(path)) {
+      if (
+        ['roles', 'plugins', 'skills'].includes(path) &&
+        (width === 375 || (width === 768 && path === 'roles'))
+      ) {
         await expect(page.getByRole('article').first()).toBeVisible()
         await resetScroll(page)
         await page.screenshot({

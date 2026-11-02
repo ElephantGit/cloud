@@ -17,9 +17,10 @@ export default function SettingsPage() {
   const client = useQueryClient()
   const themePage = location.pathname === '/settings/theme'
   // Plugins and members are real server resources. Skills mixes server market skills with local
-  // documents, while model connections remain browser-local.
+  // documents, while roles and model connections remain browser-local.
   const localDemoPage = [
     '/settings/model-connections',
+    '/settings/roles',
     '/settings/skills',
   ].includes(location.pathname)
   const mixedDataPage = location.pathname === '/settings/skills'
@@ -93,6 +94,8 @@ export default function SettingsPage() {
                   ? '服务端目录与本地技能'
                   : location.pathname === '/settings/model-connections'
                     ? '演示工作空间'
+                    : location.pathname === '/settings/roles'
+                      ? '本机角色'
                     : '工作空间成员'}
           </span>
         </div>
@@ -134,7 +137,7 @@ export default function SettingsPage() {
       {confirming && (
         <ConfirmDialog
           title="重置演示数据？"
-          description="将清除当前用户在此浏览器中的模型连接和自建技能修改，恢复初始示例。主题、工作空间插件与市场技能不受影响。"
+          description="将清除当前用户在此浏览器中的模型连接、自建技能和角色修改，恢复初始示例。主题、工作空间插件与市场技能不受影响。"
           confirmLabel="重置演示"
           pending={reset.isPending}
           error={reset.error}

@@ -63,11 +63,13 @@ beforeEach(() => {
 })
 
 it('starts the Agent with the configured model and shows the run being prepared', async () => {
-  vi.mocked(api.startTaskRun).mockResolvedValue(run({ executorId: 'claude:configured' }))
-  // After the start the page reads the task and its timeline again and finds the run.
-  vi.mocked(api.getTask).mockResolvedValueOnce(task())
-    .mockResolvedValue(task({ status: 'running', activeRun: { id: 'run-1', state: 'running', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Sonnet' } }))
-  vi.mocked(api.getTaskTimeline).mockResolvedValueOnce(empty).mockResolvedValue({ runs: [run()], comments: [] })
+  // Once started, the page reads the task and its timeline again and finds the run.
+  let started = false
+  vi.mocked(api.startTaskRun).mockImplementation(async () => { started = true; return run({ executorId: 'claude:configured' }) })
+  vi.mocked(api.getTask).mockImplementation(async () => (started
+    ? task({ status: 'running', activeRun: { id: 'run-1', state: 'running', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Sonnet' } })
+    : task()))
+  vi.mocked(api.getTaskTimeline).mockImplementation(async () => (started ? { runs: [run()], comments: [] } : empty))
   renderPage()
   expect(await screen.findByText(/还没有运行/)).toBeInTheDocument()
   // An Agent task enters 进行中 by running, not by hand.

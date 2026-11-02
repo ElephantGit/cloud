@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ChevronLeft, ClipboardList, Pencil } from 'lucide-react'
@@ -61,6 +61,14 @@ export default function TaskPage() {
     ? pickedExecutor
     : (executorList.find(x => !x.id.endsWith(':fixture')) ?? executorList[0])?.id ?? ''
 
+  // The task is read most often; when its run changes state, the timeline and the sidebar's counts
+  // follow at once instead of on their own slower beat.
+  const runState = task ? `${task.activeRun?.id ?? ''}:${task.activeRun?.state ?? ''}:${task.status}` : ''
+  useEffect(() => {
+    if (!runState) return
+    void client.invalidateQueries({ queryKey: ['task-timeline', tenantId, taskId] })
+    void client.invalidateQueries({ queryKey: ['tasks', tenantId] })
+  }, [runState, client, tenantId, taskId])
   const runs = timeline.data?.runs ?? []
   const comments = timeline.data?.comments ?? []
   const selected = runs.find(r => r.id === pickedRun) ?? runs.at(-1)

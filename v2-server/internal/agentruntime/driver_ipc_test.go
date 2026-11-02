@@ -726,7 +726,9 @@ func TestDriverIPCPreviewsStreamPendingRecordsWithoutAck(t *testing.T) {
 		if last.Kind != execution.EventHistoryPreview {
 			t.Fatalf("unexpected event %+v", last)
 		}
-		var line struct{ Update struct{ Content struct{ Text string } } }
+		var line struct {
+			Update struct{ Content struct{ Text string } }
+		}
 		if len(last.History.Records) != 1 || !last.History.Records[0].Preview || last.History.Records[0].Sequence != 2 || json.Unmarshal(last.History.Records[0].Data, &line) != nil {
 			t.Fatalf("preview event %+v", last.History)
 		}

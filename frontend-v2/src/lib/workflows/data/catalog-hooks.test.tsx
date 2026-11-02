@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { UserContext } from "@/app/auth/user";
 import { http } from "@/lib/api-client";
-import { fakeBackend } from "@/test/backend";
-import { useWorkflowAgentModels } from "./catalog-hooks";
+import { demoUser, fakeBackend } from "@/test/backend";
+import { useAgents, useWorkflowAgentModels } from "./catalog-hooks";
 import { createContractsClient, createHttpWorkflowContracts } from "./contracts-client";
 import { ContractsClientProvider } from "./contracts-client-provider";
 
@@ -27,10 +28,22 @@ function mount() {
   return { ...renderHook(() => useWorkflowAgentModels(), { wrapper }), client };
 }
 
+function mountAgents() {
+  localStorage.clear();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderHook(() => useAgents(), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <UserContext.Provider value={demoUser}>{children}</UserContext.Provider>
+      </QueryClientProvider>
+    ),
+  });
+}
+
 afterEach(() => { http.defaults.adapter = originalAdapter; });
 
 describe("workflow executor catalog", () => {
-  it("groups real identities from one tenant request and keeps Role, Skill and MCP demo catalogs", async () => {
+  it("groups real identities from one tenant request and keeps Skill and MCP demo catalogs", async () => {
     const seen = fakeBackend((config) => config.url === `/api/v2/tenants/${tid}/chat/executors`
       ? { status: 200, data: { items: executors } } : undefined);
     const { result, client } = mount();
@@ -42,7 +55,6 @@ describe("workflow executor catalog", () => {
       { agentCli: "official/ora-space.claude", modelId: "messages-fixture", label: "Claude Code · Fixture" },
     ]);
     expect(seen).toEqual([`GET /api/v2/tenants/${tid}/chat/executors`]);
-    expect((await client.agent.list({})).agents).toHaveLength(2);
     expect((await client.skill.list({})).skills).toHaveLength(2);
     expect((await client.plugin.listInstalled({})).plugins.map((p) => p.kind)).toEqual(["mcp", "mcp"]);
   });
@@ -66,5 +78,16 @@ describe("workflow executor catalog", () => {
     failed = false;
     result.current.refetch();
     await waitFor(() => expect(result.current.agentModels).toHaveLength(3));
+  });
+});
+
+describe("workflow role catalog", () => {
+  it("reads the signed-in user's local roles", async () => {
+    const { result } = mountAgents();
+    await waitFor(() => expect(result.current.data?.length).toBe(2));
+    expect(result.current.data?.map((role) => role.name)).toEqual([
+      "代码审查",
+      "技术写作",
+    ]);
   });
 });

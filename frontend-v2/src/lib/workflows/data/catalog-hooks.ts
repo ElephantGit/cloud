@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Skill } from "../contracts";
 import type { WorkflowAgentModel } from "../mock";
+import { useRoleCatalog } from "@/lib/settings-demo/role-hooks";
 import { useContractsClient } from "./contracts-client";
 import { useAgentCatalog, type AgentEntry } from "./use-agent-catalog";
 
@@ -10,19 +11,23 @@ import { useAgentCatalog, type AgentEntry } from "./use-agent-catalog";
 // the desktop selection plumbing that picks one is left out.
 
 const catalogKeys = {
-  agents: ["workflow-catalog", "agents"] as const,
   skills: ["workflow-catalog", "skills"] as const,
   plugins: ["workflow-catalog", "plugins"] as const,
   executors: ["workflow-catalog", "executors"] as const,
 };
 
-/** Loads configurable agents (Roles). */
+/** Loads configurable roles from the same browser-local snapshot Settings edits. */
 export function useAgents() {
-  const client = useContractsClient();
-  return useQuery({
-    queryKey: catalogKeys.agents,
-    queryFn: () => client.agent.list({}).then((response) => response.agents),
-  });
+  const query = useRoleCatalog();
+  return {
+    ...query,
+    data: query.data?.map((role) => ({
+      id: role.id,
+      namespace: role.namespace,
+      name: role.name,
+      description: role.description,
+    })),
+  };
 }
 
 /** Pickers only surface skills whose on-disk package is still usable. */

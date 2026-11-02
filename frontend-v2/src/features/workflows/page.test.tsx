@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { UserContext } from "@/app/auth/user";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { defaultWorkflowSidebar, useUiStore } from "@/lib/workflows/host/ui-store";
 import { LocalWorkflowBackend, browserWorkflowStorage } from "@/lib/workflows/data/local-workflow-backend";
@@ -38,9 +39,11 @@ async function renderPage() {
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Page />
-      </TooltipProvider>
+      <UserContext.Provider value={demoUser}>
+        <TooltipProvider>
+          <Page />
+        </TooltipProvider>
+      </UserContext.Provider>
     </QueryClientProvider>,
   );
   await screen.findByRole("complementary", { name: "工作流列表" });

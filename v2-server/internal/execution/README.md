@@ -6,7 +6,7 @@
 
 ## 两条执行路径
 
-- `Start`：选择 `ProjectID` 和 `ExecutorID`，后端从项目已保存的仓库 clone 对话目录，经真实 Node 启动 Agent。
+- `Start`：选择 `ProjectID`、`AgentID` 和 `ModelID`，后端按 Agent 协议解析模型绑定，从项目已保存的仓库 clone 对话目录，经真实 Node 启动 Agent。旧调用仍可用 `ExecutorID` 读取已冻结的组合绑定。
 - `StartModel`：无项目，直接通过共享 provider 调模型，只需要 `ModelID`；不启动 Agent、不建目录、不提供工具。
 - 两者共用 `Append`、Ref、Result、会话订阅、取消和历史读取。Append 沿用 session 的模式和绑定。
 - `Prompt` 是 ACP ContentBlock 数组；首版只接 text，其他块返回 `ErrUnsupported`，空或畸形输入返回 `ErrInvalidRequest`。
@@ -14,7 +14,7 @@
   Agent 与模型直连共用这份配置，凭据只留在后端。未配置的模型或不可用的 Agent 产物不能列为可运行项。
 
 项目由共享项目服务创建：同步 `clone --mirror` 仓库和指定分支，成功后保存项目及 snapshot ref。
-执行端口不接收原始仓库凭据或任意目录。Session 保留目标、执行器和模型的选择快照，清单更新不能改写历史。
+执行端口不接收原始仓库凭据或任意目录。Session 保留目标、Agent 和模型的选择快照，清单更新不能改写历史。Agent 和模型分开选择，但只有协议兼容的组合可以解析为执行绑定。
 
 ## 身份与目录
 

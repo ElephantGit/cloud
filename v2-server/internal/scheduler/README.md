@@ -26,10 +26,10 @@
 `ConversationAdapter` 使用公共 `execution.Service`，不是新的 provider 或 Session/Turn 实现。从冻结配置读取执行目标，以 occurrence ID 作为公共 Caller 的 ID 和 AttemptID：
 
 - 无项目文本对话使用 `StartModel` 与明确的模型 ID，不创建 Agent 或 Workspace；不能同时携带项目执行器 ID。
-- 有项目文本对话使用 `Start`，传入冻结的 projectId 和 target.executorId（公共目录里的执行器绑定 ID）。每次触发都是独立会话，目录由公共服务创建，消费方不能选择或争抢目录。执行器名称、agent/model 展示文字不能替代绑定 ID。
+- 有项目文本对话使用 `Start`，传入冻结的 projectId、target.agentId 和 target.model。公共服务按 Agent 协议解析实际绑定；旧任务可继续使用冻结的 target.executorId。每次触发都是独立会话，目录由公共服务创建，消费方不能选择或争抢目录。展示名称不能替代 Agent/model ID。
 - 任一路的接收错误都不会降级到另一路；缺少绑定、空提示词及工作流目标明确拒绝。工作流必须经自己的运行入口，不能在这里当作 Agent 对话运行。
 
-配置接口和表单已经开放项目绑定：保存时按当前 `schedule-resources` 目录校验 projectId、模型与执行器绑定，触发时仍走同一个 `Start`。
+配置接口和表单已经开放项目绑定：保存时按当前 `schedule-resources` 目录校验 projectId、Agent 与其可运行模型，触发时仍走同一个 `Start`。
 
 ## 工作流执行适配
 

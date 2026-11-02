@@ -95,17 +95,27 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 
 // Start validates the project and freezes a binding before recording the first Agent turn.
 func (s *Service) Start(ctx context.Context, scope execution.Scope, req execution.StartRequest) (execution.Ref, error) {
-	return s.start(ctx, scope, req.Caller, req.Prompt, &req.Target, req.ExecutorID, "")
+	return s.start(ctx, scope, req.Caller, req.Prompt, &req.Target, req.ExecutorID, req.AgentID, req.ModelID)
 }
 
 // StartModel starts an independent model conversation without creating a directory or Node.
 func (s *Service) StartModel(ctx context.Context, scope execution.Scope, req execution.ModelStartRequest) (execution.Ref, error) {
-	return s.start(ctx, scope, req.Caller, req.Prompt, nil, "", req.ModelID)
+	return s.start(ctx, scope, req.Caller, req.Prompt, nil, "", "", req.ModelID)
 }
 
-func (s *Service) start(ctx context.Context, scope execution.Scope, caller execution.Caller, prompt execution.Prompt, target *execution.Target, executorID, modelID string) (execution.Ref, error) {
+func (s *Service) start(ctx context.Context, scope execution.Scope, caller execution.Caller, prompt execution.Prompt, target *execution.Target, executorID, agentID, modelID string) (execution.Ref, error) {
 	if err := validate(caller, prompt); err != nil {
 		return execution.Ref{}, err
+	}
+	if target != nil {
+		if target.ProjectID == "" {
+			return execution.Ref{}, execution.ErrInvalidRequest
+		}
+		if executorID == "" && (agentID == "" || modelID == "") {
+			return execution.Ref{}, execution.ErrInvalidRequest
+		}
+	} else if executorID != "" || agentID != "" {
+		return execution.Ref{}, execution.ErrInvalidRequest
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,7 +131,7 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 		if e != nil {
 			return execution.Ref{}, publicError(e)
 		}
-		if !sameJSON(old.Prompt, prompt) || !reflect.DeepEqual(session.Target, target) || (target == nil && session.Model.ID != modelID) || (target != nil && (session.Executor == nil || session.Executor.ID != executorID)) {
+		if !sameJSON(old.Prompt, prompt) || !reflect.DeepEqual(session.Target, target) || (target == nil && session.Model.ID != modelID) || (target != nil && !sameAgentSelection(session.Executor, executorID, agentID, modelID)) {
 			return execution.Ref{}, execution.ErrConflict
 		}
 		return old.Ref, nil
@@ -134,28 +144,18 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 	}
 	var executor *execution.Executor
 	if target != nil {
-		if target.ProjectID == "" {
-			return execution.Ref{}, execution.ErrInvalidRequest
-		}
 		if s.agent == nil {
 			return execution.Ref{}, execution.ErrUnavailable
 		}
 		if _, err := s.db.GetProject(ctx, scope, target.ProjectID); err != nil {
 			return execution.Ref{}, publicError(err)
 		}
-	search:
-		for id, choice := range s.models {
-			for _, a := range agentExecutors {
-				if e, ok := executorFor(a, choice); ok && e.ID == executorID {
-					modelID = id
-					executor = &e
-					break search
-				}
-			}
-		}
-		if executor == nil {
+		var ok bool
+		executor, ok = s.resolveExecutor(executorID, agentID, modelID)
+		if !ok {
 			return execution.Ref{}, execution.ErrNotFound
 		}
+		modelID = executor.Model.ID
 	}
 	choice, ok := s.models[modelID]
 	// A direct model turn speaks OpenAI chat completions; Messages bindings serve Agents only.
@@ -193,6 +193,52 @@ func (s *Service) start(ctx context.Context, scope execution.Scope, caller execu
 	}
 	s.launch(scope, session, turn, group)
 	return turn.Ref, nil
+}
+
+// resolveExecutor accepts either the legacy combined binding ID or the independent Agent and
+// model IDs. Mixed forms must describe the same binding; display names never select execution.
+func (s *Service) resolveExecutor(executorID, agentID, modelID string) (*execution.Executor, bool) {
+	if executorID == "" && (agentID == "" || modelID == "") {
+		return nil, false
+	}
+	for id, choice := range s.models {
+		for _, a := range agentExecutors {
+			e, ok := executorFor(a, choice)
+			if !ok {
+				continue
+			}
+			if executorID != "" && e.ID != executorID {
+				continue
+			}
+			if executorID == "" && (e.AgentID != agentID || id != modelID) {
+				continue
+			}
+			if executorID != "" && ((agentID != "" && e.AgentID != agentID) || (modelID != "" && id != modelID)) {
+				continue
+			}
+			copy := e
+			return &copy, true
+		}
+	}
+	return nil, false
+}
+
+// sameAgentSelection compares an existing frozen executor snapshot with either the legacy
+// combined ID or the independent Agent/model IDs without consulting the mutable catalog.
+func sameAgentSelection(e *execution.Executor, executorID, agentID, modelID string) bool {
+	if e == nil || (executorID == "" && agentID == "" && modelID == "") {
+		return false
+	}
+	if executorID != "" && e.ID != executorID {
+		return false
+	}
+	if agentID != "" && e.AgentID != agentID {
+		return false
+	}
+	if modelID != "" && e.Model.ID != modelID {
+		return false
+	}
+	return true
 }
 
 // Append continues a live logical session. A durable terminal event may precede driver cleanup;

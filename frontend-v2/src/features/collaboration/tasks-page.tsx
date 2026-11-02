@@ -15,7 +15,7 @@ import { TaskBoardColumns, TaskRows } from './task-list'
 import { taskMessageFor } from './task-model'
 import { filterTasks, TASK_VIEWS, viewOf } from './task-views'
 import { createTask, type Task } from './tasks-api/generated'
-import { useTaskList, useWorkspace } from './workspace'
+import { usePendingMentions, useTaskList, useWorkspace } from './workspace'
 
 /**
  * One scope of the team's tasks, as a board (the default) or a list. The scope and layout live in
@@ -34,10 +34,11 @@ export default function TasksPage() {
   const [showCancelled, setShowCancelled] = useState(false)
   const [error, setError] = useState('')
   const list = useTaskList(tenantId)
+  const mentions = usePendingMentions(tenantId)
   const projects = useQuery({ queryKey: ['projects', tenantId], queryFn: () => getApiV2TenantsTidProjects(tenantId, { limit: 100 }), enabled: !!tenantId })
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
   const squad = squads.data?.items.find(s => s.id === squadId)
-  const items = filterTasks(list.data?.items ?? [], view, me.id, squadId)
+  const items = filterTasks(list.data?.items ?? [], view, me.id, squadId, new Set(mentions.keys()))
   const projectList = projects.data?.items ?? []
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -84,8 +85,8 @@ export default function TasksPage() {
         ? <p role="alert">任务加载失败，请刷新重试。</p>
         : items.length || layout === 'board'
           ? layout === 'board'
-            ? <TaskBoardColumns tasks={items} projects={projectList} showCancelled={showCancelled} onOpen={open} />
-            : <TaskRows tasks={items} projects={projectList} onOpen={open} />
+            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} showCancelled={showCancelled} onOpen={open} />
+            : <TaskRows tasks={items} projects={projectList} mentions={mentions} onOpen={open} />
           : <Empty className="min-h-56 border">
             <EmptyHeader><EmptyMedia variant="icon"><ClipboardList /></EmptyMedia>
               <EmptyTitle>{view === 'all' && !squad ? '还没有任务' : '这里还没有任务'}</EmptyTitle>

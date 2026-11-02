@@ -22,13 +22,14 @@ describe('task views', () => {
   it('scopes one team-wide list', () => {
     expect(ids(filterTasks(all, 'mine', 'me'))).toEqual(['mine', 'mine-done'])
     expect(ids(filterTasks(all, 'todo', 'me'))).toEqual(['mine', 'my-review'])
-    expect(ids(filterTasks(all, 'running', 'me'))).toEqual(['busy'])
+    expect(ids(filterTasks(all, 'todo', 'me', null, new Set(['squad'])))).toEqual(['mine', 'my-review', 'squad'])
     expect(ids(filterTasks(all, 'all', 'me'))).toEqual(ids(all))
     expect(ids(filterTasks(all, 'all', 'me', 'squad-1'))).toEqual(['squad'])
   })
 
   it('reads an unknown view as everything', () => {
-    expect(viewOf('running')).toBe('running')
+    expect(viewOf('todo')).toBe('todo')
+    expect(viewOf('running')).toBe('all')
     expect(viewOf('nope')).toBe('all')
     expect(viewOf(null)).toBe('all')
   })

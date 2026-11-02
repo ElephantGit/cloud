@@ -18,9 +18,9 @@ export interface CommentDraft {
 type Picked = TaskMentionRef & { displayName: string }
 
 /**
- * The task's one input. Text goes to the team as a comment; picking the task's Agent from the @
- * menu, or turning on 发给 Agent, also sends it to the Agent as a turn. Only a target picked from
- * the menu counts: "@name" typed by hand routes nothing.
+ * The task's one input. Whenever the caller may reach the task's Agent, text goes to it as a turn
+ * (and to the team as a comment) unless they turn 发给 Agent off; otherwise it is a team comment.
+ * Only a target picked from the @ menu counts: "@name" typed by hand routes nothing.
  */
 export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
   tenantId: string
@@ -32,12 +32,13 @@ export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
 }) {
   const [body, setBody] = useState('')
   const [picked, setPicked] = useState<Picked[]>([])
-  const [toAgent, setToAgent] = useState(false)
+  // null until the caller flips the switch: then the default, to the Agent whenever it is reachable.
+  const [toAgent, setToAgent] = useState<boolean | null>(null)
   const [query, setQuery] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const targets = useGetApiV1TenantsTidCollaborationTargets(tenantId, { query: { enabled: !!tenantId, staleTime: 60_000 } })
   const reach = agentReach(task, me)
-  const sendToAgent = toAgent && reach.ok
+  const sendToAgent = reach.ok && (toAgent ?? true)
   const options = useMemo(() => {
     if (query === null) return []
     const q = query.toLocaleLowerCase()
@@ -71,7 +72,7 @@ export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
     if (ok) {
       setBody('')
       setPicked([])
-      setToAgent(false)
+      setToAgent(null)
     }
   }
 

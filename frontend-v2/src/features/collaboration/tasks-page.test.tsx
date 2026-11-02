@@ -13,7 +13,7 @@ import type { Task } from './tasks-api/generated'
 import TasksPage from './tasks-page'
 
 vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: 'owner' }] }, isLoading: false, isError: false }) }))
-vi.mock('./tasks-api/generated', () => ({ listTasks: vi.fn(), createTask: vi.fn() }))
+vi.mock('./tasks-api/generated', () => ({ listTasks: vi.fn(), createTask: vi.fn(), listPendingMentions: vi.fn() }))
 vi.mock('./api/generated', () => ({ listSquads: vi.fn() }))
 vi.mock('@/lib/projects-api/generated', () => ({ getApiV2TenantsTidProjects: vi.fn() }))
 
@@ -57,6 +57,7 @@ beforeEach(() => {
   vi.mocked(projectsApi.getApiV2TenantsTidProjects).mockResolvedValue({ items: [project], nextCursor: '' })
   vi.mocked(squadsApi.listSquads).mockResolvedValue({ items: [], nextCursor: '' })
   vi.mocked(api.listTasks).mockResolvedValue({ items: [], nextCursor: '' })
+  vi.mocked(api.listPendingMentions).mockResolvedValue({ items: [] })
 })
 
 it('shows an explicit empty state instead of sample tasks', async () => {
@@ -71,17 +72,25 @@ it('shows an explicit empty state instead of sample tasks', async () => {
 it('lists tasks and who is working on them', async () => {
   vi.mocked(api.listTasks).mockResolvedValue({ items: [task(), agentTask], nextCursor: '' })
   renderAt('/collaboration?layout=list')
-  expect(await screen.findByRole('button', { name: '查看任务 整理演示数据' })).toHaveTextContent('演示项目 · 未指派')
+  const open = await screen.findByRole('button', { name: '查看任务 整理演示数据' })
+  expect(open).toHaveTextContent('演示项目 · 演示用户 创建')
+  expect(open).toHaveTextContent('未指派')
   const running = screen.getByRole('button', { name: '查看任务 修复登录页' })
-  expect(running).toHaveTextContent('Claude Code 执行中')
+  expect(running).toHaveTextContent('鲍勃 发起 · 执行中')
+  expect(running).toHaveTextContent('Claude Code')
 })
 
 it('scopes the list by the view in the URL', async () => {
   vi.mocked(api.listTasks).mockResolvedValue({ items: [task(), agentTask, myTask], nextCursor: '' })
-  renderAt('/collaboration?view=running')
-  expect(await screen.findByRole('button', { name: '查看任务 修复登录页' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '查看任务 整理演示数据' })).not.toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: '运行中' })).toBeInTheDocument()
+  // Someone's @ waiting on me brings their task into 待我处理, and its card says who is waiting.
+  vi.mocked(api.listPendingMentions).mockResolvedValue({ items: [
+    { taskId: 'task-1', commentId: 'comment-1', authorId: 'user-2', authorName: '鲍勃', createdAt: '2026-10-30T00:00:00Z' },
+  ] })
+  renderAt('/collaboration?view=todo')
+  expect(await screen.findByRole('button', { name: '查看任务 整理演示数据' })).toHaveTextContent('鲍勃 @ 了你')
+  expect(screen.getByRole('button', { name: '查看任务 写周报' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '查看任务 修复登录页' })).not.toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '待我处理' })).toBeInTheDocument()
 })
 
 it('shows a board by default with one column per status and no dragging', async () => {

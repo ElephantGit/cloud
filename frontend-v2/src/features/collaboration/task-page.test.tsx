@@ -83,7 +83,30 @@ it('starts the Agent with the configured model and shows the run being prepared'
   expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
 })
 
-it('sends a comment to the Agent only when its own Agent is picked from the @ menu', async () => {
+it('sends to the Agent by default while it is reachable, and to the team once switched off', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(task({ status: 'review', activeRun: { id: 'run-1', state: 'idle', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Fixture' } }))
+  vi.mocked(api.getTaskTimeline).mockResolvedValue({ runs: [run({ state: 'idle', lastResult: 'completed' })], comments: [] })
+  vi.mocked(api.createTaskComment).mockResolvedValue({ id: 'c1', taskId: 'task-1', authorId: 'user-me', authorName: '演示用户', body: '再改改', mentions: [], runId: 'run-1', createdAt: '2026-10-30T02:00:00Z' })
+  renderPage()
+  const toAgent = await screen.findByRole('switch', { name: '发给 Agent' })
+  await waitFor(() => expect(toAgent).toHaveAttribute('aria-checked', 'true'))
+  const input = screen.getByLabelText('评论或给 Agent 的消息')
+  await userEvent.type(input, '再改改')
+  await userEvent.click(screen.getByRole('button', { name: '发给 Agent' }))
+  await waitFor(() => expect(api.createTaskComment).toHaveBeenCalledWith('tenant', 'task-1', {
+    body: '再改改', mentions: [], toAgent: true, executorId: 'claude:configured',
+  }, expect.anything()))
+
+  await userEvent.click(toAgent)
+  expect(toAgent).toHaveAttribute('aria-checked', 'false')
+  await userEvent.type(input, '只给团队看')
+  await userEvent.click(screen.getByRole('button', { name: '评论' }))
+  await waitFor(() => expect(api.createTaskComment).toHaveBeenLastCalledWith('tenant', 'task-1', {
+    body: '只给团队看', mentions: [], toAgent: false, executorId: undefined,
+  }, expect.anything()))
+})
+
+it('sends a comment to the Agent when its own Agent is picked from the @ menu', async () => {
   vi.mocked(api.getTask).mockResolvedValue(task({ status: 'review', activeRun: { id: 'run-1', state: 'idle', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Fixture' } }))
   vi.mocked(api.getTaskTimeline).mockResolvedValue({ runs: [run({ state: 'idle', lastResult: 'completed' })], comments: [] })
   vi.mocked(api.createTaskComment).mockResolvedValue({ id: 'c1', taskId: 'task-1', authorId: 'user-me', authorName: '演示用户', body: '@Claude Code 按钮再大一点', mentions: [], runId: 'run-1', createdAt: '2026-10-30T02:00:00Z' })

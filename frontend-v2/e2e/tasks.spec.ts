@@ -72,7 +72,7 @@ test('an Agent runs a task, the team watches, only the starter follows up', asyn
   await expect(dialog.getByLabel('所属项目')).not.toHaveValue('')
   await dialog.getByRole('button', { name: '创建任务' }).click()
   const side = page.getByRole('complementary', { name: '任务属性' })
-  await side.getByLabel('指派给').selectOption({ label: 'official/ora-space.opencode' })
+  await side.getByLabel('指派给').selectOption({ label: 'OpenCode' })
 
   // The owner starts it on the fixture model; the run is theirs, the task enters 进行中.
   await side.getByLabel('执行模型').selectOption({ label: 'OpenCode / Fixture' })
@@ -95,8 +95,9 @@ test('an Agent runs a task, the team watches, only the starter follows up', asyn
   await expect(colleague.getByRole('list', { name: '讨论' })).toContainText('看起来可以，等 Owner 确认')
   await colleague.screenshot({ path: test.info().outputPath('task-run-colleague.png'), fullPage: true })
 
-  // The owner follows up in the same run, then stops it; the task returns to 待处理.
-  await page.getByRole('switch', { name: '发给 Agent' }).click()
+  // The owner follows up in the same run, which is where a message goes by default, then stops it;
+  // the task returns to 待处理.
+  await expect(page.getByRole('switch', { name: '发给 Agent' })).toHaveAttribute('aria-checked', 'true')
   await page.getByLabel('评论或给 Agent 的消息').fill('再确认一次')
   await page.getByRole('button', { name: '发给 Agent', exact: true }).click()
   await expect(page.locator('.mc-task-bar .mc-status')).toHaveText(/进行中|待验收/)

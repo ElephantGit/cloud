@@ -1,7 +1,8 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { isAgentRunning } from './task-views'
-import { listTasks } from './tasks-api/generated'
+import { listPendingMentions, listTasks, type PendingMention } from './tasks-api/generated'
 
 /** The caller's workspace: v2 signs everyone into one team, so it is the first membership. */
 export function useWorkspace() {
@@ -22,4 +23,19 @@ export function useTaskList(tenantId: string) {
     enabled: !!tenantId,
     refetchInterval: query => (query.state.data?.items.some(isAgentRunning) ? 3000 : 15000),
   })
+}
+
+/**
+ * The caller's mentions still waiting on their reply, by task. With no notification channel, this
+ * is how an @ reaches a person: the task joins 待我处理 and its card says who is waiting.
+ */
+export function usePendingMentions(tenantId: string): ReadonlyMap<string, PendingMention> {
+  const query = useQuery({
+    queryKey: ['task-mentions', tenantId],
+    queryFn: () => listPendingMentions(tenantId),
+    enabled: !!tenantId,
+    refetchInterval: 15000,
+  })
+  const items = query.data?.items
+  return useMemo(() => new Map((items ?? []).map(m => [m.taskId, m])), [items])
 }

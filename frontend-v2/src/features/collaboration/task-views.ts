@@ -1,12 +1,11 @@
 import type { Task } from './tasks-api/generated'
 
 /** The task scopes the sidebar offers; each one is a filter over the same team-wide list. */
-export type TaskView = 'mine' | 'todo' | 'running' | 'all'
+export type TaskView = 'mine' | 'todo' | 'all'
 
 export const TASK_VIEWS: { id: TaskView; label: string; hint: string }[] = [
   { id: 'mine', label: '我的任务', hint: '指派给我的任务' },
-  { id: 'todo', label: '待我处理', hint: '指派给我且未结束的，以及我建的、等着验收的' },
-  { id: 'running', label: '运行中', hint: 'Agent 正在执行的任务' },
+  { id: 'todo', label: '待我处理', hint: '指派给我且未结束的、我建的等着验收的，以及有人 @ 我还没回复的' },
   { id: 'all', label: '全部任务', hint: '工作区里所有任务，全团队可见' },
 ]
 
@@ -18,16 +17,17 @@ export const isAgentRunning = (task: Task): boolean => task.activeRun?.state ===
 
 const finished = (task: Task) => task.status === 'done' || task.status === 'cancelled'
 
-/** The tasks of a view, for the person `me`; a squad narrows any view to the tasks it owns. */
-export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?: string | null): Task[] {
+/**
+ * The tasks of a view, for the person `me`; a squad narrows any view to the tasks it owns.
+ * `mentioned` holds the tasks where someone @-mentioned `me` and is still waiting on a reply.
+ */
+export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?: string | null, mentioned: ReadonlySet<string> = new Set()): Task[] {
   const scoped = squadId ? tasks.filter(t => t.assignee?.type === 'squad' && t.assignee.id === squadId) : tasks
   switch (view) {
     case 'mine':
       return scoped.filter(t => t.assignee?.type === 'human' && t.assignee.id === me)
     case 'todo':
-      return scoped.filter(t => (t.assignee?.type === 'human' && t.assignee.id === me && !finished(t)) || (t.status === 'review' && t.createdBy === me))
-    case 'running':
-      return scoped.filter(isAgentRunning)
+      return scoped.filter(t => (t.assignee?.type === 'human' && t.assignee.id === me && !finished(t)) || (t.status === 'review' && t.createdBy === me) || mentioned.has(t.id))
     default:
       return scoped
   }

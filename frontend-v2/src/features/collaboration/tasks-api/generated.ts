@@ -323,6 +323,18 @@ export interface TaskCommentCreate {
   executorId?: string;
 }
 
+export interface PendingMention {
+  taskId: string;
+  commentId: string;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+}
+
+export interface PendingMentionList {
+  items: PendingMention[];
+}
+
 export type StreamTaskRunEventsParams = {
 /**
  * Resume after this sequence; Last-Event-ID takes precedence.
@@ -1301,3 +1313,87 @@ export const useCreateTaskComment = <TError = ErrorType<TaskError>,
       > => {
       return useMutation(getCreateTaskCommentMutationOptions(options), queryClient);
     }
+
+/**
+ * The caller's mentions still waiting on their reply, one per open task: the latest comment by someone else that @-mentioned them, on a task they have not commented on since.
+ */
+export const listPendingMentions = (
+    tid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PendingMentionList>(
+      {url: `/api/v2/tenants/${tid}/task-mentions`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListPendingMentionsQueryKey = (tid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/task-mentions`
+    ] as const;
+    }
+
+
+export const getListPendingMentionsQueryOptions = <TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPendingMentionsQueryKey(tid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPendingMentions>>> = ({ signal }) => listPendingMentions(tid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPendingMentionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPendingMentions>>>
+export type ListPendingMentionsQueryError = ErrorType<TaskError>
+
+
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPendingMentions>>,
+          TError,
+          Awaited<ReturnType<typeof listPendingMentions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPendingMentions>>,
+          TError,
+          Awaited<ReturnType<typeof listPendingMentions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListPendingMentionsQueryOptions(tid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

@@ -121,6 +121,8 @@ export default function TaskPage() {
     mutationFn: (draft: CommentDraft) => createTaskComment(tenantId, taskId, { ...draft, executorId: draft.toAgent ? executorId : undefined }, keyed()),
     onSuccess: async (created, draft) => {
       setComposeError('')
+      // Replying answers any @ waiting on the caller here.
+      void client.invalidateQueries({ queryKey: ['task-mentions', tenantId] })
       if (draft.toAgent && created.runId) showRun(created.runId)
       else showTab('discussion')
       await refresh()

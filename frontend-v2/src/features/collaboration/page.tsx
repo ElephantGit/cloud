@@ -1,19 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
-import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
-import { Activity, ClipboardCheck, ClipboardList, Inbox, Plus, UserRound, Users } from 'lucide-react'
+import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
+import { ClipboardCheck, ClipboardList, Inbox, Plus, UserRound, Users } from 'lucide-react'
 import { useUser } from '@/app/auth/user'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { listSquads } from './api/generated'
 import { filterTasks, TASK_VIEWS, viewOf, type TaskView } from './task-views'
-import { useTaskList, useWorkspace } from './workspace'
+import { usePendingMentions, useTaskList, useWorkspace } from './workspace'
 import './collaboration.css'
 
-const VIEW_ICONS: Record<TaskView, typeof Inbox> = { mine: UserRound, todo: Inbox, running: Activity, all: ClipboardList }
+const VIEW_ICONS: Record<TaskView, typeof Inbox> = { mine: UserRound, todo: Inbox, all: ClipboardList }
 
 /**
- * 协作: the team's shared work. The sidebar scopes the one task list (mine, waiting on me, being
- * run by an Agent, everything) and lists the squads; the outlet shows the list, a task, or squads.
+ * 协作: the team's shared work. The sidebar scopes the one task list (mine, waiting on me,
+ * everything) and lists the squads; the outlet shows the board, a task, or squads. The scopes
+ * differ only by query, so they are plain links marked current by hand: NavLink would mark them all.
  * Everything here is the workspace's; a person's private conversations stay on the chat page.
  */
 export default function CollaborationLayout() {
@@ -22,6 +23,8 @@ export default function CollaborationLayout() {
   const location = useLocation()
   const [params] = useSearchParams()
   const tasks = useTaskList(tenantId)
+  const mentions = usePendingMentions(tenantId)
+  const mentioned = new Set(mentions.keys())
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
   const onList = location.pathname === '/collaboration' || location.pathname === '/collaboration/'
   const view = viewOf(params.get('view'))
@@ -42,22 +45,22 @@ export default function CollaborationLayout() {
         {TASK_VIEWS.map(v => {
           const Icon = VIEW_ICONS[v.id]
           const active = onList && !squadId && view === v.id
-          return <NavLink key={v.id} to={`/collaboration?view=${v.id}`} title={v.hint} aria-current={active ? 'page' : undefined} className={cn('mc-nav-link', active && 'active')}>
+          return <Link key={v.id} to={`/collaboration?view=${v.id}`} title={v.hint} aria-current={active ? 'page' : undefined} className={cn('mc-nav-link', active && 'active')}>
             <Icon size={15} aria-hidden="true" />
             <span>{v.label}</span>
-            <b>{tasks.data ? filterTasks(items, v.id, me.id).length : ''}</b>
-          </NavLink>
+            <b>{tasks.data ? filterTasks(items, v.id, me.id, null, mentioned).length : ''}</b>
+          </Link>
         })}
       </nav>
       <nav className="mc-nav" aria-label="小队">
         <span className="mc-nav-label">小队</span>
         {liveSquads.map(s => {
           const active = onList && squadId === s.id
-          return <NavLink key={s.id} to={`/collaboration?view=all&squad=${s.id}`} aria-current={active ? 'page' : undefined} className={cn('mc-nav-link', active && 'active')}>
+          return <Link key={s.id} to={`/collaboration?view=all&squad=${s.id}`} aria-current={active ? 'page' : undefined} className={cn('mc-nav-link', active && 'active')}>
             <ClipboardCheck size={15} aria-hidden="true" />
             <span>{s.name}</span>
             <b>{tasks.data ? filterTasks(items, 'all', me.id, s.id).length : ''}</b>
-          </NavLink>
+          </Link>
         })}
         <NavLink to="/collaboration/squads" className={({ isActive }) => cn('mc-nav-link', isActive && 'active')}>
           <Users size={15} aria-hidden="true" />

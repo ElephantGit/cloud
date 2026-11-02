@@ -688,3 +688,83 @@ func TestProjectCloseHonorsContextWhileAnotherStopOwnsGate(t *testing.T) {
 		t.Fatalf("close waited past caller cancellation: %v", err)
 	}
 }
+
+// Previews stream as pending-only history_preview events: coalesced to one per interval, the last
+// one before a pause still published, never ACKed, and superseded by the settled snapshot.
+func TestDriverIPCPreviewsStreamPendingRecordsWithoutAck(t *testing.T) {
+	defer func(interval time.Duration) { previewInterval = interval }(previewInterval)
+	previewInterval = 100 * time.Millisecond
+	h := newIPCHarness(t, nil)
+	ctx := ipcContext(t)
+	session := h.session("session", "workspace")
+	var mu sync.Mutex
+	var events []execution.Event
+	published := make(chan execution.Event, 64)
+	done := startIPCRun(h, ctx, session, "turn", func(_ context.Context, event execution.Event) error {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+		published <- event
+		return nil
+	})
+	f := receiveIPC(t, h.created)
+	start := nextIPCCommand(t, f, "start_agent_session")
+	preview := func(version int, text string) {
+		block := map[string]any{"history_sequence": 2, "turn_id": "turn", "record": map[string]any{"type": "update", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": text}}}}
+		payload, _ := json.Marshal(map[string]any{"version": version, "incomplete": false, "blocks": []any{block}})
+		f.in <- node.Message{Type: "thread_preview", Version: 1, OperationID: start.OperationID, ExecutionID: start.ExecutionID, Payload: payload}
+	}
+	text := ""
+	for version := 1; version <= 20; version++ {
+		text += "字"
+		preview(version, text)
+	}
+	// The burst ends without settling: the trailing flush must still show the newest text.
+	var last execution.Event
+	for {
+		last = receiveIPC(t, published)
+		if last.Kind != execution.EventHistoryPreview {
+			t.Fatalf("unexpected event %+v", last)
+		}
+		var line struct{ Update struct{ Content struct{ Text string } } }
+		if len(last.History.Records) != 1 || !last.History.Records[0].Preview || last.History.Records[0].Sequence != 2 || json.Unmarshal(last.History.Records[0].Data, &line) != nil {
+			t.Fatalf("preview event %+v", last.History)
+		}
+		if last.Ref.TurnID != "turn" {
+			t.Fatalf("preview turn %q", last.Ref.TurnID)
+		}
+		if line.Update.Content.Text == text {
+			break
+		}
+	}
+	mu.Lock()
+	burst := len(events)
+	mu.Unlock()
+	if burst > 3 {
+		t.Fatalf("%d preview events for one burst; previews were not coalesced", burst)
+	}
+	// Repeating the same pending set retains nothing new.
+	preview(21, text)
+	time.Sleep(3 * previewInterval)
+	select {
+	case event := <-published:
+		t.Fatalf("unchanged preview retained: %+v", event)
+	case m := <-f.acked:
+		t.Fatalf("preview ACKed: %+v", m)
+	default:
+	}
+	f.finishTurn(t, start, "turn", text)
+	got := receiveIPC(t, done)
+	if got.err != nil || got.result.Answer != text || !got.result.AnswerComplete {
+		t.Fatalf("turn: %+v", got)
+	}
+	snapshot := receiveIPC(t, published)
+	if snapshot.Kind != execution.EventHistorySnapshot {
+		t.Fatalf("settled history published as %q", snapshot.Kind)
+	}
+	for _, record := range snapshot.History.Records {
+		if record.Preview {
+			t.Fatalf("settled snapshot kept a preview: %+v", snapshot.History)
+		}
+	}
+}

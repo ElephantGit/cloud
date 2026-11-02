@@ -47,6 +47,8 @@ Agent 改动不 commit、不 push，也不写回项目的仓库文件夹。End �
 Event.Ref.TurnID 对轮次外事件为空。固定 Node 的 `history_snapshot` 是当前可得历史的完整替换快照：
 Records 按历史位置排序，Data 保留 settled HistoryLine/preview 及可得元数据；同位置 settled 优先于 preview。
 页面整体替换快照，不将 preview 与最终文本重复追加，也不直接套用 ACP 增量归约器。
+`history_preview` 只带仍在写的 pending 记录（全部是 preview），替换最近快照里的 preview 部分；
+同位置已定型的记录优先。它让回答、思考和进行中的工具调用随 Agent 进度出现，同样只作显示，不进入 Result。
 HistoryRecord.Sequence 是 Node 历史位置，Event.Sequence 才是订阅游标。
 
 快照 Incomplete 只说明过程信息缺失，不代表最终回答不完整。固定 Node 缺少原始 ACP、每轮 usage、上下文和

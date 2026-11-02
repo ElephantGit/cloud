@@ -12,6 +12,7 @@
 
 - `Observation.Snapshot` 替换整个旧快照。`Records[].Sequence` 是 Node history 位置，
   同位置只保留最新值；settled 优先于 preview。它不是页面订阅游标，也不是 ACP 原始增量。
+- `thread_preview` 的 Observation 设 `Preview`，`Snapshot` 只含 pending 记录，替换上一份完整快照里的 pending 部分；`Pending()` 返回同样内容。
 - 新版 preview 替换全部 pending，丢弃旧版本；`Incomplete` 只说明过程展示可能不完整。
   重连 Node 后重建 projection，不能沿用旧 incarnation 的 preview version。
 - 定型记录发生截断时，从本地完整 JSONL 恢复后才替换 preview。

@@ -1170,7 +1170,7 @@
           "records",
           "incomplete"
         ],
-        "description": "A full replacement of the session's displayed history."
+        "description": "On history_snapshot, a full replacement of the session's displayed history. On history_preview, only the records still being written (all preview): they replace the preview records of the latest snapshot, and a settled record at the same position wins."
       },
       "ChatEvent": {
         "type": "object",
@@ -1188,6 +1188,7 @@
             "type": "string",
             "enum": [
               "history_snapshot",
+              "history_preview",
               "turn_ended",
               "text_delta",
               "session_ended"

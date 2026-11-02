@@ -152,14 +152,17 @@ type EventKind string
 
 const (
 	EventHistorySnapshot EventKind = "history_snapshot"
-	EventTurnEnded       EventKind = "turn_ended"
-	EventTextDelta       EventKind = "text_delta"
-	EventSessionEnded    EventKind = "session_ended"
+	// EventHistoryPreview replaces only the pending (preview) records of the latest snapshot.
+	EventHistoryPreview EventKind = "history_preview"
+	EventTurnEnded      EventKind = "turn_ended"
+	EventTextDelta      EventKind = "text_delta"
+	EventSessionEnded   EventKind = "session_ended"
 )
 
 // Event is immutable after publication. Sequence starts at 1 and increases without gaps within
-// SessionID. Ref.TurnID is empty outside a turn. History replaces the entire displayed Node
-// projection; it is never appended as ACP chunks. Result is set only on TurnEnded, which does
+// SessionID. Ref.TurnID is empty outside a turn. On history_snapshot, History replaces the entire
+// displayed Node projection; on history_preview it holds only the still-pending records and
+// replaces the pending records of the latest snapshot. Neither is appended as ACP chunks. Result is set only on TurnEnded, which does
 // not prove session shutdown. Thought/tool text is not part of Answer.
 type Event struct {
 	Ref        Ref

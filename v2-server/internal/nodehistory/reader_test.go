@@ -305,3 +305,43 @@ func TestInvalidPreviewDoesNotReplaceLastGoodSnapshot(t *testing.T) {
 		}
 	}
 }
+
+// A Node preview block is a bare HistoryRecord (no at/seq) with its turn; Consume returns only the
+// pending records, so a page can replace its pending set without resending the settled history.
+func TestConsumePreviewReturnsOnlyPendingRecords(t *testing.T) {
+	r, _ := setupReader(t, meta(), update(1, "user_message_chunk", "question"), update(2, "agent_message_chunk", "answer"), ended(3, "end_turn"))
+	p := NewProjection(r, "agent")
+	settle := func(seq uint32, record json.RawMessage) {
+		t.Helper()
+		sequence := uint64(seq)
+		payload, _ := json.Marshal(map[string]any{"turn_id": "turn", "history_sequence": seq, "record": record})
+		if _, err := p.Consume(context.Background(), node.Message{Type: "thread_event", OperationID: "op", ExecutionID: "agent", Sequence: &sequence, Payload: payload}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preview := func(version int, blocks ...map[string]any) Observation {
+		t.Helper()
+		payload, _ := json.Marshal(map[string]any{"version": version, "incomplete": false, "blocks": blocks})
+		got, err := p.Consume(context.Background(), node.Message{Type: "thread_preview", OperationID: "op", ExecutionID: "agent", Payload: payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	block := func(seq int, kind, text string) map[string]any {
+		return map[string]any{"history_sequence": seq, "turn_id": "turn", "record": map[string]any{"type": "update", "update": map[string]any{"sessionUpdate": kind, "content": map[string]string{"type": "text", "text": text}}}}
+	}
+	settle(1, update(1, "user_message_chunk", "question"))
+	got := preview(1, block(2, "agent_message_chunk", "ans"))
+	if !got.Preview || got.Turn != nil || len(got.Snapshot.Records) != 1 || got.Snapshot.Records[0].Sequence != 2 || !got.Snapshot.Records[0].Preview {
+		t.Fatalf("preview observation=%+v", got)
+	}
+	settle(2, update(2, "agent_message_chunk", "answer"))
+	// A late preview still holding the settled position adds nothing pending.
+	if got = preview(2, block(2, "agent_message_chunk", "answe")); len(got.Snapshot.Records) != 0 {
+		t.Fatalf("settled position stayed pending: %+v", got)
+	}
+	if full := p.Snapshot(); len(full.Records) != 2 || full.Records[1].Preview {
+		t.Fatalf("full snapshot=%+v", full)
+	}
+}

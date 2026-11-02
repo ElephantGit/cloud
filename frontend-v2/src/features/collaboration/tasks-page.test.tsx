@@ -61,13 +61,16 @@ beforeEach(() => {
 
 it('shows an explicit empty state instead of sample tasks', async () => {
   renderAt('/collaboration')
-  expect(await screen.findByText('还没有任务')).toBeInTheDocument()
+  const board = await screen.findByRole('list', { name: '任务看板' })
+  expect(within(board).getAllByText('暂无')).toHaveLength(4)
   expect(screen.getByRole('heading', { name: '全部任务' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '列表' }))
+  expect(await screen.findByText('还没有任务')).toBeInTheDocument()
 })
 
 it('lists tasks and who is working on them', async () => {
   vi.mocked(api.listTasks).mockResolvedValue({ items: [task(), agentTask], nextCursor: '' })
-  renderAt('/collaboration')
+  renderAt('/collaboration?layout=list')
   expect(await screen.findByRole('button', { name: '查看任务 整理演示数据' })).toHaveTextContent('演示项目 · 未指派')
   const running = screen.getByRole('button', { name: '查看任务 修复登录页' })
   expect(running).toHaveTextContent('Claude Code 执行中')
@@ -81,9 +84,9 @@ it('scopes the list by the view in the URL', async () => {
   expect(screen.getByRole('heading', { name: '运行中' })).toBeInTheDocument()
 })
 
-it('shows a board with one column per status and no dragging', async () => {
+it('shows a board by default with one column per status and no dragging', async () => {
   vi.mocked(api.listTasks).mockResolvedValue({ items: [task(), agentTask, myTask], nextCursor: '' })
-  renderAt('/collaboration?layout=board')
+  renderAt('/collaboration')
   const board = await screen.findByRole('list', { name: '任务看板' })
   expect(within(board).getByRole('listitem', { name: '待处理列' })).toHaveTextContent('整理演示数据')
   expect(within(board).getByRole('listitem', { name: '进行中列' })).toHaveTextContent('修复登录页')
@@ -94,7 +97,7 @@ it('shows a board with one column per status and no dragging', async () => {
 it('creates a task in a real project and opens its page', async () => {
   vi.mocked(api.createTask).mockResolvedValue(task({ id: 'task-9' }))
   renderAt('/collaboration')
-  await screen.findByText('还没有任务')
+  await screen.findByRole('list', { name: '任务看板' })
   await userEvent.click(screen.getByRole('button', { name: '新建任务' }))
   const dialog = await screen.findByRole('dialog')
   await waitFor(() => expect(within(dialog).getByLabelText('所属项目')).toHaveValue('project-1'))

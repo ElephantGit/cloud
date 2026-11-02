@@ -175,11 +175,14 @@
 .mc-task-hint { display: inline-flex; align-items: center; gap: 4px; }
 
 /* Board. */
-.mc-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: start; }
-.mc-column { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--mc-surface); border: 1px solid var(--mc-line); min-width: 0; }
+/* The board fills the window below the header; each column scrolls on its own once it outgrows it. */
+.mc-content-board { height: 100%; display: flex; flex-direction: column; padding-bottom: 24px; }
+.mc-content-board .mc-page-header, .mc-content-board .mc-switch-line, .mc-content-board .mc-list-footer { flex-shrink: 0; }
+.mc-board { flex: 1; min-height: 360px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); grid-template-rows: minmax(0, 1fr); gap: 12px; }
+.mc-column { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--mc-surface); border: 1px solid var(--mc-line); min-width: 0; min-height: 0; }
 .mc-column header { display: flex; align-items: center; justify-content: space-between; }
 .mc-column header b { color: var(--mc-muted); font-size: 12px; font-weight: 500; }
-.mc-column ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mc-column ul { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mc-column-empty { padding: 10px; color: var(--mc-muted); font-size: 12px; text-align: center; }
 .mc-card-task { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 10px; background: var(--background); color: inherit; font: inherit; text-align: left; }
 .mc-card-task:hover { box-shadow: 0 4px 14px var(--mc-shadow); }
@@ -263,7 +266,9 @@
   .mc-nav { flex-direction: row; }
   .mc-nav-link { white-space: nowrap; }
   .mc-new-task { width: auto; }
-  .mc-board { grid-template-columns: minmax(0, 1fr); }
+  .mc-content-board { height: auto; }
+  .mc-board { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; min-height: 0; }
+  .mc-column ul { max-height: 60vh; }
   .mc-task-bar, .mc-task-main-col { padding-left: 16px; padding-right: 16px; }
   .mc-page-header { flex-wrap: wrap; }
 }

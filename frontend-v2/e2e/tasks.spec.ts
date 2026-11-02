@@ -44,14 +44,16 @@ test('create a task, assign it, and walk it through the lifecycle', async ({ pag
   await page.getByRole('tab', { name: /讨论/ }).click()
   await expect(page.getByRole('list', { name: '讨论' })).toContainText('e2e 评论：可以收尾了')
 
-  // Back on the list the task shows its final status and owner; the board shows it in its column.
+  // Back on the tasks the board, the default, shows it in its column; the list shows its final status.
   await page.getByRole('link', { name: '返回任务列表' }).click()
+  const done = page.getByRole('listitem', { name: '已完成列' })
+  await expect(done).toContainText(title)
+  await expect(done.getByRole('button', { name: `查看任务 ${title}` })).toContainText('演示 Owner')
+  await page.screenshot({ path: test.info().outputPath('task-board.png'), fullPage: true })
+  await page.getByRole('button', { name: '列表' }).click()
   const row = page.getByRole('button', { name: `查看任务 ${title}` })
   await expect(row).toContainText('已完成')
   await expect(row).toContainText('演示 Owner')
-  await page.getByRole('radio', { name: '看板' }).or(page.getByRole('button', { name: '看板' })).click()
-  await expect(page.getByRole('listitem', { name: '已完成列' })).toContainText(title)
-  await page.screenshot({ path: test.info().outputPath('task-board.png'), fullPage: true })
 })
 
 test('an Agent runs a task, the team watches, only the starter follows up', async ({ page, browser }) => {

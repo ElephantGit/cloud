@@ -18,8 +18,8 @@ import { createTask, type Task } from './tasks-api/generated'
 import { useTaskList, useWorkspace } from './workspace'
 
 /**
- * One scope of the team's tasks, as a list or a board. The scope and layout live in the URL so a
- * link shows a teammate the same view; `new=1` opens the create form the sidebar links to.
+ * One scope of the team's tasks, as a board (the default) or a list. The scope and layout live in
+ * the URL so a link shows a teammate the same view; `new=1` opens the create form the sidebar links to.
  */
 export default function TasksPage() {
   const me = useUser()
@@ -29,7 +29,7 @@ export default function TasksPage() {
   const [params, setParams] = useSearchParams()
   const view = viewOf(params.get('view'))
   const squadId = params.get('squad')
-  const layout = params.get('layout') === 'board' ? 'board' : 'list'
+  const layout = params.get('layout') === 'list' ? 'list' : 'board'
   const creating = params.get('new') === '1'
   const [showCancelled, setShowCancelled] = useState(false)
   const [error, setError] = useState('')
@@ -61,16 +61,16 @@ export default function TasksPage() {
   const title = squad ? squad.name : current?.label ?? '全部任务'
   const subtitle = squad ? '这个小队负责的任务；指派给小队不会自动分派给成员。' : current?.hint
 
-  return <div className="mc-content">
+  return <div className={layout === 'board' ? 'mc-content mc-content-board' : 'mc-content'}>
     <header className="mc-page-header">
       <div>
         <h2>{title}</h2>
         <p>{subtitle}</p>
       </div>
       <div className="mc-header-actions">
-        <ToggleGroup aria-label="展示方式" value={[layout]} onValueChange={next => { const picked = next.at(-1); if (picked) setParam('layout', picked === 'board' ? 'board' : null) }}>
-          <ToggleGroupItem value="list" aria-label="列表"><LayoutList /></ToggleGroupItem>
+        <ToggleGroup aria-label="展示方式" value={[layout]} onValueChange={next => { const picked = next.at(-1); if (picked) setParam('layout', picked === 'list' ? 'list' : null) }}>
           <ToggleGroupItem value="board" aria-label="看板"><SquareKanban /></ToggleGroupItem>
+          <ToggleGroupItem value="list" aria-label="列表"><LayoutList /></ToggleGroupItem>
         </ToggleGroup>
         <Button onClick={openCreate} disabled={!tenantId || list.isLoading || list.isError}><Plus data-icon="inline-start" />新建任务</Button>
       </div>

@@ -12,6 +12,7 @@ import type {
   MarketSource,
   MarketSourceInput,
 } from './market-api/generated'
+import type { Skill, SkillInput } from '@/lib/skills-api/generated'
 import { demoUser, fakeBackend } from '@/test/backend'
 
 export const MARKET_TENANT = '00000000-0000-4000-8000-0000000000aa'
@@ -84,16 +85,19 @@ export function installMarketplaceBackend({
   catalog = [],
   selections = [],
   marketSources = [],
+  skills = [],
 }: {
   role?: 'owner' | 'member'
   catalog?: PluginCatalogEntry[]
   selections?: SpacePlugin[]
   marketSources?: MarketSource[]
+  skills?: Skill[]
 } = {}) {
   const state = {
     catalog: [...catalog],
     selections: [...selections],
     marketSources: [...marketSources],
+    skills: [...skills],
   }
   const seen: string[] = []
   const bodies: unknown[] = []
@@ -131,6 +135,125 @@ export function installMarketplaceBackend({
           nextCursor: '',
         },
       }
+    const skillBase = `/api/v2/tenants/${MARKET_TENANT}/skills`
+    if (url === skillBase && method === 'GET')
+      return { status: 200, data: { items: state.skills } }
+    if (url === skillBase + '/import' && method === 'POST') {
+      const body = (
+        typeof config.data === 'string'
+          ? JSON.parse(config.data)
+          : config.data
+      ) as { fileName: string; content: string; overwrite?: boolean }
+      const match = body.content.match(
+        /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/,
+      )
+      if (!match)
+        return {
+          status: 400,
+          data: { code: 'skill_front_matter_missing', params: {} },
+        }
+      const name = match[1].match(/^name:\s*["']?([^"'\r\n]+)["']?$/m)?.[1]
+      const description = match[1].match(
+        /^description:\s*["']?([^"'\r\n]+)["']?$/m,
+      )?.[1]
+      if (!name)
+        return {
+          status: 400,
+          data: { code: 'skill_name_missing', params: {} },
+        }
+      if (!description)
+        return {
+          status: 400,
+          data: { code: 'skill_description_missing', params: {} },
+        }
+      const index = state.skills.findIndex(
+        (item) => item.name.toLowerCase() === name.toLowerCase(),
+      )
+      if (index >= 0 && !body.overwrite)
+        return {
+          status: 409,
+          data: { code: 'skill_name_conflict', params: {} },
+        }
+      const now = new Date().toISOString()
+      const item: Skill = {
+        id: index < 0 ? crypto.randomUUID() : state.skills[index].id,
+        name,
+        description,
+        content: match[2].trim(),
+        version: index < 0 ? 1 : state.skills[index].version + 1,
+        createdAt: index < 0 ? now : state.skills[index].createdAt,
+        updatedAt: now,
+      }
+      if (index < 0) state.skills.unshift(item)
+      else state.skills[index] = item
+      return { status: 201, data: item }
+    }
+    if (url === skillBase && method === 'POST') {
+      const body = (
+        typeof config.data === 'string'
+          ? JSON.parse(config.data)
+          : config.data
+      ) as SkillInput
+      if (
+        state.skills.some(
+          (item) =>
+            item.name.toLowerCase() === body.name.trim().toLowerCase(),
+        )
+      )
+        return {
+          status: 409,
+          data: { code: 'skill_name_conflict', params: {} },
+        }
+      const now = new Date().toISOString()
+      const item: Skill = {
+        id: crypto.randomUUID(),
+        ...body,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      }
+      state.skills.unshift(item)
+      return { status: 201, data: item }
+    }
+    if (url.startsWith(skillBase + '/')) {
+      const id = decodeURIComponent(url.slice(skillBase.length + 1))
+      const index = state.skills.findIndex((item) => item.id === id)
+      if (index < 0)
+        return {
+          status: 404,
+          data: { code: 'skill_not_found', params: {} },
+        }
+      if (method === 'DELETE') {
+        state.skills.splice(index, 1)
+        return { status: 204 }
+      }
+      if (method === 'PUT') {
+        const body = (
+          typeof config.data === 'string'
+            ? JSON.parse(config.data)
+            : config.data
+        ) as SkillInput
+        if (
+          state.skills.some(
+            (item) =>
+              item.id !== id &&
+              item.name.toLowerCase() === body.name.trim().toLowerCase(),
+          )
+        )
+          return {
+            status: 409,
+            data: { code: 'skill_name_conflict', params: {} },
+          }
+        const item = {
+          ...state.skills[index],
+          ...body,
+          version: state.skills[index].version + 1,
+          updatedAt: new Date().toISOString(),
+        }
+        state.skills[index] = item
+        return { status: 200, data: item }
+      }
+    }
     const base = `/api/v1/tenants/${MARKET_TENANT}/spaces/${MARKET_SPACE}/plugins`
     const sourceBase = `${base}/sources`
     if (url === sourceBase && method === 'GET')

@@ -6,7 +6,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 
 ## 文件索引
 
-当前共 76 个 SQL 文件。
+当前共 77 个 SQL 文件。
 
 | SQL 文件 | schema 变化 |
 |---|---|
@@ -86,6 +86,7 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 | [0072_scheduled_task_conversation_reasons.sql](0072_scheduled_task_conversation_reasons.sql) | 定时任务接纳的任务对话拒绝原因 |
 | [0073_member_join_provenance.sql](0073_member_join_provenance.sql) | 链接管理备注与成员加入来源，不回填未知历史 |
 | [0074_node_unavailable_attempts.sql](0074_node_unavailable_attempts.sql) | 操作的 Node 不可用尝试计数，默认 0 且不可为负 |
+| [0075_scheduled_task_live_name.sql](0075_scheduled_task_live_name.sql) | 定时任务名称只在未删除的定义里唯一，删除后释放名称 |
 
 0050 不复制个人连接或 Key，不回填历史运行；清除配置保留 revision，运行选项独立于共享运行输入保存。
 
@@ -98,6 +99,8 @@ SQL 通过 `core/store.go` 的 `embed.FS` 编入二进制。`Store.Migrate` 在�
 0072 只放宽 `scheduled_task_occurrences.failure_reason` 的 CHECK，加入 `task_paused` 与 `task_handoff_pending`：绑定 issue 的任务对话已暂停、有未解决的 failed 消息或有 waiting 消息时，接纳记这两个原因、不建运行。既有行不改写。升级与重放由 `TestMigration0072ScheduledTaskConversationReasonsUpgradeAndReplay` 覆盖。
 
 0074 为 `operations` 添加 `node_unavailable_attempts`（bigint、NOT NULL、默认 0），并用 `CHECK (node_unavailable_attempts >= 0)` 拒绝负值。既有操作从 0 开始，不回填历史尝试，也不改写既有执行的 Node 归属或结果。`ADD COLUMN IF NOT EXISTS` 允许重复应用 SQL。升级、重复应用、既有执行保留和负值拒绝由 [operation_wait_migration_test.go](../operation_wait_migration_test.go) 中的 `TestOperationWaitMigrationPreservesLegacyExecutionAndDefaults` 覆盖。
+
+0075 把 0061 的 `UNIQUE(tenant_id, issue_id, creator_user_id, name)` 换成带 `WHERE deleted_at IS NULL` 的部分唯一索引 `scheduled_tasks_live_name_uniq`：删除定时任务后，同一创建者在同一 issue 下可以再用这个名称，与工作流归档后释放名称一致。既有数据已满足更严格的旧约束，建索引不会失败，墓碑和既有行都不改写。升级、重放和墓碑释放名称由 `TestMigration0075ScheduledTaskLiveNameUpgradeAndReplay` 覆盖。
 
 - 已应用 SQL 不改内容、不改文件名；更正用新的前向迁移。重复应用跳过 checksum 相同的已应用文件。
 - `CheckSchema` 只读检查缺失迁移、checksum 不符和未知数据库版本，发现不一致拒绝启动。生产服务不执行 DDL，运维用 [cloudctl](../../../cmd/cloudctl/README.md) 应用迁移。

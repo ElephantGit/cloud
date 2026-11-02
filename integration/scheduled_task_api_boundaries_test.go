@@ -261,11 +261,11 @@ func TestScheduledTaskRevokeConsentDisables(t *testing.T) {
 	}
 }
 
-// TestScheduledTaskNameIsUniquePerIssueAndCreator pins the name boundary of the
-// (tenant, issue, creator, name) uniqueness constraint: repeating a name the creator already holds on
-// the issue — by create or by rename, and including a soft-deleted task's name — is `409
-// name_conflict` with nothing written, while the same name on another issue or by another creator is
-// a different task.
+// TestScheduledTaskNameIsUniquePerIssueAndCreator pins the name boundary of the live
+// (tenant, issue, creator, name) unique index: repeating a name one of the creator's live tasks holds
+// on the issue — by create or by rename, concurrently included — is `409 name_conflict` with nothing
+// written, while the same name on another issue, by another creator, or held only by a deleted task
+// is free.
 func TestScheduledTaskNameIsUniquePerIssueAndCreator(t *testing.T) {
 	store, s, agentID := scheduledTaskStore(t)
 	creator := scheduledTaskCaller(t, store, s.tenantID)
@@ -341,5 +341,50 @@ func TestScheduledTaskNameIsUniquePerIssueAndCreator(t *testing.T) {
 	})
 	must(t, err)
 	_, err = create("name-after-delete", creator, s.issueID, "Daily")
-	wantNameConflict("reusing a deleted task's name", err)
+	must(t, err) // deleting the task freed its name
+	_, err = create("name-after-reuse", creator, s.issueID, "Daily")
+	wantNameConflict("repeating a reused name", err)
+
+	monthlyID, err := create("name-monthly", creator, s.issueID, "Monthly")
+	must(t, err)
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
+		Method: "DELETE", Key: "name-delete-monthly", Path: collection + "/" + monthlyID, TenantID: s.tenantID,
+		ScheduledTaskID: monthlyID, Identity: creator,
+	})
+	must(t, err)
+	_, _, err = store.Public(context.Background(), &core.PublicRequest{
+		Method: "PATCH", Key: "name-rename-freed", Path: weekly, TenantID: s.tenantID,
+		ScheduledTaskID: weeklyID, Identity: creator,
+		Body: core.Object{"name": "Monthly", "version": int64(2)},
+	})
+	must(t, err) // renaming onto a deleted task's name succeeds
+
+	// Two renames racing onto one free name: exactly one wins and the other is a 409, never a
+	// unique violation surfacing as a 500.
+	leftID, err := create("name-left", creator, s.issueID, "Left")
+	must(t, err)
+	rightID, err := create("name-right", creator, s.issueID, "Right")
+	must(t, err)
+	errs := make(chan error, 2)
+	for _, id := range []string{leftID, rightID} {
+		go func(id string) {
+			_, _, e := store.Public(context.Background(), &core.PublicRequest{
+				Method: "PATCH", Key: "name-race-" + id, Path: collection + "/" + id, TenantID: s.tenantID,
+				ScheduledTaskID: id, Identity: creator,
+				Body: core.Object{"name": "Shared", "version": int64(1)},
+			})
+			errs <- e
+		}(id)
+	}
+	var won int
+	for range 2 {
+		if e := <-errs; e == nil {
+			won++
+		} else {
+			wantNameConflict("losing a concurrent rename", e)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("concurrent renames onto one name: %d succeeded, want exactly 1", won)
+	}
 }

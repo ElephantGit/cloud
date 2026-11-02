@@ -148,14 +148,15 @@ func scheduledTaskCreate(t *transaction, r *PublicRequest, uid string) Object {
 	if enabled {
 		enabledAt = consentedAt
 	}
-	// The name is unique per (tenant, issue, creator), soft-deleted tombstones included. Letting the
-	// constraint arbitrate keeps a concurrent create with the same name a 409 rather than a 500.
+	// The name is unique per (tenant, issue, creator) among live definitions; a deleted task frees
+	// its name. The conflict target names the partial unique index, so a repeated live name inserts
+	// nothing and answers 409 rather than raising a unique violation.
 	inserted := t.execRows(`INSERT INTO scheduled_tasks
 		(id, tenant_id, issue_id, creator_user_id, agent_id, name, prompt, model, schedule, timezone,
 		 revision, version, enabled, enabled_at, disabled_reason,
 		 unattended_policy, unattended_consented_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,1,$11,$12,NULL,$13,$14)
-		ON CONFLICT (tenant_id, issue_id, creator_user_id, name) DO NOTHING`,
+		ON CONFLICT (tenant_id, issue_id, creator_user_id, name) WHERE deleted_at IS NULL DO NOTHING`,
 		id, r.TenantID, issueID, uid, agentID, name, prompt, nilIfEmpty(model), jsonText(scheduleDoc), timezone,
 		enabled, enabledAt, policy, consentedAt)
 	require(inserted == 1, 409, "name_conflict")
@@ -225,11 +226,12 @@ func scheduledTaskUpdate(t *transaction, r *PublicRequest, uid string) Object {
 	}
 	require(creatorModelReady(t, uid, agent.S("pluginId")), 409, "model_unavailable")
 	require(scheduledTaskModelReady(t, uid, model), 409, "model_unavailable")
-	// A rename must not take a name the creator already holds on this issue; tombstones keep theirs
-	// because the uniqueness constraint covers soft-deleted rows.
+	// A rename must not take a name one of the creator's live tasks holds on this issue; a deleted
+	// task has freed its name. Check-then-write cannot race a concurrent create or rename into the
+	// unique index: every public write holds the exclusive control-plane lock (Store.transact).
 	if name != task.S("name") {
 		require(t.one(`SELECT id FROM scheduled_tasks
-			WHERE tenant_id=$1 AND issue_id=$2 AND creator_user_id=$3 AND name=$4`,
+			WHERE tenant_id=$1 AND issue_id=$2 AND creator_user_id=$3 AND name=$4 AND deleted_at IS NULL`,
 			r.TenantID, task.S("issueId"), uid, name) == nil, 409, "name_conflict")
 	}
 

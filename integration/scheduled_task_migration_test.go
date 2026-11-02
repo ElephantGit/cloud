@@ -12,6 +12,7 @@ const (
 	scheduledTaskMigration                    = "0061_scheduled_tasks.sql"
 	scheduledTaskModelMigration               = "0071_scheduled_task_model.sql"
 	scheduledTaskConversationReasonsMigration = "0072_scheduled_task_conversation_reasons.sql"
+	scheduledTaskLiveNameMigration            = "0075_scheduled_task_live_name.sql"
 )
 
 // seedScheduledTaskAgent inserts the one space_agents row a definition binds, returning its id.
@@ -209,6 +210,49 @@ func TestMigration0072ScheduledTaskConversationReasonsUpgradeAndReplay(t *testin
 	must(t, pool.QueryRow(`SELECT failure_reason FROM scheduled_task_occurrences WHERE task_id=$1 AND scheduled_at='2026-01-01T00:00:00Z'`, taskID).Scan(&reason))
 	if reason != "target_unavailable" {
 		t.Fatalf("0072 must not rewrite an existing occurrence, got %q", reason)
+	}
+}
+
+// TestMigration0075ScheduledTaskLiveNameUpgradeAndReplay swaps the 0061 name constraint, which
+// also bound soft-deleted tombstones, for a unique index over live definitions only: a deleted
+// task frees its name, two live ones still cannot share it, and no existing row is rewritten.
+func TestMigration0075ScheduledTaskLiveNameUpgradeAndReplay(t *testing.T) {
+	pool, _ := testSchema(t, "test_scheduled75u_")
+	applyMigrationsUpTo(t, pool, migrationsBefore(t, scheduledTaskLiveNameMigration))
+	s := seedAgentIssueRunSkeleton(t, pool)
+	agentID := seedScheduledTaskAgent(t, pool, s)
+	named := func(name string) error {
+		_, err := pool.Exec(`INSERT INTO scheduled_tasks (`+scheduledTaskColumns+`) VALUES($1,$2,$3,$4,$5,$6,'x','{"kind":"every_hours","intervalHours":1}'::jsonb,'Asia/Shanghai',1,1)`,
+			uuid.NewString(), s.tenantID, s.issueID, s.userID, agentID, name)
+		return err
+	}
+	must(t, named("Daily sync"))
+	must(t, named("Retired"))
+	_, err := pool.Exec(`UPDATE scheduled_tasks SET deleted_at='2026-01-02T03:04:05Z' WHERE name='Retired'`)
+	must(t, err)
+	wantPGError(t, named("Retired"), "23505") // before 0075 the tombstone still holds its name
+
+	store := newStoreOnSchema(t, pool)
+	must(t, store.Migrate(context.Background()))
+	must(t, store.Migrate(context.Background()))
+
+	var constraints, indexes int
+	must(t, pool.QueryRow(`SELECT count(*) FROM pg_constraint
+		WHERE conname='scheduled_tasks_tenant_id_issue_id_creator_user_id_name_key'`).Scan(&constraints))
+	must(t, pool.QueryRow(`SELECT count(*) FROM pg_indexes
+		WHERE schemaname=current_schema() AND indexname='scheduled_tasks_live_name_uniq'`).Scan(&indexes))
+	if constraints != 0 || indexes != 1 {
+		t.Fatalf("0075 left %d old constraints and %d live-name indexes, want 0/1", constraints, indexes)
+	}
+
+	must(t, named("Retired"))                    // the tombstone's name is free again
+	wantPGError(t, named("Daily sync"), "23505") // two live definitions still cannot share one
+	wantPGError(t, named("Retired"), "23505")    // nor can the reused name be taken twice
+	var tombstones int
+	must(t, pool.QueryRow(`SELECT count(*) FROM scheduled_tasks
+		WHERE name='Retired' AND deleted_at='2026-01-02T03:04:05Z'`).Scan(&tombstones))
+	if tombstones != 1 {
+		t.Fatalf("0075 must keep the existing tombstone untouched, found %d", tombstones)
 	}
 }
 

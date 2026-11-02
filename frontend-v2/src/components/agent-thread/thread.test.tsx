@@ -3,8 +3,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { applyEvent } from '../model/conversation'
-import { type ChatEvent, type Conversation, emptyConversation } from '../model/types'
+import { applyEvent } from './model/conversation'
+import { type ChatEvent, type Conversation, emptyConversation } from './model/types'
 import { Thread } from './thread'
 
 const conversationOf = (events: ChatEvent[]): Conversation => events.reduce((c, e) => applyEvent(c, e, 0), emptyConversation)

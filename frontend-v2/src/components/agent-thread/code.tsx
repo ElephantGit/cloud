@@ -1,6 +1,6 @@
 import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from '@/components/ui/code-block'
 import { useHighlightedCode } from '@/hooks/use-highlighted-code'
-import { diffLines } from '../model/diff'
+import { diffLines } from './model/diff'
 
 /** A fenced code block with syntax highlighting and a copy button. */
 export function HighlightedCode({ code, language, title }: { code: string; language: string; title?: string }) {

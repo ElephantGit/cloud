@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatEvent, ChatHistoryRecord, ChatResult } from '../api/generated'
+import type { SessionEvent as ChatEvent, SessionHistoryRecord as ChatHistoryRecord, SessionResult as ChatResult } from './wire'
 import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from './history'
 
 const at = (s: number) => `2026-10-30T09:00:${String(s).padStart(2, '0')}Z`

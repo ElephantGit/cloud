@@ -1,5 +1,5 @@
 import type * as acp from '@agentclientprotocol/sdk'
-import type { ChatEvent, ChatHistoryRecord, ChatResult, ChatSessionEndReason } from '../api/generated'
+import type { SessionEndReason as ChatSessionEndReason, SessionEvent as ChatEvent, SessionHistoryRecord as ChatHistoryRecord, SessionResult as ChatResult } from './wire'
 import { applyEvent } from './conversation'
 import { type ChatEvent as ModelEvent, type Conversation, emptyConversation, type Turn } from './types'
 

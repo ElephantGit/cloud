@@ -26,6 +26,13 @@ type Project struct {
 	SnapshotRef string
 }
 
+// UserSkill is one validated skill document materialized into a new checkout.
+type UserSkill struct {
+	Name        string
+	Description string
+	Content     string
+}
+
 // Options wires preverified local assets and frozen model bindings into the adapter.
 // ResolveProject must check Scope access and return a prepared mirror and immutable snapshot.
 type Options struct {
@@ -34,6 +41,8 @@ type Options struct {
 	GitBackend      string
 	Bindings        map[string]nodeservices.Binding
 	ResolveProject  func(context.Context, execution.Scope, string) (Project, error)
+	// UserSkills returns the caller's live skill catalog. Nil skips user-skill projection.
+	UserSkills func(context.Context, execution.Scope) ([]UserSkill, error)
 }
 
 // Emit retains an event before its source Node envelope can be acknowledged. It must honor ctx.

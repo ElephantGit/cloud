@@ -112,6 +112,16 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		driver, e = agentruntime.New(agentruntime.Options{Root: filepath.Join(base, "nodes"), AssetsDirectory: assets, GitBackend: filepath.Join(strings.TrimSpace(string(gitDir)), "git-http-backend"), Bindings: bindings, ResolveProject: func(c context.Context, scope execution.Scope, id string) (agentruntime.Project, error) {
 			p, e := db.GetProject(c, scope, id)
 			return agentruntime.Project{MirrorPath: p.MirrorPath, Commit: p.Commit, SnapshotRef: p.SnapshotRef}, e
+		}, UserSkills: func(c context.Context, scope execution.Scope) ([]agentruntime.UserSkill, error) {
+			items, e := db.UserSkillDocuments(c, scope.TenantID, scope.UserID)
+			if e != nil {
+				return nil, e
+			}
+			skills := make([]agentruntime.UserSkill, len(items))
+			for i, item := range items {
+				skills[i] = agentruntime.UserSkill{Name: item.Name, Description: item.Description, Content: item.Content}
+			}
+			return skills, nil
 		}})
 		if e != nil {
 			return e

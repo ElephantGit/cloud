@@ -172,6 +172,31 @@ CREATE TABLE IF NOT EXISTS v2_plugin_mutations (
 	PRIMARY KEY (tenant_id, user_id, method, path, idempotency_key)
 );
 
+-- User-owned skills are real catalog rows. Their SKILL.md bodies are persisted here and
+-- materialized into each new Agent checkout by the execution runtime.
+CREATE TABLE IF NOT EXISTS v2_skills (
+	id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	tenant_id   uuid NOT NULL REFERENCES tenants (id),
+	user_id     uuid NOT NULL REFERENCES users (id),
+	name        text NOT NULL,
+	description text NOT NULL,
+	content     text NOT NULL,
+	version     bigint NOT NULL DEFAULT 1,
+	created_at  timestamptz NOT NULL DEFAULT now(),
+	updated_at  timestamptz NOT NULL DEFAULT now(),
+	deleted_at  timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_skills_live_name
+	ON v2_skills (tenant_id, user_id, lower(name)) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS v2_skills_owner
+	ON v2_skills (tenant_id, user_id, updated_at DESC, id) WHERE deleted_at IS NULL;
+-- One-time starter catalog per account. Deleting a starter skill must not recreate it at the next
+-- login, so the marker outlives the skill rows.
+CREATE TABLE IF NOT EXISTS v2_skill_seeds (
+	user_id   uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+	seeded_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Members are typed references: a human row points at a user, an agent row at a Space Agent.
 -- Ending a membership keeps the row as history; rejoining inserts a new grant.
 CREATE TABLE IF NOT EXISTS v2_squad_members (

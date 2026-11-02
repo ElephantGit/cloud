@@ -272,7 +272,7 @@ Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不�
 
 | 路由 | 行为 |
 |---|---|
-| `GET …/chat/executors` | 可选的 Agent 与模型绑定，来自公共执行目录 |
+| `GET …/chat/executors` | 可选的 Agent 与模型绑定，来自公共执行目录；包含 `agentId` / `modelId`，供工作流选择器保存真实执行身份 |
 | `GET …/chat/conversations` | 本人在该租户的对话，按创建时间排序，各带自己的执行 session |
 | `POST …/chat/conversations` | 以第一条消息创建对话并 `Start`，返回 201 和该轮的 session/turn |
 | `PATCH …/chat/conversations/{cid}` | 改名 |

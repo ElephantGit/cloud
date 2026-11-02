@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { PluginLogo } from "../contracts";
-import { useInstalledPlugins } from "./catalog-hooks";
+import { useWorkflowExecutors } from "./catalog-hooks";
 
 /**
  * Describes one agent this installation can bind a session to.
@@ -22,29 +22,18 @@ export interface AgentEntry {
 }
 
 /**
- * Lists every agent supplied by an installed package, in the backend's stable identifier order.
- *
- * This is the catalog, not the offer: a package that is installed but disabled, or whose agent is
- * not runnable on this machine, still appears here so a session bound to it can be labelled. Use
- * `useAvailableAgents` for the set a picker may offer.
+ * Lists runnable agents from Chat's execution directory, preserving the backend's order.
  */
 export function useAgentCatalog(): AgentEntry[] {
-  const { data: plugins } = useInstalledPlugins();
+  const { data } = useWorkflowExecutors();
   return useMemo(
     () =>
-      (plugins ?? [])
-        .filter((plugin) => plugin.kind === "agent")
-        .map((plugin) => ({
-          // Supervisors are keyed by the package's whole `namespace/name` address: two sources
-          // may publish the same name, and the name alone would collapse them into one agent.
-          agentRef: plugin.id,
-          // The plugin title is the user-facing identity of the installed package. The agent
-          // contribution name may be an implementation identifier and should not be exposed in
-          // the selection list.
-          label: plugin.displayName,
-          logo: plugin.logo,
-        })),
-    [plugins],
+      [...new Map((data?.items ?? []).map((executor) => [executor.agentId, {
+        agentRef: executor.agentId,
+        label: executor.agentName,
+        logo: null,
+      }])).values()],
+    [data],
   );
 }
 

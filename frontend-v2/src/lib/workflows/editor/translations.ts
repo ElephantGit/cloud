@@ -430,6 +430,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.nodeParameters": "配置参数",
     "settings.workflow.searchAvailableAgentModels": "搜索可用 Agent 模型",
     "settings.workflow.noAvailableAgentModels": "没有可用 Agent 模型",
+    "settings.workflow.selectAvailableAgentModel": "请选择当前可用的 Agent 和模型。",
     "settings.workflow.searchAvailableRoles": "搜索可用角色",
     "settings.workflow.noAvailableRoles": "没有可用角色",
     "settings.workflow.noRole": "无角色",
@@ -1021,6 +1022,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.searchAvailableAgentModels":
       "Search available Agent models",
     "settings.workflow.noAvailableAgentModels": "No available Agent models",
+    "settings.workflow.selectAvailableAgentModel": "Select an available Agent and model.",
     "settings.workflow.searchAvailableRoles": "Search available Roles",
     "settings.workflow.noAvailableRoles": "No available Roles",
     "settings.workflow.noRole": "No role",

@@ -66,9 +66,9 @@ export const line = {
 }
 
 export const executors: ChatExecutor[] = [
-  { id: 'oc-fixture', name: 'OpenCode · Fixture', agentName: 'OpenCode', modelName: 'Fixture' },
-  { id: 'oc-sonnet', name: 'OpenCode · Claude Sonnet 5.5', agentName: 'OpenCode', modelName: 'Claude Sonnet 5.5' },
-  { id: 'cc-sonnet', name: 'Claude Code · Claude Sonnet 5.5', agentName: 'Claude Code', modelName: 'Claude Sonnet 5.5' },
+  { id: 'oc-fixture', name: 'OpenCode · Fixture', agentId: 'official/ora-space.opencode', agentName: 'OpenCode', modelId: 'fixture', modelName: 'Fixture' },
+  { id: 'oc-sonnet', name: 'OpenCode · Claude Sonnet 5.5', agentId: 'official/ora-space.opencode', agentName: 'OpenCode', modelId: 'configured', modelName: 'Claude Sonnet 5.5' },
+  { id: 'cc-sonnet', name: 'Claude Code · Claude Sonnet 5.5', agentId: 'official/ora-space.claude', agentName: 'Claude Code', modelId: 'messages-configured', modelName: 'Claude Sonnet 5.5' },
 ]
 
 const conversation = (id: string, title: string): ChatConversation => ({

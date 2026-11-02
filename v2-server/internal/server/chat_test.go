@@ -71,7 +71,7 @@ func chatRuntime() (rt *executiontest.Stub, finish func(sid string)) {
 	}
 	return &executiontest.Stub{
 		ListExecutorsFunc: func(context.Context, execution.Scope) ([]execution.Executor, error) {
-			return []execution.Executor{{ID: "fixture", Name: "OpenCode · Fixture", AgentName: "OpenCode", Model: execution.Model{ID: "fixture", Name: "Fixture"}}}, nil
+			return []execution.Executor{{ID: "fixture", Name: "OpenCode · Fixture", AgentID: "official/ora-space.opencode", AgentName: "OpenCode", Model: execution.Model{ID: "fixture", Name: "Fixture"}}}, nil
 		},
 		StartFunc: func(_ context.Context, _ execution.Scope, req execution.StartRequest) (execution.Ref, error) {
 			mu.Lock()
@@ -242,6 +242,8 @@ func TestChatConversationLifecycle(t *testing.T) {
 	c := newChatClient(t, withRuntime(&finish))
 	if status, body := c.do("GET", "/executors", nil); status != 200 || len(body["items"].([]any)) != 1 {
 		t.Fatalf("executors = %d %v", status, body)
+	} else if item := body["items"].([]any)[0].(map[string]any); item["agentId"] != "official/ora-space.opencode" || item["modelId"] != "fixture" {
+		t.Fatalf("executor identities = %v", item)
 	}
 	input := map[string]any{"projectId": "demo", "executorId": "fixture", "prompt": "你好"}
 	if status, body := c.do("POST", "/conversations", input); status != 400 || body["code"] != "idempotency_key_required" {

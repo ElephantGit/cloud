@@ -164,7 +164,7 @@ describe('chat store: backend that cannot run Agents', () => {
 
 describe('agentsOf', () => {
   it('keeps agents apart when they run a model of the same name, OpenCode first as listed', () => {
-    const fixture = (id: string, agentName: string) => ({ id, name: `${agentName} · Fixture`, agentName, modelName: 'Fixture' })
+    const fixture = (id: string, agentName: string) => ({ id, name: `${agentName} · Fixture`, agentId: id, agentName, modelId: 'fixture', modelName: 'Fixture' })
     expect(agentsOf([fixture('opencode:fixture', 'OpenCode'), fixture('claude:fixture', 'Claude Code')])).toEqual([
       { id: 'OpenCode', name: 'OpenCode', models: ['Fixture'] },
       { id: 'Claude Code', name: 'Claude Code', models: ['Fixture'] },

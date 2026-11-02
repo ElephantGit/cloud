@@ -872,6 +872,12 @@
           "agentName": {
             "type": "string"
           },
+          "agentId": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
           "modelName": {
             "type": "string"
           }
@@ -880,6 +886,8 @@
           "id",
           "name",
           "agentName",
+          "agentId",
+          "modelId",
           "modelName"
         ]
       },

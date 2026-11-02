@@ -47,7 +47,7 @@ const noArtifacts: WorkflowArtifact[] = []
  */
 export default function RunPane({ runId }: { runId: string }) {
   const tenantId = useChatStore((s) => s.tenantId) ?? ''
-  const client = useMemo(() => createContractsClient(createHttpWorkflowContracts(tenantId)), [tenantId])
+  const client = useMemo(() => createContractsClient(createHttpWorkflowContracts(tenantId), tenantId), [tenantId])
   const [queryClient] = useState(createWorkflowQueryClient)
   // The sidebar's project run list lives in the page's cache, not the run page's own; a run this
   // page creates must reach it at once, since the list stops polling once every run has ended.

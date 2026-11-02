@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { Skill } from "../contracts";
 import type { WorkflowAgentModel } from "../mock";
 import { useContractsClient } from "./contracts-client";
@@ -13,8 +13,7 @@ const catalogKeys = {
   agents: ["workflow-catalog", "agents"] as const,
   skills: ["workflow-catalog", "skills"] as const,
   plugins: ["workflow-catalog", "plugins"] as const,
-  models: (agentRef: string) =>
-    ["workflow-catalog", "models", agentRef] as const,
+  executors: ["workflow-catalog", "executors"] as const,
 };
 
 /** Loads configurable agents (Roles). */
@@ -40,7 +39,7 @@ export function useSkills() {
   });
 }
 
-/** Loads the installed plugin packages: Agents and MCP servers. */
+/** Loads MCP packages for the workflow's existing dependency picker. */
 export function useInstalledPlugins() {
   const client = useContractsClient();
   return useQuery({
@@ -65,33 +64,27 @@ export interface WorkflowAgentModelsCatalog {
   refetch: () => void;
 }
 
-/** Discovers every installed Agent's models for the Agent node's executor picker. */
-export function useWorkflowAgentModels(): WorkflowAgentModelsCatalog {
+/** Reads the same executable agent/model bindings as Chat; failures never supply demo data. */
+export function useWorkflowExecutors() {
   const client = useContractsClient();
-  const agents = useAgentCatalog();
-  const modelQueries = useQueries({
-    queries: agents.map((agent) => ({
-      queryKey: catalogKeys.models(agent.agentRef),
-      queryFn: () =>
-        client.agentRuntime.listModels({ agentRef: agent.agentRef }),
-      retry: false,
-    })),
+  return useQuery({
+    queryKey: [...catalogKeys.executors, client.tenantId],
+    queryFn: () => client.executors.list(),
   });
+}
 
-  const agentModels = useMemo(() => {
-    const models: WorkflowAgentModel[] = [];
-    for (const [index, agent] of agents.entries()) {
-      for (const model of modelQueries[index]?.data?.models ?? []) {
-        models.push({
-          agentCli: agent.agentRef,
-          modelId: model.id,
-          label: `${agent.label} · ${model.displayName}`,
-        });
-      }
-    }
-    return models;
-  }, [agents, modelQueries]);
-
+/** Builds the Agent picker from one authoritative executor directory. */
+export function useWorkflowAgentModels(): WorkflowAgentModelsCatalog {
+  const query = useWorkflowExecutors();
+  const agents = useAgentCatalog();
+  const agentModels = useMemo(
+    () => (query.data?.items ?? []).map((executor) => ({
+      agentCli: executor.agentId,
+      modelId: executor.modelId,
+      label: `${executor.agentName} · ${executor.modelName}`,
+    })),
+    [query.data],
+  );
   const modelsByCli = useMemo(() => {
     const byCli = new Map<string, WorkflowAgentModel[]>();
     for (const model of agentModels) {
@@ -99,30 +92,19 @@ export function useWorkflowAgentModels(): WorkflowAgentModelsCatalog {
     }
     return byCli;
   }, [agentModels]);
-
-  const cliStatus = useMemo(
-    () =>
-      Object.fromEntries(
-        agents.map((agent, index) => [
-          agent.agentRef,
-          {
-            isLoading: modelQueries[index]?.isPending === true,
-            isError: modelQueries[index]?.isError === true,
-          },
-        ]),
-      ),
-    [agents, modelQueries],
-  );
-
+  const cliStatus = Object.fromEntries(agents.map((agent) => [agent.agentRef, {
+    isLoading: query.isPending,
+    isError: query.isError,
+  }]));
   return {
     agents,
     agentModels,
     modelsByCli,
     cliStatus,
-    isLoading: modelQueries.some((query) => query.isPending),
-    isError: modelQueries.some((query) => query.isError),
+    isLoading: query.isPending,
+    isError: query.isError,
     refetch: () => {
-      for (const query of modelQueries) void query.refetch();
+      void query.refetch();
     },
   };
 }

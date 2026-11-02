@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { memberEmail, signIn } from './login.ts'
+import { ownerName, signIn, signInAsInvitedMember } from './login.ts'
 
 async function login(page: Page, path: string, email?: string) {
   await page.goto(path)
@@ -271,7 +271,7 @@ test('owner manages a space market while the official catalog stays shared', asy
 test('member can inspect market sources but cannot manage them', async ({
   page,
 }) => {
-  await login(page, '/settings/plugins', memberEmail)
+  await signInAsInvitedMember(page, '/settings/plugins')
   await page.getByRole('button', { name: '管理市场' }).click()
   const dialog = page.getByRole('dialog')
   await expect(
@@ -490,17 +490,16 @@ test('the roster comes from the server and a member sees no invitation entry', a
 }) => {
   await login(page, '/settings/members')
   // The preset owner is the only guaranteed row; the badge names the real role.
-  const row = page.getByRole('row', { name: /演示 Owner/ })
-  await expect(row.getByText('owner', { exact: true })).toBeVisible()
+  const row = page.getByRole('row', { name: new RegExp(ownerName) })
+  await expect(row.getByRole('cell').nth(1)).toHaveText('owner')
   await expect(page.getByRole('form', { name: '邀请成员' })).toBeVisible()
 
-  // A preset member reads the same roster and is told why there is nothing to invite with.
-  await page.getByRole('button', { name: '退出登录' }).click()
-  await login(page, '/settings/members', memberEmail)
-  await expect(page.getByRole('img', { name: '爱丽丝' })).toBeVisible()
+  // A real invited member reads the same roster and has nothing to invite with.
+  const member = await signInAsInvitedMember(page)
+  await expect(page.getByRole('img', { name: member.name })).toBeVisible()
   await expect(page.getByText(/邀请入口只向 owner 开放/)).toBeVisible()
   await expect(page.getByRole('form', { name: '邀请成员' })).toHaveCount(0)
-  await expect(page.getByRole('row', { name: /演示 Owner/ })).toBeVisible()
+  await expect(page.getByRole('row', { name: new RegExp(ownerName) })).toBeVisible()
 })
 
 test('model metadata and simulated credentials never send model requests', async ({

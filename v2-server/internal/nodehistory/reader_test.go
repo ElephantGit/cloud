@@ -344,4 +344,13 @@ func TestConsumePreviewReturnsOnlyPendingRecords(t *testing.T) {
 	if full := p.Snapshot(); len(full.Records) != 2 || full.Records[1].Preview {
 		t.Fatalf("full snapshot=%+v", full)
 	}
+	// Node drops a written record from previews before its thread_event arrives: it stays pending.
+	preview(3, block(4, "agent_thought_chunk", "thinking"))
+	if got = preview(4); len(got.Snapshot.Records) != 1 || got.Snapshot.Records[0].Sequence != 4 {
+		t.Fatalf("written record vanished before it settled: %+v", got)
+	}
+	settle(3, ended(3, "end_turn"))
+	if got = preview(5); len(got.Snapshot.Records) != 0 {
+		t.Fatalf("turn end left records pending: %+v", got)
+	}
 }

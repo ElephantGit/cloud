@@ -82,7 +82,9 @@ func (p *Projection) Consume(ctx context.Context, message node.Message) (Observa
 }
 
 // Projection has one owner per execution. Settled records take precedence over previews;
-// a newer preview replaces the entire pending set, including removing vanished pending items.
+// a newer preview replaces the pending records it carries. Node stops previewing a record once
+// it is written, before its thread_event arrives, so a record a preview no longer carries stays
+// pending until it settles or the turn ends; dropping it would blank the page in between.
 type Projection struct {
 	reader           *Reader
 	execution        string
@@ -126,6 +128,11 @@ func (p *Projection) Preview(payload json.RawMessage) error {
 		seen[*b.Sequence] = true
 		if _, settled := p.settled[*b.Sequence]; !settled {
 			next[*b.Sequence] = Record{*b.Sequence, bytes.Clone(b.Record), true}
+		}
+	}
+	for sequence, record := range p.pending {
+		if _, carried := next[sequence]; !carried {
+			next[sequence] = record
 		}
 	}
 	p.pending = next

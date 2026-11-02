@@ -10,6 +10,8 @@
 
 Receive 保留 payload、operation/execution/sequence 与 ACP 扩展信息。**不会自动 ACK**：
 运行时先处理并持久化事件，再 Ack 原始坐标；发送成功不等于 Node 已接收业务命令或执行完成。
+`Options.ThreadPreviews` 在 Hello 里请求实时 `thread_preview`；Node 只在同时具备 `agent_session` 时同意，
+`Client.ThreadPreviews` 报告协商结果。未协商时 Receive 丢弃 Node 发来的 preview；Node 未经请求就同意则握手失败。
 Node 执行流序号与页面的 session 事件序号是两种坐标，后续持久化适配负责对应。
 
 ## 验证

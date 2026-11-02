@@ -26,6 +26,9 @@ type Options struct {
 	HeartbeatInterval    time.Duration
 	FrameTimeout         time.Duration
 	RequiredCapabilities []string
+	// ThreadPreviews asks Node for live thread_preview snapshots. Node grants them only beside
+	// agent_session; Client.ThreadPreviews reports what was actually negotiated.
+	ThreadPreviews bool
 }
 
 // Client owns one IPC connection and one heartbeat goroutine. One caller owns Receive;
@@ -40,6 +43,7 @@ type Client struct {
 	done          chan struct{}
 	heartbeatDone chan struct{}
 	closeOnce     sync.Once
+	previews      bool
 }
 
 // Dial negotiates Node v1 and required capabilities before starting heartbeats.
@@ -54,7 +58,11 @@ func Dial(ctx context.Context, opts Options) (*Client, error) {
 	}
 	c := &Client{conn: conn, options: opts, writeToken: make(chan struct{}, 1), done: make(chan struct{}), heartbeatDone: make(chan struct{})}
 	c.writeToken <- struct{}{}
-	hello, _ := json.Marshal(map[string]any{"controller_id": opts.ControllerID, "supported_versions": []int{1}})
+	greeting := map[string]any{"controller_id": opts.ControllerID, "supported_versions": []int{1}}
+	if opts.ThreadPreviews {
+		greeting["thread_previews"] = true
+	}
+	hello, _ := json.Marshal(greeting)
 	if err = c.Send(ctx, Message{Type: "hello", Version: 1, Payload: hello}); err == nil {
 		var message Message
 		message, err = c.read(ctx)
@@ -75,6 +83,7 @@ func (c *Client) accept(message Message) error {
 		Version      int      `json:"selected_version"`
 		Node         Identity `json:"node"`
 		Capabilities []string `json:"capabilities"`
+		Previews     bool     `json:"thread_previews"`
 	}
 	if message.Type != "hello_accepted" || json.Unmarshal(message.Payload, &accepted) != nil || accepted.Version != 1 || accepted.Node.NodeID != c.options.ExpectedNodeID || strings.TrimSpace(accepted.Node.IncarnationID) == "" {
 		return errors.New("Node identity or negotiated version mismatch")
@@ -94,12 +103,18 @@ func (c *Client) accept(message Message) error {
 			return fmt.Errorf("Node missing required capability %q", required)
 		}
 	}
-	c.identity = accepted.Node
+	if accepted.Previews && (!c.options.ThreadPreviews || !capabilities["agent_session"]) {
+		return errors.New("Node granted thread previews it cannot send")
+	}
+	c.identity, c.previews = accepted.Node, accepted.Previews
 	return nil
 }
 
 // Identity returns the immutable identity established by Hello.
 func (c *Client) Identity() Identity { return c.identity }
+
+// ThreadPreviews reports whether both peers opted into thread_preview messages.
+func (c *Client) ThreadPreviews() bool { return c.previews }
 
 // Send serializes commands and heartbeats and bounds every frame write. Successful return
 // means bytes were sent, not that Node admitted or completed the command.
@@ -153,13 +168,17 @@ func (c *Client) read(ctx context.Context) (Message, error) {
 	return message, err
 }
 
-// Receive skips validated heartbeats and returns every other message unchanged. In particular,
-// it never ACKs durable events: callers must persist/process them before explicitly calling Ack.
+// Receive skips validated heartbeats and previews that were not negotiated, and returns every
+// other message unchanged. In particular, it never ACKs durable events: callers must
+// persist/process them before explicitly calling Ack.
 func (c *Client) Receive(ctx context.Context) (Message, error) {
 	for {
 		message, err := c.read(ctx)
 		if err != nil {
 			return Message{}, err
+		}
+		if message.Type == "thread_preview" && !c.previews {
+			continue
 		}
 		if message.Type != "heartbeat" {
 			return message, nil

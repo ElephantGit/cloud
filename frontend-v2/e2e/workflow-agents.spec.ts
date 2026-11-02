@@ -86,3 +86,34 @@ test('workflow agent: replace a legacy demo choice, persist real IDs, and execut
   expect(payload.model.fallback).toBe(false)
   expect(node.sessionId).toBeTruthy()
 })
+
+test('workflow agent: roles saved in settings appear in the role picker', async ({ page }) => {
+  await page.goto('/settings/roles')
+  await signIn(page)
+  const roleName = `发布审查 ${Date.now()}`
+  await page.getByRole('button', { name: '新建角色' }).click()
+  await page.getByLabel('标题').fill(roleName)
+  await page.getByLabel('描述').fill('由工作流 Agent 节点选择')
+  await page.getByLabel('内容（Markdown）').fill('# 发布审查\n\n核对发布说明。')
+  await page.getByRole('button', { name: '保存角色' }).click()
+  await expect(page.getByRole('article', { name: roleName })).toBeVisible()
+
+  await page.goto('/workflows')
+  const tid = (await (await page.request.get('/api/v1/me/tenants')).json()).items[0].id
+  const name = `角色选择 ${Date.now()}`
+  const created = await page.request.post(`/api/v2/tenants/${tid}/workflows`, {
+    data: { name, graph: null },
+  })
+  expect(created.status()).toBe(201)
+  await page.reload()
+  await page
+    .getByRole('complementary', { name: '工作流列表' })
+    .getByRole('button', { name, exact: true })
+    .click()
+  await page
+    .getByRole('toolbar', { name: '添加工作流节点' })
+    .getByRole('button', { name: 'Agent', exact: true })
+    .click()
+  await page.getByLabel('角色', { exact: true }).click()
+  await expect(page.getByRole('option', { name: roleName })).toBeVisible()
+})

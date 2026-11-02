@@ -57,7 +57,6 @@ import type {
 import { ContractError } from "../contracts";
 import {
   demoPlugins,
-  demoRoles,
   demoSkills,
 } from "./demo-catalog";
 
@@ -168,8 +167,9 @@ export function createHttpWorkflowContracts(tenantId: string): WorkflowContracts
 
 /**
  * The client every copied workflow query and mutation hook calls: the definition operations, and
- * the catalogs the Agent node's pickers read. v2-server reports no Roles, Skills or MCP servers
- * yet, so those catalogs retain demo entries. Executors come from Chat's real catalog.
+ * the catalogs the Agent node's pickers read. Roles come from Settings; v2-server reports no
+ * Skills or MCP servers yet, so those catalogs retain demo entries. Executors come from Chat's
+ * real catalog.
  */
 export function createContractsClient(workflow: WorkflowContracts, tenantId: string) {
   const answer =
@@ -179,9 +179,6 @@ export function createContractsClient(workflow: WorkflowContracts, tenantId: str
   return {
     tenantId,
     workflow,
-    agent: {
-      list: answer((_request: Record<string, never>) => ({ agents: demoRoles })),
-    },
     skill: {
       list: answer((_request: Record<string, never>) => ({ skills: demoSkills })),
     },

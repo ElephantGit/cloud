@@ -28,7 +28,8 @@ export const emptySessionView = (id: string): SessionView => ({ id, records: [],
 
 /**
  * Folds one event-stream message into a session. A history snapshot replaces the whole history,
- * as the backend sends it; nothing is appended chunk by chunk.
+ * as the backend sends it; a history preview replaces only its pending records. Nothing is
+ * appended chunk by chunk.
  */
 export function applySessionEvent(base: SessionView, event: ChatEvent): SessionView {
   if (event.sequence <= base.cursor) return base
@@ -36,6 +37,8 @@ export function applySessionEvent(base: SessionView, event: ChatEvent): SessionV
   switch (event.kind) {
     case 'history_snapshot':
       return event.history ? { ...view, records: event.history.records, incomplete: event.history.incomplete } : view
+    case 'history_preview':
+      return event.history ? { ...view, records: withPending(view.records, event.history.records), incomplete: event.history.incomplete } : view
     case 'turn_ended':
       return event.result ? { ...view, results: [...view.results, event.result], prompts: [...view.prompts, event.prompt ?? ''] } : view
     case 'session_ended':
@@ -43,6 +46,13 @@ export function applySessionEvent(base: SessionView, event: ChatEvent): SessionV
     default:
       return view
   }
+}
+
+/** Swaps a history's pending records for newer ones; a settled record at the same position wins. */
+function withPending(records: ChatHistoryRecord[], pending: ChatHistoryRecord[]): ChatHistoryRecord[] {
+  const settled = records.filter((r) => !r.preview)
+  const positions = new Set(settled.map((r) => r.sequence))
+  return [...settled, ...pending.filter((r) => !positions.has(r.sequence))]
 }
 
 /**
@@ -64,7 +74,7 @@ export function conversationOf(sessions: SessionView[]): Conversation {
   return conversation
 }
 
-/** The parts of a fixed-Node HistoryLine the page reads. */
+/** The parts of a fixed-Node HistoryLine the page reads; a preview's record has no at or seq. */
 interface HistoryLine {
   at?: string
   seq?: number
@@ -89,9 +99,12 @@ function appendSession(base: Conversation, session: SessionView): Conversation {
     else if (session.ended) conversation = applyEvent(conversation, { type: 'turnError', message: '会话已结束，这一轮没有完成。' }, at)
   }
 
+  let last = 0
   for (const record of records) {
     const line = record.data as HistoryLine
-    const at = timeOf(line.at)
+    // A record still being written carries no time of its own; it is no older than the one before.
+    const at = timeOf(line.at) || last
+    last = at
     if (line.type === 'turnEnded') {
       if (line.stop_reason) conversation = applyEvent(conversation, { type: 'turnEnd', stopReason: line.stop_reason }, at)
       continue

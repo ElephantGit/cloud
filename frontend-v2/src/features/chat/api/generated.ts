@@ -156,7 +156,7 @@ export interface ChatHistoryRecord {
 }
 
 /**
- * A full replacement of the session's displayed history.
+ * On history_snapshot, a full replacement of the session's displayed history. On history_preview, only the records still being written (all preview): they replace the preview records of the latest snapshot, and a settled record at the same position wins.
  */
 export interface ChatHistory {
   records: ChatHistoryRecord[];
@@ -168,6 +168,7 @@ export type ChatEventKind = typeof ChatEventKind[keyof typeof ChatEventKind];
 
 export const ChatEventKind = {
   history_snapshot: 'history_snapshot',
+  history_preview: 'history_preview',
   turn_ended: 'turn_ended',
   text_delta: 'text_delta',
   session_ended: 'session_ended',

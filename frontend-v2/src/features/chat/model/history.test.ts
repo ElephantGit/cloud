@@ -24,6 +24,12 @@ const tool = (seq: number, status: 'completed' | 'in_progress'): ChatHistoryReco
     tool_timing: { startedAt: at(seq), durationMs: 2000 },
   },
 })
+/** A record Node is still writing: a bare HistoryRecord with no at or seq. */
+const pending = (seq: number, update: Record<string, unknown>, extra: Record<string, unknown> = {}): ChatHistoryRecord => ({
+  sequence: seq,
+  data: { type: 'update', update, ...extra },
+  preview: true,
+})
 const ended = (seq: number, stop = 'end_turn'): ChatHistoryRecord => ({ sequence: seq, data: { at: at(seq), seq, type: 'turnEnded', stop_reason: stop } })
 const meta: ChatHistoryRecord = { sequence: 0, data: { at: at(0), seq: 0, type: 'meta', schemaVersion: 2, sessionId: 'x' } }
 const done: ChatResult = { status: 'completed', answer: '', answerComplete: true, stopReason: 'end_turn', failureCode: '' }
@@ -46,6 +52,24 @@ describe('applySessionEvent', () => {
   })
 })
 
+describe('applySessionEvent with previews', () => {
+  it('replaces only the pending records, and a settled record at the same position wins', () => {
+    let sequence = 0
+    const event = (e: Partial<ChatEvent>): ChatEvent => ({ sequence: ++sequence, occurredAt: at(0), kind: 'history_preview', turnId: 't1', ...e })
+    const draft = (text: string) => pending(2, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
+    let v = applySessionEvent(emptySessionView('s1'), event({ kind: 'history_snapshot', history: { records: [user(1, 'hi')], incomplete: false } }))
+    v = applySessionEvent(v, event({ history: { records: [draft('定')], incomplete: false } }))
+    v = applySessionEvent(v, event({ history: { records: [draft('定稿')], incomplete: false } }))
+    expect(v.records).toEqual([user(1, 'hi'), draft('定稿')])
+    v = applySessionEvent(v, event({ kind: 'history_snapshot', history: { records: [user(1, 'hi'), say(2, '定稿')], incomplete: false } }))
+    // A preview that raced the settled record cannot bring the draft back.
+    v = applySessionEvent(v, event({ history: { records: [draft('定')], incomplete: false } }))
+    expect(v.records).toEqual([user(1, 'hi'), say(2, '定稿')])
+    v = applySessionEvent(v, event({ history: { records: [], incomplete: false } }))
+    expect(v.records).toEqual([user(1, 'hi'), say(2, '定稿')])
+  })
+})
+
 describe('conversationOf', () => {
   it('rebuilds turns from settled history in position order', () => {
     const c = conversationOf([view({ records: [ended(5), say(4, '第二段'), tool(2, 'completed'), user(1, '读一下'), say(3, '第一段'), meta], results: [done] })])
@@ -55,6 +79,23 @@ describe('conversationOf', () => {
     // Two settled messages stay two items; they are never glued into one.
     expect(turn.items.map((i) => i.kind)).toEqual(['tool', 'message', 'message'])
     expect(turn.items[0]).toMatchObject({ status: 'completed', startedAt: ms(2), endedAt: ms(4) })
+  })
+
+  it('shows pending text and a running tool while the turn streams, timed no earlier than the record before', () => {
+    const records = [
+      meta,
+      user(1, '跑一下测试'),
+      pending(2, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先看看' } }),
+      pending(3, { sessionUpdate: 'tool_call', toolCallId: 'call-3', title: 'sleep 12', kind: 'execute', status: 'in_progress' }, { tool_timing: { startedAt: at(4) } }),
+      pending(4, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '正在' } }),
+    ]
+    const [turn] = conversationOf([view({ records })]).turns
+    expect(turn.status).toBe('streaming')
+    expect(turn.items.map((i) => i.kind)).toEqual(['thought', 'tool', 'message'])
+    expect(turn.items[0]).toMatchObject({ text: '先看看', startedAt: ms(1), endedAt: ms(4) })
+    expect(turn.items[1]).toMatchObject({ status: 'in_progress', startedAt: ms(4) })
+    expect(turn.items[1]).not.toHaveProperty('endedAt')
+    expect(turn.items[2]).toMatchObject({ text: '正在' })
   })
 
   it('closes a turn the history left open with its result, and fails one with no result once the session ended', () => {

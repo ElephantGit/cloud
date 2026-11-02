@@ -64,10 +64,9 @@ func dialPublic(ctx context.Context, network, address string, useProxy bool) (ne
 	if e != nil || len(ips) == 0 {
 		return nil, ErrTransient
 	}
-	for _, ip := range ips {
-		if !publicIP(ip) {
-			return nil, ErrSource
-		}
+	dialIP, e := selectDialAddress(host, ips)
+	if e != nil {
+		return nil, e
 	}
 	dial := (&net.Dialer{Timeout: 15 * time.Second}).DialContext
 	if useProxy {
@@ -86,7 +85,7 @@ func dialPublic(ctx context.Context, network, address string, useProxy bool) (ne
 		}
 		dial = d.DialContext
 	}
-	conn, e := dial(ctx, network, net.JoinHostPort(ips[0].Unmap().String(), port))
+	conn, e := dial(ctx, network, net.JoinHostPort(dialIP.String(), port))
 	if e != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -67,6 +67,20 @@ const (
 	SkillJobRetry
 )
 
+// String names the outcome in structured logs.
+func (o SkillJobOutcome) String() string {
+	switch o {
+	case SkillJobSucceeded:
+		return "succeeded"
+	case SkillJobFailed:
+		return "failed"
+	case SkillJobRetry:
+		return "retry"
+	default:
+		return fmt.Sprintf("unknown(%d)", o)
+	}
+}
+
 func (s *Store) SkillJobs(ctx context.Context) ([]SkillJob, error) {
 	rows, e := s.pool.Query(ctx, `select p.id,a.id,a.space_id,a.source_namespace,a.identifier,a.desired_version,a.desired_state,
  f.locator,f.digest,f.retrieval,f.credentials,a.version,coalesce(r.installed_version,'')
@@ -95,7 +109,7 @@ func (s *Store) StartSkillJob(ctx context.Context, j SkillJob) (bool, error) {
 	tag, e := s.pool.Exec(ctx, `insert into v2_skill_results(selection_id,project_id,revision,state) select a.id,p.id,a.version,'applying' from v2_space_agents a join v2_projects p on p.plugin_space_id=a.space_id and p.tenant_id=a.tenant_id where a.id=$1 and a.version=$2 and p.id=$3 on conflict(selection_id,project_id) do update set revision=excluded.revision,state='applying',failure=null,retry_at=null,retry_count=case when v2_skill_results.revision=excluded.revision then v2_skill_results.retry_count else 0 end`, j.Selection, j.Revision, j.Project)
 	return tag.RowsAffected() == 1, e
 }
-func (s *Store) FinishSkillJob(ctx context.Context, j SkillJob, outcome SkillJobOutcome) error {
+func (s *Store) FinishSkillJob(ctx context.Context, j SkillJob, outcome SkillJobOutcome, failureDetail string) error {
 	state := "installed"
 	var version any = j.Version
 	var failure any
@@ -121,7 +135,10 @@ func (s *Store) FinishSkillJob(ctx context.Context, j SkillJob, outcome SkillJob
 		return e
 	case SkillJobFailed:
 		state = "failed"
-		failure = "项目节点未确认操作，请重新尝试。"
+		if failureDetail == "" {
+			failureDetail = "项目节点未确认操作，请重新尝试。"
+		}
+		failure = failureDetail
 		version = j.Previous
 		if j.Previous == "" {
 			version = nil

@@ -264,7 +264,7 @@ Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不�
 - **变量与失败尝试投影**：运行 payload 的其余部分不公开；除了 Condition 的 `conditionDecisions`，详情再投影 desktop `GetWorkflowRunResponse` 里的两项。`variables` 读 `variablePool` 的 catalog（`<节点>.<名字>`，按键排序），`sourceNodeId` 取 `writer`，没赋值的不带 `value`，赋了 `null` 的带 `null`；跳过旧的 `selected_branch_id` 路由项，键不合法的项跳过而不让整个详情失败（desktop 在这里报 payload 损坏）。运行开始前没有变量池，读出空列表。`failedAttempts` 是被软删的 `failed` 节点行（desktop 的 `list_failed_attempts`），取各行 `payload.error_detail`，没有的跳过；只有重试、续跑和整次重跑会软删失败行，v2 三者都没有，所以目前总是空的，当前失败的尝试就是节点自己的行。
 - **能力边界**：整次运行 restart/resume 不在演示范围；顶栏“再跑一次”创建新运行。重启中断由执行桥提供，见下文“工作流执行”。
 
-运行页按选中的 Loop scope 或 Iteration 下标投影节点状态，并以该次尝试的 `nodeRunId` 订阅会话事件。该轮未执行的成员没有尝试身份，不继承前一轮的会话或执行元数据。
+运行页按选中的 Loop scope 或 Iteration 下标投影节点状态，并以该次尝试的 `nodeRunId` 订阅会话事件。该轮未执行的成员没有尝试身份，不继承前一轮的会话或执行元数据。启动输入和根变量只覆盖根 Start，不覆盖 Loop 的本轮入口。`failedAttempts` 的兼容展示仍只映射根作用域；演示版不替换失败尝试，当前轮内失败直接显示在该轮的节点状态中。
 
 ### 对话
 
@@ -400,10 +400,12 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 
 ```sh
 cd frontend-v2
-npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts
+npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/schedule-workflows.spec.ts
 ```
 
 命令从仓库根目录运行；Node 数据目录用独立的 `V2_DATA_DIR`，并与测试数据库配对。没有 Node 资产时，真实 Agent 容器用例按条件跳过，分支用例只验收缺少执行器的失败路径，不能据此认定 Agent 和 Aggregator 的成功链路已经验证。fixture 的回答是确定性的，外部模型服务的输出稳定性不在这些测试的证据范围内。
+
+`schedule-workflows.spec.ts` 还覆盖定时任务的“立即运行”入口：固定发布版本与初始输入，等待 occurrence 结算，在任务历史读取结果，再从对话页项目下打开同一运行，刷新后核对根变量、Loop 反馈、Iteration 逐项任务及各次尝试的会话流。这里验证的是入口合流，不代替真实时钟到点触发、进程重启或调度故障的消费侧验收。
 
 与 desktop 的差异：
 
@@ -416,6 +418,7 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts
 - **失效事件**：`workflowhost.Hub` 在每次提交的状态转移、会话绑定和取消后按运行发布一个不带数据的失效通知，供运行事件流使用；读者收到后重新读取运行，未消费的通知会合并。
 - **失败后的操作**：顶栏“再跑一次”创建新的运行，再从 Start 启动；不会续跑原失败节点或恢复原运行。失败提示指向这个现有入口。
 - **根作用域的并行 swift 行**：同波次一个 swift 节点失败后，另一个节点行可能仍保留 `running`，desktop 基线也有这一表现。运行本身已经失败，历史展示应以运行终态判断能否继续，不能将该行解释为仍有执行活动。Loop scope 的兄弟节点取消不受这一边界影响。
+- **同轮兄弟取消的错误展示**：`sibling_failed` 以 `{"reason":"sibling_failed"}` 写入节点错误，详情会显示这段 JSON；与 desktop 相同，尚未转成面向用户的说明。
 - **失败节点的执行元数据**：`executor`、`model` 和渲染后的 `task` 随成功结果写入；包括结构化契约失败在内的失败结果不承诺这些字段。原回答与错误仍保留，界面不能用配置值冒充这次实际使用的执行元数据。
 
 ### 定时触发记录基础

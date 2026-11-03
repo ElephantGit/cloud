@@ -15,6 +15,9 @@ import { toast } from '@/lib/workflows/host/ui'
 import { ContractError } from '@/lib/workflows/contracts'
 import { localizeContractError } from '@/lib/workflows/host/contract-error'
 import { isTerminalRunStatus, type GraphWorkflowRun, type WorkflowArtifact, type WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
+import { WorkspaceNavigationProvider } from '@/components/workspace-panel/navigation'
+import { useWorkspacePanel } from '@/components/workspace-panel/use-panel'
+import { WorkspacePanel, WorkspaceToggle } from '@/components/workspace-panel/workspace-panel'
 import { FadeText } from '../components/fade-text'
 import { ShowSidebarButton } from '../components/sidebar'
 import { emptyDraft, newChatKey, useChatStore } from '../store'
@@ -126,6 +129,12 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
   const stageAreaRef = useRef<HTMLDivElement>(null)
   const focusStatusSampleRef = useRef<TheaterFocusStatusSample | null>(null)
   const conversationByNodeId = useConversationByNode(conversations)
+  // The checkout every Agent node of the run shares; read again whenever a node or the run moves on.
+  const workspace = useWorkspacePanel()
+  const workspaceSource = useMemo(() => ({ kind: 'run' as const, tenantId, runId: run.id }), [tenantId, run.id])
+  const workspaceRevision = `${run.status}:${Object.values(run.nodeStates)
+    .map((state) => state.status)
+    .join(',')}`
 
   const nodes = run.definitionSnapshot.nodes
   const startNode = nodes.find((n) => n.data.kind === 'start')
@@ -253,7 +262,7 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
   }
 
   return (
-    <>
+    <WorkspaceNavigationProvider value={workspace.navigation}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <ShowSidebarButton />
         <WorkflowIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -329,40 +338,48 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
               在对话中追问
             </Button>
           )}
+          <WorkspaceToggle open={workspace.open} toggle={() => workspace.setOpen(!workspace.open)} />
         </div>
       </header>
-      <div ref={stageAreaRef} aria-label={viewMode === 'theater' ? '运行舞台' : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {run.status === 'pending' && viewMode === 'overview' && (
-          <p className="absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
-            还没开始：点右上角「启动」，填写输入后运行
-          </p>
-        )}
-        {viewMode === 'theater' ? (
-          <RunTheater
-            run={run}
-            focusNodeId={stageFocusNodeId}
-            onFocusNode={focusNode}
-            onClearFocus={() => {
-              setFocusNodeId(null)
-              setConversationNodeId(null)
-            }}
-            artifacts={artifacts}
-            conversationByNodeId={conversationByNodeId}
-            revealedArtifactId={revealedArtifactId}
-            openInspectorOnMount={openInspectorOnTheaterEnter}
-            onOpenInspectorOnMountConsumed={() => setOpenInspectorOnTheaterEnter(false)}
-            sessionConversationNodeId={conversationNodeId}
-            onSessionConversationNodeIdChange={(nodeId) => {
-              setConversationNodeId(nodeId)
-              if (nodeId !== null) setFocusNodeId(nodeId)
-            }}
-            onShowOverview={() => {
-              setOpenInspectorOnTheaterEnter(false)
-              setViewMode('overview')
-            }}
-          />
-        ) : (
-          <RunOverviewCanvas run={run} focusedNodeId={stageFocusNodeId} onFocusNode={focusNodeFromOverview} artifacts={artifacts} fitRequestKey={overviewFitRequestKey} />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div ref={stageAreaRef} aria-label={viewMode === 'theater' ? '运行舞台' : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {run.status === 'pending' && viewMode === 'overview' && (
+            <p className="absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+              还没开始：点右上角「启动」，填写输入后运行
+            </p>
+          )}
+          {viewMode === 'theater' ? (
+            <RunTheater
+              run={run}
+              focusNodeId={stageFocusNodeId}
+              onFocusNode={focusNode}
+              onClearFocus={() => {
+                setFocusNodeId(null)
+                setConversationNodeId(null)
+              }}
+              artifacts={artifacts}
+              conversationByNodeId={conversationByNodeId}
+              revealedArtifactId={revealedArtifactId}
+              openInspectorOnMount={openInspectorOnTheaterEnter}
+              onOpenInspectorOnMountConsumed={() => setOpenInspectorOnTheaterEnter(false)}
+              sessionConversationNodeId={conversationNodeId}
+              onSessionConversationNodeIdChange={(nodeId) => {
+                setConversationNodeId(nodeId)
+                if (nodeId !== null) setFocusNodeId(nodeId)
+              }}
+              onShowOverview={() => {
+                setOpenInspectorOnTheaterEnter(false)
+                setViewMode('overview')
+              }}
+            />
+          ) : (
+            <RunOverviewCanvas run={run} focusedNodeId={stageFocusNodeId} onFocusNode={focusNodeFromOverview} artifacts={artifacts} fitRequestKey={overviewFitRequestKey} />
+          )}
+        </div>
+        {workspace.open && (
+          <div className="hidden w-[min(480px,42vw)] shrink-0 md:flex">
+            <WorkspacePanel source={workspaceSource} revision={workspaceRevision} request={workspace.request} onClose={() => workspace.setOpen(false)} />
+          </div>
         )}
       </div>
       <WorkflowRunStartDialog
@@ -378,7 +395,7 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
           setViewMode('theater')
         }}
       />
-    </>
+    </WorkspaceNavigationProvider>
   )
 }
 

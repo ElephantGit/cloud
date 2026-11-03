@@ -57,6 +57,14 @@ export interface FileChange {
   created: boolean
 }
 
+/**
+ * A path inside an Agent's checkout, relative to it. Agents report absolute paths under the
+ * server's checkout directory (`…/w/r/<checkout>/src/a.ts`), which say nothing to the person.
+ */
+export function checkoutPath(path: string): string {
+  return path.match(/\/w\/r\/[^/]+\/(.+)$/)?.[1] ?? path
+}
+
 /** Every file the turn's diffs touched; a later diff of the same file adds to the earlier one. */
 export function turnFileChanges(turn: Turn): FileChange[] {
   const byPath = new Map<string, FileChange>()
@@ -65,9 +73,10 @@ export function turnFileChanges(turn: Turn): FileChange[] {
     for (const c of item.content) {
       if (c.type !== 'diff') continue
       const { added, removed } = countLines(c.oldText ?? '', c.newText)
-      const prev = byPath.get(c.path)
-      byPath.set(c.path, {
-        path: c.path,
+      const path = checkoutPath(c.path)
+      const prev = byPath.get(path)
+      byPath.set(path, {
+        path,
         added: (prev?.added ?? 0) + added,
         removed: (prev?.removed ?? 0) + removed,
         created: prev?.created ?? c.oldText == null,

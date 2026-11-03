@@ -51,15 +51,19 @@ describe('workspace panel', () => {
     })
   })
 
-  it('lists the changes and opens a diff', async () => {
+  it('expands several diffs at once and opens a file in full', async () => {
     renderPanel()
-    const list = await screen.findByRole('list', { name: '改动的文件' })
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    const list = await screen.findByLabelText('改动的文件')
     await userEvent.click(within(list).getByText('README.md'))
-    const diff = await screen.findByLabelText('README.md 的改动')
-    expect(diff).toHaveTextContent('agent')
-    await userEvent.click(screen.getByRole('button', { name: '查看文件' }))
-    expect(await screen.findByText('package src')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'README.md 的改动' })).toHaveTextContent('agent')
+    await userEvent.click(within(list).getByText('app.go'))
+    expect(await screen.findByRole('region', { name: 'src/app.go 的改动' })).toBeInTheDocument()
+    // Opening the second left the first open.
+    expect(screen.getByRole('region', { name: 'README.md 的改动' })).toBeInTheDocument()
+    await userEvent.click(within(screen.getByRole('region', { name: 'README.md 的改动' }).parentElement!).getByRole('button', { name: '查看文件' }))
+    expect(await screen.findByRole('region', { name: 'README.md 的内容' })).toHaveTextContent('package src')
+    await userEvent.click(screen.getByRole('button', { name: '查看改动' }))
+    expect(await screen.findByRole('region', { name: 'README.md 的改动' })).toBeInTheDocument()
   })
 
   it('browses the tree and reads a file', async () => {
@@ -68,15 +72,15 @@ describe('workspace panel', () => {
     const tree = await screen.findByRole('tree', { name: '工作区文件' })
     await userEvent.click(await within(tree).findByText('src'))
     await userEvent.click(await within(tree).findByText('app.go'))
-    expect(await screen.findByText('package src')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'src/app.go 的内容' })).toHaveTextContent('package src')
     expect(seen).toContain(`GET ${base}/file`)
   })
 
   it('opens the diff an outside request names, resolving an absolute Agent path', async () => {
     const view = renderPanel()
-    await screen.findByRole('list', { name: '改动的文件' })
+    await screen.findByLabelText('改动的文件')
     view.rerender({ request: { path: '/data/nodes/x/w/r/c-1/src/app.go', nonce: 1 } })
-    expect(await screen.findByLabelText('src/app.go 的改动')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'src/app.go 的改动' })).toBeInTheDocument()
   })
 
   it('says the workspace is not ready, then reads it again on a new revision', async () => {
@@ -85,6 +89,6 @@ describe('workspace panel', () => {
     expect(await screen.findByText(/工作区在第一轮开始后才会准备好/)).toBeInTheDocument()
     ready = true
     view.rerender({ revision: '1' })
-    expect(await screen.findByRole('list', { name: '改动的文件' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('改动的文件')).toBeInTheDocument()
   })
 })

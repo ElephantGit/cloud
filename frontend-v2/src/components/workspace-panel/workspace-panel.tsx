@@ -1,20 +1,10 @@
 import { type UseQueryResult, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  ArrowLeftIcon,
-  ChevronRightIcon,
-  FileIcon,
-  FileTextIcon,
-  FolderIcon,
-  GitCompareArrowsIcon,
-  PanelRightIcon,
-  RefreshCwIcon,
-  XIcon,
-} from 'lucide-react'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { HighlightedCode } from '@/components/agent-thread/code'
+import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FileTextIcon, FolderIcon, GitCompareArrowsIcon, PanelRightIcon, RefreshCwIcon, XIcon } from 'lucide-react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
-import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { useHighlightedCode } from '@/hooks/use-highlighted-code'
 import { codeOf } from '@/lib/api-client'
 import { subtleScrollbar } from '@/lib/scrollbar'
 import { cn } from '@/lib/utils'
@@ -23,7 +13,6 @@ import { parsePatch } from './patch'
 import { languageOf, relativePath, type WorkspaceReader, type WorkspaceSource, workspaceReader } from './source'
 
 type Tab = 'changes' | 'files'
-type View = { kind: 'diff' | 'file'; path: string }
 
 /** A request from outside the panel to show one file's diff; a new nonce repeats the same path. */
 export interface OpenRequest {
@@ -33,9 +22,9 @@ export interface OpenRequest {
 
 /**
  * A side panel that shows an Agent's checkout read-only, as desktop's review pane does: what
- * changed against the commit it started from, and every file. The page bumps `revision` whenever
- * the Agent may have written (a tool call finished, a turn or node ended), and the panel reads
- * the checkout again.
+ * changed against the commit it started from, each file's diff expandable in place, and every
+ * file. The page bumps `revision` whenever the Agent may have written (a tool call finished, a
+ * turn or node ended), and the panel reads the checkout again.
  */
 export function WorkspacePanel({
   source,
@@ -51,34 +40,44 @@ export function WorkspacePanel({
   const reader = useMemo(() => workspaceReader(source), [source])
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('changes')
-  const [view, setView] = useState<View | null>(null)
+  /** The file shown in full, over either tab. */
+  const [file, setFile] = useState<string | null>(null)
+  /** Changed files whose diff is expanded; several can be open at once. */
+  const [expanded, setExpanded] = useState<string[]>([])
+  const [reveal, setReveal] = useState<string | null>(null)
   const changes = useQuery({ queryKey: [...reader.key, 'changes'], queryFn: reader.changes, retry: false })
 
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: reader.key })
   }, [queryClient, reader, revision])
 
+  const showDiff = (path: string) => {
+    setTab('changes')
+    setFile(null)
+    setExpanded((open) => (open.includes(path) ? open : [...open, path]))
+    setReveal(path)
+  }
   const [handled, setHandled] = useState<number | undefined>(undefined)
   if (request && request.nonce !== handled) {
     setHandled(request.nonce)
-    setTab('changes')
-    setView({ kind: 'diff', path: relativePath(request.path, changes.data?.files) })
+    showDiff(relativePath(request.path, changes.data?.files))
   }
 
+  const listing = !file
   return (
-    <aside aria-label="工作区" className="flex h-full min-h-0 w-full flex-col border-l bg-background">
+    <aside aria-label="工作区" className="flex h-full min-h-0 w-full flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-1.5 border-b px-3">
         <div role="group" aria-label="工作区视图" className="inline-flex rounded-lg border p-0.5">
           {(['changes', 'files'] as const).map((t) => (
             <Button
               key={t}
               size="sm"
-              variant={tab === t && !view ? 'secondary' : 'ghost'}
+              variant={tab === t && listing ? 'secondary' : 'ghost'}
               className="h-7 gap-1.5 px-2.5 text-xs"
-              aria-pressed={tab === t && !view}
+              aria-pressed={tab === t && listing}
               onClick={() => {
                 setTab(t)
-                setView(null)
+                setFile(null)
               }}
             >
               {t === 'changes' ? <GitCompareArrowsIcon className="size-3.5" /> : <FolderIcon className="size-3.5" />}
@@ -98,20 +97,30 @@ export function WorkspacePanel({
           </Button>
         </div>
       </header>
-      <div className={cn('min-h-0 flex-1 overflow-y-auto', subtleScrollbar)}>
-        {view ? (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {file ? (
           <FileView
             reader={reader}
-            view={view}
-            status={changes.data?.files.find((c) => c.path === view.path)?.status}
-            onBack={() => setView(null)}
-            onSwitch={setView}
+            path={file}
+            changed={changes.data?.files.some((c) => c.path === file && c.status !== 'deleted') ?? false}
+            onBack={() => setFile(null)}
+            onShowChanges={() => showDiff(file)}
           />
         ) : tab === 'changes' ? (
-          <ChangesList query={changes} onOpen={(path) => setView({ kind: 'diff', path })} />
+          <ChangesList
+            reader={reader}
+            query={changes}
+            expanded={expanded}
+            onExpanded={setExpanded}
+            reveal={reveal}
+            onRevealed={() => setReveal(null)}
+            onOpenFile={setFile}
+          />
         ) : (
-          <div role="tree" aria-label="工作区文件" className="flex flex-col p-2 text-sm">
-            <Directory reader={reader} path="" depth={0} onOpen={(path) => setView({ kind: 'file', path })} />
+          <div className={cn('min-h-0 flex-1 overflow-y-auto', subtleScrollbar)}>
+            <div role="tree" aria-label="工作区文件" className="flex flex-col p-2 text-sm">
+              <Directory reader={reader} path="" depth={0} onOpen={setFile} />
+            </div>
           </div>
         )}
       </div>
@@ -149,9 +158,12 @@ function failureText(error: unknown): string {
   }
 }
 
-function Message({ children, error, onRetry }: { children: ReactNode; error?: boolean; onRetry?: () => void }) {
+function Message({ children, error, compact, onRetry }: { children: ReactNode; error?: boolean; compact?: boolean; onRetry?: () => void }) {
   return (
-    <div role={error ? 'alert' : 'status'} className="flex flex-col items-center gap-3 px-6 py-10 text-center text-sm text-muted-foreground">
+    <div
+      role={error ? 'alert' : 'status'}
+      className={cn('flex flex-col items-center gap-3 text-center text-muted-foreground', compact ? 'px-3 py-3 text-xs' : 'px-6 py-10 text-sm')}
+    >
       <p>{children}</p>
       {onRetry && (
         <Button size="sm" variant="outline" onClick={onRetry}>
@@ -165,10 +177,10 @@ function Message({ children, error, onRetry }: { children: ReactNode; error?: bo
 /** Codes that describe the workspace, not a failure worth retrying. */
 const settled = new Set(['workspace_not_ready', 'workspace_removed', 'binary_file', 'too_large', 'path_not_found', 'invalid_path'])
 
-function Failure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function Failure({ error, compact, onRetry }: { error: unknown; compact?: boolean; onRetry: () => void }) {
   const code = codeOf(error)
   return (
-    <Message error={!code || !settled.has(code)} onRetry={code && settled.has(code) ? undefined : onRetry}>
+    <Message compact={compact} error={!code || !settled.has(code)} onRetry={code && settled.has(code) ? undefined : onRetry}>
       {failureText(error)}
     </Message>
   )
@@ -180,36 +192,54 @@ const statusMark: Record<WorkspaceChange['status'], { letter: string; label: str
   deleted: { letter: 'D', label: '删除', className: 'text-destructive' },
 }
 
+/** Every changed file as an accordion row; expanding one shows its diff, and several can be open. */
 function ChangesList({
+  reader,
   query,
-  onOpen,
+  expanded,
+  onExpanded,
+  reveal,
+  onRevealed,
+  onOpenFile,
 }: {
+  reader: WorkspaceReader
   query: UseQueryResult<WorkspaceChanges>
-  onOpen: (path: string) => void
+  expanded: string[]
+  onExpanded: (paths: string[]) => void
+  reveal: string | null
+  onRevealed: () => void
+  onOpenFile: (path: string) => void
 }) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const files = query.data?.files
+  useEffect(() => {
+    if (!reveal || !files) return
+    const row = [...(scroller.current?.querySelectorAll<HTMLElement>('[data-change-path]') ?? [])].find((el) => el.dataset.changePath === reveal)
+    row?.scrollIntoView?.({ block: 'start' })
+    onRevealed()
+  }, [reveal, files, onRevealed])
+
   if (query.isPending) return <Message>正在读取变更…</Message>
   if (query.isError) return <Failure error={query.error} onRetry={() => void query.refetch()} />
-  const { files, truncated } = query.data
-  if (files.length === 0) return <Message>还没有文件改动。</Message>
-  const added = files.reduce((n, c) => n + c.additions, 0)
-  const removed = files.reduce((n, c) => n + c.deletions, 0)
+  const { truncated } = query.data
+  if (query.data.files.length === 0) return <Message>还没有文件改动。</Message>
+  const added = query.data.files.reduce((n, c) => n + c.additions, 0)
+  const removed = query.data.files.reduce((n, c) => n + c.deletions, 0)
   return (
-    <div className="flex flex-col py-1">
-      <p className="px-3 py-1.5 text-xs text-muted-foreground">
-        相对初始版本改动了 {files.length} 个文件 <span className="text-success">+{added}</span> <span className="text-destructive">−{removed}</span>
+    <div ref={scroller} className={cn('min-h-0 flex-1 overflow-y-auto', subtleScrollbar)}>
+      <p className="px-3 py-2 text-xs text-muted-foreground">
+        相对初始版本改动了 {query.data.files.length} 个文件 <span className="text-success">+{added}</span> <span className="text-destructive">−{removed}</span>
       </p>
-      <ul aria-label="改动的文件" className="flex flex-col">
-        {files.map((c) => {
+      <Accordion multiple value={expanded} onValueChange={(value) => onExpanded(value as string[])} aria-label="改动的文件" className="border-t">
+        {query.data.files.map((c) => {
           const name = c.path.split('/').at(-1)
           const dir = c.path.slice(0, -(name?.length ?? 0)).replace(/\/$/, '')
           const mark = statusMark[c.status]
           return (
-            <li key={c.path}>
-              <button
-                type="button"
-                className="flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left outline-none hover:bg-muted focus-visible:bg-muted"
+            <AccordionItem key={c.path} value={c.path} data-change-path={c.path}>
+              <AccordionTrigger
                 title={c.path}
-                onClick={() => onOpen(c.path)}
+                className="min-w-0 items-center gap-2 rounded-none px-3 py-1.5 font-normal hover:bg-muted hover:no-underline focus-visible:ring-inset **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:size-3.5"
               >
                 <span className={cn('w-3 shrink-0 font-mono text-[11px] font-semibold', mark.className)} aria-label={mark.label}>
                   {mark.letter}
@@ -225,12 +255,61 @@ function ChangesList({
                     </>
                   )}
                 </span>
-              </button>
-            </li>
+              </AccordionTrigger>
+              <AccordionContent className="pb-0">
+                <DiffContent reader={reader} change={c} onOpenFile={onOpenFile} />
+              </AccordionContent>
+            </AccordionItem>
           )
         })}
-      </ul>
-      {truncated && <p className="px-3 py-2 text-xs text-muted-foreground">改动太多，只列出了前 {files.length} 个文件。</p>}
+      </Accordion>
+      {truncated && <p className="px-3 py-2 text-xs text-muted-foreground">改动太多，只列出了前 {query.data.files.length} 个文件。</p>}
+    </div>
+  )
+}
+
+/** One file's diff, read when its row first opens, drawn straight into the row without a frame. */
+function DiffContent({ reader, change, onOpenFile }: { reader: WorkspaceReader; change: WorkspaceChange; onOpenFile: (path: string) => void }) {
+  const query = useQuery({ queryKey: [...reader.key, 'diff', change.path], queryFn: () => reader.diff(change.path), retry: false })
+  const parsed = useMemo(() => (query.data ? parsePatch(query.data.patch) : undefined), [query.data])
+  let body: ReactNode
+  if (query.isPending) body = <Message compact>正在读取改动…</Message>
+  else if (query.isError) body = <Failure compact error={query.error} onRetry={() => void query.refetch()} />
+  else if (parsed!.binary) body = <Message compact>二进制文件有改动，无法预览。</Message>
+  else if (parsed!.lines.length === 0) body = <Message compact>这个文件和初始版本相同。</Message>
+  else {
+    body = (
+      <div role="region" aria-label={`${change.path} 的改动`} className="font-mono text-[11px] leading-5">
+        {parsed!.lines.map((l, i) => (
+          <div
+            key={i}
+            className={cn(
+              'flex px-3',
+              l.op === '+' && 'bg-success-soft',
+              l.op === '-' && 'bg-destructive/10',
+              l.op === '@' && 'bg-muted/60 text-muted-foreground',
+            )}
+          >
+            <span className={cn('w-4 shrink-0 select-none', l.op === '+' ? 'text-success' : l.op === '-' ? 'text-destructive' : 'text-muted-foreground')}>
+              {l.op === '+' || l.op === '-' ? l.op : ''}
+            </span>
+            <span className="min-w-0 flex-1 break-all whitespace-pre-wrap">{l.text || ' '}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="border-t">
+      {change.status !== 'deleted' && (
+        <div className="flex justify-end px-2 py-1">
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-muted-foreground" onClick={() => onOpenFile(change.path)}>
+            <FileTextIcon />
+            查看文件
+          </Button>
+        </div>
+      )}
+      {body}
     </div>
   )
 }
@@ -304,77 +383,62 @@ function EntryRow({ entry, reader, depth, onOpen }: { entry: WorkspaceEntry; rea
   )
 }
 
-/** One file, as its diff against the initial version or as its current content. */
+/** One file's current content, filling the panel below its path, without a frame. */
 function FileView({
   reader,
-  view,
-  status,
+  path,
+  changed,
   onBack,
-  onSwitch,
+  onShowChanges,
 }: {
   reader: WorkspaceReader
-  view: View
-  status?: WorkspaceChange['status']
+  path: string
+  changed: boolean
   onBack: () => void
-  onSwitch: (view: View) => void
+  onShowChanges: () => void
 }) {
+  const query = useQuery({ queryKey: [...reader.key, 'file', path], queryFn: () => reader.file(path), retry: false })
   return (
-    <div className="flex flex-col gap-2 p-3">
-      <div className="flex min-w-0 items-center gap-1.5">
+    <>
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 border-b px-2 py-1">
         <Button size="icon-sm" variant="ghost" aria-label="返回列表" onClick={onBack}>
           <ArrowLeftIcon />
         </Button>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={view.path}>
-          {view.path}
+        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={path}>
+          {path}
         </span>
-        {view.kind === 'diff' && status !== 'deleted' && (
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onSwitch({ kind: 'file', path: view.path })}>
-            <FileTextIcon />
-            查看文件
-          </Button>
-        )}
-        {view.kind === 'file' && (
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onSwitch({ kind: 'diff', path: view.path })}>
+        {changed && (
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onShowChanges}>
             <GitCompareArrowsIcon />
             查看改动
           </Button>
         )}
       </div>
-      {view.kind === 'diff' ? <DiffContent reader={reader} path={view.path} /> : <FileContent reader={reader} path={view.path} />}
+      {query.isPending ? (
+        <Message>正在读取文件…</Message>
+      ) : query.isError ? (
+        <Failure error={query.error} onRetry={() => void query.refetch()} />
+      ) : query.data.content === '' ? (
+        <Message>空文件。</Message>
+      ) : (
+        <FileText path={path} content={query.data.content} />
+      )}
+    </>
+  )
+}
+
+function FileText({ path, content }: { path: string; content: string }) {
+  const lines = useHighlightedCode(content, languageOf(path))
+  return (
+    <div role="region" aria-label={`${path} 的内容`} className={cn('min-h-0 flex-1 overflow-auto py-2 font-mono text-xs leading-5', subtleScrollbar)}>
+      <div className="grid min-w-max grid-cols-[auto_1fr]">
+        {lines.map((line, i) => (
+          <div key={i} className="contents">
+            <span className="select-none px-3 text-right text-muted-foreground/60 tabular-nums">{i + 1}</span>
+            <span className="pr-4 whitespace-pre">{line}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
-}
-
-function DiffContent({ reader, path }: { reader: WorkspaceReader; path: string }) {
-  const query = useQuery({ queryKey: [...reader.key, 'diff', path], queryFn: () => reader.diff(path), retry: false })
-  const parsed = useMemo(() => (query.data ? parsePatch(query.data.patch) : undefined), [query.data])
-  if (query.isPending) return <Message>正在读取改动…</Message>
-  if (query.isError) return <Failure error={query.error} onRetry={() => void query.refetch()} />
-  if (parsed!.binary) return <Message>二进制文件有改动，无法预览。</Message>
-  if (parsed!.lines.length === 0) return <Message>这个文件和初始版本相同。</Message>
-  return (
-    <CodeBlock size="sm">
-      <CodeBlockContent wrap aria-label={`${path} 的改动`}>
-        {parsed!.lines.map((l, i) =>
-          l.op === '@' ? (
-            <CodeBlockLine key={i} className="text-muted-foreground">
-              {l.text}
-            </CodeBlockLine>
-          ) : (
-            <CodeBlockLine key={i} variant={l.op === '+' ? 'added' : l.op === '-' ? 'removed' : 'default'} className={l.op === '+' ? 'bg-success-soft' : undefined}>
-              {l.text}
-            </CodeBlockLine>
-          ),
-        )}
-      </CodeBlockContent>
-    </CodeBlock>
-  )
-}
-
-function FileContent({ reader, path }: { reader: WorkspaceReader; path: string }) {
-  const query = useQuery({ queryKey: [...reader.key, 'file', path], queryFn: () => reader.file(path), retry: false })
-  if (query.isPending) return <Message>正在读取文件…</Message>
-  if (query.isError) return <Failure error={query.error} onRetry={() => void query.refetch()} />
-  if (query.data.content === '') return <Message>空文件。</Message>
-  return <HighlightedCode code={query.data.content} language={languageOf(path)} title={path.split('/').at(-1)} />
 }

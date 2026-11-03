@@ -7,6 +7,7 @@ import {
   marketplaceSelection,
   renderSettingsPage,
 } from '../test-utils'
+import type { Skill } from '@/lib/skills-api/generated'
 import SkillsPage from './page'
 
 const writing = marketplaceEntry('writing-kit', {
@@ -16,13 +17,38 @@ const writing = marketplaceEntry('writing-kit', {
   readme: '# writing-guide\n\n先明确读者和目的，再组织内容。',
 })
 
+const serverSkill = (overrides: Partial<Skill> = {}): Skill => ({
+  id: '00000000-0000-4000-8000-000000000801',
+  name: 'review',
+  description: '检查改动的正确性和测试覆盖。',
+  content: '# 代码审查\n\n先看行为，再看实现。',
+  version: 1,
+  createdAt: '2026-11-02T08:00:00Z',
+  updatedAt: '2026-11-02T08:00:00Z',
+  ...overrides,
+})
+
+const skillFile = (
+  name: string,
+  description = '导入的技能',
+  body = '# 导入说明\n\n按步骤执行。',
+) =>
+  new File(
+    [`---\nname: ${name}\ndescription: ${description}\n---\n\n${body}`],
+    'SKILL.md',
+    { type: 'text/markdown' },
+  )
+
 beforeEach(() => localStorage.clear())
 
-it('creates, edits, renders and deletes a local document', async () => {
-  installMarketplaceBackend({ catalog: [writing] })
+it('creates, edits, renders and deletes a server-backed skill', async () => {
+  const backend = installMarketplaceBackend({
+    catalog: [writing],
+    skills: [serverSkill()],
+  })
   const user = userEvent.setup()
   renderSettingsPage(<SkillsPage />)
-  await screen.findByRole('article', { name: 'change-summary' })
+  expect(await screen.findByRole('article', { name: 'review' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: '新建技能' }))
   await user.type(screen.getByLabelText('技能名称'), 'release-notes')
   await user.type(screen.getByLabelText('简介'), '发布说明')
@@ -54,6 +80,37 @@ it('creates, edits, renders and deletes a local document', async () => {
       screen.queryByRole('article', { name: 'release-notes' }),
     ).not.toBeInTheDocument(),
   )
+  expect(backend.state.skills.map((skill) => skill.name)).not.toContain(
+    'release-notes',
+  )
+})
+
+it('imports one SKILL.md and asks before overwriting a conflict', async () => {
+  const backend = installMarketplaceBackend({ catalog: [writing] })
+  const user = userEvent.setup()
+  renderSettingsPage(<SkillsPage />)
+  await screen.findByRole('article', { name: 'writing-guide' })
+
+  await user.click(screen.getByRole('button', { name: '导入技能' }))
+  await user.upload(screen.getByLabelText(/选择 SKILL.md/), skillFile('review'))
+  await user.click(screen.getByRole('button', { name: '导入' }))
+  expect(await screen.findByRole('article', { name: 'review' })).toBeVisible()
+  expect(backend.state.skills).toHaveLength(1)
+
+  await user.click(screen.getByRole('button', { name: '导入技能' }))
+  await user.upload(
+    screen.getByLabelText(/选择 SKILL.md/),
+    skillFile('review', '覆盖后的说明'),
+  )
+  await user.click(screen.getByRole('button', { name: '导入' }))
+  expect(await screen.findByText('已有同名技能')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '覆盖并导入' }))
+  await waitFor(() => expect(backend.state.skills).toHaveLength(1))
+  expect(backend.state.skills[0]).toMatchObject({
+    name: 'review',
+    description: '覆盖后的说明',
+    version: 2,
+  })
 })
 
 it('installs and removes the source plugin from the skill row and keeps the document readonly', async () => {
@@ -89,7 +146,7 @@ it('installs and removes the source plugin from the skill row and keeps the docu
   ).toHaveAttribute('href', '/settings/plugins?plugin=demo%2Fwriting-kit')
 })
 
-it('shows a member the market state without write controls', async () => {
+it('shows a member the market state without market write controls', async () => {
   installMarketplaceBackend({
     role: 'member',
     catalog: [writing],
@@ -101,4 +158,5 @@ it('shows a member the market state without write controls', async () => {
   expect(
     within(row).queryByRole('button', { name: '移除技能' }),
   ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '新建技能' })).toBeVisible()
 })

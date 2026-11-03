@@ -10,18 +10,6 @@ export interface DemoUser {
   displayName: string
   role: 'owner' | 'member'
 }
-export type SkillSource =
-  { kind: 'local' } | { kind: 'plugin'; pluginId: string }
-/** A document resource, independent from the package that may supply it. */
-export interface Skill {
-  id: string
-  namespace: string
-  name: string
-  description: string
-  content: string
-  source: SkillSource
-  availability: 'available' | 'unavailable'
-}
 /**
  * A configurable role, mirroring desktop's local Agent definition. The name is what workflow
  * graphs store, so changing it deliberately leaves existing graph references untouched.
@@ -39,16 +27,14 @@ export interface Role {
  * and the only role that reaches these pages is the signed-in one.
  */
 export interface Snapshot {
-  schema: 4
+  schema: 5
   revision: number
   connections: ModelConnection[]
   modelDefault: ModelDefault
-  skills: Skill[]
   roles: Role[]
 }
 export type ConnectionDraft = Pick<
   ModelConnection,
   'name' | 'protocol' | 'authMode' | 'baseUrl' | 'enabled' | 'models'
 >
-export type SkillDraft = Pick<Skill, 'name' | 'description' | 'content'>
 export type RoleDraft = Pick<Role, 'name' | 'description' | 'content'>

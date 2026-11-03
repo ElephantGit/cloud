@@ -194,6 +194,69 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
 })
 
+test('server-backed user skills create, import, overwrite, reload and isolate by browser context', async ({
+  page,
+  browser,
+}) => {
+  const created = `e2e-skill-${Date.now()}`
+  const imported = `e2e-import-${Date.now()}`
+  await login(page, '/settings/skills')
+  await page.getByRole('button', { name: '新建技能' }).click()
+  await page.getByLabel('技能名称').fill(created)
+  await page.getByLabel('简介').fill('端到端创建的真实技能')
+  await page
+    .getByLabel('说明文档（Markdown）')
+    .fill('# 真实技能\n\n由端到端测试创建。')
+  await page.getByRole('button', { name: '保存技能' }).click()
+  await expect(page.getByRole('article', { name: created })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('article', { name: created })).toBeVisible()
+
+  const importFile = (description: string) => ({
+    name: 'SKILL.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      `---\nname: ${imported}\ndescription: ${description}\n---\n\n# Imported\n`,
+    ),
+  })
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page.getByLabel(/选择 SKILL.md/).setInputFiles(importFile('第一次导入'))
+  await page.getByRole('dialog').getByRole('button', { name: '导入' }).click()
+  await expect(page.getByRole('article', { name: imported })).toBeVisible()
+
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page
+    .getByLabel(/选择 SKILL.md/)
+    .setInputFiles(importFile('覆盖后的说明'))
+  await page.getByRole('dialog').getByRole('button', { name: '导入' }).click()
+  await expect(page.getByRole('dialog').getByText('已有同名技能')).toBeVisible()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: '覆盖并导入' })
+    .click()
+  await expect(
+    page.getByRole('article', { name: imported }).getByText('覆盖后的说明'),
+  ).toBeVisible()
+
+  const other = await browser.newContext({ baseURL: new URL(page.url()).origin })
+  const otherPage = await other.newPage()
+  await login(otherPage, '/settings/skills')
+  await expect(otherPage.getByRole('article', { name: created })).toBeVisible()
+  await expect(otherPage.getByRole('article', { name: imported })).toBeVisible()
+  await other.close()
+
+  for (const name of [created, imported]) {
+    const row = page.getByRole('article', { name })
+    await row.getByRole('button', { name: `查看技能 ${name}` }).click()
+    await page.getByRole('button', { name: '删除技能' }).click()
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: '删除技能' })
+      .click()
+    await expect(page.getByRole('article', { name })).toHaveCount(0)
+  }
+})
+
 test('Agent cards install and remove while preinstalled Agents stay read-only', async ({
   page,
   browser,
@@ -328,9 +391,9 @@ test('member can inspect market sources but cannot manage them', async ({
 test('corrupt local data shows a recoverable error and requires reset confirmation', async ({
   page,
 }) => {
-  await login(page, '/settings/skills')
+  await login(page, '/settings/model-connections')
   await expect(
-    page.getByRole('article', { name: 'change-summary' }),
+    page.getByRole('article', { name: '团队日常模型 · 示例' }),
   ).toBeVisible()
   await page.evaluate(() => {
     const key = Object.keys(localStorage).find((k) =>
@@ -354,7 +417,7 @@ test('corrupt local data shows a recoverable error and requires reset confirmati
     .getByRole('button', { name: '重置演示', exact: true })
     .click()
   await expect(
-    page.getByRole('article', { name: 'change-summary' }),
+    page.getByRole('article', { name: '团队日常模型 · 示例' }),
   ).toBeVisible()
 })
 
@@ -430,6 +493,19 @@ test('six settings pages and keyboard-accessible details', async ({
       fullPage: true,
     })
   }
+  await page.goto('/settings/skills')
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page.getByLabel(/选择 SKILL.md/).setInputFiles({
+    name: 'SKILL.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      '---\nname: import-preview\ndescription: 导入预览\n---\n\n# 导入预览\n',
+    ),
+  })
+  await page.screenshot({
+    path: info.outputPath('skill-import-light.png'),
+  })
+  await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
   await page.goto('/settings/plugins')
   const opener = page.getByRole('button', {
     name: '查看插件 Matt Pocock Skills',
@@ -452,6 +528,16 @@ test('dark settings screenshots', async ({ page }, info) => {
     await resetScroll(page)
     await page.screenshot({
       path: info.outputPath(path + '-dark.png'),
+      fullPage: true,
+    })
+  }
+  for (const width of [768, 375]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/settings/skills')
+    await expect(page.getByRole('article').first()).toBeVisible()
+    await resetScroll(page)
+    await page.screenshot({
+      path: info.outputPath(`skills-dark-${width}.png`),
       fullPage: true,
     })
   }
@@ -510,14 +596,11 @@ for (const width of [768, 375]) {
       const nav = page.getByRole('navigation', { name: '设置导航' })
       const active = nav.getByRole('link', { name: title, exact: true })
       await expect(active).toBeInViewport({ ratio: 1 })
-      if (
-        ['roles', 'plugins', 'skills'].includes(path) &&
-        (width === 375 || (width === 768 && path === 'roles'))
-      ) {
+      if (['roles', 'plugins', 'skills'].includes(path)) {
         await expect(page.getByRole('article').first()).toBeVisible()
         await resetScroll(page)
         await page.screenshot({
-          path: info.outputPath(path + '-mobile.png'),
+          path: info.outputPath(path + '-' + width + '.png'),
           fullPage: true,
         })
       }

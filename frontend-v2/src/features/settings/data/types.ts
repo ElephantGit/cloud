@@ -4,8 +4,5 @@ export type {
   DemoUser,
   Role,
   RoleDraft,
-  Skill,
-  SkillDraft,
-  SkillSource,
   Snapshot,
 } from '@/lib/settings-demo/types'

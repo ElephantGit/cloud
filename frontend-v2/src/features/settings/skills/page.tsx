@@ -1,14 +1,21 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
-import { ArrowUpRight, Download, FileText, Plus, Sparkles } from 'lucide-react'
-import type { PluginCatalogEntry, SpacePlugin } from '@/api/generated.schemas'
+import {
+  ArrowUpRight,
+  Download,
+  FileText,
+  Plus,
+  Sparkles,
+  Upload,
+} from 'lucide-react'
+import type {
+  PluginCatalogEntry,
+  SpacePlugin,
+} from '@/api/generated.schemas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { useSettingsData } from '../data/hooks'
-import type { Skill } from '../data/types'
-import { deleteSkill, saveSkill } from '../data/resource-actions'
 import {
   pluginInstalled,
   pluginKey,
@@ -25,13 +32,35 @@ import {
 import { DetailPanel } from '../components/detail-panel'
 import { ConfirmDialog } from '../components/confirm-dialog'
 import { MarkdownPreview } from '../components/markdown-preview'
+import type { Skill as ServerSkill, SkillInput } from '@/lib/skills-api/generated'
+import { ImportSkillDialog } from './import-skill-dialog'
 import { SkillForm } from './skill-form'
+import { useUserSkills } from './use-skills'
 
 type Panel = { kind: 'create' } | { kind: 'detail' | 'edit'; id: string } | null
-type SkillRow = Skill & {
+
+type SkillSource =
+  | { kind: 'local' }
+  | { kind: 'plugin'; pluginId: string }
+
+type SkillRow = {
+  id: string
+  namespace: string
+  name: string
+  description: string
+  content: string
+  source: SkillSource
+  availability: 'available' | 'unavailable'
+  updatedAt?: string
+  local?: ServerSkill
   entry?: PluginCatalogEntry
   selection?: SpacePlugin
 }
+
+type Removing =
+  | { kind: 'local'; skill: SkillRow }
+  | { kind: 'plugin'; skill: SkillRow }
+
 function skillStatus(skill: SkillRow, detail = false) {
   if (skill.availability === 'available') return '可用'
   if (skill.selection?.observedState === 'removing') return '移除中'
@@ -41,13 +70,19 @@ function skillStatus(skill: SkillRow, detail = false) {
   return detail ? '不可用，来源插件未安装' : '来源插件未安装'
 }
 
-type Removing =
-  | { kind: 'local'; skill: Skill }
-  | { kind: 'plugin'; skill: SkillRow }
-
 function pluginSkillName(entry: PluginCatalogEntry): string {
   const heading = entry.readme?.match(/^#\s+(.+)$/m)?.[1]?.trim()
   return heading || entry.identifier
+}
+
+function localSkillRows(skills: ServerSkill[]): SkillRow[] {
+  return skills.map((skill) => ({
+    ...skill,
+    namespace: 'local',
+    source: { kind: 'local' },
+    availability: 'available',
+    local: skill,
+  }))
 }
 
 function pluginSkillRows(
@@ -72,8 +107,22 @@ function pluginSkillRows(
     })
 }
 
+const updatedLabel = (value?: string) => {
+  if (!value) return '未知'
+  const date = new Date(value)
+  return Number.isNaN(date.valueOf())
+    ? '未知'
+    : new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date)
+}
+
 export default function SkillsPage() {
-  const local = useSettingsData()
+  const local = useUserSkills()
   const market = usePluginMarketplace()
   const [search, setSearch] = useState('')
   const [source, setSource] = useState('all')
@@ -81,8 +130,9 @@ export default function SkillsPage() {
   const [order, setOrder] = useState('asc')
   const [panel, setPanel] = useState<Panel>(null)
   const [removing, setRemoving] = useState<Removing>()
+  const [importing, setImporting] = useState(false)
   const skills: SkillRow[] = [
-    ...(local.query.data?.skills ?? []),
+    ...localSkillRows(local.skills),
     ...pluginSkillRows(market.catalog, market.selection),
   ]
   const selected =
@@ -109,7 +159,8 @@ export default function SkillsPage() {
     setStatus('all')
   }
   const open = (next: Panel) => {
-    local.mutation.reset()
+    local.resetErrors()
+    market.resetErrors()
     setPanel(next)
   }
   const create = () => open({ kind: 'create' })
@@ -134,6 +185,37 @@ export default function SkillsPage() {
         setRemoving(undefined)
       })
       .catch(() => undefined)
+  }
+  const save = async (
+    input: SkillInput,
+    id: string | undefined,
+    done: () => void,
+  ) => {
+    if (!local.tenantId) return
+    local.resetErrors()
+    try {
+      if (id)
+        await local.update({ tid: local.tenantId, sid: id, data: input })
+      else await local.create({ tid: local.tenantId, data: input })
+      toast.success(id ? `已更新技能 ${input.name}` : `已创建技能 ${input.name}`)
+      done()
+    } catch {
+      // The hook exposes the localized mutation error beside the form.
+    }
+  }
+  const confirmLocalRemove = async () => {
+    if (removing?.kind !== 'local' || !removing.skill.local) return
+    try {
+      await local.remove({
+        tid: local.tenantId,
+        sid: removing.skill.local.id,
+      })
+      toast.success(`已删除技能 ${removing.skill.name}`)
+      setRemoving(undefined)
+      setPanel(null)
+    } catch {
+      // ConfirmDialog renders the localized mutation error.
+    }
   }
   function pluginActions(skill: SkillRow) {
     if (!skill.entry || !market.canManage) return null
@@ -182,23 +264,36 @@ export default function SkillsPage() {
     <section>
       <PageHeader
         title="Skills"
-        description="管理能复用的说明文档；市场技能随来源插件安装，自建技能仍是本地演示。"
+        description="管理当前工作区的可复用技能。导入或新建后，新开启的 Agent 会话会在项目中自动发现它们。"
         count={skills.length}
         actions={
-          <Button
-            disabled={!local.query.data || local.query.isError}
-            onClick={create}
-          >
-            <Plus data-icon="inline-start" />
-            新建技能
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={!local.tenantId || local.loading}
+              onClick={() => {
+                local.resetErrors()
+                setImporting(true)
+              }}
+            >
+              <Upload data-icon="inline-start" />
+              导入技能
+            </Button>
+            <Button
+              disabled={!local.tenantId || local.loading}
+              onClick={create}
+            >
+              <Plus data-icon="inline-start" />
+              新建技能
+            </Button>
+          </>
         }
       />
       <DataState
-        pending={local.query.isPending || market.pending}
-        error={local.query.error ?? market.error}
+        pending={local.loading || market.pending}
+        error={local.error ?? market.error}
         retry={() => {
-          void local.query.refetch()
+          local.refetch()
           void market.refetch()
         }}
       >
@@ -222,7 +317,7 @@ export default function SkillsPage() {
             onChange={setSource}
             options={[
               ['all', '全部来源'],
-              ['local', '自建技能'],
+              ['local', '用户技能'],
               ['plugin', '市场技能'],
             ]}
           />
@@ -246,7 +341,7 @@ export default function SkillsPage() {
             ]}
           />
         </div>
-        <ActionError error={local.mutation.error ?? market.mutationError} />
+        <ActionError error={local.mutationError ?? market.mutationError} />
         <div className="settings-resource-list">
           {filtered.map((skill) => (
             <article
@@ -275,7 +370,7 @@ export default function SkillsPage() {
                   <span className="settings-resource-meta">
                     <span>
                       {skill.source.kind === 'local'
-                        ? '自建技能 · 本机演示'
+                        ? '用户技能 · 服务端'
                         : '市场技能 · 只读'}
                     </span>
                     <span aria-hidden="true">·</span>
@@ -306,54 +401,59 @@ export default function SkillsPage() {
         </div>
         {!filtered.length && (
           <NoResults filtered={skills.length > 0} onClear={clear}>
-            <Button onClick={create}>新建技能</Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  local.resetErrors()
+                  setImporting(true)
+                }}
+              >
+                导入 SKILL.md
+              </Button>
+              <Button onClick={create}>新建技能</Button>
+            </div>
           </NoResults>
         )}
         <div className="settings-list-footer">
           <span>
             显示 {filtered.length} / {skills.length} 个技能 · 共{' '}
-            {localSkills.length} 个自建
+            {localSkills.length} 个用户技能
           </span>
-          <span>市场技能跟随插件安装；自建说明不会执行工具</span>
+          <span>用户技能保存在服务端；市场技能跟随插件安装</span>
         </div>
       </DataState>
       {panel?.kind === 'create' && (
         <DetailPanel
           title="新建技能"
-          description="写下清晰的说明，让相同工作有一致的方法。"
+          description="写一份可复用的 Agent 技能说明。"
           onClose={() => setPanel(null)}
         >
           <SkillForm
-            pending={local.mutation.isPending}
-            error={local.mutation.error}
+            pending={local.savePending}
+            error={local.mutationError}
             onCancel={() => setPanel(null)}
             onSave={(draft) =>
-              local.save(
-                (data) => saveSkill(data, draft),
-                '演示技能已保存',
-                () => setPanel(null),
-              )
+              void save(draft, undefined, () => setPanel(null))
             }
           />
         </DetailPanel>
       )}
-      {selected && panel?.kind === 'edit' && (
+      {selected?.local && panel?.kind === 'edit' && (
         <DetailPanel
           title={`编辑 ${selected.name}`}
-          description="修改只保存在此浏览器的演示空间。"
+          description="保存后会更新服务端目录；已有会话保留启动时的技能副本。"
           onClose={() => setPanel(null)}
         >
           <SkillForm
             key={selected.id}
-            skill={selected}
-            pending={local.mutation.isPending}
-            error={local.mutation.error}
+            skill={selected.local}
+            pending={local.savePending}
+            error={local.mutationError}
             onCancel={() => open({ kind: 'detail', id: selected.id })}
             onSave={(draft) =>
-              local.save(
-                (data) => saveSkill(data, draft, selected.id),
-                '演示技能已保存',
-                () => setPanel({ kind: 'detail', id: selected.id }),
+              void save(draft, selected.local?.id, () =>
+                setPanel({ kind: 'detail', id: selected.id }),
               )
             }
           />
@@ -368,10 +468,10 @@ export default function SkillsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Badge variant="secondary">
               {selected.source.kind === 'local'
-                ? '自建技能 · 本机演示'
+                ? '用户技能 · 服务端'
                 : '市场技能 · 只读'}
             </Badge>
-            {selected.source.kind === 'local' ? (
+            {selected.local ? (
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -382,7 +482,7 @@ export default function SkillsPage() {
                 <Button
                   variant="destructive"
                   onClick={() => {
-                    local.mutation.reset()
+                    local.resetErrors()
                     setRemoving({ kind: 'local', skill: selected })
                   }}
                 >
@@ -401,7 +501,7 @@ export default function SkillsPage() {
             <dt>来源</dt>
             <dd>
               {selected.source.kind === 'local' ? (
-                '当前用户的本机演示空间'
+                '当前登录用户的技能库'
               ) : (
                 <Link
                   className="underline underline-offset-4"
@@ -411,34 +511,51 @@ export default function SkillsPage() {
                 </Link>
               )}
             </dd>
+            {selected.local && (
+              <>
+                <dt>最近更新</dt>
+                <dd>{updatedLabel(selected.updatedAt)}</dd>
+                <dt>目录版本</dt>
+                <dd>v{selected.local.version}</dd>
+              </>
+            )}
           </dl>
           {selected.availability === 'unavailable' && (
             <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
               说明仍可预览。安装来源插件后，此技能会恢复可用。
             </p>
           )}
+          <p className="rounded-lg bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
+            新建的 Agent 会话会读取 SKILL.md；编辑或删除不会回写已经开始运行的会话。
+          </p>
           <Separator />
           <MarkdownPreview content={selected.content} />
         </DetailPanel>
       )}
+      {importing && (
+        <ImportSkillDialog
+          onClose={() => setImporting(false)}
+          onImport={async (input) => {
+            local.resetErrors()
+            return local.importFile({ tid: local.tenantId, data: input })
+          }}
+          onImported={(name, overwritten) => {
+            toast.success(
+              overwritten ? `已覆盖技能 ${name}` : `已导入技能 ${name}`,
+            )
+            setImporting(false)
+          }}
+        />
+      )}
       {removing?.kind === 'local' && (
         <ConfirmDialog
           title={`删除 ${removing.skill.name}？`}
-          description="将删除此浏览器中的自建技能和说明文档。此操作不影响市场技能或真实会话。"
+          description="将从服务端技能库删除这条技能。已经开始的 Agent 会话仍保留启动时的副本。"
           confirmLabel="删除技能"
-          pending={local.mutation.isPending}
-          error={local.mutation.error}
+          pending={local.deletePending}
+          error={local.mutationError}
           onClose={() => setRemoving(undefined)}
-          onConfirm={() =>
-            local.save(
-              (data) => deleteSkill(data, removing.skill.id),
-              '演示技能已删除',
-              () => {
-                setRemoving(undefined)
-                setPanel(null)
-              },
-            )
-          }
+          onConfirm={() => void confirmLocalRemove()}
         />
       )}
       {removing?.kind === 'plugin' && (

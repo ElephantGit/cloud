@@ -43,9 +43,20 @@ function mountAgents() {
 afterEach(() => { http.defaults.adapter = originalAdapter; });
 
 describe("workflow executor catalog", () => {
-  it("groups real identities from one tenant request and keeps Skill and MCP demo catalogs", async () => {
+  it("groups real executor identities and reads the real user skill catalog", async () => {
     const seen = fakeBackend((config) => config.url === `/api/v2/tenants/${tid}/chat/executors`
-      ? { status: 200, data: { items: executors } } : undefined);
+      ? { status: 200, data: { items: executors } }
+      : config.url === `/api/v2/tenants/${tid}/skills`
+        ? { status: 200, data: { items: [{
+            id: "skill-review",
+            name: "review",
+            description: "检查改动",
+            content: "# Review",
+            version: 1,
+            createdAt: "2026-11-02T08:00:00Z",
+            updatedAt: "2026-11-02T08:00:00Z",
+          }] } }
+        : undefined);
     const { result, client } = mount();
     await waitFor(() => expect(result.current.agentModels).toHaveLength(3));
     expect(result.current.agents.map((a) => a.agentRef)).toEqual([
@@ -55,7 +66,15 @@ describe("workflow executor catalog", () => {
       { agentCli: "official/ora-space.claude", modelId: "messages-fixture", label: "Claude Code · Fixture" },
     ]);
     expect(seen).toEqual([`GET /api/v2/tenants/${tid}/chat/executors`]);
-    expect((await client.skill.list({})).skills).toHaveLength(2);
+    expect((await client.skill.list({})).skills).toEqual([{
+      id: "skill-review",
+      namespace: "local",
+      name: "review",
+      description: "检查改动",
+      source: { kind: "local" },
+      availability: "available",
+    }]);
+    expect(seen).toContain(`GET /api/v2/tenants/${tid}/skills`);
     expect((await client.plugin.listInstalled({})).plugins.map((p) => p.kind)).toEqual(["mcp", "mcp"]);
   });
 

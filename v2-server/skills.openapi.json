@@ -1,0 +1,288 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Temporary v2 skills",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v2/tenants/{tid}/skills": {
+      "get": {
+        "operationId": "listSkills",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SkillList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      },
+      "post": {
+        "operationId": "createSkill",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SkillInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Skill" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/SkillError" },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "409": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/skills/import": {
+      "post": {
+        "operationId": "importSkill",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImportSkillInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Skill" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/SkillError" },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "409": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/skills/{sid}": {
+      "get": {
+        "operationId": "getSkill",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Skill" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "404": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      },
+      "put": {
+        "operationId": "updateSkill",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SkillInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Skill" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/SkillError" },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "404": { "$ref": "#/components/responses/SkillError" },
+          "409": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSkill",
+        "tags": ["skills"],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "No Content" },
+          "401": { "$ref": "#/components/responses/SkillError" },
+          "403": { "$ref": "#/components/responses/SkillError" },
+          "404": { "$ref": "#/components/responses/SkillError" },
+          "500": { "$ref": "#/components/responses/SkillError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "SkillError": {
+        "description": "Response",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SkillError" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Skill": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "content",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "content": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SkillList": {
+        "type": "object",
+        "required": ["items"],
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Skill" }
+          }
+        }
+      },
+      "SkillInput": {
+        "type": "object",
+        "required": ["name", "description", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "content": { "type": "string" }
+        }
+      },
+      "ImportSkillInput": {
+        "type": "object",
+        "required": ["fileName", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "fileName": { "type": "string" },
+          "content": { "type": "string" },
+          "overwrite": { "type": "boolean" }
+        }
+      },
+      "SkillError": {
+        "type": "object",
+        "required": ["code", "params", "requestId"],
+        "properties": {
+          "code": { "type": "string" },
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "requestId": { "type": "string" }
+        }
+      }
+    }
+  }
+}

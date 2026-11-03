@@ -92,7 +92,7 @@ func (s *Store) RetireLegacyDemoUser(ctx context.Context) error {
 
 // EndDeletedSquadMembers ends the live squad memberships of soft-deleted accounts. Retiring an
 // account keeps its rows for history, but a member who can no longer sign in must not count as a
-// squad's member or maintainer; the ended row stays as the squad's 已退出 history. It runs on every
+// squad's member or maintainer; the ended row stays in the table, unlisted. It runs on every
 // startup after the retirements, so databases retired by an older build converge too, and it is a
 // no-op once nothing is left.
 func (s *Store) EndDeletedSquadMembers(ctx context.Context) error {

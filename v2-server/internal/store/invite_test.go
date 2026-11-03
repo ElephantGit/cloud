@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
@@ -196,7 +197,7 @@ func TestRetireLegacyDemoUserKeepsItsHistory(t *testing.T) {
 	}
 }
 
-func TestEndDeletedSquadMembersMovesThemToHistory(t *testing.T) {
+func TestDeletedAccountsLeaveSquadsWithoutAName(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx
 	owner := f.login(t, "owner", store.RoleOwner)
@@ -234,14 +235,14 @@ func TestEndDeletedSquadMembersMovesThemToHistory(t *testing.T) {
 	if got.HumanCount != 1 || got.MaintainerCount != 1 || got.Version != squad.Version+1 {
 		t.Fatalf("counts or version after cleanup = %+v", got.SquadSummary)
 	}
-	var ended bool
-	for _, m := range got.Members {
-		if m.UserID != nil && *m.UserID == legacy {
-			ended = m.EndedAt != nil && m.DisplayName == "演示用户"
-		}
+	// The ended row stays in the table, but the squad no longer names the account anywhere.
+	if len(got.Members) != 1 {
+		t.Fatalf("deleted account still listed: %+v", got.Members)
 	}
-	if !ended {
-		t.Fatalf("deleted account is not kept as history: %+v", got.Members)
+	var endedAt *time.Time
+	if e := f.db.QueryRow(ctx, `
+		SELECT ended_at FROM v2_squad_members WHERE squad_id = $1 AND user_id = $2`, squad.ID, legacy).Scan(&endedAt); e != nil || endedAt == nil {
+		t.Fatalf("deleted account's membership = %v %v", endedAt, e)
 	}
 
 	// Nothing is left to end, so a later startup leaves the squad untouched.

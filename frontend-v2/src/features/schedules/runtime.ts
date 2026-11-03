@@ -29,6 +29,10 @@ export function scheduleError(error: unknown, fallback: string) {
   if (!error.response) return '网络连接中断，结果尚未确认。请重试同一操作。'
   return fallback
 }
+/** The occurrence's workflow run was deleted after it started: there is no run page left to open. */
+export function isDeletedWorkflowRun(error: unknown) {
+  return isAxiosError(error) && error.response?.data?.code === 'workflow_run_not_found'
+}
 export function errorOccurrenceId(error: unknown) {
   if (!isAxiosError(error)) return ''
   const id = error.response?.data?.params?.occurrenceId

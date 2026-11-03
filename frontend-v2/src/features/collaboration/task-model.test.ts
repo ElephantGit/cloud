@@ -8,7 +8,7 @@ import {
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: 'task', tenantId: 'tenant', title: '整理演示数据', description: '', projectId: 'project',
   assignee: null, status: 'pending', createdBy: 'user', createdByName: '演示用户', version: 1,
-  createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z', ...overrides,
+  createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z', activeRun: null, ...overrides,
 })
 
 describe('task status', () => {

@@ -3,7 +3,9 @@ import { DemoRepository } from './repository'
 import {
   changeConnection,
   connectionReady,
+  deleteRole,
   deleteSkill,
+  saveRole,
   saveConnection,
   saveSkill,
   setModelDefault,
@@ -42,7 +44,7 @@ describe('settings demo persistence', () => {
     expect(
       (
         await new DemoRepository(
-          { id: 'other', displayName: '另一用户', role: 'member' },
+          { id: 'other' },
           port,
         ).read()
       ).skills.some((s) => s.name === 'custom'),
@@ -80,7 +82,7 @@ describe('settings demo persistence', () => {
   it('keeps corrupt data until an explicit reset and does not reset another user', async () => {
     const repo = repository()
     const other = new DemoRepository(
-      { id: 'other', displayName: '另一用户', role: 'member' },
+      { id: 'other' },
       port,
     )
     await other.read()
@@ -119,7 +121,11 @@ describe('document skills', () => {
   })
   it('keeps no roster, invitations or join history in browser storage', async () => {
     const state = await repository().read()
-    expect(state.schema).toBe(3)
+    expect(state.schema).toBe(4)
+    expect(state.roles.map((role) => role.name)).toEqual([
+      '代码审查',
+      '技术写作',
+    ])
     expect(state).not.toHaveProperty('catalog')
     expect(state).not.toHaveProperty('installations')
     for (const field of ['members', 'history', 'links', 'requests'])
@@ -150,13 +156,69 @@ describe('document skills', () => {
       }),
     )
     const upgraded = await repo.read()
-    expect(upgraded.schema).toBe(3)
+    expect(upgraded.schema).toBe(4)
+    expect(upgraded.roles).toHaveLength(2)
     expect(upgraded).not.toHaveProperty('catalog')
     expect(upgraded).not.toHaveProperty('installations')
     expect(
       upgraded.skills.every((skill) => skill.source.kind === 'local'),
     ).toBe(true)
-    expect(JSON.parse(values.get(repo.key) ?? '{}').schema).toBe(3)
+    expect(JSON.parse(values.get(repo.key) ?? '{}').schema).toBe(4)
+  })
+  it('upgrades schema 3 with roles while preserving its skills', async () => {
+    const repo = repository()
+    const initial = await repo.read()
+    values.set(
+      repo.key,
+      JSON.stringify({
+        ...initial,
+        schema: 3,
+        roles: undefined,
+      }),
+    )
+    const upgraded = await repo.read()
+    expect(upgraded.schema).toBe(4)
+    expect(upgraded.roles).toHaveLength(2)
+    expect(upgraded.skills).toEqual(initial.skills)
+  })
+})
+
+describe('roles', () => {
+  it('supports local editing, deletion and isolation between users', async () => {
+    const repo = repository()
+    let state = await repo.read()
+    state = await repo.update(state.revision, (data) =>
+      saveRole(data, {
+        name: '发布检查',
+        description: '发布前核对版本和说明',
+        content: '# 发布检查\n\n核对版本。',
+      }),
+    )
+    const role = state.roles.find((candidate) => candidate.name === '发布检查')
+    expect(role?.namespace).toBe('local')
+    expect(
+      (
+        await new DemoRepository(
+          { id: 'other' },
+          port,
+        ).read()
+      ).roles.some((candidate) => candidate.name === '发布检查'),
+    ).toBe(false)
+    await expect(
+      repo.update(state.revision, (data) =>
+        saveRole(data, {
+          name: '发布检查',
+          description: '',
+          content: '',
+        }),
+      ),
+    ).rejects.toThrow('同名')
+    state = await repo.update(state.revision, (data) =>
+      deleteRole(data, role!.id),
+    )
+    expect(state.roles.some((candidate) => candidate.id === role!.id)).toBe(
+      false,
+    )
   })
 })
 

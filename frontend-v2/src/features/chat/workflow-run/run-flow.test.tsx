@@ -4,7 +4,9 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { UserContext } from '@/app/auth/user'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { demoUser } from '@/test/backend'
 import Page from '../page'
 import { resetChatStore } from '../store'
 import { chatBackend, FakeEventSource, line, tenantId } from '../test-backend'
@@ -17,9 +19,11 @@ const renderPage = async () => {
   render(
     <MemoryRouter initialEntries={['/chat']}>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <TooltipProvider>
-          <Page />
-        </TooltipProvider>
+        <UserContext.Provider value={demoUser}>
+          <TooltipProvider>
+            <Page />
+          </TooltipProvider>
+        </UserContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>,
   )

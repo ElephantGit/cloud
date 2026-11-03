@@ -89,3 +89,30 @@ export function taskMessageFor(error: unknown): string {
     default: return '操作失败，请重试。'
   }
 }
+
+/** Run states and results in the page's words. */
+export const runStateLabel = (state: string): string => ({ running: '执行中', idle: '等待追问', ended: '已结束' } as Record<string, string>)[state] ?? state
+
+/** Why a run ended, in words; empty for a live run. */
+export const runEndLabel = (reason: string): string =>
+  ({ stopped: '已停止', replaced: '已被重新执行替代', closed: '任务已结束', interrupted: '服务重启后中断' } as Record<string, string>)[reason] ?? ''
+
+/** A finished turn's result in words. */
+export const runResultLabel = (result: string): string =>
+  ({ completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '已中断' } as Record<string, string>)[result] ?? ''
+
+/** A user-facing reason for a refused run, follow-up or comment; codes stay out of the page. */
+export function taskRunMessageFor(error: unknown): string {
+  switch (codeOf(error)) {
+    case 'run_active': return 'Agent 正在执行，等这一轮结束或先停止。'
+    case 'run_owned': return '当前运行由别人发起，只有发起人能继续追问；你可以重新执行，用自己的身份开一次新运行。'
+    case 'not_agent_task': return '任务还没有指派给 Agent，先在右侧把它指派给一个 Agent。'
+    case 'task_closed': return '任务已结束，不能再执行。'
+    case 'no_live_run': return '这次运行已经结束了。'
+    case 'invalid_executor': return '所选模型不属于这个 Agent，请重新选择。'
+    case 'invalid_mention': return '@ 的对象已不在工作区里，请重新选择。'
+    case 'execution_unavailable': return '执行服务暂时不可用，请稍后重试。'
+    case 'invalid_project': return '任务所属项目不可用。'
+  }
+  return statusOf(error) === 404 ? '任务不存在或你已无权查看。' : '操作失败，请重试。'
+}

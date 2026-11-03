@@ -86,6 +86,18 @@ it("says when a workflow schedule still runs an older version, and shows an occu
  expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
 })
 
+it('offers no run page once the occurrence\'s workflow run was deleted',async()=>{
+ const scheduled={...item,projectId:'project-id',target:{kind:'workflow' as const,workflowId:'wf-1',snapshotId:'snap-1',input:'整理本周'}}
+ vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[scheduled],nextCursor:''})
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[{...occurrence,status:'succeeded',released:true,executionRef:'{"workflowRunId":"run-9"}'}],nextCursor:''})
+ vi.mocked(workflowRuns.getWorkflowRun).mockRejectedValue({isAxiosError:true,response:{status:404,data:{code:'workflow_run_not_found'}}})
+ mount();const dialog=await detail()
+ await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
+ expect(await within(dialog).findByText('工作流运行已被删除')).toBeInTheDocument()
+ expect(within(dialog).queryByRole('link',{name:'打开运行页'})).not.toBeInTheDocument()
+ expect(within(dialog).queryByRole('button',{name:'重试读取运行'})).not.toBeInTheDocument()
+})
+
 it('offers no run page for a workflow occurrence that started no run',async()=>{
  const scheduled={...item,projectId:'project-id',target:{kind:'workflow' as const,workflowId:'wf-1',snapshotId:'snap-1',input:'整理本周'}}
  vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[scheduled],nextCursor:''})

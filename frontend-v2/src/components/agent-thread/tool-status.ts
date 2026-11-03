@@ -1,4 +1,4 @@
-import type { ToolItem } from '../model/types'
+import type { ToolItem } from './model/types'
 
 /** The trace status a tool shows: running only while its turn can still settle it. */
 export function toolLineStatus(tool: ToolItem, live: boolean): 'running' | 'error' | 'pending' | undefined {

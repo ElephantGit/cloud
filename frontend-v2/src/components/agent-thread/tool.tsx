@@ -32,7 +32,7 @@ import {
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace'
-import type { PermissionRequest, ToolItem } from '../model/types'
+import type { PermissionRequest, ToolItem } from './model/types'
 import { DiffBlock, OutputBlock } from './code'
 import { formatDuration } from './format'
 import { isStackTrace, toolLineStatus } from './tool-status'

@@ -26,9 +26,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Trace, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace'
-import type { Attachment, PluginRef } from '../model/types'
+import type { Attachment, PluginRef } from '@/components/agent-thread/model/types'
 import type { Agent, Draft } from '../store'
-import { AttachmentList, PluginList } from './attachments'
+import { AttachmentList, PluginList } from '@/components/agent-thread/attachments'
 import { ModelSelector } from './model-selector'
 
 interface ComposerProps {

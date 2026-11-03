@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/attachment'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { Attachment as AttachmentData, PluginRef } from '../model/types'
+import type { Attachment as AttachmentData, PluginRef } from './model/types'
 import { formatBytes } from './format'
 
 /** Attached files as chips; images show a thumbnail. `onRemove` adds a remove button to each. */

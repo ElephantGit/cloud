@@ -1,18 +1,31 @@
-import { Bot, MessageSquare, Pencil, Users } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Bot, CirclePlay, CircleStop, RotateCcw, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import type { SquadSummary } from './api/generated'
 import { formatTime } from './squad-model'
 import { TaskAssigneePicker } from './task-assignee'
-import { assigneeKindLabel, assigneeLabel, isTaskFinished, taskActions, taskStatusLabel } from './task-model'
-import type { Task, TaskAssigneeRef, TaskStatusProperty } from './tasks-api/generated'
+import { assigneeKindLabel, assigneeLabel, isTaskFinished, taskActions } from './task-model'
+import type { Task, TaskAssigneeRef, TaskExecutor, TaskStatusProperty } from './tasks-api/generated'
+
+/** The run controls' state, decided by the page from the task and its timeline. */
+export interface RunControls {
+  /** The executors that can run the task's Agent; empty while loading or for non-Agent tasks. */
+  executors: TaskExecutor[]
+  executorId: string
+  onExecutor: (id: string) => void
+  /** Whether the task already has runs, so starting again is a rerun. */
+  hasRuns: boolean
+  starting: boolean
+  stopping: boolean
+  onStart: () => void
+  onStop: () => void
+}
 
 /**
- * One task: what it is, where it lives, who owns it and the moves a person may still make. The
- * status moves are manual here; running an agent stays out of this release, so the panel says so
- * instead of offering a button that would not execute anything.
+ * One task's facts and the moves on it: who owns it, running its Agent, and the manual status
+ * moves. While the Agent runs a turn, the run owns the status, so manual moves wait for it.
  */
-export function TaskDetailView({ task, projectName, squads, busy, error, onEdit, onStatus, onAssign }: {
+export function TaskDetailView({ task, projectName, squads, busy, error, run, onStatus, onAssign }: {
   task: Task
   /** The project's display name, resolved from the workspace list. */
   projectName: string
@@ -22,51 +35,69 @@ export function TaskDetailView({ task, projectName, squads, busy, error, onEdit,
   busy: boolean
   /** Error from the last write attempt. */
   error: string
-  onEdit: () => void
+  run: RunControls
   onStatus: (status: TaskStatusProperty) => void
   onAssign: (next: TaskAssigneeRef | null) => void
 }) {
-  const actions = taskActions(task.status)
   const finished = isTaskFinished(task.status)
-  return <div className="mc-detail">
-    <div className="mc-detail-scroll">
-      <div className="mc-task-head">
-        <span className={`mc-status ${task.status}`}>{taskStatusLabel(task.status)}</span>
-        <span className="mc-task-meta">创建人 {task.createdByName} · 更新于 {formatTime(task.updatedAt)}</span>
-      </div>
+  const agentTask = task.assignee?.type === 'agent'
+  const running = task.activeRun?.state === 'running'
+  // An Agent task enters 进行中 by running, not by hand.
+  const actions = taskActions(task.status).filter(a => !(agentTask && a.status === 'running'))
+  return <div className="mc-side">
+    <section className="mc-section" aria-label="任务信息">
+      <h3>任务信息</h3>
+      <dl className="mc-facts-list">
+        <dt>项目</dt><dd>{projectName}</dd>
+        <dt>创建人</dt><dd>{task.createdByName}</dd>
+        <dt>创建于</dt><dd>{formatTime(task.createdAt)}</dd>
+        <dt>更新于</dt><dd>{formatTime(task.updatedAt)}</dd>
+      </dl>
+    </section>
 
-      <p className="mc-description">{task.description || '还没有描述。'}</p>
+    <section className="mc-section" aria-label="指派">
+      <h3><Users size={14} />指派对象</h3>
+      <TaskAssigneePicker tenantId={task.tenantId} squads={squads} value={task.assignee} disabled={busy || running} onAssign={onAssign} />
+      <p className="mc-note">当前：{assigneeLabel(task)}{task.assignee && `（${assigneeKindLabel(task)}）`}。指派给小队只表示这个队负责，不会自动分派给成员。</p>
+    </section>
 
-      <div className="mc-facts">
-        <span>项目 <b>{projectName}</b></span>
-        <span>指派 <b>{assigneeLabel(task)}</b>{task.assignee && <em>（{assigneeKindLabel(task)}）</em>}</span>
-        <span>创建于 <b>{formatTime(task.createdAt)}</b></span>
-      </div>
+    {agentTask && <section className="mc-section" aria-label="执行">
+      <h3><Bot size={14} />执行</h3>
+      {finished
+        ? <p className="mc-empty-line">任务已结束，不能再执行。</p>
+        : <>
+          <label className="mc-field-label" htmlFor="mc-executor">模型</label>
+          <NativeSelect id="mc-executor" aria-label="执行模型" value={run.executorId} disabled={running || run.executors.length === 0} onChange={e => run.onExecutor(e.target.value)}>
+            {run.executors.map(x => <NativeSelectOption key={x.id} value={x.id}>{x.name}</NativeSelectOption>)}
+          </NativeSelect>
+          <div className="mc-actions">
+            <Button type="button" size="sm" disabled={running || run.starting || run.executors.length === 0} onClick={run.onStart}>
+              {run.hasRuns ? <RotateCcw data-icon="inline-start" /> : <CirclePlay data-icon="inline-start" />}
+              {run.starting ? '正在启动…' : run.hasRuns ? '重新执行' : '开始处理'}
+            </Button>
+            {task.activeRun && <Button type="button" size="sm" variant="outline" disabled={run.stopping} onClick={run.onStop}>
+              <CircleStop data-icon="inline-start" />{running ? '停止' : '结束会话'}
+            </Button>}
+          </div>
+          <p className="mc-note">
+            {running
+              ? `${task.activeRun?.startedByName} 发起的运行正在执行；跑完任务自动进入待验收。`
+              : task.activeRun
+                ? `${task.activeRun.startedByName} 的会话在等追问；重新执行会结束它，用你的身份开一次新运行。`
+                : '用你的身份运行这个 Agent；跑完任务自动进入待验收，全团队都能看到过程。'}
+          </p>
+        </>}
+    </section>}
 
-      <section className="mc-section" aria-label="指派">
-        <h3><Users size={14} />指派对象</h3>
-        <TaskAssigneePicker tenantId={task.tenantId} squads={squads} value={task.assignee} disabled={busy} onAssign={onAssign} />
-        <p className="mc-note"><Users size={14} />指派给小队只表示这个队负责，不会自动分派给成员；队里的人可以再把任务转给具体的人或 Agent。</p>
-        {task.assignee?.type === 'agent' && <p className="mc-note"><Bot size={14} />指派给 Agent 后需要人点「开始处理」；真正启动 Agent 执行、跑完自动进入待验收尚未接入。</p>}
-      </section>
-
-      <section className="mc-section" aria-label="推进状态">
-        <h3>推进任务</h3>
-        {finished
-          ? <p className="mc-empty-line">任务已结束，不能再改状态。</p>
+    <section className="mc-section" aria-label="推进状态">
+      <h3>推进任务</h3>
+      {finished
+        ? <p className="mc-empty-line">任务已结束，不能再改状态。</p>
+        : running
+          ? <p className="mc-empty-line">Agent 正在执行，结束后再推进。</p>
           : <div className="mc-actions">{actions.map(action => <Button key={action.status} type="button" size="sm" variant={action.status === 'cancelled' ? 'outline' : 'default'} disabled={busy} onClick={() => onStatus(action.status)}>{action.label}</Button>)}</div>}
-      </section>
+    </section>
 
-      <section className="mc-section" aria-label="评论">
-        <h3><MessageSquare size={14} />评论 <Badge variant="secondary">0</Badge></h3>
-        <p className="mc-comment-placeholder">评论区留在这里；评论写入、执行记录与运行详情在后续版本接入。</p>
-      </section>
-
-      {error && <p role="alert" className="mc-error">{error}</p>}
-    </div>
-    <footer className="mc-detail-footer">
-      <span className="mc-muted">版本 {task.version}</span>
-      <Button type="button" variant="outline" size="sm" onClick={onEdit} disabled={busy}><Pencil size={14} />编辑任务</Button>
-    </footer>
+    {error && <p role="alert" className="mc-error">{error}</p>}
   </div>
 }

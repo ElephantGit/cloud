@@ -68,6 +68,8 @@ func taskFault(w http.ResponseWriter, e error) bool {
 		fault(w, http.StatusConflict, "version_conflict")
 	case errors.Is(e, store.ErrInvalidTransition):
 		fault(w, http.StatusBadRequest, "invalid_transition")
+	case errors.Is(e, store.ErrRunActive):
+		fault(w, http.StatusConflict, "run_active")
 	case errors.Is(e, store.ErrInvalidProject):
 		fault(w, http.StatusBadRequest, "invalid_project")
 	case errors.Is(e, store.ErrInvalidAssignee), errors.Is(e, store.ErrUserUnavailable),
@@ -230,8 +232,8 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request, u store.Use
 	writeJSON(w, http.StatusOK, task)
 }
 
-// setTaskStatus moves a task by hand. The lifecycle check lives in the store so the execution
-// service applies the same rule.
+// setTaskStatus moves a task by hand. The lifecycle check lives in the store, which also refuses a
+// move while the task's Agent turn runs.
 func (h *handler) setTaskStatus(w http.ResponseWriter, r *http.Request, u store.User) {
 	s, tenant, id, ok := h.taskScope(w, r)
 	if !ok {
@@ -252,6 +254,10 @@ func (h *handler) setTaskStatus(w http.ResponseWriter, r *http.Request, u store.
 		}
 		internal(w, "set task status", e)
 		return
+	}
+	if h.opts.TaskRuns != nil && (task.Status == store.TaskDone || task.Status == store.TaskCancelled) {
+		// Nobody can follow up a finished task, so its idle Agent session is ended.
+		h.opts.TaskRuns.Release(r.Context(), tenant, id)
 	}
 	writeJSON(w, http.StatusOK, task)
 }

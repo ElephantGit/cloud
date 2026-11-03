@@ -23,8 +23,8 @@ import {
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace'
-import { buildRows, type FileChange, type Folder, fileTree, turnFileChanges, turnSources } from '../model/display'
-import type { PermissionRequest, Turn } from '../model/types'
+import { buildRows, type FileChange, type Folder, fileTree, turnFileChanges, turnSources } from './model/display'
+import type { PermissionRequest, Turn } from './model/types'
 import { Rows, TurnProvider } from './activity'
 import { AttachmentList, PluginList } from './attachments'
 import { formatDuration, formatTokens } from './format'

@@ -291,6 +291,52 @@ CREATE TABLE IF NOT EXISTS v2_tasks (
 	CHECK (status IN ('pending', 'running', 'review', 'done', 'cancelled'))
 );
 CREATE INDEX IF NOT EXISTS v2_tasks_tenant ON v2_tasks (tenant_id, updated_at DESC, id);
+
+-- A task run is one execution session of the task's Agent, started by one person: the session runs
+-- under that person's scope, so only they can append to it, while the whole workspace reads it.
+-- session_id stays NULL until the execution service accepts the first turn. turn_active is true
+-- while a turn runs; ended_at is set once the session can take no more turns, with end_reason
+-- stopped (a person stopped it), replaced (a rerun took over), closed (the task finished) or
+-- interrupted (the server restarted, or the session ended on its own). At most one run per task is
+-- live. start_key is the Idempotency-Key of the request that started it.
+CREATE TABLE IF NOT EXISTS v2_task_runs (
+	id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	task_id       uuid NOT NULL REFERENCES v2_tasks (id) ON DELETE CASCADE,
+	tenant_id     uuid NOT NULL REFERENCES tenants (id),
+	started_by    uuid NOT NULL REFERENCES users (id),
+	start_key     text NOT NULL,
+	executor_id   text NOT NULL,
+	executor_name text NOT NULL,
+	session_id    text,
+	last_turn_id  text NOT NULL DEFAULT '',
+	turn_active   boolean NOT NULL DEFAULT true,
+	last_result   text NOT NULL DEFAULT '',
+	failure_code  text NOT NULL DEFAULT '',
+	end_reason    text NOT NULL DEFAULT '',
+	created_at    timestamptz NOT NULL DEFAULT now(),
+	ended_at      timestamptz,
+	UNIQUE (task_id, started_by, start_key),
+	CHECK (end_reason IN ('', 'stopped', 'replaced', 'closed', 'interrupted'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_task_runs_live ON v2_task_runs (task_id) WHERE ended_at IS NULL;
+
+-- Task comments are the team's side of a task's timeline. mentions holds the typed targets picked
+-- from the @ menu ({type, id}); text typed as "@name" never routes. run_id and turn_id are set when
+-- the comment was sent to the task's Agent as a turn. create_key is the request's Idempotency-Key.
+CREATE TABLE IF NOT EXISTS v2_task_comments (
+	id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	task_id    uuid NOT NULL REFERENCES v2_tasks (id) ON DELETE CASCADE,
+	tenant_id  uuid NOT NULL REFERENCES tenants (id),
+	author_id  uuid NOT NULL REFERENCES users (id),
+	create_key text NOT NULL,
+	body       text NOT NULL,
+	mentions   jsonb NOT NULL DEFAULT '[]',
+	run_id     uuid REFERENCES v2_task_runs (id) ON DELETE SET NULL,
+	turn_id    text NOT NULL DEFAULT '',
+	created_at timestamptz NOT NULL DEFAULT now(),
+	UNIQUE (task_id, author_id, create_key)
+);
+CREATE INDEX IF NOT EXISTS v2_task_comments_task ON v2_task_comments (task_id, created_at, id);
 -- Workflow definitions follow desktop's authoring model instead of Cloud's: every definition owns
 -- exactly one mutable draft snapshot (version 'draft') plus immutable published snapshots addressed
 -- by a caller-chosen version, and the workflow row points at the version new runs freeze. The graph

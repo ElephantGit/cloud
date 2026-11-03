@@ -52,6 +52,8 @@ test('workflow runs: v2-server executes a published workflow started from chat',
   // The visible input-area entry offers published workflows; the run opens pending, and
   // follows the run's invalidation stream while it has not ended.
   await page.reload()
+  await page.getByRole('button', { name: '选择项目' }).click()
+  await page.getByRole('option', { name: 'Demo', exact: true }).click()
   const runEvents = page.waitForResponse((r) => /\/workflow-runs\/[^/]+\/events$/.test(new URL(r.url()).pathname))
   const demo = page.getByRole('complementary', { name: '聊天记录' }).getByRole('region', { name: '项目 Demo' })
   await page.getByRole('button', { name: '运行工作流', exact: true }).click()

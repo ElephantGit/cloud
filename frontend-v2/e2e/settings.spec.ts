@@ -176,7 +176,9 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   await page.goto('/settings/plugins')
   const tavily = page.getByRole('article', { name: 'Tavily' })
   await tavily.getByRole('button', { name: '安装' }).click()
-  await expect(tavily.getByText('已安装', { exact: true })).toBeVisible()
+  await expect(tavily.getByText('已安装', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
   await page.reload()
   await expect(tavily.getByText('已安装', { exact: true })).toBeVisible()
   await tavily.getByRole('button', { name: '移除' }).click()
@@ -189,7 +191,9 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   const hooks = page.getByRole('article', { name: '示例 Hooks' })
   await expect(page.getByRole('heading', { name: 'Hooks' })).toBeVisible()
   await hooks.getByRole('button', { name: '安装' }).click()
-  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
+  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
   await page.reload()
   await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
 })
@@ -257,7 +261,7 @@ test('server-backed user skills create, import, overwrite, reload and isolate by
   }
 })
 
-test('Agent cards install and remove while preinstalled Agents stay read-only', async ({
+test('Agent cards install and remove while preinstalled Agents run the demo install', async ({
   page,
   browser,
 }) => {
@@ -266,7 +270,28 @@ test('Agent cards install and remove while preinstalled Agents stay read-only', 
   const opencode = page.getByRole('article', { name: 'OpenCode' })
   const codex = page.getByRole('article', { name: 'Codex' })
   await expect(opencode.getByText('运行时预装')).toBeVisible()
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toHaveCount(0)
   await expect(opencode.getByRole('button', { name: '移除' })).toHaveCount(0)
+  await opencode.getByRole('button', { name: '安装' }).click()
+  await expect(opencode.getByText('安装中', { exact: true })).toBeVisible()
+  await expect(opencode.getByText('安装中', { exact: true })).toHaveCount(0, {
+    timeout: 15_000,
+  })
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    opencode.getByRole('button', { name: '安装' }),
+  ).toHaveCount(0)
+  await page.reload()
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    opencode.getByRole('button', { name: '安装' }),
+  ).toHaveCount(0)
   await expect(
     page
       .getByRole('article', { name: 'Claude Code' })
@@ -283,7 +308,9 @@ test('Agent cards install and remove while preinstalled Agents stay read-only', 
     await expect(codex.getByText('未安装', { exact: true })).toBeVisible()
   }
   await codex.getByRole('button', { name: '安装' }).click()
-  await expect(codex.getByText('已安装', { exact: true })).toBeVisible()
+  await expect(codex.getByText('已安装', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
   await page.reload()
   await expect(codex.getByText('已安装', { exact: true })).toBeVisible()
 
@@ -485,7 +512,7 @@ test('six settings pages and keyboard-accessible details', async ({
           '已安装',
           { exact: true },
         ),
-      ).toBeVisible()
+      ).toBeVisible({ timeout: 15_000 })
     }
     await resetScroll(page)
     await page.screenshot({

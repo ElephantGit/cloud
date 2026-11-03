@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
 import type { SquadDetail, SquadMember } from './api/generated'
 import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins, pluginLabel } from './member-model'
+import { useDemoPluginSelections } from '@/features/settings/plugins/demo-state'
 
 const account = (overrides: Partial<MemberListItem>): MemberListItem => ({
   id: 'user', tenantId: 'tenant', userId: 'user', displayName: '成员', role: 'member', status: 'active', version: 1,
@@ -66,6 +67,18 @@ describe('agent candidates', () => {
       plugin({ id: 'market', requestedByUserId: 'owner' }),
     ]
     expect(agentCandidatesFor(detail, plugins).map(p => p.id)).toEqual(['rejoinable', 'fresh'])
+  })
+
+  it('keeps a preinstalled agent runnable before and after its browser demo install', () => {
+    const detail = squad([])
+    const plugins = [plugin({ id: 'opencode' })]
+    expect(agentCandidatesFor(detail, plugins).map(p => p.id)).toEqual(['opencode'])
+
+    useDemoPluginSelections
+      .getState()
+      .setSelected('user:tenant:space', 'official/ora-space.opencode', true)
+    expect(agentCandidatesFor(detail, plugins).map(p => p.id)).toEqual(['opencode'])
+    useDemoPluginSelections.getState().reset()
   })
 
   it('labels an agent by the identifier people install and searches it', () => {

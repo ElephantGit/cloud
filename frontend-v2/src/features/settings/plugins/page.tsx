@@ -1,7 +1,7 @@
 import { ProjectResults } from './project-results'
 import { listMarketSources, syncMarketSource } from '../market-api/generated'
 import { MarketSources } from './market-sources'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Download, ExternalLink } from 'lucide-react'
@@ -34,6 +34,7 @@ import {
 import { pluginKind, pluginKindOrder } from './plugin-kind'
 import { PluginMark } from './plugin-mark'
 import { isPreinstalledAgent } from '@/lib/plugin-runtime'
+import { installDelayMs, waitForInstallDelay } from './install-delay'
 
 const stateLabels: Record<string, string> = {
   installed: '已安装',
@@ -47,11 +48,16 @@ const stateLabels: Record<string, string> = {
 function StateBadge({
   selection,
   demoSelected,
+  installing,
 }: {
   selection?: SpacePlugin
   demoSelected: boolean
+  installing: boolean
 }) {
+  if (installing) return <Badge variant="outline">安装中</Badge>
   if (demoSelected) return <Badge variant="secondary">已安装</Badge>
+  if (selection && isPreinstalledAgent(selection))
+    return <Badge variant="outline">运行时预装</Badge>
   const state = selection?.observedState ?? 'removed'
   const label =
     selection?.kind !== 'skill' &&
@@ -133,6 +139,10 @@ export default function PluginsPage() {
   const [kind, setKind] = useState('all')
   const [status, setStatus] = useState('all')
   const [order, setOrder] = useState('asc')
+  const [pendingInstalls, setPendingInstalls] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const pendingInstallsRef = useRef(new Set<string>())
   const [removing, setRemoving] = useState<{
     entry: PluginCatalogEntry
     selection?: SpacePlugin
@@ -156,8 +166,16 @@ export default function PluginsPage() {
   const selected = catalog.find(
     (entry) => pluginKey(entry) === params.get('plugin'),
   )
+  const selectedSelection = selected ? market.selection(selected) : undefined
+  const demoInstallable = (entry: PluginCatalogEntry) => {
+    const selection = market.selection(entry)
+    return (
+      demoPlugin(entry) ||
+      (selection != null && isPreinstalledAgent(selection))
+    )
+  }
   const demoSelected = (entry: PluginCatalogEntry) =>
-    demoPlugin(entry) && demoSelection.includes(pluginKey(entry))
+    demoInstallable(entry) && demoSelection.includes(pluginKey(entry))
   const filtered = catalog
     .filter((entry) => {
       const selection = market.selection(entry)
@@ -168,10 +186,12 @@ export default function PluginsPage() {
         (kind === 'all' || entry.kind === kind) &&
         (status === 'all' ||
           (status === 'installed'
-            ? demoSelected(entry) || pluginInstalled(selection)
+            ? demoInstallable(entry)
+              ? demoSelected(entry)
+              : pluginInstalled(selection)
             : status === 'failed'
               ? selection?.observedState === 'failed'
-              : demoPlugin(entry)
+              : demoInstallable(entry)
                 ? !demoSelected(entry)
                 : !selection || selection.observedState === 'removed'))
       )
@@ -210,17 +230,34 @@ export default function PluginsPage() {
   const open = (entry: PluginCatalogEntry) => {
     setParams({ plugin: pluginKey(entry) })
   }
-  const install = (entry: PluginCatalogEntry) => {
+  const installing = (entry: PluginCatalogEntry) =>
+    pendingInstalls.has(pluginKey(entry))
+  const install = async (entry: PluginCatalogEntry) => {
+    const key = pluginKey(entry)
+    if (pendingInstallsRef.current.has(key)) return
+    pendingInstallsRef.current.add(key)
+    setPendingInstalls((current) => new Set(current).add(key))
     market.resetErrors()
-    if (demoPlugin(entry)) {
-      setDemoSelected(demoScope, pluginKey(entry), true)
-      toast.success(`已安装 ${entry.title}`)
-      return
+    const delay = waitForInstallDelay(installDelayMs())
+    try {
+      if (demoInstallable(entry)) {
+        await delay
+        setDemoSelected(demoScope, key, true)
+        toast.success(`已安装 ${entry.title}`)
+      } else {
+        await Promise.all([market.install(entry), delay])
+        toast.success(`已选择 ${entry.title}`)
+      }
+    } catch {
+      await delay
+    } finally {
+      pendingInstallsRef.current.delete(key)
+      setPendingInstalls((current) => {
+        const next = new Set(current)
+        next.delete(key)
+        return next
+      })
     }
-    void market
-      .install(entry)
-      .then(() => toast.success(`已选择 ${entry.title}`))
-      .catch(() => undefined)
   }
   const requestRemove = (entry: PluginCatalogEntry) => {
     market.resetErrors()
@@ -251,6 +288,14 @@ export default function PluginsPage() {
   }
   function actions(entry: PluginCatalogEntry) {
     const selection = market.selection(entry)
+    const pending = installing(entry)
+    if (pending)
+      return (
+        <Button size="sm" variant="secondary" disabled>
+          <Download data-icon="inline-start" />
+          安装中…
+        </Button>
+      )
     if (demoPlugin(entry))
       return demoSelected(entry) ? (
         <Button
@@ -265,15 +310,25 @@ export default function PluginsPage() {
         <Button
           size="sm"
           variant="secondary"
-          disabled={!market.canManage}
-          onClick={() => install(entry)}
+          disabled={!market.canManage || pending}
+          onClick={() => void install(entry)}
         >
           <Download data-icon="inline-start" />
-          安装
+          {pending ? '安装中…' : '安装'}
         </Button>
       )
     if (selection && isPreinstalledAgent(selection))
-      return <span className="text-xs text-muted-foreground">运行时预装</span>
+      return demoSelected(entry) ? null : (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!market.canManage || pending}
+          onClick={() => void install(entry)}
+        >
+          <Download data-icon="inline-start" />
+          {pending ? '安装中…' : '安装'}
+        </Button>
+      )
     if (
       selection?.desiredState === 'removed' &&
       selection.observedState === 'failed'
@@ -308,6 +363,7 @@ export default function PluginsPage() {
       )
     const busy =
       market.mutating ||
+      pending ||
       selection?.observedState === 'installing' ||
       selection?.observedState === 'removing'
     if (
@@ -328,11 +384,15 @@ export default function PluginsPage() {
             selection.observedState === 'pending') && (
             <Button
               disabled={!market.canManage || busy}
-              onClick={() => install(entry)}
+              onClick={() => void install(entry)}
               size="sm"
               variant="secondary"
             >
-              {entry.version !== selection.desiredVersion ? '更新' : '重新应用'}
+              {pending
+                ? '安装中…'
+                : entry.version !== selection.desiredVersion
+                  ? '更新'
+                  : '重新应用'}
             </Button>
           )}
         <Button
@@ -351,10 +411,14 @@ export default function PluginsPage() {
           selection?.observedState === 'failed' ? 'outline' : 'secondary'
         }
         disabled={!market.canManage || busy}
-        onClick={() => install(entry)}
+        onClick={() => void install(entry)}
       >
         <Download data-icon="inline-start" />
-        {selection?.observedState === 'failed' ? '重试安装' : '安装'}
+        {pending
+          ? '安装中…'
+          : selection?.observedState === 'failed'
+            ? '重试安装'
+            : '安装'}
       </Button>
     )
   }
@@ -362,7 +426,7 @@ export default function PluginsPage() {
     <section>
       <PageHeader
         title="Plugins"
-        description="浏览并管理空间插件；Skill 与 Agent 安装状态保存在服务端，MCP 与 Hook 可在当前浏览器中演示安装和卸载。"
+        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill 与市场 Agent 的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作仅为本地演示。"
         count={catalog.length}
         actions={
           <>
@@ -392,7 +456,7 @@ export default function PluginsPage() {
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          MCP 与 Hook 的安装状态仅保存在当前浏览器，用于演示；Agent 安装只记录空间选择，不会下载或启动插件。
+          MCP、Hook 与运行时预装 Agent 的安装仅用于界面演示，不下载或启动插件；市场 Agent 的安装只记录空间选择。
         </p>
         <div className="settings-toolbar">
           {market.spaces.length > 1 && (
@@ -511,6 +575,7 @@ export default function PluginsPage() {
                             <StateBadge
                               selection={market.selection(entry)}
                               demoSelected={demoSelected(entry)}
+                              installing={installing(entry)}
                             />
                             {actions(entry)}
                           </div>
@@ -533,7 +598,8 @@ export default function PluginsPage() {
             {installedServerPackages.length} 个服务端插件
           </span>
           <span>
-            Skill 由项目节点确认；MCP/Hook 为本地演示；Agent 仅保存空间选择
+            Skill 由项目节点确认；MCP/Hook 与预装 Agent 为本地演示；市场 Agent
+            仅保存空间选择
           </span>
         </div>
       </DataState>
@@ -576,6 +642,7 @@ export default function PluginsPage() {
               <StateBadge
                 selection={market.selection(selected)}
                 demoSelected={demoSelected(selected)}
+                installing={installing(selected)}
               />
             </div>
             {actions(selected)}
@@ -604,15 +671,19 @@ export default function PluginsPage() {
             <dd>
               {demoSelected(selected)
                 ? `演示安装 ${selected.version}`
-                : market.selection(selected)?.desiredState === 'installed'
-                  ? `安装 ${market.selection(selected)?.desiredVersion}`
+                : selectedSelection && isPreinstalledAgent(selectedSelection)
+                  ? '运行时预装，未开始演示安装'
+                  : selectedSelection?.desiredState === 'installed'
+                  ? `安装 ${selectedSelection?.desiredVersion}`
                   : '未选择'}
             </dd>
             <dt>安装结果</dt>
             <dd>
               {demoSelected(selected)
                 ? '浏览器本地演示状态'
-                : (market.selection(selected)?.observedVersion ?? '尚未安装')}
+                : selectedSelection && isPreinstalledAgent(selectedSelection)
+                  ? '运行时预装（服务端未变更）'
+                  : (selectedSelection?.observedVersion ?? '尚未安装')}
             </dd>
             <dt>来源</dt>
             <dd>
@@ -629,6 +700,8 @@ export default function PluginsPage() {
           <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             {demoPlugin(selected)
               ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器演示状态，不会下载或运行插件包。'
+              : selectedSelection && isPreinstalledAgent(selectedSelection)
+                ? '该 Agent 由运行时预装；安装只改变浏览器演示状态，不写服务端，也不影响执行器候选。'
               : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
           </p>
           <Separator />

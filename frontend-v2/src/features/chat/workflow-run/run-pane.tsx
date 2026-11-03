@@ -18,6 +18,7 @@ import { isTerminalRunStatus, type GraphWorkflowRun, type WorkflowArtifact, type
 import { WorkspaceNavigationProvider } from '@/components/workspace-panel/navigation'
 import { useWorkspacePanel } from '@/components/workspace-panel/use-panel'
 import { WorkspacePanel, WorkspaceToggle } from '@/components/workspace-panel/workspace-panel'
+import { WorkspaceSplit } from '@/components/workspace-panel/workspace-split'
 import { FadeText } from '../components/fade-text'
 import { ShowSidebarButton } from '../components/sidebar'
 import { emptyDraft, newChatKey, useChatStore } from '../store'
@@ -341,7 +342,12 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
           <WorkspaceToggle open={workspace.open} toggle={() => workspace.setOpen(!workspace.open)} />
         </div>
       </header>
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <WorkspaceSplit
+        id="run"
+        panel={
+          workspace.open && <WorkspacePanel source={workspaceSource} revision={workspaceRevision} request={workspace.request} onClose={() => workspace.setOpen(false)} />
+        }
+      >
         <div ref={stageAreaRef} aria-label={viewMode === 'theater' ? '运行舞台' : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {run.status === 'pending' && viewMode === 'overview' && (
             <p className="absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
@@ -376,12 +382,7 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
             <RunOverviewCanvas run={run} focusedNodeId={stageFocusNodeId} onFocusNode={focusNodeFromOverview} artifacts={artifacts} fitRequestKey={overviewFitRequestKey} />
           )}
         </div>
-        {workspace.open && (
-          <div className="hidden w-[min(480px,42vw)] shrink-0 md:flex">
-            <WorkspacePanel source={workspaceSource} revision={workspaceRevision} request={workspace.request} onClose={() => workspace.setOpen(false)} />
-          </div>
-        )}
-      </div>
+      </WorkspaceSplit>
       <WorkflowRunStartDialog
         open={startOpen}
         runName={run.name}

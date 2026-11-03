@@ -17,6 +17,7 @@ import { isResponding } from '@/components/agent-thread/model/conversation'
 import { emptyConversation, type PluginRef } from '@/components/agent-thread/model/types'
 import { WorkspacePanel, WorkspaceToggle } from '@/components/workspace-panel/workspace-panel'
 import { WorkspaceNavigationProvider } from '@/components/workspace-panel/navigation'
+import { WorkspaceSplit } from '@/components/workspace-panel/workspace-split'
 import { conversationRevision } from '@/components/workspace-panel/revision'
 import { useWorkspacePanel } from '@/components/workspace-panel/use-panel'
 import { type Agent, agentsOf, emptyDraft, isEnded, newChatKey, type Session, useChatStore } from './store'
@@ -110,14 +111,14 @@ function ChatWithWorkspace({ session, tenantId }: { session?: Session; tenantId:
   const shown = source !== undefined && panel.open
   return (
     <WorkspaceNavigationProvider value={source ? panel.navigation : null}>
-      <section className="flex min-w-0 flex-1 flex-col" aria-label="会话">
-        <ChatPane session={session} workspace={source ? { open: panel.open, toggle: () => panel.setOpen(!panel.open) } : undefined} />
-      </section>
-      {shown && (
-        <div className="hidden w-[min(480px,42vw)] shrink-0 md:flex">
-          <WorkspacePanel key={source.conversationId} source={source} revision={revision} request={panel.request} onClose={() => panel.setOpen(false)} />
-        </div>
-      )}
+      <WorkspaceSplit
+        id="chat"
+        panel={shown && <WorkspacePanel key={source.conversationId} source={source} revision={revision} request={panel.request} onClose={() => panel.setOpen(false)} />}
+      >
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="会话">
+          <ChatPane session={session} workspace={source ? { open: panel.open, toggle: () => panel.setOpen(!panel.open) } : undefined} />
+        </section>
+      </WorkspaceSplit>
     </WorkspaceNavigationProvider>
   )
 }

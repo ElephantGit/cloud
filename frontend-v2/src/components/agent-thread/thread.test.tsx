@@ -6,6 +6,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { applyEvent } from './model/conversation'
 import { type ChatEvent, type Conversation, emptyConversation } from './model/types'
 import { Thread } from './thread'
+import { applySessionEvent, conversationOf as fromHistory, emptySessionView } from './model/history'
+import type { SessionEvent } from './model/wire'
 
 const conversationOf = (events: ChatEvent[]): Conversation => events.reduce((c, e) => applyEvent(c, e, 0), emptyConversation)
 const update = (u: acp.SessionUpdate): ChatEvent => ({ type: 'update', update: u })
@@ -24,6 +26,38 @@ const renderThread = (conversation: Conversation, onAnswer = vi.fn()) =>
   )
 
 describe('Thread', () => {
+  it('shows an estimated reasoning duration after settling and a cold event replay', () => {
+    const record = (sequence: number, sessionUpdate: string, text: string, preview = false) => ({
+      sequence, preview, data: { type: 'update', at: '2026-11-03T00:00:10Z', update: { sessionUpdate, content: { type: 'text', text } } },
+    })
+    const user = record(1, 'user_message_chunk', 'hi')
+    const thought = record(2, 'agent_thought_chunk', '先想一想', true)
+    const answer = record(3, 'agent_message_chunk', '你好')
+    const events: SessionEvent[] = [
+      { sequence: 1, occurredAt: '2026-11-03T00:00:02Z', kind: 'history_preview', turnId: 't', history: { records: [user, thought], incomplete: false } },
+      { sequence: 2, occurredAt: '2026-11-03T00:00:07Z', kind: 'history_preview', turnId: 't', history: { records: [thought, { ...answer, preview: true }], incomplete: false } },
+      { sequence: 3, occurredAt: '2026-11-03T00:00:10Z', kind: 'history_snapshot', turnId: 't', history: {
+        records: [user, { ...thought, preview: false }, answer, { sequence: 4, data: { type: 'turnEnded', at: '2026-11-03T00:00:10Z', stop_reason: 'end_turn' } }], incomplete: false,
+      } },
+    ]
+    const folded = fromHistory([events.reduce(applySessionEvent, emptySessionView('s'))])
+    renderThread(folded)
+    expect(screen.getByText('思考了约 5 秒')).toBeInTheDocument()
+    expect(screen.queryByText('思考了 0.0 秒')).not.toBeInTheDocument()
+  })
+
+  it('shows reasoning without a fabricated duration when only settled history is available', () => {
+    const data = (sessionUpdate: string, text: string) => ({ type: 'update', at: '2026-11-03T00:00:10Z', update: { sessionUpdate, content: { type: 'text', text } } })
+    renderThread(fromHistory([{ ...emptySessionView('s'), records: [
+      { sequence: 1, data: data('user_message_chunk', 'hi') },
+      { sequence: 2, data: data('agent_thought_chunk', '先想一想') },
+      { sequence: 3, data: data('agent_message_chunk', '你好') },
+      { sequence: 4, data: { type: 'turnEnded', at: '2026-11-03T00:00:10Z', stop_reason: 'end_turn' } },
+    ] }]))
+    expect(screen.getByText('思考')).toBeInTheDocument()
+    expect(screen.queryByText(/思考了/)).not.toBeInTheDocument()
+  })
+
   it('folds a turn\'s tool calls into a summary that opens into the steps', async () => {
     renderThread(
       conversationOf([

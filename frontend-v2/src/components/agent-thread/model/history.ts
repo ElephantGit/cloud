@@ -1,6 +1,7 @@
 import type * as acp from '@agentclientprotocol/sdk'
 import type { SessionEndReason as ChatSessionEndReason, SessionEvent as ChatEvent, SessionHistoryRecord as ChatHistoryRecord, SessionResult as ChatResult } from './wire'
 import { applyEvent } from './conversation'
+import { observeThoughts, type ThoughtTimings } from './thought-timing'
 import { type ChatEvent as ModelEvent, type Conversation, emptyConversation, type Turn } from './types'
 
 /**
@@ -10,6 +11,8 @@ import { type ChatEvent as ModelEvent, type Conversation, emptyConversation, typ
 export interface SessionView {
   id: string
   records: ChatHistoryRecord[]
+  /** Estimates recovered from retained preview event times, independent of settled history. */
+  thoughtTimings: ThoughtTimings
   /** The snapshot left out process detail; the answers themselves are judged by `results`. */
   incomplete: boolean
   /** One per ended turn, in turn order. */
@@ -24,7 +27,7 @@ export interface SessionView {
 }
 
 /** A session before any event has arrived. */
-export const emptySessionView = (id: string): SessionView => ({ id, records: [], incomplete: false, results: [], prompts: [], ended: false, endReason: '', cursor: 0 })
+export const emptySessionView = (id: string): SessionView => ({ id, records: [], thoughtTimings: {}, incomplete: false, results: [], prompts: [], ended: false, endReason: '', cursor: 0 })
 
 /**
  * Folds one event-stream message into a session. A history snapshot replaces the whole history,
@@ -33,7 +36,7 @@ export const emptySessionView = (id: string): SessionView => ({ id, records: [],
  */
 export function applySessionEvent(base: SessionView, event: ChatEvent): SessionView {
   if (event.sequence <= base.cursor) return base
-  const view = { ...base, cursor: event.sequence }
+  const view = { ...base, cursor: event.sequence, thoughtTimings: observeThoughts(base.thoughtTimings, event, base.records) }
   switch (event.kind) {
     case 'history_snapshot':
       return event.history ? { ...view, records: event.history.records, incomplete: event.history.incomplete } : view
@@ -125,6 +128,17 @@ function appendSession(base: Conversation, session: SessionView): Conversation {
       continue
     }
     for (const event of eventsOf(update, record.sequence, line, at)) conversation = applyEvent(conversation, event.event, event.at)
+    if (update.sessionUpdate === 'agent_thought_chunk') {
+      const timing = session.thoughtTimings[record.sequence]
+      const duration = timing?.endedAt !== undefined ? timing.endedAt - timing.startedAt : 0
+      const turn = conversation.turns.at(-1)
+      if (turn) {
+        const id = `thought-${update.messageId ?? `h${record.sequence}`}`
+        const items = turn.items.map((item) => item.kind === 'thought' && item.id === id
+          ? { ...item, durationMs: duration > 0 ? duration : null } : item)
+        conversation = { ...conversation, turns: [...conversation.turns.slice(0, -1), { ...turn, items }] }
+      }
+    }
   }
   close(Date.now())
   // A turn stopped before its Agent started never reached the history; show it from its result.

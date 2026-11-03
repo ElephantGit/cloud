@@ -145,13 +145,16 @@ function ThoughtRow({ thought }: { thought: ThoughtItem }) {
   const { status } = useContext(TurnContext)
   const running = thought.endedAt === undefined && status === 'streaming'
   const [open, setOpen] = useState<boolean>()
-  const took = thought.endedAt !== undefined ? formatDuration(thought.endedAt - thought.startedAt) : undefined
+  const estimated = thought.durationMs !== undefined
+  const duration = estimated ? thought.durationMs : thought.endedAt !== undefined ? thought.endedAt - thought.startedAt : null
+  // Positive sampled intervals must not round down to a misleading "0.0 秒".
+  const took = duration != null ? formatDuration(estimated ? Math.max(duration, 100) : duration) : undefined
   return (
     <TraceCollapsible open={open ?? running} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>
         <TraceLine status={running ? 'running' : undefined}>
           <TraceIcon>{running ? <LoaderCircleIcon className="animate-spin" /> : <CircleCheckIcon />}</TraceIcon>
-          <TraceTitle>{running ? '思考中' : took ? `思考了 ${took}` : '思考'}</TraceTitle>
+          <TraceTitle>{running ? '思考中' : took ? `思考了${estimated ? '约' : ''} ${took}` : '思考'}</TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="whitespace-pre-wrap">{thought.text}</TraceCollapsibleContent>

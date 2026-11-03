@@ -70,6 +70,84 @@ describe('applySessionEvent with previews', () => {
   })
 })
 
+describe('reasoning durations from retained events', () => {
+  const thought = (seq: number, preview = true, source?: string): ChatHistoryRecord => ({
+    sequence: seq, preview,
+    data: { type: 'update', ...(!preview && { at: at(20) }), update: {
+      sessionUpdate: 'agent_thought_chunk', messageId: `thought-${seq}`, content: { type: 'text', text: '先想一想' },
+      ...(source && { _meta: { 'opencode/child-session': { id: source, parentID: 'parent' } } }),
+    } },
+  })
+  const event = (sequence: number, seconds: number, records: ChatHistoryRecord[], kind: ChatEvent['kind'] = 'history_preview'): ChatEvent => ({
+    sequence, occurredAt: at(seconds), kind, turnId: 't1', history: { records, incomplete: false },
+  })
+  const duration = (v: SessionView) => conversationOf([v]).turns[0].items.find((item) => item.kind === 'thought')?.durationMs
+
+  it('keeps the observed interval across previews, a batch-settled snapshot, duplicate events and cold replay', () => {
+    const events = [
+      event(1, 1, [user(1, 'hi')], 'history_snapshot'),
+      event(2, 3, [thought(2)]),
+      event(3, 6, [thought(2)]),
+      event(4, 8, [thought(2), pending(3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '你好' } })]),
+      // Node writes the whole batch with at=20s; these are append times, not reasoning times.
+      event(5, 20, [user(1, 'hi'), thought(2, false), { ...say(3, '你好'), data: { ...say(3, '你好').data, at: at(20) } }, ended(20)], 'history_snapshot'),
+    ]
+    const streaming = events.slice(0, 4).reduce(applySessionEvent, emptySessionView('s1'))
+    expect(duration(streaming)).toBe(5000)
+    const settled = applySessionEvent(streaming, events[4])
+    expect(duration(settled)).toBe(5000)
+    expect(applySessionEvent(settled, events[4])).toBe(settled)
+    expect(duration(events.reduce(applySessionEvent, emptySessionView('s1')))).toBe(5000)
+  })
+
+  it('does not infer a duration from settled-only history or a late preview of that history', () => {
+    const settled = applySessionEvent(emptySessionView('s1'), event(1, 20, [user(1, 'hi'), thought(2, false), say(3, '你好'), ended(20)], 'history_snapshot'))
+    expect(duration(settled)).toBeNull()
+    const late = applySessionEvent(settled, event(2, 21, [thought(2)]))
+    expect(late.thoughtTimings).toEqual({})
+    expect(duration(late)).toBeNull()
+  })
+
+  it('does not invent an interval when reasoning and the answer are first seen together', () => {
+    const v = applySessionEvent(emptySessionView('s1'), event(1, 8, [user(1, 'hi'), thought(2), say(3, '你好')]))
+    expect(duration(v)).toBeNull()
+  })
+
+  it('does not end reasoning on an empty answer delta', () => {
+    let v = applySessionEvent(emptySessionView('s1'), event(1, 2, [user(1, 'hi'), thought(2)]))
+    v = applySessionEvent(v, event(2, 3, [thought(2), pending(3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '  ' } })]))
+    expect(v.thoughtTimings[2].endedAt).toBeUndefined()
+    v = applySessionEvent(v, event(3, 7, [thought(2), say(3, '你好')]))
+    expect(duration(v)).toBe(5000)
+  })
+
+  it('ignores another source moving on, and closes at a tool from the same source', () => {
+    let v = applySessionEvent(emptySessionView('s1'), event(1, 2, [user(1, 'hi'), thought(2)]))
+    v = applySessionEvent(v, event(2, 4, [thought(3, true, 'child')]))
+    expect(v.thoughtTimings[2].endedAt).toBeUndefined()
+    v = applySessionEvent(v, event(3, 7, [tool(4, 'in_progress')]))
+    expect(v.thoughtTimings[2]).toMatchObject({ startedAt: ms(2), endedAt: ms(7) })
+    expect(v.thoughtTimings[3].endedAt).toBeUndefined()
+  })
+
+  it.each(['turn_ended', 'session_ended'] as const)('closes on %s without using the browser clock', (kind) => {
+    let v = applySessionEvent(emptySessionView('s1'), event(1, 2, [user(1, 'hi'), thought(2)]))
+    v = applySessionEvent(v, { sequence: 2, occurredAt: at(5), kind, turnId: 't1', result: { ...done, status: 'cancelled', stopReason: 'cancelled' } })
+    expect(duration(v)).toBe(3000)
+  })
+
+  it('does not change earlier intervals in later turns or accept invalid event times', () => {
+    let v = applySessionEvent(emptySessionView('s1'), event(1, 2, [user(1, 'hi'), thought(2)]))
+    v = applySessionEvent(v, event(2, 5, [ended(3)]))
+    v = applySessionEvent(v, event(3, 7, [user(4, 'again'), thought(5)]))
+    v = applySessionEvent(v, { ...event(4, 9, [say(6, '你好')]), occurredAt: 'invalid' })
+    expect(v.thoughtTimings[5].endedAt).toBeUndefined()
+    v = applySessionEvent(v, event(5, 10, [say(6, '你好')]))
+    expect(v.thoughtTimings[2]).toMatchObject({ startedAt: ms(2), endedAt: ms(5) })
+    expect(v.thoughtTimings[5]).toMatchObject({ startedAt: ms(7), endedAt: ms(10) })
+  })
+})
+
 describe('conversationOf', () => {
   it('rebuilds turns from settled history in position order', () => {
     const c = conversationOf([view({ records: [ended(5), say(4, '第二段'), tool(2, 'completed'), user(1, '读一下'), say(3, '第一段'), meta], results: [done] })])

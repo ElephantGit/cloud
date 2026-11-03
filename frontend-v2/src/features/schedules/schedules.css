@@ -1,25 +1,12 @@
-/* Feature-local semantic tokens keep the shared Ora shell unchanged. */
+/* Feature aliases of the shared design tokens (src/index.css), so both themes follow the shell. */
 .schedules-feature {
-  --background: #fff; --foreground: #27272d; --primary: #27272d; --primary-foreground: #fff;
-  --secondary: #f3f3f6; --secondary-foreground: #555561; --muted: #f5f5f8; --muted-foreground: #676976;
-  --accent: #f1f1f6; --accent-foreground: #27272d; --border: #e5e5eb; --input: #d6d6df; --ring: #8580cd;
-  --sp-line: var(--border); --sp-muted: var(--muted-foreground); --sp-accent: #6257bd;
-  --sp-accent-bg: #f3f1fb; --sp-success: #257048; --sp-success-bg: #eef7f1;
-  --sp-warning: #96531e; --sp-warning-bg: #fff5e8; --sp-danger: #bd433d;
-  --sp-surface: #fafafb; --sp-scrim: #20202a30; --sp-shadow: #16162216;
+  --sp-line: var(--border); --sp-muted: var(--muted-foreground); --sp-accent: var(--brand);
+  --sp-accent-bg: var(--brand-soft); --sp-success: var(--success); --sp-success-bg: var(--success-soft);
+  --sp-warning: var(--warning); --sp-warning-bg: var(--warning-soft); --sp-danger: var(--destructive);
+  --sp-surface: color-mix(in oklch, var(--muted) 60%, var(--background)); --sp-scrim: var(--scrim); --sp-shadow: var(--shadow-color);
   color: var(--foreground); background: var(--background); font-size: 14px; line-height: 1.6;
 }
 .schedules-feature button { cursor: pointer; touch-action: manipulation; }
-.dark .schedules-feature {
-  --background: inherit; --foreground: inherit; --primary: inherit; --primary-foreground: inherit;
-  --secondary: inherit; --secondary-foreground: inherit; --muted: inherit; --muted-foreground: inherit;
-  --accent: inherit; --accent-foreground: inherit; --border: inherit; --input: inherit; --ring: inherit;
-  --sp-accent: oklch(0.78 0.1 290); --sp-accent-bg: oklch(0.28 0.035 290);
-  --sp-success: oklch(0.78 0.11 155); --sp-success-bg: oklch(0.25 0.025 155);
-  --sp-warning: oklch(0.82 0.11 75); --sp-warning-bg: oklch(0.27 0.025 75);
-  --sp-danger: var(--destructive); --sp-surface: var(--card);
-  --sp-scrim: #00000070; --sp-shadow: #00000040;
-}
 .schedules-feature button:disabled { cursor: not-allowed; }
 .schedules-feature button:focus-visible, .schedules-feature summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .schedules-feature h1, .schedules-feature h2, .schedules-feature p { margin: 0; }

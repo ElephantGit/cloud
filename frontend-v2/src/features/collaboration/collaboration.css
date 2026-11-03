@@ -1,11 +1,10 @@
-/* Feature-local tokens keep the shared Ora shell and other features untouched. */
+/* Feature aliases of the shared design tokens (src/index.css), so both themes follow the shell. */
 .collaboration-feature {
-  --background: #fff; --foreground: #27272d; --primary: #27272d; --primary-foreground: #fff;
-  --secondary: #f3f3f6; --secondary-foreground: #555561; --muted: #f5f5f8; --muted-foreground: #676976;
-  --accent: #f1f1f6; --accent-foreground: #27272d; --border: #e5e5eb; --input: #d6d6df; --ring: #8580cd;
-  --mc-line: var(--border); --mc-muted: var(--muted-foreground); --mc-surface: #fafafb;
-  --mc-human: #2f6fbb; --mc-human-bg: #eef4fc; --mc-agent: #7a5bd6; --mc-agent-bg: #f3f0fd;
-  --mc-maintainer: #2f8a5f; --mc-done-bg: #eaf6ef; --mc-danger: #bd433d; --mc-scrim: #20202a30; --mc-shadow: #16162216;
+  --mc-line: var(--border); --mc-muted: var(--muted-foreground);
+  --mc-surface: color-mix(in oklch, var(--muted) 60%, var(--background));
+  --mc-human: var(--info); --mc-human-bg: var(--info-soft); --mc-agent: var(--brand); --mc-agent-bg: var(--brand-soft);
+  --mc-maintainer: var(--success); --mc-done-bg: var(--success-soft); --mc-danger: var(--destructive);
+  --mc-scrim: var(--scrim); --mc-shadow: var(--shadow-color);
   color: var(--foreground); background: var(--background); font-size: 14px; line-height: 1.6;
 }
 .collaboration-feature button { cursor: pointer; touch-action: manipulation; }
@@ -70,9 +69,9 @@
 .mc-card-counts b { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
 .mc-card-time { color: var(--mc-muted); font-size: 11px; }
 .mc-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--mc-line); color: var(--mc-muted); font-size: 12px; }
-.mc-toast { position: fixed; right: 28px; bottom: 28px; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; background: #27272d; color: #fff; font-size: 13px; box-shadow: 0 10px 30px #16162240; z-index: 60; }
+.mc-toast { position: fixed; right: 28px; bottom: 28px; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; background: var(--primary); color: var(--primary-foreground); font-size: 13px; box-shadow: 0 10px 30px var(--mc-shadow); z-index: 60; }
 
-.mc-dialog { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--background); color: var(--foreground); box-shadow: 0 24px 64px #16162230; overflow: hidden; }
+.mc-dialog { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--background); color: var(--foreground); box-shadow: 0 24px 64px var(--mc-shadow); overflow: hidden; }
 .mc-dialog[open] { display: flex; flex-direction: column; }
 .mc-dialog::backdrop { background: var(--mc-scrim); }
 .mc-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--mc-line); }

@@ -98,12 +98,7 @@ func TestResetEmptiesTheEnvironment(t *testing.T) {
 	}
 	name := "reset" + strings.ToLower(rand.Text()[:8])
 	config.Database = "ora_v2_demo_" + name
-	u, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	u.Path = "/" + config.Database
-	dbURL := u.String()
+	dbURL := withDatabase(t, raw, config.Database)
 	c := Config{Environment: Environment{Name: name, Dir: name, Database: config.Database, Scenes: []string{"newcomer", "ops"}}, DatabaseURL: dbURL, DataDir: filepath.Join(t.TempDir(), name)}
 	c.UsersFile = filepath.Join(c.DataDir, "users.json")
 	t.Cleanup(func() {
@@ -158,4 +153,19 @@ func TestResetEmptiesTheEnvironment(t *testing.T) {
 	if err := Reset(ctx, other); err == nil {
 		t.Fatal("reset the everyday database")
 	}
+}
+
+// withDatabase points a TEST_DATABASE_URL, in URL or keyword/value form, at another database.
+func withDatabase(t *testing.T, raw, database string) string {
+	t.Helper()
+	if !strings.Contains(raw, "://") {
+		// In keyword/value form the last occurrence of a keyword wins.
+		return raw + " dbname=" + database
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + database
+	return u.String()
 }

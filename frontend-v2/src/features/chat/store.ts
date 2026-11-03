@@ -101,6 +101,8 @@ interface State {
   setSidebar: (sidebar: Partial<SidebarLayout>) => void
 
   tenantId?: string
+  /** The signed-in person whose conversations, drafts and streams this state belongs to. */
+  userId?: string
   backend: BackendState
   executors: ChatExecutor[]
   /** The execution session behind each backend conversation; empty until its first turn. */
@@ -109,8 +111,8 @@ interface State {
   pending: Record<string, { text: string; turns: number }>
   /** The latest problem with a send, per session (or the new chat). */
   notices: Record<string, Notice>
-  /** Loads the tenant's projects, executors and conversations. */
-  connect: (tenantId: string) => Promise<void>
+  /** Loads the person's projects, executors and conversations in the tenant. */
+  connect: (tenantId: string, userId: string) => Promise<void>
   dismiss: (key: string) => void
 
   select: (id: string) => void
@@ -145,6 +147,24 @@ interface State {
   unqueue: (id: string, index: number) => void
 }
 
+/** Everything tied to one person in one tenant; sidebar layout is browser state and stays. */
+const blankChat = () => ({
+  projects: [] as Project[],
+  sessions: [] as Session[],
+  conversations: {} as Record<string, Conversation>,
+  queued: {} as Record<string, string[]>,
+  unread: {} as Record<string, true>,
+  drafts: {} as Record<string, Draft>,
+  selectedId: undefined,
+  selectedRunId: undefined,
+  executors: [] as ChatExecutor[],
+  views: {} as Record<string, SessionView[]>,
+  pending: {} as Record<string, { text: string; turns: number }>,
+  notices: {} as Record<string, Notice>,
+  newChat: { projectId: '', agent: '', model: '' } as NewChat,
+  newChatOpens: 0,
+})
+
 /** The event streams being followed, by conversation id. */
 const streams = new Map<string, () => void>()
 /** Conversations whose stream reached its end: everything their session will ever send has been read. */
@@ -154,8 +174,18 @@ const drained = new Set<string>()
  * the page saw it start: their queue waits for that turn's end event rather than retrying.
  */
 const awaitingTurnEnd = new Set<string>()
+/** Distinguishes load results for successive account connections. */
+let connectionVersion = 0
 let ids = 0
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(ids++).toString(36)}`
+
+/** Stops every event stream; their callbacks also check the active account before applying. */
+function stopFollowing() {
+  for (const stop of streams.values()) stop()
+  streams.clear()
+  drained.clear()
+  awaitingTurnEnd.clear()
+}
 
 /** A backend conversation as a history entry, listed directly under its project. */
 function sessionOf(c: ChatConversation, executors: ChatExecutor[]): Session {
@@ -202,6 +232,8 @@ export const useChatStore = create<State>()(
   persist(
     (set, get) => {
       const isRemote = (id: string) => !!get().sessions.find((x) => x.id === id)?.remote
+      const isCurrent = (tenantId: string, userId: string) =>
+        get().tenantId === tenantId && get().userId === userId
 
       /** Sends the next queued prompt once the agent is free, as the person would have. */
       const sendQueued = (id: string) => {
@@ -248,12 +280,13 @@ export const useChatStore = create<State>()(
        * seen; an ended one replays what is left and closes.
        */
       const follow = (id: string) => {
-        const tid = get().tenantId
-        if (!tid) return
+        const { tenantId: tid, userId } = get()
+        if (!tid || !userId) return
         for (const view of get().views[id] ?? []) {
           if (streams.has(id) || drained.has(id)) continue
           const done = () => streams.delete(id)
           const apply = (event: ChatEvent) => {
+            if (!isCurrent(tid, userId)) return
             if (event.kind === 'turn_ended' || event.kind === 'session_ended') awaitingTurnEnd.delete(id)
             refresh(id, (s) => ({
               views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.id === view.id ? applySessionEvent(v, event) : v)) },
@@ -285,10 +318,10 @@ export const useChatStore = create<State>()(
 
       /** Reads a conversation again, for why its session ended outside this page's own actions. */
       const reconcile = async (id: string) => {
-        const tid = get().tenantId
-        if (!tid) return
+        const { tenantId: tid, userId } = get()
+        if (!tid || !userId) return
         const c = (await remote.conversations(tid).catch(() => [])).find((x) => x.id === id)
-        if (c) refresh(id, (s) => ({ views: { ...s.views, [id]: viewsOf(c, s.views[id]) } }))
+        if (c && isCurrent(tid, userId)) refresh(id, (s) => ({ views: { ...s.views, [id]: viewsOf(c, s.views[id]) } }))
       }
 
       /** Takes a conversation as the backend returned it after a write. */
@@ -304,14 +337,16 @@ export const useChatStore = create<State>()(
       }
 
       const sendRemote = async (id: string, text: string) => {
-        const tid = get().tenantId
-        if (!tid) return
+        const { tenantId: tid, userId } = get()
+        if (!tid || !userId) return
         const turns = (get().conversations[id] ?? emptyConversation).turns.length
         refresh(id, (s) => ({ pending: { ...s.pending, [id]: { text, turns } } }))
         try {
           const { conversation } = await remote.send(tid, id, text)
+          if (!isCurrent(tid, userId)) return
           absorb(conversation)
         } catch (error) {
+          if (!isCurrent(tid, userId)) return
           const failure = failureOf(error)
           // Set before the refresh below, which would otherwise send the requeued prompt at once.
           if (failure.kind === 'running') awaitingTurnEnd.add(id)
@@ -341,18 +376,24 @@ export const useChatStore = create<State>()(
         pending: {},
         notices: {},
         setSidebar: (sidebar) => set((s) => ({ sidebar: { ...s.sidebar, ...sidebar } })),
-        connect: async (tenantId) => {
-          if (get().tenantId === tenantId && get().backend !== 'idle') return
-          set({ tenantId, backend: 'loading' })
+        connect: async (tenantId, userId) => {
+          const before = get()
+          if (before.tenantId === tenantId && before.userId === userId && before.backend !== 'idle') return
+          const version = ++connectionVersion
+          if (before.tenantId !== tenantId || before.userId !== userId) stopFollowing()
+          // Clear synchronously: the page may render immediately after the identity changes.
+          set({ ...blankChat(), tenantId, userId, backend: 'loading' })
           let loaded: RemoteState
           try {
             loaded = await remote.load(tenantId)
           } catch {
-            set({ backend: 'unavailable' })
+            if (version === connectionVersion && isCurrent(tenantId, userId)) set({ backend: 'unavailable' })
             return
           }
+          // An old account's request may finish after a switch. Never let it replace the new state.
+          if (version !== connectionVersion || !isCurrent(tenantId, userId)) return
           const projects = loaded.projects.map((p): Project => ({ id: p.id, name: p.name }))
-          const order = loaded.projectOrder.length ? loaded.projectOrder : get().projects.map((p) => p.id)
+          const order = loaded.projectOrder.length ? loaded.projectOrder : projects.map((p) => p.id)
           const first = loaded.executors[0]
           set((s) => ({
             backend: projects.length && loaded.executors.length ? 'ready' : 'unavailable',
@@ -397,10 +438,10 @@ export const useChatStore = create<State>()(
         },
         setNewChat: (patch) => set((s) => ({ newChat: { ...s.newChat, ...patch } })),
         sendNewChat: async (draft) => {
-          const { tenantId: tid, newChat, executors, projects } = get()
+          const { tenantId: tid, userId, newChat, executors, projects } = get()
           const executor = executors.find((x) => x.agentName === newChat.agent && x.modelName === newChat.model)
           const project = projects.find((p) => p.id === newChat.projectId)
-          if (!tid || !executor || !project) {
+          if (!tid || !userId || !executor || !project) {
             notify(newChatKey, { kind: 'unavailable' })
             return
           }
@@ -420,6 +461,7 @@ export const useChatStore = create<State>()(
             })
           try {
             const { conversation } = await remote.create(tid, { projectId: project.id, executorId: executor.id, prompt: draft.text })
+            if (!isCurrent(tid, userId)) return
             const selected = get().selectedId === placeholder
             // Prompts typed while the first one was being sent wait for the conversation.
             const queued = get().queued[placeholder] ?? []
@@ -432,6 +474,7 @@ export const useChatStore = create<State>()(
             absorb(conversation)
             if (selected) get().select(conversation.id)
           } catch (error) {
+            if (!isCurrent(tid, userId)) return
             drop()
             set((s) => ({ selectedId: s.selectedId === placeholder ? undefined : s.selectedId, drafts: { ...s.drafts, [newChatKey]: draft } }))
             notify(newChatKey, failureOf(error))
@@ -442,9 +485,10 @@ export const useChatStore = create<State>()(
           const before = get().sessions.find((x) => x.id === id)
           if (!before || !trimmed || trimmed === before.title) return
           set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: trimmed } : x)) }))
-          const tid = get().tenantId
-          if (before.remote && tid) {
+          const { tenantId: tid, userId } = get()
+          if (before.remote && tid && userId) {
             remote.rename(tid, id, trimmed).catch((error: unknown) => {
+              if (!isCurrent(tid, userId)) return
               set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: before.title } : x)) }))
               notify(id, failureOf(error))
             })
@@ -452,14 +496,16 @@ export const useChatStore = create<State>()(
         },
         deleteSession: async (id) => {
           const session = get().sessions.find((x) => x.id === id)
-          const tid = get().tenantId
-          if (session?.remote && tid) {
+          const { tenantId: tid, userId } = get()
+          if (session?.remote && tid && userId) {
             try {
               await remote.remove(tid, id)
             } catch (error) {
+              if (!isCurrent(tid, userId)) return
               notify(id, failureOf(error))
               return
             }
+            if (!isCurrent(tid, userId)) return
             streams.get(id)?.()
             streams.delete(id)
           }
@@ -475,14 +521,16 @@ export const useChatStore = create<State>()(
           })
         },
         createProject: async (input) => {
-          const tid = get().tenantId
-          if (!tid) return '还没连上后端，请稍后再试。'
+          const { tenantId: tid, userId } = get()
+          if (!tid || !userId) return '还没连上后端，请稍后再试。'
           let project: Project
           try {
             project = await remote.createProject(tid, input)
           } catch (error) {
+            if (!isCurrent(tid, userId)) return undefined
             return projectFailureOf(error, input)
           }
+          if (!isCurrent(tid, userId)) return undefined
           set((s) => ({
             projects: [...s.projects.filter((p) => p.id !== project.id), project],
             // The page waited only for a project to start chats in.
@@ -518,9 +566,9 @@ export const useChatStore = create<State>()(
           void sendRemote(id, draft.text)
         },
         stop: (id) => {
-          const tid = get().tenantId
+          const { tenantId: tid, userId } = get()
           // A first prompt still being admitted has nothing to stop yet.
-          if (!isRemote(id) || !tid) return
+          if (!isRemote(id) || !tid || !userId) return
           // The fixed Node ends the whole session, and its stream can report that before the
           // stop request returns; the reason is set first so the marker reads right either way.
           // Prompts queued behind the stopped turn can never be sent.
@@ -528,7 +576,11 @@ export const useChatStore = create<State>()(
             refresh(id, (s) => ({ views: { ...s.views, [id]: (s.views[id] ?? []).map((v) => (v.ended ? v : { ...v, endReason })) } }))
           set((s) => ({ queued: { ...s.queued, [id]: [] } }))
           reason('stopped')
-          remote.stop(tid, id).catch((error: unknown) => (reason(''), notify(id, failureOf(error))))
+          remote.stop(tid, id).catch((error: unknown) => {
+            if (!isCurrent(tid, userId)) return
+            reason('')
+            notify(id, failureOf(error))
+          })
         },
         setDraft: (id, draft) => set((s) => ({ drafts: { ...s.drafts, [id]: draft } })),
         unqueue: (id, index) =>
@@ -539,14 +591,12 @@ export const useChatStore = create<State>()(
       name: 'ora-v2-chat',
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // The backend keeps the order of its projects; this copy covers a backend that cannot run
-      // chats.
-      partialize: (s) => ({ projectOrder: s.projects.map((p) => p.id), sidebar: s.sidebar }),
+      // The backend keeps project order per person. Only browser layout survives a reload.
+      partialize: (s) => ({ sidebar: s.sidebar }),
       merge: (persisted, current) => {
-        const saved = persisted as { projectOrder?: string[]; sidebar?: SidebarLayout } | undefined
+        const saved = persisted as { sidebar?: SidebarLayout } | undefined
         return {
           ...current,
-          projects: ordered(current.projects, saved?.projectOrder ?? []),
           sidebar: { ...current.sidebar, ...saved?.sidebar },
         }
       },
@@ -556,27 +606,13 @@ export const useChatStore = create<State>()(
 
 /** Resets everything to the initial state; tests call it between cases. */
 export function resetChatStore() {
-  for (const stop of streams.values()) stop()
-  streams.clear()
-  drained.clear()
-  awaitingTurnEnd.clear()
+  connectionVersion++
+  stopFollowing()
   useChatStore.setState({
-    projects: [],
-    sessions: [],
-    conversations: {},
-    queued: {},
-    unread: {},
-    drafts: {},
+    ...blankChat(),
     sidebar: defaultSidebar,
     tenantId: undefined,
+    userId: undefined,
     backend: 'idle',
-    executors: [],
-    views: {},
-    pending: {},
-    notices: {},
-    newChat: { projectId: '', agent: '', model: '' },
-    newChatOpens: 0,
-    selectedId: undefined,
-    selectedRunId: undefined,
   })
 }

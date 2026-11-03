@@ -27,7 +27,8 @@ const renderPage = async () => {
       </QueryClientProvider>
     </MemoryRouter>,
   )
-  await within(sidebar()).findByRole('region', { name: '项目 ora-space/cloud' })
+  const column = await screen.findByRole('complementary', { name: '聊天记录' })
+  await within(column).findByRole('region', { name: '项目 ora-space/cloud' })
 }
 const sidebar = () => screen.getByRole('complementary', { name: '聊天记录' })
 const project = () => within(sidebar()).getByRole('region', { name: '项目 ora-space/cloud' })

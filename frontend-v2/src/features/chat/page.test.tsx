@@ -3,7 +3,9 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { UserContext } from '@/app/auth/user'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { demoUser } from '@/test/backend'
 import Page from './page'
 import { resetChatStore, useChatStore } from './store'
 import { type ChatBackend, chatBackend, FakeEventSource, line, tenantId } from './test-backend'
@@ -12,9 +14,11 @@ const renderPage = (url = '/chat') =>
   render(
     <MemoryRouter initialEntries={[url]}>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <TooltipProvider>
-          <Page />
-        </TooltipProvider>
+        <UserContext.Provider value={demoUser}>
+          <TooltipProvider>
+            <Page />
+          </TooltipProvider>
+        </UserContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>,
   )
@@ -22,7 +26,8 @@ const sidebar = () => screen.getByRole('complementary', { name: '聊天记录' }
 /** Renders the page and waits until it has loaded the backend's projects. */
 const renderReady = async () => {
   renderPage()
-  await within(sidebar()).findByRole('region', { name: '项目 ora-space/cloud' })
+  const column = await screen.findByRole('complementary', { name: '聊天记录' })
+  await within(column).findByRole('region', { name: '项目 ora-space/cloud' })
 }
 
 describe('chat page', () => {
@@ -246,7 +251,8 @@ describe('chat page', () => {
 
   it('folds the history column away and brings it back', async () => {
     renderPage()
-    await userEvent.click(within(sidebar()).getByRole('button', { name: '收起对话列表' }))
+    const column = await screen.findByRole('complementary', { name: '聊天记录' })
+    await userEvent.click(within(column).getByRole('button', { name: '收起对话列表' }))
     expect(screen.queryByRole('complementary', { name: '聊天记录' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '展开对话列表' }))
     expect(sidebar()).toBeInTheDocument()
@@ -255,7 +261,7 @@ describe('chat page', () => {
 
   it('resizes the history column from its edge, folding it past the narrowest width', async () => {
     renderPage()
-    const edge = screen.getByRole('separator', { name: '调整对话列表宽度' })
+    const edge = await screen.findByRole('separator', { name: '调整对话列表宽度' })
     edge.focus()
     await userEvent.keyboard('{ArrowRight}')
     expect(sidebar()).toHaveStyle({ width: '304px' })

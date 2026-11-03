@@ -2,6 +2,7 @@ import { SquarePenIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import { useGetApiV1MeTenants } from '@/api/me/me'
+import { useUser } from '@/app/auth/user'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Composer } from './components/composer'
@@ -33,16 +34,19 @@ const slide = { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
  * chat when neither is. `?run=<id>` opens that run, so other pages can link straight to it.
  */
 export default function Page() {
+  const user = useUser()
   const session = useChatStore((s) => s.sessions.find((x) => x.id === s.selectedId))
   const runId = useChatStore((s) => s.selectedRunId)
-  const tenantId = useGetApiV1MeTenants().data?.items[0]?.id
+  const tenants = useGetApiV1MeTenants()
+  const tenantId = tenants.data?.items[0]?.id
+  const connected = useChatStore((s) => !!tenantId && s.tenantId === tenantId && s.userId === user.id)
   const [params, setParams] = useSearchParams()
   const linkedRun = params.get('run')
   useEffect(() => {
-    if (tenantId) void useChatStore.getState().connect(tenantId)
-  }, [tenantId])
+    if (tenantId) void useChatStore.getState().connect(tenantId, user.id)
+  }, [tenantId, user.id])
   useEffect(() => {
-    if (!linkedRun) return
+    if (!connected || !linkedRun) return
     useChatStore.getState().selectRun(linkedRun)
     setParams(
       (p) => {
@@ -51,7 +55,29 @@ export default function Page() {
       },
       { replace: true },
     )
-  }, [linkedRun, setParams])
+  }, [connected, linkedRun, setParams])
+  if (tenants.isError) {
+    return (
+      <div role="alert" className="flex min-h-0 flex-1 items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+        <span>无法加载工作区。</span>
+        <Button size="sm" variant="outline" onClick={() => void tenants.refetch()}>重试</Button>
+      </div>
+    )
+  }
+  if (!tenantId) {
+    return (
+      <div role="status" className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+        {tenants.isPending ? '正在加载工作区…' : '你还没有可用的工作区。'}
+      </div>
+    )
+  }
+  if (!connected) {
+    return (
+      <div role="status" className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+        正在加载对话…
+      </div>
+    )
+  }
   return (
     <div className="flex min-h-0 flex-1">
       <Sidebar />

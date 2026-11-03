@@ -92,6 +92,8 @@ func (s *Store) RetireLegacyDemoUser(ctx context.Context) error {
 
 // UpsertUser creates or updates one account and its demo-team membership, returning the user id.
 // It is the write behind both the startup preset and the test fixtures; browsers never reach it.
+// A soft-deleted account is never resurrected: listing it again refreshes nothing but its name, and
+// it gets no starter catalog, because login and invitation both refuse a deleted address.
 func (s *Store) UpsertUser(ctx context.Context, in PresetUser) (string, error) {
 	email, e := NormalizeEmail(in.Email)
 	if e != nil {
@@ -101,6 +103,7 @@ func (s *Store) UpsertUser(ctx context.Context, in PresetUser) (string, error) {
 		return "", fmt.Errorf("role %q is not %s or %s", in.Role, RoleOwner, RoleMember)
 	}
 	var userID string
+	var live bool
 	e = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var tenantID string
 		if e := tx.QueryRow(ctx, `
@@ -112,8 +115,11 @@ func (s *Store) UpsertUser(ctx context.Context, in PresetUser) (string, error) {
 		if e := tx.QueryRow(ctx, `
 			INSERT INTO users (source, subject, display_name) VALUES ($1, $2, $3)
 			ON CONFLICT (source, subject) DO UPDATE SET display_name = excluded.display_name
-			RETURNING id`, EmailSource, email, in.DisplayName).Scan(&userID); e != nil {
+			RETURNING id, deleted_at IS NULL`, EmailSource, email, in.DisplayName).Scan(&userID, &live); e != nil {
 			return fmt.Errorf("upsert user: %w", e)
+		}
+		if !live {
+			return nil
 		}
 		if _, e := tx.Exec(ctx, `
 			INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, $3)

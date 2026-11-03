@@ -101,6 +101,61 @@ func TestRetirePresetUsersHidesThemAndKeepsInvitedMembers(t *testing.T) {
 	}
 }
 
+func TestRetiredAccountIsNeitherInvitedBackNorGivenStarterSkills(t *testing.T) {
+	f := newSquadFixture(t)
+	ctx := f.ctx
+	owner := f.login(t, "owner", store.RoleOwner)
+	// An account from an older preset: it was created before the starter catalog existed, so it
+	// owns neither a skill nor a seed marker of its own.
+	var legacy string
+	if e := f.db.QueryRow(ctx, `
+		INSERT INTO users (source, subject, display_name) VALUES ('email', 'alice@demo.test', 'Alice')
+		RETURNING id::text`).Scan(&legacy); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Exec(ctx, `
+		INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`,
+		f.tenant, legacy); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.store.RetireUsers(ctx, []store.RetiredUser{{Email: "alice@demo.test"}}); e != nil {
+		t.Fatal(e)
+	}
+
+	// The invitation path refuses the address instead of resurrecting it with a fresh catalog.
+	if _, e := f.store.InviteMember(ctx, f.tenant, owner, store.Invite{Email: "alice@demo.test"}); !errors.Is(e, store.ErrUserUnavailable) {
+		t.Fatalf("inviting a retired address = %v", e)
+	}
+
+	// Listing it in the startup preset again refreshes the name and nothing else: the account stays
+	// deleted, and it gets no starter catalog even though it never had one.
+	if e := f.store.SeedUsers(ctx, store.Preset{Users: []store.PresetUser{
+		{Email: "owner@demo.test", DisplayName: "owner", Role: store.RoleOwner},
+		{Email: "alice@demo.test", DisplayName: "Alice Again", Role: store.RoleMember},
+	}}); e != nil {
+		t.Fatal(e)
+	}
+	var status string
+	var deleted bool
+	if e := f.db.QueryRow(ctx, `
+		SELECT status, deleted_at IS NOT NULL FROM users WHERE id = $1`, legacy).Scan(&status, &deleted); e != nil {
+		t.Fatal(e)
+	}
+	if status != "disabled" || !deleted {
+		t.Fatalf("reseed resurrected the retired account: status=%q deleted=%v", status, deleted)
+	}
+	var skills, seeds int
+	if e := f.db.QueryRow(ctx, `SELECT count(*) FROM v2_skills WHERE user_id = $1`, legacy).Scan(&skills); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.db.QueryRow(ctx, `SELECT count(*) FROM v2_skill_seeds WHERE user_id = $1`, legacy).Scan(&seeds); e != nil {
+		t.Fatal(e)
+	}
+	if skills != 0 || seeds != 0 {
+		t.Fatalf("retired account regained its starter catalog: skills=%d seeds=%d", skills, seeds)
+	}
+}
+
 func TestRetireLegacyDemoUserKeepsItsHistory(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx

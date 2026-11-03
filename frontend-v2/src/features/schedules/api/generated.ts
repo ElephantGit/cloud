@@ -41,6 +41,20 @@ export interface ScheduleChatTarget {
   executorId?: string;
 }
 
+export type ScheduleTaskTargetKind = typeof ScheduleTaskTargetKind[keyof typeof ScheduleTaskTargetKind];
+
+
+export const ScheduleTaskTargetKind = {
+  task: 'task',
+} as const;
+
+export interface ScheduleTaskTarget {
+  kind: ScheduleTaskTargetKind;
+  taskId: string;
+  executorId: string;
+  note: string;
+}
+
 export type ScheduleWorkflowTargetKind = typeof ScheduleWorkflowTargetKind[keyof typeof ScheduleWorkflowTargetKind];
 
 
@@ -68,14 +82,14 @@ export const ScheduleLegacyTargetKind = {
 } as const;
 
 /**
- * Read-only compatibility for previously stored references. Provider fields are preserved without interpretation; only the workflow target above can be written.
+ * Read-only compatibility for previously stored references. Provider fields are preserved without interpretation; only bound workflow and personal task targets can be written.
  */
 export interface ScheduleLegacyTarget {
   kind: ScheduleLegacyTargetKind;
   [key: string]: unknown;
  }
 
-export type ScheduleTarget = ScheduleChatTarget | ScheduleWorkflowTarget | ScheduleLegacyTarget;
+export type ScheduleTarget = ScheduleChatTarget | ScheduleTaskTarget | ScheduleWorkflowTarget | ScheduleLegacyTarget;
 
 export type ScheduleRuleKind = typeof ScheduleRuleKind[keyof typeof ScheduleRuleKind];
 
@@ -85,6 +99,7 @@ export const ScheduleRuleKind = {
   weekdays: 'weekdays',
   weekly: 'weekly',
   hours: 'hours',
+  once: 'once',
 } as const;
 
 export interface ScheduleRule {
@@ -97,19 +112,21 @@ export interface ScheduleRule {
   days: number[];
   hours: number;
   timezone: string;
+  /** Local calendar date for a one-time trigger (YYYY-MM-DD). */
+  date?: string;
 }
 
 export interface ScheduleInput {
   name: string;
   projectId: string;
-  target: ScheduleChatTarget | ScheduleWorkflowTarget;
+  target: ScheduleChatTarget | ScheduleTaskTarget | ScheduleWorkflowTarget;
   rule: ScheduleRule;
 }
 
 export interface ScheduleUpdate {
   name: string;
   projectId: string;
-  target: ScheduleChatTarget | ScheduleWorkflowTarget;
+  target: ScheduleChatTarget | ScheduleTaskTarget | ScheduleWorkflowTarget;
   rule: ScheduleRule;
   /** @minimum 1 */
   version: number;

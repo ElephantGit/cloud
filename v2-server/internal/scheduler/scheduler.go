@@ -185,12 +185,16 @@ func (c *Coordinator) Tick(ctx context.Context, scope execution.Scope) error {
 			failures = append(failures, fmt.Errorf("rule %s: %w", config.ID, err))
 			continue
 		}
+		var next time.Time
+		if len(future) > 0 {
+			next = future[0]
+		}
 		cursor, found := s.tasks[config.ID]
 		if !found || cursor.version != config.Version || !cursor.enabled {
-			s.tasks[config.ID] = scheduleCursor{version: config.Version, enabled: true, next: future[0]}
+			s.tasks[config.ID] = scheduleCursor{version: config.Version, enabled: true, next: next}
 			continue
 		}
-		if cursor.next.After(now) {
+		if cursor.next.IsZero() || cursor.next.After(now) {
 			continue
 		}
 		due, err := mostRecentDue(rule, config.CreatedAt, cursor.next, now)
@@ -198,7 +202,7 @@ func (c *Coordinator) Tick(ctx context.Context, scope execution.Scope) error {
 			failures = append(failures, fmt.Errorf("due %s: %w", config.ID, err))
 			continue
 		}
-		s.tasks[config.ID] = scheduleCursor{version: config.Version, enabled: true, next: future[0]}
+		s.tasks[config.ID] = scheduleCursor{version: config.Version, enabled: true, next: next}
 		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, 30*time.Second)
 		item, err := c.records.RecordOccurrence(dispatchCtx, scope.TenantID, scope.UserID, config.ID, store.Trigger{Kind: "scheduled", At: due, Version: config.Version}, now)
 		if err != nil {
@@ -243,6 +247,9 @@ func (c *Coordinator) abandonScheduledRecord(ctx context.Context, scope executio
 }
 
 func mostRecentDue(rule schedule.Rule, created, first, now time.Time) (time.Time, error) {
+	if rule.Kind == "once" {
+		return first, nil
+	}
 	if rule.Kind == "hours" {
 		step := time.Duration(rule.Hours) * time.Hour
 		return created.Add((now.Sub(created) / step) * step).UTC(), nil

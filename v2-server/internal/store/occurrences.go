@@ -139,7 +139,7 @@ func (s *Store) RecordOccurrence(ctx context.Context, tenant, user, id string, t
 			if e != nil {
 				return ErrIneligible
 			}
-			if !next[0].Equal(t.At) {
+			if len(next) == 0 || !next[0].Equal(t.At) {
 				return ErrIneligible
 			}
 		}

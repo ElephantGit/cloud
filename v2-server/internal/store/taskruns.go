@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// ScheduledTaskStartPrefix cannot occur in a client Idempotency-Key HTTP header.
+const ScheduledTaskStartPrefix = "\nschedule:"
 
 // Task run end reasons; the empty reason is a live run.
 const (
@@ -42,6 +46,7 @@ type TaskRun struct {
 	TenantID      string     `json:"-"`
 	StartedBy     string     `json:"startedBy"`
 	StartedByName string     `json:"startedByName"`
+	Scheduled     bool       `json:"scheduled,omitempty"`
 	StartKey      string     `json:"-"`
 	ExecutorID    string     `json:"executorId"`
 	ExecutorName  string     `json:"executorName"`
@@ -98,6 +103,7 @@ func scanTaskRun(row pgx.Row) (TaskRun, error) {
 	if e != nil {
 		return r, e
 	}
+	r.Scheduled = strings.HasPrefix(r.StartKey, ScheduledTaskStartPrefix)
 	switch {
 	case r.EndedAt != nil:
 		r.State = TaskRunEnded
@@ -195,6 +201,7 @@ func (s *Store) TaskRunByKey(ctx context.Context, tenant, taskID, user, key stri
 
 // NewTaskRun is a run about to ask the execution service for its first turn.
 type NewTaskRun struct {
+	ExpectedVersion                                                 int64
 	TenantID, TaskID, StartedBy, StartKey, ExecutorID, ExecutorName string
 }
 
@@ -202,10 +209,20 @@ type NewTaskRun struct {
 // ErrRunActive: the caller ends it first.
 func (s *Store) CreateTaskRun(ctx context.Context, in NewTaskRun) (TaskRun, error) {
 	var id string
-	e := s.pool.QueryRow(ctx, `
-		INSERT INTO v2_task_runs (task_id, tenant_id, started_by, start_key, executor_id, executor_name)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		in.TaskID, in.TenantID, in.StartedBy, in.StartKey, in.ExecutorID, in.ExecutorName).Scan(&id)
+	query := `INSERT INTO v2_task_runs (task_id,tenant_id,started_by,start_key,executor_id,executor_name) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`
+	args := []any{in.TaskID, in.TenantID, in.StartedBy, in.StartKey, in.ExecutorID, in.ExecutorName}
+	if in.ExpectedVersion != 0 {
+		// Reserve against the version whose assignment/status was checked. FOR UPDATE
+		// serializes this admission with reassignment and manual state transitions.
+		query = `INSERT INTO v2_task_runs (task_id,tenant_id,started_by,start_key,executor_id,executor_name)
+ SELECT $1::uuid,$2::uuid,$3::uuid,$4,$5,$6 FROM
+ (SELECT id FROM v2_tasks WHERE id=$1 AND tenant_id=$2 AND version=$7 FOR UPDATE) eligible RETURNING id`
+		args = append(args, in.ExpectedVersion)
+	}
+	e := s.pool.QueryRow(ctx, query, args...).Scan(&id)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return TaskRun{}, ErrConflict
+	}
 	var pg *pgconn.PgError
 	if errors.As(e, &pg) && pg.Code == "23505" {
 		return TaskRun{}, ErrRunActive
@@ -225,8 +242,9 @@ func (s *Store) DeleteTaskRun(ctx context.Context, id string) error {
 // RecordTaskTurn notes an accepted turn: the run's session and its now running last turn.
 func (s *Store) RecordTaskTurn(ctx context.Context, runID, sessionID, turnID string) error {
 	tag, e := s.pool.Exec(ctx, `
-		UPDATE v2_task_runs SET session_id = $2, last_turn_id = $3, turn_active = true,
-			last_result = '', failure_code = ''
+		UPDATE v2_task_runs SET session_id = $2, last_turn_id = $3, turn_active = (ended_at IS NULL),
+            last_result = CASE WHEN ended_at IS NULL THEN '' ELSE last_result END,
+            failure_code = CASE WHEN ended_at IS NULL THEN '' ELSE failure_code END
 		WHERE id = $1 AND (session_id IS NULL OR session_id = $2)`, runID, sessionID, turnID)
 	if e != nil {
 		return fmt.Errorf("record task turn: %w", e)

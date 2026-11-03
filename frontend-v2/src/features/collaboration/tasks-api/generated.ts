@@ -242,6 +242,8 @@ export interface TaskRun {
   createdAt: string;
   /** @nullable */
   endedAt: string | null;
+  /** The original task run was started by a schedule. */
+  scheduled?: boolean;
 }
 
 export type TaskMentionType = typeof TaskMentionType[keyof typeof TaskMentionType];

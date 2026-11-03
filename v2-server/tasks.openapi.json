@@ -747,7 +747,7 @@
         "tags": [
           "tasks"
         ],
-        "summary": "The executors that can run the task's Agent",
+        "summary": "The executors that can run the task: its Agent's, or for a person's task every executor that person can run",
         "parameters": [
           {
             "name": "tid",
@@ -836,7 +836,7 @@
         "tags": [
           "tasks"
         ],
-        "summary": "Start a run of the task's Agent under the caller's identity",
+        "summary": "Start a run of the task's Agent, or for a person's task the Agent that person picks, under the caller's identity",
         "parameters": [
           {
             "name": "tid",

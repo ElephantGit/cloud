@@ -208,7 +208,7 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态 |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}/assignment` | 携带 version 指派或清除指派人，显式 `null` 表示清除 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/timeline` | 任务的运行与评论，各按时间先后 |
-| `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行任务所指派 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；任务没指派给 Agent 是 409 `not_agent_task` |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行这个任务的执行器：指派给 Agent 时是该 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；指派给人时，只有负责人本人能读，返回他能用的全部执行器，别人是 409 `not_assignee`；指派给小队或未指派是 409 `not_agent_task` |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs` | 必须带 `Idempotency-Key`；`{executorId?, note?}` 用调用者身份开一次新运行，返回 201。见下文「任务运行」 |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop` | 结束一次活着的运行：正在执行的一轮先取消，空闲的会话直接结束；任何成员都可以停 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events` | 运行会话的 SSE，形状与对话事件流相同；工作区任何成员都能读 |
@@ -238,7 +238,7 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 
 #### 任务运行
 
-任务运行（[`internal/taskrun`](internal/taskrun/taskrun.go)，表 `v2_task_runs`）是任务所指派 Agent 的一次执行会话，
+任务运行（[`internal/taskrun`](internal/taskrun/taskrun.go)，表 `v2_task_runs`）是任务所指派 Agent（派给人的任务是负责人选的 Agent）的一次执行会话，
 经公共执行服务以调用方类型 `task` 运行，Caller ID 是运行 ID。和对话不同，它属于团队：
 
 - **身份归发起人**：会话在点「开始处理」的人的 scope 下运行。工作区任何成员都能读运行和它的事件流
@@ -248,7 +248,9 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
   页面不排队，追问在一轮执行中同样是 409 `run_active`。
 - **停止即结束这次运行**：固定 Node 上取消一轮会结束整个会话，之后只能重新执行。任务完成或取消时结束空闲会话（`closed`）。
 - **重启**：进程启动前把上一个进程留下的活运行记为 `interrupted`，正在执行的任务回到 `pending`；不重放、不恢复。
-- **执行器**：`executorId` 必须是任务所指派 Agent 的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
+- **派给人的任务**：负责人本人可以用自己选的 Agent 处理，执行器就决定了 Agent。只有负责人能开运行（包括重新执行和 `toAgent` 评论开的新运行），
+  别人是 409 `not_assignee`；别人仍能看过程、停止。跑完、停止对任务状态的推进与 Agent 任务相同。
+- **执行器**：`executorId` 必须是上面 `executors` 列出的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
 - **列表**：任务带 `activeRun`（活着的运行的发起人、执行器与 `running`/`idle`），列表不用逐个读时间线就能显示谁在干活。
 
 评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的

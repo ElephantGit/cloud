@@ -465,6 +465,46 @@ func TestRunsNeedAnAgentAndItsOwnExecutor(t *testing.T) {
 	}
 }
 
+func TestAPersonRunsTheAgentTheyPickOnTheirOwnTask(t *testing.T) {
+	f := newFixture(t)
+	task, e := f.store.CreateTask(f.ctx, f.tenant, f.owner.UserID, store.TaskInput{Title: "修复登录页", ProjectID: f.project,
+		Assignee: &store.TaskAssigneeRef{Type: store.AssigneeHuman, ID: f.member.UserID}})
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	// Everyone else only watches: listing, starting and a comment to the Agent are refused alike.
+	if _, e := f.host.Executors(f.ctx, f.owner, task.ID); !errors.Is(e, taskrun.ErrNotAssignee) {
+		t.Fatalf("executors for another person = %v", e)
+	}
+	if _, e := f.host.Start(f.ctx, f.owner, task.ID, "k-owner", taskrun.StartInput{}); !errors.Is(e, taskrun.ErrNotAssignee) {
+		t.Fatalf("start by another person = %v", e)
+	}
+	if _, e := f.host.Comment(f.ctx, f.owner, task.ID, "c-owner", taskrun.CommentInput{Body: "我来", ToAgent: true}); !errors.Is(e, taskrun.ErrNotAssignee) {
+		t.Fatalf("comment to the Agent by another person = %v", e)
+	}
+
+	// The assignee picks from every executor they can run, of any Agent.
+	list, e := f.host.Executors(f.ctx, f.member, task.ID)
+	if e != nil || len(list) != 3 {
+		t.Fatalf("assignee's executors = %+v %v", list, e)
+	}
+	run, e := f.host.Start(f.ctx, f.member, task.ID, "k-member", taskrun.StartInput{ExecutorID: "claude:fixture"})
+	if e != nil || run.ExecutorID != "claude:fixture" || run.StartedBy != f.member.UserID {
+		t.Fatalf("assignee's run = %+v %v", run, e)
+	}
+	if got := f.read(t, task.ID); got.Status != store.TaskRunning {
+		t.Fatalf("task while running = %+v", got)
+	}
+	f.port.finish(t, run.LastTurnID, execution.StatusCompleted)
+	f.await(t, task.ID, store.TaskReview)
+
+	// Anyone may still stop the run: it spends nobody's identity.
+	if _, e := f.host.Stop(f.ctx, f.owner, task.ID, run.ID); e != nil {
+		t.Fatalf("stop by another person = %v", e)
+	}
+}
+
 func TestInterruptEndsRunsLeftByThePreviousProcess(t *testing.T) {
 	f := newFixture(t)
 	task := f.task(t, opencode)

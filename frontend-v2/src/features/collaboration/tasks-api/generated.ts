@@ -938,7 +938,7 @@ export function useGetTaskTimeline<TData = Awaited<ReturnType<typeof getTaskTime
 
 
 /**
- * @summary The executors that can run the task's Agent
+ * @summary The executors that can run the task: its Agent's, or for a person's task every executor that person can run
  */
 export const listTaskExecutors = (
     tid: string,
@@ -1015,7 +1015,7 @@ export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskE
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary The executors that can run the task's Agent
+ * @summary The executors that can run the task: its Agent's, or for a person's task every executor that person can run
  */
 
 export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(
@@ -1038,7 +1038,7 @@ export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskE
 
 
 /**
- * @summary Start a run of the task's Agent under the caller's identity
+ * @summary Start a run of the task's Agent, or for a person's task the Agent that person picks, under the caller's identity
  */
 export const startTaskRun = (
     tid: string,
@@ -1094,7 +1094,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type StartTaskRunMutationVariables = {tid: string;taskid: string;data: BodyType<TaskRunStart>}
 
     /**
- * @summary Start a run of the task's Agent under the caller's identity
+ * @summary Start a run of the task's Agent, or for a person's task the Agent that person picks, under the caller's identity
  */
 export const useStartTaskRun = <TError = ErrorType<TaskError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startTaskRun>>, TError,StartTaskRunMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}

@@ -3,6 +3,9 @@
 // can send it another turn, because the turn would run on their identity. Others start their own
 // run instead, which ends the previous idle one.
 //
+// A task assigned to an Agent runs that Agent, and any member may start it. A task assigned to a
+// person runs the Agent that person picks, and only they start it: the work is theirs.
+//
 // The run moves its task: starting or following up puts it in 进行中, a finished turn (completed or
 // failed) hands it to 待验收, and a stopped or interrupted turn returns it to 待处理. While a turn
 // runs, nobody moves the task by hand. Runs never outlive the process: Interrupt ends what a
@@ -24,8 +27,10 @@ import (
 
 // Errors the HTTP layer maps to stable codes.
 var (
-	// ErrNotAgentTask reports a run on a task that is not assigned to an Agent.
-	ErrNotAgentTask = errors.New("task not assigned to an agent")
+	// ErrNotAgentTask reports a run on a task assigned to neither an Agent nor a person.
+	ErrNotAgentTask = errors.New("task not assigned to an agent or a person")
+	// ErrNotAssignee reports a run on a person's task by someone other than that person.
+	ErrNotAssignee = errors.New("task assigned to someone else")
 	// ErrNoExecutor reports an Agent with no runnable executor, or an executor of another Agent.
 	ErrNoExecutor = errors.New("no executor for the task's agent")
 	// ErrTaskClosed reports a run on a task that is done or cancelled.
@@ -118,7 +123,8 @@ func (h *Host) lock(taskID string) func() {
 	return l.Unlock
 }
 
-// Executors lists the executors that can run the task's Agent: the catalog entries of its plugin.
+// Executors lists the executors that can run the task: for an Agent's task the catalog entries of
+// its plugin, for a person's task every executor that person can run, since they pick the Agent.
 func (h *Host) Executors(ctx context.Context, scope execution.Scope, taskID string) ([]execution.Executor, error) {
 	task, e := h.store.Task(ctx, scope.TenantID, scope.UserID, taskID)
 	if e != nil {
@@ -128,12 +134,20 @@ func (h *Host) Executors(ctx context.Context, scope execution.Scope, taskID stri
 }
 
 func (h *Host) executorsFor(ctx context.Context, scope execution.Scope, task store.Task) ([]execution.Executor, error) {
-	if task.Assignee == nil || task.Assignee.Type != store.AssigneeAgent {
+	human := task.Assignee != nil && task.Assignee.Type == store.AssigneeHuman
+	switch {
+	case human && task.Assignee.ID != scope.UserID:
+		// A person's task runs on that person's identity, so only they start it.
+		return nil, ErrNotAssignee
+	case !human && (task.Assignee == nil || task.Assignee.Type != store.AssigneeAgent):
 		return nil, ErrNotAgentTask
 	}
 	all, e := h.catalog.ListExecutors(ctx, scope)
 	if e != nil {
 		return nil, e
+	}
+	if human {
+		return all, nil
 	}
 	out := []execution.Executor{}
 	for _, x := range all {

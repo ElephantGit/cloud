@@ -28,6 +28,11 @@ describe('execution target boundaries',()=>{
   expect(validateDraft({...draft,kind:'task'})).toHaveProperty('target')
   expect(()=>targetFromDraft({...draft,kind:'task'})).toThrow('引用目标只读')
  })
+ it('saves independent Agent and model IDs without an executor binding',()=>{
+  const data={projects:[{id:'p',name:'Demo',description:''}],models:[],agents:[{id:'official/claude',name:'Claude Code',version:'1.0.0',models:[{id:'messages-fixture',name:'Fixture'}]}],available:{projects:true,models:true,agents:true}}
+  const draft={...emptyDraft(),name:'项目任务',projectId:'p',prompt:'检查',agentId:'official/claude',agent:'Claude Code',model:'messages-fixture'}
+  expect(targetFromDraft(draft,data)).toEqual({kind:'chat',prompt:'检查',agent:'Claude Code',agentId:'official/claude',model:'messages-fixture'})
+ })
  it('freezes the published snapshot of the chosen workflow, in a required project',()=>{
   const data={projects:[{id:'p',name:'Demo',description:''}],workflows:[{id:'wf',name:'周报流程',version:'v3',snapshotId:'snap-3'}]}
   const draft={...emptyDraft(),name:'周报',kind:'workflow' as const,workflowId:'wf',snapshotId:'snap-1',input:'整理'}

@@ -65,11 +65,14 @@ type Target struct {
 	ProjectID string
 }
 
-// StartRequest starts a session with its first turn. ExecutorID references a server-owned
-// Agent-plugin/model binding; it never contains provider credentials or executable paths.
+// StartRequest starts a session with its first turn. New callers select an Agent and a model
+// independently; ExecutorID is retained for older frozen configs that selected the pair as one
+// binding. Neither form contains provider credentials or executable paths.
 type StartRequest struct {
 	Caller     Caller
 	Target     Target
+	AgentID    string
+	ModelID    string
 	ExecutorID string
 	Prompt     Prompt
 }

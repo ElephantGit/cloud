@@ -9,7 +9,7 @@ import { signIn } from './login.ts'
  */
 const modelAnswer = 'V2 fixture response.'
 const agentAnswer = 'V2 fixture complete. Real Agent executed the shell tool.'
-/** Agent runs need the prepared Node assets; CI without them keeps the executor list empty. */
+/** Agent runs need the prepared Node assets; CI without them keeps the Agent list empty. */
 const nodeAssets = process.env.V2_NODE_ASSETS_DIR
 const agentTimeout = 240_000
 
@@ -24,10 +24,12 @@ async function createSchedule(page: Page, name: string, prompt: string, agent = 
   await page.locator('header').getByRole('button', { name: '新建任务', exact: true }).click()
   await dialog.getByRole('textbox', { name: '任务名称' }).fill(name)
   await dialog.getByRole('textbox', { name: '任务指令' }).fill(prompt)
-  await dialog.getByRole('combobox', { name: '模型', exact: true }).selectOption('fixture')
   if (agent) {
     await dialog.getByRole('combobox', { name: '关联项目', exact: true }).selectOption({ label: 'Demo' })
-    await dialog.getByRole('combobox', { name: '执行器', exact: true }).selectOption({ label: 'OpenCode / Fixture' })
+    await dialog.getByRole('combobox', { name: 'Agent', exact: true }).selectOption({ label: 'OpenCode' })
+    await dialog.getByRole('combobox', { name: '模型', exact: true }).selectOption({ label: 'Fixture' })
+  } else {
+    await dialog.getByRole('combobox', { name: '模型', exact: true }).selectOption('fixture')
   }
   await dialog.getByRole('button', { name: '创建并启用' }).click()
   await expect(dialog.getByRole('heading', { name })).toBeVisible()

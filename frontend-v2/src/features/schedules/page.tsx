@@ -94,7 +94,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
       </header>
 
       <div className="sp-resource-status" aria-live="polite">
-        {resourceQuery.isPending?'正在读取执行资源…':resourceQuery.isError?`${scheduleError(resourceQuery.error,'执行资源加载失败。')}${hasResources?' 当前继续使用上次读取的资源。':''}`:!resources.available.models?'执行服务尚未就绪，当前可保存未绑定模型的配置。':'项目、模型与执行器来自当前工作空间；执行以运行记录为准。'}
+        {resourceQuery.isPending?'正在读取执行资源…':resourceQuery.isError?`${scheduleError(resourceQuery.error,'执行资源加载失败。')}${hasResources?' 当前继续使用上次读取的资源。':''}`:!resources.available.models?'执行服务尚未就绪，当前可保存未绑定模型的配置。':'项目、Agent 与模型来自当前工作空间；执行以运行记录为准。'}
         <Button variant="outline" size="sm" disabled={resourceQuery.isFetching} onClick={()=>void resourceQuery.refetch()}>刷新资源</Button>
       </div>
       <div className="sp-summary-strip" aria-label="任务概览">

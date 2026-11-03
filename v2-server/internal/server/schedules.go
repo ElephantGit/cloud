@@ -63,8 +63,11 @@ func validateSchedule(in *store.ScheduleInput) string {
 	if code != "" {
 		return code
 	}
-	if target.Kind == "chat" && in.ProjectID != "" && (!scheduleUUID.MatchString(in.ProjectID) || target.ExecutorID == "") {
-		return "invalid_project_executor"
+	if target.Kind == "chat" && in.ProjectID != "" && (!scheduleUUID.MatchString(in.ProjectID) || target.Model == "" || (target.AgentID == "" && target.ExecutorID == "")) {
+		return "invalid_project_agent"
+	}
+	if target.Kind == "chat" && in.ProjectID == "" && (target.AgentID != "" || target.ExecutorID != "") {
+		return "project_required"
 	}
 	if target.Kind == "workflow" {
 		if _, code := decodeScheduleWorkflow(in.Target); code != "" {

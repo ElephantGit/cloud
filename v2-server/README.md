@@ -111,13 +111,13 @@ Skill 占用同名路径时保留原内容，不覆盖；已经启动的会话�
 | `POST /api/v2/tenants/{tid}/schedule-configs` | 创建配置，返回 201，初始 version 为 1、enabled 为 true |
 | `PUT /api/v2/tenants/{tid}/schedule-configs/{id}` | 携带 version 修改配置，保留 enabled 和创建时间 |
 | `PATCH /api/v2/tenants/{tid}/schedule-configs/{id}/enabled` | 携带 version 和 enabled 暂停/恢复配置 |
-| `GET /api/v2/tenants/{tid}/schedule-resources` | 当前有效成员的真实项目、模型和执行器投影；分别标明目录是否可用，不返回后端路径或凭据 |
+| `GET /api/v2/tenants/{tid}/schedule-resources` | 当前有效成员的真实项目、Agent 和模型投影；Agent 带自己的可运行模型，分别标明目录是否可用，不返回后端路径或凭据 |
 
 接口要求登录 cookie、有效成员关系及创建者归属。无权限资源返回 404，过期版本返回 409，缺失更新版本返回 428；每次修改递增版本。配置持久存储于 PostgreSQL，服务重新启动后保留。请求大小限制 64 KiB，拒绝未知字段，并校验时间、时区、星期和间隔。
 
-对话配置保存时按当前权限验证绑定：无项目的 model ID 必须来自共享 Catalog；有项目的 projectId 必须来自当前租户的共享项目存储，target.executorId 必须匹配共享执行器和所选 model ID。agent 字段只用于展示，不作为执行身份。公共目录未就绪或选择失效时拒绝写入，不猜测默认模型/项目。兼容未绑定执行的文本配置：无项目、空模型、无 executorId 可先保存，运行时仍不能通过 model_required 门禁。
+对话配置保存时按当前权限验证绑定：无项目的 model ID 必须来自直接模型 Catalog；有项目的 projectId 必须来自当前租户的共享项目存储，target.agentId 必须来自共享执行目录且该 Agent 能运行所选 model ID。新配置不再写 executorId；旧配置仍可按冻结的 executorId 读取和执行。`agent` 只是展示名，不参与执行身份。公共目录未就绪或选择失效时拒绝写入，不猜测默认 Agent/模型/项目。兼容未绑定执行的文本配置：无项目、空模型、空 Agent 可先保存，运行时仍不能通过 model_required 门禁。
 
-资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/模型/执行器在每次保存时重检，真正执行时仍由公共服务再次鉴权。
+资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/Agent/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/Agent/模型在每次保存时重检，真正执行时仍由公共服务再次鉴权。
 
 配置响应中的 `runs` 保留兼容空列表。前端另消费执行操作和历史领域的独立候选契约 `schedule-actions.openapi.json` / `schedule-history.openapi.json`；调度 Host、操作入口和只读历史后端已在主干装配，页面通过这些契约读取实际运行事实，不生成模拟结果。
 
@@ -406,7 +406,7 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 
 [`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
 
-ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
+ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.agentId、target.model；旧任务仍可传冻结的 target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失 Agent/model、工作流目标明确拒绝，不从展示名称猜测可执行绑定。
 
 协调器本身不创建 goroutine；main 的 Host 接入周期扫描和上述 HTTP 操作，前端页面已接入运行与取消等操作。main 注入公共 `executionruntime.Service` 驱动实际派发；普通测试通过公共 Stub 和实际 PostgreSQL 验证编排、HTTP 和生命周期，opt-in 测试另组合真实公共 Service。
 

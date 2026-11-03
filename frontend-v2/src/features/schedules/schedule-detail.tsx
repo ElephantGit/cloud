@@ -8,7 +8,7 @@ import { listScheduleHistory, getScheduleHistoryItem, getScheduleExecutionResult
 import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import type { ScheduleResources } from './api/generated'
-import { type Catalog, formatTime, isWorkflowTarget, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
+import { type Catalog, formatTime, isWorkflowTarget, modelLabel, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
 import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isDeletedWorkflowRun, isTerminalActionRejection, manualRequestKey, occurrenceWorkflowRun, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
 const workflowRunLabels: Record<string,string> = { pending: '未开始', running: '运行中', awaitingInput: '等待输入', succeeded: '成功', failed: '失败', cancelled: '已取消' }
@@ -47,6 +47,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const available=runnable(task,resources)
  const target=task.target
  const workflow=isWorkflowTarget(target)?resources.workflows.find(w=>w.id===target.workflowId):undefined
+ const targetAgent=target.kind==='chat'?resources.agents.find(a=>target.agentId?a.id===target.agentId:a.name===target.agent):undefined
  const canCancel=!!selected&&!selected.released&&['running','cancelling','succeeded','failed','cancelled','interrupted'].includes(selected.status)
  const cleanup=!!selected&&['succeeded','failed','cancelled','interrupted'].includes(selected.status)
  return <div className="sp-detail">
@@ -59,7 +60,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     <div className="sp-config-heading">运行环境</div><dl className="sp-key-values">
      <div><dt>关联项目</dt><dd>{projectName(task.projectId,data)}</dd></div>
      {isWorkflowTarget(target)&&<div><dt>工作流</dt><dd>{!workflow?'原工作流暂不可用':workflow.snapshotId===target.snapshotId?`${workflow.name}（${workflow.version}）`:`${workflow.name}（固定的旧版本；生效版本已是 ${workflow.version}，编辑保存后改用）`}</dd></div>}
-     {target.kind==='chat'&&<><div><dt>模型</dt><dd>{resources.models.find(m=>m.id===target.model)?.name??(target.model?'原模型暂不可用':'尚未选择模型')}</dd></div><div><dt>执行器</dt><dd>{!task.projectId?'无需执行器':resources.executors.find(e=>e.id===target.executorId)?.name??'原执行器暂不可用'}</dd></div></>}
+     {target.kind==='chat'&&<><div><dt>Agent</dt><dd>{!task.projectId?'无需 Agent':targetAgent?.name??(target.agent?'原 Agent 暂不可用':'尚未选择 Agent')}</dd></div><div><dt>模型</dt><dd>{target.model?modelLabel(target,data)||'原模型暂不可用':'尚未选择模型'}</dd></div></>}
      <div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div>
     </dl>
     <div className="sp-time-preview"><div><Clock3 size={15}/><strong>预计触发时间</strong></div>{nextTimes(task.rule,now,new Date(task.createdAt)).map((date,i)=><p key={date.toISOString()}><span>{i+1}</span>{formatTime(date,task.rule.timezone)}</p>)}</div>

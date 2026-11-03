@@ -105,6 +105,8 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   page,
   browser,
 }) => {
+  // Four plugin installs each wait 3-5 seconds before reaching the server.
+  test.setTimeout(90_000)
   await login(page, '/settings/plugins')
   const row = page.getByRole('article', { name: 'Matt Pocock Skills' })
   await expect(row).toBeVisible()
@@ -114,7 +116,9 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   const install = row.getByRole('button', { name: /^(安装|重试安装)$/ })
   if (await install.count()) {
     await install.click()
-    await expect(row.getByText('等待节点', { exact: true })).toBeVisible()
+    await expect(row.getByText('等待节点', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
   }
   await row.getByRole('button', { name: '移除' }).click()
   await page
@@ -140,7 +144,7 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
     .click()
   await expect(
     page.getByRole('dialog').getByText('等待节点', { exact: true }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: 15_000 })
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.goto('/settings/skills')

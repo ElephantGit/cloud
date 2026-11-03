@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -45,33 +46,57 @@ func TestGraphs(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := doc.Nodes[1].Data["agentConfig"].(map[string]any)["outputContract"].(map[string]any)["schema"].(map[string]any)
-	parsed, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"增加筛选","description":"按负责人筛选；覆盖空列表测试"}]}`, schema)
-	if err != nil {
+	if _, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"增加筛选","description":"按负责人筛选；覆盖空列表测试"}]}`, schema); err != nil {
 		t.Fatal(err)
-	}
-	g, err := workflow.ParseGraph(graph)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := workflow.NewPool(g)
-	if err := pool.Set("decompose.structured_output", "decompose", parsed); err != nil {
-		t.Fatal(err)
-	}
-	output := doc.Nodes[2].Data["outputs"].([]any)[0].(map[string]any)
-	var selector []string
-	for _, part := range output["variableSelector"].([]any) {
-		selector = append(selector, part.(string))
-	}
-	value, assigned, err := pool.Resolve(selector)
-	if err != nil || !assigned {
-		t.Fatalf("child task output cannot resolve: assigned=%v err=%v", assigned, err)
-	}
-	tasks, ok := value.([]any)
-	if !ok || len(tasks) != 1 || tasks[0].(map[string]any)["title"] != "增加筛选" {
-		t.Fatalf("child task importer requires the tasks array, got %#v", value)
 	}
 	if _, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"缺少验收条件"}]}`, schema); err == nil {
 		t.Fatal("malformed child task accepted")
+	}
+}
+
+func TestAllWorkflowOutputsResolveFromRuntimePool(t *testing.T) {
+	tasks := []any{map[string]any{"title": "增加筛选", "description": "按负责人筛选；覆盖空列表测试"}}
+	for _, tc := range []struct {
+		name     string
+		build    func(WorkflowSeed) (string, error)
+		variable string
+		value    any
+		want     map[string]any
+	}{
+		{"newcomer", NewcomerGraph, "verify.output", "交付说明：测试通过", map[string]any{"delivery": "交付说明：测试通过"}},
+		{"lead", DecompositionGraph, "decompose.structured_output", map[string]any{"tasks": tasks}, map[string]any{"tasks": tasks}},
+		{"ops", OpsGraph, "report.output", "巡检报告：服务正常", map[string]any{"report": "巡检报告：服务正常"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source, err := tc.build(WorkflowSeed{AgentCLI: "official/ora-space.opencode", ModelID: "configured"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			graph, err := workflow.ParseGraph(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pool := workflow.NewPool(graph)
+			writer, _, _ := strings.Cut(tc.variable, ".")
+			if err := pool.Set(tc.variable, writer, tc.value); err != nil {
+				t.Fatal(err)
+			}
+			output, ok := graph.Node("output")
+			if !ok {
+				t.Fatal("workflow has no output node")
+			}
+			got := map[string]any{}
+			for _, binding := range output.OutputBindings() {
+				value, assigned, err := pool.Resolve(binding.Selector)
+				if err != nil || !assigned {
+					t.Fatalf("output %s selector %v cannot resolve: assigned=%v err=%v", binding.Name, binding.Selector, assigned, err)
+				}
+				got[binding.Name] = value
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("workflow result = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
 

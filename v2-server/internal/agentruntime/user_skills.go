@@ -31,15 +31,24 @@ func (p *projectRuntime) attachUserSkills(ctx context.Context, checkout string, 
 		return execution.ErrUnavailable
 	}
 	defer root.Close()
+	var created []string
 	for _, base := range []string{".opencode", ".claude"} {
 		if !ensureSkillDir(root, base) || !ensureSkillDir(root, base+"/skills") {
 			continue
 		}
 		for _, skill := range skills {
-			if err := writeUserSkill(root, base+"/skills/"+skill.Name, skill); err != nil {
+			dir := base + "/skills/" + skill.Name
+			wrote, err := writeUserSkill(root, dir, skill)
+			if err != nil {
 				return execution.ErrUnavailable
 			}
+			if wrote {
+				created = append(created, dir)
+			}
 		}
+	}
+	if excludeFromGit(root, created) != nil {
+		return execution.ErrUnavailable
 	}
 	return nil
 }
@@ -56,26 +65,28 @@ func ensureSkillDir(root *os.Root, path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func writeUserSkill(root *os.Root, dir string, skill UserSkill) error {
+// writeUserSkill creates the skill's directory and SKILL.md, and reports whether it did: an existing
+// path is left as it is.
+func writeUserSkill(root *os.Root, dir string, skill UserSkill) (bool, error) {
 	if err := skilldoc.ValidateName(skill.Name); err != nil {
-		return err
+		return false, err
 	}
 	_, err := root.Lstat(dir)
 	switch {
 	case err == nil:
 		// Project-authored, market-linked, or duplicate catalog names are never overwritten.
-		return nil
+		return false, nil
 	case !errors.Is(err, fs.ErrNotExist):
-		return err
+		return false, err
 	}
 	if !strings.HasPrefix(dir, ".opencode/skills/") && !strings.HasPrefix(dir, ".claude/skills/") {
-		return errors.New("invalid skill projection path")
+		return false, errors.New("invalid skill projection path")
 	}
 	if err := root.Mkdir(dir, 0700); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	content := skilldoc.Render(skilldoc.Document{
 		Name: skill.Name, Description: skill.Description, Content: skill.Content,
@@ -83,16 +94,16 @@ func writeUserSkill(root *os.Root, dir string, skill UserSkill) error {
 	file, err := root.OpenFile(dir+"/SKILL.md", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		if removeErr := root.Remove(dir); removeErr != nil {
-			return errors.Join(err, removeErr)
+			return false, errors.Join(err, removeErr)
 		}
-		return err
+		return false, err
 	}
 	_, writeErr := file.WriteString(content)
 	closeErr := file.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		_ = root.Remove(dir + "/SKILL.md")
 		_ = root.Remove(dir)
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }

@@ -175,6 +175,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/workflow-runs/{rid}/events", h.authed(h.workflowRunEvents))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/workflow-runs/{rid}/nodes/{nodeRunId}/events", h.authed(h.workflowNodeEvents))
 	h.chatRoutes(mux)
+	h.workspaceRoutes(mux)
 	h.taskRunRoutes(mux)
 	h.taskDecompositionRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })

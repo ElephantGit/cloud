@@ -401,6 +401,26 @@ Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不�
 
 HTTP 集成测试按 `chat.openapi.json` 验证 JSON 响应，向注入点传入 `executiontest.Stub`，覆盖对话生命周期、停止后只读、事件流续传、项目顺序和执行不可用；`internal/chat` 的测试用真实 PostgreSQL 和执行端口替身，覆盖幂等重试、结果未知、上一轮未结束、停止与重启后只读和删除顺序。
 
+### Agent 工作区查看
+
+对话页和工作流运行页的右侧面板只读查看 Agent 的工作副本，使用独立候选契约 [`workspace.openapi.json`](workspace.openapi.json)。正式 Cloud 中 Node 运行在沙盒里，服务端读不到工作副本，届时要改为经 Node 读取；这里因为 v2-server 与 Node 同机，直接读本机目录。读取逻辑在 [`internal/workspacefs`](internal/workspacefs)。
+
+| 路由 | 行为 |
+|---|---|
+| `GET …/chat/conversations/{cid}/workspace/entries?path=` | 对话工作副本的一层目录，目录在前；`path` 省略为根 |
+| `GET …/chat/conversations/{cid}/workspace/file?path=` | 一个文本文件的内容 |
+| `GET …/chat/conversations/{cid}/workspace/changes` | 相对克隆时 commit 的变更文件，含未跟踪且未忽略的文件，带增删行数 |
+| `GET …/chat/conversations/{cid}/workspace/diff?path=` | 一个文件相对克隆时 commit 的 unified diff；未变更时为空 |
+| `GET …/workflow-runs/{rid}/workspace/{entries,file,changes,diff}` | 同上，读取该运行各 Agent 节点共用的工作副本 |
+
+`…` 是 `/api/v2/tenants/{tid}`。对话只能读本人的（他人的按 404 `not_found`），运行与运行详情一样对租户成员可见。
+
+- **位置落库**：Agent 运行时在工作副本克隆并物化技能后、Agent 启动前，把 `WorkspaceID → 目录、克隆时 commit` 写进 `v2_workspaces`，所以会话结束、服务重启后仍能查看。还没克隆好时返回 404 `workspace_not_ready`；目录已被 `-cleanup` 删除时返回 410 `workspace_removed`。
+- **路径**：只接受相对路径，解析符号链接后必须仍在工作副本内，`.git` 不可见；越界返回 400 `invalid_path`。目录列表跳过指向工作副本外的符号链接。
+- **上限**：文件 2 MiB、diff 输出 4 MiB（413 `too_large`），含 NUL 或非 UTF-8 的文件返回 422 `binary_file`；目录最多 5000 项、变更最多 2000 个文件，超出时 `truncated`。
+- **不改 Agent 的 Git 状态**：变更和 diff 在 index 的临时副本里把未跟踪文件标为 intent-to-add 后计算，Agent 的 index 不变。git 调用关闭 hooks、fsmonitor、外部 diff 和 textconv。v2 的 Agent 本来就以同一用户在本机执行命令，这些读取不增加它的权限。
+- **简化**：不检测重命名（显示为删除加新增）；不做文件监听，页面在工具调用完成和一轮结束时刷新；工作流只到运行级，不区分节点各自改了哪些文件。新会话物化的技能文件目前也会作为未跟踪文件出现在变更里。
+
 ## 进程内 Agent 执行接口
 
 [`internal/execution`](internal/execution/README.md) 的公共 Go 接口由

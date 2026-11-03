@@ -26,12 +26,13 @@ export async function signInAsInvitedMember(
   const suffix = crypto.randomUUID().slice(0, 8)
   const email = `member-${suffix}@demo.ora-space.dev`
   const name = `受邀成员-${suffix}`
-  await page.goto('/settings/members')
-  const signOut = page.getByRole('button', {
-    name: '退出登录',
-    exact: true,
-  })
-  await expect(signOut.or(page.getByLabel('邮箱'))).toBeVisible()
+  // The members page has a 邮箱 field of its own (the invitation form), so the session is resolved
+  // on the root page, where the only 邮箱 belongs to the login form.
+  await page.goto('/')
+  const signOut = page.getByRole('button', { name: '退出登录', exact: true })
+  await expect(
+    signOut.or(page.getByRole('button', { name: '登录', exact: true })),
+  ).toBeVisible()
   if (await signOut.isVisible()) await signOut.click()
   await signIn(page)
   const tenants = await (await page.request.get('/api/v1/me/tenants')).json()
@@ -40,7 +41,7 @@ export async function signInAsInvitedMember(
     { data: { email, displayName: name } },
   )
   expect(invited.ok()).toBeTruthy()
-  await page.getByRole('button', { name: '退出登录' }).click()
+  await signOut.click()
   await page.goto(path)
   await signIn(page, email)
   return { email, name }

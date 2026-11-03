@@ -196,21 +196,29 @@ func TestRemoteMessagesProviderUsesItsKeyAndProtocolHeaders(t *testing.T) {
 		_, _ = io.WriteString(w, `{"type":"message","usage":{"output_tokens":7}}`)
 	}))
 	defer upstream.Close()
-	p, err := NewRemoteMessagesProvider(upstream.URL+"/v1", "backend-key", upstream.Client().Transport)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"model":"attacker","messages":[]}`))
-	r.Header.Set("X-Api-Key", "agent-token")
-	r.Header.Set("Authorization", "Bearer acp-proxy")
-	r.Header.Set("Anthropic-Version", "2023-06-01")
-	r.Header.Set("Anthropic-Beta", "fine-grained-tool-streaming-2025-05-14")
-	r.Header.Set("X-Caller-Secret", "do-not-forward")
-	w := httptest.NewRecorder()
-	p.Complete(w, r, testModel)
-	want := seen{"/v1/messages", "backend-key", "", "2023-06-01", "fine-grained-tool-streaming-2025-05-14", "", testModel.ID}
-	if got := <-observed; w.Code != 200 || got != want || !strings.Contains(w.Body.String(), `"output_tokens":7`) {
-		t.Fatalf("upstream saw %+v (want %+v), response %d %s", got, want, w.Code, w.Body)
+	for _, tc := range []struct {
+		name        string
+		newProvider func(string, string, http.RoundTripper) (*RemoteProvider, error)
+		key, auth   string
+	}{{"key", NewRemoteMessagesProvider, "backend-key", ""}, {"bearer", NewBearerMessagesProvider, "", "Bearer backend-key"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := tc.newProvider(upstream.URL+"/compatible/v1", "backend-key", upstream.Client().Transport)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest("POST", "/", strings.NewReader(`{"model":"attacker","messages":[]}`))
+			r.Header.Set("X-Api-Key", "agent-token")
+			r.Header.Set("Authorization", "Bearer acp-proxy")
+			r.Header.Set("Anthropic-Version", "2023-06-01")
+			r.Header.Set("Anthropic-Beta", "fine-grained-tool-streaming-2025-05-14")
+			r.Header.Set("X-Caller-Secret", "do-not-forward")
+			w := httptest.NewRecorder()
+			p.Complete(w, r, testModel)
+			want := seen{"/compatible/v1/messages", tc.key, tc.auth, "2023-06-01", "fine-grained-tool-streaming-2025-05-14", "", testModel.ID}
+			if got := <-observed; w.Code != 200 || got != want || !strings.Contains(w.Body.String(), `"output_tokens":7`) {
+				t.Fatalf("upstream saw %+v (want %+v), response %d %s", got, want, w.Code, w.Body)
+			}
+		})
 	}
 	if _, err := NewRemoteMessagesProvider("http://example.test/v1", "key", nil); err == nil {
 		t.Fatal("accepted a plain HTTP provider")

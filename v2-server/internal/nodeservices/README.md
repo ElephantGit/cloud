@@ -35,7 +35,7 @@ renew 必须匹配原 execution，过期后不能续期。binding 和 Model 快�
 `MessagesFixtureProvider` 是同样行为的 Messages 版本：看到 `Bash` 工具时返回 `tool_use`，
 收到 `tool_result` 后给出同一个回答，支持 JSON 和 SSE。
 `NewRemoteProvider` 转发 OpenAI chat completions，`NewRemoteMessagesProvider` 转发 Anthropic
-Messages（后端 key 放在 `x-api-key`，只透传 `anthropic-version` / `anthropic-beta`）；两者都支持 JSON/SSE，强制使用已选模型，保留成功响应的
+Messages（后端 API key 放在 `x-api-key`，或将配置的 auth token 放在 `Authorization: Bearer …`，只透传 `anthropic-version` / `anthropic-beta`）；两者都支持 JSON/SSE，强制使用已选模型，保留成功响应的
 usage 等字段。真实 API key 留在后端内存，不转发 Agent token、调用者自定义 header 或上游错误正文；
 禁止 HTTP 和重定向。请求取消、grant 撤销/到期均会取消上游请求；单次远端请求上限 5 分钟。
 不支持运行时模型切换或任何隐式环境变量凭据读取。

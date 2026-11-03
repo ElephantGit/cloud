@@ -832,6 +832,15 @@ func TestModelsFromEnvironmentRejectsPartialConfigurationWithoutSecrets(t *testi
 	}
 	env := map[string]string{"V2_ANTHROPIC_MODEL_BASE_URL": "https://provider.example/v1", "V2_ANTHROPIC_MODEL_API_KEY": "secret-key", "V2_ANTHROPIC_MODEL_NAME": "claude-model"}
 	models, err = ModelsFromEnvironment(func(name string) string { return env[name] })
+	if err != nil || models["messages-configured"].Binding.Model.ID != "claude-model" {
+		t.Fatalf("API key provider not configured: %v", err)
+	}
+	env["V2_ANTHROPIC_MODEL_AUTH_TOKEN"] = "token"
+	if _, err := ModelsFromEnvironment(func(name string) string { return env[name] }); err == nil {
+		t.Fatal("accepted conflicting Messages credentials")
+	}
+	delete(env, "V2_ANTHROPIC_MODEL_API_KEY")
+	models, err = ModelsFromEnvironment(func(name string) string { return env[name] })
 	if c := models["messages-configured"]; err != nil || len(models) != 3 || c.Binding.Protocol != nodeservices.AnthropicMessages || c.Binding.Model.ID != "claude-model" || c.Model.Name != "claude-model" {
 		t.Fatalf("configured Messages provider=%v err=%v", models, err)
 	}

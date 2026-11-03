@@ -28,7 +28,7 @@ go run .                               # 监听 127.0.0.1:8090
 | `V2_MARKET_CREDENTIAL_KEY` | 未设置 | S3 来源凭据的 AES-256-GCM 密钥（Base64 编码的 32 字节）；启用 S3 来源时必须持久提供 |
 | `V2_NODE_ASSETS_DIR` | 未设置 | `task v2:node:prepare` 生成的固定 Node、host、guardian、Deno、OpenCode 和 Claude Code 资源；未设置时只启用纯模型路径 |
 | `V2_MODEL_BASE_URL` / `V2_MODEL_API_KEY` / `V2_MODEL_NAME` | 未设置 | 可选的一组 HTTPS OpenAI 兼容 provider；必须同时设置，OpenCode 与纯模型共用，清单只公开模型名称与版本 |
-| `V2_ANTHROPIC_MODEL_BASE_URL` / `V2_ANTHROPIC_MODEL_API_KEY` / `V2_ANTHROPIC_MODEL_NAME` | 未设置 | 可选的一组 HTTPS Anthropic 兼容 provider（Messages API，base URL 写到 `/v1`，如 `https://api.anthropic.com/v1`）；必须同时设置，只供 Claude Code 使用 |
+| `V2_ANTHROPIC_MODEL_BASE_URL` / `V2_ANTHROPIC_MODEL_API_KEY` / `V2_ANTHROPIC_MODEL_NAME` | 未设置 | 可选的一组 HTTPS Anthropic 兼容 provider（Messages API，base URL 写到 `/v1`，如 `https://api.anthropic.com/v1`）；必须同时提供地址、凭据和模型名，只供 Claude Code 使用。使用 Bearer 网关时以 `V2_ANTHROPIC_MODEL_AUTH_TOKEN` 代替 `V2_ANTHROPIC_MODEL_API_KEY`，二者不能同时配置；Claude Code 的 base URL 若以 `/compatible` 结尾，这里填 `/compatible/v1` |
 
 测试需要 `TEST_DATABASE_URL`（任意可建 schema 的库），每个测试用独立的 schema：
 
@@ -49,7 +49,7 @@ mkdir -p ~/ora-demo && cp v2-server/.env.example ~/ora-demo/.env   # 填入 DEEP
 task v2:deepseek                                                       # PostgreSQL、v2-server、frontend-v2；打开 http://localhost:5173
 ```
 
-key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和所有 worktree 共用，清理 worktree 也不会删掉它。`scripts/deepseek.sh` 按行读取这个文件（不当作 shell 执行），key 为空或文件不存在时在启动任何服务前退出，再导出上表的三个 `V2_MODEL_*` 后运行 `go run .`。chat 页面只提供 Agent 执行器，所以还要求先用 `task v2:node:prepare` 准备 Node 资源（默认 `~/.cache/ora-v2-node`，可在 `~/ora-demo/.env` 里用 `V2_NODE_ASSETS_DIR` 指定），缺少时同样在启动前退出。
+key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和所有 worktree 共用，清理 worktree 也不会删掉它。`scripts/deepseek.sh` 按行读取这个文件（不当作 shell 执行），key 为空或文件不存在时在启动任何服务前退出，再导出上表的三个 `V2_MODEL_*`；如果文件还配置了 `V2_ANTHROPIC_MODEL_*`，也会读取并校验 Claude 的配置。随后运行 `go run .`。chat 页面只提供 Agent 执行器，所以还要求先用 `task v2:node:prepare` 准备 Node 资源（默认 `~/.cache/ora-v2-node`，可在 `~/ora-demo/.env` 里用 `V2_NODE_ASSETS_DIR` 指定），缺少时同样在启动前退出。
 
 ### 录屏演示环境
 

@@ -34,11 +34,22 @@ func ModelsFromEnvironment(getenv func(string) string) (map[string]ModelChoice, 
 		}},
 	} {
 		base, key, name := strings.TrimSpace(getenv(c.env+"_BASE_URL")), strings.TrimSpace(getenv(c.env+"_API_KEY")), strings.TrimSpace(getenv(c.env+"_NAME"))
+		if c.protocol == nodeservices.AnthropicMessages {
+			if token := strings.TrimSpace(getenv("V2_ANTHROPIC_MODEL_AUTH_TOKEN")); token != "" {
+				if key != "" {
+					return nil, errors.New("configure either V2_ANTHROPIC_MODEL_API_KEY or V2_ANTHROPIC_MODEL_AUTH_TOKEN, not both")
+				}
+				key = token
+				c.provider = func(b, k string) (*nodeservices.RemoteProvider, error) {
+					return nodeservices.NewBearerMessagesProvider(b, k, nil)
+				}
+			}
+		}
 		if base == "" && key == "" && name == "" {
 			continue
 		}
 		if base == "" || key == "" || name == "" {
-			return nil, errors.New(c.env + "_BASE_URL, " + c.env + "_API_KEY and " + c.env + "_NAME must be configured together")
+			return nil, errors.New(c.env + " requires a base URL, credential and model name")
 		}
 		provider, err := c.provider(base, key)
 		if err != nil {

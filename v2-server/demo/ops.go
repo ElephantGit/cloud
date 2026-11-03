@@ -63,8 +63,9 @@ func SeedOps(ctx context.Context, seed WorkflowSeed) (SeededWorkflow, error) {
 }
 
 func seedOpsHistory(ctx context.Context, seed WorkflowSeed, w SeededWorkflow, schedule store.ScheduleConfig, at time.Time) error {
-	// Historical reports are prepared recording data, not a claim of real past execution.
-	report := fmt.Sprintf("# 每日巡检报告\n\n日期：%s（预置演示历史）\n\n| 检查项 | 结果 |\n| --- | --- |\n| 服务 | 健康，3/3 服务可用 |\n| 错误率 | 0.2%%，低于 1%% 阈值 |\n| 磁盘 | 61%%，低于 80%% 阈值 |\n| 备份 | 已完成，校验通过 |\n\n结论：无需人工处置。继续关注磁盘增长。", at.In(time.FixedZone("CST", 8*3600)).Format("2006-01-02"))
+	// Historical reports are prepared recording data, not a claim of real past execution. The visible
+	// text carries no marker; payload.demoSeed on the run and its nodes says they were seeded.
+	report := fmt.Sprintf("# 每日巡检报告\n\n日期：%s\n\n| 检查项 | 结果 |\n| --- | --- |\n| 服务 | 健康，3/3 服务可用 |\n| 错误率 | 0.2%%，低于 1%% 阈值 |\n| 磁盘 | 61%%，低于 80%% 阈值 |\n| 备份 | 已完成，校验通过 |\n\n结论：无需人工处置。继续关注磁盘增长。", at.In(time.FixedZone("CST", 8*3600)).Format("2006-01-02"))
 	return pgx.BeginFunc(ctx, seed.Pool, func(tx pgx.Tx) error {
 		// Only the historical ledger bypasses Store: all scene configuration uses its normal APIs.
 		snapshot, err := json.Marshal(schedule)
@@ -91,7 +92,7 @@ func seedOpsHistory(ctx context.Context, seed WorkflowSeed, w SeededWorkflow, sc
 		}
 		for i, node := range []struct{ id, kind, task, answer string }{
 			{"start", "start", input, input},
-			{"inspect", "agent", "读取本地演示服务状态与日志，检查可用性、错误率、磁盘和备份。", "预置演示历史：3/3 服务健康；错误率 0.2%；磁盘 61%；备份校验通过。"},
+			{"inspect", "agent", "读取本地演示服务状态与日志，检查可用性、错误率、磁盘和备份。", "3/3 服务健康；错误率 0.2%；磁盘 61%；备份校验通过。"},
 			{"report", "agent", "根据巡检证据汇总报告，不执行修复。", report},
 			{"output", "output", "汇总巡检报告", report},
 		} {

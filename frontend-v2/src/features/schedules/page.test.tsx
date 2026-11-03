@@ -16,6 +16,7 @@ vi.mock('./api/generated',()=>({listScheduleConfigs:vi.fn(),createScheduleConfig
 vi.mock('./api/actions/generated',()=>({runScheduleNow:vi.fn(),cancelScheduleRun:vi.fn()}))
 vi.mock('./api/history/generated',()=>({listScheduleHistory:vi.fn(),getScheduleHistoryItem:vi.fn(),getScheduleExecutionResult:vi.fn()}))
 vi.mock('@/lib/workflows/api/generated',()=>({getWorkflowRun:vi.fn()}))
+vi.mock('../collaboration/tasks-api/generated',()=>({listTasks:vi.fn(async()=>({items:[],nextCursor:''})),listTaskExecutors:vi.fn()}))
 const resources={projects:[{id:'project-id',name:'真实项目',description:''}],models:[{id:'fixture',name:'固定模型'}],agents:[{id:'official/agent',name:'Agent',version:'1.0.0',models:[{id:'fixture',name:'固定模型'}]}],workflows:[{id:'wf-1',name:'周报流程',version:'v2',snapshotId:'snap-2'}],available:{projects:true,models:true,agents:true,workflows:true}}
 const item={id:'task-1',name:'早报',projectId:'',target:{kind:'chat' as const,prompt:'摘要',agent:'',model:'fixture'},rule:{kind:'daily' as const,time:'09:00',days:[1],hours:6,timezone:'Asia/Shanghai'},enabled:true,version:1,createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z',runs:[]}
 const occurrence:history.Occurrence={id:'run-1',scheduleId:item.id,key:'key',kind:'manual',status:'running',reason:'',executionRef:'ref',scheduledAt:item.createdAt,recordedAt:item.createdAt,configVersion:1,snapshot:{},released:false,version:1}
@@ -109,12 +110,12 @@ it('offers no run page for a workflow occurrence that started no run',async()=>{
  expect(workflowRuns.getWorkflowRun).not.toHaveBeenCalled()
 })
 
-it('shows unavailable resources, keeps reference modes disabled and allows unbound text configuration',async()=>{
+it('shows unavailable resources, keeps workflows disabled and allows unbound text configuration',async()=>{
  vi.mocked(api.getScheduleResources).mockResolvedValue(emptyResources)
  vi.mocked(api.createScheduleConfig).mockResolvedValue({...item,target:{...item.target,model:''}})
  mount();const dialog=await detail();expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeDisabled()
  await userEvent.click(screen.getByRole('button',{name:'关闭面板'}));await userEvent.click(screen.getByRole('button',{name:'新建任务'}))
- expect(screen.getByRole('button',{name:/运行工作流/})).toBeDisabled();expect(screen.getByRole('button',{name:/已有任务/})).toBeDisabled()
+ expect(screen.getByRole('button',{name:/运行工作流/})).toBeDisabled();expect(screen.getByRole('button',{name:/处理协作任务/})).toBeEnabled()
  expect(screen.getByLabelText('模型')).toBeDisabled();expect(screen.getByLabelText('Agent')).toBeDisabled()
  fireEvent.change(screen.getByLabelText('任务名称'),{target:{value:'稍后配置'}});fireEvent.change(screen.getByLabelText('任务指令'),{target:{value:'摘要'}})
  await userEvent.click(screen.getByRole('button',{name:'创建并启用'}));await waitFor(()=>expect(api.createScheduleConfig).toHaveBeenCalledWith('tenant',expect.objectContaining({projectId:'',target:expect.objectContaining({model:''})})))
@@ -251,4 +252,11 @@ it('retains loaded tasks, resources and active history occupancy across poll err
  await userEvent.click(within(dialog).getByRole('button',{name:'立即运行'}))
  expect(await within(dialog).findByText(/所选 Agent、模型或项目当前不可用/)).toBeInTheDocument()
  expect(await within(dialog).findByText('执行目标已不可用')).toBeInTheDocument()
+})
+
+it('opens the run named by the selected occurrence even after the plan target changes',async()=>{
+ vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[{...occurrence,status:'succeeded',released:true,executionRef:JSON.stringify({taskId:'original',taskRunId:'first'})}],nextCursor:''})
+ mount();const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
+ expect(await within(dialog).findByRole('link',{name:'查看本次执行'})).toHaveAttribute('href','/collaboration/tasks/original?run=first')
+ expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
 })

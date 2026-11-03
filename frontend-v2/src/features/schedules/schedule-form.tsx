@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query'
+import { listTaskExecutors } from '../collaboration/tasks-api/generated'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Check, Clock3, GitBranch, MessageSquare, ListTodo } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +12,7 @@ import { agentChoice, agentModels, catalog, editableDraft, emptyDraft, formatTim
 
 export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blocked=false,saveError,onCloseReady,resourcesLoading=false,resourcesError,onRetryResources}:{task?:Task;onSave:(draft:Draft,data:Catalog)=>void;onCancel:()=>void;data?:Catalog;saving?:boolean;blocked?:boolean;saveError?:string;onCloseReady?:(close:()=>void)=>void;resourcesLoading?:boolean;resourcesError?:string;onRetryResources?:()=>void}) {
  const [draft,setDraft]=useState(()=>task?taskDraft(task):emptyDraft())
+ const [search,setSearch]=useState('')
  const [errors,setErrors]=useState<Record<string,string>>({})
  const [discard,setDiscard]=useState(false)
  const [dirty,setDirty]=useState(false)
@@ -51,12 +54,23 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
     <FieldLegend variant="label"><span className="sp-section-number">01</span>执行内容</FieldLegend>
     <FieldGroup>
      <ScheduleField name="name" label="任务名称" error={errors.name}><Input placeholder="例如：每日 AI 简报" value={draft.name} onChange={e=>patch({name:e.target.value})} {...control('name')}/></ScheduleField>
-     <ToggleGroup className="sp-kind-picker w-full" aria-label="执行方式" value={[draft.kind]} onValueChange={values=>{const kind=values.at(-1);if(kind==='chat'||kind==='workflow')patch({kind})}} variant="outline" spacing={3}>
-      <ToggleGroupItem disabled={draft.kind==='task'} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="chat"><MessageSquare/><strong>直接对话</strong><small>用一段指令完成工作</small>{draft.kind==='chat'&&<Check className="sp-selected-check"/>}</ToggleGroupItem>
-      <ToggleGroupItem disabled={draft.kind==='task'||!data.available?.workflows} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch/><strong>运行工作流</strong><small>{data.available?.workflows?'按已发布的版本运行':'工作流服务尚未就绪'}</small>{draft.kind==='workflow'&&<Check className="sp-selected-check"/>}</ToggleGroupItem>
-      <ToggleGroupItem disabled className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="task"><ListTodo/><strong>已有任务</strong><small>任务目录待接入</small></ToggleGroupItem>
+     <ToggleGroup className="sp-kind-picker w-full" aria-label="执行方式" value={[draft.kind]} onValueChange={values=>{const kind=values.at(-1);if(kind==='task'&&draft.kind!=='task')patch({kind,projectId:'',executorId:'',rule:{...draft.rule,kind:'once',date:tomorrow(draft.rule.timezone)}});else if(kind==='chat'||kind==='workflow')patch({kind,...(draft.kind==='task'?{projectId:'',executorId:''}:{})})}} variant="outline" spacing={3}>
+      <ToggleGroupItem disabled={!editable} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="chat"><MessageSquare/><strong>直接对话</strong><small>用一段指令完成工作</small>{draft.kind==='chat'&&<Check className="sp-selected-check"/>}</ToggleGroupItem>
+      <ToggleGroupItem disabled={!editable||!data.available?.workflows} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="workflow"><GitBranch/><strong>运行工作流</strong><small>{data.available?.workflows?'按已发布的版本运行':'工作流服务尚未就绪'}</small>{draft.kind==='workflow'&&<Check className="sp-selected-check"/>}</ToggleGroupItem>
+      <ToggleGroupItem disabled={!data.tenantId||!editable} className="sp-choice h-auto min-h-24 flex-1 flex-col items-start gap-2 p-4" value="task"><ListTodo/><strong>处理协作任务</strong><small>在原任务中执行并查看结果</small></ToggleGroupItem>
      </ToggleGroup>
-     {draft.kind==='chat'?<ScheduleField name="prompt" label="任务指令" error={errors.prompt} hint="每次运行新建独立对话，不携带上次聊天记录。"><Textarea className="min-h-28" rows={4} placeholder="描述任务目标与期望的输出格式…" value={draft.prompt} onChange={e=>patch({prompt:e.target.value})} {...control('prompt')}/></ScheduleField>:editable?<>
+     {draft.kind==='chat'?<ScheduleField name="prompt" label="任务指令" error={errors.prompt} hint="每次运行新建独立对话，不携带上次聊天记录。"><Textarea className="min-h-28" rows={4} placeholder="描述任务目标与期望的输出格式…" value={draft.prompt} onChange={e=>patch({prompt:e.target.value})} {...control('prompt')}/></ScheduleField> :draft.kind==='task'&&editable?<>
+       <ScheduleField name="search" label="搜索分配给我的任务"><Input id="schedule-search" placeholder="搜索标题或编号" value={search} onChange={e=>setSearch(e.target.value)} /></ScheduleField>
+       <ScheduleField name="taskId" label="协作任务" error={errors.taskId} hint="只列出分配给你且待处理或进行中的任务。">
+        <NativeSelect {...control('taskId')} value={draft.taskId} onChange={e=>{const t=data.tasks?.find(t=>t.id===e.target.value);patch({taskId:t?.id??'',projectId:t?.projectId??'',executorId:'',...(!draft.name?{name:t?.title??''}:{})})}}>
+         <NativeSelectOption value="">{data.taskDirectoryError?'任务列表读取失败，请重新打开':!data.tasks?'正在读取任务…':data.tasks.length?'请选择任务':'没有可处理的任务'}</NativeSelectOption>
+         {draft.taskId&&!data.tasks?.some(t=>t.id===draft.taskId)&&<NativeSelectOption value={draft.taskId} disabled>原任务已不可用</NativeSelectOption>}
+         {data.tasks?.filter(t=>t.id===draft.taskId||(t.title+' '+t.id).toLowerCase().includes(search.trim().toLowerCase())).map(t=><NativeSelectOption key={t.id} value={t.id}>{t.title} · {t.id.slice(0,8)} · {data.projects.find(p=>p.id===t.projectId)?.name??'无关联项目'}</NativeSelectOption>)}
+        </NativeSelect>
+       </ScheduleField>
+       {draft.taskId&&data.tenantId&&<TaskExecutor tenant={data.tenantId} taskId={draft.taskId} value={draft.executorId??''} onChange={executorId=>patch({executorId})} error={errors.executorId}/>}
+       <ScheduleField name="note" label="补充说明" hint="可选。每次执行读取原任务的最新描述。"><Textarea {...control('note')} value={draft.note} onChange={e=>patch({note:e.target.value})}/></ScheduleField>
+      </>:editable?<>
       <ScheduleField name="workflowId" label="工作流" error={errors.workflowId} hint={workflowHint}>
        <NativeSelect className="w-full" disabled={unavailable||!data.available?.workflows} value={draft.workflowId} onChange={e=>patch({workflowId:e.target.value})} {...control('workflowId')}>
         <NativeSelectOption value="">{data.available?.workflows?(workflows.length?'请选择已发布的工作流':'暂无已发布的工作流'):'工作流服务尚未就绪'}</NativeSelectOption>
@@ -73,8 +87,8 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
     <FieldGroup>
      {resourcesLoading&&<p role="status">正在读取执行资源…</p>}
      {resourcesError&&<p role="alert">{resourcesError} <Button type="button" variant="outline" size="sm" onClick={onRetryResources}>重试加载</Button></p>}
-     <ScheduleField name="projectId" label="关联项目" error={errors.projectId} hint={draft.kind==='workflow'?'必选。每次运行在这个项目的独立目录中执行工作流。':'可选。不关联项目时直接调用模型；关联项目时使用该项目独立的执行环境。'}>
-      <NativeSelect className="w-full" disabled={unavailable||!data.available?.projects} aria-required={draft.kind==='workflow'} value={draft.projectId} onChange={e=>patch({projectId:e.target.value,agentId:'',agent:'',model:''})} {...control('projectId')}>
+     <ScheduleField name="projectId" label="关联项目" error={errors.projectId} hint={draft.kind==='task'?'沿用协作任务的项目。':draft.kind==='workflow'?'必选。每次运行在这个项目的独立目录中执行工作流。':'可选。不关联项目时直接调用模型；关联项目时使用该项目独立的执行环境。'}>
+      <NativeSelect className="w-full" disabled={draft.kind==='task'||unavailable||!data.available?.projects} aria-required={draft.kind==='workflow'} value={draft.projectId} onChange={e=>patch({projectId:e.target.value,agentId:'',agent:'',model:''})} {...control('projectId')}>
        <NativeSelectOption value="" disabled={draft.kind==='workflow'}>{draft.kind==='workflow'?'请选择项目':'不关联项目'}</NativeSelectOption>
        {draft.projectId&&!data.projects.some(p=>p.id===draft.projectId)&&<NativeSelectOption value={draft.projectId} disabled>原项目暂不可用</NativeSelectOption>}
        {data.projects.map(p=><NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
@@ -107,12 +121,13 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
         <FieldLegend variant="label"><span className="sp-section-number">03</span>时间安排</FieldLegend>
         <FieldGroup>
           <FieldGroup className="grid grid-cols-2 gap-4">
-            <ScheduleField name="frequency" label="重复频率"><NativeSelect className="w-full" id="schedule-frequency" value={draft.rule.kind} onChange={e => rule({ kind: e.target.value as Draft['rule']['kind'] })}><NativeSelectOption value="daily">每天</NativeSelectOption><NativeSelectOption value="weekdays">工作日（周一至周五）</NativeSelectOption><NativeSelectOption value="weekly">每周</NativeSelectOption><NativeSelectOption value="hours">每隔若干小时</NativeSelectOption></NativeSelect></ScheduleField>
+            <ScheduleField name="frequency" label="重复频率"><NativeSelect className="w-full" id="schedule-frequency" value={draft.rule.kind} onChange={e => rule({ kind: e.target.value as Draft['rule']['kind'],date:e.target.value==='once'?(draft.rule.date||tomorrow(draft.rule.timezone)):undefined })}><NativeSelectOption value="once">仅一次</NativeSelectOption><NativeSelectOption value="daily">每天</NativeSelectOption><NativeSelectOption value="weekdays">工作日（周一至周五）</NativeSelectOption><NativeSelectOption value="weekly">每周</NativeSelectOption><NativeSelectOption value="hours">每隔若干小时</NativeSelectOption></NativeSelect></ScheduleField>
             {draft.rule.kind === 'hours' ? <ScheduleField name="hours" label="间隔小时数" error={errors.hours}><Input type="number" min={1} max={24} value={draft.rule.hours} onChange={e => rule({ hours: Number(e.target.value) })} {...control('hours')} /></ScheduleField> : <ScheduleField name="time" label="执行时间" error={errors.time}><Input type="time" value={draft.rule.time} onChange={e => rule({ time: e.target.value })} {...control('time')} /></ScheduleField>}
           </FieldGroup>
+          {draft.rule.kind==='once'&&<ScheduleField name="date" label="执行日期" error={errors.date}><Input {...control('date')} type="date" value={draft.rule.date??''} onChange={e=>rule({date:e.target.value})}/></ScheduleField>}
           {draft.rule.kind === 'weekly' && <Field data-invalid={!!errors.days}><ToggleGroup className="sp-weekdays w-full" aria-label="执行星期" multiple variant="outline" value={draft.rule.days.map(String)} onValueChange={values => rule({ days: values.map(Number) })} spacing={2}>{[1, 2, 3, 4, 5, 6, 0].map(day => <ToggleGroupItem className="flex-1" key={day} value={String(day)} aria-label={`星期${weekdayNames[day]}`}>{weekdayNames[day]}</ToggleGroupItem>)}</ToggleGroup><FieldError id="error-days">{errors.days}</FieldError></Field>}
           <ScheduleField name="timezone" label="时区" error={errors.timezone}><NativeSelect className="w-full" value={draft.rule.timezone} onChange={e => rule({ timezone: e.target.value })} {...control('timezone')}><NativeSelectOption value="Asia/Shanghai">Asia/Shanghai · 北京时间</NativeSelectOption><NativeSelectOption value="Asia/Tokyo">Asia/Tokyo · 东京</NativeSelectOption><NativeSelectOption value="Europe/London">Europe/London · 伦敦</NativeSelectOption><NativeSelectOption value="America/New_York">America/New_York · 纽约</NativeSelectOption><NativeSelectOption value="UTC">UTC · 协调世界时</NativeSelectOption></NativeSelect></ScheduleField>
-          <div className="sp-time-preview"><div><Clock3 size={15} /><strong>接下来三次</strong><span>{draft.rule.timezone}</span></div>{times.length ? times.map((time, i) => <p key={time.toISOString()}><span>{String(i + 1).padStart(2, '0')}</span>{formatTime(time, draft.rule.timezone)}</p>) : <p>填写完整时间规则后预览</p>}<small>{draft.rule.kind === 'hours' ? '从创建时间起，按固定小时数间隔计算。' : '按所选时区计算，跳过夏令时不存在的时刻。'}</small></div>
+          <div className="sp-time-preview"><div><Clock3 size={15} /><strong>{draft.rule.kind==='once'?'预计执行时间':'接下来三次'}</strong><span>{draft.rule.timezone}</span></div>{times.length ? times.map((time, i) => <p key={time.toISOString()}><span>{String(i + 1).padStart(2, '0')}</span>{formatTime(time, draft.rule.timezone)}</p>) : <p>填写完整时间规则后预览</p>}<small>{draft.rule.kind === 'hours' ? '从创建时间起，按固定小时数间隔计算。' : '按所选时区计算，跳过夏令时不存在的时刻。'}</small></div>
         </FieldGroup>
       </FieldSet>
 
@@ -123,6 +138,21 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
    {discard?<><span>放弃未保存的修改？</span><Button type="button" variant="outline" onClick={()=>setDiscard(false)}>继续编辑</Button><Button type="button" onClick={onCancel}>放弃修改</Button></>:<><Button type="button" variant="outline" onClick={()=>dirty?setDiscard(true):onCancel()}>取消</Button><span className="sp-footer-spacer"/><Button type="submit" disabled={saving||blocked||resourcesLoading||!editable}>{saving?'保存中…':task?'保存修改':'创建并启用'}</Button></>}
   </footer>
  </form>
+}
+
+function TaskExecutor({tenant,taskId,value,onChange,error}:{tenant:string;taskId:string;value:string;onChange:(id:string)=>void;error?:string}){
+ const q=useQuery({queryKey:['schedule-task-executors',tenant,taskId],queryFn:({signal})=>listTaskExecutors(tenant,taskId,undefined,signal),retry:false})
+ return <ScheduleField name="executorId" label="Agent 与模型" error={error}>
+  <NativeSelect id="schedule-executorId" aria-invalid={!!error} disabled={!q.data} value={value} onChange={e=>onChange(e.target.value)}>
+    <NativeSelectOption value="">{q.isError?'执行器读取失败':q.isPending?'正在读取…':q.data?.items.length?'请选择 Agent 与模型':'没有可用执行器'}</NativeSelectOption>
+    {value&&!q.data?.items.some(x=>x.id===value)&&<NativeSelectOption disabled value={value}>原执行器暂不可用</NativeSelectOption>}
+    {q.data?.items.map(x=><NativeSelectOption key={x.id} value={x.id}>{x.name}</NativeSelectOption>)}
+  </NativeSelect>{q.isError&&<Button variant="outline" type="button" onClick={()=>void q.refetch()}>重试</Button>}
+ </ScheduleField>
+}
+
+function tomorrow(zone:string) {
+ return new Intl.DateTimeFormat('sv-SE',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(Date.now()+86400000))
 }
 
 function ScheduleField({name,label,error,hint,children}:{name:string;label:string;error?:string;hint?:string;children:ReactNode}){

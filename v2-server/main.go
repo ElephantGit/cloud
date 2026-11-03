@@ -177,6 +177,9 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		}
 		return checkFixture(ctx, runtime, scope, demo.ID, filepath.Join(base, "nodes"))
 	}
+	if driver != nil {
+		go driver.WarmDemo(ctx, demo.ID, agentruntime.Project{MirrorPath: demo.MirrorPath, Commit: demo.Commit, SnapshotRef: demo.SnapshotRef})
+	}
 	marketURL, e := pluginmarket.NormalizeSourceURL(envOr(
 		"V2_PLUGIN_MARKETPLACE_URL",
 		"https://github.com/ora-space/marketplace",

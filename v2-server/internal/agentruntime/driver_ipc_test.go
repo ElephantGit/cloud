@@ -770,3 +770,42 @@ func TestDriverIPCPreviewsStreamPendingRecordsWithoutAck(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoWarmCheckoutIsClaimedOnceByChat(t *testing.T) {
+	h := newIPCHarness(t, nil)
+	ctx := ipcContext(t)
+	h.driver.WarmDemo(ctx, "project", h.config)
+	f := receiveIPC(t, h.created)
+	first := nextIPCCommand(t, f, "clone_repository")
+	run := func(id string, kind execution.CallerKind) string {
+		done := make(chan ipcRunOutcome, 1)
+		go func() {
+			r, e := h.driver.Run(ctx, h.scope, h.session(id, id), execution.Turn{Caller: execution.Caller{Kind: kind}, Ref: execution.Ref{SessionID: id, TurnID: id}, Prompt: execution.TextPrompt("prompt")}, discardIPCEvent)
+			done <- ipcRunOutcome{r, e}
+		}()
+		cmd := nextIPCCommand(t, f, "start_agent_session")
+		var payload struct {
+			Spec struct {
+				Checkout string `json:"checkout_execution_id"`
+			}
+		}
+		if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.Spec.Checkout == "" {
+			t.Fatalf("missing checkout: %v", err)
+		}
+		f.finishTurn(t, cmd, id, "OK")
+		if result := receiveIPC(t, done); result.err != nil || result.result.Answer != "OK" {
+			t.Fatalf("failed turn: %+v", result)
+		}
+		return payload.Spec.Checkout
+	}
+	if got := run("workflow", execution.CallerWorkflow); got == first.ExecutionID {
+		t.Fatal("workflow consumed demo spare")
+	}
+	if got := run("one", execution.CallerChat); got != first.ExecutionID {
+		t.Fatalf("first chat used %s; want %s", got, first.ExecutionID)
+	}
+	next := nextIPCCommand(t, f, "clone_repository")
+	if got := run("two", execution.CallerChat); got != next.ExecutionID || got == first.ExecutionID {
+		t.Fatalf("second chat did not receive an independent replenished checkout: %s", got)
+	}
+}

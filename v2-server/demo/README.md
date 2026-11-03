@@ -1,5 +1,16 @@
 # 录屏工作流与场景 seed
 
+## 演示环境框架
+
+`task v2:demo:newcomer|lead|ops` 和合成的 `task v2:demo` 由 `scripts/demo.sh` 执行，用法见 [`../README.md`](../README.md#录屏演示环境)。`cmd/v2-demo` 提供它调用的三个子命令：`env` 输出本段的环境变量，`reset` 清空数据目录、重建数据库并写入合并后的用户文件，`seed` 写入本段数据。
+
+- `env.go`：各段的库、数据目录和端口表；重置；`Seeder` 的写入辅助：`Scope` 按邮箱找到本段账号，`Project` 把 `fixtures/<段>/` 准备成一个本地 Git 提交的项目（UUID 与 snapshot ref 齐全），`WorkflowSeed` 把账号和项目交给下面的工作流 seed。
+- `scenes.go`：三段的接线和合成时的顺序。
+- `newcomer.go`、`lead.go`、`ops.go`：各段的数据，由各段负责人维护。每段只用 `users/<段>.json` 里的账号和自己的项目，不依赖其他段先跑过。
+- B 段（`lead.go`）：陈默（owner）带苏芮、周衡和 OpenCode、Claude Code 组成「看板小队」，项目「协作看板服务」，「需求拆分」工作流，以及几张人类成员已经在做或做完的任务。Agent 任务在录屏时现场执行，seed 不写任务运行和评论。
+
+## 工作流 seed
+
 `demo` 包只提供场景数据，公共演示环境框架负责重置数据库、准备本地 Git 项目、预置用户和启动进程。这里不读取“第一个用户”，不启动服务，也不删除任何数据。
 
 框架准备好每段的用户和项目后，构造 `WorkflowSeed`：`Store` 与 `Pool` 指向同一个演示数据库；`Scope` 是本段用户的成员身份；`ProjectID` 是本段已准备的项目；`AgentCLI` 与 `ModelID` 来自真实执行目录；`Now` 显式指定 seed 时钟。模型不能为 `fixture`。

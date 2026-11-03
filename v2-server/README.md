@@ -51,6 +51,23 @@ task v2:deepseek                                                       # Postgre
 
 key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和所有 worktree 共用，清理 worktree 也不会删掉它。`scripts/deepseek.sh` 按行读取这个文件（不当作 shell 执行），key 为空或文件不存在时在启动任何服务前退出，再导出上表的三个 `V2_MODEL_*` 后运行 `go run .`。chat 页面只提供 Agent 执行器，所以还要求先用 `task v2:node:prepare` 准备 Node 资源（默认 `~/.cache/ora-v2-node`，可在 `~/ora-demo/.env` 里用 `V2_NODE_ASSETS_DIR` 指定），缺少时同样在启动前退出。
 
+### 录屏演示环境
+
+11-06 录屏的三段各有一个命令，另有一个把三段合在一起的命令。每个命令都用独立的库、数据目录和端口，和日常开发的 `ora_v2` 库及 8090/5173 分开，可以同时运行：
+
+| 命令 | 段 | 数据库 | 数据目录 | 后端 / 前端 | 账号 | `VITE_DEMO_MOCK` |
+|---|---|---|---|---|---|---|
+| `task v2:demo:newcomer` | A 新人 | `ora_v2_demo_newcomer` | `~/.od/a` | 8191 / 5191 | 林新 | 关 |
+| `task v2:demo:lead` | B Tech Lead | `ora_v2_demo_lead` | `~/.od/b` | 8192 / 5192 | 陈默、苏芮、周衡 | 开 |
+| `task v2:demo:ops` | C 运维 | `ora_v2_demo_ops` | `~/.od/c` | 8193 / 5193 | 许运 | 关 |
+| `task v2:demo` | 三段合成 | `ora_v2_demo` | `~/.od/all` | 8190 / 5190 | 以上全部 | 开 |
+
+每个命令依次：按上一节检查 `~/ora-demo/.env` 的 key 和 Node 资源；启动 compose PostgreSQL；删掉并重建本段的库、清空数据目录（同一段还在运行时拒绝，并按可执行文件路径停掉上次留下的 Node 进程）；用 `V2_DATABASE_URL`、`V2_DATA_DIR`、`V2_ADDR`、`V2_USERS_FILE` 启动预先编译的 v2-server；`/healthz` 就绪后运行本段的 seed；最后以 `0.0.0.0` 启动 frontend-v2。所以重跑同一个命令总是回到同一个初始状态。账号用邮箱登录，seed 完成后终端会列出来。前端端口被占用时，用 `ORA_DEMO_WEB_PORT` 换一个。
+
+数据目录没有用 #882 原定的 `~/ora-demo/data/<段>`：Agent 运行时要在数据目录下建 Unix socket，路径必须短于 108 字节，数据目录本身最多约 23 个字符，所以放在 `~/.od/<a|b|c|all>`（A、B、C 三段和合成）。主目录较长时用 `ORA_DEMO_DATA` 换一个更短的目录，太长时命令会在启动前报错。
+
+seed 在 [`demo/`](demo/README.md)：`env.go` 是上表和重置、准备本地 Git 项目、合并用户文件的公共部分，`scenes.go` 接上三段，`lead.go` 是 B 段，`users/<段>.json` 是各段的账号（合成时合并）。同一项目第一次执行 Agent 要多等约一分钟在 Node 上安装 Agent，录屏前先在本段的项目里跑一次热身。
+
 ## 已实现
 
 | 路由 | 来源 | 说明 |

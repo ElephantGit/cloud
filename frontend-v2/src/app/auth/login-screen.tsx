@@ -33,17 +33,17 @@ export function LoginScreen({ returnTo }: { returnTo: string }) {
   const refused = codeOf(login.error) === 'email_not_invited'
 
   return (
-    <div className="flex h-svh items-center justify-center bg-muted/40">
+    <div className="flex h-svh items-center justify-center bg-sidebar bg-[radial-gradient(ellipse_at_top,var(--brand-soft),transparent_60%)] px-4">
       <form
-        className="flex w-80 flex-col gap-4 rounded-xl border bg-background p-6 shadow-sm"
+        className="flex w-full max-w-sm flex-col gap-5 rounded-2xl border bg-card p-8 shadow-[0_12px_40px_var(--shadow-color)]"
         onSubmit={(e) => {
           e.preventDefault()
           login.mutate(email.trim())
         }}
       >
-        <div className="flex items-center gap-2">
-          <OraMark />
-          <h1 className="text-lg font-medium">登录 Ora</h1>
+        <div className="flex flex-col gap-3">
+          <OraMark className="size-10" />
+          <h1 className="text-xl font-semibold tracking-tight">登录 Ora</h1>
         </div>
         {providers.isPending && <p className="text-sm text-muted-foreground">加载中…</p>}
         {providers.isError && <p className="text-sm text-destructive">无法获取登录方式，请稍后重试。</p>}
@@ -61,7 +61,7 @@ export function LoginScreen({ returnTo }: { returnTo: string }) {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <Button type="submit" disabled={login.isPending || email.trim() === ''}>
+            <Button type="submit" size="lg" disabled={login.isPending || email.trim() === ''}>
               登录
             </Button>
             {refused && <p className="text-sm text-destructive">该邮箱不在演示团队中，请让 owner 邀请后再登录。</p>}
@@ -74,7 +74,7 @@ export function LoginScreen({ returnTo }: { returnTo: string }) {
           </Button>
         ))}
         {emailOffered && (
-          <p className="text-xs text-muted-foreground">
+          <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs leading-relaxed text-warning">
             演示环境：只凭邮箱即可登录，知道邮箱就能冒充任何人。请勿在演示环境之外使用。
           </p>
         )}

@@ -30,7 +30,7 @@ export function UserMenu() {
               aria-label="退出登录"
               disabled={signOut.isPending}
               onClick={() => signOut.mutate()}
-              className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
             />
           }
         >
@@ -40,7 +40,7 @@ export function UserMenu() {
       </Tooltip>
       <Tooltip>
         <TooltipTrigger
-          render={<div role="img" aria-label={user.displayName} className="flex size-8 items-center justify-center rounded-full bg-secondary text-xs font-medium" />}
+          render={<div role="img" aria-label={user.displayName} className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand ring-1 ring-brand/15" />}
         >
           {user.displayName.slice(0, 1)}
         </TooltipTrigger>

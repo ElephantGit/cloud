@@ -116,7 +116,7 @@ export function WorkflowConditionRules({
                     <SelectTrigger
                       size="sm"
                       aria-label={`${logicLabel} · ${comparisonIndex}`}
-                      className="h-5 min-h-5 w-auto shrink-0 justify-center gap-0 rounded-md border-blue-200 bg-background px-1.5 py-0 pr-1.5 text-[10px] font-semibold text-blue-600 shadow-sm dark:border-blue-800 dark:text-blue-400 [&_svg]:hidden"
+                      className="h-5 min-h-5 w-auto shrink-0 justify-center gap-0 rounded-md border-brand/30 bg-background px-1.5 py-0 pr-1.5 text-[10px] font-semibold text-brand shadow-sm [&_svg]:hidden"
                     >
                       <span>{logic.toUpperCase()}</span>
                     </SelectTrigger>

@@ -1,21 +1,10 @@
-/* Feature-local semantic tokens keep the shared Ora shell unchanged. */
+/* Feature aliases of the shared design tokens (src/index.css), so both themes follow the shell. */
 .dashboard-feature {
-  --background: #fff; --foreground: #27272d; --primary: #27272d; --primary-foreground: #fff;
-  --secondary: #f3f3f6; --secondary-foreground: #555561; --muted: #f5f5f8; --muted-foreground: #676976;
-  --accent: #f1f1f6; --accent-foreground: #27272d; --border: #e5e5eb; --input: #d6d6df; --ring: #8580cd;
-  --db-line: var(--border); --db-muted: var(--muted-foreground); --db-accent: #6257bd;
-  --db-accent-bg: #f3f1fb; --db-success: #257048; --db-success-bg: #eef7f1;
-  --db-warning: #96531e; --db-warning-bg: #fff5e8; --db-surface: #fafafb;
+  --db-line: var(--border); --db-muted: var(--muted-foreground); --db-accent: var(--brand);
+  --db-accent-bg: var(--brand-soft); --db-success: var(--success); --db-success-bg: var(--success-soft);
+  --db-warning: var(--warning); --db-warning-bg: var(--warning-soft);
+  --db-surface: color-mix(in oklch, var(--muted) 60%, var(--background));
   color: var(--foreground); background: var(--background); font-size: 14px; line-height: 1.6;
-}
-.dark .dashboard-feature {
-  --background: inherit; --foreground: inherit; --primary: inherit; --primary-foreground: inherit;
-  --secondary: inherit; --secondary-foreground: inherit; --muted: inherit; --muted-foreground: inherit;
-  --accent: inherit; --accent-foreground: inherit; --border: inherit; --input: inherit; --ring: inherit;
-  --db-accent: oklch(0.78 0.1 290); --db-accent-bg: oklch(0.28 0.035 290);
-  --db-success: oklch(0.78 0.11 155); --db-success-bg: oklch(0.25 0.025 155);
-  --db-warning: oklch(0.82 0.11 75); --db-warning-bg: oklch(0.27 0.025 75);
-  --db-surface: var(--card); --db-line: var(--border); --db-muted: var(--muted-foreground);
 }
 .dashboard-feature h1, .dashboard-feature h2, .dashboard-feature p, .dashboard-feature ol, .dashboard-feature ul { margin: 0; }
 .dashboard-feature ul, .dashboard-feature ol { list-style: none; padding: 0; }
@@ -34,13 +23,13 @@
 .db-head-counts svg { opacity: .7; }
 
 .db-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.db-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--db-line); border-radius: 12px; background: var(--db-surface); }
+.db-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--db-line); border-radius: 12px; background: var(--card); }
 .db-stat-label { color: var(--db-muted); font-size: 12px; }
 .db-stat-value { font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
 .db-stat-note { color: var(--db-muted); font-size: 12px; }
 
 .db-panels { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
-.db-panel { border: 1px solid var(--db-line); border-radius: 12px; background: var(--background); }
+.db-panel { border: 1px solid var(--db-line); border-radius: 12px; background: var(--card); }
 .db-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--db-line); }
 .db-panel-head h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
 .db-panel-head h2 svg { color: var(--db-accent); }

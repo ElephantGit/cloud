@@ -149,15 +149,15 @@ export const RunOverviewNode = memo(function RunOverviewNode({
         unused && "opacity-60",
         tone.ring,
         "ring-1 transition-[box-shadow,ring-color] duration-300",
-        state.status === "running" && "ring-sky-500/35 theater-live-breathe",
+        state.status === "running" && "ring-info/35 theater-live-breathe",
         state.status === "awaiting_input" &&
-          "ring-amber-500/35 theater-live-breathe-amber",
+          "ring-warning/35 theater-live-breathe-amber",
         // A waiting retry keeps its own orange ring instead of the sky peer cue.
         peerActive &&
           state.status !== "running" &&
           state.status !== "awaiting_input" &&
           state.status !== "retry_waiting" &&
-          "ring-sky-500/20",
+          "ring-info/20",
       )}
       headerAccessory={
         <div className="flex shrink-0 items-center gap-1">
@@ -195,7 +195,7 @@ export const RunOverviewNode = memo(function RunOverviewNode({
       }
       footer={
         retryWait !== undefined ? (
-          <p className="text-[9px] font-medium tabular-nums text-orange-700 dark:text-orange-300">
+          <p className="text-[9px] font-medium tabular-nums text-caution">
             <RunRetryWaitLabel wait={retryWait} />
           </p>
         ) : hasTiming ? (

@@ -35,14 +35,14 @@ export function RunConditionStage({
               key={branch.id}
               className={
                 selected === branch.id
-                  ? "rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2"
+                  ? "rounded-lg border border-success/40 bg-success/10 p-2"
                   : undefined
               }
             >
               <span className="text-xs font-semibold">
                 {index === 0 ? "IF" : "ELSE IF"} · {branch.id}
                 {selected === branch.id && (
-                  <span className="ml-2 text-emerald-700">
+                  <span className="ml-2 text-success">
                     {t("workflowRun.conditionView.matched")}
                   </span>
                 )}
@@ -60,13 +60,13 @@ export function RunConditionStage({
           <li
             className={
               selected === "else"
-                ? "rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2"
+                ? "rounded-lg border border-success/40 bg-success/10 p-2"
                 : undefined
             }
           >
             <span className="text-xs font-semibold">ELSE</span>
             {selected === "else" && (
-              <span className="ml-2 text-xs text-emerald-700">
+              <span className="ml-2 text-xs text-success">
                 {t("workflowRun.conditionView.matched")}
               </span>
             )}

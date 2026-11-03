@@ -288,9 +288,9 @@ export function RunTheaterRegionNavigator({
                   className={cn(
                     "relative flex gap-1.5 rounded-lg border px-1.5 pb-1.5 pt-5",
                     phase.kind === "parallel"
-                      ? "border-sky-500/25 bg-sky-500/[0.035]"
+                      ? "border-info/25 bg-info/[0.035]"
                       : phase.kind === "conditional"
-                        ? "border-amber-500/25 bg-amber-500/[0.035]"
+                        ? "border-warning/25 bg-warning/[0.035]"
                         : "border-transparent p-0",
                   )}
                   role="group"
@@ -340,7 +340,7 @@ export function RunTheaterRegionNavigator({
                           selected
                             ? "border-violet-500/45 shadow-sm"
                             : retryWait !== undefined
-                              ? "border-orange-500/40 hover:border-orange-500/55"
+                              ? "border-caution/40 hover:border-caution/55"
                               : "border-border/65 hover:border-violet-500/30",
                           notRun && "opacity-60",
                         )}
@@ -357,7 +357,7 @@ export function RunTheaterRegionNavigator({
                             <RunRetryWaitLabel
                               wait={retryWait}
                               variant="compact"
-                              className="mt-0.5 block text-[11px] tabular-nums text-orange-700 dark:text-orange-300"
+                              className="mt-0.5 block text-[11px] tabular-nums text-caution"
                             />
                           ) : (
                             duration !== null && (

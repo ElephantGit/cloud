@@ -12,7 +12,7 @@ export function SandboxLabel() {
         render={
           <span
             tabIndex={0}
-            className="inline-flex h-6 shrink-0 cursor-default items-center gap-1 rounded-md bg-blue-500/10 px-1.5 text-xs text-blue-600 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-blue-400"
+            className="inline-flex h-6 shrink-0 cursor-default items-center gap-1 rounded-md bg-info-soft px-1.5 text-xs text-info outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           />
         }
       >

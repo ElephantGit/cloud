@@ -18,7 +18,7 @@ import { SandboxLabel } from './sandbox-label'
 import { RunWorkflowButton } from '../workflow-run/run-sidebar'
 
 const tab =
-  'group/context h-6 min-w-0 gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground data-popup-open:bg-muted/60 data-popup-open:text-foreground'
+  'group/context h-6 min-w-0 gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground'
 const item = 'gap-1.5 px-2 py-1.5 text-xs'
 const icon = 'size-3.5 text-muted-foreground'
 const heading = '**:[[cmdk-group-heading]]:font-normal'

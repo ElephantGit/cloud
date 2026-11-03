@@ -84,7 +84,7 @@ function TurnEnding({ turn }: { turn: Turn }) {
   if (turn.status === 'streaming') return null
   if (turn.status === 'failed') {
     return (
-      <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive-soft px-3 py-2 text-sm text-destructive">
         <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
         <span>{turn.error ?? '这一轮没有完成。'}</span>
       </div>
@@ -159,7 +159,7 @@ function FileChanges({ changes }: { changes: FileChange[] }) {
             </TraceIcon>
             <TraceTitle>修改了 {changes.length} 个文件</TraceTitle>
             <TraceDescription>
-              <span className="text-emerald-600 dark:text-emerald-400">+{added}</span> <span className="text-destructive">−{removed}</span>
+              <span className="text-success">+{added}</span> <span className="text-destructive">−{removed}</span>
             </TraceDescription>
           </TraceLine>
         </TraceCollapsibleTrigger>
@@ -195,7 +195,7 @@ function FolderNodes({ folder }: { folder: Folder }) {
           {c.created ? <FilePlusIcon className="size-3.5" /> : <FileIcon className="size-3.5" />}
           <span className="min-w-0 truncate font-mono text-xs">{c.path.split('/').at(-1)}</span>
           <span className="ml-auto font-mono text-xs tabular-nums">
-            <span className="text-emerald-600 dark:text-emerald-400">+{c.added}</span> <span className="text-destructive">−{c.removed}</span>
+            <span className="text-success">+{c.added}</span> <span className="text-destructive">−{c.removed}</span>
           </span>
         </div>
       ))}

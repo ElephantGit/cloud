@@ -32,7 +32,7 @@ export function RunActV2Execution({
             </p>
             {executor.pluginVersion !== '' && <p className="text-[11px] text-muted-foreground">{t('workflowRun.v2.pluginVersion', { version: executor.pluginVersion })}</p>}
             {model.fallback && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+              <p className="text-[11px] text-warning">
                 {model.requested === ''
                   ? t('workflowRun.v2.modelDefault')
                   : t('workflowRun.v2.modelFallback', { model: model.requested })}
@@ -45,7 +45,7 @@ export function RunActV2Execution({
         <div
           role="note"
           aria-label={t('workflowRun.v2.unappliedLabel')}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-4 text-amber-800 dark:text-amber-200"
+          className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] leading-4 text-warning"
         >
           <p className="font-medium">
             {t('workflowRun.v2.unapplied', { settings: unapplied.map((setting) => t(unappliedSettingKeys[setting])).join(t('workflowRun.v2.listSeparator')) })}

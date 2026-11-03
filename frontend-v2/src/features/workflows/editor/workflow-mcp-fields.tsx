@@ -198,7 +198,7 @@ export function WorkflowMcpFields({
               </div>
               <Switch
                 size="sm"
-                className="shrink-0 data-checked:bg-blue-600 hover:data-checked:bg-blue-700"
+                className="shrink-0 data-checked:bg-brand hover:data-checked:bg-brand/90"
                 checked={configuredMcp.enabled}
                 aria-label={t("settings.workflow.toggleMcp", {
                   name: mcp.label,

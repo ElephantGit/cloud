@@ -305,19 +305,19 @@ export function RunHitlComposer({
           className={cn(
             "group flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left",
             "transition-[background-color,border-color,box-shadow] duration-200",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/25",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/25",
             embedded
-              ? "rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 hover:border-amber-500/45 hover:bg-amber-500/[0.08]"
+              ? "rounded-xl border border-warning/30 bg-warning/5 px-3 py-2.5 hover:border-warning/45 hover:bg-warning/[0.08]"
               : cn(
-                  "rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3",
+                  "rounded-2xl border border-warning/30 bg-warning/5 px-3.5 py-3",
                   "shadow-[0_1px_2px_rgba(180,83,9,0.04)]",
-                  "hover:border-amber-500/45 hover:bg-amber-500/[0.08]",
+                  "hover:border-warning/45 hover:bg-warning/[0.08]",
                 ),
           )}
           aria-expanded={false}
           onClick={() => onExpandedChange(true)}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-200">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
             <IconHandClick className="size-3.5" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
@@ -328,7 +328,7 @@ export function RunHitlComposer({
               {collapsedDetail}
             </p>
           </div>
-          <span className="inline-flex h-7 shrink-0 items-center gap-1 text-xs font-medium text-amber-900/80 transition-colors group-hover:text-amber-950 dark:text-amber-200/80">
+          <span className="inline-flex h-7 shrink-0 items-center gap-1 text-xs font-medium text-warning/80 transition-colors group-hover:text-warning">
             {t("workflowRun.hitl.reopenAction")}
             <IconChevronDown
               className="size-3.5 rotate-180 opacity-70"
@@ -356,9 +356,9 @@ export function RunHitlComposer({
       <section
         className={cn(
           embedded
-            ? "rounded-xl border border-amber-500/25 bg-amber-500/[0.05] p-3 dark:bg-amber-400/[0.07]"
+            ? "rounded-xl border border-warning/25 bg-warning/[0.05] p-3"
             : cn(
-                "rounded-2xl border border-amber-500/20 bg-card p-4",
+                "rounded-2xl border border-warning/20 bg-card p-4",
                 "shadow-[0_1px_2px_rgba(180,83,9,0.04),0_8px_24px_rgba(0,0,0,0.04)]",
                 "dark:shadow-[0_1px_2px_rgba(0,0,0,0.28),0_10px_28px_rgba(0,0,0,0.16)]",
               ),
@@ -366,11 +366,11 @@ export function RunHitlComposer({
       >
         <div className="flex items-start gap-3">
           <span
-            className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-500/10"
+            className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/10"
             aria-hidden
           >
-            <span className="absolute inset-0 animate-ping rounded-full bg-amber-500/25 motion-reduce:animate-none" />
-            <span className="relative size-2.5 animate-pulse rounded-full bg-amber-500 motion-reduce:animate-none" />
+            <span className="absolute inset-0 animate-ping rounded-full bg-warning/25 motion-reduce:animate-none" />
+            <span className="relative size-2.5 animate-pulse rounded-full bg-warning motion-reduce:animate-none" />
           </span>
           <div className="min-w-0 flex-1 pt-0.5">
             {multi ? (
@@ -438,7 +438,7 @@ export function RunHitlComposer({
               variant="ghost"
               size="icon-sm"
               data-hitl-collapse=""
-              className="size-7 shrink-0 cursor-pointer rounded-full text-muted-foreground hover:bg-amber-500/10 hover:text-amber-950 dark:hover:text-amber-100"
+              className="size-7 shrink-0 cursor-pointer rounded-full text-muted-foreground hover:bg-warning/10 hover:text-warning"
               aria-label={t("workflowRun.hitl.collapseAction")}
               aria-expanded={true}
               onPointerDown={(event) => event.stopPropagation()}
@@ -454,12 +454,12 @@ export function RunHitlComposer({
             className={cn(
               "mt-3 rounded-lg px-3 py-2.5",
               gateKind === "clarify"
-                ? "border border-amber-500/30 bg-background/90"
+                ? "border border-warning/30 bg-background/90"
                 : "border border-border/70 bg-background/70",
             )}
           >
             {gateKind === "clarify" && (
-              <p className="text-[10px] font-medium uppercase tracking-[0.04em] text-amber-900 dark:text-amber-200">
+              <p className="text-[10px] font-medium uppercase tracking-[0.04em] text-warning">
                 {t("workflowRun.hitl.modelQuestion")}
               </p>
             )}
@@ -475,7 +475,7 @@ export function RunHitlComposer({
         )}
 
         {showTimeout && (
-          <p className="mt-2 text-[11px] tabular-nums text-amber-800/80 dark:text-amber-200/80">
+          <p className="mt-2 text-[11px] tabular-nums text-warning/80">
             {t("workflowRun.hitl.timeoutAt", { at: timeoutLabel })}
           </p>
         )}
@@ -512,11 +512,11 @@ export function RunHitlComposer({
                           "group relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-center text-sm font-medium",
                           "animate-in fade-in zoom-in-95 duration-200 fill-mode-both motion-reduce:animate-none",
                           "transition-[background-color,border-color,box-shadow,color,opacity] duration-200 ease-out",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/30",
                           "disabled:pointer-events-none disabled:opacity-60",
                           active
                             ? "border-foreground/25 bg-foreground text-background shadow-sm"
-                            : "border-border/90 bg-background text-foreground hover:border-amber-500/40 hover:bg-amber-500/[0.06]",
+                            : "border-border/90 bg-background text-foreground hover:border-warning/40 hover:bg-warning/[0.06]",
                         )}
                         onClick={() => onSelectOption(field.name, option.value)}
                       >
@@ -559,7 +559,7 @@ export function RunHitlComposer({
                   className={cn(
                     "relative flex flex-col rounded-xl border border-border/80 bg-background",
                     "transition-[border-color,box-shadow] duration-200",
-                    "focus-within:border-amber-500/40 focus-within:ring-2 focus-within:ring-amber-500/20",
+                    "focus-within:border-warning/40 focus-within:ring-2 focus-within:ring-warning/20",
                   )}
                 >
                   <div className="flex flex-col p-2">
@@ -663,11 +663,11 @@ function HitlChoiceStrip({
                   className={cn(
                     "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs font-medium",
                     "transition-[background-color,border-color,color,box-shadow] duration-200 ease-out",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/30",
                     "disabled:pointer-events-none disabled:opacity-60",
                     active
                       ? "border-foreground/20 bg-foreground text-background shadow-sm"
-                      : "border-border bg-background text-muted-foreground hover:border-amber-500/40 hover:bg-amber-500/[0.06] hover:text-foreground",
+                      : "border-border bg-background text-muted-foreground hover:border-warning/40 hover:bg-warning/[0.06] hover:text-foreground",
                   )}
                   onClick={() => onSelect(field.name, option.value)}
                 >

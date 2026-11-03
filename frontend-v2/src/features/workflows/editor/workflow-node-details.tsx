@@ -1282,7 +1282,7 @@ function IterationNodeDetails({
             t("settings.workflow.field.iterationIterator"),
           )}
           {config.iteratorSelector.length === 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
+            <p className="text-xs text-warning">
               {t("settings.workflow.iteration.iteratorEmpty")}
             </p>
           )}
@@ -1301,7 +1301,7 @@ function IterationNodeDetails({
             t("settings.workflow.field.iterationCollect"),
           )}
           {config.collectSelector.length === 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
+            <p className="text-xs text-warning">
               {t("settings.workflow.iteration.collectEmpty")}
             </p>
           )}

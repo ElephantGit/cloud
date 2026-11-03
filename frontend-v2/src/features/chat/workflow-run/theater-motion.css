@@ -9,7 +9,7 @@
     box-shadow: 0 0 0 3px
       var(
         --theater-breathe-color,
-        color-mix(in oklch, var(--color-sky-500, #0ea5e9) 16%, transparent)
+        color-mix(in oklch, var(--info) 16%, transparent)
       );
   }
 }
@@ -37,7 +37,7 @@
 .theater-live-breathe {
   --theater-breathe-color: color-mix(
     in oklch,
-    var(--color-sky-500, #0ea5e9) 16%,
+    var(--info) 16%,
     transparent
   );
   animation: theater-live-breathe 2.6s ease-in-out infinite;
@@ -46,7 +46,7 @@
 .theater-live-breathe-amber {
   --theater-breathe-color: color-mix(
     in oklch,
-    var(--color-amber-500, #f59e0b) 18%,
+    var(--warning) 18%,
     transparent
   );
   animation: theater-live-breathe 2.6s ease-in-out infinite;

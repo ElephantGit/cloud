@@ -8,8 +8,8 @@ import { features } from './features'
 /** The narrow icon column on the far left: one icon per feature page. */
 export function NavRail() {
   return (
-    <nav aria-label="主导航" className="flex w-13 shrink-0 flex-col items-center gap-1 border-r bg-muted/40 py-3">
-      <OraMark className="mb-3" />
+    <nav aria-label="主导航" className="flex w-13 shrink-0 flex-col items-center gap-1.5 border-r border-sidebar-border bg-sidebar py-3">
+      <OraMark className="mb-2.5 size-8 shadow-sm dark:ring-1 dark:ring-white/10" />
       {features.map((f) => (
         <Tooltip key={f.path}>
           <TooltipTrigger
@@ -19,8 +19,8 @@ export function NavRail() {
                 aria-label={f.title}
                 className={({ isActive }) =>
                   cn(
-                    'flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                    isActive && 'bg-background text-foreground shadow-sm ring-1 ring-border',
+                    'flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50',
+                    isActive && 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand',
                   )
                 }
               />

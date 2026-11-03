@@ -106,7 +106,7 @@ export function Composer(props: ComposerProps) {
       )}
       <form
         ref={form}
-        className="relative flex flex-col rounded-xl border border-border bg-card shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-200 focus-within:border-foreground/30 focus-within:shadow-[0_2px_4px_rgba(0,0,0,0.07),0_12px_32px_rgba(0,0,0,0.07)] focus-within:ring-2 focus-within:ring-ring/25 hover:border-foreground/20 hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_10px_28px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.28),0_10px_28px_rgba(0,0,0,0.18)]"
+        className="relative flex flex-col rounded-2xl border border-border bg-card shadow-[0_1px_2px_var(--shadow-color),0_8px_24px_var(--shadow-color)] transition-[border-color,box-shadow] duration-200 hover:border-foreground/20 focus-within:border-brand/45 focus-within:shadow-[0_1px_2px_var(--shadow-color),0_12px_32px_var(--shadow-color)] focus-within:ring-3 focus-within:ring-brand/15"
         onSubmit={(e) => {
           e.preventDefault()
           if (!canSend) return
@@ -234,7 +234,7 @@ export function Composer(props: ComposerProps) {
   )
 }
 
-const footerControl = 'h-7 gap-1.5 rounded-md px-2 text-xs font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+const footerControl = 'h-7 gap-1.5 rounded-md px-2 text-xs font-normal text-muted-foreground hover:bg-accent hover:text-foreground'
 const sendButton =
   'size-8 rounded-full bg-foreground text-background shadow-sm transition-[background-color,color,box-shadow] duration-200 hover:bg-foreground/85 hover:shadow-md disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:shadow-none'
 
@@ -273,7 +273,7 @@ function PermissionSelector() {
 /** Prompts waiting for the agent to finish its turn, sent in order. */
 function Queue({ items, onRemove }: { items: string[]; onRemove: (index: number) => void }) {
   return (
-    <div className="mb-2 rounded-lg border bg-muted/40 px-3 py-2" aria-label="排队中的消息">
+    <div className="mb-2 rounded-xl border bg-muted/50 px-3 py-2" aria-label="排队中的消息">
       <Trace>
         <TraceLine>
           <TraceIcon>

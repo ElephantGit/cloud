@@ -9,7 +9,7 @@ export function Layout() {
     <SessionGate>
       <div className="flex h-svh">
         <NavRail />
-        <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+        <main className="flex min-w-0 flex-1 flex-col overflow-auto bg-background">
           <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">加载中…</p>}>
             <Outlet />
           </Suspense>

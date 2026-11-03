@@ -90,7 +90,7 @@ export function RunLoopRoundHistory({
                   <RunRetryWaitLabel
                     wait={state.retryWait}
                     variant="compact"
-                    className="shrink-0 text-[9px] tabular-nums text-orange-700 dark:text-orange-300"
+                    className="shrink-0 text-[9px] tabular-nums text-caution"
                   />
                 </>
               )}

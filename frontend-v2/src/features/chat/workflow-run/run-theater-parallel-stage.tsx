@@ -442,15 +442,15 @@ export function RunTheaterParallelStage({
                   "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 font-sans text-[11px] font-medium transition-[colors,box-shadow] duration-200",
                   retryWait !== undefined ? "max-w-[13rem]" : "max-w-[9rem]",
                   selected && waiting
-                    ? "border-amber-500/55 bg-amber-500/15 text-amber-950 shadow-sm dark:text-amber-50"
+                    ? "border-warning/55 bg-warning/15 text-warning shadow-sm"
                     : selected && retryWaiting
-                      ? "border-orange-500/55 bg-orange-500/15 text-orange-950 shadow-sm dark:text-orange-50"
+                      ? "border-caution/55 bg-caution/15 text-caution shadow-sm"
                       : selected
                         ? "border-foreground/35 bg-background shadow-sm"
                         : waiting
-                          ? "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+                          ? "border-warning/40 bg-warning/10 text-warning"
                           : retryWaiting
-                            ? "border-orange-500/40 bg-orange-500/10 text-orange-950 dark:text-orange-100"
+                            ? "border-caution/40 bg-caution/10 text-caution"
                             : "border-border/70 bg-muted/40 text-muted-foreground hover:border-border hover:bg-background hover:text-foreground",
                 )}
                 aria-pressed={selected}
@@ -467,7 +467,7 @@ export function RunTheaterParallelStage({
                   <RunRetryWaitLabel
                     wait={retryWait}
                     variant="compact"
-                    className="shrink-0 text-[9px] tabular-nums text-orange-800 dark:text-orange-200"
+                    className="shrink-0 text-[9px] tabular-nums text-caution"
                   />
                 )}
               </button>

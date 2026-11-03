@@ -418,10 +418,10 @@ function Banner({
       role={role}
       className={cn(
         "flex gap-2.5 rounded-[9px] px-3 py-2.5 text-[12.5px] leading-normal",
-        tone === "warn" && "bg-amber-500/10 text-amber-800 dark:text-amber-300",
+        tone === "warn" && "bg-warning/10 text-warning",
         tone === "ok" &&
-          "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
-        tone === "info" && "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+          "bg-success/10 text-success",
+        tone === "info" && "bg-brand-soft text-brand",
         tone === "error" && "bg-destructive/10 text-destructive",
       )}
     >

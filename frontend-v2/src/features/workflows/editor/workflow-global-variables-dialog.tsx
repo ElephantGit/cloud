@@ -80,7 +80,7 @@ export function WorkflowGlobalVariablesDialog({
                 className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
               >
                 <div className="flex items-center gap-1.5 text-sm">
-                  <IconVariable className="size-4 text-orange-600" />
+                  <IconVariable className="size-4 text-caution" />
                   <code className="font-semibold text-foreground">
                     {variable.name}
                   </code>

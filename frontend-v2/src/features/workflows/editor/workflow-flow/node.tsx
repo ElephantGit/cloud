@@ -262,7 +262,7 @@ function ConditionNodeDetails({
               {conditionCase.conditions.map((comparison, comparisonIndex) => (
                 <Fragment key={comparisonIndex}>
                   {comparisonIndex > 0 && (
-                    <div className="flex h-3.5 items-center justify-end pr-2 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                    <div className="flex h-3.5 items-center justify-end pr-2 text-[10px] font-semibold text-brand">
                       {(conditionCase.logic ?? "and").toUpperCase()}
                     </div>
                   )}
@@ -273,10 +273,10 @@ function ConditionNodeDetails({
                           <span className="truncate text-muted-foreground">
                             {comparison.variableSelector[0]}
                           </span>
-                          <span className="text-blue-600 dark:text-blue-400">
+                          <span className="text-brand">
                             /
                           </span>
-                          <span className="truncate text-blue-600 dark:text-blue-400">
+                          <span className="truncate text-brand">
                             {comparison.variableSelector.slice(1).join(".")}
                           </span>
                         </div>

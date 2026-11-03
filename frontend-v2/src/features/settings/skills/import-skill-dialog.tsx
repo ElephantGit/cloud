@@ -149,7 +149,7 @@ export function ImportSkillDialog({
           {conflict && (
             <div
               role="alert"
-              className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"
+              className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm"
             >
               <p className="font-medium">已有同名技能</p>
               <p className="mt-1 text-muted-foreground">

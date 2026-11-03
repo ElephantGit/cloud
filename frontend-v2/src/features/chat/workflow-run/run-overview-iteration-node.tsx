@@ -70,13 +70,13 @@ export function RunOverviewIterationNode({
         unused && "opacity-60",
         tone.ring,
         focused && "shadow-md ring-2",
-        state.status === "running" && "ring-sky-500/35 theater-live-breathe",
+        state.status === "running" && "ring-info/35 theater-live-breathe",
         state.status === "awaiting_input" &&
-          "ring-amber-500/35 theater-live-breathe-amber",
+          "ring-warning/35 theater-live-breathe-amber",
         peerActive &&
           state.status !== "running" &&
           state.status !== "awaiting_input" &&
-          "ring-sky-500/20",
+          "ring-info/20",
       )}
     >
       <Handle
@@ -153,7 +153,7 @@ export function RunOverviewIterationNode({
           height: ITERATION_START_SIZE,
         }}
       >
-        <span className="flex size-6 items-center justify-center rounded-full bg-blue-600 text-white">
+        <span className="flex size-6 items-center justify-center rounded-full bg-brand text-brand-foreground">
           <IconHomeFilled className="size-3" aria-hidden="true" />
         </span>
         <Handle

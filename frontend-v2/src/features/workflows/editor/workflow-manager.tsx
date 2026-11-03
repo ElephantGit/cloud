@@ -284,7 +284,7 @@ export function WorkflowManager({
                   {workflow.name}
                 </span>
                 {workflow.imported === true && (
-                  <span className="shrink-0 rounded-full bg-blue-500/10 px-1.5 py-px text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                  <span className="shrink-0 rounded-full bg-brand-soft px-1.5 py-px text-[10px] font-medium text-brand">
                     {t("settings.workflow.transfer.importedBadge")}
                   </span>
                 )}

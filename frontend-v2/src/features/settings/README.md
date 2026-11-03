@@ -4,7 +4,7 @@
 
 ## 数据边界
 
-成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。旧 `dev/demo` 账号和启动配置 `retired` 里的旧预置成员会被软删除，不出现在名册中；它们的历史引用保留。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
+成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。名册里只有启动配置里的 bootstrap owner（显示名取自 `users.json` 的 `displayName`，「协作空间 Owner」）和真实受邀成员；旧 `dev/demo` 账号和启动配置 `retired` 里的旧预置成员会被软删除，不出现在名册中，它们的历史引用保留。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
 
 成员、Plugins、技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
 契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 与 Hook 没有 v2 执行器，安装和卸载是明确标注的浏览器本地演示，不会调用安装 API 或伪造服务端成功；目录缺少对应类型时提供演示条目。模型连接和角色仍是明确标注的浏览器演示。所有演示写入按登录用户隔离，其中 MCP/Hook 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
@@ -54,7 +54,8 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 ## 验证
 
 `npm run check` 检查类型、Oxlint、单元测试、客户端一致性与构建。`e2e/login.ts` 提供邮箱
-登录辅助，`e2e/settings.spec.ts` 覆盖六页路由、成员页的 owner/member 两种视角、角色增改删
+登录辅助，以及 bootstrap owner 的固定邮箱 `ownerEmail`、显示名 `ownerName` 和「邀请一个真实
+成员后再以该成员登录」的 `signInAsInvitedMember`；`e2e/settings.spec.ts` 覆盖六页路由、成员页的 owner/member 两种视角、角色增改删
 与 Markdown 导入、插件和技能安装/卸载、技能新建与 `SKILL.md` 导入及覆盖、Agent 选择生命周期、
 刷新与新浏览器上下文读取服务端状态、错误恢复、主题、375/768/1440 布局与截图；
 `e2e/multiuser.spec.ts` 覆盖 owner 邀请（含邀请入队）、被邀请者登录、未邀请邮箱被拒与

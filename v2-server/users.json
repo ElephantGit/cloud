@@ -1,6 +1,6 @@
 {
   "users": [
-    { "email": "owner@demo.ora-space.dev", "role": "owner" }
+    { "email": "owner@demo.ora-space.dev", "displayName": "协作空间 Owner", "role": "owner" }
   ],
   "retired": [
     { "email": "alice@demo.ora-space.dev" },

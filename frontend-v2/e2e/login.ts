@@ -2,8 +2,8 @@ import { expect, type Page } from '@playwright/test'
 
 /** The owner from `v2-server/users.json`, the account the startup preset guarantees. */
 export const ownerEmail = 'owner@demo.ora-space.dev'
-/** The owner has no mock display name; the roster falls back to the email local part. */
-export const ownerName = ownerEmail.split('@')[0]
+/** The owner's display name in `v2-server/users.json`; the roster shows it instead of an address. */
+export const ownerName = '协作空间 Owner'
 
 /**
  * Signs in through the real login screen. Every test gets a private browser context, so this is

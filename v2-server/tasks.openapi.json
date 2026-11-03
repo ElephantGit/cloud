@@ -1261,6 +1261,224 @@
         }
       }
     },
+    "/api/v2/tenants/{tid}/tasks/{taskid}/decompositions": {
+      "get": {
+        "operationId": "listTaskDecompositions",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List the task's decompositions, newest first",
+        "description": "A decomposition whose workflow run has ended is settled before it is listed, so a read never shows a finished run as still splitting.",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDecompositionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "startTaskDecomposition",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Split the task into subtasks with a published workflow",
+        "description": "Runs the workflow's published version over the task (its title and description as input, its project as the run's project) as the caller. When the run succeeds, its output's `tasks` array (items with `title` and an optional `description`) becomes the task's subtasks: pending, unassigned, in the task's project. Writing them and ending the decomposition share one transaction, so a run's subtasks are written once. Any other end fails the decomposition with a reason. Errors: `decomposition_active` (409) while another is running, `invalid_workflow` (400) for a workflow that is missing or unpublished, `task_closed` (409) for a done or cancelled task, `subtask_not_decomposable` (409) for a subtask.",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "A retry with the same key returns the decomposition it started."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskDecompositionStart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDecomposition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/tenants/{tid}/task-mentions": {
       "get": {
         "operationId": "listPendingMentions",
@@ -1409,6 +1627,11 @@
           },
           "projectId": {
             "type": "string"
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The task this one was split from; null for a task created by hand."
           },
           "assignee": {
             "type": "object",
@@ -1965,6 +2188,102 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PendingMention"
+            }
+          }
+        }
+      },
+      "TaskDecompositionStart": {
+        "type": "object",
+        "required": [
+          "workflowId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "A workflow of the workspace with a published version."
+          }
+        }
+      },
+      "TaskDecomposition": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "startedBy",
+          "startedByName",
+          "workflowId",
+          "workflowName",
+          "workflowRunId",
+          "status",
+          "failure",
+          "createdCount",
+          "createdAt",
+          "finishedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "startedByName": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string"
+          },
+          "workflowName": {
+            "type": "string"
+          },
+          "workflowRunId": {
+            "type": "string",
+            "description": "The workflow run doing the split; the workflow's run history lists it too."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "description": "running until the run ends; succeeded once its subtasks are written; failed otherwise."
+          },
+          "failure": {
+            "type": "string",
+            "description": "Why a failed decomposition wrote no subtasks, in the page's words; empty otherwise."
+          },
+          "createdCount": {
+            "type": "integer",
+            "description": "How many subtasks a succeeded decomposition wrote."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TaskDecompositionList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskDecomposition"
             }
           }
         }

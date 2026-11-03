@@ -192,6 +192,8 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop` | 结束一次活着的运行：正在执行的一轮先取消，空闲的会话直接结束；任何成员都可以停 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events` | 运行会话的 SSE，形状与对话事件流相同；工作区任何成员都能读 |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/comments` | 必须带 `Idempotency-Key`；`{body, mentions?, toAgent?, executorId?}` 记一条评论，`toAgent` 同时发给 Agent |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/decompositions` | 任务的拆分记录，最新在前；运行已结束但还没结算的先结算再返回 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/decompositions` | 必须带 `Idempotency-Key`；`{workflowId}` 用一个已发布的工作流拆分任务，返回 201。见下文「任务拆分」 |
 | `GET /api/v2/tenants/{tid}/task-mentions` | 调用者还没回复的 @：每个未结束任务一条，取别人最近一次 @ 调用者、且调用者此后没在该任务评论过的那条 |
 
 任务归属于一个工作区项目，`projectId` 必须在同一工作区内，否则 400 `invalid_project`。指派人显式类型化，
@@ -232,6 +234,21 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 Space Agent），写入时解析名字；正文里手打的「@名字」不路由。`toAgent` 把评论作为一轮发给 Agent：调用者自己的活运行就追加到同一会话，
 没有活运行就用调用者身份开新运行。v2 没有通知渠道，@ 靠 `task-mentions` 送达：被 @ 的人在任务里评论一次就算回复，
 自己 @ 自己和已完成、已取消任务上的 @ 不算。
+
+#### 任务拆分
+
+任务拆分（[`internal/taskdecomp`](internal/taskdecomp/taskdecomp.go)，表 `v2_task_decompositions`）是 Tech Lead 在协作页点「拆分」：
+用一个已发布的工作流（演示里是「需求拆分」）把大需求拆成子任务。
+
+- **一次拆分 = 一次工作流运行**：用点「拆分」的人的身份运行工作流的已发布版本，输入是任务标题和描述，项目是任务的项目。
+  运行和普通运行一样出现在工作流的运行历史里。同一任务同时只有一次进行中的拆分（409 `decomposition_active`）；
+  已结束的任务（409 `task_closed`）和子任务（409 `subtask_not_decomposable`）不能拆；工作流不存在或没有发布版本是 400 `invalid_workflow`。
+- **子任务**：运行成功后，输出的 `tasks` 数组（每项 `title`、可选的 `description`，也接受整段数组的 JSON 字符串）变成任务的子任务：
+  `v2_tasks.parent_id` 指向大需求，项目同大需求，创建人是发起人，不指派，状态 `pending`，按输出顺序排在列表里。只有一层，子任务不再拆。
+  标题和描述超长的部分截断；一次最多 20 个。
+- **幂等**：结束拆分和写子任务在同一个事务里，以拆分仍是 `running` 为条件，所以同一次运行无论被看到结束几次（后台观察、页面读取、重启恢复），子任务只写一次。
+- **失败可见**：运行失败或被取消、输出里没有 `tasks` 数组、数组为空或某项缺标题、执行桥拒绝启动，拆分都记为 `failed` 并写明原因（`failure`），可以重新拆分。
+- **重启**：拆分不跨进程。启动时先由工作流执行桥中断上一个进程的运行，再结算留下的拆分：运行已成功的照常建子任务，其余记为失败。
 
 HTTP 集成测试按此候选 OpenAPI 校验每一次响应，并覆盖创建、编辑、合法与非法状态迁移、三种指派、
 版本冲突和越权读取，以及开始、停止、评论、@、时间线和事件流；数据库测试另覆盖跨租户隔离与执行服务的推进；

@@ -18,6 +18,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskdecomp"
 	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 )
 
@@ -83,6 +84,8 @@ type Options struct {
 	// TaskRuns runs task Agents and records comments for the collaboration page; nil keeps those
 	// writes and the run event stream unavailable, while task reads and the timeline still work.
 	TaskRuns *taskrun.Host
+	// TaskDecompositions splits a task into subtasks with a workflow; nil keeps 「拆分」 unavailable.
+	TaskDecompositions *taskdecomp.Host
 }
 
 // New returns the handler for every route v2-server serves.
@@ -173,6 +176,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/workflow-runs/{rid}/nodes/{nodeRunId}/events", h.authed(h.workflowNodeEvents))
 	h.chatRoutes(mux)
 	h.taskRunRoutes(mux)
+	h.taskDecompositionRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }

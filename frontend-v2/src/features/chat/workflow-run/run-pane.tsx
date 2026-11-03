@@ -1,5 +1,5 @@
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MapIcon, PlayIcon, RotateCcwIcon, SquareIcon, TheaterIcon, WorkflowIcon } from 'lucide-react'
+import { MapIcon, MessageSquareIcon, PlayIcon, RotateCcwIcon, SquareIcon, TheaterIcon, WorkflowIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,7 @@ import { localizeContractError } from '@/lib/workflows/host/contract-error'
 import { isTerminalRunStatus, type GraphWorkflowRun, type WorkflowArtifact, type WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
 import { FadeText } from '../components/fade-text'
 import { ShowSidebarButton } from '../components/sidebar'
-import { useChatStore } from '../store'
+import { emptyDraft, newChatKey, useChatStore } from '../store'
 import { useRunInvalidations } from './run-events'
 import { cancelRun, rerun, runKeys, runQuery, runSnapshotQuery, startRun } from './server-runs'
 import { isLoopHistoryNode } from './loop-round-state'
@@ -313,6 +313,20 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
             >
               <RotateCcwIcon />
               再跑一次
+            </Button>
+          )}
+          {run.status === 'succeeded' && run.finalOutput && (
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => {
+              const store = useChatStore.getState()
+              const draft = store.drafts[newChatKey] ?? emptyDraft
+              store.startNewChat({ projectId: run.projectId })
+              store.setDraft(newChatKey, {
+                ...draft,
+                text: `${draft.text ? `${draft.text}\n\n` : ''}关于工作流「${run.name}」的交付结果，我想了解：\n\n--- 工作流上下文 ---\n本对话使用独立沙盒；以下是工作流的交付说明，不代表当前目录已包含工作流的修改。\n运行 ID：${run.id}\n需求：${run.kickoffInput ?? ''}\n交付结果：\n${run.finalOutput}`,
+              })
+            }}>
+              <MessageSquareIcon />
+              在对话中追问
             </Button>
           )}
         </div>

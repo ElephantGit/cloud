@@ -49,13 +49,15 @@ test('workflow runs: v2-server executes a published workflow started from chat',
   const workflowId = ((await created.json()) as { draft: { workflowId: string } }).draft.workflowId
   expect((await page.request.post(`/api/v2/tenants/${tenantId}/workflows/${workflowId}/publish`, { data: { version: 'v1' } })).ok()).toBe(true)
 
-  // A project's + offers the published workflows; the run opens pending in the main area, and
+  // The visible input-area entry offers published workflows; the run opens pending, and
   // follows the run's invalidation stream while it has not ended.
   await page.reload()
+  await page.getByRole('button', { name: '选择项目' }).click()
+  await page.getByRole('option', { name: 'Demo', exact: true }).click()
   const runEvents = page.waitForResponse((r) => /\/workflow-runs\/[^/]+\/events$/.test(new URL(r.url()).pathname))
   const demo = page.getByRole('complementary', { name: '聊天记录' }).getByRole('region', { name: '项目 Demo' })
-  await demo.getByRole('button', { name: '在 Demo 新建对话' }).click()
-  await page.getByRole('menuitem', { name: '运行工作流' }).hover()
+  await page.getByRole('button', { name: '运行工作流', exact: true }).click()
+  await screenshot(page, testInfo.outputPath('workflow-entry.png'))
   await page.getByRole('menuitem', { name: new RegExp(name) }).click()
   const dialog = page.getByRole('dialog', { name: '运行工作流' })
   await dialog.getByLabel('运行名称').fill(runName)

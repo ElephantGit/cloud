@@ -8,7 +8,7 @@ import { UserContext } from '@/app/auth/user'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { demoUser } from '@/test/backend'
 import Page from '../page'
-import { resetChatStore } from '../store'
+import { newChatKey, resetChatStore, useChatStore } from '../store'
 import { chatBackend, FakeEventSource, line, tenantId } from '../test-backend'
 import { sampleWorkflowBackend, serveWorkflows, type WorkflowServer } from '@/lib/workflows/test/workflow-server'
 import { runRefreshMs } from './server-runs'
@@ -60,6 +60,21 @@ describe('workflow runs in chat', () => {
     runRefreshMs.interval = 1_000
   })
 
+  it('creates a run in the chosen project from the visible new-chat entry', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(screen.getByRole('button', { name: '选择项目' }))
+    await user.click(await screen.findByRole('option', { name: 'ora-space/desktop' }))
+    await user.click(screen.getByRole('button', { name: '运行工作流' }))
+    await user.click(await screen.findByRole('menuitem', { name: /示例：代码审查/ }))
+    const dialog = await screen.findByRole('dialog', { name: '运行工作流' })
+    await user.click(within(dialog).getByRole('button', { name: '创建运行' }))
+    await screen.findByRole('region', { name: '工作流运行' })
+    await waitFor(() => expect([...runs.runs.values()]).toHaveLength(1))
+    expect([...runs.runs.values()][0]!.detail.run.projectId).toBe('p-desktop')
+    expect(screen.queryByRole('dialog', { name: '运行工作流' })).not.toBeInTheDocument()
+  })
+
   it('runs a published workflow on v2-server and follows it on the Theater', async () => {
     const user = userEvent.setup()
     await renderPage()
@@ -102,6 +117,14 @@ describe('workflow runs in chat', () => {
     expect(within(details).getByLabelText('实际执行')).toHaveTextContent('Claude Code · Fixture')
     expect(within(details).getByLabelText('实际执行')).toHaveTextContent('没有找到配置的模型「claude-sonnet-5-5」')
     expect(within(details).getByLabelText('v2 未应用的设置')).toHaveTextContent('v2 未应用：自动重试')
+
+    await user.click(within(pane).getByRole('button', { name: '在对话中追问' }))
+    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('ora-space/cloud')
+    const followup = useChatStore.getState().drafts[newChatKey]!.text
+    expect(followup).toContain('审查 cloud#210')
+    expect(followup).toContain(created!.detail.run.id)
+    expect(followup).toContain('独立沙盒')
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue(followup)
   }, 30_000)
 
   it('reads an executing run again whenever its events stream says it changed', async () => {

@@ -43,6 +43,26 @@ export function RunWorkflowSubmenu({ onPick }: { onPick: (workflow: PublishedWor
   )
 }
 
+/** A visible entry beside the new chat's project selector, using the same frozen-version flow. */
+export function RunWorkflowButton({ projectId }: { projectId?: string }) {
+  const [open, setOpen] = useState(false)
+  const [workflow, setWorkflow] = useState<PublishedWorkflow>()
+  return (
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs" disabled={!projectId} />}>
+          <WorkflowIcon className="size-3.5" />
+          运行工作流
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side="top" className="flex w-72 flex-col p-0">
+          {open && <PublishedWorkflowPicker onPick={(picked) => { setWorkflow(picked); setOpen(false) }} />}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {projectId && <RunWorkflowDialog key={projectId} projectId={projectId} workflow={workflow} onClose={() => setWorkflow(undefined)} />}
+    </>
+  )
+}
+
 /**
  * The library changes on the workflow page, so it is read each time the submenu opens and
  * dropped when it closes: an earlier answer is never shown as the current one, and a failure

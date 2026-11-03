@@ -15,6 +15,7 @@ import type { CreateProject } from '@/lib/projects-api/generated'
 import type { NewChat, Project } from '../store'
 import { NewProjectDialog } from './new-project-dialog'
 import { SandboxLabel } from './sandbox-label'
+import { RunWorkflowButton } from '../workflow-run/run-sidebar'
 
 const tab =
   'group/context h-6 min-w-0 gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground data-popup-open:bg-muted/60 data-popup-open:text-foreground'
@@ -139,6 +140,7 @@ export function ContextBar({
         </DropdownMenuContent>
       </DropdownMenu>
       <SandboxLabel />
+      <RunWorkflowButton projectId={project?.id} />
 
       {onCreateProject && <NewProjectDialog open={creating} onOpenChange={setCreating} onCreate={onCreateProject} />}
     </div>

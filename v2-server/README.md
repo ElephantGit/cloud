@@ -36,6 +36,10 @@ go run .                               # 监听 127.0.0.1:8090
 TEST_DATABASE_URL='postgres://ora:ora-local@127.0.0.1:55432/ora?sslmode=disable' go test -race ./...
 ```
 
+### 录屏场景 seed
+
+新人需求开发、需求拆分和每日巡检的工作流 seed 见 [`demo/README.md`](demo/README.md)。三个 seed 接收各段明确的用户、项目和真实模型绑定，可按任意顺序叠加；每日巡检带三晚可查询的预置历史。演示环境的重置与进程启动由公共框架负责。
+
 ### 用 DeepSeek Flash 演示
 
 模型固定为 DeepSeek Flash（`https://api.deepseek.com` 上的 `deepseek-flash`），只需要填 key：

@@ -73,7 +73,7 @@ func seedLead(ctx context.Context, s *Seeder) error {
 			}
 		}
 	}
-	return nil
+	return seedDashboard(ctx, s, lead, project)
 }
 
 func seedLeadSquad(ctx context.Context, s *Seeder, lead execution.Scope, members map[string]execution.Scope) error {

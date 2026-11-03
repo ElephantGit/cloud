@@ -157,7 +157,7 @@ func TestConfiguredMessagesProviderRunsClaudeCode(t *testing.T) {
 	if os.Getenv("V2_REAL_MESSAGES_PROVIDER_TEST") != "1" {
 		t.Skip("external Messages provider NOT verified; set V2_REAL_MESSAGES_PROVIDER_TEST=1 with all required configuration to opt in")
 	}
-	for _, name := range []string{"V2_ANTHROPIC_MODEL_BASE_URL", "V2_ANTHROPIC_MODEL_API_KEY", "V2_ANTHROPIC_MODEL_NAME", "TEST_DATABASE_URL", "V2_NODE_ASSETS_DIR"} {
+	for _, name := range []string{"V2_ANTHROPIC_MODEL_BASE_URL", "V2_ANTHROPIC_MODEL_NAME", "TEST_DATABASE_URL", "V2_NODE_ASSETS_DIR"} {
 		if strings.TrimSpace(os.Getenv(name)) == "" {
 			t.Fatalf("explicit external Messages provider acceptance requires %s", name)
 		}

@@ -61,7 +61,7 @@ provider 必须是 `ModelsFromEnvironment` 支持的 HTTPS OpenAI 兼容接口�
 工具调用。配置应由本地安全环境注入，不把密钥写入命令、提交或验收记录。
 
 `TestConfiguredMessagesProviderRunsClaudeCode` 是 `claude:configured` 的同类验收：
-`V2_REAL_MESSAGES_PROVIDER_TEST=1` 才发真实请求，要求三个 `V2_ANTHROPIC_MODEL_*`、`TEST_DATABASE_URL`
+`V2_REAL_MESSAGES_PROVIDER_TEST=1` 才发真实请求，要求 `V2_ANTHROPIC_MODEL_*` 指定地址、模型和一种凭据（`API_KEY` 或 `AUTH_TOKEN`）、`TEST_DATABASE_URL`
 和 `V2_NODE_ASSETS_DIR`，由真实 Claude Code 用 Bash 工具写 marker 并给出回答。默认 skip，表示外部
 Messages provider 未验收。
 

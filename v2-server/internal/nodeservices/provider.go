@@ -17,6 +17,7 @@ import (
 // key stays in backend memory, redirects are forbidden, and upstream error bodies are discarded.
 type RemoteProvider struct {
 	endpoint, key string
+	bearer        bool
 	protocol      Protocol
 	client        *http.Client
 }
@@ -32,6 +33,16 @@ func NewRemoteProvider(baseURL, apiKey string, transport http.RoundTripper) (*Re
 // NewRemoteProvider, and the key is sent as x-api-key.
 func NewRemoteMessagesProvider(baseURL, apiKey string, transport http.RoundTripper) (*RemoteProvider, error) {
 	return newRemoteProvider(AnthropicMessages, baseURL, "/messages", apiKey, transport)
+}
+
+// NewBearerMessagesProvider connects to Messages gateways that use an auth token
+// in the Authorization header instead of an Anthropic API key.
+func NewBearerMessagesProvider(baseURL, token string, transport http.RoundTripper) (*RemoteProvider, error) {
+	p, err := NewRemoteMessagesProvider(baseURL, token, transport)
+	if err == nil {
+		p.bearer = true
+	}
+	return p, err
 }
 
 func newRemoteProvider(protocol Protocol, baseURL, path, apiKey string, transport http.RoundTripper) (*RemoteProvider, error) {
@@ -66,7 +77,11 @@ func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model 
 		return
 	}
 	if p.protocol == AnthropicMessages {
-		req.Header.Set("X-Api-Key", p.key)
+		if p.bearer {
+			req.Header.Set("Authorization", "Bearer "+p.key)
+		} else {
+			req.Header.Set("X-Api-Key", p.key)
+		}
 		// The API version and beta features are part of the request's meaning, never a credential.
 		req.Header.Set("Anthropic-Version", cmp.Or(r.Header.Get("Anthropic-Version"), "2023-06-01"))
 		if beta := r.Header.Get("Anthropic-Beta"); beta != "" {

@@ -341,7 +341,7 @@ func (i *installation) wait(ctx context.Context, p *projectRuntime) error {
 	}
 }
 
-func (p *projectRuntime) prepareCheckout(ctx context.Context, workspace string, config Project) (*checkout, error) {
+func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project) (*checkout, error) {
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
@@ -377,6 +377,10 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, workspace string, 
 				return
 			}
 			if err := p.attachSkills(cloned.Result.Path); err != nil {
+				entry.err = err
+				return
+			}
+			if err := p.attachUserSkills(ctx, cloned.Result.Path, scope); err != nil {
 				entry.err = err
 				return
 			}

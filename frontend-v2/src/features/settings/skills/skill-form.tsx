@@ -4,7 +4,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ActionError } from '../components/page-parts'
-import type { Skill, SkillDraft } from '../data/types'
+import type { Skill, SkillInput } from '@/lib/skills-api/generated'
 
 export function SkillForm({
   skill,
@@ -16,11 +16,11 @@ export function SkillForm({
   skill?: Skill
   pending: boolean
   error: unknown
-  onSave: (draft: SkillDraft) => void
+  onSave: (draft: SkillInput) => void
   onCancel: () => void
 }) {
   const id = useId()
-  const [draft, setDraft] = useState<SkillDraft>({
+  const [draft, setDraft] = useState<SkillInput>({
     name: skill?.name ?? '',
     description: skill?.description ?? '',
     content: skill?.content ?? '',
@@ -39,7 +39,7 @@ export function SkillForm({
           <Input
             id={id + '-name'}
             required
-            maxLength={80}
+            maxLength={255}
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="例如 change-summary"
@@ -50,7 +50,8 @@ export function SkillForm({
           <FieldLabel htmlFor={id + '-description'}>简介</FieldLabel>
           <Textarea
             id={id + '-description'}
-            maxLength={500}
+            required
+            maxLength={4096}
             value={draft.description}
             onChange={(e) =>
               setDraft({ ...draft, description: e.target.value })
@@ -66,7 +67,7 @@ export function SkillForm({
           <Textarea
             className="min-h-64 font-mono text-sm"
             id={id + '-content'}
-            maxLength={100000}
+            maxLength={921600}
             value={draft.content}
             onChange={(e) => setDraft({ ...draft, content: e.target.value })}
             placeholder="# 使用说明"
@@ -76,7 +77,7 @@ export function SkillForm({
       </FieldGroup>
       <ActionError error={error} />
       <p className="text-xs leading-relaxed text-muted-foreground">
-        文档只保存在本浏览器的演示空间，不会注入真实会话。
+        保存后会写入服务端技能目录，新开启的 Agent 会话会自动发现它。
       </p>
       <div className="settings-form-actions">
         <Button

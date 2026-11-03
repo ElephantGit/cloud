@@ -76,6 +76,31 @@ key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和�
 
 升级已有数据库时注意：旧开发登录建出的 `dev/demo`「演示用户」仍留在库里，但邮箱登录不再认这个身份，它再也无法登录，名下的成员记录、小队与对话却还会出现在成员页里。演示请用全新数据库，不要把旧库当成干净基线；这里不做账号清理，避免删掉别人正在引用的历史。
 
+### 用户技能
+
+用户技能使用独立候选契约 [`skills.openapi.json`](skills.openapi.json)。正式 Cloud 尚无这套 CRUD
+契约，因此不改 `api/openapi.json`；前端由独立 Orval 配置生成共享客户端。
+
+| 路由 | 行为 |
+|---|---|
+| `GET /api/v2/tenants/{tid}/skills` | 当前登录用户的活动技能，最近更新在前；不返回其他用户的行 |
+| `POST /api/v2/tenants/{tid}/skills` | 新建，返回 201；名称在同一用户内不区分大小写去重 |
+| `GET`/`PUT`/`DELETE /api/v2/tenants/{tid}/skills/{sid}` | 读取、替换或软删除自己的技能；其他用户和已删除行都按不存在处理 |
+| `POST /api/v2/tenants/{tid}/skills/import` | 导入一个 1 MiB 以内的 `SKILL.md`；解析 YAML front matter 的 `name`、`description`，正文去掉 front matter 后保存。同名返回 409，显式 `overwrite` 才覆盖并保留 id |
+
+名称遵循 desktop 的安全规则：单个 ASCII slug 路径段，不能以 `.` 开头，不能包含路径分隔符；
+简介最多 4096 字节，正文最多 900 KiB。写请求拒绝未知字段和多余 JSON；校验失败返回稳定的
+`skill_*` 错误码，不为越权用户暴露其他账号的资源。
+
+账号首次创建或首次被邀请时写入三个真实 starter skill（`code-review`、`test-plan`、
+`release-notes`），登记在独立的 `v2_skill_seeds` 一次性标记里；之后它们和用户创建的技能
+完全一样，可编辑、删除，删除后不会在下次登录时重新出现。
+
+创建或导入的技能会在新 Agent 会话完成工作副本克隆后，物化为
+`.opencode/skills/<name>/SKILL.md` 和 `.claude/skills/<name>/SKILL.md`。已有项目文件或市场
+Skill 占用同名路径时保留原内容，不覆盖；已经启动的会话保留启动时的副本。v2 的导入只支持
+单个 Markdown 文件，不支持文件夹、归档和附带脚本/资源。
+
 ### 定时任务配置
 
 定时任务配置使用独立候选契约 [`schedules.openapi.json`](schedules.openapi.json)，不改变正式 Cloud 的 ScheduledTask（其 issue/agent 执行语义不能表达本次独立对话配置）。前端以独立 Orval 配置生成客户端，后续正式契约收敛时替换这一适配。

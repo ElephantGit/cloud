@@ -118,7 +118,7 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			// Run has checked the executor names a known plugin; its install overlaps the clone.
 			plugin, _ := findPlugin(session.Executor.AgentID, session.Executor.PluginVersion)
 			installed := p.install(plugin)
-			a.checkout, a.prepareErr = p.prepareCheckout(prepare, session.WorkspaceID, config)
+			a.checkout, a.prepareErr = p.prepareCheckout(prepare, scope, session.WorkspaceID, config)
 			if a.prepareErr != nil {
 				return
 			}

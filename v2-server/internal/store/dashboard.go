@@ -43,7 +43,7 @@ const dashboardRows = ` FROM v2_execution_sessions s
 const dashboardColumns = `SELECT s.id,task.title,p.id,p.data->>'Name',
  coalesce(s.data->'Executor'->>'AgentID',''),coalesce(s.data->'Model'->>'ID',''),
  CASE WHEN l.data->'Result' IS NULL OR l.data->'Result'='null'::jsonb THEN 'running' ELSE l.data->'Result'->>'Status' END,
- 'task','/collaboration/tasks/'||task.id::text,(s.data->>'CreatedAt')::timestamptz,s.ended_at`
+ 'task','/collaboration/tasks/'||task.id::text||'?run='||tr.id::text,(s.data->>'CreatedAt')::timestamptz,s.ended_at`
 
 type dashboardCursor struct {
 	Tenant, User, Selection, ID string

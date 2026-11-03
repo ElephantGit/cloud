@@ -23,13 +23,13 @@
 .db-head-counts svg { opacity: .7; }
 
 .db-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.db-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--db-line); border-radius: 12px; background: var(--db-surface); }
+.db-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--db-line); border-radius: 12px; background: var(--card); }
 .db-stat-label { color: var(--db-muted); font-size: 12px; }
 .db-stat-value { font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
 .db-stat-note { color: var(--db-muted); font-size: 12px; }
 
 .db-panels { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
-.db-panel { border: 1px solid var(--db-line); border-radius: 12px; background: var(--background); }
+.db-panel { border: 1px solid var(--db-line); border-radius: 12px; background: var(--card); }
 .db-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--db-line); }
 .db-panel-head h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
 .db-panel-head h2 svg { color: var(--db-accent); }

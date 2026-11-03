@@ -60,7 +60,7 @@ type agentSession struct {
 	previewSent   []byte    // the pending set the page last received
 }
 
-func (d *Driver) session(ctx context.Context, scope execution.Scope, session execution.Session, config Project) (*agentSession, error) {
+func (d *Driver) session(ctx context.Context, scope execution.Scope, session execution.Session, config Project, caller execution.CallerKind) (*agentSession, error) {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
@@ -118,7 +118,7 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			// Run has checked the executor names a known plugin; its install overlaps the clone.
 			plugin, _ := findPlugin(session.Executor.AgentID, session.Executor.PluginVersion)
 			installed := p.install(plugin)
-			a.checkout, a.prepareErr = p.prepareCheckout(prepare, scope, session.WorkspaceID, config)
+			a.checkout, a.prepareErr = p.prepareCheckout(prepare, scope, session.WorkspaceID, config, caller)
 			if a.prepareErr != nil {
 				return
 			}

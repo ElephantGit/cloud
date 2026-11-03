@@ -126,7 +126,7 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 	if err != nil {
 		return failed("agent_project_unavailable"), execution.ErrUnavailable
 	}
-	a, err := d.session(ctx, scope, session, project)
+	a, err := d.session(ctx, scope, session, project, turn.Caller.Kind)
 	if err != nil {
 		if ctx.Err() != nil {
 			return d.cancelledRun(session.ID, ctx.Err())
@@ -147,6 +147,11 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 	}
 	select {
 	case outcome := <-call.done:
+		if turn.Caller.Kind == execution.CallerChat && outcome.err == nil {
+			a.project.mu.Lock()
+			a.project.fillSpareLocked(project)
+			a.project.mu.Unlock()
+		}
 		return outcome.result, outcome.err
 	case <-ctx.Done():
 		result, err := d.cancelledRun(session.ID, ctx.Err())

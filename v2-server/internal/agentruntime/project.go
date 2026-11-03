@@ -51,6 +51,8 @@ type nodeClient interface {
 // One reader owns all projections. Control replies and sessions are dispatched by execution ID;
 // no per-turn goroutine may call Client.Receive or close the project's shared transport.
 type projectRuntime struct {
+	warmDemo       bool
+	spare          *checkout // Unclaimed Demo checkout, never contains user skills.
 	skillsMu       sync.Mutex
 	driver         *Driver
 	id, root       string
@@ -341,12 +343,81 @@ func (i *installation) wait(ctx context.Context, p *projectRuntime) error {
 	}
 }
 
-func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project) (*checkout, error) {
+// WarmDemo starts one pristine checkout for the bootstrapped Demo snapshot.
+func (d *Driver) WarmDemo(ctx context.Context, id string, config Project) {
+	p, err := d.project(ctx, id, config)
+	if err != nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.configuration == config {
+		p.warmDemo = true
+		p.fillSpareLocked(config)
+	}
+}
+
+func (p *projectRuntime) fillSpareLocked(config Project) {
+	if !p.warmDemo || config != p.configuration || p.spare != nil || p.fatal || p.ctx.Err() != nil {
+		return
+	}
+	spare := &checkout{id: p.driver.nextID("c"), ready: make(chan struct{})}
+	p.spare = spare
+	go func() {
+		defer close(spare.ready)
+		spare.path, spare.err = p.clonePath(p.ctx, spare.id, config, spare)
+	}()
+}
+
+func (p *projectRuntime) clonePath(ctx context.Context, key string, config Project, entry *checkout) (string, error) {
+	ref := digest(key)
+	workspaceID := ref[:8] + "-" + ref[8:12] + "-4" + ref[13:16] + "-8" + ref[17:20] + "-" + ref[20:]
+	message, err := p.control(ctx, entry.id, "clone_repository", "clone_result", map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "repository_url": p.services.URL + "/repo.git", "snapshot_ref": config.SnapshotRef, "base_commit": config.Commit, "workspace_ref": "refs/heads/workspaces/" + workspaceID + "/main"}})
+	if err != nil {
+		return "", execution.ErrUnavailable
+	}
+	var cloned struct {
+		Kind   string
+		Result struct{ Path, Commit string }
+	}
+	if json.Unmarshal(message.Payload, &cloned) != nil || cloned.Kind != "clone_ready" || cloned.Result.Commit != config.Commit {
+		return "", execution.ErrUnavailable
+	}
+	rel, err := filepath.Rel(filepath.Join(p.root, "w", "r"), cloned.Result.Path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", execution.ErrUnavailable
+	}
+	return cloned.Result.Path, nil
+}
+
+// A failed speculative checkout has no workspace owner. Retry through normal admission.
+func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, config Project, spare, entry *checkout) (string, error) {
+	if spare != nil {
+		select {
+		case <-spare.ready:
+			if spare.err == nil {
+				entry.id = spare.id
+				return spare.path, nil
+			}
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-p.dead:
+			return "", execution.ErrUnavailable
+		}
+	}
+	return p.clonePath(ctx, workspace, config, entry)
+}
+
+func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project, caller execution.CallerKind) (*checkout, error) {
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
 		entry = &checkout{id: p.driver.nextID("c") + "-" + digest(workspace), ready: make(chan struct{})}
 		p.checkouts[workspace] = entry
+		var spare *checkout
+		if caller == execution.CallerChat && p.configuration == config && p.spare != nil {
+			spare, p.spare = p.spare, nil
+		}
 		go func() {
 			defer func() {
 				p.mu.Lock()
@@ -356,35 +427,20 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 				p.mu.Unlock()
 				close(entry.ready)
 			}()
-			ref := digest(workspace)
-			workspaceID := ref[:8] + "-" + ref[8:12] + "-4" + ref[13:16] + "-8" + ref[17:20] + "-" + ref[20:]
-			message, err := p.control(ctx, entry.id, "clone_repository", "clone_result", map[string]any{"spec": map[string]any{"node_id": p.nodeID(), "repository_url": p.services.URL + "/repo.git", "snapshot_ref": config.SnapshotRef, "base_commit": config.Commit, "workspace_ref": "refs/heads/workspaces/" + workspaceID + "/main"}})
+			path, err := p.checkoutPath(ctx, workspace, config, spare, entry)
 			if err != nil {
-				entry.err = execution.ErrUnavailable
-				return
-			}
-			var cloned struct {
-				Kind   string
-				Result struct{ Path, Commit string }
-			}
-			if json.Unmarshal(message.Payload, &cloned) != nil || cloned.Kind != "clone_ready" || cloned.Result.Commit != config.Commit {
-				entry.err = execution.ErrUnavailable
-				return
-			}
-			rel, err := filepath.Rel(filepath.Join(p.root, "w", "r"), cloned.Result.Path)
-			if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-				entry.err = execution.ErrUnavailable
-				return
-			}
-			if err := p.attachSkills(cloned.Result.Path); err != nil {
 				entry.err = err
 				return
 			}
-			if err := p.attachUserSkills(ctx, cloned.Result.Path, scope); err != nil {
+			if err := p.attachSkills(path); err != nil {
 				entry.err = err
 				return
 			}
-			entry.path = cloned.Result.Path
+			if err := p.attachUserSkills(ctx, path, scope); err != nil {
+				entry.err = err
+				return
+			}
+			entry.path = path
 		}()
 	}
 	p.mu.Unlock()

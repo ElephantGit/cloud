@@ -19,6 +19,8 @@ export interface ThoughtItem {
   startedAt: number
   /** Set when the next item arrives or the turn ends, so the row can say how long it thought. */
   endedAt?: number
+  /** History reasoning uses a sampled duration; null means the start was never observed. */
+  durationMs?: number | null
   meta?: Meta
 }
 

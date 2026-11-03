@@ -60,6 +60,18 @@ type Task struct {
 	Version       int64         `json:"version"`
 	CreatedAt     time.Time     `json:"createdAt"`
 	UpdatedAt     time.Time     `json:"updatedAt"`
+	// ActiveRun is the task's live Agent run, so a list can show who is working without reading
+	// each timeline; nil when no run is live.
+	ActiveRun *TaskRunSummary `json:"activeRun"`
+}
+
+// TaskRunSummary is the part of a live run a task list shows.
+type TaskRunSummary struct {
+	ID            string `json:"id"`
+	State         string `json:"state"`
+	StartedBy     string `json:"startedBy"`
+	StartedByName string `json:"startedByName"`
+	ExecutorName  string `json:"executorName"`
 }
 
 // TaskAssigneeRef is the typed identity a write assigns. Display values come from the join, never
@@ -93,6 +105,19 @@ func CanTransitionTask(from, to string) bool {
 	return false
 }
 
+// CanRunTransitionTask reports the moves a task's Agent run makes: starting or following up a run
+// puts the task in 进行中, a finished turn hands it to 待验收, and a stopped or interrupted turn
+// returns it to 待处理. A person still cannot make the last two moves by hand.
+func CanRunTransitionTask(from, to string) bool {
+	switch from {
+	case TaskPending, TaskReview:
+		return to == TaskRunning
+	case TaskRunning:
+		return to == TaskReview || to == TaskPending
+	}
+	return false
+}
+
 // taskColumns resolves the assignee's current name from its own table rather than a copied label,
 // so a renamed member or agent shows through.
 const taskColumns = `t.id, t.tenant_id::text, t.title, t.description, t.project_id,
@@ -104,7 +129,9 @@ const taskColumns = `t.id, t.tenant_id::text, t.title, t.description, t.project_
 		ELSE ''
 	END,
 	CASE WHEN t.assignee_type = 'agent' THEN COALESCE(a.source_namespace || '/' || a.identifier, '') ELSE '' END,
-	t.status, t.created_by::text, COALESCE(c.display_name, ''), t.version, t.created_at, t.updated_at`
+	t.status, t.created_by::text, COALESCE(c.display_name, ''), t.version, t.created_at, t.updated_at,
+	COALESCE(r.id::text, ''), COALESCE(r.turn_active, false), COALESCE(r.started_by::text, ''),
+	COALESCE(ru.display_name, ''), COALESCE(r.executor_name, '')`
 
 // taskJoins resolves the typed assignee and the creator. FOR UPDATE OF t keeps a lock usable
 // beside these outer joins.
@@ -112,13 +139,18 @@ const taskJoins = `FROM v2_tasks t
 	LEFT JOIN users u ON t.assignee_type = 'human' AND u.id = t.assignee_id
 	LEFT JOIN v2_space_agents a ON t.assignee_type = 'agent' AND a.id = t.assignee_id
 	LEFT JOIN v2_squads sq ON t.assignee_type = 'squad' AND sq.id = t.assignee_id
-	JOIN users c ON c.id = t.created_by`
+	JOIN users c ON c.id = t.created_by
+	LEFT JOIN v2_task_runs r ON r.task_id = t.id AND r.ended_at IS NULL
+	LEFT JOIN users ru ON ru.id = r.started_by`
 
 func scanTask(row pgx.Row) (Task, error) {
 	var t Task
 	var kind, id, name, identifier string
+	var run TaskRunSummary
+	var turnActive bool
 	e := row.Scan(&t.ID, &t.TenantID, &t.Title, &t.Description, &t.ProjectID, &kind, &id, &name,
-		&identifier, &t.Status, &t.CreatedBy, &t.CreatedByName, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+		&identifier, &t.Status, &t.CreatedBy, &t.CreatedByName, &t.Version, &t.CreatedAt, &t.UpdatedAt,
+		&run.ID, &turnActive, &run.StartedBy, &run.StartedByName, &run.ExecutorName)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -127,6 +159,13 @@ func scanTask(row pgx.Row) (Task, error) {
 	}
 	if kind != "" {
 		t.Assignee = &TaskAssignee{Type: kind, ID: id, DisplayName: name, Identifier: identifier}
+	}
+	if run.ID != "" {
+		run.State = TaskRunIdle
+		if turnActive {
+			run.State = TaskRunRunning
+		}
+		t.ActiveRun = &run
 	}
 	return t, nil
 }
@@ -287,7 +326,8 @@ func (s *Store) UpdateTask(ctx context.Context, tenant, user, id string, in Task
 }
 
 // SetTaskStatus moves a task by hand under a version check. Only the lifecycle's legal moves are
-// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen.
+// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen. While an Agent
+// turn runs the run owns the status, and a manual move returns ErrRunActive.
 func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status string, version int64) (Task, error) {
 	var out Task
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -298,6 +338,9 @@ func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status stri
 		if !CanTransitionTask(task.Status, status) {
 			return ErrInvalidTransition
 		}
+		if task.ActiveRun != nil && task.ActiveRun.State == TaskRunRunning {
+			return ErrRunActive
+		}
 		task, e = writeTaskStatus(ctx, tx, id, status)
 		out = task
 		return e
@@ -305,8 +348,8 @@ func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status stri
 	return out, e
 }
 
-// TransitionTaskStatus moves a task on behalf of the execution service, which owns the status
-// while a run is live. from guards against a stale run overwriting a person's change.
+// TransitionTaskStatus moves a task on behalf of its Agent run, by CanRunTransitionTask. from guards
+// against a stale run overwriting a person's change.
 func (s *Store) TransitionTaskStatus(ctx context.Context, tenant, id, from, to string) (Task, error) {
 	var out Task
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -318,7 +361,7 @@ func (s *Store) TransitionTaskStatus(ctx context.Context, tenant, id, from, to s
 		if task.Status != from {
 			return ErrConflict
 		}
-		if !CanTransitionTask(from, to) {
+		if !CanRunTransitionTask(from, to) {
 			return ErrInvalidTransition
 		}
 		task, e = writeTaskStatus(ctx, tx, id, to)

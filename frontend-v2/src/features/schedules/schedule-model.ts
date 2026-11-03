@@ -1,6 +1,8 @@
 /** Schedule-owned configuration and read-only legacy target metadata. */
 export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
-export type ChatTarget = { kind: 'chat'; prompt: string; agent: string; model: string; executorId?: string }
+export type ChatTarget = { kind: 'chat'; prompt: string; agent: string; agentId?: string; model: string; executorId?: string }
+export type AgentModel = { id: string; name: string }
+export type AgentChoice = { id: string; name: string; version: string; models: AgentModel[] }
 /** A workflow run in the schedule's project: the published snapshot frozen at save, and its kickoff input. */
 export type WorkflowTarget = { kind: 'workflow'; workflowId: string; snapshotId: string; input: string }
 export type LegacyTarget = { kind: 'workflow' | 'task'; [key:string]:unknown }
@@ -11,12 +13,12 @@ export function isWorkflowTarget(target: Target): target is WorkflowTarget {
 }
 export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; reason?:string;released?:boolean }
 export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
-export type Draft = { name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;model:string;executorId?:string;workflowId:string;snapshotId:string;input:string;rule:Rule }
-export type Catalog = { projects:{id:string;name:string;description:string}[];models?:{id:string;name:string}[];executors?:{id:string;name:string;agentName:string;modelId:string}[];workflows?:{id:string;name:string;version:string;snapshotId:string}[];available?:{projects:boolean;models:boolean;executors:boolean;workflows?:boolean} }
+export type Draft = { name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;agentId:string;model:string;executorId?:string;workflowId:string;snapshotId:string;input:string;rule:Rule }
+export type Catalog = { projects:{id:string;name:string;description:string}[];models?:AgentModel[];agents?:AgentChoice[];workflows?:{id:string;name:string;version:string;snapshotId:string}[];available?:{projects:boolean;models:boolean;agents:boolean;workflows?:boolean} }
 export const catalog: Catalog = {projects:[]}
 export const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
 export function emptyDraft(): Draft {
-  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: '', model: '', workflowId: '', snapshotId: '', input: '', rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
+  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: '', agentId: '', model: '', workflowId: '', snapshotId: '', input: '', rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
 }
 export function taskDraft(task: Task): Draft {
   const d = emptyDraft()
@@ -27,6 +29,26 @@ export function taskDraft(task: Task): Draft {
 /** Whether a draft's target can be saved: a conversation, or a workflow; older references stay read-only. */
 export function editableDraft(d: Draft, task?: Task) {
   return d.kind === 'chat' || (d.kind === 'workflow' && (!task || task.target.kind !== 'workflow' || isWorkflowTarget(task.target)))
+}
+/** The Agent selected by ID, or by display name for a task frozen before agent IDs existed. */
+export function agentChoice(d: Pick<Draft,'agentId'|'agent'>, data: Catalog = catalog): AgentChoice | undefined {
+  return data.agents?.find(a => d.agentId ? a.id === d.agentId : a.name === d.agent)
+}
+/** Models an Agent can run. A project task never falls back to direct-model entries. */
+export function agentModels(d: Pick<Draft,'agentId'|'agent'|'projectId'>, data: Catalog = catalog): AgentModel[] {
+  return d.projectId ? agentChoice(d, data)?.models ?? [] : data.models ?? []
+}
+export function agentLabel(d: Pick<Draft,'agentId'|'agent'>, data: Catalog = catalog): string {
+  return agentChoice(d, data)?.name ?? (d.agent || '')
+}
+export function modelLabel(target: ChatTarget, data: Catalog = catalog): string {
+  const direct = data.models?.find(m => m.id === target.model)
+  if (direct) return direct.name
+  for (const agent of data.agents ?? []) {
+    const model = agent.models.find(m => m.id === target.model)
+    if (model) return model.name
+  }
+  return ''
 }
 export function validateDraft(d: Draft, data: Catalog = catalog): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -53,7 +75,14 @@ export function targetFromDraft(d: Draft, data: Catalog = catalog): ChatTarget |
     return { kind: 'workflow', workflowId: workflow.id, snapshotId: workflow.snapshotId, input: d.input }
   }
   if(d.kind!=='chat')throw new Error('引用目标只读，等待提供方接口')
-  return {kind:'chat',prompt:d.prompt.trim(),agent:d.agent,model:d.model,...(d.executorId?{executorId:d.executorId}:{})}
+  const selected = agentChoice(d, data)
+  return {
+    kind: 'chat',
+    prompt: d.prompt.trim(),
+    agent: selected?.name ?? d.agent,
+    model: d.model,
+    ...(d.projectId && selected ? {agentId: selected.id} : {}),
+  }
 }
 export function projectName(id: string, data:Catalog=catalog) { return !id?'不关联项目':data.projects.find(p => p.id === id)?.name ?? '项目暂不可用' }
 export function ruleText(rule: Rule) {

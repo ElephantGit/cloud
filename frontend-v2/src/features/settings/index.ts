@@ -22,6 +22,12 @@ export const settings: Feature = {
       }),
     },
     {
+      path: 'roles',
+      lazy: async () => ({
+        Component: (await import('./roles/page')).default,
+      }),
+    },
+    {
       path: 'theme',
       lazy: async () => ({ Component: (await import('./theme/page')).default }),
     },

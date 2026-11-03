@@ -18,6 +18,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 )
 
 // SessionCookie is the Gateway's development cookie name, so the frontend sees the same session.
@@ -42,6 +43,12 @@ type Store interface {
 	PluginCatalog(ctx context.Context, tenant, space, caller string) ([]store.PluginCatalogEntry, time.Time, error)
 	InstallSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in store.PluginInstallInput) (store.SpacePlugin, error)
 	RemoveSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in store.PluginRemoveInput) (store.SpacePlugin, error)
+	ListSkills(ctx context.Context, tenant, caller string) ([]store.Skill, error)
+	GetSkill(ctx context.Context, tenant, caller, id string) (store.Skill, error)
+	CreateSkill(ctx context.Context, tenant, caller string, in store.SkillInput) (store.Skill, error)
+	UpdateSkill(ctx context.Context, tenant, caller, id string, in store.SkillInput) (store.Skill, error)
+	DeleteSkill(ctx context.Context, tenant, caller, id string) error
+	ImportSkill(ctx context.Context, tenant, caller string, raw []byte, overwrite bool) (store.Skill, error)
 }
 
 // Options tune the server.
@@ -73,6 +80,9 @@ type Options struct {
 	// WorkflowRunEvents announces committed run changes to the run events route; nil keeps that
 	// route unavailable, and pages poll instead.
 	WorkflowRunEvents WorkflowRunEvents
+	// TaskRuns runs task Agents and records comments for the collaboration page; nil keeps those
+	// writes and the run event stream unavailable, while task reads and the timeline still work.
+	TaskRuns *taskrun.Host
 }
 
 // New returns the handler for every route v2-server serves.
@@ -87,6 +97,12 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v1/me/tenants", h.authed(h.tenants))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/members", h.authed(h.members))
 	mux.HandleFunc("POST /api/v2/tenants/{tid}/members", h.authed(h.invite))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/skills", h.authed(h.listSkills))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/skills", h.authed(h.createSkill))
+	mux.HandleFunc("POST /api/v2/tenants/{tid}/skills/import", h.authed(h.importSkill))
+	mux.HandleFunc("GET /api/v2/tenants/{tid}/skills/{sid}", h.authed(h.getSkill))
+	mux.HandleFunc("PUT /api/v2/tenants/{tid}/skills/{sid}", h.authed(h.updateSkill))
+	mux.HandleFunc("DELETE /api/v2/tenants/{tid}/skills/{sid}", h.authed(h.deleteSkill))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces", h.authed(h.spaces))
 	mux.HandleFunc("GET /api/v1/tenants/{tid}/spaces/{sid}/plugins/sources", h.authed(h.marketSources))
 	mux.HandleFunc("POST /api/v1/tenants/{tid}/spaces/{sid}/plugins/sources", h.authed(h.marketSources))
@@ -156,6 +172,7 @@ func New(s Store, o Options) http.Handler {
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/workflow-runs/{rid}/events", h.authed(h.workflowRunEvents))
 	mux.HandleFunc("GET /api/v2/tenants/{tid}/workflow-runs/{rid}/nodes/{nodeRunId}/events", h.authed(h.workflowNodeEvents))
 	h.chatRoutes(mux)
+	h.taskRunRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { fault(w, http.StatusNotFound, "not_found") })
 	return mux
 }

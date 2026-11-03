@@ -640,6 +640,31 @@ func TestRuntimeExecutorDirectoryPairsAgentsWithTheirProtocol(t *testing.T) {
 		t.Fatalf("Claude session executor=%+v", call.session.Executor)
 	}
 	call.unblock()
+	ref, err = f.service.Start(f.ctx, f.scope, execution.StartRequest{
+		Caller: modelRequest("opencode", "first", "").Caller, Target: execution.Target{ProjectID: "project"},
+		AgentID: "official/ora-space.opencode", ModelID: "fixture", Prompt: execution.TextPrompt("run"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call = nextAgentCall(t, f, a)
+	if call.session.ID != ref.SessionID || call.session.Executor == nil || !reflect.DeepEqual(*call.session.Executor, want[0]) {
+		t.Fatalf("independent Agent/model selection=%+v", call.session.Executor)
+	}
+	call.unblock()
+	again, err := f.service.Start(f.ctx, f.scope, execution.StartRequest{
+		Caller: modelRequest("opencode", "first", "").Caller, Target: execution.Target{ProjectID: "project"},
+		AgentID: "official/ora-space.opencode", ModelID: "fixture", Prompt: execution.TextPrompt("run"),
+	})
+	if err != nil || again != ref {
+		t.Fatalf("independent selection replay=%+v %v, want %+v", again, err, ref)
+	}
+	if _, err := f.service.Start(f.ctx, f.scope, execution.StartRequest{
+		Caller: modelRequest("mismatch", "first", "").Caller, Target: execution.Target{ProjectID: "project"},
+		AgentID: "official/ora-space.opencode", ModelID: "messages-fixture", Prompt: execution.TextPrompt("run"),
+	}); !errors.Is(err, execution.ErrNotFound) {
+		t.Fatalf("mismatched Agent/model started: %v", err)
+	}
 }
 
 func TestRuntimeAgentOrchestrationSeparatesConversationsAndReusesWorkflowDirectory(t *testing.T) {

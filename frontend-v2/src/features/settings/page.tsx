@@ -16,13 +16,12 @@ export default function SettingsPage() {
   const { repository, queryKey, reset } = useSettingsData()
   const client = useQueryClient()
   const themePage = location.pathname === '/settings/theme'
-  // Plugins and members are real server resources. Skills mixes server market skills with local
-  // documents, while model connections remain browser-local.
+  // Plugins, skills and members are real server resources. Roles and model connections remain
+  // browser-local.
   const localDemoPage = [
     '/settings/model-connections',
-    '/settings/skills',
+    '/settings/roles',
   ].includes(location.pathname)
-  const mixedDataPage = location.pathname === '/settings/skills'
   const navigation = useRef<HTMLElement>(null)
   useEffect(() => {
     const keepCurrentVisible = () =>
@@ -90,10 +89,12 @@ export default function SettingsPage() {
               : location.pathname === '/settings/plugins'
                 ? '工作空间资源'
                 : location.pathname === '/settings/skills'
-                  ? '服务端目录与本地技能'
+                  ? '个人技能目录'
                   : location.pathname === '/settings/model-connections'
                     ? '演示工作空间'
-                    : '工作空间成员'}
+                    : location.pathname === '/settings/roles'
+                      ? '本机角色'
+                      : '工作空间成员'}
           </span>
         </div>
         <div className="settings-content">
@@ -104,15 +105,9 @@ export default function SettingsPage() {
                 aria-hidden="true"
               />
               <div className="min-w-0 flex-1">
-                <p className="font-medium">
-                  {mixedDataPage
-                    ? '市场技能来自服务端，自建技能保存在此浏览器'
-                    : '演示数据，仅保存在此浏览器'}
-                </p>
+                <p className="font-medium">演示数据，仅保存在此浏览器</p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {mixedDataPage
-                    ? '安装与移除会修改当前工作空间的市场选择；新建、编辑或删除自建技能只影响当前登录用户。'
-                    : '操作不会调用模型或修改在线资源。每个登录用户独立保存。'}
+                  操作不会调用模型或修改在线资源。每个登录用户独立保存。
                 </p>
               </div>
               <Button
@@ -134,7 +129,7 @@ export default function SettingsPage() {
       {confirming && (
         <ConfirmDialog
           title="重置演示数据？"
-          description="将清除当前用户在此浏览器中的模型连接和自建技能修改，恢复初始示例。主题、工作空间插件与市场技能不受影响。"
+          description="将清除当前用户在此浏览器中的模型连接和角色修改，恢复初始示例。主题、工作空间插件与技能不受影响。"
           confirmLabel="重置演示"
           pending={reset.isPending}
           error={reset.error}

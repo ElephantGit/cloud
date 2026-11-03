@@ -1,5 +1,5 @@
 import type { GraphWorkflowNodeStatus, WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
-import type { Conversation, Turn, TurnItem } from '../model/types'
+import type { Conversation, Turn, TurnItem } from '@/components/agent-thread/model/types'
 
 const time = (iso: string) => new Date(iso).getTime()
 

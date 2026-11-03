@@ -19,7 +19,7 @@
 | recorded | 启动恢复 | skipped / server_restarted |
 | starting / running / cancelling | 启动恢复 | reconciling / server_restarted，保留 Ref 和占位 |
 
-`reason` 是稳定原因码，不是异常原文。拒绝原因包括 `execution_busy`、`execution_unavailable`、`invalid_execution_request`、`execution_unsupported`、`execution_target_unavailable`，以及配置校验的 `invalid_snapshot`、`unsupported_schedule_target`、`model_required`、`project_required`、`executor_required`、`invalid_prompt`。`execution_busy` 只消费公共服务的 Busy 拒绝，不表示其他调用方抢占项目目录，不进入等待队列。成功但回答不完整转 `failed/result_incomplete`；其他执行终态使用公共 Result.FailureCode（过长时用 `execution_failed`），没有原因时为空。
+`reason` 是稳定原因码，不是异常原文。拒绝原因包括 `execution_busy`、`execution_unavailable`、`invalid_execution_request`、`execution_unsupported`、`execution_target_unavailable`，以及配置校验的 `invalid_snapshot`、`unsupported_schedule_target`、`model_required`、`project_required`、`agent_required`、`invalid_prompt`。`executor_required` 仅作为旧记录的历史原因保留。`execution_busy` 只消费公共服务的 Busy 拒绝，不表示其他调用方抢占项目目录，不进入等待队列。成功但回答不完整转 `failed/result_incomplete`；其他执行终态使用公共 Result.FailureCode（过长时用 `execution_failed`），没有原因时为空。
 
 `released=false` 表示本记录仍占用**同任务的执行资格**。`released=true` 表示不占位：recorded 尚未 begin、skipped 未执行，或结果终态已经确认 End。它不证明目录已删除，也不是结果完整性标志。End 保留历史及目录；模型 Cancel 只停当前轮，Agent Cancel 结束会话，定时任务两路都随后调用幂等 End。
 

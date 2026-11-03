@@ -50,7 +50,7 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 			if s != scope || !allowed {
 				return nil, execution.ErrNotFound
 			}
-			return []execution.Executor{{ID: "executor-id", Name: "Configured executor", AgentName: "Agent", Model: model}}, nil
+			return []execution.Executor{{ID: "executor-id", Name: "Configured executor", AgentID: "official/agent", AgentName: "Agent", PluginVersion: "1.0.0", Model: model}}, nil
 		},
 	}
 	h := server.New(db, server.Options{Catalog: stub})
@@ -85,7 +85,7 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 	}
 	base := "/api/v2/tenants/" + scope.TenantID
 	w := call(h, "GET", base+"/schedule-resources", nil)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "Configured executor") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"name":"Agent"`) || !strings.Contains(w.Body.String(), `"id":"official/agent"`) {
 		t.Fatalf("resources: %d %s", w.Code, w.Body)
 	}
 	for _, secret := range []string{"private-binding", "/private/mirror", "example.invalid"} {
@@ -97,7 +97,7 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"models":false`) {
 		t.Fatalf("unavailable not distinguished: %d %s", w.Code, w.Body)
 	}
-	target := map[string]any{"kind": "chat", "prompt": "inspect", "agent": "Agent", "model": "model-id", "executorId": "executor-id"}
+	target := map[string]any{"kind": "chat", "prompt": "inspect", "agent": "Agent", "agentId": "official/agent", "model": "model-id"}
 	in := map[string]any{"name": "Bound task", "projectId": project.ID, "target": target, "rule": map[string]any{"kind": "hours", "time": "09:00", "days": []int{}, "hours": 1, "timezone": "UTC"}}
 	w = call(h, "POST", base+"/schedule-configs", in)
 	if w.Code != 201 {
@@ -114,6 +114,11 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 		t.Fatalf("mismatched binding: %d", w.Code)
 	}
 	target["model"] = "model-id"
+	target["agentId"] = "official/other"
+	if w = call(h, "PUT", base+"/schedule-configs/"+saved.ID, in); w.Code != 404 {
+		t.Fatalf("mismatched agent: %d", w.Code)
+	}
+	target["agentId"] = "official/agent"
 	allowed = false
 	if w = call(h, "PUT", base+"/schedule-configs/"+saved.ID, in); w.Code != 404 {
 		t.Fatalf("revoked binding: %d", w.Code)
@@ -128,7 +133,7 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 		t.Fatalf("foreign project: %d", w.Code)
 	}
 	in["projectId"] = ""
-	delete(target, "executorId")
+	delete(target, "agentId")
 	delete(in, "version")
 	if w = call(h, "POST", base+"/schedule-configs", in); w.Code != 201 {
 		t.Fatalf("model-only: %d %s", w.Code, w.Body)
@@ -136,5 +141,11 @@ func TestScheduleSharedResourcesAndBindingAuthorization(t *testing.T) {
 	target["model"] = "guessed-model"
 	if w = call(h, "POST", base+"/schedule-configs", in); w.Code != 404 {
 		t.Fatalf("guessed model: %d", w.Code)
+	}
+	target["model"] = "model-id"
+	target["executorId"] = "executor-id"
+	in["projectId"] = project.ID
+	if w = call(h, "POST", base+"/schedule-configs", in); w.Code != 201 {
+		t.Fatalf("legacy executor binding: %d %s", w.Code, w.Body)
 	}
 }

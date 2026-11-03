@@ -121,7 +121,10 @@ func (s *Store) UpsertUser(ctx context.Context, in PresetUser) (string, error) {
 			tenantID, userID, in.Role); e != nil {
 			return fmt.Errorf("join tenant: %w", e)
 		}
-		return ensureDemoSpace(ctx, tx, tenantID, userID)
+		if e := ensureDemoSpace(ctx, tx, tenantID, userID); e != nil {
+			return e
+		}
+		return seedStarterSkills(ctx, tx, tenantID, userID)
 	})
 	if e != nil {
 		return "", e

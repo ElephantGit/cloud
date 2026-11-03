@@ -144,14 +144,14 @@ func modelRequest(o store.Occurrence) (execution.ModelStartRequest, string) {
 	if json.Unmarshal(o.Snapshot, &config) != nil {
 		return execution.ModelStartRequest{}, "invalid_snapshot"
 	}
-	var target struct{ Kind, Prompt, Model, ExecutorID string }
+	var target struct{ Kind, Prompt, Model, AgentID, ExecutorID string }
 	if json.Unmarshal(config.Target, &target) != nil || target.Kind != "chat" || config.ProjectID != "" {
 		return execution.ModelStartRequest{}, "unsupported_schedule_target"
 	}
 	if strings.TrimSpace(target.Model) == "" {
 		return execution.ModelStartRequest{}, "model_required"
 	}
-	if target.ExecutorID != "" {
+	if target.AgentID != "" || target.ExecutorID != "" {
 		return execution.ModelStartRequest{}, "project_required"
 	}
 	prompt := execution.TextPrompt(target.Prompt)
@@ -161,25 +161,28 @@ func modelRequest(o store.Occurrence) (execution.ModelStartRequest, string) {
 	return execution.ModelStartRequest{Caller: occurrenceCaller(o), ModelID: target.Model, Prompt: prompt}, ""
 }
 
-// agentRequest requires a catalog executor ID, never a guessed binding of display names.
-// The shared service authorizes the selected project and creates an independent directory for this new session.
+// agentRequest passes the task's Agent and model snapshot to the shared service. Legacy tasks
+// that froze one executor binding keep that ID; display names never select execution.
 func agentRequest(o store.Occurrence) (execution.StartRequest, string) {
 	var config store.ScheduleConfig
 	if json.Unmarshal(o.Snapshot, &config) != nil {
 		return execution.StartRequest{}, "invalid_snapshot"
 	}
-	var target struct{ Kind, Prompt, ExecutorID string }
+	var target struct{ Kind, Prompt, Model, AgentID, ExecutorID string }
 	if json.Unmarshal(config.Target, &target) != nil || target.Kind != "chat" || strings.TrimSpace(config.ProjectID) == "" {
 		return execution.StartRequest{}, "unsupported_schedule_target"
 	}
-	if strings.TrimSpace(target.ExecutorID) == "" {
-		return execution.StartRequest{}, "executor_required"
+	if strings.TrimSpace(target.AgentID) == "" && strings.TrimSpace(target.ExecutorID) == "" {
+		return execution.StartRequest{}, "agent_required"
 	}
 	prompt := execution.TextPrompt(target.Prompt)
 	if _, err := prompt.Text(); err != nil {
 		return execution.StartRequest{}, "invalid_prompt"
 	}
-	return execution.StartRequest{Caller: occurrenceCaller(o), Target: execution.Target{ProjectID: config.ProjectID}, ExecutorID: target.ExecutorID, Prompt: prompt}, ""
+	return execution.StartRequest{
+		Caller: occurrenceCaller(o), Target: execution.Target{ProjectID: config.ProjectID},
+		AgentID: target.AgentID, ModelID: target.Model, ExecutorID: target.ExecutorID, Prompt: prompt,
+	}, ""
 }
 
 func admissionFailure(err error) (string, string) {

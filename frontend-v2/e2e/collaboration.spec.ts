@@ -7,7 +7,7 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   const suffix = crypto.randomUUID().slice(0, 8)
   const name = `演示小队-${suffix}`
   const colleague = `同事-${suffix}`
-  await page.goto('/collaboration')
+  await page.goto('/collaboration/squads')
   await signIn(page)
   await expect(page.getByRole('heading', { level: 1, name: '协作' })).toBeVisible()
   // The startup preset creates the workspace; the second human has to exist before the picker opens.

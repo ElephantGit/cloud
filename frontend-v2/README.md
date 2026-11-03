@@ -124,11 +124,11 @@ v2 只做核心执行，有几项界面在、但不会出现或不可用：服�
 
 以前的版本把工作流存在浏览器 localStorage 里。`data/legacy-library.ts` 只读这份旧数据：浏览器里还有旧工作流时，左栏顶部提示一次，点"导入"按名字逐个建到服务端（只带草稿，旧的发布版本要重新发布；同名的跳过），点"不导入"就不再提示；两种情况都不删浏览器里的旧数据。`data/local-workflow-backend.ts` 照搬 desktop Rust 实现的规则（名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；不能删除草稿和当前生效的版本等），现在用来读取旧数据，也是单元测试的假服务端（`lib/workflows/test/workflow-server.ts`）。
 
-Agent 和模型清单读取与 Chat 相同的 `/chat/executors`，保存后端返回的 `agentId` / `modelId`，目录为空或读取失败时不提供演示选项。旧占位配置保留并提示重新选择。角色、Skill 和 MCP 清单仍是 `data/demo-catalog.ts` 里的演示数据。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。
+Agent 和模型清单读取与 Chat 相同的 `/chat/executors`，保存后端返回的 `agentId` / `modelId`，目录为空或读取失败时不提供演示选项。旧占位配置保留并提示重新选择。角色目录读取 Settings 保存的本机角色；Skill 和 MCP 清单仍是 `data/demo-catalog.ts` 里的演示数据。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。
 
 ## 设置
 
-主导航的「设置」包含成员、模型连接、主题、Plugins、Skills 五个独立子页面，默认进入成员页。成员页读取真实的 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外，见 v2-server README）；主题真实作用于整个 V2；模型连接、Plugins、Skills 仍是清楚标注、按登录用户隔离的本机演示数据。没有真实 API Key、模型调用或插件下载，也不改变聊天和工作流的资源。详情见 [`src/features/settings/README.md`](src/features/settings/README.md)。
+主导航的「设置」包含成员、角色、模型连接、主题、Plugins、Skills 六个独立子页面，默认进入成员页。成员页读取真实的 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外，见 v2-server README）；主题真实作用于整个 V2；Plugins 使用真实市场目录与空间选择；Skills 使用按登录用户隔离的服务端技能库，支持新建和导入 `SKILL.md`，并会在新 Agent 会话中物化；角色保存在浏览器本机快照中，可新建、编辑、删除和导入 Markdown，并出现在工作流 Agent 节点的角色选择中，但 v2 执行仍不注入角色内容。模型连接和 MCP/Hook 安装仍是清楚标注的浏览器本地演示数据。没有真实 API Key 或模型调用；详情见 [`src/features/settings/README.md`](src/features/settings/README.md)。
 
 端到端测试可通过 `E2E_WEB_PORT`、`E2E_SERVER_PORT` 指定独立端口，默认仍为 5174、8091。与其他应用共用机器时选择空闲端口；测试不会复用已启动的服务。
 

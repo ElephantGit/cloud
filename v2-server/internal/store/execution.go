@@ -73,7 +73,7 @@ func executionError(err error) error {
 }
 
 func executionCaller(caller execution.Caller) ([]byte, error) {
-	if caller.ID == "" || caller.AttemptID == "" || (caller.Kind != execution.CallerChat && caller.Kind != execution.CallerWorkflow && caller.Kind != execution.CallerSchedule) {
+	if caller.ID == "" || caller.AttemptID == "" || (caller.Kind != execution.CallerChat && caller.Kind != execution.CallerWorkflow && caller.Kind != execution.CallerSchedule && caller.Kind != execution.CallerTask) {
 		return nil, execution.ErrInvalidRequest
 	}
 	if len(caller.Rounds) == 0 {

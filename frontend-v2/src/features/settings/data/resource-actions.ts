@@ -1,44 +1,45 @@
-import type { ConnectionDraft, SkillDraft, Snapshot } from './types'
+import type {
+  ConnectionDraft,
+  RoleDraft,
+  Snapshot,
+} from './types'
 
-export function saveSkill(data: Snapshot, draft: SkillDraft, id?: string) {
-  const current = id ? data.skills.find((s) => s.id === id) : undefined
-  if (id && !current) throw new Error('技能已不存在，请刷新列表。')
-  if (current?.source.kind === 'plugin')
-    throw new Error('插件提供的技能只读，请管理来源插件。')
+export function saveRole(data: Snapshot, draft: RoleDraft, id?: string) {
+  const current = id ? data.roles.find((role) => role.id === id) : undefined
+  if (id && !current) throw new Error('角色已不存在，请刷新列表。')
   const name = draft.name.trim()
   if (!name || name.length > 80 || /[\r\n/\\]/.test(name))
-    throw new Error('名称需为 1–80 个字符，不能包含换行或路径分隔符。')
+    throw new Error('标题需为 1–80 个字符，不能包含换行或路径分隔符。')
   if (
-    data.skills.some(
-      (s) =>
-        s.id !== id &&
-        s.namespace === 'local' &&
-        s.name.toLowerCase() === name.toLowerCase(),
+    data.roles.some(
+      (role) => role.id !== id && role.name.toLowerCase() === name.toLowerCase(),
     )
   )
-    throw new Error('已有同名自建技能，请使用其他名称。')
-  if (draft.description.length > 500 || draft.content.length > 100000)
-    throw new Error('简介最多 500 字，正文最多 100,000 字。')
+    throw new Error('已有同名角色，请使用其他标题。')
+  const description = draft.description.trim()
+  if (description.length > 500)
+    throw new Error('描述最多 500 个字符。')
+  if (draft.content.length > 100000)
+    throw new Error('内容最多 100,000 个字符。')
   const fields = {
     name,
-    description: draft.description.trim(),
+    description,
     content: draft.content,
+    updatedAt: new Date().toISOString(),
   }
   if (current) Object.assign(current, fields)
   else
-    data.skills.unshift({
+    data.roles.unshift({
       id: crypto.randomUUID(),
       namespace: 'local',
-      source: { kind: 'local' },
-      availability: 'available',
       ...fields,
     })
 }
-export function deleteSkill(data: Snapshot, id: string) {
-  const skill = data.skills.find((s) => s.id === id)
-  if (!skill || skill.source.kind !== 'local')
-    throw new Error('只能删除自建技能。')
-  data.skills = data.skills.filter((s) => s.id !== id)
+
+export function deleteRole(data: Snapshot, id: string) {
+  const role = data.roles.find((candidate) => candidate.id === id)
+  if (!role) throw new Error('角色已不存在，请刷新列表。')
+  data.roles = data.roles.filter((candidate) => candidate.id !== id)
 }
 
 export function validateConnection(draft: ConnectionDraft): string | undefined {

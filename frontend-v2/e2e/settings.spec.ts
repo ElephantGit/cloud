@@ -19,11 +19,48 @@ async function resetScroll(page: Page) {
 }
 const titles = [
   ['members', '成员'],
+  ['roles', '角色'],
   ['model-connections', '模型连接'],
   ['theme', '主题'],
   ['plugins', 'Plugins'],
   ['skills', 'Skills'],
 ] as const
+
+test('roles are user-managed, persistent and importable', async ({ page }) => {
+  await login(page, '/settings/roles')
+  await expect(page.getByRole('article', { name: '代码审查' })).toBeVisible()
+  await page.getByRole('button', { name: '新建角色' }).click()
+  await page.getByLabel('标题').fill('发布检查')
+  await page.getByLabel('描述').fill('发布前核对版本和说明')
+  await page
+    .getByLabel('内容（Markdown）')
+    .fill('# 发布检查\n\n核对版本。')
+  await page.getByRole('button', { name: '保存角色' }).click()
+  await expect(
+    page.getByRole('article', { name: '发布检查' }),
+  ).toBeVisible()
+  await page.reload()
+  await expect(
+    page.getByRole('article', { name: '发布检查' }),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: '导入角色' }).click()
+  await page.getByLabel('角色 Markdown 文件').setInputFiles({
+    name: 'reviewer.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(`---
+name: 代码审查
+description: 导入的审查说明
+---
+导入的审查内容`),
+  })
+  await expect(page.getByText('现有描述：')).toBeVisible()
+  await page.getByRole('button', { name: '覆盖' }).click()
+  await page.getByRole('button', { name: '确认导入' }).click()
+  await expect(
+    page.getByRole('article', { name: '代码审查' }),
+  ).toContainText('导入的审查说明')
+})
 
 test('settings subroutes, refresh, history and the existing shell remain navigable', async ({
   page,
@@ -155,6 +192,69 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
   await page.reload()
   await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
+})
+
+test('server-backed user skills create, import, overwrite, reload and isolate by browser context', async ({
+  page,
+  browser,
+}) => {
+  const created = `e2e-skill-${Date.now()}`
+  const imported = `e2e-import-${Date.now()}`
+  await login(page, '/settings/skills')
+  await page.getByRole('button', { name: '新建技能' }).click()
+  await page.getByLabel('技能名称').fill(created)
+  await page.getByLabel('简介').fill('端到端创建的真实技能')
+  await page
+    .getByLabel('说明文档（Markdown）')
+    .fill('# 真实技能\n\n由端到端测试创建。')
+  await page.getByRole('button', { name: '保存技能' }).click()
+  await expect(page.getByRole('article', { name: created })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('article', { name: created })).toBeVisible()
+
+  const importFile = (description: string) => ({
+    name: 'SKILL.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      `---\nname: ${imported}\ndescription: ${description}\n---\n\n# Imported\n`,
+    ),
+  })
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page.getByLabel(/选择 SKILL.md/).setInputFiles(importFile('第一次导入'))
+  await page.getByRole('dialog').getByRole('button', { name: '导入' }).click()
+  await expect(page.getByRole('article', { name: imported })).toBeVisible()
+
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page
+    .getByLabel(/选择 SKILL.md/)
+    .setInputFiles(importFile('覆盖后的说明'))
+  await page.getByRole('dialog').getByRole('button', { name: '导入' }).click()
+  await expect(page.getByRole('dialog').getByText('已有同名技能')).toBeVisible()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: '覆盖并导入' })
+    .click()
+  await expect(
+    page.getByRole('article', { name: imported }).getByText('覆盖后的说明'),
+  ).toBeVisible()
+
+  const other = await browser.newContext({ baseURL: new URL(page.url()).origin })
+  const otherPage = await other.newPage()
+  await login(otherPage, '/settings/skills')
+  await expect(otherPage.getByRole('article', { name: created })).toBeVisible()
+  await expect(otherPage.getByRole('article', { name: imported })).toBeVisible()
+  await other.close()
+
+  for (const name of [created, imported]) {
+    const row = page.getByRole('article', { name })
+    await row.getByRole('button', { name: `查看技能 ${name}` }).click()
+    await page.getByRole('button', { name: '删除技能' }).click()
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: '删除技能' })
+      .click()
+    await expect(page.getByRole('article', { name })).toHaveCount(0)
+  }
 })
 
 test('Agent cards install and remove while preinstalled Agents stay read-only', async ({
@@ -291,9 +391,9 @@ test('member can inspect market sources but cannot manage them', async ({
 test('corrupt local data shows a recoverable error and requires reset confirmation', async ({
   page,
 }) => {
-  await login(page, '/settings/skills')
+  await login(page, '/settings/model-connections')
   await expect(
-    page.getByRole('article', { name: 'change-summary' }),
+    page.getByRole('article', { name: '团队日常模型 · 示例' }),
   ).toBeVisible()
   await page.evaluate(() => {
     const key = Object.keys(localStorage).find((k) =>
@@ -317,7 +417,7 @@ test('corrupt local data shows a recoverable error and requires reset confirmati
     .getByRole('button', { name: '重置演示', exact: true })
     .click()
   await expect(
-    page.getByRole('article', { name: 'change-summary' }),
+    page.getByRole('article', { name: '团队日常模型 · 示例' }),
   ).toBeVisible()
 })
 
@@ -359,7 +459,7 @@ test('theme survives reload and follows system changes across existing pages', a
   await expect(page.locator('html')).not.toHaveClass(/dark/)
 })
 
-test('five desktop pages and keyboard-accessible details', async ({
+test('six settings pages and keyboard-accessible details', async ({
   page,
 }, info) => {
   const errors: string[] = []
@@ -393,6 +493,19 @@ test('five desktop pages and keyboard-accessible details', async ({
       fullPage: true,
     })
   }
+  await page.goto('/settings/skills')
+  await page.getByRole('button', { name: '导入技能' }).click()
+  await page.getByLabel(/选择 SKILL.md/).setInputFiles({
+    name: 'SKILL.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      '---\nname: import-preview\ndescription: 导入预览\n---\n\n# 导入预览\n',
+    ),
+  })
+  await page.screenshot({
+    path: info.outputPath('skill-import-light.png'),
+  })
+  await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
   await page.goto('/settings/plugins')
   const opener = page.getByRole('button', {
     name: '查看插件 Matt Pocock Skills',
@@ -405,16 +518,26 @@ test('five desktop pages and keyboard-accessible details', async ({
   expect(errors).toEqual([])
 })
 
-test('dark plugin and skill screenshots', async ({ page }, info) => {
+test('dark settings screenshots', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await login(page, '/settings/theme')
   await theme(page, '深色')
-  for (const path of ['plugins', 'skills']) {
+  for (const path of ['roles', 'plugins', 'skills']) {
     await page.goto('/settings/' + path)
     await expect(page.getByRole('article').first()).toBeVisible()
     await resetScroll(page)
     await page.screenshot({
       path: info.outputPath(path + '-dark.png'),
+      fullPage: true,
+    })
+  }
+  for (const width of [768, 375]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/settings/skills')
+    await expect(page.getByRole('article').first()).toBeVisible()
+    await resetScroll(page)
+    await page.screenshot({
+      path: info.outputPath(`skills-dark-${width}.png`),
       fullPage: true,
     })
   }
@@ -448,7 +571,7 @@ test('Agent plugin screenshots', async ({ page }, info) => {
 })
 
 for (const width of [768, 375]) {
-  test(`five settings pages at ${width}px keep the active link visible`, async ({
+  test(`six settings pages at ${width}px keep the active link visible`, async ({
     page,
   }, info) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -473,11 +596,11 @@ for (const width of [768, 375]) {
       const nav = page.getByRole('navigation', { name: '设置导航' })
       const active = nav.getByRole('link', { name: title, exact: true })
       await expect(active).toBeInViewport({ ratio: 1 })
-      if (width === 375 && ['plugins', 'skills'].includes(path)) {
+      if (['roles', 'plugins', 'skills'].includes(path)) {
         await expect(page.getByRole('article').first()).toBeVisible()
         await resetScroll(page)
         await page.screenshot({
-          path: info.outputPath(path + '-mobile.png'),
+          path: info.outputPath(path + '-' + width + '.png'),
           fullPage: true,
         })
       }

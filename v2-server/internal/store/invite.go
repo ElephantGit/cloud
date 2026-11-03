@@ -66,6 +66,9 @@ func (s *Store) InviteMember(ctx context.Context, tenant, caller string, in Invi
 		if tag.RowsAffected() == 0 {
 			return ErrAlreadyMember
 		}
+		if e := seedStarterSkills(ctx, tx, tenant, userID); e != nil {
+			return e
+		}
 		if in.SquadID != "" {
 			if e := joinInvitedSquad(ctx, tx, tenant, in.SquadID, userID); e != nil {
 				return e

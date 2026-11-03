@@ -36,6 +36,7 @@ export interface ScheduleChatTarget {
   kind: ScheduleChatTargetKind;
   prompt: string;
   agent: string;
+  agentId?: string;
   model: string;
   executorId?: string;
 }
@@ -159,11 +160,16 @@ export type ScheduleResourcesModelsItem = {
   name: string;
 };
 
-export type ScheduleResourcesExecutorsItem = {
+export type ScheduleResourcesAgentsItemModelsItem = {
   id: string;
   name: string;
-  agentName: string;
-  modelId: string;
+};
+
+export type ScheduleResourcesAgentsItem = {
+  id: string;
+  name: string;
+  version: string;
+  models: ScheduleResourcesAgentsItemModelsItem[];
 };
 
 export type ScheduleResourcesWorkflowsItem = {
@@ -176,14 +182,14 @@ export type ScheduleResourcesWorkflowsItem = {
 export type ScheduleResourcesAvailable = {
   projects: boolean;
   models: boolean;
-  executors: boolean;
+  agents: boolean;
   workflows: boolean;
 };
 
 export interface ScheduleResources {
   projects: ScheduleResourcesProjectsItem[];
   models: ScheduleResourcesModelsItem[];
-  executors: ScheduleResourcesExecutorsItem[];
+  agents: ScheduleResourcesAgentsItem[];
   /** Workflows with a published version, each with the snapshot a schedule would freeze. */
   workflows: ScheduleResourcesWorkflowsItem[];
   available: ScheduleResourcesAvailable;

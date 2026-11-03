@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useRole, useUser } from '@/app/auth/user'
-import { DemoRepository } from './repository'
+import { DemoRepository, settingsDemoQueryKey } from './repository'
 import type { Snapshot } from './types'
 
 /** Demo and HTTP caches never share keys. Mutations commit storage before updating query data. */
@@ -12,15 +12,10 @@ export function useSettingsData() {
   const role = useRole()
   const client = useQueryClient()
   const repository = useMemo(
-    () =>
-      new DemoRepository({
-        id: user.id,
-        displayName: user.displayName,
-        role: role ?? 'member',
-      }),
-    [user.id, user.displayName, role],
+    () => new DemoRepository({ id: user.id }),
+    [user.id],
   )
-  const queryKey = ['settings-demo', repository.key]
+  const queryKey = settingsDemoQueryKey(repository)
   const query = useQuery({
     queryKey,
     queryFn: () => repository.read(),

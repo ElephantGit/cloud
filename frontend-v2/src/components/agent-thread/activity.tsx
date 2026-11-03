@@ -22,8 +22,8 @@ import {
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace'
-import type { ActivityEntry, ExploreGroup, Row, SubagentGroup } from '../model/display'
-import type { PermissionRequest, PlanItem, ThoughtItem, ToolItem, TurnStatus } from '../model/types'
+import type { ActivityEntry, ExploreGroup, Row, SubagentGroup } from './model/display'
+import type { PermissionRequest, PlanItem, ThoughtItem, ToolItem, TurnStatus } from './model/types'
 import { formatDuration } from './format'
 import { Markdown } from './markdown'
 import { ToolRow } from './tool'

@@ -354,14 +354,14 @@ function DiffContent({ reader, path }: { reader: WorkspaceReader; path: string }
   if (parsed!.lines.length === 0) return <Message>这个文件和初始版本相同。</Message>
   return (
     <CodeBlock size="sm">
-      <CodeBlockContent aria-label={`${path} 的改动`}>
+      <CodeBlockContent wrap aria-label={`${path} 的改动`}>
         {parsed!.lines.map((l, i) =>
           l.op === '@' ? (
             <CodeBlockLine key={i} className="text-muted-foreground">
               {l.text}
             </CodeBlockLine>
           ) : (
-            <CodeBlockLine key={i} variant={l.op === '+' ? 'added' : l.op === '-' ? 'removed' : 'default'}>
+            <CodeBlockLine key={i} variant={l.op === '+' ? 'added' : l.op === '-' ? 'removed' : 'default'} className={l.op === '+' ? 'bg-success-soft' : undefined}>
               {l.text}
             </CodeBlockLine>
           ),

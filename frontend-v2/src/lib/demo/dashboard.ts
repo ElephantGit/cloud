@@ -7,8 +7,10 @@
  * two, while moving them to `src/lib/` is a shared change that belongs to the task-workspace work.
  * Replace this file in the same change that adds a dashboard aggregation to the contract.
  *
- * The numbers are internally consistent — member rows add up to the overview tiles and the trend
- * adds up to the week's completions — so a reviewer can check the panel arithmetic by eye.
+ * The numbers are internally consistent — member rows add up to the overview tiles, the tiles' notes
+ * count the members they describe, the trend adds up to the week's completions — and
+ * `dashboard.test.ts` holds the dataset to that, so the recording cannot show two panels that
+ * disagree.
  */
 
 /** One overview tile: a short label, its value, and what the number covers. */
@@ -62,8 +64,8 @@ export interface DashboardData {
 export const dashboardDemo: DashboardData = {
   period: '本周 · 11-02 至 11-06',
   stats: [
-    { label: '进行中', value: '6', note: '3 人在处理，2 个 Agent 在运行' },
-    { label: '待验收', value: '4', note: '其中 2 项由 Agent 提交' },
+    { label: '进行中', value: '6', note: '2 人在处理，2 个 Agent 在运行' },
+    { label: '待验收', value: '5', note: '其中 2 项由 Agent 提交' },
     { label: '本周完成', value: '12', note: '比上周多 3 项' },
     { label: 'Agent 运行', value: '23 次', note: '18 次已交付' },
   ],
@@ -71,7 +73,7 @@ export const dashboardDemo: DashboardData = {
     { id: 'member-lead', name: '陈默', kind: 'human', role: 'Tech Lead', running: 1, review: 2, doneThisWeek: 3 },
     { id: 'member-su', name: '苏芮', kind: 'human', role: '研发', running: 2, review: 1, doneThisWeek: 3 },
     { id: 'member-zhou', name: '周衡', kind: 'human', role: '研发', running: 0, review: 0, doneThisWeek: 2 },
-    { id: 'member-opencode', name: 'OpenCode', kind: 'agent', role: '执行 Agent', running: 1, review: 1, doneThisWeek: 3 },
+    { id: 'member-opencode', name: 'OpenCode', kind: 'agent', role: '执行 Agent', running: 1, review: 2, doneThisWeek: 3 },
     { id: 'member-reviewer', name: 'Reviewer', kind: 'agent', role: '评审 Agent', running: 2, review: 0, doneThisWeek: 1 },
   ],
   outputs: [

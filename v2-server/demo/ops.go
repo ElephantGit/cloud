@@ -15,7 +15,7 @@ func OpsGraph(seed WorkflowSeed) (string, error) {
 	return chainGraph(seed,
 		demoNode{ID: "start", Data: map[string]any{"kind": "start", "title": "开始：每日巡检"}},
 		agentStep("inspect", "检查服务与资源", "只读巡检当前仓库中的演示服务。读取 README.md、ops/metrics.json 和 ops/service.log，运行 node scripts/inspect.mjs。不要访问外网、改动配置或修复系统。下面是巡检要求：{{#start.input#}}\n逐项列出实际观察到的服务状态、错误率、磁盘和备份信息，不把示例数据说成生产环境状态。"),
-		agentStep("report", "汇总风险与巡检报告", "根据上一步的实际巡检证据生成中文 Markdown 报告，含总体结论、检查项表格、异常与处置建议。不得编造未采集的指标，不执行修复。\n巡检证据：{{#inspect.output#}}"),
+		agentStep("report", "汇总风险与巡检报告", "根据上一步的实际巡检证据生成中文 Markdown 报告，含总体结论、检查项表格、实际指标、异常与处置建议。最终助手回复必须直接包含完整报告正文，让用户在运行结果中就能读到；不要只回复文件路径或完成通知。整个步骤只读，不创建或修改任何文件，不执行修复，不编造未采集的指标。\n巡检证据：{{#inspect.output#}}"),
 		outputStep("report", "report"),
 	)
 }

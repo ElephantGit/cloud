@@ -1,6 +1,7 @@
 import { beforeEach, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { vi } from 'vitest'
 import type { PluginCatalogEntry } from '@/api/generated.schemas'
 import {
   installMarketplaceBackend,
@@ -10,6 +11,13 @@ import {
 } from '../test-utils'
 import PluginsPage from './page'
 import { useDemoPluginSelections } from './demo-state'
+
+const installDelay = vi.hoisted(() => ({ ms: 0 }))
+
+vi.mock('./install-delay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./install-delay')>()),
+  installDelayMs: () => installDelay.ms,
+}))
 
 const writing = marketplaceEntry('writing-kit', {
   kind: 'skill',
@@ -50,6 +58,7 @@ const codex = marketplaceEntry('ora-space.codex', {
 })
 
 beforeEach(() => {
+  installDelay.ms = 0
   useDemoPluginSelections.getState().reset()
   localStorage.clear()
 })
@@ -103,7 +112,9 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
   renderSettingsPage(<PluginsPage />)
   const row = await screen.findByRole('article', { name: 'GitHub 工具' })
   await user.click(within(row).getByRole('button', { name: '安装' }))
-  expect(within(row).getByText('已安装', { exact: true })).toBeInTheDocument()
+  expect(
+    await within(row).findByText('已安装', { exact: true }),
+  ).toBeInTheDocument()
   await user.click(within(row).getByRole('button', { name: '移除' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(dialog).toHaveTextContent('不会卸载真实插件包')
@@ -113,7 +124,9 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
   const hook = screen.getByRole('article', { name: '示例 Hooks' })
   expect(screen.getByRole('heading', { name: 'Hooks' })).toBeInTheDocument()
   await user.click(within(hook).getByRole('button', { name: '安装' }))
-  expect(within(hook).getByText('已安装', { exact: true })).toBeInTheDocument()
+  expect(
+    await within(hook).findByText('已安装', { exact: true }),
+  ).toBeInTheDocument()
   expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
     'demo/sample-hooks',
   )
@@ -182,16 +195,49 @@ it('installs and removes a marketplace Agent', async () => {
   })
 })
 
-it('keeps a runtime-preinstalled Agent read-only', async () => {
-  installMarketplaceBackend({
+it('lets a runtime-preinstalled Agent use the demo install flow', async () => {
+  const backend = installMarketplaceBackend({
     catalog: [opencode],
     selections: [marketplaceSelection(opencode)],
   })
+  installDelay.ms = 500
+  const user = userEvent.setup()
   renderSettingsPage(<PluginsPage />)
   const row = await screen.findByRole('article', { name: 'OpenCode' })
   expect(within(row).getByText('运行时预装')).toBeInTheDocument()
-  expect(within(row).queryByRole('button', { name: '安装' })).not.toBeInTheDocument()
+  expect(
+    within(row).queryByText('已安装', { exact: true }),
+  ).not.toBeInTheDocument()
+  const installButton = within(row).getByRole('button', { name: '安装' })
+  expect(installButton).toBeEnabled()
   expect(within(row).queryByRole('button', { name: '移除' })).not.toBeInTheDocument()
+
+  await user.click(installButton)
+  expect(
+    within(row).getByRole('button', { name: '安装中…' }),
+  ).toBeDisabled()
+  expect(await within(row).findByText('已安装', { exact: true })).toBeInTheDocument()
+  expect(within(row).queryByRole('button', { name: '安装' })).not.toBeInTheDocument()
+  expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
+    'official/ora-space.opencode',
+  )
+  expect(backend.bodies).toHaveLength(0)
+})
+
+it('keeps the install pending state for the selected random delay', async () => {
+  const backend = installMarketplaceBackend({ catalog: [codex] })
+  installDelay.ms = 500
+  const user = userEvent.setup()
+  renderSettingsPage(<PluginsPage />)
+  const row = await screen.findByRole('article', { name: 'Codex' })
+
+  await user.click(within(row).getByRole('button', { name: '安装' }))
+  expect(
+    within(row).getByRole('button', { name: '安装中…' }),
+  ).toBeDisabled()
+  expect(within(row).getByText('安装中', { exact: true })).toBeInTheDocument()
+  expect(await within(row).findByText('已安装')).toBeInTheDocument()
+  expect(backend.bodies).toHaveLength(1)
 })
 
 it('shows the shared official market and manages space sources', async () => {

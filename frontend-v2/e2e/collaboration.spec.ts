@@ -5,7 +5,7 @@ import { ownerName, signIn } from './login.ts'
 
 test('create a squad, add and remove a member, then archive it', async ({ page }) => {
   const suffix = crypto.randomUUID().slice(0, 8)
-  const name = `演示小队-${suffix}`
+  const name = `Web 前端组-${suffix}`
   const colleague = `同事-${suffix}`
   // Squads are workspace configuration, managed under 设置 rather than beside the task views.
   await page.goto('/settings/squads')
@@ -18,7 +18,7 @@ test('create a squad, add and remove a member, then archive it', async ({ page }
   await page.getByRole('button', { name: '新建小队' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('小队名称').fill(name)
-  await dialog.getByLabel('简介').fill('由 e2e 创建的演示小队')
+  await dialog.getByLabel('简介').fill('负责协作平台 Web 前端的开发与代码评审')
   await dialog.getByLabel('协作说明').fill('人类定优先级，Agent 收集数据。')
   await dialog.getByRole('button', { name: '创建小队' }).click()
   await expect(dialog.getByRole('heading', { name })).toBeVisible()

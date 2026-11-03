@@ -27,6 +27,20 @@ assets=${assets/#\~/$HOME}
 # The chat page only offers Agent executors, so a demo without Node assets cannot start a conversation.
 [[ -f $assets/assets.json ]] || { echo "No prepared Node assets at $assets: run \`task v2:node:prepare\` first (or set V2_NODE_ASSETS_DIR in $env_file)." >&2; exit 1; }
 
+# Optional Claude provider, read by the same launcher as the OpenCode provider.
+for name in V2_ANTHROPIC_MODEL_BASE_URL V2_ANTHROPIC_MODEL_NAME V2_ANTHROPIC_MODEL_API_KEY V2_ANTHROPIC_MODEL_AUTH_TOKEN; do
+  value=$(read_value "$name")
+  [[ -z $value ]] || export "$name=$value"
+done
+if [[ -n ${V2_ANTHROPIC_MODEL_BASE_URL:-}${V2_ANTHROPIC_MODEL_NAME:-}${V2_ANTHROPIC_MODEL_API_KEY:-}${V2_ANTHROPIC_MODEL_AUTH_TOKEN:-} ]]; then
+  if [[ -z ${V2_ANTHROPIC_MODEL_BASE_URL:-} || -z ${V2_ANTHROPIC_MODEL_NAME:-} ||
+        ( -z ${V2_ANTHROPIC_MODEL_API_KEY:-} && -z ${V2_ANTHROPIC_MODEL_AUTH_TOKEN:-} ) ||
+        ( -n ${V2_ANTHROPIC_MODEL_API_KEY:-} && -n ${V2_ANTHROPIC_MODEL_AUTH_TOKEN:-} ) ]]; then
+    echo "Claude Code requires a base URL, model name, and exactly one API key or auth token." >&2
+    exit 1
+  fi
+fi
+
 [[ ${1:-} == --check ]] && exit 0
 
 export V2_MODEL_BASE_URL=https://api.deepseek.com

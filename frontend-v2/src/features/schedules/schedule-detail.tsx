@@ -8,8 +8,8 @@ import { listScheduleHistory, getScheduleHistoryItem, getScheduleExecutionResult
 import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import type { ScheduleResources } from './api/generated'
-import { type Catalog, formatTime, isWorkflowTarget, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
-import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isTerminalActionRejection, manualRequestKey, occurrenceWorkflowRun, reasonText, runLabels, runnable, scheduleError } from './runtime'
+import { type Catalog, formatTime, isWorkflowTarget, modelLabel, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
+import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isDeletedWorkflowRun, isTerminalActionRejection, manualRequestKey, occurrenceWorkflowRun, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
 const workflowRunLabels: Record<string,string> = { pending: '未开始', running: '运行中', awaitingInput: '等待输入', succeeded: '成功', failed: '失败', cancelled: '已取消' }
 
@@ -39,6 +39,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const workflowRunId=occurrenceWorkflowRun(selected)
  const output=useQuery({queryKey:['schedule-result',scope,task.id,selected?.id,selected?.version],queryFn:({signal})=>getScheduleExecutionResult(tenantId,task.id,selected!.id,undefined,signal),enabled:tab==='history'&&!!selected?.executionRef&&!workflowRunId,retry:false,refetchInterval:selected&&!selected.released?2000:false})
  const workflowRun=useQuery({queryKey:['schedule-workflow-run',scope,workflowRunId,selected?.version],queryFn:({signal})=>getWorkflowRun(tenantId,workflowRunId,undefined,signal),enabled:tab==='history'&&!!workflowRunId,retry:false,refetchInterval:selected&&!selected.released?2000:false})
+ const workflowRunDeleted=workflowRun.isError&&isDeletedWorkflowRun(workflowRun.error)
  const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{const oid=errorOccurrenceId(error);if(oid)setRunId(oid);if(isTerminalActionRejection(error))finishManualRequest(scope,task.id);setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
  const cancel=useMutation({mutationFn:(id:string)=>cancelScheduleRun(tenantId,task.id,id,{}),retry:false,onSuccess:receipt=>{onObserved?.(receipt);setOperationError('');setNotice('取消请求已处理，当前状态见运行历史。');void history.refetch();if(selected?.executionRef&&!workflowRunId)void output.refetch()},onError:error=>{setOperationError(scheduleError(error,'取消失败，运行状态未确认，请稍后重试。'));void history.refetch()}})
  const busy=run.isPending||cancel.isPending
@@ -46,6 +47,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const available=runnable(task,resources)
  const target=task.target
  const workflow=isWorkflowTarget(target)?resources.workflows.find(w=>w.id===target.workflowId):undefined
+ const targetAgent=target.kind==='chat'?resources.agents.find(a=>target.agentId?a.id===target.agentId:a.name===target.agent):undefined
  const canCancel=!!selected&&!selected.released&&['running','cancelling','succeeded','failed','cancelled','interrupted'].includes(selected.status)
  const cleanup=!!selected&&['succeeded','failed','cancelled','interrupted'].includes(selected.status)
  return <div className="sp-detail">
@@ -58,7 +60,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     <div className="sp-config-heading">运行环境</div><dl className="sp-key-values">
      <div><dt>关联项目</dt><dd>{projectName(task.projectId,data)}</dd></div>
      {isWorkflowTarget(target)&&<div><dt>工作流</dt><dd>{!workflow?'原工作流暂不可用':workflow.snapshotId===target.snapshotId?`${workflow.name}（${workflow.version}）`:`${workflow.name}（固定的旧版本；生效版本已是 ${workflow.version}，编辑保存后改用）`}</dd></div>}
-     {target.kind==='chat'&&<><div><dt>模型</dt><dd>{resources.models.find(m=>m.id===target.model)?.name??(target.model?'原模型暂不可用':'尚未选择模型')}</dd></div><div><dt>执行器</dt><dd>{!task.projectId?'无需执行器':resources.executors.find(e=>e.id===target.executorId)?.name??'原执行器暂不可用'}</dd></div></>}
+     {target.kind==='chat'&&<><div><dt>Agent</dt><dd>{!task.projectId?'无需 Agent':targetAgent?.name??(target.agent?'原 Agent 暂不可用':'尚未选择 Agent')}</dd></div><div><dt>模型</dt><dd>{target.model?modelLabel(target,data)||'原模型暂不可用':'尚未选择模型'}</dd></div></>}
      <div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div>
     </dl>
     <div className="sp-time-preview"><div><Clock3 size={15}/><strong>预计触发时间</strong></div>{nextTimes(task.rule,now,new Date(task.createdAt)).map((date,i)=><p key={date.toISOString()}><span>{i+1}</span>{formatTime(date,task.rule.timezone)}</p>)}</div>
@@ -73,8 +75,8 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
      {selected&&<section aria-label="选中运行的结果">
       <div className="sp-config-heading">{runLabels[selected.status]}{!selected.released?' · 等待结束确认':''}</div>
       {selected.reason&&<p className="sp-helper">{reasonText(selected.reason)}</p>}
-      {workflowRunId&&<Link className={buttonVariants({variant:'outline',size:'sm'})} to={`/chat?run=${encodeURIComponent(workflowRunId)}`}>打开运行页</Link>}
-      {workflowRunId?workflowRun.isPending?<p role="status">正在读取工作流运行…</p>:workflowRun.isError?<p role="alert">{scheduleError(workflowRun.error,'工作流运行暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void workflowRun.refetch()}>重试读取运行</Button></p>:<>
+      {workflowRunId&&!workflowRunDeleted&&<Link className={buttonVariants({variant:'outline',size:'sm'})} to={`/chat?run=${encodeURIComponent(workflowRunId)}`}>打开运行页</Link>}
+      {workflowRunId?workflowRun.isPending?<p role="status">正在读取工作流运行…</p>:workflowRunDeleted?selected.reason!=='workflow_run_deleted'&&<p className="sp-helper">{reasonText('workflow_run_deleted')}</p>:workflowRun.isError?<p role="alert">{scheduleError(workflowRun.error,'工作流运行暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void workflowRun.refetch()}>重试读取运行</Button></p>:<>
        <div className="sp-config-heading">工作流运行 · {workflowRunLabels[workflowRun.data.run.status]??workflowRun.data.run.status}</div>
        <pre className="sp-prompt-preview" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{workflowRun.data.run.output??workflowRun.data.run.error??'运行尚未产生输出'}</pre>
       </>:!selected.executionRef?<p className="sp-helper">此次运行尚无可读取的执行结果。</p>:output.isPending?<p role="status">正在读取结果…</p>:output.isError?<p role="alert">{scheduleError(output.error,'完整结果暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void output.refetch()}>重试读取结果</Button></p>:output.data?.result?<>

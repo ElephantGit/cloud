@@ -767,6 +767,9 @@
           "agent": {
             "type": "string"
           },
+          "agentId": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -781,7 +784,7 @@
         "required": [
           "projects",
           "models",
-          "executors",
+          "agents",
           "workflows",
           "available"
         ],
@@ -828,7 +831,7 @@
               }
             }
           },
-          "executors": {
+          "agents": {
             "type": "array",
             "items": {
               "type": "object",
@@ -836,8 +839,8 @@
               "required": [
                 "id",
                 "name",
-                "agentName",
-                "modelId"
+                "version",
+                "models"
               ],
               "properties": {
                 "id": {
@@ -846,11 +849,27 @@
                 "name": {
                   "type": "string"
                 },
-                "agentName": {
+                "version": {
                   "type": "string"
                 },
-                "modelId": {
-                  "type": "string"
+                "models": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -891,7 +910,7 @@
             "required": [
               "projects",
               "models",
-              "executors",
+              "agents",
               "workflows"
             ],
             "properties": {
@@ -901,7 +920,7 @@
               "models": {
                 "type": "boolean"
               },
-              "executors": {
+              "agents": {
                 "type": "boolean"
               },
               "workflows": {

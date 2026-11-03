@@ -20,3 +20,29 @@ it('validates weekly scheduling and accepts unscoped chat', async () => {
   await user.click(screen.getByRole('button', { name: '创建并启用' }))
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'chat', projectId: '', rule: expect.objectContaining({ days: [5] }) }), expect.any(Object))
 })
+
+it('selects an Agent and one of its models independently', async () => {
+  const user = userEvent.setup()
+  const onSave = vi.fn()
+  const data = {
+    projects: [{ id: 'project', name: 'Demo', description: '' }],
+    models: [{ id: 'direct', name: 'Direct model' }],
+    agents: [
+      { id: 'official/opencode', name: 'OpenCode', version: '1.0.0', models: [{ id: 'openai', name: 'OpenAI model' }] },
+      { id: 'official/claude', name: 'Claude Code', version: '1.0.0', models: [{ id: 'messages', name: 'Anthropic model' }] },
+    ],
+    available: { projects: true, models: true, agents: true, workflows: false },
+  }
+  render(<QueryClientProvider client={new QueryClient()}><ScheduleForm onSave={onSave} onCancel={() => {}} data={data} /></QueryClientProvider>)
+  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '项目任务' } })
+  fireEvent.change(screen.getByLabelText('任务指令'), { target: { value: '检查代码' } })
+  expect(screen.queryByLabelText('执行器')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('Agent')).toBeDisabled()
+  await user.selectOptions(screen.getByLabelText('关联项目'), 'project')
+  await user.selectOptions(screen.getByLabelText('Agent'), 'official/claude')
+  expect(screen.getByRole('option', { name: 'Anthropic model' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: 'OpenAI model' })).not.toBeInTheDocument()
+  await user.selectOptions(screen.getByLabelText('模型'), 'messages')
+  await user.click(screen.getByRole('button', { name: '创建并启用' }))
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'official/claude', agent: 'Claude Code', model: 'messages' }), data)
+})

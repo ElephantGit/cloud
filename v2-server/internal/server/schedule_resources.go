@@ -27,11 +27,11 @@ type scheduleModelView struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
-type scheduleExecutorView struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	AgentName string `json:"agentName"`
-	ModelID   string `json:"modelId"`
+type scheduleAgentView struct {
+	ID      string              `json:"id"`
+	Name    string              `json:"name"`
+	Version string              `json:"version"`
+	Models  []scheduleModelView `json:"models"`
 }
 type scheduleWorkflowView struct {
 	ID         string `json:"id"`
@@ -42,12 +42,12 @@ type scheduleWorkflowView struct {
 type scheduleResourceView struct {
 	Projects  []scheduleProjectView  `json:"projects"`
 	Models    []scheduleModelView    `json:"models"`
-	Executors []scheduleExecutorView `json:"executors"`
+	Agents    []scheduleAgentView    `json:"agents"`
 	Workflows []scheduleWorkflowView `json:"workflows"`
 	Available struct {
 		Projects  bool `json:"projects"`
 		Models    bool `json:"models"`
-		Executors bool `json:"executors"`
+		Agents    bool `json:"agents"`
 		Workflows bool `json:"workflows"`
 	} `json:"available"`
 }
@@ -76,7 +76,7 @@ func (h *handler) scheduleResources(w http.ResponseWriter, r *http.Request, u st
 		return
 	}
 	scope := execution.Scope{TenantID: tid, UserID: u.ID}
-	out := scheduleResourceView{Projects: []scheduleProjectView{}, Models: []scheduleModelView{}, Executors: []scheduleExecutorView{}, Workflows: []scheduleWorkflowView{}}
+	out := scheduleResourceView{Projects: []scheduleProjectView{}, Models: []scheduleModelView{}, Agents: []scheduleAgentView{}, Workflows: []scheduleWorkflowView{}}
 	if projects, ok := h.store.(scheduleProjects); ok {
 		items, err := projects.ListProjects(r.Context(), scope)
 		if scheduleResourceError(w, err) {
@@ -103,10 +103,22 @@ func (h *handler) scheduleResources(w http.ResponseWriter, r *http.Request, u st
 	if scheduleResourceError(w, err) {
 		return
 	}
-	out.Available.Executors = err == nil
+	out.Available.Agents = err == nil
 	if err == nil {
+		index := map[string]int{}
+		modelIDs := map[string]map[string]bool{}
 		for _, e := range executors {
-			out.Executors = append(out.Executors, scheduleExecutorView{e.ID, e.Name, e.AgentName, e.Model.ID})
+			i, ok := index[e.AgentID]
+			if !ok {
+				i = len(out.Agents)
+				index[e.AgentID] = i
+				out.Agents = append(out.Agents, scheduleAgentView{ID: e.AgentID, Name: e.AgentName, Version: e.PluginVersion, Models: []scheduleModelView{}})
+				modelIDs[e.AgentID] = map[string]bool{}
+			}
+			if !modelIDs[e.AgentID][e.Model.ID] {
+				out.Agents[i].Models = append(out.Agents[i].Models, scheduleModelView{ID: e.Model.ID, Name: e.Model.Name})
+				modelIDs[e.AgentID][e.Model.ID] = true
+			}
 		}
 	}
 	if workflows, err := h.scheduleWorkflows(r.Context(), tid); err != nil {
@@ -165,12 +177,12 @@ func scheduleResourceError(w http.ResponseWriter, err error) bool {
 func (h *handler) resolveScheduleChat(ctx context.Context, tenant, user string, in *store.ScheduleInput, target ScheduleChatTarget) error {
 	// Preserve unbound text-only configuration drafts; they cannot pass the runtime's
 	// model_required gate. Any executable selection must resolve through the catalog.
-	if in.ProjectID == "" && target.Model == "" && target.ExecutorID == "" {
+	if in.ProjectID == "" && target.Model == "" && target.AgentID == "" && target.ExecutorID == "" {
 		return nil
 	}
 	scope := execution.Scope{TenantID: tenant, UserID: user}
 	if in.ProjectID == "" {
-		if target.ExecutorID != "" {
+		if target.AgentID != "" || target.ExecutorID != "" {
 			return store.ErrNotFound
 		}
 		models, err := h.opts.Catalog.ListModels(ctx, scope)
@@ -196,7 +208,13 @@ func (h *handler) resolveScheduleChat(ctx context.Context, tenant, user string, 
 		return scheduleSelectionError(err)
 	}
 	for _, e := range executors {
-		if e.ID == target.ExecutorID && e.Model.ID == target.Model {
+		if e.Model.ID != target.Model {
+			continue
+		}
+		if target.AgentID != "" && e.AgentID == target.AgentID && (target.ExecutorID == "" || e.ID == target.ExecutorID) {
+			return nil
+		}
+		if target.AgentID == "" && e.ID == target.ExecutorID {
 			return nil
 		}
 	}

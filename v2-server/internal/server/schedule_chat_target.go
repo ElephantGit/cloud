@@ -12,6 +12,7 @@ type ScheduleChatTarget struct {
 	Kind       string `json:"kind"`
 	Prompt     string `json:"prompt"`
 	Agent      string `json:"agent"`
+	AgentID    string `json:"agentId,omitempty"`
 	Model      string `json:"model"`
 	ExecutorID string `json:"executorId,omitempty"`
 }
@@ -44,7 +45,7 @@ func decodeScheduleChat(raw json.RawMessage) (ScheduleChatTarget, string) {
 			return target, "invalid_target"
 		}
 	}
-	if string(fields["executorId"]) == "null" {
+	if string(fields["agentId"]) == "null" || string(fields["executorId"]) == "null" {
 		return target, "invalid_target"
 	}
 	return target, ""

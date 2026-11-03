@@ -16,6 +16,21 @@ const agentProject = "00000000-0000-0000-0000-000000000123"
 
 const agentTarget = `{"kind":"chat","prompt":"frozen prompt","executorId":"catalog-executor"}`
 
+func TestProjectConversationPassesIndependentAgentAndModel(t *testing.T) {
+	target := `{"kind":"chat","prompt":"frozen prompt","agent":"OpenCode","agentId":"official/ora-space.opencode","model":"fixture"}`
+	f := newConversationFixture(t, agentProject, json.RawMessage(target))
+	f.executor.StartFunc = func(_ context.Context, scope execution.Scope, req execution.StartRequest) (execution.Ref, error) {
+		prompt, err := req.Prompt.Text()
+		if err != nil || scope != f.scope || req.Target.ProjectID != agentProject || req.AgentID != "official/ora-space.opencode" || req.ModelID != "fixture" || req.ExecutorID != "" || prompt != "frozen prompt" {
+			t.Fatalf("wrong independent selection: scope=%+v request=%+v prompt=%q err=%v", scope, req, prompt, err)
+		}
+		return f.ref, nil
+	}
+	if err := f.adapter.Dispatch(context.Background(), f.scope, f.occ); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectConversationUsesFrozenBindingAndWaitsForCleanup(t *testing.T) {
 	f := newConversationFixture(t, agentProject, json.RawMessage(agentTarget))
 	ctx := context.Background()
@@ -131,7 +146,7 @@ func TestProjectAdmissionBusyAndConflictNeverFallBackOrReplay(t *testing.T) {
 
 func TestConversationInvalidSelectionNeverCallsExecution(t *testing.T) {
 	for _, tc := range []struct{ name, project, target, reason string }{
-		{"missing executor", agentProject, `{"kind":"chat","prompt":"hello","agent":"display-name","model":"display-name"}`, "executor_required"},
+		{"missing agent", agentProject, `{"kind":"chat","prompt":"hello","agent":"display-name","model":"display-name"}`, "agent_required"},
 		{"executor without project", "", `{"kind":"chat","prompt":"hello","model":"model","executorId":"executor"}`, "project_required"},
 		{"workflow is not chat", agentProject, `{"kind":"workflow","prompt":"hello","executorId":"executor"}`, "unsupported_schedule_target"},
 		{"empty prompt", agentProject, `{"kind":"chat","prompt":"","executorId":"executor"}`, "invalid_prompt"},

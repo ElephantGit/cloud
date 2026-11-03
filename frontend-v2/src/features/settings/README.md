@@ -6,15 +6,15 @@
 
 成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
 
-成员、Plugins、市场技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
-契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 与 Hook 没有 v2 执行器，安装和卸载状态只保存在浏览器，不会调用安装 API 或伪造服务端成功；目录缺少对应类型时提供本地条目。模型连接、自建技能和角色同样只保存在当前浏览器。所有本地写入按登录用户隔离，其中 MCP/Hook 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
+成员、Plugins、技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
+契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 与 Hook 没有 v2 执行器，安装和卸载状态只保存在浏览器，不会调用安装 API 或伪造服务端成功；目录缺少对应类型时提供本地条目。模型连接和角色同样只保存在当前浏览器。所有本地写入按登录用户隔离，其中 MCP/Hook 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
 
-`lib/settings-demo/` 是本机模型连接、自建技能和角色的共享存储边界，键包含版本、当前用户 ID
-和空间 ID；Settings 与工作流的角色选择读同一份快照。`members/` 与
+`lib/settings-demo/` 是本机模型连接和角色的共享存储边界，键包含版本、当前用户 ID 和空间
+ID；Settings 与工作流的角色选择读同一份快照。`members/`、`skills/` 与
 `data/marketplace.ts` 不使用它。初次读取创建示例；修改先校验 revision 并成功写入
-localStorage，再更新 TanStack Query 缓存。schema 2 和 3 的旧快照会升级为 schema 4，
-其中 schema 2 会丢弃已经由服务端目录取代的本地插件镜像。保存失败和损坏数据会报错，不会
-自动清空。
+localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照会升级为 schema 5，
+丢弃已经由服务端目录取代的技能和本地插件镜像，同时保留已有角色或为旧快照补上角色。保存
+失败和损坏数据会报错，不会自动清空。
 
 - 插件复用生成的 `PluginCatalogEntry` 与 `SpacePlugin`；目录、安装和卸载全部走
   `frontend-v2/src/api` 的生成客户端。以 `sourceNamespace/identifier` 对应，写入带
@@ -25,9 +25,15 @@ localStorage，再更新 TanStack Query 缓存。schema 2 和 3 的旧快照会�
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
   member 只读。MCP 与 Hook 的安装选择保存在 `plugins/demo-state.ts` 的浏览器存储中，
   按用户、团队和空间分键；Skill 与 Agent 不读取这份状态。
-- 技能是独立的说明文档，保留 namespace、source、availability、content。自建技能可增改删，
-  仍只保存在本浏览器；市场技能从 `kind=skill` 的目录 README 生成，只读，安装或移除来源插件
-  会改变可用性，移除后仍能预览文档。预览不执行 HTML 或加载远程图片。
+- 用户技能通过候选契约 `v2-server/skills.openapi.json` 持久化在 PostgreSQL，按登录用户和
+  工作区隔离；`npm run api:generate:skills` 生成共享客户端到 `src/lib/skills-api`。页面可新建、
+  编辑、删除，或导入单个带 YAML front matter 的 `SKILL.md`；新账号首次登录获得
+  `code-review`、`test-plan`、`release-notes` 三个真实 starter skill，删除后不会重新创建。
+  同名导入先返回冲突，用户确认后覆盖并保留技能 ID。市场技能仍从 `kind=skill` 的目录 README
+  生成，只读，安装或移除来源插件会改变可用性，移除后仍能预览文档。预览不执行 HTML 或加载远程图片。
+- 用户技能在新 Agent 会话克隆工作副本后物化到 `.opencode/skills/<name>/SKILL.md` 与
+  `.claude/skills/<name>/SKILL.md`。项目已有同名目录时保留项目内容；编辑或删除只影响之后
+  启动的会话。
 - 角色复用 desktop 的 Agent definition 形状：名称、描述和 Markdown 内容，使用 `local`
   命名空间。可在页面新建、编辑、删除，也可以导入带 YAML front matter（`name` 和
   `description`）的单个 `.md` 文件；同名时选择跳过或覆盖。工作流 Agent 节点按角色名称读取
@@ -49,10 +55,9 @@ localStorage，再更新 TanStack Query 缓存。schema 2 和 3 的旧快照会�
 
 `npm run check` 检查类型、Oxlint、单元测试、客户端一致性与构建。`e2e/login.ts` 提供邮箱
 登录辅助，`e2e/settings.spec.ts` 覆盖六页路由、成员页的 owner/member 两种视角、角色增改删
-与 Markdown 导入、插件和技能
-安装/卸载、Agent 选择生命周期、刷新与新浏览器上下文读取服务端状态、错误恢复、主题、
-375/768/1440 布局与截图；
+与 Markdown 导入、插件和技能安装/卸载、技能新建与 `SKILL.md` 导入及覆盖、Agent 选择生命周期、
+刷新与新浏览器上下文读取服务端状态、错误恢复、主题、375/768/1440 布局与截图；
 `e2e/multiuser.spec.ts` 覆盖 owner 邀请（含邀请入队）、被邀请者登录、未邀请邮箱被拒与
-member 被服务端拒绝。模型连接、自建技能与角色的资源操作仍只保存在当前浏览器。
+member 被服务端拒绝。模型连接和角色的资源操作仍只保存在当前浏览器。
 
 插件市场区分空间选择与项目实际结果。来源管理使用临时市场契约生成的客户端；空间选择供插件和技能页面共享。当前会进入项目运行时的市场类型是 Skill；Agent 选择只保存空间状态，可执行 Agent 仍只有系统预装的 OpenCode 和 Claude Code；MCP 与 Hook 的安装/卸载状态只保存在浏览器。插件详情列出各项目等待、成功或失败的状态。移除市场仅隐藏可安装目录，不移除空间中已有选择。

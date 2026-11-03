@@ -6,7 +6,6 @@ import { seed, seedRoles } from './seed'
 import {
   DEMO_SPACE,
   type Role,
-  type Skill,
   type Snapshot,
 } from './types'
 
@@ -102,7 +101,7 @@ function rows(value: unknown, fields: string[]) {
 function isSnapshot(value: unknown): value is Snapshot {
   if (
     !record(value) ||
-    value.schema !== 4 ||
+    value.schema !== 5 ||
     !commonSnapshotFields(value) ||
     !Array.isArray(value.roles) ||
     !value.roles.every(isRole)
@@ -112,17 +111,17 @@ function isSnapshot(value: unknown): value is Snapshot {
 }
 
 interface LegacySnapshot {
-  schema: 2 | 3
+  schema: 2 | 3 | 4
   revision: number
   connections: ModelConnection[]
   modelDefault: ModelDefault
-  skills: Skill[]
+  roles?: unknown
 }
 
 function isLegacySnapshot(value: unknown): value is LegacySnapshot {
   if (
     !record(value) ||
-    (value.schema !== 2 && value.schema !== 3) ||
+    (value.schema !== 2 && value.schema !== 3 && value.schema !== 4) ||
     !commonSnapshotFields(value)
   )
     return false
@@ -130,16 +129,18 @@ function isLegacySnapshot(value: unknown): value is LegacySnapshot {
 }
 
 function migrate(value: LegacySnapshot): Snapshot {
+  const roles =
+    value.schema === 4 &&
+    Array.isArray(value.roles) &&
+    value.roles.every(isRole)
+      ? value.roles
+      : seedRoles()
   return {
-    schema: 4,
+    schema: 5,
     revision: value.revision,
     connections: value.connections,
     modelDefault: value.modelDefault,
-    skills:
-      value.schema === 2
-        ? value.skills.filter((skill) => skill.source.kind === 'local')
-        : value.skills,
-    roles: seedRoles(),
+    roles,
   }
 }
 
@@ -147,23 +148,6 @@ function migrate(value: LegacySnapshot): Snapshot {
 function commonSnapshotFields(value: Record<string, unknown>): boolean {
   return (
     Number.isSafeInteger(value.revision) &&
-    rows(value.skills, [
-      'id',
-      'name',
-      'namespace',
-      'description',
-      'content',
-      'availability',
-    ]) &&
-    Array.isArray(value.skills) &&
-    value.skills.every(
-      (s) =>
-        record(s) &&
-        record(s.source) &&
-        (s.source.kind === 'local' ||
-          (s.source.kind === 'plugin' &&
-            typeof s.source.pluginId === 'string')),
-    ) &&
     Array.isArray(value.connections) &&
     value.connections.every(
       (c) => record(c) && rows(c.models, ['id', 'name']),

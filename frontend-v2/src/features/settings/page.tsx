@@ -80,12 +80,12 @@ export default function SettingsPage() {
               : location.pathname === '/settings/plugins'
                 ? '工作空间资源'
                 : location.pathname === '/settings/skills'
-                  ? '服务端目录与本地技能'
+                  ? '服务端技能目录'
                   : location.pathname === '/settings/model-connections'
                     ? '个人设置'
                     : location.pathname === '/settings/roles'
-                      ? '本地角色'
-                    : '工作空间成员'}
+                      ? '本机角色'
+                      : '工作空间成员'}
           </span>
         </div>
         <div className="settings-content">

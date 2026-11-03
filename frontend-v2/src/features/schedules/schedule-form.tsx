@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { catalog, editableDraft, emptyDraft, formatTime, nextTimes, summary, taskDraft, validateDraft, weekdayNames, type Catalog, type Draft, type Task } from './schedule-model'
+import { agentChoice, agentModels, catalog, editableDraft, emptyDraft, formatTime, nextTimes, summary, taskDraft, validateDraft, weekdayNames, type Catalog, type Draft, type Task } from './schedule-model'
 
 export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blocked=false,saveError,onCloseReady,resourcesLoading=false,resourcesError,onRetryResources}:{task?:Task;onSave:(draft:Draft,data:Catalog)=>void;onCancel:()=>void;data?:Catalog;saving?:boolean;blocked?:boolean;saveError?:string;onCloseReady?:(close:()=>void)=>void;resourcesLoading?:boolean;resourcesError?:string;onRetryResources?:()=>void}) {
  const [draft,setDraft]=useState(()=>task?taskDraft(task):emptyDraft())
@@ -19,8 +19,8 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
  const rule=(changes:Partial<Draft['rule']>)=>patch({rule:{...draft.rule,...changes}})
  const times=nextTimes(draft.rule,previewNow,task?new Date(task.createdAt):previewNow)
  const control=(name:string)=>({id:`schedule-${name}`,'aria-invalid':!!errors[name],'aria-describedby':errors[name]?`error-${name}`:undefined})
- const models=data.models??[]
- const executors=(data.executors??[]).filter(e=>!draft.model||e.modelId===draft.model)
+ const selectedAgent=agentChoice(draft,data)
+ const models=agentModels(draft,data)
  const unavailable=resourcesLoading||(!!resourcesError&&!data.available?.models&&!data.available?.projects)
  const editable=editableDraft(draft,task)
  const workflows=data.workflows??[]
@@ -32,9 +32,14 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
   if(saving||blocked||resourcesLoading||!editable)return
   const next=validateDraft(draft,data)
   if(draft.kind==='chat'){
-   if(data.available?.models&&!models.some(m=>m.id===draft.model))next.model='请选择当前可用的模型'
-   if(!data.available?.models&&draft.model)next.model='模型目录尚未就绪，请刷新后再保存'
-   if(draft.projectId&&(!data.available?.executors||!executors.some(e=>e.id===draft.executorId&&e.modelId===draft.model)))next.executorId='请选择当前可用的执行器'
+   if(draft.projectId){
+    if(!data.available?.agents)next.agentId='Agent 目录尚未就绪，请刷新后再保存'
+    else if(!selectedAgent)next.agentId='请选择当前可用的 Agent'
+    else if(!draft.model||!selectedAgent.models.some(m=>m.id===draft.model))next.model='请选择该 Agent 可用的模型'
+   }else{
+    if(data.available?.models&&!models.some(m=>m.id===draft.model))next.model='请选择当前可用的模型'
+    if(!data.available?.models&&draft.model)next.model='模型目录尚未就绪，请刷新后再保存'
+   }
   }
   setErrors(next)
   if(Object.keys(next).length){const form=event.currentTarget;requestAnimationFrame(()=>form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());return}
@@ -69,29 +74,31 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
      {resourcesLoading&&<p role="status">正在读取执行资源…</p>}
      {resourcesError&&<p role="alert">{resourcesError} <Button type="button" variant="outline" size="sm" onClick={onRetryResources}>重试加载</Button></p>}
      <ScheduleField name="projectId" label="关联项目" error={errors.projectId} hint={draft.kind==='workflow'?'必选。每次运行在这个项目的独立目录中执行工作流。':'可选。不关联项目时直接调用模型；关联项目时使用该项目独立的执行环境。'}>
-      <NativeSelect className="w-full" disabled={unavailable||!data.available?.projects} value={draft.projectId} onChange={e=>patch({projectId:e.target.value,executorId:'',agent:''})} {...control('projectId')}>
+      <NativeSelect className="w-full" disabled={unavailable||!data.available?.projects} value={draft.projectId} onChange={e=>patch({projectId:e.target.value,agentId:'',agent:'',model:''})} {...control('projectId')}>
        <NativeSelectOption value="">不关联项目</NativeSelectOption>
        {draft.projectId&&!data.projects.some(p=>p.id===draft.projectId)&&<NativeSelectOption value={draft.projectId} disabled>原项目暂不可用</NativeSelectOption>}
        {data.projects.map(p=><NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
       </NativeSelect>
      </ScheduleField>
      {draft.kind==='chat'&&<FieldGroup className="grid grid-cols-2 gap-4">
+      <ScheduleField name="agentId" label="Agent" error={errors.agentId}>
+       <NativeSelect className="w-full" disabled={unavailable||!draft.projectId||!data.available?.agents} value={selectedAgent?.id??(draft.agentId||draft.agent)} onChange={e=>{const item=(data.agents??[]).find(a=>a.id===e.target.value);patch({agentId:e.target.value,agent:item?.name??'',...(draft.model&&!item?.models.some(m=>m.id===draft.model)?{model:''}:{})})}} {...control('agentId')}>
+        <NativeSelectOption value="">{!draft.projectId?'不关联项目时仅调用模型':!data.available?.agents?'Agent 服务尚未就绪':(data.agents??[]).length?'请选择 Agent':'暂无可用 Agent'}</NativeSelectOption>
+        {(draft.agentId||draft.agent)&&!selectedAgent&&<NativeSelectOption value={draft.agentId||draft.agent} disabled>原 Agent 暂不可用</NativeSelectOption>}
+        {(data.agents??[]).map(a=><NativeSelectOption key={a.id} value={a.id}>{a.name}</NativeSelectOption>)}
+       </NativeSelect>
+      </ScheduleField>
       <ScheduleField name="model" label="模型" error={errors.model}>
-       <NativeSelect className="w-full" disabled={unavailable||!data.available?.models} value={draft.model} onChange={e=>patch({model:e.target.value,executorId:'',agent:''})} {...control('model')}>
-        <NativeSelectOption value="">{data.available?.models?(models.length?'请选择模型':'暂无可用模型'):'模型服务尚未就绪'}</NativeSelectOption>
+       <NativeSelect className="w-full" disabled={unavailable||(draft.projectId?(!data.available?.agents||!selectedAgent):!data.available?.models)} value={draft.model} onChange={e=>patch({model:e.target.value})} {...control('model')}>
+        <NativeSelectOption value="">{draft.projectId?(!selectedAgent?'请先选择 Agent':models.length?'请选择模型':'该 Agent 暂无可用模型'):data.available?.models?(models.length?'请选择模型':'暂无可用模型'):'模型服务尚未就绪'}</NativeSelectOption>
         {draft.model&&!models.some(m=>m.id===draft.model)&&<NativeSelectOption value={draft.model} disabled>原模型暂不可用</NativeSelectOption>}
         {models.map(m=><NativeSelectOption key={m.id} value={m.id}>{m.name}</NativeSelectOption>)}
        </NativeSelect>
       </ScheduleField>
-      <ScheduleField name="executorId" label="执行器" error={errors.executorId}>
-       <NativeSelect className="w-full" disabled={unavailable||!draft.projectId||!draft.model||!data.available?.executors} value={draft.executorId??''} onChange={e=>{const item=executors.find(v=>v.id===e.target.value);patch({executorId:e.target.value,agent:item?.agentName??''})}} {...control('executorId')}>
-        <NativeSelectOption value="">{!draft.projectId?'不关联项目时无需执行器':!data.available?.executors?'执行器服务尚未就绪':executors.length?'请选择执行器':'暂无匹配的执行器'}</NativeSelectOption>
-        {draft.executorId&&!executors.some(e=>e.id===draft.executorId)&&<NativeSelectOption value={draft.executorId} disabled>原执行器暂不可用</NativeSelectOption>}
-        {executors.map(e=><NativeSelectOption key={e.id} value={e.id}>{e.name}</NativeSelectOption>)}
-       </NativeSelect>
-      </ScheduleField>
      </FieldGroup>}
      {draft.kind==='workflow'&&<FieldDescription>Agent 和模型由工作流里各个节点的配置决定。</FieldDescription>}
+     {draft.kind==='chat'&&draft.projectId&&data.available?.agents&&<FieldDescription>Agent 和模型分开选择；模型只列出该 Agent 当前可运行的选项。</FieldDescription>}
+     {draft.kind==='chat'&&!draft.projectId&&<FieldDescription>不关联项目时只直接调用模型，不启动 Agent。</FieldDescription>}
      {draft.kind==='chat'&&!resourcesLoading&&!data.available?.models&&<FieldDescription>模型服务尚未就绪。可以先保存无项目、未选模型的配置，接入后再选择模型；当前不会执行。</FieldDescription>}
      {!resourcesLoading&&data.available?.projects&&!data.projects.length&&<FieldDescription>暂无可用项目，可先配置无项目对话。</FieldDescription>}
     </FieldGroup>

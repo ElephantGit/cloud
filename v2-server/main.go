@@ -28,6 +28,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 	"github.com/wanglongan587/cloud/v2-server/internal/workflowhost"
 	"golang.org/x/sys/unix"
 )
@@ -112,6 +113,16 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		driver, e = agentruntime.New(agentruntime.Options{Root: filepath.Join(base, "nodes"), AssetsDirectory: assets, GitBackend: filepath.Join(strings.TrimSpace(string(gitDir)), "git-http-backend"), Bindings: bindings, ResolveProject: func(c context.Context, scope execution.Scope, id string) (agentruntime.Project, error) {
 			p, e := db.GetProject(c, scope, id)
 			return agentruntime.Project{MirrorPath: p.MirrorPath, Commit: p.Commit, SnapshotRef: p.SnapshotRef}, e
+		}, UserSkills: func(c context.Context, scope execution.Scope) ([]agentruntime.UserSkill, error) {
+			items, e := db.UserSkillDocuments(c, scope.TenantID, scope.UserID)
+			if e != nil {
+				return nil, e
+			}
+			skills := make([]agentruntime.UserSkill, len(items))
+			for i, item := range items {
+				skills[i] = agentruntime.UserSkill{Name: item.Name, Description: item.Description, Content: item.Content}
+			}
+			return skills, nil
 		}})
 		if e != nil {
 			return e
@@ -206,12 +217,19 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 	if e := workflowRuns.Interrupt(ctx); e != nil {
 		return e
 	}
+	// Task runs, likewise, end what the previous process left live before serving.
+	taskRuns := taskrun.New(db, runtime, runtime, nil)
+	defer taskRuns.Close()
+	if e := taskRuns.Interrupt(ctx); e != nil {
+		return e
+	}
 	options := withWorkflowDomain(server.Options{
 		RefreshOfficial: func(ctx context.Context) error { return market.Refresh(ctx, db, time.Now()) },
 		SessionTTL:      7 * 24 * time.Hour,
 		Projects:        projects,
 		Execution:       runtime,
 		Catalog:         runtime,
+		TaskRuns:        taskRuns,
 	}, workflowRuns)
 	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
 	if e != nil {

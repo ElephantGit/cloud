@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChatEvent } from '../api/generated'
-import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from '../model/history'
-import type { Conversation } from '../model/types'
+import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from '@/components/agent-thread/model/history'
+import type { Conversation } from '@/components/agent-thread/model/types'
 
 /**
  * Follows one node attempt's session over v2-server's node events stream and folds it as the chat

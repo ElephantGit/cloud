@@ -76,6 +76,31 @@ key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和�
 
 升级已有数据库时注意：旧开发登录建出的 `dev/demo`「演示用户」仍留在库里，但邮箱登录不再认这个身份，它再也无法登录，名下的成员记录、小队与对话却还会出现在成员页里。演示请用全新数据库，不要把旧库当成干净基线；这里不做账号清理，避免删掉别人正在引用的历史。
 
+### 用户技能
+
+用户技能使用独立候选契约 [`skills.openapi.json`](skills.openapi.json)。正式 Cloud 尚无这套 CRUD
+契约，因此不改 `api/openapi.json`；前端由独立 Orval 配置生成共享客户端。
+
+| 路由 | 行为 |
+|---|---|
+| `GET /api/v2/tenants/{tid}/skills` | 当前登录用户的活动技能，最近更新在前；不返回其他用户的行 |
+| `POST /api/v2/tenants/{tid}/skills` | 新建，返回 201；名称在同一用户内不区分大小写去重 |
+| `GET`/`PUT`/`DELETE /api/v2/tenants/{tid}/skills/{sid}` | 读取、替换或软删除自己的技能；其他用户和已删除行都按不存在处理 |
+| `POST /api/v2/tenants/{tid}/skills/import` | 导入一个 1 MiB 以内的 `SKILL.md`；解析 YAML front matter 的 `name`、`description`，正文去掉 front matter 后保存。同名返回 409，显式 `overwrite` 才覆盖并保留 id |
+
+名称遵循 desktop 的安全规则：单个 ASCII slug 路径段，不能以 `.` 开头，不能包含路径分隔符；
+简介最多 4096 字节，正文最多 900 KiB。写请求拒绝未知字段和多余 JSON；校验失败返回稳定的
+`skill_*` 错误码，不为越权用户暴露其他账号的资源。
+
+账号首次创建或首次被邀请时写入三个真实 starter skill（`code-review`、`test-plan`、
+`release-notes`），登记在独立的 `v2_skill_seeds` 一次性标记里；之后它们和用户创建的技能
+完全一样，可编辑、删除，删除后不会在下次登录时重新出现。
+
+创建或导入的技能会在新 Agent 会话完成工作副本克隆后，物化为
+`.opencode/skills/<name>/SKILL.md` 和 `.claude/skills/<name>/SKILL.md`。已有项目文件或市场
+Skill 占用同名路径时保留原内容，不覆盖；已经启动的会话保留启动时的副本。v2 的导入只支持
+单个 Markdown 文件，不支持文件夹、归档和附带脚本/资源。
+
 ### 定时任务配置
 
 定时任务配置使用独立候选契约 [`schedules.openapi.json`](schedules.openapi.json)，不改变正式 Cloud 的 ScheduledTask（其 issue/agent 执行语义不能表达本次独立对话配置）。前端以独立 Orval 配置生成客户端，后续正式契约收敛时替换这一适配。
@@ -86,13 +111,13 @@ key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和�
 | `POST /api/v2/tenants/{tid}/schedule-configs` | 创建配置，返回 201，初始 version 为 1、enabled 为 true |
 | `PUT /api/v2/tenants/{tid}/schedule-configs/{id}` | 携带 version 修改配置，保留 enabled 和创建时间 |
 | `PATCH /api/v2/tenants/{tid}/schedule-configs/{id}/enabled` | 携带 version 和 enabled 暂停/恢复配置 |
-| `GET /api/v2/tenants/{tid}/schedule-resources` | 当前有效成员的真实项目、模型和执行器投影；分别标明目录是否可用，不返回后端路径或凭据 |
+| `GET /api/v2/tenants/{tid}/schedule-resources` | 当前有效成员的真实项目、Agent 和模型投影；Agent 带自己的可运行模型，分别标明目录是否可用，不返回后端路径或凭据 |
 
 接口要求登录 cookie、有效成员关系及创建者归属。无权限资源返回 404，过期版本返回 409，缺失更新版本返回 428；每次修改递增版本。配置持久存储于 PostgreSQL，服务重新启动后保留。请求大小限制 64 KiB，拒绝未知字段，并校验时间、时区、星期和间隔。
 
-对话配置保存时按当前权限验证绑定：无项目的 model ID 必须来自共享 Catalog；有项目的 projectId 必须来自当前租户的共享项目存储，target.executorId 必须匹配共享执行器和所选 model ID。agent 字段只用于展示，不作为执行身份。公共目录未就绪或选择失效时拒绝写入，不猜测默认模型/项目。兼容未绑定执行的文本配置：无项目、空模型、无 executorId 可先保存，运行时仍不能通过 model_required 门禁。
+对话配置保存时按当前权限验证绑定：无项目的 model ID 必须来自直接模型 Catalog；有项目的 projectId 必须来自当前租户的共享项目存储，target.agentId 必须来自共享执行目录且该 Agent 能运行所选 model ID。新配置不再写 executorId；旧配置仍可按冻结的 executorId 读取和执行。`agent` 只是展示名，不参与执行身份。公共目录未就绪或选择失效时拒绝写入，不猜测默认 Agent/模型/项目。兼容未绑定执行的文本配置：无项目、空模型、空 Agent 可先保存，运行时仍不能通过 model_required 门禁。
 
-资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/模型/执行器在每次保存时重检，真正执行时仍由公共服务再次鉴权。
+资源接口复用 `Options.Catalog` 和共享 `ListProjects`/`GetProject`，没有另一份项目/Agent/模型目录。响应的 available 区分目录不可用与可用但为空，先校验当前用户/租户/成员，再返回数据；只投影名称和稳定ID，不公开镜像目录、provider binding或凭据。项目/Agent/模型在每次保存时重检，真正执行时仍由公共服务再次鉴权。
 
 配置响应中的 `runs` 保留兼容空列表。前端另消费执行操作和历史领域的独立候选契约 `schedule-actions.openapi.json` / `schedule-history.openapi.json`；调度 Host、操作入口和只读历史后端已在主干装配，页面通过这些契约读取实际运行事实，不生成模拟结果。
 
@@ -161,6 +186,13 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}` | 携带 version 修改标题、描述与所属项目 |
 | `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态 |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}/assignment` | 携带 version 指派或清除指派人，显式 `null` 表示清除 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/timeline` | 任务的运行与评论，各按时间先后 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行任务所指派 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；任务没指派给 Agent 是 409 `not_agent_task` |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs` | 必须带 `Idempotency-Key`；`{executorId?, note?}` 用调用者身份开一次新运行，返回 201。见下文「任务运行」 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/stop` | 结束一次活着的运行：正在执行的一轮先取消，空闲的会话直接结束；任何成员都可以停 |
+| `GET /api/v2/tenants/{tid}/tasks/{taskid}/runs/{rid}/events` | 运行会话的 SSE，形状与对话事件流相同；工作区任何成员都能读 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/comments` | 必须带 `Idempotency-Key`；`{body, mentions?, toAgent?, executorId?}` 记一条评论，`toAgent` 同时发给 Agent |
+| `GET /api/v2/tenants/{tid}/task-mentions` | 调用者还没回复的 @：每个未结束任务一条，取别人最近一次 @ 调用者、且调用者此后没在该任务评论过的那条 |
 
 任务归属于一个工作区项目，`projectId` 必须在同一工作区内，否则 400 `invalid_project`。指派人显式类型化，
 与小队成员一致：`human` 引用当前有效的租户成员，`agent` 引用同工作区活动且可执行的预装 Space Agent，
@@ -172,14 +204,44 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 终结且不能重开；跳过验收是 400 `invalid_transition`，不是版本冲突。同一函数
 [`store.CanTransitionTask`](internal/store/tasks.go) 供人工推进和执行服务共用，执行服务经
 `TransitionTaskStatus(ctx, tenant, id, from, to)` 在运行开始与结束时移动任务，`from` 防止过期运行覆盖人工修改。
+运行按 [`store.CanRunTransitionTask`](internal/store/tasks.go) 移动任务：开始或追问进入 `running`（从 `pending`
+或 `review`），一轮结束（成功或失败）进入 `review`，被停止或中断回到 `pending`；后两种人不能手动做。
+Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 
 当前工作区任意成员都可读写、指派与推进任务：v2 没有任务级归属，谁来改由版本号防止互相覆盖。
 过期 version 返回 409 `version_conflict`，缺 version 返回 428 `version_required`；跨租户的任务与项目
 一律按不存在处理（404 或 400 `invalid_project`）。请求大小限制 64 KiB，拒绝未知字段与多余的 JSON 值。
-任务评论、附件与运行记录属于后续批次，本期不提供。
+附件不提供。
+
+#### 任务运行
+
+任务运行（[`internal/taskrun`](internal/taskrun/taskrun.go)，表 `v2_task_runs`）是任务所指派 Agent 的一次执行会话，
+经公共执行服务以调用方类型 `task` 运行，Caller ID 是运行 ID。和对话不同，它属于团队：
+
+- **身份归发起人**：会话在点「开始处理」的人的 scope 下运行。工作区任何成员都能读运行和它的事件流
+  （服务端校验读者是成员后，用发起人的 scope 读），但只有发起人能发下一轮：别人代发，等于用发起人的身份（以后是他的模型凭据）跑。
+  其他成员发给 Agent 是 409 `run_owned`，他们可以重新执行，用自己的身份开一次新运行。
+- **一个任务最多一个活着的运行**：重新执行会先结束空闲的旧会话（`endReason = replaced`）；正在执行一轮时是 409 `run_active`，要先停。
+  页面不排队，追问在一轮执行中同样是 409 `run_active`。
+- **停止即结束这次运行**：固定 Node 上取消一轮会结束整个会话，之后只能重新执行。任务完成或取消时结束空闲会话（`closed`）。
+- **重启**：进程启动前把上一个进程留下的活运行记为 `interrupted`，正在执行的任务回到 `pending`；不重放、不恢复。
+- **执行器**：`executorId` 必须是任务所指派 Agent 的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
+- **列表**：任务带 `activeRun`（活着的运行的发起人、执行器与 `running`/`idle`），列表不用逐个读时间线就能显示谁在干活。
+
+评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的
+Space Agent），写入时解析名字；正文里手打的「@名字」不路由。`toAgent` 把评论作为一轮发给 Agent：调用者自己的活运行就追加到同一会话，
+没有活运行就用调用者身份开新运行。v2 没有通知渠道，@ 靠 `task-mentions` 送达：被 @ 的人在任务里评论一次就算回复，
+自己 @ 自己和已完成、已取消任务上的 @ 不算。
 
 HTTP 集成测试按此候选 OpenAPI 校验每一次响应，并覆盖创建、编辑、合法与非法状态迁移、三种指派、
-版本冲突和越权读取；数据库测试另覆盖跨租户隔离与执行服务的推进。
+版本冲突和越权读取，以及开始、停止、评论、@、时间线和事件流；数据库测试另覆盖跨租户隔离与执行服务的推进；
+`internal/taskrun` 用内存执行端口和真实 PostgreSQL 覆盖发起人身份、追问权限、停止、重新执行、关闭任务与重启中断。
+
+### 协作 @ 目录
+
+`GET /api/v1/tenants/{tid}/collaboration/targets` 按正式契约实现子集：`user`（工作区有效成员，交互 `mention`）与
+`agent`（预装且已安装的 Space Agent，交互 `task`，`description` 是插件标识）。正式契约里的 `team` 与 `workflow` 不返回：
+v2 不向小队自动派发，工作流在自己的页面运行。
 
 ### 项目仓库
 
@@ -344,7 +406,7 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 
 [`internal/scheduler`](internal/scheduler/README.md) 提供显式注入记录、执行接口和时钟的协调器。Recover 完成持久恢复后才允许 Tick/Manual，首次发现、版本变化和暂停恢复从未来时刻安排；单进程迟到扫描只处理最近到期点，不回补积压。手动请求用固定键找回原时刻和记录，尚未 begin 的记录可继续首次接收，已接收或未知结果仅按原身份核对。
 
-ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失绑定、工作流目标明确拒绝，不从演示名称猜测可执行绑定。
+ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.agentId、target.model；旧任务仍可传冻结的 target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失 Agent/model、工作流目标明确拒绝，不从展示名称猜测可执行绑定。
 
 协调器本身不创建 goroutine；main 的 Host 接入周期扫描和上述 HTTP 操作，前端页面已接入运行与取消等操作。main 注入公共 `executionruntime.Service` 驱动实际派发；普通测试通过公共 Stub 和实际 PostgreSQL 验证编排、HTTP 和生命周期，opt-in 测试另组合真实公共 Service。
 

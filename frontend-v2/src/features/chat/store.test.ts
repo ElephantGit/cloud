@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { emptyConversation } from './model/types'
+import { emptyConversation } from '@/components/agent-thread/model/types'
 import { agentsOf, emptyDraft, isEnded, newChatKey, resetChatStore, useChatStore } from './store'
 import { type ChatBackend, chatBackend, FakeEventSource, line, tenantId } from './test-backend'
 

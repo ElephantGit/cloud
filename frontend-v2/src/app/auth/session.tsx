@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router'
 import { useGetApiV1Me } from '@/api/me/me'
 import { Button } from '@/components/ui/button'
 import { statusOf } from '@/lib/api-client'
 import { LoginScreen } from './login-screen'
+import { rememberAuthIdentity, subscribeAuthIdentity } from './sync'
 import { UserContext } from './user'
 
 /**
@@ -14,6 +16,19 @@ import { UserContext } from './user'
 export function SessionGate({ children }: { children: ReactNode }) {
   const me = useGetApiV1Me({ query: { retry: false } })
   const location = useLocation()
+  const queryClient = useQueryClient()
+  const userId = me.data?.id
+
+  useEffect(() => {
+    if (userId) rememberAuthIdentity(userId)
+  }, [userId])
+
+  // A sign-in or sign-out in another tab changes the shared cookie. Revalidate every visible
+  // query before rendering the old account's page with the new session.
+  useEffect(
+    () => subscribeAuthIdentity(() => void queryClient.resetQueries()),
+    [queryClient],
+  )
 
   if (me.isPending) return <Centered>加载中…</Centered>
   if (me.isError) {

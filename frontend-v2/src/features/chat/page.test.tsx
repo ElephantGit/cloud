@@ -239,6 +239,20 @@ describe('chat page', () => {
     expect(within(screen.getByRole('banner')).getByText('沙盒')).toBeInTheDocument()
   })
 
+  it('shows a conversation\'s workspace beside it, and only for a conversation', async () => {
+    localStorage.removeItem('ora.v2.workspace-panel.open')
+    await renderReady()
+    // A new chat has no checkout yet.
+    expect(screen.queryByRole('button', { name: '工作区' })).not.toBeInTheDocument()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
+    await userEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '工作区' }))
+    const panel = screen.getByRole('complementary', { name: '工作区' })
+    expect(within(panel).getByRole('button', { name: '变更' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(within(panel).getByRole('button', { name: '关闭工作区' }))
+    expect(screen.queryByRole('complementary', { name: '工作区' })).not.toBeInTheDocument()
+    expect(localStorage.getItem('ora.v2.workspace-panel.open')).toBe('0')
+  })
+
   it('renames a conversation by double-clicking it', async () => {
     await renderReady()
     await userEvent.dblClick(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))

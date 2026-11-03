@@ -29,6 +29,7 @@ import { Rows, TurnProvider } from './activity'
 import { AttachmentList, PluginList } from './attachments'
 import { formatDuration, formatTokens } from './format'
 import { hostname } from './links'
+import { useWorkspaceNavigation } from '@/components/workspace-panel/navigation'
 
 /** The person's prompt, right-aligned, with what they attached. */
 export function UserPrompt({ turn }: { turn: Turn }) {
@@ -174,6 +175,8 @@ function FileChanges({ changes }: { changes: FileChange[] }) {
 }
 
 function FolderNodes({ folder }: { folder: Folder }) {
+  // On a page with a workspace panel, a changed file opens its diff there.
+  const navigation = useWorkspaceNavigation()
   return (
     <>
       {folder.folders.map((f) => (
@@ -190,15 +193,33 @@ function FolderNodes({ folder }: { folder: Folder }) {
           </CollapsibleContent>
         </Collapsible>
       ))}
-      {folder.files.map((c) => (
-        <div key={c.path} role="treeitem" className="flex items-center gap-1.5 px-1 py-0.5 pl-6">
-          {c.created ? <FilePlusIcon className="size-3.5" /> : <FileIcon className="size-3.5" />}
-          <span className="min-w-0 truncate font-mono text-xs">{c.path.split('/').at(-1)}</span>
-          <span className="ml-auto font-mono text-xs tabular-nums">
-            <span className="text-success">+{c.added}</span> <span className="text-destructive">−{c.removed}</span>
-          </span>
-        </div>
-      ))}
+      {folder.files.map((c) => {
+        const row = (
+          <>
+            {c.created ? <FilePlusIcon className="size-3.5" /> : <FileIcon className="size-3.5" />}
+            <span className="min-w-0 truncate font-mono text-xs">{c.path.split('/').at(-1)}</span>
+            <span className="ml-auto font-mono text-xs tabular-nums">
+              <span className="text-success">+{c.added}</span> <span className="text-destructive">−{c.removed}</span>
+            </span>
+          </>
+        )
+        return navigation ? (
+          <button
+            key={c.path}
+            type="button"
+            role="treeitem"
+            title={`在工作区查看 ${c.path.split('/').at(-1)} 的改动`}
+            className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 pl-6 text-left hover:bg-muted"
+            onClick={() => navigation.openDiff(c.path)}
+          >
+            {row}
+          </button>
+        ) : (
+          <div key={c.path} role="treeitem" className="flex items-center gap-1.5 px-1 py-0.5 pl-6">
+            {row}
+          </div>
+        )
+      })}
     </>
   )
 }

@@ -559,3 +559,32 @@ WHERE kind='skill' AND desired_state='installed' AND observed_state IN ('pending
 
 UPDATE v2_space_agents SET observed_state='pending',observed_version=NULL
 WHERE kind NOT IN ('agent','skill') AND desired_state='installed' AND observed_state='installed';
+
+-- A subtask is an ordinary task with a parent: the big requirement it was split from. Only one level
+-- exists; a subtask is never split again.
+ALTER TABLE v2_tasks ADD COLUMN IF NOT EXISTS parent_id uuid REFERENCES v2_tasks (id);
+CREATE INDEX IF NOT EXISTS v2_tasks_parent ON v2_tasks (parent_id) WHERE parent_id IS NOT NULL;
+
+-- A task decomposition is one run of a workflow over a task, started by one person; when the run
+-- succeeds, its `tasks` output becomes the task's subtasks. status is running until the run ends,
+-- then succeeded (created_count subtasks were written in the same transaction) or failed (failure
+-- says why). At most one decomposition per task runs at a time. start_key is the Idempotency-Key of
+-- the request that started it.
+CREATE TABLE IF NOT EXISTS v2_task_decompositions (
+	id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	task_id         uuid NOT NULL REFERENCES v2_tasks (id) ON DELETE CASCADE,
+	tenant_id       uuid NOT NULL REFERENCES tenants (id),
+	started_by      uuid NOT NULL REFERENCES users (id),
+	start_key       text NOT NULL,
+	workflow_id     uuid NOT NULL REFERENCES v2_workflows (id),
+	workflow_name   text NOT NULL,
+	workflow_run_id uuid NOT NULL REFERENCES v2_workflow_runs (id),
+	status          text NOT NULL DEFAULT 'running',
+	failure         text NOT NULL DEFAULT '',
+	created_count   integer NOT NULL DEFAULT 0,
+	created_at      timestamptz NOT NULL DEFAULT now(),
+	finished_at     timestamptz,
+	UNIQUE (task_id, started_by, start_key),
+	CHECK (status IN ('running', 'succeeded', 'failed'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS v2_task_decompositions_live ON v2_task_decompositions (task_id) WHERE status = 'running';

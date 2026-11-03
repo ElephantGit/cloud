@@ -28,6 +28,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskdecomp"
 	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 	"github.com/wanglongan587/cloud/v2-server/internal/workflowhost"
 	"golang.org/x/sys/unix"
@@ -231,13 +232,20 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 	if e := taskRuns.Interrupt(ctx); e != nil {
 		return e
 	}
+	// Decompositions settle what the previous process left running, after its runs were interrupted.
+	decompositions := taskdecomp.New(db, workflowRunStarter{workflowRuns}, nil)
+	defer decompositions.Close()
+	if e := decompositions.Recover(ctx); e != nil {
+		return e
+	}
 	options := withWorkflowDomain(server.Options{
-		RefreshOfficial: func(ctx context.Context) error { return market.Refresh(ctx, db, time.Now()) },
-		SessionTTL:      7 * 24 * time.Hour,
-		Projects:        projects,
-		Execution:       runtime,
-		Catalog:         runtime,
-		TaskRuns:        taskRuns,
+		RefreshOfficial:    func(ctx context.Context) error { return market.Refresh(ctx, db, time.Now()) },
+		SessionTTL:         7 * 24 * time.Hour,
+		Projects:           projects,
+		Execution:          runtime,
+		Catalog:            runtime,
+		TaskRuns:           taskRuns,
+		TaskDecompositions: decompositions,
 	}, workflowRuns)
 	coordinator, e := server.NewScheduleCoordinator(db, options, time.Now)
 	if e != nil {
@@ -441,4 +449,16 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// workflowRunStarter lets task decompositions start workflow runs as a person and watch them end.
+type workflowRunStarter struct{ host *workflowhost.Host }
+
+func (s workflowRunStarter) Start(ctx context.Context, tenant, user, runID string) error {
+	_, e := s.host.StartRun(ctx, server.WorkflowRunScope{TenantID: tenant, UserID: user}, runID)
+	return e
+}
+
+func (s workflowRunStarter) Subscribe(runID string) (<-chan struct{}, func()) {
+	return s.host.Hub().Subscribe(runID)
 }

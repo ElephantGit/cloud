@@ -1,3 +1,4 @@
+import { isTaskFinished, taskActions, taskStatusLabel } from './task-model'
 import type { Task } from './tasks-api/generated'
 
 /** The task scopes the sidebar offers; each one is a filter over the same team-wide list. */
@@ -33,8 +34,52 @@ export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?:
   }
 }
 
+/** Whether 「拆分」 applies: a big requirement still open, not a subtask. */
+export const canDecompose = (task: Task): boolean => !task.parentId && !isTaskFinished(task.status)
+
+/**
+ * A card's family line, by task id: a subtask names the requirement it was split from, and a
+ * requirement counts its subtasks. Read from the whole team list, so a filtered view still names a
+ * parent it does not show.
+ */
+export function familyLabels(all: Task[]): ReadonlyMap<string, string> {
+  const titles = new Map(all.map(t => [t.id, t.title]))
+  const counts = new Map<string, number>()
+  for (const t of all) if (t.parentId) counts.set(t.parentId, (counts.get(t.parentId) ?? 0) + 1)
+  const out = new Map<string, string>()
+  for (const t of all) {
+    if (t.parentId) out.set(t.id, `拆分自 ${titles.get(t.parentId) ?? '大需求'}`)
+    else if (counts.has(t.id)) out.set(t.id, `${counts.get(t.id)} 个子任务`)
+  }
+  return out
+}
+
 /** The board's columns in lifecycle order; cancelled work is hidden unless asked for. */
 export const BOARD_COLUMNS = ['pending', 'running', 'review', 'done'] as const
+
+/** Whether a card can be picked up at all: a running Agent owns its task, and finished work stays put. */
+export function boardDraggable(task: Task): { ok: boolean; reason: string } {
+  if (isAgentRunning(task)) return { ok: false, reason: 'Agent 正在执行，这张卡片不能拖动；等这一轮结束或在任务里停止。' }
+  if (finished(task)) return { ok: false, reason: '任务已结束，不能再改状态。' }
+  return { ok: true, reason: '' }
+}
+
+/**
+ * Whether dropping the card on the column `to` is a move a person may make, and why not. The board
+ * offers exactly the task's own buttons (the server's `CanTransitionTask`), so 待验收 is never
+ * skipped; an Agent task reaches 进行中 only by starting its run, never by hand.
+ */
+export function boardMove(task: Task, to: string): { ok: boolean; reason: string } {
+  const pickable = boardDraggable(task)
+  if (!pickable.ok || task.status === to) return pickable.ok ? { ok: false, reason: '' } : pickable
+  if (to === 'running' && task.assignee?.type === 'agent') {
+    return { ok: false, reason: '指派给 Agent 的任务要在任务里「开始处理」，跑起来才进入进行中。' }
+  }
+  if (!taskActions(task.status).some(a => a.status === to)) {
+    return { ok: false, reason: `「${taskStatusLabel(task.status)}」不能直接拖到「${taskStatusLabel(to)}」：按「待处理 → 进行中 → 待验收 → 已完成」逐步推进。` }
+  }
+  return { ok: true, reason: '' }
+}
 
 /** Whether the caller may send the Agent a turn now, and why not. */
 export function agentReach(task: Task, me: string): { ok: boolean; reason: string } {

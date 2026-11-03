@@ -56,6 +56,37 @@ test('create a task, assign it, and walk it through the lifecycle', async ({ pag
   await expect(row).toContainText(ownerName)
 })
 
+test('drag a card on the board to move it one legal step', async ({ page }) => {
+  const title = `e2e 拖动-${crypto.randomUUID().slice(0, 8)}`
+  await page.goto('/collaboration?new=1')
+  await signIn(page)
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('任务标题').fill(title)
+  await expect(dialog.getByLabel('所属项目')).not.toHaveValue('')
+  await dialog.getByRole('button', { name: '创建任务' }).click()
+  await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible()
+  await page.getByRole('link', { name: '返回任务列表' }).click()
+
+  // A drag is real pointer movement, so the board's pointer sensor picks the card up as for a person.
+  const card = page.getByRole('button', { name: `查看任务 ${title}` })
+  const drag = async (column: string) => {
+    const from = (await card.boundingBox())!, to = (await page.getByRole('listitem', { name: column }).boundingBox())!
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2, { steps: 4 })
+    await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 12 })
+    await page.mouse.up()
+  }
+  await drag('进行中列')
+  await expect(page.getByRole('listitem', { name: '进行中列' })).toContainText(title)
+  // Skipping 待验收 is refused with the reason, and the card stays where it was, also after a reload.
+  await drag('已完成列')
+  await expect(page.getByRole('alert')).toContainText('逐步推进')
+  await page.screenshot({ path: test.info().outputPath('board-drag.png'), fullPage: true })
+  await page.reload()
+  await expect(page.getByRole('listitem', { name: '进行中列' })).toContainText(title)
+})
+
 test('an Agent runs a task, the team watches, only the starter follows up', async ({ page, browser }) => {
   test.skip(!realAgents, 'needs V2_NODE_ASSETS_DIR for a real Node and Agent')
   // The first run in a project installs the Agent plugin in the project's Node.

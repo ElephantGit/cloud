@@ -46,13 +46,15 @@ type TaskAssignee struct {
 }
 
 // Task is v2's minimal work item. The whole workspace sees every task, including whose it is;
-// a private conversation stays private.
+// a private conversation stays private. ParentID is the task it was split from, nil for a task
+// created by hand.
 type Task struct {
 	ID            string        `json:"id"`
 	TenantID      string        `json:"tenantId"`
 	Title         string        `json:"title"`
 	Description   string        `json:"description"`
 	ProjectID     string        `json:"projectId"`
+	ParentID      *string       `json:"parentId"`
 	Assignee      *TaskAssignee `json:"assignee"`
 	Status        string        `json:"status"`
 	CreatedBy     string        `json:"createdBy"`
@@ -131,7 +133,7 @@ const taskColumns = `t.id, t.tenant_id::text, t.title, t.description, t.project_
 	CASE WHEN t.assignee_type = 'agent' THEN COALESCE(a.source_namespace || '/' || a.identifier, '') ELSE '' END,
 	t.status, t.created_by::text, COALESCE(c.display_name, ''), t.version, t.created_at, t.updated_at,
 	COALESCE(r.id::text, ''), COALESCE(r.turn_active, false), COALESCE(r.started_by::text, ''),
-	COALESCE(ru.display_name, ''), COALESCE(r.executor_name, '')`
+	COALESCE(ru.display_name, ''), COALESCE(r.executor_name, ''), t.parent_id::text`
 
 // taskJoins resolves the typed assignee and the creator. FOR UPDATE OF t keeps a lock usable
 // beside these outer joins.
@@ -150,7 +152,7 @@ func scanTask(row pgx.Row) (Task, error) {
 	var turnActive bool
 	e := row.Scan(&t.ID, &t.TenantID, &t.Title, &t.Description, &t.ProjectID, &kind, &id, &name,
 		&identifier, &t.Status, &t.CreatedBy, &t.CreatedByName, &t.Version, &t.CreatedAt, &t.UpdatedAt,
-		&run.ID, &turnActive, &run.StartedBy, &run.StartedByName, &run.ExecutorName)
+		&run.ID, &turnActive, &run.StartedBy, &run.StartedByName, &run.ExecutorName, &t.ParentID)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}

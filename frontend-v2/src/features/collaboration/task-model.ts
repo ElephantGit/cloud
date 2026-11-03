@@ -116,3 +116,34 @@ export function taskRunMessageFor(error: unknown): string {
   }
   return statusOf(error) === 404 ? '任务不存在或你已无权查看。' : '操作失败，请重试。'
 }
+
+/** A refused manual move: the run's own reason when it owns the status, else the task's. */
+export function taskMoveMessageFor(error: unknown): string {
+  const message = taskRunMessageFor(error)
+  return message === '操作失败，请重试。' ? taskMessageFor(error) : message
+}
+
+/**
+ * A refused drop on the board. The board has just been read again, so a stale version asks for one
+ * more drag instead of reopening a panel.
+ */
+export function boardMoveMessageFor(error: unknown): string {
+  if (statusOf(error) === 409 && codeOf(error) !== 'run_active') return '任务刚被其他人改过，看板已刷新，请再拖一次。'
+  return taskMoveMessageFor(error)
+}
+
+/** The workflow the demo seeds for 「拆分」; the dialog picks it when the workspace has it. */
+export const DEMO_DECOMPOSITION_WORKFLOW = '需求拆分'
+
+/** A user-facing reason for a refused decomposition. */
+export function decompositionMessageFor(error: unknown): string {
+  switch (codeOf(error)) {
+    case 'decomposition_active': return '这个任务正在拆分，等这次跑完再拆。'
+    case 'invalid_workflow': return '所选工作流不存在或还没有发布，请重新选择。'
+    case 'task_closed': return '任务已结束，不能再拆分。'
+    case 'subtask_not_decomposable': return '子任务不能再拆分。'
+    case 'invalid_project': return '任务所属项目不可用。'
+    case 'workflow_run_host_unavailable': return '工作流执行服务不可用，请稍后重试。'
+  }
+  return statusOf(error) === 404 ? '任务不存在或你已无权查看。' : '拆分没有启动，请重试。'
+}

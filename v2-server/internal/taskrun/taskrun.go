@@ -229,6 +229,9 @@ func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task
 	if e != nil {
 		return run, errors.Join(e, h.store.DeleteTaskRun(context.WithoutCancel(ctx), run.ID))
 	}
+	// The turn runs now whether or not the request is still there: a run left without its session
+	// would hold the task with nothing to stop.
+	ctx = context.WithoutCancel(ctx)
 	if e := h.store.RecordTaskTurn(ctx, run.ID, ref.SessionID, ref.TurnID); e != nil {
 		return run, e
 	}
@@ -300,6 +303,8 @@ func (h *Host) followUp(ctx context.Context, scope execution.Scope, task store.T
 		if e != nil {
 			return "", "", e
 		}
+		// Likewise, the accepted turn is recorded even if the request is gone.
+		ctx = context.WithoutCancel(ctx)
 		if e := h.store.RecordTaskTurn(ctx, live.ID, ref.SessionID, ref.TurnID); e != nil {
 			return "", "", e
 		}

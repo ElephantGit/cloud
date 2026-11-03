@@ -486,3 +486,28 @@ func TestInterruptEndsRunsLeftByThePreviousProcess(t *testing.T) {
 		t.Fatalf("task after restart = %+v", task)
 	}
 }
+
+func TestStartRecordsAnAcceptedTurnAfterTheRequestIsGone(t *testing.T) {
+	f := newFixture(t)
+	task := f.task(t, opencode)
+	ctx, cancel := context.WithCancel(f.ctx)
+	runtime := f.port.runtime()
+	start := runtime.StartFunc
+	runtime.StartFunc = func(c context.Context, scope execution.Scope, req execution.StartRequest) (execution.Ref, error) {
+		ref, e := start(c, scope, req)
+		cancel() // the page left just as the service accepted the turn
+		return ref, e
+	}
+	host := taskrun.New(f.store, runtime, runtime, nil)
+	t.Cleanup(host.Close)
+
+	run, e := host.Start(ctx, f.owner, task.ID, "start-1", taskrun.StartInput{})
+	if e != nil || run.SessionID == "" || run.State != store.TaskRunRunning {
+		t.Fatalf("run = %+v %v", run, e)
+	}
+	// The run knows its session, so it can still be stopped instead of holding the task.
+	if _, e := host.Stop(f.ctx, f.owner, task.ID, run.ID); e != nil {
+		t.Fatalf("stop = %v", e)
+	}
+	f.await(t, task.ID, store.TaskPending)
+}

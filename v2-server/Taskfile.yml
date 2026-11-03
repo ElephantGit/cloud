@@ -61,6 +61,25 @@ tasks:
   deepseek:server:
     internal: true
     cmds: [bash scripts/deepseek.sh]
+  demo:newcomer:
+    desc: 'Demo scene A (newcomer) from a clean state: database ora_v2_demo_newcomer, ~/.od/a, :8191 / :5191'
+    cmds: [{task: demo:run, vars: {SCENE: newcomer}}]
+  demo:lead:
+    desc: 'Demo scene B (Tech Lead) from a clean state, mock on: ora_v2_demo_lead, ~/.od/b, :8192 / :5192'
+    cmds: [{task: demo:run, vars: {SCENE: lead}}]
+  demo:ops:
+    desc: 'Demo scene C (operations) from a clean state: ora_v2_demo_ops, ~/.od/c, :8193 / :5193'
+    cmds: [{task: demo:run, vars: {SCENE: ops}}]
+  demo:
+    desc: 'All three demo scenes in one environment, one account each, mock on: ora_v2_demo, ~/.od/all, :8190 / :5190'
+    cmds: [{task: demo:run, vars: {SCENE: all}}]
+  demo:run:
+    internal: true
+    cmds:
+      # Validate the key and Node assets before resetting anything (see scripts/deepseek.sh).
+      - bash scripts/deepseek.sh --check
+      - task: db
+      - bash scripts/demo.sh {{.SCENE}}
   test:
     desc: v2-server tests against the compose PostgreSQL
     deps: [db]

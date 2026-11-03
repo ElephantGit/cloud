@@ -201,15 +201,19 @@ func TestSeedsComposeAndHistoryIsOwnedByOps(t *testing.T) {
 			t.Fatal("history does not link a real persisted workflow run")
 		}
 		run, err := s.WorkflowRun(ctx, tenant, runID)
-		if err != nil || run.SnapshotID != ops.Snapshot.ID || run.ProjectID != seeds["ops"].ProjectID || !strings.HasSuffix(run.Name, "02:00") || run.Output == nil || !strings.Contains(*run.Output, "预置演示历史") {
+		if err != nil || run.SnapshotID != ops.Snapshot.ID || run.ProjectID != seeds["ops"].ProjectID || !strings.HasSuffix(run.Name, "02:00") || run.Output == nil || strings.Contains(*run.Output, "预置") {
 			t.Fatalf("history run: %+v %v", run, err)
+		}
+		// The seeded marker lives in the payload, never in the text the recording shows.
+		if !strings.Contains(strings.ReplaceAll(string(run.RuntimePayload), " ", ""), `"demoSeed":true`) {
+			t.Fatalf("history run payload lacks demoSeed: %s", run.RuntimePayload)
 		}
 		nodes, err := s.WorkflowRunNodes(ctx, tenant, runID)
 		if err != nil || len(nodes) != 4 {
 			t.Fatalf("nodes: %v %v", nodes, err)
 		}
 		for _, node := range nodes {
-			if node.Status != "succeeded" || node.Output == nil {
+			if node.Status != "succeeded" || node.Output == nil || strings.Contains(*node.Output, "预置") || !strings.Contains(strings.ReplaceAll(string(node.Payload), " ", ""), `"demoSeed":true`) {
 				t.Fatalf("incomplete historical node: %+v", node)
 			}
 		}

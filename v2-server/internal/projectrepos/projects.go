@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing/fstest"
 	"time"
 	"unicode/utf8"
 
@@ -159,6 +161,15 @@ func (s *Service) recordMirror(ctx context.Context, scope execution.Scope, in In
 // browser URL/path and is never called by the project HTTP handler. This keeps the one-command
 // fixture check independent of external networks while still exercising real Git and Node.
 func (s *Service) SeedDemo(ctx context.Context, scope execution.Scope) (store.Project, error) {
+	readme := fstest.MapFS{"README.md": {Data: []byte("# Ora demo\n\nA local repository for the real Node and fixture-model demonstration.\n"), Mode: 0600}}
+	return s.SeedLocal(ctx, scope, "Demo", "fixture://demo", readme)
+}
+
+// SeedLocal prepares or reuses a project whose repository is one commit of trusted files compiled
+// into the server, such as the recording scenes' fixtures. key identifies the fixture (and is the
+// project's repository URL), so seeding again returns the existing project. Like SeedDemo it is
+// never reachable from the HTTP handler and never contacts a network.
+func (s *Service) SeedLocal(ctx context.Context, scope execution.Scope, name, key string, files fs.FS) (store.Project, error) {
 	s.seedMu.Lock()
 	defer s.seedMu.Unlock()
 	projects, err := s.store.ListProjects(ctx, scope)
@@ -166,7 +177,7 @@ func (s *Service) SeedDemo(ctx context.Context, scope execution.Scope) (store.Pr
 		return store.Project{}, err
 	}
 	for _, project := range projects {
-		if project.RepositoryURL == "fixture://demo" {
+		if project.RepositoryURL == key {
 			return project, nil
 		}
 	}
@@ -178,16 +189,13 @@ func (s *Service) SeedDemo(ctx context.Context, scope execution.Scope) (store.Pr
 	}
 	defer os.RemoveAll(stage)
 	source, mirror := filepath.Join(stage, "source"), filepath.Join(stage, "repository.git")
-	if err := os.Mkdir(source, 0700); err != nil {
+	if err := os.CopyFS(source, files); err != nil {
 		return store.Project{}, err
 	}
 	if _, err := s.run(ctx, source, "init", "--template=", "-b", "main"); err != nil {
 		return store.Project{}, repositoryError(ctx)
 	}
-	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("# Ora demo\n\nA local repository for the real Node and fixture-model demonstration.\n"), 0600); err != nil {
-		return store.Project{}, err
-	}
-	if _, err := s.run(ctx, source, "add", "--", "README.md"); err != nil {
+	if _, err := s.run(ctx, source, "add", "--all"); err != nil {
 		return store.Project{}, repositoryError(ctx)
 	}
 	if _, err := s.run(ctx, source, "-c", "user.name=Ora Demo", "-c", "user.email=demo@localhost", "-c", "commit.gpgsign=false", "commit", "-m", "Prepare demo repository"); err != nil {
@@ -198,7 +206,7 @@ func (s *Service) SeedDemo(ctx context.Context, scope execution.Scope) (store.Pr
 	if _, err := s.run(ctx, stage, "-c", "protocol.file.allow=always", "clone", "--mirror", "--no-hardlinks", "--template=", "--", source, mirror); err != nil {
 		return store.Project{}, repositoryError(ctx)
 	}
-	return s.recordMirror(ctx, scope, Input{Name: "Demo", RepositoryURL: "fixture://demo", DefaultBranch: "main"}, mirror)
+	return s.recordMirror(ctx, scope, Input{Name: name, RepositoryURL: key, DefaultBranch: "main"}, mirror)
 }
 
 // Get returns a tenant-visible project; private mirror paths are stripped by the HTTP layer.

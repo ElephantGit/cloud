@@ -33,4 +33,6 @@ export V2_MODEL_BASE_URL=https://api.deepseek.com
 export V2_MODEL_NAME=deepseek-flash
 export V2_MODEL_API_KEY=$key
 export V2_NODE_ASSETS_DIR=$assets
+# scripts/demo.sh passes a prebuilt binary, so stopping a demo stops the server rather than `go run`.
+[[ -n ${V2_SERVER_BIN:-} ]] && exec "$V2_SERVER_BIN"
 exec go run .

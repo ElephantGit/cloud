@@ -16,4 +16,4 @@
 
 ## 验证
 
-`dashboard-model.test.ts` 覆盖完成率的边界与趋势缩放，`page.test.tsx` 覆盖开关关闭时的占位和打开时的成员行、完成率、Agent 产出与演示数据说明。不需要 v2-server 或数据库。
+`dashboard-model.test.ts` 覆盖完成率的边界与趋势缩放，`page.test.tsx` 覆盖开关关闭时的占位和打开时的成员行、完成率、Agent 产出与演示数据说明，`src/lib/demo/dashboard.test.ts` 检查演示数据自洽（概览 = 成员合计、说明里的数字由成员算出、Agent 产出与 Agent 待验收一一对应、趋势合计 = 本周完成）。不需要 v2-server 或数据库。

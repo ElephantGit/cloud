@@ -84,7 +84,7 @@ export function Sidebar() {
   return (
     <>
       {sidebar.open && (
-        <aside aria-label="聊天记录" style={{ width: sidebar.width }} className="flex shrink-0 flex-col border-r bg-muted/20">
+        <aside aria-label="聊天记录" style={{ width: sidebar.width }} className="flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
           <div className="flex h-12 items-center justify-between pr-2 pl-4">
             <h1 className="text-sm font-semibold">对话</h1>
             <Button variant="ghost" size="icon-xs" aria-label="收起对话列表" onClick={() => setSidebar({ open: false })}>
@@ -161,10 +161,10 @@ function ProjectGroup({ project, dropLine }: { project: Project; dropLine?: 'bef
   return (
     <section ref={setNodeRef} className="relative rounded-md" aria-label={`项目 ${project.name}`} data-dragging={isDragging || undefined}>
       {dropLine && (
-        <div aria-hidden className={cn('absolute inset-x-1 h-0.5 rounded-full bg-primary', dropLine === 'before' ? '-top-[5px]' : '-bottom-[5px]')} />
+        <div aria-hidden className={cn('absolute inset-x-1 h-0.5 rounded-full bg-brand', dropLine === 'before' ? '-top-[5px]' : '-bottom-[5px]')} />
       )}
       <Collapsible defaultOpen className={cn(isDragging && 'opacity-40 grayscale')}>
-        <div className="group/project flex h-8 items-center gap-0.5 rounded-md pr-1 hover:bg-accent/60">
+        <div className="group/project flex h-8 items-center gap-0.5 rounded-md pr-1 hover:bg-sidebar-accent/70">
           <button
             ref={setActivatorNodeRef}
             type="button"
@@ -252,7 +252,7 @@ function SessionRow({ session }: { session: Session }) {
     )
   }
   return (
-    <div className={cn('group/session flex h-8 items-center rounded-md pr-1 text-sm', selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60')}>
+    <div className={cn('group/session flex h-8 items-center rounded-md pr-1 text-sm', selected ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent/70')}>
       <button
         type="button"
         className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left"
@@ -261,7 +261,7 @@ function SessionRow({ session }: { session: Session }) {
         onDoubleClick={() => setEditing(true)}
       >
         <FadeText text={session.title} className="flex-1" />
-        {responding ? <AgentActivityDots label="回复中" className="text-muted-foreground" /> : unread && <span className="size-2 rounded-full bg-primary" aria-label="有新回复" />}
+        {responding ? <AgentActivityDots label="回复中" className="text-muted-foreground" /> : unread && <span className="size-2 rounded-full bg-brand" aria-label="有新回复" />}
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger

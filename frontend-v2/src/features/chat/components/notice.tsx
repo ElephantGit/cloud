@@ -19,7 +19,7 @@ const text = (notice: NoticeData) => {
 /** What went wrong with the last send, above the input. */
 export function Notice({ notice, onDismiss }: { notice: NoticeData; onDismiss: () => void }) {
   return (
-    <div role="alert" className="mb-2 flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs">
+    <div role="alert" className="mb-2 flex items-start gap-2 rounded-xl border bg-muted/50 px-3 py-2 text-xs">
       <p className="min-w-0 flex-1 py-0.5">{text(notice)}</p>
       <Button size="icon-xs" variant="ghost" aria-label="关闭提示" onClick={onDismiss}>
         <XIcon />

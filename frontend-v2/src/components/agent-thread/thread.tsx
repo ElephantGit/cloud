@@ -104,7 +104,7 @@ function MarkerRow({ marker }: { marker: MarkerData }) {
 export function LandingHeading() {
   return (
     <div className="mb-7">
-      <h2 className="text-2xl font-medium tracking-[-0.035em] text-foreground sm:text-[28px]">今天想构建什么？</h2>
+      <h2 className="text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-[28px]">今天想构建什么？</h2>
       <p className="mt-2 text-sm text-muted-foreground">描述一个任务，Ora 会读取代码、修改文件并运行命令。</p>
     </div>
   )

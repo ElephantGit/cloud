@@ -167,13 +167,13 @@ function ChatPane({ session }: { session?: Session }) {
         >
           <div className="mx-auto w-full max-w-[760px]">
             {!session && (backend === 'unavailable' || backend === 'loading') && (
-              <p role="status" className="mb-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+              <p role="status" className="mb-2 rounded-xl border border-dashed px-3 py-2 text-xs text-muted-foreground">
                 {backend === 'loading' ? '正在连接后端…' : '后端还不能运行 Agent，暂时无法开始新对话。'}
               </p>
             )}
             {notice && !ended && <Notice notice={notice} onDismiss={() => dismiss(key)} />}
             {session && ended ? (
-              <div role="status" className="flex items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <div role="status" className="flex items-center gap-3 rounded-2xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
                 <p className="min-w-0 flex-1">这个对话已结束，Agent 不能继续。要接着做，请新开一个对话。</p>
                 <Button size="sm" variant="outline" className="shrink-0" onClick={() => startNewChat({ projectId: session.projectId })}>
                   <SquarePenIcon />

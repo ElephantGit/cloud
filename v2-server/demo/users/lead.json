@@ -1,0 +1,7 @@
+{
+  "users": [
+    { "email": "chen.mo@demo.ora-space.dev", "displayName": "陈默", "role": "owner" },
+    { "email": "su.rui@demo.ora-space.dev", "displayName": "苏芮", "role": "member" },
+    { "email": "zhou.heng@demo.ora-space.dev", "displayName": "周衡", "role": "member" }
+  ]
+}

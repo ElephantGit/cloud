@@ -64,7 +64,7 @@ func TestResolveFollowsTheEnvironmentTable(t *testing.T) {
 }
 
 func TestSceneUsersStayApartAndMerge(t *testing.T) {
-	all, err := SceneUsers([]string{"newcomer", "ops"})
+	all, err := SceneUsers([]string{"newcomer", "lead", "ops"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,16 +72,16 @@ func TestSceneUsersStayApartAndMerge(t *testing.T) {
 	for _, u := range all.Users {
 		names = append(names, u.DisplayName)
 	}
-	if !slices.Equal(names, []string{"林新", "许运"}) {
+	if !slices.Equal(names, []string{"林新", "陈默", "苏芮", "周衡", "许运"}) {
 		t.Fatalf("merged accounts: %v", names)
 	}
 	// Each scene file is a valid preset on its own: v2-server refuses a file without an owner.
-	for _, scene := range []string{"newcomer", "ops"} {
+	for _, scene := range []string{"newcomer", "lead", "ops"} {
 		if _, err := SceneUsers([]string{scene}); err != nil {
 			t.Errorf("%s: %v", scene, err)
 		}
 	}
-	if _, err := SceneUsers([]string{"ops", "ops"}); err == nil {
+	if _, err := SceneUsers([]string{"lead", "lead"}); err == nil {
 		t.Fatal("a scene listed twice merged duplicate accounts")
 	}
 }

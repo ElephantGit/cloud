@@ -14,6 +14,7 @@ type scene struct {
 // sceneSeeds lists the scenes in the order the combined command seeds them.
 var sceneSeeds = []scene{
 	{name: "newcomer", seed: seedNewcomerScene},
+	{name: "lead", seed: seedLead},
 	{name: "ops", seed: seedOpsScene},
 }
 

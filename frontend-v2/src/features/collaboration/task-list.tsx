@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
+import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { AtSign, Bot, CornerDownRight, ListTree, UserRound, Users } from 'lucide-react'
 import type { PendingMention, Task } from './tasks-api/generated'
 import { assigneeLabel, projectLabel, taskStatusLabel } from './task-model'
@@ -85,10 +85,14 @@ function BoardCard({ task, projects, mention, family, movable, onOpen }: { task:
   </li>
 }
 
-/** One status column, a drop target while a card is lifted: open to a legal move, dimmed otherwise. */
+/**
+ * One status column. While a card is lifted it shows whether the card may land here: open to a
+ * legal move, dimmed otherwise. A dimmed column still takes the drop, so letting go over it says
+ * why instead of landing the card in a neighbor.
+ */
 function BoardColumn({ status, children, count, lifted }: { status: string; children: ReactNode; count: number; lifted?: Task }) {
   const move = lifted ? boardMove(lifted, status) : undefined
-  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: !move?.ok })
+  const { setNodeRef, isOver } = useDroppable({ id: status })
   const state = !move || lifted?.status === status ? '' : move.ok ? (isOver ? ' mc-drop-over' : ' mc-drop-open') : ' mc-drop-closed'
   return <section ref={setNodeRef} className={`mc-column${state}`} role="listitem" aria-label={`${taskStatusLabel(status)}列`}>
     <header><span className={`mc-status ${status}`}>{taskStatusLabel(status)}</span><b>{count}</b></header>
@@ -117,7 +121,18 @@ export function TaskBoardColumns({ tasks, projects, mentions, families = new Map
     if (move.ok) onMove?.(lifted, to)
     else if (move.reason) onRefuse?.(move.reason)
   }
-  return <DndContext sensors={sensors} onDragStart={({ active }) => setLiftedId(String(active.id))}
+  const titleOf = (id: string | number) => tasks.find(t => t.id === id)?.title ?? '任务'
+  const columnOf = (id?: string | number) => (id === undefined ? '' : taskStatusLabel(String(id)))
+  const announcements = {
+    onDragStart: ({ active }: { active: { id: string | number } }) => `拿起了「${titleOf(active.id)}」。`,
+    onDragOver: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) =>
+      over ? `「${titleOf(active.id)}」在「${columnOf(over.id)}」列上方。` : `「${titleOf(active.id)}」不在任何列上方。`,
+    onDragEnd: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) =>
+      over ? `「${titleOf(active.id)}」放到了「${columnOf(over.id)}」列。` : `「${titleOf(active.id)}」放回原处。`,
+    onDragCancel: ({ active }: { active: { id: string | number } }) => `取消拖动，「${titleOf(active.id)}」放回原处。`,
+  }
+  // The column under the pointer is the target, never the one the lifted card overlaps most.
+  return <DndContext sensors={sensors} collisionDetection={pointerWithin} accessibility={{ announcements, screenReaderInstructions: { draggable: '用指针拖到其他列可以改状态；键盘请在任务页用推进按钮。' } }} onDragStart={({ active }) => setLiftedId(String(active.id))}
     onDragCancel={() => setLiftedId(undefined)} onDragEnd={({ over }) => drop(over ? String(over.id) : undefined)}>
     <div className="mc-board" role="list" aria-label="任务看板">
       {columns.map(status => {

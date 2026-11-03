@@ -63,6 +63,8 @@
     --color-success-soft: var(--success-soft);
     --color-warning: var(--warning);
     --color-warning-soft: var(--warning-soft);
+    --color-caution: var(--caution);
+    --color-caution-soft: var(--caution-soft);
     --color-info: var(--info);
     --color-info-soft: var(--info-soft);
     --color-accent-foreground: var(--accent-foreground);
@@ -91,9 +93,9 @@
 /*
  * The v2 design tokens. Neutrals carry a faint cool tint (hue 286) so surfaces read as one family;
  * primary stays near-black like the Ora mark. `brand` is the one accent (focus rings, the active
- * page, selection, links); success / warning / info are the status colours, each with a `-soft`
- * wash for badges and highlighted rows. Features use these instead of their own palettes so both
- * themes stay complete everywhere.
+ * page, selection, links); success / warning / caution / info are the status colours, each with a
+ * `-soft` wash for badges and highlighted rows. Features use these instead of their own palettes
+ * so both themes stay complete everywhere.
  */
 :root {
     --background: oklch(1 0 0);
@@ -117,8 +119,10 @@
     --brand-soft: oklch(0.955 0.025 278);
     --success: oklch(0.48 0.115 155);
     --success-soft: oklch(0.96 0.03 155);
-    --warning: oklch(0.49 0.12 58);
+    --warning: oklch(0.51 0.14 55);
     --warning-soft: oklch(0.97 0.035 80);
+    --caution: oklch(0.53 0.17 40);
+    --caution-soft: oklch(0.965 0.03 45);
     --info: oklch(0.5 0.14 252);
     --info-soft: oklch(0.96 0.025 252);
     --border: oklch(0.922 0.004 286);
@@ -167,6 +171,8 @@
     --success-soft: oklch(0.27 0.035 155);
     --warning: oklch(0.82 0.11 75);
     --warning-soft: oklch(0.29 0.04 75);
+    --caution: oklch(0.78 0.13 50);
+    --caution-soft: oklch(0.29 0.05 45);
     --info: oklch(0.76 0.1 252);
     --info-soft: oklch(0.28 0.045 252);
     --border: oklch(1 0 0 / 9%);

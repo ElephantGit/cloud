@@ -1,3 +1,4 @@
+import { taskActions, taskStatusLabel } from './task-model'
 import type { Task } from './tasks-api/generated'
 
 /** The task scopes the sidebar offers; each one is a filter over the same team-wide list. */
@@ -35,6 +36,30 @@ export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?:
 
 /** The board's columns in lifecycle order; cancelled work is hidden unless asked for. */
 export const BOARD_COLUMNS = ['pending', 'running', 'review', 'done'] as const
+
+/** Whether a card can be picked up at all: a running Agent owns its task, and finished work stays put. */
+export function boardDraggable(task: Task): { ok: boolean; reason: string } {
+  if (isAgentRunning(task)) return { ok: false, reason: 'Agent 正在执行，这张卡片不能拖动；等这一轮结束或在任务里停止。' }
+  if (finished(task)) return { ok: false, reason: '任务已结束，不能再改状态。' }
+  return { ok: true, reason: '' }
+}
+
+/**
+ * Whether dropping the card on the column `to` is a move a person may make, and why not. The board
+ * offers exactly the task's own buttons (the server's `CanTransitionTask`), so 待验收 is never
+ * skipped; an Agent task reaches 进行中 only by starting its run, never by hand.
+ */
+export function boardMove(task: Task, to: string): { ok: boolean; reason: string } {
+  const pickable = boardDraggable(task)
+  if (!pickable.ok || task.status === to) return pickable.ok ? { ok: false, reason: '' } : pickable
+  if (to === 'running' && task.assignee?.type === 'agent') {
+    return { ok: false, reason: '指派给 Agent 的任务要在任务里「开始处理」，跑起来才进入进行中。' }
+  }
+  if (!taskActions(task.status).some(a => a.status === to)) {
+    return { ok: false, reason: `「${taskStatusLabel(task.status)}」不能直接拖到「${taskStatusLabel(to)}」：按「待处理 → 进行中 → 待验收 → 已完成」逐步推进。` }
+  }
+  return { ok: true, reason: '' }
+}
 
 /** Whether the caller may send the Agent a turn now, and why not. */
 export function agentReach(task: Task, me: string): { ok: boolean; reason: string } {

@@ -12,7 +12,7 @@ import { TaskComposer, type CommentDraft } from './task-composer'
 import { TaskDetailView } from './task-detail'
 import { TaskDiscussion } from './task-discussion'
 import { TaskForm, type TaskDraft } from './task-form'
-import { projectLabel, taskMessageFor, taskRunMessageFor, taskStatusLabel } from './task-model'
+import { projectLabel, taskMessageFor, taskMoveMessageFor, taskRunMessageFor, taskStatusLabel } from './task-model'
 import {
   createTaskComment, getTask, getTaskTimeline, listTaskExecutors, setTaskAssignee, setTaskStatus, startTaskRun, stopTaskRun, updateTask,
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
@@ -100,7 +100,7 @@ export default function TaskPage() {
   const move = useMutation({
     mutationFn: ({ status, target }: { status: TaskStatusProperty; target: Task }) => setTaskStatus(tenantId, target.id, { status, version: target.version }),
     onSuccess: updated => { settle(updated); void refresh() },
-    onError: e => setError(taskRunMessageForStatus(e)),
+    onError: e => setError(taskMoveMessageFor(e)),
   })
   const assign = useMutation({
     mutationFn: ({ assignee, target }: { assignee: TaskAssigneeRef | null; target: Task }) => setTaskAssignee(tenantId, target.id, { assignee, version: target.version }),
@@ -180,10 +180,4 @@ export default function TaskPage() {
       <TaskForm initial={{ title: task.title, description: task.description, projectId: task.projectId }} projects={projectList} projectsLoading={projects.isLoading} submitLabel="保存修改" saving={save.isPending} error={error} onSave={draft => save.mutate({ draft, target: task })} onCancel={() => setEditing(false)} />
     </PanelDialog>}
   </div>
-}
-
-/** A refused manual move: the run's own reason when it owns the status, else the task's. */
-function taskRunMessageForStatus(error: unknown): string {
-  const message = taskRunMessageFor(error)
-  return message === '操作失败，请重试。' ? taskMessageFor(error) : message
 }

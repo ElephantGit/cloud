@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './tasks-api/generated'
-import { agentReach, filterTasks, viewOf } from './task-views'
+import { agentReach, boardDraggable, boardMove, filterTasks, viewOf } from './task-views'
 
 const task = (overrides: Partial<Task>): Task => ({
   id: 'task', tenantId: 'tenant', title: '任务', description: '', projectId: 'project', assignee: null, status: 'pending',
@@ -49,4 +49,27 @@ describe('who may send the Agent a turn', () => {
     expect(agentReach(task({ assignee: agent, status: 'done' }), 'me').ok).toBe(false)
     expect(agentReach(task({}), 'me').ok).toBe(false)
   })
+
+  it('opens only the next legal step on the board', () => {
+    const human = { type: 'human' as const, id: 'me', displayName: '我' }
+    const pending = task({ assignee: human })
+    expect(boardMove(pending, 'running').ok).toBe(true)
+    expect(boardMove(pending, 'cancelled').ok).toBe(true)
+    expect(boardMove(pending, 'review')).toEqual({ ok: false, reason: expect.stringContaining('逐步推进') })
+    expect(boardMove(pending, 'pending')).toEqual({ ok: false, reason: '' })
+    expect(boardMove(task({ status: 'running', assignee: human }), 'review').ok).toBe(true)
+    expect(boardMove(task({ status: 'review', assignee: human }), 'done').ok).toBe(true)
+    expect(boardMove(task({ status: 'review', assignee: human }), 'running').ok).toBe(false)
+  })
+
+  it('keeps a running Agent card and an Agent start off the board', () => {
+    expect(boardDraggable(task({ status: 'running', assignee: agent, activeRun: running })).ok).toBe(false)
+    expect(boardMove(task({ status: 'running', assignee: agent, activeRun: running }), 'review').reason).toContain('Agent 正在执行')
+    expect(boardMove(task({ assignee: agent }), 'running').reason).toContain('开始处理')
+    // The Agent's turn ended: a person may hand its work to 待验收 or cancel it.
+    const idle = task({ status: 'running', assignee: agent, activeRun: { ...running, state: 'idle' } })
+    expect(boardMove(idle, 'review').ok).toBe(true)
+    expect(boardDraggable(task({ status: 'done' })).ok).toBe(false)
+  })
 })
+

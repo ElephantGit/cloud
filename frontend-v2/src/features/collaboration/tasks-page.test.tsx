@@ -93,7 +93,7 @@ it('scopes the list by the view in the URL', async () => {
   expect(screen.getByRole('heading', { name: '待我处理' })).toBeInTheDocument()
 })
 
-it('shows a board by default with one column per status and no dragging', async () => {
+it('shows a board by default with one column per status', async () => {
   vi.mocked(api.listTasks).mockResolvedValue({ items: [task(), agentTask, myTask], nextCursor: '' })
   renderAt('/collaboration')
   const board = await screen.findByRole('list', { name: '任务看板' })

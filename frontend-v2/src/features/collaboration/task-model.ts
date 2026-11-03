@@ -116,3 +116,18 @@ export function taskRunMessageFor(error: unknown): string {
   }
   return statusOf(error) === 404 ? '任务不存在或你已无权查看。' : '操作失败，请重试。'
 }
+
+/** A refused manual move: the run's own reason when it owns the status, else the task's. */
+export function taskMoveMessageFor(error: unknown): string {
+  const message = taskRunMessageFor(error)
+  return message === '操作失败，请重试。' ? taskMessageFor(error) : message
+}
+
+/**
+ * A refused drop on the board. The board has just been read again, so a stale version asks for one
+ * more drag instead of reopening a panel.
+ */
+export function boardMoveMessageFor(error: unknown): string {
+  if (statusOf(error) === 409 && codeOf(error) !== 'run_active') return '任务刚被其他人改过，看板已刷新，请再拖一次。'
+  return taskMoveMessageFor(error)
+}

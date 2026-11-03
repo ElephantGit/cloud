@@ -12,9 +12,9 @@ import { listSquads } from './api/generated'
 import { PanelDialog } from './panel-dialog'
 import { TaskForm, type TaskDraft } from './task-form'
 import { TaskBoardColumns, TaskRows } from './task-list'
-import { taskMessageFor } from './task-model'
+import { boardMoveMessageFor, taskMessageFor } from './task-model'
 import { filterTasks, TASK_VIEWS, viewOf } from './task-views'
-import { createTask, type Task } from './tasks-api/generated'
+import { createTask, setTaskStatus, type Task, type TaskList, type TaskStatusProperty } from './tasks-api/generated'
 import { usePendingMentions, useTaskList, useWorkspace } from './workspace'
 
 /**
@@ -58,6 +58,25 @@ export default function TasksPage() {
     },
     onError: e => setError(taskMessageFor(e)),
   })
+  // A drop moves the card at once and puts it back if the server refuses, with the reason above
+  // the board; the list is read again either way.
+  const [notice, setNotice] = useState('')
+  const listKey = ['tasks', tenantId]
+  const move = useMutation({
+    mutationFn: ({ task, status }: { task: Task; status: TaskStatusProperty }) => setTaskStatus(tenantId, task.id, { status, version: task.version }),
+    onMutate: async ({ task, status }) => {
+      setNotice('')
+      await client.cancelQueries({ queryKey: listKey })
+      const before = client.getQueryData<TaskList>(listKey)
+      if (before) client.setQueryData<TaskList>(listKey, { ...before, items: before.items.map(t => (t.id === task.id ? { ...t, status } : t)) })
+      return { before }
+    },
+    onError: (e, _vars, context) => {
+      if (context?.before) client.setQueryData(listKey, context.before)
+      setNotice(boardMoveMessageFor(e))
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: listKey }),
+  })
   const current = TASK_VIEWS.find(v => v.id === view)
   const title = squad ? squad.name : current?.label ?? '全部任务'
   const subtitle = squad ? '这个小队负责的任务；指派给小队不会自动分派给成员。' : current?.hint
@@ -77,6 +96,7 @@ export default function TasksPage() {
       </div>
     </header>
 
+    {layout === 'board' && notice && <p role="alert" className="mc-error mc-board-notice">{notice}</p>}
     {layout === 'board' && <label className="mc-switch-line"><Switch checked={showCancelled} onCheckedChange={setShowCancelled} />显示已取消</label>}
 
     {list.isLoading
@@ -85,7 +105,8 @@ export default function TasksPage() {
         ? <p role="alert">任务加载失败，请刷新重试。</p>
         : items.length || layout === 'board'
           ? layout === 'board'
-            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} showCancelled={showCancelled} onOpen={open} />
+            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} showCancelled={showCancelled} onOpen={open}
+              onMove={(task, status) => move.mutate({ task, status: status as TaskStatusProperty })} onRefuse={setNotice} />
             : <TaskRows tasks={items} projects={projectList} mentions={mentions} onOpen={open} />
           : <Empty className="min-h-56 border">
             <EmptyHeader><EmptyMedia variant="icon"><ClipboardList /></EmptyMedia>

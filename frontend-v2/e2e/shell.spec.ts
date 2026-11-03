@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './login.ts'
+import { ownerName, signIn } from './login.ts'
 
 test('log in, switch pages, log out', async ({ page }) => {
   // Signed out: the login screen appears in place of the requested page.
@@ -10,7 +10,7 @@ test('log in, switch pages, log out', async ({ page }) => {
   await signIn(page)
   await expect(page).toHaveURL(/\/workflows$/)
   await expect(page.getByRole('heading', { level: 1, name: '工作流' })).toBeVisible()
-  await expect(page.getByRole('img', { name: '演示 Owner' })).toBeVisible()
+  await expect(page.getByRole('img', { name: ownerName })).toBeVisible()
 
   for (const title of ['对话', '协作', '定时任务', '仪表盘']) {
     await page.getByRole('link', { name: title }).click()

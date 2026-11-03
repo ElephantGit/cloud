@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 	expires_at timestamptz NOT NULL
 );
 
+-- One-time data cleanups that must not repeat after their source configuration changes.
+CREATE TABLE IF NOT EXISTS v2_data_cleanups (
+	name       text PRIMARY KEY,
+	applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Squads group people and Space Agents inside one workspace. Each tenant has exactly one
 -- collaboration space in v2, so tenant_id is the space boundary.
 CREATE TABLE IF NOT EXISTS v2_squads (

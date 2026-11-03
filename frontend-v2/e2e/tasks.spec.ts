@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test'
-import { memberEmail, signIn } from './login.ts'
+import { ownerName, signIn, signInAsInvitedMember } from './login.ts'
 
 // With prepared Node assets (`task v2:node:prepare`, then V2_NODE_ASSETS_DIR) v2-server runs real
 // Agents on the fixture model; without them, as in CI, the Agent spec skips itself.
@@ -26,8 +26,8 @@ test('create a task, assign it, and walk it through the lifecycle', async ({ pag
   await expect(page).toHaveURL(/\/collaboration\/tasks\//)
   await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible()
   const side = page.getByRole('complementary', { name: '任务属性' })
-  await side.getByLabel('指派给').selectOption({ label: '演示 Owner' })
-  await expect(side.getByText(/当前：演示 Owner（人）/)).toBeVisible()
+  await side.getByLabel('指派给').selectOption({ label: ownerName })
+  await expect(side.getByText(new RegExp(`当前：${ownerName}（人）`))).toBeVisible()
 
   // A person's task moves by hand, one step at a time, and ends terminal.
   await side.getByRole('button', { name: '开始处理' }).click()
@@ -48,12 +48,12 @@ test('create a task, assign it, and walk it through the lifecycle', async ({ pag
   await page.getByRole('link', { name: '返回任务列表' }).click()
   const done = page.getByRole('listitem', { name: '已完成列' })
   await expect(done).toContainText(title)
-  await expect(done.getByRole('button', { name: `查看任务 ${title}` })).toContainText('演示 Owner')
+  await expect(done.getByRole('button', { name: `查看任务 ${title}` })).toContainText(ownerName)
   await page.screenshot({ path: test.info().outputPath('task-board.png'), fullPage: true })
   await page.getByRole('button', { name: '列表' }).click()
   const row = page.getByRole('button', { name: `查看任务 ${title}` })
   await expect(row).toContainText('已完成')
-  await expect(row).toContainText('演示 Owner')
+  await expect(row).toContainText(ownerName)
 })
 
 test('an Agent runs a task, the team watches, only the starter follows up', async ({ page, browser }) => {
@@ -85,8 +85,7 @@ test('an Agent runs a task, the team watches, only the starter follows up', asyn
 
   // A colleague sees the same task and run, may comment, but cannot spend the owner's identity.
   const colleague = await (await browser.newContext()).newPage()
-  await colleague.goto(url)
-  await signIn(colleague, memberEmail)
+  await signInAsInvitedMember(colleague, url)
   await expect(colleague.getByRole('region', { name: '运行与讨论' }).getByText(answer)).toBeVisible({ timeout: 60_000 })
   await expect(colleague.getByRole('switch', { name: '发给 Agent' })).toHaveAttribute('aria-disabled', 'true')
   await expect(colleague.getByText(/只有发起人能追问/).first()).toBeVisible()

@@ -20,7 +20,7 @@ go run .                               # 监听 127.0.0.1:8090
 | `V2_ADDR` | `127.0.0.1:8090` | 监听地址 |
 | `V2_DATABASE_URL` | `postgres://ora:ora-local@127.0.0.1:55432/ora_v2?sslmode=disable` | PostgreSQL |
 | `V2_DATA_DIR` | `$HOME/.ora-v2` | 仓库 mirror、marketplace checkout、Node 与对话目录；同一目录只允许一个进程持有，使用短路径以满足 Unix socket 长度限制 |
-| `V2_USERS_FILE` | `users.json` | 启动时预置的账号文件（相对进程工作目录）：`email`、`displayName`、`role`（`owner` / `member`）。启动时幂等写入，已存在的账号只更新名字和角色，不在文件里的账号不删除；文件缺失、没有 owner 或邮箱重复时拒绝启动 |
+| `V2_USERS_FILE` | `users.json` | 启动时预置的账号文件（相对进程工作目录）：`users` 里的 `email`、可选的 `displayName`、`role`（`owner` / `member`）；`retired` 里列出要从成员页移除的旧预置 `email`。`users` 幂等写入，已存在的账号只更新名字和角色；不在 `users` 里的账号默认保留，只有 `retired` 中的地址会在首次启动时软删除。文件缺失、没有 owner、邮箱重复或 `users` 与 `retired` 重叠时拒绝启动 |
 | `V2_PLUGIN_MARKETPLACE_URL` | `https://github.com/ora-space/marketplace` | 插件市场 Git HTTPS 地址；禁止携带凭据、query 或 fragment。离线测试直接构造 Syncer 使用本地仓库 |
 | `V2_PLUGIN_MARKETPLACE_BRANCH` | `main` | 市场同步分支；启动时浅克隆并拉取，之后按间隔快进工作副本 |
 | `V2_PLUGIN_MARKETPLACE_INTERVAL` | `5m` | 市场刷新间隔；必须为正 duration。失败时保留上一版 PostgreSQL 快照 |
@@ -78,7 +78,7 @@ key 放在仓库外的 `~/ora-demo/.env`，一台机器配一次，主目录和�
 |---|---|
 | `POST /api/v2/tenants/{tid}/members` | 只有 owner 可以邀请：`email` 必填，`displayName` 选填（默认取邮箱 @ 前面的部分），`squadId` 选填（同时加入该小队，小队必须属于本工作区且未归档）。提交即创建账号并加入"演示团队"（角色 `member`），不需要对方接受；被邀请的邮箱随后可以直接登录。写权限不足 `403 forbidden`，已在团队 `409 member_exists`，小队不存在 `404 not_found` |
 
-升级已有数据库时注意：旧开发登录建出的 `dev/demo`「演示用户」仍留在库里，但邮箱登录不再认这个身份，它再也无法登录，名下的成员记录、小队与对话却还会出现在成员页里。演示请用全新数据库，不要把旧库当成干净基线；这里不做账号清理，避免删掉别人正在引用的历史。
+升级已有数据库时，启动会软删除旧开发登录建出的 `dev/demo`「演示用户」，并按 `users.json` 的 `retired` 列表一次性软删除旧预置成员。这些账号的成员记录、小队与对话引用保留，但不再出现在成员页，也不能登录。软删除后账号不会恢复：再邀请同一邮箱返回 `409 user_unavailable`，把它重新写回 `users` 也只会更新名字，既不恢复登录，也不补发 starter skill；`retired` 的清理同样只执行一次，手动恢复的账号不会在下次启动时再被删除。
 
 ### 用户技能
 

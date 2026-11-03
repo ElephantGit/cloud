@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test'
-import { memberEmail, signIn } from './login.ts'
+import { ownerName, signIn, signInAsInvitedMember } from './login.ts'
 
 // A fresh address per run keeps the invite idempotent against an e2e database that keeps accounts.
 const newAddress = () => `invite-${crypto.randomUUID().slice(0, 8)}@demo.ora-space.dev`
@@ -45,7 +45,7 @@ test('an owner invites an address and that address signs in', async ({ page }) =
   await expect(page.getByRole('img', { name })).toBeVisible()
   // The invited account is a member: the roster is readable, the invitation entry is not.
   await expect(page.getByRole('form', { name: '邀请成员' })).toHaveCount(0)
-  await expect(page.getByRole('row', { name: /演示 Owner/ })).toBeVisible()
+  await expect(page.getByRole('row', { name: new RegExp(ownerName) })).toBeVisible()
 })
 
 test('an address nobody presetted or invited cannot sign in', async ({ page }) => {
@@ -61,8 +61,7 @@ test('an address nobody presetted or invited cannot sign in', async ({ page }) =
 test('a member is refused by the server even without the invitation entry', async ({
   page,
 }) => {
-  await page.goto('/settings/members')
-  await signIn(page, memberEmail)
+  await signInAsInvitedMember(page)
   await expect(page.getByText(/邀请入口只向 owner 开放/)).toBeVisible()
 
   // Hiding the form is presentation; the workspace API still has to reject the write.

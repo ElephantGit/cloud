@@ -78,6 +78,14 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		db.Close()
 		return e
 	}
+	if e := db.RetireLegacyDemoUser(ctx); e != nil {
+		db.Close()
+		return e
+	}
+	if e := db.RetireUsers(ctx, preset.Retired); e != nil {
+		db.Close()
+		return e
+	}
 	// The demo project is owned by the first preset owner; it seeds shared content, not a login.
 	bootstrap := preset.Users[0].Email
 	for _, u := range preset.Users {

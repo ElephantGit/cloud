@@ -1,7 +1,9 @@
 {
   "users": [
-    { "email": "owner@demo.ora-space.dev", "displayName": "演示 Owner", "role": "owner" },
-    { "email": "alice@demo.ora-space.dev", "displayName": "爱丽丝", "role": "member" },
-    { "email": "bob@demo.ora-space.dev", "displayName": "鲍勃", "role": "member" }
+    { "email": "owner@demo.ora-space.dev", "displayName": "协作空间 Owner", "role": "owner" }
+  ],
+  "retired": [
+    { "email": "alice@demo.ora-space.dev" },
+    { "email": "bob@demo.ora-space.dev" }
   ]
 }

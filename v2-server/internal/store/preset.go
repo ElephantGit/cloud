@@ -25,9 +25,16 @@ type PresetUser struct {
 	Role        string `json:"role"`
 }
 
+// RetiredUser is one account from an older preset that must no longer appear as a member.
+// The cleanup runs once so a later invitation of the same address is not removed.
+type RetiredUser struct {
+	Email string `json:"email"`
+}
+
 // Preset is the startup configuration: the accounts that may sign in before any invitation.
 type Preset struct {
-	Users []PresetUser `json:"users"`
+	Users   []PresetUser  `json:"users"`
+	Retired []RetiredUser `json:"retired,omitempty"`
 }
 
 // LoadPreset reads and validates the startup accounts file. Browsers may only sign in accounts
@@ -88,6 +95,17 @@ func (p *Preset) Validate() error {
 		default:
 			return fmt.Errorf("user %d: role %q is not %s or %s", i+1, u.Role, RoleOwner, RoleMember)
 		}
+	}
+	for i := range p.Retired {
+		email, e := NormalizeEmail(p.Retired[i].Email)
+		if e != nil {
+			return fmt.Errorf("retired user %d: %w", i+1, e)
+		}
+		if seen[email] {
+			return fmt.Errorf("retired user %d: duplicate email %s", i+1, email)
+		}
+		seen[email] = true
+		p.Retired[i].Email = email
 	}
 	if owners == 0 {
 		return errors.New("no owner")

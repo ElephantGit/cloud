@@ -15,7 +15,7 @@ export function WorkflowVariableRowContent({
         <span
           aria-hidden="true"
           data-workflow-variable-part="variable-mark"
-          className="shrink-0 font-medium text-blue-600 dark:text-blue-400"
+          className="shrink-0 font-medium text-brand"
         >
           {"{x}"}
         </span>
@@ -68,7 +68,7 @@ export function WorkflowVariableSelectGroups({
                 key={selector}
                 value={selector}
                 aria-label={selector}
-                className="[&_[data-workflow-variable-part=variable-mark]]:text-blue-600! [&_[data-workflow-variable-part=variable-name]]:text-foreground! [&_[data-workflow-variable-part=variable-type]]:text-muted-foreground! dark:[&_[data-workflow-variable-part=variable-mark]]:text-blue-400!"
+                className="[&_[data-workflow-variable-part=variable-mark]]:text-brand! [&_[data-workflow-variable-part=variable-name]]:text-foreground! [&_[data-workflow-variable-part=variable-type]]:text-muted-foreground!"
               >
                 <WorkflowVariableRowContent variable={variable} />
               </SelectItem>

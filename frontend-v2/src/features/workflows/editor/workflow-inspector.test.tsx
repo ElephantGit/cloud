@@ -311,11 +311,11 @@ describe("WorkflowInspector kind-specific layouts", () => {
     await user.click(firstVariable);
     const option = await screen.findByRole("option", { name: "writer.output" });
     expect(option.className).toContain(
-      "[&_[data-workflow-variable-part=variable-mark]]:text-blue-600!",
+      "[&_[data-workflow-variable-part=variable-mark]]:text-brand!",
     );
     expect(
       option.querySelector('[data-workflow-variable-part="variable-mark"]'),
-    ).toHaveClass("text-blue-600");
+    ).toHaveClass("text-brand");
     expect(
       option.querySelector('[data-workflow-variable-part="variable-name"]'),
     ).toHaveClass("text-foreground");

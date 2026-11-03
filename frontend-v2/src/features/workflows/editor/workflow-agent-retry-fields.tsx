@@ -177,7 +177,7 @@ export function WorkflowAgentRetryFields({
         </Label>
         <Switch
           id="workflow-agent-retry"
-          className="shrink-0 data-checked:bg-blue-600 hover:data-checked:bg-blue-700"
+          className="shrink-0 data-checked:bg-brand hover:data-checked:bg-brand/90"
           checked={enabled}
           aria-describedby="workflow-agent-retry-hint"
           onCheckedChange={(next) => commit({ enabled: next })}

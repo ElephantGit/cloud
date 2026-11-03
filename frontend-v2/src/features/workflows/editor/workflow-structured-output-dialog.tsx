@@ -125,7 +125,7 @@ function WorkflowStructuredOutputDialogContent({
               type="button"
               role="tab"
               aria-selected={mode === "visual"}
-              className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-blue-600 aria-selected:shadow-sm"
+              className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-brand aria-selected:shadow-sm"
               onClick={() => selectMode("visual")}
             >
               <IconTimeline className="size-4" />
@@ -392,7 +392,7 @@ function SchemaFieldEditor({
                   {type}
                 </span>
                 {required && (
-                  <span className="text-[10px] font-medium text-orange-600">
+                  <span className="text-[10px] font-medium text-caution">
                     {t("settings.workflow.structuredOutput.required")}
                   </span>
                 )}
@@ -524,7 +524,7 @@ function SchemaSummaryFields({
               <code className="font-semibold">{name}</code>
               <span className="text-[11px] text-muted-foreground">{type}</span>
               {required.has(name) && (
-                <span className="text-[10px] font-medium text-orange-600">
+                <span className="text-[10px] font-medium text-caution">
                   {t("settings.workflow.structuredOutput.required")}
                 </span>
               )}

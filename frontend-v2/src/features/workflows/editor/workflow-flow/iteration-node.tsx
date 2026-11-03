@@ -236,7 +236,7 @@ export function IterationNodeFrame({
                   : () => setEntryMenuOpen((open) => !open)
               }
             >
-              <span className="flex size-6 items-center justify-center rounded-full bg-blue-600 text-white">
+              <span className="flex size-6 items-center justify-center rounded-full bg-brand text-brand-foreground">
                 <IconHomeFilled className="size-3" aria-hidden="true" />
               </span>
               <Handle

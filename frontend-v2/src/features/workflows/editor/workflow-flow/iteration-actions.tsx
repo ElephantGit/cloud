@@ -246,7 +246,7 @@ export function IterationInsertMenu({
             size="icon-xs"
             style={style}
             className={cn(
-              "nodrag nopan rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700",
+              "nodrag nopan rounded-full bg-brand text-brand-foreground shadow-sm hover:bg-brand/90",
               className,
             )}
             aria-label={label}

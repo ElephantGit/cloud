@@ -18,8 +18,8 @@ const FIX_LABELS: Record<WorkflowDependencyFix, string> = {
 type PillTone = "ok" | "warn" | "muted";
 
 const PILL_TONES: Record<PillTone, string> = {
-  ok: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  warn: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  ok: "bg-success/10 text-success",
+  warn: "bg-warning/10 text-warning",
   muted: "bg-muted text-muted-foreground",
 };
 
@@ -153,7 +153,7 @@ export function WorkflowTransferDependencies({
                   {dependency.fix !== null && (
                     <button
                       type="button"
-                      className="text-[11.5px] text-blue-600 hover:underline dark:text-blue-400"
+                      className="text-[11.5px] text-brand hover:underline"
                       onClick={() => {
                         if (dependency.fix !== null) {
                           resolve(dependency, dependency.fix);

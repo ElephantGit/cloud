@@ -57,13 +57,13 @@ export function WorkflowVariableDisplay({
       <span
         aria-hidden="true"
         data-workflow-variable-part="variable-mark"
-        className="shrink-0 font-medium text-blue-600 dark:text-blue-400"
+        className="shrink-0 font-medium text-brand"
       >
         {"{x}"}
       </span>
       <span
         data-workflow-variable-part="variable-name"
-        className="shrink-0 font-medium text-blue-600 dark:text-blue-400"
+        className="shrink-0 font-medium text-brand"
       >
         {variable.variableName}
       </span>

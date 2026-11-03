@@ -151,11 +151,11 @@ export function WorkflowExportDialog({
                       aria-hidden
                       className={cn(
                         "flex size-[13px] items-center justify-center rounded-full border",
-                        checked ? "border-blue-600" : "border-muted-foreground",
+                        checked ? "border-brand" : "border-muted-foreground",
                       )}
                     >
                       {checked && (
-                        <span className="size-[7px] rounded-full bg-blue-600" />
+                        <span className="size-[7px] rounded-full bg-brand" />
                       )}
                     </span>
                     <span className="min-w-0">
@@ -205,7 +205,7 @@ export function WorkflowExportDialog({
               variant="export"
             />
           )}
-          <div className="flex gap-2.5 rounded-[9px] bg-blue-500/10 px-3 py-2.5 text-[12.5px] leading-normal text-blue-700 dark:text-blue-300">
+          <div className="flex gap-2.5 rounded-[9px] bg-brand-soft px-3 py-2.5 text-[12.5px] leading-normal text-brand">
             <IconInfoCircle className="mt-0.5 size-[15px] shrink-0" />
             <div>{t("settings.workflow.transfer.referenceOnlyNotice")}</div>
           </div>

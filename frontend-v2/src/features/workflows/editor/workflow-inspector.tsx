@@ -900,7 +900,7 @@ function AgentConfigurationFields({
                 <span className="min-w-0 truncate text-xs">{skill.label}</span>
                 <Switch
                   size="sm"
-                  className="shrink-0 data-checked:bg-blue-600 hover:data-checked:bg-blue-700"
+                  className="shrink-0 data-checked:bg-brand hover:data-checked:bg-brand/90"
                   checked={configuredSkill.enabled}
                   aria-label={t("settings.workflow.toggleSkill", {
                     name: skill.label,
@@ -952,7 +952,7 @@ function AgentConfigurationFields({
             </p>
             <Switch
               id="workflow-agent-interactive"
-              className="shrink-0 data-checked:bg-blue-600 hover:data-checked:bg-blue-700"
+              className="shrink-0 data-checked:bg-brand hover:data-checked:bg-brand/90"
               checked={config.interactive ?? false}
               disabled={iterationMember}
               onCheckedChange={(interactive) =>

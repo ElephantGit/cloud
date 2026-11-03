@@ -124,7 +124,7 @@ export function WorkflowStartVariables({
                 className="group flex min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 shadow-sm"
               >
                 <IconGripVertical className="size-3.5 shrink-0 text-muted-foreground/60" />
-                <IconVariable className="size-4 shrink-0 text-blue-600" />
+                <IconVariable className="size-4 shrink-0 text-brand" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-baseline gap-1">
                     <code className="truncate text-xs font-semibold text-foreground">

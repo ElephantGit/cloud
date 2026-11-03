@@ -312,8 +312,8 @@ describe("iteration composite node", () => {
     expect(badge).toHaveClass(
       "size-6",
       "rounded-full",
-      "bg-blue-600",
-      "text-white",
+      "bg-brand",
+      "text-brand-foreground",
     );
     // The home glyph is the only icon inside the blue badge.
     expect(badge!.querySelector("svg")).not.toBeNull();
@@ -335,7 +335,7 @@ describe("iteration composite node", () => {
       "top-1/2",
       "-translate-x-1/2",
       "-translate-y-1/2",
-      "bg-blue-600",
+      "bg-brand",
       "rounded-full",
       "group-hover/iteration-start:opacity-100",
       "focus-visible:opacity-100",
@@ -402,7 +402,7 @@ describe("iteration composite node", () => {
       "opacity-0",
       "-right-3",
       "-translate-y-1/2",
-      "bg-blue-600",
+      "bg-brand",
       "rounded-full",
       "group-hover/iteration-member:opacity-100",
       "focus-visible:opacity-100",

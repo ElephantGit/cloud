@@ -81,9 +81,17 @@ export function boardMove(task: Task, to: string): { ok: boolean; reason: string
   return { ok: true, reason: '' }
 }
 
+/**
+ * Whether the caller may run an Agent on the task at all: any member on an Agent's task, and on a
+ * person's task only that person, with the Agent they pick.
+ */
+export const runsAgent = (task: Task, me: string): boolean =>
+  task.assignee?.type === 'agent' || (task.assignee?.type === 'human' && task.assignee.id === me)
+
 /** Whether the caller may send the Agent a turn now, and why not. */
 export function agentReach(task: Task, me: string): { ok: boolean; reason: string } {
-  if (task.assignee?.type !== 'agent') return { ok: false, reason: '任务没有指派给 Agent。' }
+  if (task.assignee?.type === 'human' && task.assignee.id !== me) return { ok: false, reason: `任务派给了 ${task.assignee.displayName}，只有负责人本人能用 Agent 处理。` }
+  if (!runsAgent(task, me)) return { ok: false, reason: '任务没有指派给 Agent。' }
   if (task.status === 'done' || task.status === 'cancelled') return { ok: false, reason: '任务已结束。' }
   const run = task.activeRun
   if (run?.state === 'running') return { ok: false, reason: 'Agent 正在执行，等这一轮结束。' }

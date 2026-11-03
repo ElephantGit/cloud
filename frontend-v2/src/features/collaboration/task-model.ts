@@ -107,6 +107,7 @@ export function taskRunMessageFor(error: unknown): string {
     case 'run_active': return 'Agent 正在执行，等这一轮结束或先停止。'
     case 'run_owned': return '当前运行由别人发起，只有发起人能继续追问；你可以重新执行，用自己的身份开一次新运行。'
     case 'not_agent_task': return '任务还没有指派给 Agent，先在右侧把它指派给一个 Agent。'
+    case 'not_assignee': return '任务派给了别人，只有负责人本人能用 Agent 处理。'
     case 'task_closed': return '任务已结束，不能再执行。'
     case 'no_live_run': return '这次运行已经结束了。'
     case 'invalid_executor': return '所选模型不属于这个 Agent，请重新选择。'

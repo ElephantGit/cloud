@@ -5,6 +5,7 @@ import type { SquadSummary } from './api/generated'
 import { formatTime } from './squad-model'
 import { TaskAssigneePicker } from './task-assignee'
 import { assigneeKindLabel, assigneeLabel, isTaskFinished, taskActions } from './task-model'
+import { runsAgent } from './task-views'
 import type { Task, TaskAssigneeRef, TaskExecutor, TaskStatusProperty } from './tasks-api/generated'
 
 /** The run controls' state, decided by the page from the task and its timeline. */
@@ -25,8 +26,10 @@ export interface RunControls {
  * One task's facts and the moves on it: who owns it, running its Agent, and the manual status
  * moves. While the Agent runs a turn, the run owns the status, so manual moves wait for it.
  */
-export function TaskDetailView({ task, projectName, squads, busy, error, run, onStatus, onAssign }: {
+export function TaskDetailView({ task, me, projectName, squads, busy, error, run, onStatus, onAssign }: {
   task: Task
+  /** The caller's user id: a person's task runs an Agent only for that person. */
+  me: string
   /** The project's display name, resolved from the workspace list. */
   projectName: string
   /** Live squads the task may be reassigned to. */
@@ -41,6 +44,8 @@ export function TaskDetailView({ task, projectName, squads, busy, error, run, on
 }) {
   const finished = isTaskFinished(task.status)
   const agentTask = task.assignee?.type === 'agent'
+  // On their own task a person picks which Agent does the work; the executor names it.
+  const personal = task.assignee?.type === 'human'
   const running = task.activeRun?.state === 'running'
   // An Agent task enters 进行中 by running, not by hand.
   const actions = taskActions(task.status).filter(a => !(agentTask && a.status === 'running'))
@@ -61,19 +66,19 @@ export function TaskDetailView({ task, projectName, squads, busy, error, run, on
       <p className="mc-note">当前：{assigneeLabel(task)}{task.assignee && `（${assigneeKindLabel(task)}）`}。指派给小队只表示这个队负责，不会自动分派给成员。</p>
     </section>
 
-    {agentTask && <section className="mc-section" aria-label="执行">
-      <h3><Bot size={14} />执行</h3>
+    {runsAgent(task, me) && <section className="mc-section" aria-label="执行">
+      <h3><Bot size={14} />{personal ? '用 Agent 处理' : '执行'}</h3>
       {finished
         ? <p className="mc-empty-line">任务已结束，不能再执行。</p>
         : <>
-          <label className="mc-field-label" htmlFor="mc-executor">模型</label>
+          <label className="mc-field-label" htmlFor="mc-executor">{personal ? 'Agent 与模型' : '模型'}</label>
           <NativeSelect id="mc-executor" aria-label="执行模型" value={run.executorId} disabled={running || run.executors.length === 0} onChange={e => run.onExecutor(e.target.value)}>
             {run.executors.map(x => <NativeSelectOption key={x.id} value={x.id}>{x.name}</NativeSelectOption>)}
           </NativeSelect>
           <div className="mc-actions">
             <Button type="button" size="sm" disabled={running || run.starting || run.executors.length === 0} onClick={run.onStart}>
               {run.hasRuns ? <RotateCcw data-icon="inline-start" /> : <CirclePlay data-icon="inline-start" />}
-              {run.starting ? '正在启动…' : run.hasRuns ? '重新执行' : '开始处理'}
+              {run.starting ? '正在启动…' : run.hasRuns ? '重新执行' : personal ? '用 Agent 处理' : '开始处理'}
             </Button>
             {task.activeRun && <Button type="button" size="sm" variant="outline" disabled={run.stopping} onClick={run.onStop}>
               <CircleStop data-icon="inline-start" />{running ? '停止' : '结束会话'}
@@ -84,7 +89,9 @@ export function TaskDetailView({ task, projectName, squads, busy, error, run, on
               ? `${task.activeRun?.startedByName} 发起的运行正在执行；跑完任务自动进入待验收。`
               : task.activeRun
                 ? `${task.activeRun.startedByName} 的会话在等追问；重新执行会结束它，用你的身份开一次新运行。`
-                : '用你的身份运行这个 Agent；跑完任务自动进入待验收，全团队都能看到过程。'}
+                : personal
+                  ? '选一个 Agent 替你处理这个任务；跑完任务自动进入待验收，全团队都能看到过程。'
+                  : '用你的身份运行这个 Agent；跑完任务自动进入待验收，全团队都能看到过程。'}
           </p>
         </>}
     </section>}

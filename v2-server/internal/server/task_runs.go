@@ -81,6 +81,8 @@ func taskRunFault(w http.ResponseWriter, op string, e error) {
 		fault(w, http.StatusConflict, "run_owned")
 	case errors.Is(e, taskrun.ErrNotAgentTask):
 		fault(w, http.StatusConflict, "not_agent_task")
+	case errors.Is(e, taskrun.ErrNotAssignee):
+		fault(w, http.StatusConflict, "not_assignee")
 	case errors.Is(e, taskrun.ErrTaskClosed):
 		fault(w, http.StatusConflict, "task_closed")
 	case errors.Is(e, taskrun.ErrNoLiveRun):

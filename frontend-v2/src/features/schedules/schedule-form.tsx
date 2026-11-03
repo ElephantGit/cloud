@@ -89,7 +89,7 @@ export function ScheduleForm({task,onSave,onCancel,data=catalog,saving=false,blo
      {resourcesError&&<p role="alert">{resourcesError} <Button type="button" variant="outline" size="sm" onClick={onRetryResources}>重试加载</Button></p>}
      <ScheduleField name="projectId" label="关联项目" error={errors.projectId} hint={draft.kind==='task'?'沿用协作任务的项目。':draft.kind==='workflow'?'必选。每次运行在这个项目的独立目录中执行工作流。':'可选。不关联项目时直接调用模型；关联项目时使用该项目独立的执行环境。'}>
       <NativeSelect className="w-full" disabled={draft.kind==='task'||unavailable||!data.available?.projects} aria-required={draft.kind==='workflow'} value={draft.projectId} onChange={e=>patch({projectId:e.target.value,agentId:'',agent:'',model:''})} {...control('projectId')}>
-       <NativeSelectOption value="" disabled={draft.kind==='workflow'}>{draft.kind==='workflow'?'请选择项目':'不关联项目'}</NativeSelectOption>
+       <NativeSelectOption value="" disabled={draft.kind==='workflow'} hidden={draft.kind==='workflow'}>{draft.kind==='workflow'?'请选择项目':'不关联项目'}</NativeSelectOption>
        {draft.projectId&&!data.projects.some(p=>p.id===draft.projectId)&&<NativeSelectOption value={draft.projectId} disabled>原项目暂不可用</NativeSelectOption>}
        {data.projects.map(p=><NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
       </NativeSelect>

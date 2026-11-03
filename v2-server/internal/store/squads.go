@@ -206,6 +206,9 @@ func bumpSquad(ctx context.Context, tx pgx.Tx, id string) error {
 	return e
 }
 
+// squadMembers lists a squad's memberships, live and ended. Rows of soft-deleted accounts stay in
+// the table for history but are not listed: an account that can no longer sign in is not shown
+// anywhere else either, so the squad does not name it even among the members who left.
 func squadMembers(ctx context.Context, q dbTX, squadID string) ([]SquadMember, error) {
 	rows, e := q.Query(ctx, `
 		SELECT m.id, m.member_type, m.user_id::text, m.space_agent_id::text,
@@ -213,7 +216,7 @@ func squadMembers(ctx context.Context, q dbTX, squadID string) ([]SquadMember, e
 		FROM v2_squad_members m
 		LEFT JOIN users u ON u.id = m.user_id
 		LEFT JOIN v2_space_agents a ON a.id = m.space_agent_id
-		WHERE m.squad_id = $1
+		WHERE m.squad_id = $1 AND u.deleted_at IS NULL
 		ORDER BY m.joined_at, m.id`, squadID)
 	if e != nil {
 		return nil, fmt.Errorf("list squad members: %w", e)

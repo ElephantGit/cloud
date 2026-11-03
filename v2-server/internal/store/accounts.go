@@ -90,6 +90,35 @@ func (s *Store) RetireLegacyDemoUser(ctx context.Context) error {
 	})
 }
 
+// EndDeletedSquadMembers ends the live squad memberships of soft-deleted accounts. Retiring an
+// account keeps its rows for history, but a member who can no longer sign in must not count as a
+// squad's member or maintainer; the ended row stays as the squad's 已退出 history. It runs on every
+// startup after the retirements, so databases retired by an older build converge too, and it is a
+// no-op once nothing is left.
+func (s *Store) EndDeletedSquadMembers(ctx context.Context) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		rows, e := tx.Query(ctx, `
+			UPDATE v2_squad_members m SET ended_at = now()
+			FROM users u
+			WHERE u.id = m.user_id AND u.deleted_at IS NOT NULL AND m.ended_at IS NULL
+			RETURNING m.squad_id::text`)
+		if e != nil {
+			return fmt.Errorf("end deleted squad members: %w", e)
+		}
+		squads, e := pgx.CollectRows(rows, pgx.RowTo[string])
+		if e != nil {
+			return fmt.Errorf("end deleted squad members: %w", e)
+		}
+		// A maintainer's edit read before this cleanup must see the version move, like a manual removal.
+		if _, e := tx.Exec(ctx, `
+			UPDATE v2_squads SET version = version + 1, updated_at = now()
+			WHERE id = ANY($1::uuid[])`, squads); e != nil {
+			return fmt.Errorf("bump squads of deleted members: %w", e)
+		}
+		return nil
+	})
+}
+
 // UpsertUser creates or updates one account and its demo-team membership, returning the user id.
 // It is the write behind both the startup preset and the test fixtures; browsers never reach it.
 // A soft-deleted account is never resurrected: listing it again refreshes nothing but its name, and

@@ -7,7 +7,7 @@
 .settings-sidebar {
   width: 208px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--sidebar-border);
   padding: 24px 12px;
   background: var(--sidebar);
   display: flex;
@@ -29,7 +29,7 @@
   white-space: nowrap;
 }
 .settings-nav-link:hover {
-  background: var(--accent);
+  background: var(--sidebar-accent);
   color: var(--foreground);
 }
 .settings-nav-link:focus-visible {
@@ -37,9 +37,12 @@
   outline-offset: 2px;
 }
 .settings-nav-active {
-  background: var(--accent);
+  background: var(--sidebar-accent);
   color: var(--foreground);
   font-weight: 500;
+}
+.settings-nav-active svg {
+  color: var(--brand);
 }
 .settings-sidebar-note {
   margin-top: auto;
@@ -216,7 +219,7 @@
 }
 .settings-plugin-card:hover {
   border-color: color-mix(in oklab, var(--foreground) 22%, var(--border));
-  box-shadow: 0 6px 20px color-mix(in oklab, var(--foreground) 6%, transparent);
+  box-shadow: 0 6px 20px var(--shadow-color);
   transform: translateY(-1px);
 }
 .settings-plugin-card-header {

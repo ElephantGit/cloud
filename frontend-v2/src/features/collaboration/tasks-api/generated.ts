@@ -104,6 +104,11 @@ export interface Task {
   title: string;
   description: string;
   projectId: string;
+  /**
+     * The task this one was split from; null for a task created by hand.
+     * @nullable
+     */
+  parentId?: string | null;
   /** @nullable */
   assignee: TaskAssignee;
   status: TaskStatusProperty;
@@ -333,6 +338,47 @@ export interface PendingMention {
 
 export interface PendingMentionList {
   items: PendingMention[];
+}
+
+export interface TaskDecompositionStart {
+  /** A workflow of the workspace with a published version. */
+  workflowId: string;
+}
+
+/**
+ * running until the run ends; succeeded once its subtasks are written; failed otherwise.
+ */
+export type TaskDecompositionStatus = typeof TaskDecompositionStatus[keyof typeof TaskDecompositionStatus];
+
+
+export const TaskDecompositionStatus = {
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+} as const;
+
+export interface TaskDecomposition {
+  id: string;
+  taskId: string;
+  startedBy: string;
+  startedByName: string;
+  workflowId: string;
+  workflowName: string;
+  /** The workflow run doing the split; the workflow's run history lists it too. */
+  workflowRunId: string;
+  /** running until the run ends; succeeded once its subtasks are written; failed otherwise. */
+  status: TaskDecompositionStatus;
+  /** Why a failed decomposition wrote no subtasks, in the page's words; empty otherwise. */
+  failure: string;
+  /** How many subtasks a succeeded decomposition wrote. */
+  createdCount: number;
+  createdAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface TaskDecompositionList {
+  items: TaskDecomposition[];
 }
 
 export type StreamTaskRunEventsParams = {
@@ -1312,6 +1358,178 @@ export const useCreateTaskComment = <TError = ErrorType<TaskError>,
         TContext
       > => {
       return useMutation(getCreateTaskCommentMutationOptions(options), queryClient);
+    }
+
+/**
+ * A decomposition whose workflow run has ended is settled before it is listed, so a read never shows a finished run as still splitting.
+ * @summary List the task's decompositions, newest first
+ */
+export const listTaskDecompositions = (
+    tid: string,
+    taskid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskDecompositionList>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/decompositions`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListTaskDecompositionsQueryKey = (tid: string,
+    taskid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/tasks/${taskid}/decompositions`
+    ] as const;
+    }
+
+
+export const getListTaskDecompositionsQueryOptions = <TData = Awaited<ReturnType<typeof listTaskDecompositions>>, TError = ErrorType<TaskError>>(tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTaskDecompositionsQueryKey(tid,taskid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaskDecompositions>>> = ({ signal }) => listTaskDecompositions(tid,taskid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && taskid !== null && taskid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTaskDecompositionsQueryResult = NonNullable<Awaited<ReturnType<typeof listTaskDecompositions>>>
+export type ListTaskDecompositionsQueryError = ErrorType<TaskError>
+
+
+export function useListTaskDecompositions<TData = Awaited<ReturnType<typeof listTaskDecompositions>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskDecompositions>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskDecompositions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTaskDecompositions<TData = Awaited<ReturnType<typeof listTaskDecompositions>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskDecompositions>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskDecompositions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTaskDecompositions<TData = Awaited<ReturnType<typeof listTaskDecompositions>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the task's decompositions, newest first
+ */
+
+export function useListTaskDecompositions<TData = Awaited<ReturnType<typeof listTaskDecompositions>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskDecompositions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTaskDecompositionsQueryOptions(tid,taskid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * Runs the workflow's published version over the task (its title and description as input, its project as the run's project) as the caller. When the run succeeds, its output's `tasks` array (items with `title` and an optional `description`) becomes the task's subtasks: pending, unassigned, in the task's project. Writing them and ending the decomposition share one transaction, so a run's subtasks are written once. Any other end fails the decomposition with a reason. Errors: `decomposition_active` (409) while another is running, `invalid_workflow` (400) for a workflow that is missing or unpublished, `task_closed` (409) for a done or cancelled task, `subtask_not_decomposable` (409) for a subtask.
+ * @summary Split the task into subtasks with a published workflow
+ */
+export const startTaskDecomposition = (
+    tid: string,
+    taskid: string,
+    taskDecompositionStart: BodyType<TaskDecompositionStart>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskDecomposition>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/decompositions`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: taskDecompositionStart, signal
+    },
+      options);
+    }
+
+
+
+
+export const getStartTaskDecompositionMutationKey = () => ['startTaskDecomposition'] as const;
+
+export const getStartTaskDecompositionMutationOptions = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startTaskDecomposition>>, TError,StartTaskDecompositionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof startTaskDecomposition>>, TError,StartTaskDecompositionMutationVariables, TContext> => {
+
+const mutationKey = getStartTaskDecompositionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startTaskDecomposition>>, StartTaskDecompositionMutationVariables> = (props) => {
+          const {tid,taskid,data} = props ?? {};
+
+          return  startTaskDecomposition(tid,taskid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartTaskDecompositionMutationResult = NonNullable<Awaited<ReturnType<typeof startTaskDecomposition>>>
+    export type StartTaskDecompositionMutationBody = BodyType<TaskDecompositionStart>
+    export type StartTaskDecompositionMutationError = ErrorType<TaskError>
+    export type StartTaskDecompositionMutationVariables = {tid: string;taskid: string;data: BodyType<TaskDecompositionStart>}
+
+    /**
+ * @summary Split the task into subtasks with a published workflow
+ */
+export const useStartTaskDecomposition = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startTaskDecomposition>>, TError,StartTaskDecompositionMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startTaskDecomposition>>,
+        TError,
+        StartTaskDecompositionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartTaskDecompositionMutationOptions(options), queryClient);
     }
 
 /**

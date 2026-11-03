@@ -15,6 +15,7 @@
 ## 已经有的
 
 - 任务列表显示状态、标题、项目、指派对象，以及谁在干活（某个 Agent 执行中、等待追问）。看板按「待处理 / 进行中 / 待验收 / 已完成」分列，「已取消」默认隐藏。把卡片拖到另一列，等同于点任务里对应的推进按钮：拖动时只有合法的下一步亮起，状态逐级推进，不能跳过待验收；Agent 正在执行的卡片拿不起来；指派给 Agent 的任务只能在任务里「开始处理」进入进行中，不能拖进去。松手后卡片立即移动，服务端拒绝（例如 `409 run_active`）时退回原列，并在看板上方说明原因。拖动只支持指针，键盘用任务页的按钮。窄屏下看板变成单列。
+- **拆分**：大需求在任务页点「拆分」，选一个已发布的工作流（默认「需求拆分」）运行，任务的标题和描述是输入。跑完后输出的 `tasks` 变成这个任务的子任务：待处理、未指派、同一个项目，任务页列出它们，看板上子任务标着「拆分自 …」，大需求标着「N 个子任务」，Tech Lead 再把它们分给人和 Agent。拆分中按钮变成「拆分中…」，失败时任务页写明原因并可「重新拆分」。子任务不能再拆。工作流运行本身在工作流页的运行历史里。
 - 任务指派给人、可执行的预装 Agent 或未归档的小队；指派给小队只表示这个队负责，不自动分派。
 - **执行**：指派给 Agent 的任务在右侧选模型后「开始处理」，用你的身份运行，任务进入进行中，一轮结束自动进入待验收；停止或服务重启后回到待处理。Agent 执行期间不能手动推进状态。已经有运行时按钮是「重新执行」，会结束空闲的旧会话。项目第一次用某个 Agent 要先在 Node 里安装，页面显示「正在准备 Agent」。
 - **运行过程**：全团队都能看每次运行的思考、工具调用和回答，按运行切换；运行结束的原因（停止、被重新执行替代、任务结束、重启中断）和最近一轮的结果写在运行上方。
@@ -32,6 +33,6 @@
 
 ## 接口与检查
 
-小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `api/generated.ts`；任务（含运行、评论与时间线）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `tasks-api/generated.ts`。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
+小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `api/generated.ts`；任务（含运行、评论、时间线与拆分）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `tasks-api/generated.ts`。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
 
 `npm run check` 运行类型检查、lint、单元测试和构建；`npm run e2e` 用真实 v2-server 与 PostgreSQL 跑建任务、指派、推进、评论、看板，以及建队、增删成员、归档流程；设了 `V2_NODE_ASSETS_DIR` 时另跑真实 Agent 执行任务、另一个成员旁观与评论、发起人追问和停止，并通过 `E2E_DATABASE_URL` 与 `PW_CHROMIUM_PATH` 指定数据库和浏览器。

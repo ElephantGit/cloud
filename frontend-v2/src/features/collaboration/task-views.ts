@@ -1,4 +1,4 @@
-import { taskActions, taskStatusLabel } from './task-model'
+import { isTaskFinished, taskActions, taskStatusLabel } from './task-model'
 import type { Task } from './tasks-api/generated'
 
 /** The task scopes the sidebar offers; each one is a filter over the same team-wide list. */
@@ -32,6 +32,26 @@ export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?:
     default:
       return scoped
   }
+}
+
+/** Whether 「拆分」 applies: a big requirement still open, not a subtask. */
+export const canDecompose = (task: Task): boolean => !task.parentId && !isTaskFinished(task.status)
+
+/**
+ * A card's family line, by task id: a subtask names the requirement it was split from, and a
+ * requirement counts its subtasks. Read from the whole team list, so a filtered view still names a
+ * parent it does not show.
+ */
+export function familyLabels(all: Task[]): ReadonlyMap<string, string> {
+  const titles = new Map(all.map(t => [t.id, t.title]))
+  const counts = new Map<string, number>()
+  for (const t of all) if (t.parentId) counts.set(t.parentId, (counts.get(t.parentId) ?? 0) + 1)
+  const out = new Map<string, string>()
+  for (const t of all) {
+    if (t.parentId) out.set(t.id, `拆分自 ${titles.get(t.parentId) ?? '大需求'}`)
+    else if (counts.has(t.id)) out.set(t.id, `${counts.get(t.id)} 个子任务`)
+  }
+  return out
 }
 
 /** The board's columns in lifecycle order; cancelled work is hidden unless asked for. */

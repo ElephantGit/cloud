@@ -5,8 +5,9 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
 import type { CollaborationTarget, User } from '@/api/generated.schemas'
+import * as workflowsApi from '@/lib/workflows/api/generated'
 import * as api from './tasks-api/generated'
-import type { Task, TaskRun, TaskTimeline } from './tasks-api/generated'
+import type { Task, TaskDecomposition, TaskRun, TaskTimeline } from './tasks-api/generated'
 import TaskPage from './task-page'
 
 const targets = vi.hoisted(() => ({ items: [] as CollaborationTarget[] }))
@@ -24,7 +25,9 @@ vi.mock('./run-session', () => ({ useRunSession: () => ({ conversation: null, re
 vi.mock('./tasks-api/generated', () => ({
   getTask: vi.fn(), getTaskTimeline: vi.fn(), listTaskExecutors: vi.fn(), startTaskRun: vi.fn(), stopTaskRun: vi.fn(),
   createTaskComment: vi.fn(), setTaskStatus: vi.fn(), setTaskAssignee: vi.fn(), updateTask: vi.fn(),
+  listTasks: vi.fn(), listTaskDecompositions: vi.fn(), startTaskDecomposition: vi.fn(),
 }))
+vi.mock('@/lib/workflows/api/generated', () => ({ listWorkflows: vi.fn() }))
 
 const me: User = { id: 'user-me', displayName: '演示用户', status: 'active', version: 1, createdAt: '2026-10-01T00:00:00Z', deletedAt: null }
 const agent = { type: 'agent' as const, id: 'agent-1', displayName: 'Claude Code', identifier: 'official/ora-space.claude' }
@@ -49,6 +52,8 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   vi.clearAllMocks()
   targets.items = [
     { type: 'user', id: 'user-2', displayName: '鲍勃', description: '工作区成员', interactionDescriptor: { mode: 'mention', requiresTask: false, formRef: null } },
@@ -56,6 +61,8 @@ beforeEach(() => {
   ]
   vi.mocked(api.getTask).mockResolvedValue(task())
   vi.mocked(api.getTaskTimeline).mockResolvedValue(empty)
+  vi.mocked(api.listTasks).mockResolvedValue({ items: [], nextCursor: '' })
+  vi.mocked(api.listTaskDecompositions).mockResolvedValue({ items: [] })
   vi.mocked(api.listTaskExecutors).mockResolvedValue({ items: [
     { id: 'claude:fixture', name: 'Claude Code / Fixture', agentId: 'official/ora-space.claude', agentName: 'Claude Code', modelId: 'messages-fixture', modelName: 'Fixture' },
     { id: 'claude:configured', name: 'Claude Code / Sonnet', agentId: 'official/ora-space.claude', agentName: 'Claude Code', modelId: 'messages-configured', modelName: 'Sonnet' },
@@ -148,4 +155,67 @@ it('says why a refused start failed instead of retrying', async () => {
   renderPage()
   await userEvent.click(await screen.findByRole('button', { name: '开始处理' }))
   expect(await screen.findByText('Agent 正在执行，等这一轮结束或先停止。')).toBeInTheDocument()
+})
+
+const decomposition = (overrides: Partial<TaskDecomposition> = {}): TaskDecomposition => ({
+  id: 'split-1', taskId: 'task-1', startedBy: 'user-me', startedByName: '演示用户', workflowId: 'wf-split', workflowName: '需求拆分',
+  workflowRunId: 'wr-1', status: 'running', failure: '', createdCount: 0, createdAt: '2026-11-03T01:00:00Z', finishedAt: null, ...overrides,
+})
+const requirement = task({ title: '账号体系', description: '登录、注册和找回密码', assignee: null })
+
+it('splits a requirement with the 需求拆分 workflow and lists the subtasks it wrote', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(requirement)
+  vi.mocked(workflowsApi.listWorkflows).mockResolvedValue({ workflows: [
+    { id: 'wf-daily', namespace: 'local', name: '每日巡检', publishedVersion: 'v2', createdAt: 0, updatedAt: 0 },
+    { id: 'wf-draft', namespace: 'local', name: '草稿', publishedVersion: null, createdAt: 0, updatedAt: 0 },
+    { id: 'wf-split', namespace: 'local', name: '需求拆分', publishedVersion: 'v1', createdAt: 0, updatedAt: 0 },
+  ] })
+  let started = false
+  vi.mocked(api.startTaskDecomposition).mockImplementation(async () => { started = true; return decomposition() })
+  vi.mocked(api.listTaskDecompositions).mockImplementation(async () => ({ items: started ? [decomposition({ status: 'succeeded', createdCount: 2 })] : [] }))
+  vi.mocked(api.listTasks).mockImplementation(async () => ({ nextCursor: '', items: started ? [
+    requirement,
+    task({ id: 'sub-1', title: '登录页', parentId: 'task-1', assignee: null, createdAt: '2026-11-03T01:00:02Z' }),
+    task({ id: 'sub-2', title: '注册页', parentId: 'task-1', assignee: null, createdAt: '2026-11-03T01:00:01Z' }),
+  ] : [requirement] }))
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '拆分' }))
+  const dialog = await screen.findByRole('dialog')
+  // Only published workflows run; the demo's 需求拆分 is picked for the Tech Lead.
+  await waitFor(() => expect(within(dialog).getByLabelText('工作流')).toHaveValue('wf-split'))
+  expect(within(dialog).queryByRole('option', { name: /草稿/ })).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole('button', { name: '开始拆分' }))
+  await waitFor(() => expect(api.startTaskDecomposition).toHaveBeenCalledWith('tenant', 'task-1', { workflowId: 'wf-split' },
+    expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } })))
+  expect(await screen.findByText(/「需求拆分」拆出了 2 个子任务/)).toBeInTheDocument()
+  const subtasks = await screen.findByRole('list', { name: '子任务' })
+  expect(within(subtasks).getAllByRole('link').map(a => a.textContent)).toEqual(['登录页', '注册页'])
+})
+
+it('shows a running split and holds the button', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(requirement)
+  vi.mocked(api.listTaskDecompositions).mockResolvedValue({ items: [decomposition()] })
+  renderPage()
+  expect(await screen.findByText(/正在用「需求拆分」拆分/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '拆分中…' })).toBeDisabled()
+})
+
+it('explains a failed split and offers to split again', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(requirement)
+  vi.mocked(api.listTaskDecompositions).mockResolvedValue({ items: [decomposition({ status: 'failed', failure: '工作流的输出里没有 tasks 数组。' })] })
+  vi.mocked(workflowsApi.listWorkflows).mockResolvedValue({ workflows: [] })
+  renderPage()
+  expect(await screen.findByRole('alert')).toHaveTextContent('拆分失败：工作流的输出里没有 tasks 数组。')
+  await userEvent.click(screen.getByRole('button', { name: '重新拆分' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(await within(dialog).findByText('工作区还没有已发布的工作流，先在工作流页发布一个。')).toBeInTheDocument()
+  expect(within(dialog).getByRole('button', { name: '开始拆分' })).toBeDisabled()
+})
+
+it('names the requirement a subtask came from and offers no split', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(task({ id: 'task-1', parentId: 'parent-1' }))
+  vi.mocked(api.listTasks).mockResolvedValue({ nextCursor: '', items: [task({ id: 'parent-1', title: '账号体系' })] })
+  renderPage()
+  expect(await screen.findByRole('link', { name: '账号体系' })).toHaveAttribute('href', '/collaboration/tasks/parent-1')
+  expect(screen.queryByRole('button', { name: '拆分' })).not.toBeInTheDocument()
 })

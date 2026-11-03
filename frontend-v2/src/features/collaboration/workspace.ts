@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { isAgentRunning } from './task-views'
-import { listPendingMentions, listTasks, type PendingMention } from './tasks-api/generated'
+import { listPendingMentions, listTaskDecompositions, listTasks, type PendingMention } from './tasks-api/generated'
 
 /** The caller's workspace: v2 signs everyone into one team, so it is the first membership. */
 export function useWorkspace() {
@@ -38,4 +38,25 @@ export function usePendingMentions(tenantId: string): ReadonlyMap<string, Pendin
   })
   const items = query.data?.items
   return useMemo(() => new Map((items ?? []).map(m => [m.taskId, m])), [items])
+}
+
+/**
+ * The task's decompositions, newest first. Nothing pushes a run's end, so the list is read again
+ * every two seconds while one runs; when it settles the team's task list is read again too, which
+ * is how the new subtasks reach the board.
+ */
+export function useDecompositions(tenantId: string, taskId: string) {
+  const client = useQueryClient()
+  const query = useQuery({
+    queryKey: ['task-decompositions', tenantId, taskId],
+    queryFn: () => listTaskDecompositions(tenantId, taskId),
+    enabled: !!tenantId && !!taskId,
+    refetchInterval: q => (q.state.data?.items[0]?.status === 'running' ? 2000 : false),
+  })
+  const latest = query.data?.items[0]
+  const settled = latest ? `${latest.id}:${latest.status}` : ''
+  useEffect(() => {
+    if (settled) void client.invalidateQueries({ queryKey: ['tasks', tenantId] })
+  }, [settled, client, tenantId])
+  return { latest, isError: query.isError }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ClipboardList, LayoutList, Plus, SquareKanban } from 'lucide-react'
@@ -13,7 +13,7 @@ import { PanelDialog } from './panel-dialog'
 import { TaskForm, type TaskDraft } from './task-form'
 import { TaskBoardColumns, TaskRows } from './task-list'
 import { boardMoveMessageFor, taskMessageFor } from './task-model'
-import { filterTasks, TASK_VIEWS, viewOf } from './task-views'
+import { familyLabels, filterTasks, TASK_VIEWS, viewOf } from './task-views'
 import { createTask, setTaskStatus, type Task, type TaskList, type TaskStatusProperty } from './tasks-api/generated'
 import { usePendingMentions, useTaskList, useWorkspace } from './workspace'
 
@@ -39,6 +39,7 @@ export default function TasksPage() {
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
   const squad = squads.data?.items.find(s => s.id === squadId)
   const items = filterTasks(list.data?.items ?? [], view, me.id, squadId, new Set(mentions.keys()))
+  const families = useMemo(() => familyLabels(list.data?.items ?? []), [list.data])
   const projectList = projects.data?.items ?? []
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -105,9 +106,9 @@ export default function TasksPage() {
         ? <p role="alert">任务加载失败，请刷新重试。</p>
         : items.length || layout === 'board'
           ? layout === 'board'
-            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} showCancelled={showCancelled} onOpen={open}
+            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} families={families} showCancelled={showCancelled} onOpen={open}
               onMove={(task, status) => move.mutate({ task, status: status as TaskStatusProperty })} onRefuse={setNotice} />
-            : <TaskRows tasks={items} projects={projectList} mentions={mentions} onOpen={open} />
+            : <TaskRows tasks={items} projects={projectList} mentions={mentions} families={families} onOpen={open} />
           : <Empty className="min-h-56 border">
             <EmptyHeader><EmptyMedia variant="icon"><ClipboardList /></EmptyMedia>
               <EmptyTitle>{view === 'all' && !squad ? '还没有任务' : '这里还没有任务'}</EmptyTitle>

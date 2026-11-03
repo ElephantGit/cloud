@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './tasks-api/generated'
-import { agentReach, boardDraggable, boardMove, filterTasks, viewOf } from './task-views'
+import { agentReach, boardDraggable, boardMove, canDecompose, familyLabels, filterTasks, viewOf } from './task-views'
 
 const task = (overrides: Partial<Task>): Task => ({
   id: 'task', tenantId: 'tenant', title: '任务', description: '', projectId: 'project', assignee: null, status: 'pending',
@@ -71,5 +71,13 @@ describe('who may send the Agent a turn', () => {
     expect(boardMove(idle, 'review').ok).toBe(true)
     expect(boardDraggable(task({ status: 'done' })).ok).toBe(false)
   })
-})
 
+  it('names a subtask\'s requirement and counts a requirement\'s subtasks', () => {
+    const parent = task({ id: 'parent', title: '账号体系' })
+    const labels = familyLabels([parent, task({ id: 'a', parentId: 'parent' }), task({ id: 'b', parentId: 'parent' }), task({ id: 'c', parentId: 'gone' }), task({ id: 'd' })])
+    expect(Object.fromEntries(labels)).toEqual({ parent: '2 个子任务', a: '拆分自 账号体系', b: '拆分自 账号体系', c: '拆分自 大需求' })
+    expect(canDecompose(parent)).toBe(true)
+    expect(canDecompose(task({ parentId: 'parent' }))).toBe(false)
+    expect(canDecompose(task({ status: 'done' }))).toBe(false)
+  })
+})

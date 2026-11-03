@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { ChevronLeft, ClipboardList, Pencil } from 'lucide-react'
+import { ChevronLeft, ClipboardList, ListTree, Pencil } from 'lucide-react'
 import { useUser } from '@/app/auth/user'
 import { Button } from '@/components/ui/button'
 import { getApiV2TenantsTidProjects } from '@/lib/projects-api/generated'
@@ -9,6 +9,7 @@ import { listSquads } from './api/generated'
 import { PanelDialog } from './panel-dialog'
 import { RunPane } from './run-pane'
 import { TaskComposer, type CommentDraft } from './task-composer'
+import { DecomposeDialog, TaskFamily } from './task-decomposition'
 import { TaskDetailView } from './task-detail'
 import { TaskDiscussion } from './task-discussion'
 import { TaskForm, type TaskDraft } from './task-form'
@@ -17,7 +18,8 @@ import {
   createTaskComment, getTask, getTaskTimeline, listTaskExecutors, setTaskAssignee, setTaskStatus, startTaskRun, stopTaskRun, updateTask,
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
 } from './tasks-api/generated'
-import { useWorkspace } from './workspace'
+import { canDecompose } from './task-views'
+import { useDecompositions, useWorkspace } from './workspace'
 
 /** Fresh idempotency key for one submission: a retry of the same click reuses it. */
 const keyed = () => ({ headers: { 'Idempotency-Key': crypto.randomUUID() } })
@@ -38,6 +40,7 @@ export default function TaskPage() {
   const [error, setError] = useState('')
   const [composeError, setComposeError] = useState('')
   const [editing, setEditing] = useState(false)
+  const [decomposing, setDecomposing] = useState(false)
   const [pickedExecutor, setExecutorId] = useState('')
   const live = (task?: Task) => !!task?.activeRun
   const taskQuery = useQuery({
@@ -69,6 +72,8 @@ export default function TaskPage() {
     void client.invalidateQueries({ queryKey: ['task-timeline', tenantId, taskId] })
     void client.invalidateQueries({ queryKey: ['tasks', tenantId] })
   }, [runState, client, tenantId, taskId])
+  const decompositions = useDecompositions(tenantId, taskId)
+  const splitting = decompositions.latest?.status === 'running'
   const runs = timeline.data?.runs ?? []
   const comments = timeline.data?.comments ?? []
   const selected = runs.find(r => r.id === pickedRun) ?? runs.at(-1)
@@ -143,11 +148,14 @@ export default function TaskPage() {
       <Link to="/collaboration" className="mc-back" aria-label="返回任务列表"><ChevronLeft size={16} /></Link>
       <span className={`mc-status ${task.status}`}>{taskStatusLabel(task.status)}</span>
       <h2>{task.title}</h2>
+      {canDecompose(task) && <Button type="button" variant="outline" size="sm" onClick={() => setDecomposing(true)} disabled={splitting}
+        title={splitting ? '正在拆分，跑完后才能再拆' : '用工作流把这个任务拆成子任务'}><ListTree data-icon="inline-start" />{splitting ? '拆分中…' : '拆分'}</Button>}
       <Button type="button" variant="outline" size="sm" onClick={() => { setError(''); setEditing(true) }} disabled={save.isPending}><Pencil data-icon="inline-start" />编辑</Button>
     </header>
     <div className="mc-task-body">
       <section className="mc-task-main-col" aria-label="运行与讨论">
         {task.description && <p className="mc-description">{task.description}</p>}
+        <TaskFamily tenantId={tenantId} task={task} latest={decompositions.latest} onRetry={() => setDecomposing(true)} />
         <div className="mc-tabs" role="tablist" aria-label="任务内容">
           <button type="button" role="tab" aria-selected={tab === 'runs'} onClick={() => showTab('runs')}>Agent 运行 <b>{runs.length}</b></button>
           <button type="button" role="tab" aria-selected={tab === 'discussion'} onClick={() => showTab('discussion')}>讨论 <b>{comments.length}</b></button>
@@ -175,6 +183,8 @@ export default function TaskPage() {
           onAssign={next => { setError(''); assign.mutate({ assignee: next, target: task }) }} />
       </aside>
     </div>
+
+    {decomposing && <DecomposeDialog tenantId={tenantId} task={task} onClose={() => setDecomposing(false)} onStarted={() => setDecomposing(false)} />}
 
     {editing && <PanelDialog icon={<ClipboardList size={14} />} eyebrow="任务" title={`编辑 ${task.title}`} subtitle="修改标题、描述与所属项目；状态与指派有各自的入口。" onClose={() => setEditing(false)}>
       <TaskForm initial={{ title: task.title, description: task.description, projectId: task.projectId }} projects={projectList} projectsLoading={projects.isLoading} submitLabel="保存修改" saving={save.isPending} error={error} onSave={draft => save.mutate({ draft, target: task })} onCancel={() => setEditing(false)} />

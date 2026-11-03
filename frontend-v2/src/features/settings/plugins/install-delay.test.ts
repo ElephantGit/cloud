@@ -11,10 +11,10 @@ afterEach(() => {
 })
 
 describe('install delay', () => {
-  it('maps the random range inclusively from one to five seconds', () => {
+  it('maps the random range inclusively from three to five seconds', () => {
     expect(installDelayMs(() => 0)).toBe(INSTALL_DELAY_MIN_MS)
     expect(installDelayMs(() => 0.999_999)).toBe(INSTALL_DELAY_MAX_MS)
-    expect(installDelayMs(() => 0.5)).toBe(3_000)
+    expect(installDelayMs(() => 0.5)).toBe(4_000)
   })
 
   it('waits for the selected delay', async () => {

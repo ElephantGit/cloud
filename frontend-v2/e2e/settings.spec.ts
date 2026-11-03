@@ -270,12 +270,28 @@ test('Agent cards install and remove while preinstalled Agents run the demo inst
   const opencode = page.getByRole('article', { name: 'OpenCode' })
   const codex = page.getByRole('article', { name: 'Codex' })
   await expect(opencode.getByText('运行时预装')).toBeVisible()
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toHaveCount(0)
   await expect(opencode.getByRole('button', { name: '移除' })).toHaveCount(0)
   await opencode.getByRole('button', { name: '安装' }).click()
   await expect(opencode.getByText('安装中', { exact: true })).toBeVisible()
   await expect(opencode.getByText('安装中', { exact: true })).toHaveCount(0, {
     timeout: 15_000,
   })
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    opencode.getByRole('button', { name: '安装' }),
+  ).toHaveCount(0)
+  await page.reload()
+  await expect(
+    opencode.getByText('已安装', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    opencode.getByRole('button', { name: '安装' }),
+  ).toHaveCount(0)
   await expect(
     page
       .getByRole('article', { name: 'Claude Code' })

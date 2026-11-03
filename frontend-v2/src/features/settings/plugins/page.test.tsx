@@ -205,6 +205,9 @@ it('lets a runtime-preinstalled Agent use the demo install flow', async () => {
   renderSettingsPage(<PluginsPage />)
   const row = await screen.findByRole('article', { name: 'OpenCode' })
   expect(within(row).getByText('运行时预装')).toBeInTheDocument()
+  expect(
+    within(row).queryByText('已安装', { exact: true }),
+  ).not.toBeInTheDocument()
   const installButton = within(row).getByRole('button', { name: '安装' })
   expect(installButton).toBeEnabled()
   expect(within(row).queryByRole('button', { name: '移除' })).not.toBeInTheDocument()
@@ -214,7 +217,10 @@ it('lets a runtime-preinstalled Agent use the demo install flow', async () => {
     within(row).getByRole('button', { name: '安装中…' }),
   ).toBeDisabled()
   expect(await within(row).findByText('已安装', { exact: true })).toBeInTheDocument()
-  expect(within(row).getByRole('button', { name: '安装' })).toBeEnabled()
+  expect(within(row).queryByRole('button', { name: '安装' })).not.toBeInTheDocument()
+  expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
+    'official/ora-space.opencode',
+  )
   expect(backend.bodies).toHaveLength(0)
 })
 

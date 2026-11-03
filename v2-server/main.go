@@ -136,6 +136,8 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 				skills[i] = agentruntime.UserSkill{Name: item.Name, Description: item.Description, Content: item.Content}
 			}
 			return skills, nil
+		}, RecordWorkspace: func(c context.Context, id string, at agentruntime.Checkout) error {
+			return db.RecordWorkspace(c, id, store.WorkspaceLocation{Path: at.Path, BaseCommit: at.BaseCommit})
 		}})
 		if e != nil {
 			return e

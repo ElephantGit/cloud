@@ -43,6 +43,15 @@ type Options struct {
 	ResolveProject  func(context.Context, execution.Scope, string) (Project, error)
 	// UserSkills returns the caller's live skill catalog. Nil skips user-skill projection.
 	UserSkills func(context.Context, execution.Scope) ([]UserSkill, error)
+	// RecordWorkspace remembers where a workspace's checkout is, once it is ready and before the
+	// Agent starts, so pages can read its files later. Nil records nothing.
+	RecordWorkspace func(ctx context.Context, workspaceID string, checkout Checkout) error
+}
+
+// Checkout is a workspace's directory on this host and the commit it was cloned at.
+type Checkout struct {
+	Path       string
+	BaseCommit string
 }
 
 // Emit retains an event before its source Node envelope can be acknowledged. It must honor ctx.

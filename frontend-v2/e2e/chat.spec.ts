@@ -186,3 +186,23 @@ test('chat: creates a project from a public repository and starts the new chat i
   await expect(page.getByRole('button', { name: '选择项目' })).toHaveText(name)
   expect(await backendProjects(page)).toContain(name)
 })
+
+test('chat: creates a project from the history column and opens a new chat in it', async ({ page }) => {
+  test.setTimeout(150_000)
+  await page.goto('/chat')
+  await signIn(page)
+  await expect(page.getByRole('heading', { name: '今天想构建什么？' })).toBeVisible()
+  const name = `Hello-World ${Date.now()}`
+
+  await page.getByRole('complementary', { name: '聊天记录' }).getByRole('button', { name: '新建项目' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建项目' })
+  await dialog.getByLabel('仓库地址').fill('https://github.com/octocat/Hello-World.git')
+  await dialog.getByLabel('默认分支').fill('master')
+  await dialog.getByLabel('项目名').fill(name)
+  await dialog.getByRole('button', { name: '新建项目' }).click()
+  await expect(dialog).toBeHidden({ timeout: 120_000 })
+  await expect(page.getByRole('region', { name: `项目 ${name}` })).toBeVisible()
+  await expect(page.getByRole('button', { name: '选择项目' })).toHaveText(name)
+  await expect(page.getByRole('textbox', { name: '消息' })).toBeFocused()
+  expect(await backendProjects(page)).toContain(name)
+})

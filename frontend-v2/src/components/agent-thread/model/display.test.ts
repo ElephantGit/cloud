@@ -87,6 +87,11 @@ describe('file changes', () => {
     ])
   })
 
+  it('shows an Agent checkout path relative to the checkout', () => {
+    const t = turn(tool('abs', 'edit', { content: [{ type: 'diff', path: '/home/u/.ora-v2/nodes/36e9/w/r/a6da-71d1/src/a.ts', oldText: 'x\n', newText: 'y\n' }] }))
+    expect(turnFileChanges(t).map((c) => c.path)).toEqual(['src/a.ts'])
+  })
+
   it('treats lines as a multiset', () => {
     expect(countLines('a\na\nb', 'a\nb\nb')).toEqual({ added: 1, removed: 1 })
   })

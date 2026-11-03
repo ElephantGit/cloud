@@ -440,6 +440,12 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 				entry.err = err
 				return
 			}
+			if record := p.driver.opts.RecordWorkspace; record != nil {
+				if err := record(ctx, workspace, Checkout{Path: path, BaseCommit: config.Commit}); err != nil {
+					entry.err = err
+					return
+				}
+			}
 			entry.path = path
 		}()
 	}

@@ -83,6 +83,8 @@ func (p *projectRuntime) projectSkills(checkouts []string, old, next []skillLink
 		return nil
 	}
 	var changes []linkChange
+	// Every checkout's links this service owns after the change, to keep out of Git.
+	owned := map[*os.Root][]string{}
 	for _, checkout := range checkouts {
 		root, e := os.OpenRoot(checkout)
 		if e != nil {
@@ -117,6 +119,9 @@ func (p *projectRuntime) projectSkills(checkouts []string, old, next []skillLink
 				if target != after[n] {
 					changes = append(changes, linkChange{root, name, target, after[n]})
 				}
+				if after[n] != "" {
+					owned[root] = append(owned[root], name)
+				}
 			}
 		}
 	}
@@ -130,6 +135,12 @@ func (p *projectRuntime) projectSkills(checkouts []string, old, next []skillLink
 			if e := c.root.Symlink(c.new, c.name); e != nil {
 				return e
 			}
+		}
+	}
+	for root, names := range owned {
+		sort.Strings(names)
+		if e := excludeFromGit(root, names); e != nil {
+			return e
 		}
 	}
 	return nil

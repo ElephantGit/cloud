@@ -588,3 +588,14 @@ CREATE TABLE IF NOT EXISTS v2_task_decompositions (
 	CHECK (status IN ('running', 'succeeded', 'failed'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS v2_task_decompositions_live ON v2_task_decompositions (task_id) WHERE status = 'running';
+
+-- Where each execution workspace's checkout lives on this host and the commit it was cloned at,
+-- recorded by the Agent runtime once the checkout is ready, so pages can still show its files after
+-- the session ends or the server restarts. id is execution.Session.WorkspaceID; sessions of one
+-- workflow run share it. The directory may since have been removed (`-cleanup`); readers check.
+CREATE TABLE IF NOT EXISTS v2_workspaces (
+	id          text PRIMARY KEY,
+	path        text NOT NULL,
+	base_commit text NOT NULL,
+	created_at  timestamptz NOT NULL DEFAULT now()
+);

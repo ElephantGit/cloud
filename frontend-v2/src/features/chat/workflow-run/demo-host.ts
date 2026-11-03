@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { localizeContractError } from '@/lib/workflows/host/contract-error'
 import { toast } from '@/lib/workflows/host/ui'
 import { useChatStore } from '../store'
+import { useWorkspaceNavigation } from '@/components/workspace-panel/navigation'
 import { updateRunInput } from './server-runs'
 
 // The desktop hooks the copied Theater components call, over v2-server's run API. Each keeps
@@ -66,9 +67,9 @@ export function useWorkspaceSelectionStore<T>(selector: (state: DemoSelection) =
   return selector({ selection: { workflowRunId: null } })
 }
 
-/** The run's file changes would open the review pane, which the chat page does not have. */
+/** The run's file changes open the run's workspace panel on that file's diff, as desktop's review pane. */
 export function useTaskChangesNavigation(): { openDiff: (path: string) => void } | null {
-  return null
+  return useWorkspaceNavigation()
 }
 
 /** Shows an Agent's absolute worktree path relative to the worktree, as desktop's diff list does. */

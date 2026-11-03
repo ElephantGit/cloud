@@ -1,5 +1,5 @@
 import { SquarePenIcon } from 'lucide-react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import { useGetApiV1MeTenants } from '@/api/me/me'
 import { useUser } from '@/app/auth/user'
@@ -15,6 +15,11 @@ import { SandboxLabel } from './components/sandbox-label'
 import { ContextUsage, LandingHeading, Thread } from '@/components/agent-thread/thread'
 import { isResponding } from '@/components/agent-thread/model/conversation'
 import { emptyConversation, type PluginRef } from '@/components/agent-thread/model/types'
+import { WorkspacePanel, WorkspaceToggle } from '@/components/workspace-panel/workspace-panel'
+import { WorkspaceNavigationProvider } from '@/components/workspace-panel/navigation'
+import { WorkspaceSplit } from '@/components/workspace-panel/workspace-split'
+import { conversationRevision } from '@/components/workspace-panel/revision'
+import { useWorkspacePanel } from '@/components/workspace-panel/use-panel'
 import { type Agent, agentsOf, emptyDraft, isEnded, newChatKey, type Session, useChatStore } from './store'
 
 /** The run view brings the graph canvas, so it loads only once a run is opened. */
@@ -88,11 +93,33 @@ export default function Page() {
           </Suspense>
         </section>
       ) : (
-        <section className="flex min-w-0 flex-1 flex-col" aria-label="会话">
-          <ChatPane session={session} />
-        </section>
+        <ChatWithWorkspace session={session} tenantId={tenantId} />
       )}
     </div>
+  )
+}
+
+/**
+ * The chat and, for a conversation the backend runs, the side panel with its checkout. The panel
+ * remembers whether it was open, and a turn's changed file opens it on that file's diff.
+ */
+function ChatWithWorkspace({ session, tenantId }: { session?: Session; tenantId: string }) {
+  const panel = useWorkspacePanel()
+  const conversationId = session?.remote ? session.id : undefined
+  const source = useMemo(() => (conversationId ? { kind: 'chat' as const, tenantId, conversationId } : undefined), [conversationId, tenantId])
+  const revision = useChatStore((s) => (conversationId && s.conversations[conversationId] ? conversationRevision(s.conversations[conversationId]) : ''))
+  const shown = source !== undefined && panel.open
+  return (
+    <WorkspaceNavigationProvider value={source ? panel.navigation : null}>
+      <WorkspaceSplit
+        id="chat"
+        panel={shown && <WorkspacePanel key={source.conversationId} source={source} revision={revision} request={panel.request} onClose={() => panel.setOpen(false)} />}
+      >
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="会话">
+          <ChatPane session={session} workspace={source ? { open: panel.open, toggle: () => panel.setOpen(!panel.open) } : undefined} />
+        </section>
+      </WorkspaceSplit>
+    </WorkspaceNavigationProvider>
   )
 }
 
@@ -101,7 +128,7 @@ export default function Page() {
  * first prompt creates its session. Until a chat has a prompt its heading and input sit together
  * in the middle of the page, as in desktop; the first prompt slides the input to the bottom.
  */
-function ChatPane({ session }: { session?: Session }) {
+function ChatPane({ session, workspace }: { session?: Session; workspace?: { open: boolean; toggle: () => void } }) {
   const key = session?.id ?? newChatKey
   const conversation = useChatStore((s) => (session && s.conversations[session.id]) || emptyConversation)
   const draft = useChatStore((s) => s.drafts[key] ?? emptyDraft)
@@ -142,6 +169,7 @@ function ChatPane({ session }: { session?: Session }) {
         {session && <SandboxLabel />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <ContextUsage conversation={conversation} />
+          {workspace && <WorkspaceToggle {...workspace} />}
         </div>
       </header>
       <main className={cn('flex min-h-0 flex-1 flex-col', landing && ['overflow-y-auto', subtleScrollbar])}>

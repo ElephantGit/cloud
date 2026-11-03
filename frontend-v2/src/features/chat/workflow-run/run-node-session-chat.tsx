@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GraphWorkflowNodeStatus, WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
-import { Thread } from '../components/thread'
+import { Thread } from '@/components/agent-thread/thread'
 import { useChatStore } from '../store'
 import { nodeConversationTurns } from './conversation-turns'
 import { useNodeSession } from './node-session'

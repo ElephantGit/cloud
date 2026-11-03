@@ -3,9 +3,9 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import type { SidebarLayout } from '@/components/sidebar-resize-handle'
 import type { ChatConversation, ChatEvent, ChatExecutor } from './api/generated'
 import type { CreateProject } from '@/lib/projects-api/generated'
-import { applyEvent, isResponding } from './model/conversation'
-import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from './model/history'
-import { type Attachment, type Conversation, emptyConversation, type PluginRef } from './model/types'
+import { applyEvent, isResponding } from '@/components/agent-thread/model/conversation'
+import { applySessionEvent, conversationOf, emptySessionView, type SessionView } from '@/components/agent-thread/model/history'
+import { type Attachment, type Conversation, emptyConversation, type PluginRef } from '@/components/agent-thread/model/types'
 import { type Failure, failureOf, projectFailureOf, remote, type RemoteState } from './remote'
 
 /**

@@ -77,6 +77,27 @@ export const TaskStatusProperty = {
   cancelled: 'cancelled',
 } as const;
 
+/**
+ * running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns.
+ */
+export type TaskRunSummaryState = typeof TaskRunSummaryState[keyof typeof TaskRunSummaryState];
+
+
+export const TaskRunSummaryState = {
+  running: 'running',
+  idle: 'idle',
+  ended: 'ended',
+} as const;
+
+export interface TaskRunSummary {
+  id: string;
+  /** running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns. */
+  state: TaskRunSummaryState;
+  startedBy: string;
+  startedByName: string;
+  executorName: string;
+}
+
 export interface Task {
   id: string;
   tenantId: string;
@@ -91,6 +112,8 @@ export interface Task {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** The task's live Agent run; null when none is live. */
+  activeRun: TaskRunSummary | null;
 }
 
 export interface TaskList {
@@ -153,6 +176,171 @@ export interface TaskAssignment {
   /** @minimum 1 */
   version: number;
 }
+
+/**
+ * running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns.
+ */
+export type TaskRunState = typeof TaskRunState[keyof typeof TaskRunState];
+
+
+export const TaskRunState = {
+  running: 'running',
+  idle: 'idle',
+  ended: 'ended',
+} as const;
+
+/**
+ * The latest ended turn's status; empty while the first turn runs.
+ */
+export type TaskRunLastResult = typeof TaskRunLastResult[keyof typeof TaskRunLastResult];
+
+
+export const TaskRunLastResult = {
+  '': '',
+  completed: 'completed',
+  cancelled: 'cancelled',
+  failed: 'failed',
+  interrupted: 'interrupted',
+} as const;
+
+/**
+ * Why the session ended: a person stopped it, a rerun replaced it, the task was closed, or the server restarted.
+ */
+export type TaskRunEndReason = typeof TaskRunEndReason[keyof typeof TaskRunEndReason];
+
+
+export const TaskRunEndReason = {
+  '': '',
+  stopped: 'stopped',
+  replaced: 'replaced',
+  closed: 'closed',
+  interrupted: 'interrupted',
+} as const;
+
+/**
+ * One execution session of the task's Agent. The whole workspace reads it; only startedBy can send it another turn.
+ */
+export interface TaskRun {
+  id: string;
+  taskId: string;
+  startedBy: string;
+  startedByName: string;
+  executorId: string;
+  executorName: string;
+  /** running: a turn runs; idle: the session waits for the starter's next turn; ended: it takes no more turns. */
+  state: TaskRunState;
+  /** The latest ended turn's status; empty while the first turn runs. */
+  lastResult: TaskRunLastResult;
+  failureCode: string;
+  /** Why the session ended: a person stopped it, a rerun replaced it, the task was closed, or the server restarted. */
+  endReason: TaskRunEndReason;
+  createdAt: string;
+  /** @nullable */
+  endedAt: string | null;
+}
+
+export type TaskMentionType = typeof TaskMentionType[keyof typeof TaskMentionType];
+
+
+export const TaskMentionType = {
+  user: 'user',
+  agent: 'agent',
+} as const;
+
+export interface TaskMention {
+  type: TaskMentionType;
+  id: string;
+  displayName: string;
+}
+
+export type TaskMentionRefType = typeof TaskMentionRefType[keyof typeof TaskMentionRefType];
+
+
+export const TaskMentionRefType = {
+  user: 'user',
+  agent: 'agent',
+} as const;
+
+export interface TaskMentionRef {
+  type: TaskMentionRefType;
+  id: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  mentions: TaskMention[];
+  /** The run the comment was sent to as a turn; empty for a plain comment. */
+  runId: string;
+  createdAt: string;
+}
+
+export interface TaskTimeline {
+  runs: TaskRun[];
+  comments: TaskComment[];
+}
+
+export interface TaskExecutor {
+  id: string;
+  name: string;
+  agentId: string;
+  agentName: string;
+  modelId: string;
+  modelName: string;
+}
+
+export interface TaskExecutorList {
+  items: TaskExecutor[];
+}
+
+export interface TaskRunStart {
+  /**
+     * Empty for the Agent's default executor.
+     * @maxLength 200
+     */
+  executorId?: string;
+  /**
+     * Added to the task's brief.
+     * @maxLength 4000
+     */
+  note?: string;
+}
+
+export interface TaskCommentCreate {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  body: string;
+  /** @maxItems 20 */
+  mentions?: TaskMentionRef[];
+  /** Send the comment to the task's Agent: the caller's own live run, or a new run when none is live. */
+  toAgent?: boolean;
+  /** @maxLength 200 */
+  executorId?: string;
+}
+
+export interface PendingMention {
+  taskId: string;
+  commentId: string;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+}
+
+export interface PendingMentionList {
+  items: PendingMention[];
+}
+
+export type StreamTaskRunEventsParams = {
+/**
+ * Resume after this sequence; Last-Event-ID takes precedence.
+ */
+after?: string;
+};
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
@@ -608,3 +796,604 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getSetTaskAssigneeMutationOptions(options), queryClient);
     }
+
+export const getTaskTimeline = (
+    tid: string,
+    taskid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskTimeline>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/timeline`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetTaskTimelineQueryKey = (tid: string,
+    taskid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/tasks/${taskid}/timeline`
+    ] as const;
+    }
+
+
+export const getGetTaskTimelineQueryOptions = <TData = Awaited<ReturnType<typeof getTaskTimeline>>, TError = ErrorType<TaskError>>(tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTaskTimelineQueryKey(tid,taskid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTaskTimeline>>> = ({ signal }) => getTaskTimeline(tid,taskid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && taskid !== null && taskid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTaskTimelineQueryResult = NonNullable<Awaited<ReturnType<typeof getTaskTimeline>>>
+export type GetTaskTimelineQueryError = ErrorType<TaskError>
+
+
+export function useGetTaskTimeline<TData = Awaited<ReturnType<typeof getTaskTimeline>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTaskTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof getTaskTimeline>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTaskTimeline<TData = Awaited<ReturnType<typeof getTaskTimeline>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTaskTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof getTaskTimeline>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTaskTimeline<TData = Awaited<ReturnType<typeof getTaskTimeline>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetTaskTimeline<TData = Awaited<ReturnType<typeof getTaskTimeline>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTaskTimeline>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetTaskTimelineQueryOptions(tid,taskid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * @summary The executors that can run the task's Agent
+ */
+export const listTaskExecutors = (
+    tid: string,
+    taskid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskExecutorList>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/executors`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListTaskExecutorsQueryKey = (tid: string,
+    taskid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/tasks/${taskid}/executors`
+    ] as const;
+    }
+
+
+export const getListTaskExecutorsQueryOptions = <TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTaskExecutorsQueryKey(tid,taskid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaskExecutors>>> = ({ signal }) => listTaskExecutors(tid,taskid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && taskid !== null && taskid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTaskExecutorsQueryResult = NonNullable<Awaited<ReturnType<typeof listTaskExecutors>>>
+export type ListTaskExecutorsQueryError = ErrorType<TaskError>
+
+
+export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskExecutors>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskExecutors>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskExecutors>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskExecutors>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The executors that can run the task's Agent
+ */
+
+export function useListTaskExecutors<TData = Awaited<ReturnType<typeof listTaskExecutors>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskExecutors>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTaskExecutorsQueryOptions(tid,taskid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * @summary Start a run of the task's Agent under the caller's identity
+ */
+export const startTaskRun = (
+    tid: string,
+    taskid: string,
+    taskRunStart: BodyType<TaskRunStart>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskRun>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/runs`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: taskRunStart, signal
+    },
+      options);
+    }
+
+
+
+
+export const getStartTaskRunMutationKey = () => ['startTaskRun'] as const;
+
+export const getStartTaskRunMutationOptions = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startTaskRun>>, TError,StartTaskRunMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof startTaskRun>>, TError,StartTaskRunMutationVariables, TContext> => {
+
+const mutationKey = getStartTaskRunMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startTaskRun>>, StartTaskRunMutationVariables> = (props) => {
+          const {tid,taskid,data} = props ?? {};
+
+          return  startTaskRun(tid,taskid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartTaskRunMutationResult = NonNullable<Awaited<ReturnType<typeof startTaskRun>>>
+    export type StartTaskRunMutationBody = BodyType<TaskRunStart>
+    export type StartTaskRunMutationError = ErrorType<TaskError>
+    export type StartTaskRunMutationVariables = {tid: string;taskid: string;data: BodyType<TaskRunStart>}
+
+    /**
+ * @summary Start a run of the task's Agent under the caller's identity
+ */
+export const useStartTaskRun = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startTaskRun>>, TError,StartTaskRunMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startTaskRun>>,
+        TError,
+        StartTaskRunMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartTaskRunMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary End a live run; a running turn is cancelled
+ */
+export const stopTaskRun = (
+    tid: string,
+    taskid: string,
+    rid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskRun>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/runs/${rid}/stop`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getStopTaskRunMutationKey = () => ['stopTaskRun'] as const;
+
+export const getStopTaskRunMutationOptions = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopTaskRun>>, TError,StopTaskRunMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopTaskRun>>, TError,StopTaskRunMutationVariables, TContext> => {
+
+const mutationKey = getStopTaskRunMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopTaskRun>>, StopTaskRunMutationVariables> = (props) => {
+          const {tid,taskid,rid} = props ?? {};
+
+          return  stopTaskRun(tid,taskid,rid,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopTaskRunMutationResult = NonNullable<Awaited<ReturnType<typeof stopTaskRun>>>
+
+    export type StopTaskRunMutationError = ErrorType<TaskError>
+    export type StopTaskRunMutationVariables = {tid: string;taskid: string;rid: string}
+
+    /**
+ * @summary End a live run; a running turn is cancelled
+ */
+export const useStopTaskRun = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopTaskRun>>, TError,StopTaskRunMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof stopTaskRun>>,
+        TError,
+        StopTaskRunMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStopTaskRunMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Follow the run's session events as Server-Sent Events
+ */
+export const streamTaskRunEvents = (
+    tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<string>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/runs/${rid}/events`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getStreamTaskRunEventsQueryKey = (tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams,) => {
+    return [
+    `/api/v2/tenants/${tid}/tasks/${taskid}/runs/${rid}/events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getStreamTaskRunEventsQueryOptions = <TData = Awaited<ReturnType<typeof streamTaskRunEvents>>, TError = ErrorType<TaskError>>(tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamTaskRunEventsQueryKey(tid,taskid,rid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamTaskRunEvents>>> = ({ signal }) => streamTaskRunEvents(tid,taskid,rid,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && taskid !== null && taskid !== undefined && rid !== null && rid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type StreamTaskRunEventsQueryResult = NonNullable<Awaited<ReturnType<typeof streamTaskRunEvents>>>
+export type StreamTaskRunEventsQueryError = ErrorType<TaskError>
+
+
+export function useStreamTaskRunEvents<TData = Awaited<ReturnType<typeof streamTaskRunEvents>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string,
+    rid: string,
+    params: undefined |  StreamTaskRunEventsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamTaskRunEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamTaskRunEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useStreamTaskRunEvents<TData = Awaited<ReturnType<typeof streamTaskRunEvents>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamTaskRunEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamTaskRunEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useStreamTaskRunEvents<TData = Awaited<ReturnType<typeof streamTaskRunEvents>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Follow the run's session events as Server-Sent Events
+ */
+
+export function useStreamTaskRunEvents<TData = Awaited<ReturnType<typeof streamTaskRunEvents>>, TError = ErrorType<TaskError>>(
+ tid: string,
+    taskid: string,
+    rid: string,
+    params?: StreamTaskRunEventsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof streamTaskRunEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getStreamTaskRunEventsQueryOptions(tid,taskid,rid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * @summary Comment on the task, optionally sending the comment to its Agent
+ */
+export const createTaskComment = (
+    tid: string,
+    taskid: string,
+    taskCommentCreate: BodyType<TaskCommentCreate>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<TaskComment>(
+      {url: `/api/v2/tenants/${tid}/tasks/${taskid}/comments`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: taskCommentCreate, signal
+    },
+      options);
+    }
+
+
+
+
+export const getCreateTaskCommentMutationKey = () => ['createTaskComment'] as const;
+
+export const getCreateTaskCommentMutationOptions = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaskComment>>, TError,CreateTaskCommentMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTaskComment>>, TError,CreateTaskCommentMutationVariables, TContext> => {
+
+const mutationKey = getCreateTaskCommentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTaskComment>>, CreateTaskCommentMutationVariables> = (props) => {
+          const {tid,taskid,data} = props ?? {};
+
+          return  createTaskComment(tid,taskid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTaskCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createTaskComment>>>
+    export type CreateTaskCommentMutationBody = BodyType<TaskCommentCreate>
+    export type CreateTaskCommentMutationError = ErrorType<TaskError>
+    export type CreateTaskCommentMutationVariables = {tid: string;taskid: string;data: BodyType<TaskCommentCreate>}
+
+    /**
+ * @summary Comment on the task, optionally sending the comment to its Agent
+ */
+export const useCreateTaskComment = <TError = ErrorType<TaskError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaskComment>>, TError,CreateTaskCommentMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createTaskComment>>,
+        TError,
+        CreateTaskCommentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateTaskCommentMutationOptions(options), queryClient);
+    }
+
+/**
+ * The caller's mentions still waiting on their reply, one per open task: the latest comment by someone else that @-mentioned them, on a task they have not commented on since.
+ */
+export const listPendingMentions = (
+    tid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<PendingMentionList>(
+      {url: `/api/v2/tenants/${tid}/task-mentions`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListPendingMentionsQueryKey = (tid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/task-mentions`
+    ] as const;
+    }
+
+
+export const getListPendingMentionsQueryOptions = <TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPendingMentionsQueryKey(tid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPendingMentions>>> = ({ signal }) => listPendingMentions(tid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPendingMentionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPendingMentions>>>
+export type ListPendingMentionsQueryError = ErrorType<TaskError>
+
+
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPendingMentions>>,
+          TError,
+          Awaited<ReturnType<typeof listPendingMentions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPendingMentions>>,
+          TError,
+          Awaited<ReturnType<typeof listPendingMentions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPendingMentions>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPendingMentions>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListPendingMentionsQueryOptions(tid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

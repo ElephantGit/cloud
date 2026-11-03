@@ -37,6 +37,7 @@ const (
 	CallerChat     CallerKind = "chat"
 	CallerWorkflow CallerKind = "workflow"
 	CallerSchedule CallerKind = "schedule"
+	CallerTask     CallerKind = "task"
 )
 
 // Round identifies one enclosing workflow container iteration, from outermost to innermost.
@@ -47,7 +48,7 @@ type Round struct {
 }
 
 // Caller is an immutable attempt identity within Scope. ID is the chat conversation ID,
-// workflow run ID, or schedule occurrence ID, respectively. AttemptID identifies a single
+// workflow run ID, schedule occurrence ID, or task run ID, respectively. AttemptID identifies a single
 // turn, including a chat turn. An explicit rerun after termination uses a NEW AttemptID.
 // NodeID and Rounds apply only to workflow callers; all fields participate in identity.
 type Caller struct {

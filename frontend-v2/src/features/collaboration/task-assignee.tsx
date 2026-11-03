@@ -1,6 +1,8 @@
 import { useGetApiV1TenantsTidMembers } from '@/api/members/members'
+import { useGetApiV1TenantsTidCollaborationTargets } from '@/api/tenants/tenants'
 import { useGetApiV1TenantsTidSpaces, useGetApiV1TenantsTidSpacesSpaceIdPlugins } from '@/api/spaces/spaces'
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from '@/components/ui/native-select'
+import type { SpacePlugin } from '@/api/generated.schemas'
 import type { SquadSummary } from './api/generated'
 import { pluginLabel } from './member-model'
 import type { TaskAssigneeRef } from './tasks-api/generated'
@@ -38,6 +40,9 @@ export function TaskAssigneePicker({ tenantId, squads, value, disabled, onAssign
   const plugins = useGetApiV1TenantsTidSpacesSpaceIdPlugins(tenantId, spaceId, { query: { enabled: !!tenantId && !!spaceId } })
   const people = (roster.data?.items ?? []).filter(member => member.status === 'active')
   const agents = (plugins.data?.items ?? []).filter(isRunnableAgent)
+  // Agents read as their names, as on the task and in the @ menu, rather than the plugin identifier.
+  const targets = useGetApiV1TenantsTidCollaborationTargets(tenantId, { query: { enabled: !!tenantId, staleTime: 60_000 } })
+  const agentName = (plugin: SpacePlugin) => targets.data?.items.find(t => t.type === 'agent' && t.id === plugin.id)?.displayName ?? pluginLabel(plugin)
   const label = roster.isLoading || plugins.isLoading ? '正在加载指派候选…' : roster.isError || plugins.isError ? '候选加载失败，请关闭后重试。' : ''
 
   return <div className="mc-assignee">
@@ -47,7 +52,7 @@ export function TaskAssigneePicker({ tenantId, squads, value, disabled, onAssign
         {people.map(member => <NativeSelectOption key={member.userId} value={`human:${member.userId}`}>{member.displayName}</NativeSelectOption>)}
       </NativeSelectOptGroup>}
       {agents.length > 0 && <NativeSelectOptGroup label="空间 Agent">
-        {agents.map(plugin => <NativeSelectOption key={plugin.id} value={`agent:${plugin.id}`}>{pluginLabel(plugin)}</NativeSelectOption>)}
+        {agents.map(plugin => <NativeSelectOption key={plugin.id} value={`agent:${plugin.id}`}>{agentName(plugin)}</NativeSelectOption>)}
       </NativeSelectOptGroup>}
       {squads.length > 0 && <NativeSelectOptGroup label="小队">
         {squads.map(squad => <NativeSelectOption key={squad.id} value={`squad:${squad.id}`}>{squad.name}</NativeSelectOption>)}

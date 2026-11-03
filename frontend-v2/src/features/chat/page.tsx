@@ -11,9 +11,9 @@ import { subtleScrollbar } from '@/lib/scrollbar'
 import { ShowSidebarButton, Sidebar } from './components/sidebar'
 import { Notice } from './components/notice'
 import { SandboxLabel } from './components/sandbox-label'
-import { ContextUsage, LandingHeading, Thread } from './components/thread'
-import { isResponding } from './model/conversation'
-import { emptyConversation, type PluginRef } from './model/types'
+import { ContextUsage, LandingHeading, Thread } from '@/components/agent-thread/thread'
+import { isResponding } from '@/components/agent-thread/model/conversation'
+import { emptyConversation, type PluginRef } from '@/components/agent-thread/model/types'
 import { type Agent, agentsOf, emptyDraft, isEnded, newChatKey, type Session, useChatStore } from './store'
 
 /** The run view brings the graph canvas, so it loads only once a run is opened. */

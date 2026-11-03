@@ -14,6 +14,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import {
   ChevronRightIcon,
   FolderIcon,
+  FolderPlusIcon,
   GripVerticalIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
@@ -36,9 +37,13 @@ import { emptyConversation } from '@/components/agent-thread/model/types'
 import { type Project, type Session, useChatStore } from '../store'
 import { AgentActivityDots } from './agent-activity-dots'
 import { FadeText } from './fade-text'
+import { NewProjectDialog } from './new-project-dialog'
 import type { PublishedWorkflow } from '../workflow-run/server-runs'
 import { ProjectRuns, RunWorkflowDialog, RunWorkflowSubmenu } from '../workflow-run/run-sidebar'
 import { subtleScrollbar } from '@/lib/scrollbar'
+
+/** The column's entries above the history; pl-5.5 lines their icons up with the projects' chevrons (after their drag handle). */
+const entry = 'h-9 w-full justify-start gap-2 pr-2 pl-5.5 text-[13px] font-medium'
 
 /** A dragged project moves only up and down. */
 const vertical: Modifier = ({ transform }) => ({ ...transform, x: 0 })
@@ -56,12 +61,15 @@ const pointerFirst: CollisionDetection = (args) => {
  * where it will land. The column's right edge drags to resize it, or to fold it away.
  * "新建对话", and the same item in each project's + menu, open the new chat view; a session shows
  * up here once its first prompt is sent. The + menu also runs a published workflow in the project.
+ * "新建项目" creates a project from a repository, as the new chat's project menu does, and opens a
+ * new chat in it.
  */
 export function Sidebar() {
   const projects = useChatStore((s) => s.projects)
   const sidebar = useChatStore((s) => s.sidebar)
   const newChatOpen = useChatStore((s) => !s.selectedId && !s.selectedRunId)
-  const { moveProject, setSidebar, startNewChat } = useChatStore.getState()
+  const { moveProject, setSidebar, startNewChat, createProject } = useChatStore.getState()
+  const [creating, setCreating] = useState(false)
   const [activeId, setActiveId] = useState<string>()
   const [overId, setOverId] = useState<string>()
   const [scrolled, setScrolled] = useState(false)
@@ -85,16 +93,15 @@ export function Sidebar() {
           </div>
           {/* Stays put above the scrolling history; the rule shows once the list scrolls under it. */}
           <div className={cn('border-b px-2 pb-2 transition-colors', scrolled ? 'border-border' : 'border-transparent')}>
-            <Button
-              variant="ghost"
-              // pl-5.5 lines the icon up with the projects' chevrons (after their drag handle).
-              className="h-9 w-full justify-start gap-2 pr-2 pl-5.5 text-[13px] font-medium"
-              aria-current={newChatOpen ? 'page' : undefined}
-              onClick={() => startNewChat()}
-            >
+            <Button variant="ghost" className={entry} aria-current={newChatOpen ? 'page' : undefined} onClick={() => startNewChat()}>
               <SquarePenIcon className="size-4 text-muted-foreground" />
               新建对话
             </Button>
+            <Button variant="ghost" className={entry} onClick={() => setCreating(true)}>
+              <FolderPlusIcon className="size-4 text-muted-foreground" />
+              新建项目
+            </Button>
+            <NewProjectDialog open={creating} onOpenChange={setCreating} onCreate={createProject} />
           </div>
           <nav
             className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-4', subtleScrollbar)}

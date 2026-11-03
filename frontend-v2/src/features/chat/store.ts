@@ -487,8 +487,9 @@ export const useChatStore = create<State>()(
             projects: [...s.projects.filter((p) => p.id !== project.id), project],
             // The page waited only for a project to start chats in.
             backend: s.executors.length ? 'ready' : s.backend,
-            newChat: { ...s.newChat, projectId: project.id },
           }))
+          // From the history column a session may be showing: the new chat opens in its place.
+          get().startNewChat({ projectId: project.id })
           return undefined
         },
         moveProject: (id, overId) => {

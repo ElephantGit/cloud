@@ -5,7 +5,7 @@ import type { CollaborationTarget } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { agentReach } from './task-views'
+import { agentReach, runsAgent } from './task-views'
 import type { Task, TaskMentionRef } from './tasks-api/generated'
 
 /** A comment as the composer hands it over. */
@@ -100,7 +100,7 @@ export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
       </ul>}
     </div>
     <div className="mc-composer-foot">
-      {task.assignee?.type === 'agent'
+      {runsAgent(task, me)
         ? <label className="mc-switch-line" title={reach.reason}><Switch checked={sendToAgent} disabled={!reach.ok} onCheckedChange={setToAgent} aria-label="发给 Agent" />发给 Agent<small>{reach.reason}</small></label>
         : <small className="mc-muted">评论全团队可见。</small>}
       <Button type="button" size="sm" disabled={!body.trim() || sending} onClick={() => void submit()}>

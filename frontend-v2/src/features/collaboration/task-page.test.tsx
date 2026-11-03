@@ -91,6 +91,34 @@ it('starts the Agent with the configured model and shows the run being prepared'
   expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
 })
 
+it('lets the assignee of a person\'s task pick an Agent to handle it, and nobody else', async () => {
+  const mine = task({ assignee: { type: 'human', id: 'user-me', displayName: '演示用户' } })
+  vi.mocked(api.getTask).mockResolvedValue(mine)
+  vi.mocked(api.listTaskExecutors).mockResolvedValue({ items: [
+    { id: 'opencode:configured', name: 'OpenCode / DeepSeek', agentId: 'official/ora-space.opencode', agentName: 'OpenCode', modelId: 'chat-configured', modelName: 'DeepSeek' },
+    { id: 'claude:configured', name: 'Claude Code / Sonnet', agentId: 'official/ora-space.claude', agentName: 'Claude Code', modelId: 'messages-configured', modelName: 'Sonnet' },
+  ] })
+  vi.mocked(api.startTaskRun).mockResolvedValue(run({ executorId: 'claude:configured' }))
+  const { unmount } = renderPage()
+  const section = await screen.findByLabelText('执行')
+  expect(within(section).getByText('Agent 与模型')).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByLabelText('执行模型')).toHaveValue('opencode:configured'))
+  await userEvent.selectOptions(screen.getByLabelText('执行模型'), 'claude:configured')
+  await userEvent.click(within(section).getByRole('button', { name: '用 Agent 处理' }))
+  await waitFor(() => expect(api.startTaskRun).toHaveBeenCalledWith('tenant', 'task-1', { executorId: 'claude:configured' }, expect.anything()))
+  // The person still moves their own task by hand when they work without an Agent.
+  expect(screen.getByRole('button', { name: '开始处理' })).toBeInTheDocument()
+  unmount()
+
+  // Someone else's task: no Agent controls, and the input only comments.
+  vi.mocked(api.listTaskExecutors).mockClear()
+  vi.mocked(api.getTask).mockResolvedValue(task({ assignee: { type: 'human', id: 'user-2', displayName: '鲍勃' } }))
+  renderPage()
+  expect(await screen.findByText('评论全团队可见。')).toBeInTheDocument()
+  expect(screen.queryByLabelText('执行')).not.toBeInTheDocument()
+  expect(api.listTaskExecutors).not.toHaveBeenCalled()
+})
+
 it('sends to the Agent by default while it is reachable, and to the team once switched off', async () => {
   vi.mocked(api.getTask).mockResolvedValue(task({ status: 'review', activeRun: { id: 'run-1', state: 'idle', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Fixture' } }))
   vi.mocked(api.getTaskTimeline).mockResolvedValue({ runs: [run({ state: 'idle', lastResult: 'completed' })], comments: [] })

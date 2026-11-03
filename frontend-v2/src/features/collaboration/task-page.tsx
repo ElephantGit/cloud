@@ -18,7 +18,7 @@ import {
   createTaskComment, getTask, getTaskTimeline, listTaskExecutors, setTaskAssignee, setTaskStatus, startTaskRun, stopTaskRun, updateTask,
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
 } from './tasks-api/generated'
-import { canDecompose } from './task-views'
+import { canDecompose, runsAgent } from './task-views'
 import { useDecompositions, useWorkspace } from './workspace'
 
 /** Fresh idempotency key for one submission: a retry of the same click reuses it. */
@@ -54,9 +54,9 @@ export default function TaskPage() {
   })
   const projects = useQuery({ queryKey: ['projects', tenantId], queryFn: () => getApiV2TenantsTidProjects(tenantId, { limit: 100 }), enabled: !!tenantId })
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
-  const agentTask = task?.assignee?.type === 'agent'
+  const runnable = !!task && runsAgent(task, me.id)
   const executors = useQuery({
-    queryKey: ['task-executors', tenantId, taskId, task?.assignee?.id], queryFn: () => listTaskExecutors(tenantId, taskId), enabled: !!tenantId && agentTask,
+    queryKey: ['task-executors', tenantId, taskId, task?.assignee?.id], queryFn: () => listTaskExecutors(tenantId, taskId), enabled: !!tenantId && runnable,
   })
   const executorList = executors.data?.items ?? []
   // Until someone picks, the Agent's configured model, as the server defaults, before its fixture.
@@ -171,7 +171,7 @@ export default function TaskPage() {
           onSend={async draft => { try { await comment.mutateAsync(draft); return true } catch { return false } }} />
       </section>
       <aside className="mc-task-side-col" aria-label="任务属性">
-        <TaskDetailView task={task} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
+        <TaskDetailView task={task} me={me.id} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
           busy={move.isPending || assign.isPending} error={error}
           run={{
             executors: executorList, executorId, onExecutor: setExecutorId, hasRuns: runs.length > 0,

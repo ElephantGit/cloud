@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './tasks-api/generated'
-import { agentReach, boardDraggable, boardMove, canDecompose, familyLabels, filterTasks, viewOf } from './task-views'
+import { agentReach, boardDraggable, boardMove, canDecompose, familyLabels, filterTasks, runsAgent, viewOf } from './task-views'
 
 const task = (overrides: Partial<Task>): Task => ({
   id: 'task', tenantId: 'tenant', title: '任务', description: '', projectId: 'project', assignee: null, status: 'pending',
@@ -42,6 +42,16 @@ describe('who may send the Agent a turn', () => {
     const other = agentReach(task({ assignee: agent, activeRun: { ...running, state: 'idle', startedBy: 'bob', startedByName: '鲍勃' } }), 'me')
     expect(other.ok).toBe(false)
     expect(other.reason).toMatch(/当前运行由 鲍勃 发起/)
+  })
+
+  it('lets only the assignee run an Agent on a person\'s task', () => {
+    const mine = task({ assignee: { type: 'human', id: 'me', displayName: '我' } })
+    const bobs = task({ assignee: { type: 'human', id: 'bob', displayName: '鲍勃' } })
+    expect(runsAgent(mine, 'me')).toBe(true)
+    expect(agentReach(mine, 'me')).toMatchObject({ ok: true, reason: '用你的身份开一次新运行。' })
+    expect(runsAgent(bobs, 'me')).toBe(false)
+    expect(agentReach(bobs, 'me')).toEqual({ ok: false, reason: '任务派给了 鲍勃，只有负责人本人能用 Agent 处理。' })
+    expect(runsAgent(task({ assignee: { type: 'squad', id: 'squad-1', displayName: '产品小队' } }), 'me')).toBe(false)
   })
 
   it('waits for a running turn and refuses closed or unassigned tasks', () => {

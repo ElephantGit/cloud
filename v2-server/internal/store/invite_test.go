@@ -200,7 +200,7 @@ func TestEndDeletedSquadMembersMovesThemToHistory(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx
 	owner := f.login(t, "owner", store.RoleOwner)
-	squad, e := f.store.CreateSquad(ctx, f.tenant, owner, store.SquadInput{Name: "演示小队"})
+	squad, e := f.store.CreateSquad(ctx, f.tenant, owner, store.SquadInput{Name: "Web 前端组"})
 	if e != nil {
 		t.Fatal(e)
 	}

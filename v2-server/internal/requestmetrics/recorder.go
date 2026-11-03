@@ -4,7 +4,6 @@ package requestmetrics
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -103,7 +102,7 @@ func (p *provider) Complete(w http.ResponseWriter, r *http.Request, m nodeservic
 	a.DurationMS = &duration
 	a.FirstOutputMS = out.first
 	a.Streamed = out.streamed
-	a.TerminalObserved = out.observer.terminal
+	a.TerminalObserved = out.observer.terminal && !out.observer.providerError
 	status := out.status
 	if status == 0 {
 		status = 200
@@ -119,7 +118,7 @@ func (p *provider) Complete(w http.ResponseWriter, r *http.Request, m nodeservic
 	case r.Context().Err() != nil:
 		a.Outcome = "cancelled"
 		a.ErrorCode = "model_request_cancelled"
-	case status >= 400:
+	case status >= 400 || out.observer.providerError:
 		a.Outcome = "failed"
 		a.ErrorCode = "model_provider_failed"
 	case out.failed:
@@ -218,7 +217,7 @@ func (w *observerWriter) finish() {
 		return
 	}
 	if !w.streamed {
-		if json.Valid(w.buffer) && jsonObject(w.buffer) != nil {
+		if validProtocolJSON(w.buffer, w.observer.protocol) {
 			w.output(w.observer.observeJSON(w.buffer))
 		} else {
 			w.failed = true

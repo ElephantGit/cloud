@@ -19,10 +19,11 @@ type observedUsage struct {
 // usageObserver consumes cumulative snapshots rather than adding them: repeated final frames and
 // Anthropic message_delta updates must not multiply usage. It owns no response body after a call.
 type usageObserver struct {
-	protocol   string
-	usage      observedUsage
-	terminal   bool
-	finalUsage bool
+	protocol      string
+	usage         observedUsage
+	terminal      bool
+	finalUsage    bool
+	providerError bool
 }
 
 func (o *usageObserver) observedUsage() Usage {
@@ -30,7 +31,7 @@ func (o *usageObserver) observedUsage() Usage {
 	availability := "unavailable"
 	if u.seen {
 		availability = "partial"
-		if o.terminal && o.finalUsage && !u.invalid && u.input != nil && u.output != nil {
+		if o.terminal && !o.providerError && o.finalUsage && !u.invalid && u.input != nil && u.output != nil {
 			availability = "complete"
 		}
 	}
@@ -145,6 +146,10 @@ func (o *usageObserver) observeEvent(event []byte) bool {
 		return false
 	}
 	value := jsonObject(payload)
+	if jsonObject(value["error"]) != nil || jsonString(value["type"]) == "error" {
+		o.providerError = true
+		return false
+	}
 	if o.protocol == "openai-completions" {
 		o.observeUsage(value["usage"])
 		if jsonObject(value["usage"]) != nil {

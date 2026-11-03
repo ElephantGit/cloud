@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
@@ -100,5 +101,22 @@ func TestRecorderRemoteDispatchBoundary(t *testing.T) {
 	a := recorder.finished[0]
 	if a.Outcome != "failed" || a.HTTPStatus == nil || *a.HTTPStatus != 429 {
 		t.Fatalf("upstream status lost: %+v", a)
+	}
+}
+
+func TestRecorderRejectsHTTP200Diagnostics(t *testing.T) {
+	for _, body := range []string{`{"error":{"message":"diagnostic"}}`, `{}`} {
+		w := observerWriter{ResponseWriter: httptest.NewRecorder(), observer: usageObserver{protocol: "openai-completions"}, start: time.Now()}
+		_, _ = w.Write([]byte(body))
+		w.finish()
+		if !w.failed || w.observer.terminal {
+			t.Fatal("non-model response reported as complete")
+		}
+	}
+	o := usageObserver{protocol: "openai-completions"}
+	o.observeEvent([]byte("data: {\"error\":{\"type\":\"upstream_error\"}}"))
+	o.observeEvent([]byte("data: [DONE]"))
+	if !o.providerError {
+		t.Fatal("terminal marker hid provider error")
 	}
 }

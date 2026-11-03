@@ -206,3 +206,89 @@ test('chat: creates a project from the history column and opens a new chat in it
   await expect(page.getByRole('textbox', { name: '消息' })).toBeFocused()
   expect(await backendProjects(page)).toContain(name)
 })
+
+test('chat: a sign-in in another tab replaces the previous account without a reload', async ({ browser }) => {
+  test.setTimeout(180_000)
+  const context = await browser.newContext()
+  const first = await context.newPage()
+  const second = await context.newPage()
+  const ownerTitle = 'Owner 的对话'
+  const memberTitle = '成员自己的对话'
+  let history: 'owner' | 'member' = 'owner'
+  const project = {
+    id: '00000000-0000-4000-8000-0000000000e1',
+    tenantId: '00000000-0000-4000-8000-0000000000aa',
+    ownerUserId: '00000000-0000-4000-8000-0000000000bb',
+    name: 'cloud',
+    repositoryUrl: 'https://github.com/ora-space/cloud',
+    defaultBranch: 'main',
+    commitId: '0'.repeat(40),
+    createdAt: '2026-11-03T09:00:00Z',
+  }
+  const conversation = (id: string, title: string) => ({
+    id,
+    projectId: project.id,
+    executorId: 'oc-fixture',
+    title,
+    createdAt: '2026-11-03T09:00:00Z',
+    updatedAt: '2026-11-03T09:00:00Z',
+    session: { id: `${id}-session`, startedAt: '2026-11-03T09:00:00Z', endedAt: null, endReason: '' },
+  })
+
+  await context.route('**/api/v2/tenants/*/projects*', (route) =>
+    route.fulfill({ json: { items: [project], nextCursor: '' } }),
+  )
+  await context.route('**/api/v2/tenants/*/chat/executors', (route) =>
+    route.fulfill({
+      json: {
+        items: [{
+          id: 'oc-fixture', name: 'OpenCode · Fixture', agentName: 'OpenCode',
+          agentId: 'official/ora-space.opencode', modelId: 'fixture', modelName: 'Fixture',
+        }],
+      },
+    }),
+  )
+  await context.route('**/api/v2/tenants/*/chat/project-order', (route) =>
+    route.fulfill({ json: { projectIds: [] } }),
+  )
+  await context.route('**/api/v2/tenants/*/chat/conversations', (route) =>
+    route.fulfill({
+      json: {
+        items: [history === 'owner' ? conversation('owner-chat', ownerTitle) : conversation('member-chat', memberTitle)],
+        nextCursor: '',
+      },
+    }),
+  )
+
+  await first.goto('/chat')
+  await signIn(first)
+  await expect(first.getByRole('button', { name: ownerTitle, exact: true })).toBeVisible()
+
+  await second.goto('/chat')
+  await expect(second.getByRole('button', { name: '退出登录', exact: true })).toBeVisible()
+  const suffix = crypto.randomUUID().slice(0, 8)
+  const email = `member-${suffix}@demo.ora-space.dev`
+  const name = `受邀成员-${suffix}`
+  const tenants = await (await second.request.get('/api/v1/me/tenants')).json()
+  const invited = await second.request.post(`/api/v2/tenants/${tenants.items[0].id}/members`, {
+    data: { email, displayName: name },
+  })
+  expect(invited.ok()).toBeTruthy()
+
+  await second.getByRole('button', { name: '退出登录', exact: true }).click()
+  await expect(second.getByRole('heading', { name: '登录 Ora' })).toBeVisible()
+  history = 'member'
+  await signIn(second, email)
+
+  // The first tab revalidates from the storage signal; no reload is needed.
+  await expect(first.getByRole('img', { name })).toBeVisible({ timeout: 10_000 })
+  await expect(first.getByRole('button', { name: memberTitle, exact: true })).toBeVisible()
+  await expect(first.getByRole('button', { name: ownerTitle, exact: true })).toHaveCount(0)
+
+  await first.reload()
+  await expect(first.getByRole('img', { name })).toBeVisible()
+  await expect(first.getByRole('button', { name: memberTitle, exact: true })).toBeVisible()
+  await expect(first.getByRole('button', { name: ownerTitle, exact: true })).toHaveCount(0)
+
+  await context.close()
+})

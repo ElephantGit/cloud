@@ -15,7 +15,16 @@ const renderAt = (path: string) => {
 
 describe('app shell, signed in', () => {
   beforeEach(() => {
-    fakeBackend((c) => (c.url === '/api/v1/me' ? { status: 200, data: demoUser } : undefined))
+    fakeBackend((c) => {
+      if (c.url === '/api/v1/me') return { status: 200, data: demoUser }
+      if (c.url === '/api/v1/me/tenants') {
+        return {
+          status: 200,
+          data: { items: [{ id: '00000000-0000-4000-8000-0000000000aa', name: '演示团队', status: 'active', role: 'owner' }], nextCursor: '' },
+        }
+      }
+      return undefined
+    })
   })
 
   it('opens the first page from the root', async () => {

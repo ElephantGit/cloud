@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyConversation } from '@/components/agent-thread/model/types'
 import { agentsOf, emptyDraft, isEnded, newChatKey, resetChatStore, useChatStore } from './store'
-import { type ChatBackend, chatBackend, FakeEventSource, line, tenantId } from './test-backend'
+import { type RemoteState, remote } from './remote'
+import { type ChatBackend, chatBackend, executors, FakeEventSource, line, tenantId } from './test-backend'
 
 const state = () => useChatStore.getState()
 const conversation = (id: string) => state().conversations[id] ?? emptyConversation
+const userId = 'user-a'
 
 describe('chat store: layout', () => {
   beforeEach(() => resetChatStore())
@@ -14,6 +16,7 @@ describe('chat store: layout', () => {
     state().setSidebar({ open: false })
     const saved = localStorage.getItem('ora-v2-chat') ?? '{}'
     expect(JSON.parse(saved).state.sidebar).toEqual({ width: 360, open: false })
+    expect(JSON.parse(saved).state.projectOrder).toBeUndefined()
     resetChatStore()
     localStorage.setItem('ora-v2-chat', saved)
     await useChatStore.persist.rehydrate()
@@ -26,8 +29,10 @@ describe('chat store: backend conversations', () => {
   beforeEach(async () => {
     resetChatStore()
     backend = chatBackend()
-    await state().connect(tenantId)
+    await state().connect(tenantId, userId)
   })
+
+  afterEach(() => vi.restoreAllMocks())
 
   it('loads projects, executors and conversations', () => {
     expect(state().backend).toBe('ready')
@@ -149,13 +154,65 @@ describe('chat store: backend conversations', () => {
     expect(state().projects.map((p) => p.id)).toEqual(['p-desktop', 'p-cloud'])
     expect(backend.bodies.at(-1)).toEqual({ projectIds: ['p-desktop', 'p-cloud'] })
   })
+
+  it('keeps one account\'s state when the same account reconnects', async () => {
+    const loads = () => backend.seen.filter((r) => r === `GET /api/v2/tenants/${tenantId}/chat/conversations`).length
+    expect(loads()).toBe(1)
+    await state().connect(tenantId, userId)
+    expect(loads()).toBe(1)
+  })
+
+  it('drops the previous account\'s conversations and streams when another account connects', async () => {
+    state().select('c-main')
+    const oldStream = FakeEventSource.of('c-main')
+    backend.conversations = [{
+      ...backend.conversations[0],
+      id: 'c-member',
+      title: '成员自己的对话',
+      session: { ...backend.conversations[0].session!, id: 'c-member-s1' },
+    }]
+
+    await state().connect(tenantId, 'user-b')
+
+    expect(state().userId).toBe('user-b')
+    expect(state().selectedId).toBeUndefined()
+    expect(state().sessions.map((s) => s.title)).toEqual(['成员自己的对话'])
+    expect(oldStream.closed).toBe(true)
+  })
+
+  it('ignores an old account\'s load that finishes after the account changed', async () => {
+    resetChatStore()
+    backend = chatBackend()
+    const snapshot = (id: string, title: string): RemoteState => {
+      const c = {
+        ...backend.conversations[0],
+        id,
+        title,
+        session: { ...backend.conversations[0].session!, id: `${id}-s1` },
+      }
+      return { executors: [executors[0]], projects: [{ id: 'p-cloud', name: 'ora-space/cloud' }], conversations: [c], projectOrder: ['p-cloud'] }
+    }
+    let finishOwner!: (value: RemoteState) => void
+    const ownerLoad = new Promise<RemoteState>((resolve) => (finishOwner = resolve))
+    vi.spyOn(remote, 'load')
+      .mockReturnValueOnce(ownerLoad)
+      .mockResolvedValueOnce(snapshot('c-member', '成员自己的对话'))
+
+    const first = state().connect(tenantId, 'user-a')
+    await state().connect(tenantId, 'user-b')
+    finishOwner(snapshot('c-owner', 'Owner 的对话'))
+    await first
+
+    expect(state().userId).toBe('user-b')
+    expect(state().sessions.map((s) => s.title)).toEqual(['成员自己的对话'])
+  })
 })
 
 describe('chat store: backend that cannot run Agents', () => {
   it('reports unavailable and refuses a new chat', async () => {
     resetChatStore()
     chatBackend({ unavailable: true })
-    await state().connect(tenantId)
+    await state().connect(tenantId, userId)
     expect(state().backend).toBe('unavailable')
     await state().sendNewChat({ ...emptyDraft, text: 'hi' })
     expect(state().notices[newChatKey]).toMatchObject({ kind: 'unavailable' })

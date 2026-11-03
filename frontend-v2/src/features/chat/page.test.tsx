@@ -176,6 +176,37 @@ describe('chat page', () => {
     expect(backend.created).toEqual([])
   })
 
+  it('creates a project from the history column while a conversation shows, and opens a new chat in it', async () => {
+    await renderReady()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '新建项目' }))
+    const dialog = await screen.findByRole('dialog', { name: '新建项目' })
+    await userEvent.type(within(dialog).getByLabelText('仓库地址'), 'https://github.com/octocat/Hello-World.git')
+    await userEvent.clear(within(dialog).getByLabelText('默认分支'))
+    await userEvent.type(within(dialog).getByLabelText('默认分支'), 'master')
+    await userEvent.click(within(dialog).getByRole('button', { name: '新建项目' }))
+
+    expect(await within(sidebar()).findByRole('region', { name: '项目 Hello-World' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: '今天想构建什么？' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择项目' })).toHaveTextContent('Hello-World')
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveFocus()
+    expect(backend.bodies).toContainEqual({ name: 'Hello-World', repositoryUrl: 'https://github.com/octocat/Hello-World.git', defaultBranch: 'master' })
+  })
+
+  it('keeps the history column\'s new project dialog open with what was typed when the project is refused', async () => {
+    await renderReady()
+    backend.refuseProject = { status: 400, data: { code: 'repository_unavailable', params: {}, requestId: 'r' } }
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '新建项目' }))
+    const dialog = await screen.findByRole('dialog', { name: '新建项目' })
+    await userEvent.type(within(dialog).getByLabelText('仓库地址'), 'https://github.com/octocat/missing')
+    await userEvent.click(within(dialog).getByRole('button', { name: '新建项目' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/无法克隆这个仓库，或仓库里没有分支 main/)
+    expect(within(dialog).getByLabelText('仓库地址')).toHaveValue('https://github.com/octocat/missing')
+    expect(within(sidebar()).queryByRole('region', { name: '项目 missing', hidden: true })).not.toBeInTheDocument()
+    expect(backend.created).toEqual([])
+  })
+
   it('picks an agent, then one of its models, from the backend\'s executors', async () => {
     await renderReady()
     await userEvent.click(screen.getByRole('button', { name: /^模型：/ }))

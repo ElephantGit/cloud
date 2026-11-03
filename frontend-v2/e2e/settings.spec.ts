@@ -105,6 +105,8 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   page,
   browser,
 }) => {
+  // Four plugin installs each wait 3-5 seconds before reaching the server.
+  test.setTimeout(90_000)
   await login(page, '/settings/plugins')
   const row = page.getByRole('article', { name: 'Matt Pocock Skills' })
   await expect(row).toBeVisible()

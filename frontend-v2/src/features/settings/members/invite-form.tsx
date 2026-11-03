@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { codeOf } from '@/lib/api-client'
-import { listSquads } from '@/features/collaboration/api/generated'
+import { listSquads } from '@/lib/squads-api/generated'
 import { inviteMember } from '../api/generated'
 import { membersKey } from './query'
 

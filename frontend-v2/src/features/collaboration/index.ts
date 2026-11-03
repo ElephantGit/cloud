@@ -10,7 +10,8 @@ export const collaboration: Feature = {
   children: [
     { index: true, lazy: async () => ({ Component: (await import('./tasks-page')).default }) },
     { path: 'tasks/:taskId', lazy: async () => ({ Component: (await import('./task-page')).default }) },
-    { path: 'squads', lazy: async () => ({ Component: (await import('./squads-page')).default }) },
+    // Squad management moved to settings; old links keep landing on the same squad.
+    { path: 'squads', loader: ({ request }) => redirect(`/settings/squads${new URL(request.url).search}`) },
     { path: '*', loader: () => redirect('/collaboration') },
   ],
 }

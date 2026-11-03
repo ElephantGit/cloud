@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Bot, Crown, Pencil, ShieldCheck, UserPlus, UserRound, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { SquadDetail, SquadMember } from './api/generated'
+import type { SquadDetail, SquadMember } from '@/lib/squads-api/generated'
 import { activeMembers, endedMembers, formatTime, isLeader, leaderName, ownMembership } from './squad-model'
 
 /**

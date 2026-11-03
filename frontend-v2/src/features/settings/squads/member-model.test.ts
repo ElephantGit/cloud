@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
-import type { SquadDetail, SquadMember } from './api/generated'
-import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins, pluginLabel } from './member-model'
+import type { SquadDetail, SquadMember } from '@/lib/squads-api/generated'
+import { pluginLabel } from '@/lib/plugin-runtime'
+import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins } from './member-model'
 import { useDemoPluginSelections } from '@/features/settings/plugins/demo-state'
 
 const account = (overrides: Partial<MemberListItem>): MemberListItem => ({

@@ -19,3 +19,7 @@ export function isPreinstalledAgent(plugin: PreinstalledAgentFields): boolean {
 export function isRunnableAgent(plugin: RunnableAgentFields): boolean {
   return isPreinstalledAgent(plugin) && plugin.observedState === 'installed'
 }
+
+/** The install identifier people recognize an agent plugin by, such as official/ora-space.opencode. */
+export const pluginLabel = (plugin: Pick<SpacePlugin, 'sourceNamespace' | 'identifier'>): string =>
+  `${plugin.sourceNamespace}/${plugin.identifier}`

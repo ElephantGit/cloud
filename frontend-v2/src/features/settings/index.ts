@@ -16,6 +16,12 @@ export const settings: Feature = {
       }),
     },
     {
+      path: 'squads',
+      lazy: async () => ({
+        Component: (await import('./squads/page')).default,
+      }),
+    },
+    {
       path: 'model-connections',
       lazy: async () => ({
         Component: (await import('./model-connections/page')).default,

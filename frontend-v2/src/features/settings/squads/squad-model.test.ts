@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SquadDetail, SquadMember, SquadSummary } from './api/generated'
+import type { SquadDetail, SquadMember, SquadSummary } from '@/lib/squads-api/generated'
 import { activeMembers, canMaintain, endedMembers, isLeader, leaderName, ownMembership, squadTotals, validateSquad } from './squad-model'
 
 const member = (overrides: Partial<SquadMember>): SquadMember => ({

@@ -6,8 +6,9 @@ import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import type { SquadDetail } from './api/generated'
-import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins, pluginLabel } from './member-model'
+import type { SquadDetail } from '@/lib/squads-api/generated'
+import { pluginLabel } from '@/lib/plugin-runtime'
+import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins } from './member-model'
 
 /** Workspace roles as people read them; unknown roles stay as the server sent them. */
 const ROLE_LABELS: Record<string, string> = { owner: '管理员', admin: '管理员', member: '成员' }

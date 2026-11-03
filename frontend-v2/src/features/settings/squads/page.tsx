@@ -3,32 +3,36 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { Plus, Users } from 'lucide-react'
 import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
+import { useGetApiV1MeTenants } from '@/api/me/me'
 import { useUser } from '@/app/auth/user'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { codeOf, statusOf } from '@/lib/api-client'
-import { archiveSquad, addSquadMember, createSquad, getSquad, listSquads, removeSquadMember, updateSquad, updateSquadMember, type SquadDetail, type SquadMember } from './api/generated'
+import { archiveSquad, addSquadMember, createSquad, getSquad, listSquads, removeSquadMember, updateSquad, updateSquadMember, type SquadDetail, type SquadMember } from '@/lib/squads-api/generated'
 import { MemberPicker } from './member-picker'
 import { SquadCard } from './squad-card'
 import { SquadDetailView } from './squad-detail'
-import { PanelDialog } from './panel-dialog'
+import { PanelDialog } from '@/components/panel/panel-dialog'
+import { PageHeader } from '../components/page-parts'
 import { SquadForm, type SquadDraft } from './squad-form'
+import '@/components/panel/panel.css'
+import './squads.css'
 import { canMaintain, isLeader, squadTotals } from './squad-model'
-import { useWorkspace } from './workspace'
 
 type Panel = { kind: 'create' } | { kind: 'detail'; id: string } | { kind: 'edit'; id: string } | { kind: 'members'; id: string } | null
 
 /**
- * Squads in the current workspace: the list, one squad's detail, and the maintainer's edits.
- * Membership changes belong to the member operations; nothing here grants runtime permissions.
- * `?squad=<id>` opens that squad's detail, so the sidebar and a shared link land on it.
+ * 设置 / 小队: the workspace's squads, one squad's detail, and the maintainer's edits. Squads are
+ * configuration; the collaboration page only filters tasks by them. Nothing here grants runtime
+ * permissions. `?squad=<id>` opens that squad's detail, so a shared link lands on it.
  */
 export default function SquadsPage() {
   const me = useUser()
-  const tenants = useWorkspace()
-  const tenantId = tenants.tenantId
-  const workspaceRole = tenants.role
+  // v2 signs everyone into one team, so the workspace is the first membership.
+  const tenants = useGetApiV1MeTenants()
+  const workspace = tenants.data?.items[0]
+  const tenantId = workspace?.id ?? ''
+  const workspaceRole = workspace?.role
   const client = useQueryClient()
   const [params, setParams] = useSearchParams()
   const linked = params.get('squad')
@@ -106,13 +110,10 @@ export default function SquadsPage() {
   const openCreate = () => { setError(''); setPanel({ kind: 'create' }) }
   const openSquad = (id: string) => { setError(''); setPanel({ kind: 'detail', id }) }
 
-  return <div className="mc-page">
-    <div className="mc-content">
+  return <div className="mc-scope mc-page">
+    <PageHeader title="小队" description="工作空间里人和 Agent 的协作编组。协作页可以按小队筛选任务，指派给小队不会自动分派。" count={list.data ? items.length : undefined}
+      actions={<Button onClick={openCreate} disabled={!tenantId || list.isLoading || list.isError}><Plus data-icon="inline-start" />新建小队</Button>} />
       <section className="mc-list-section mc-squad-section" aria-label="小队列表">
-        <header className="mc-section-head">
-          <h2>小队 <Badge variant="secondary">{items.length}</Badge></h2>
-          <Button onClick={openCreate} disabled={!tenantId || list.isLoading || list.isError}><Plus data-icon="inline-start" />新建小队</Button>
-        </header>
 
         <div className="mc-summary" aria-label="编组概览">
           <div className="mc-summary-counts">
@@ -137,7 +138,6 @@ export default function SquadsPage() {
                 </Empty>}
         <footer className="mc-list-footer"><span>{items.length} 个小队</span><span>计数只含当前有效成员</span></footer>
       </section>
-    </div>
 
     {toast && <div className="mc-toast" role="status">{toast}</div>}
 

@@ -18,7 +18,7 @@ vi.mock('@/api/spaces/spaces', () => ({
   useGetApiV1TenantsTidSpacesSpaceIdPlugins: () => ({ data: { items: [] }, isLoading: false, isError: false }),
 }))
 vi.mock('@/api/tenants/tenants', () => ({ useGetApiV1TenantsTidCollaborationTargets: () => ({ data: targets }) }))
-vi.mock('./api/generated', () => ({ listSquads: vi.fn().mockResolvedValue({ items: [], nextCursor: '' }) }))
+vi.mock('@/lib/squads-api/generated', () => ({ listSquads: vi.fn().mockResolvedValue({ items: [], nextCursor: '' }) }))
 vi.mock('@/lib/projects-api/generated', () => ({ getApiV2TenantsTidProjects: vi.fn().mockResolvedValue({ items: [], nextCursor: '' }) }))
 // The live thread has its own tests; here a run shows the session its stream would fold.
 vi.mock('./run-session', () => ({ useRunSession: () => ({ conversation: null, refused: false }) }))

@@ -4,16 +4,18 @@ import { ClipboardCheck, ClipboardList, Inbox, Plus, UserRound, Users } from 'lu
 import { useUser } from '@/app/auth/user'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { listSquads } from './api/generated'
+import { listSquads } from '@/lib/squads-api/generated'
 import { filterTasks, TASK_VIEWS, viewOf, type TaskView } from './task-views'
 import { usePendingMentions, useTaskList, useWorkspace } from './workspace'
+import '@/components/panel/panel.css'
 import './collaboration.css'
 
 const VIEW_ICONS: Record<TaskView, typeof Inbox> = { mine: UserRound, todo: Inbox, all: ClipboardList }
 
 /**
  * 协作: the team's shared work. The sidebar scopes the one task list (mine, waiting on me,
- * everything) and lists the squads; the outlet shows the board, a task, or squads. The scopes
+ * everything, or one squad's tasks); the outlet shows the board or a task. Squads themselves are
+ * configured under 设置 / 小队. The scopes
  * differ only by query, so they are plain links marked current by hand: NavLink would mark them all.
  * Everything here is the workspace's; a person's private conversations stay on the chat page.
  */
@@ -31,7 +33,7 @@ export default function CollaborationLayout() {
   const squadId = params.get('squad')
   const items = tasks.data?.items ?? []
   const liveSquads = squads.data?.items ?? []
-  return <div className="collaboration-feature mc-layout">
+  return <div className="mc-scope mc-layout">
     <aside className="mc-sidebar" aria-label="协作导航">
       <div className="mc-sidebar-head">
         <h1>协作</h1>
@@ -62,10 +64,10 @@ export default function CollaborationLayout() {
             <b>{tasks.data ? filterTasks(items, 'all', me.id, s.id).length : ''}</b>
           </Link>
         })}
-        <NavLink to="/collaboration/squads" className={({ isActive }) => cn('mc-nav-link', isActive && 'active')}>
+        {squads.data && !liveSquads.length && <Link to="/settings/squads" className="mc-nav-link">
           <Users size={15} aria-hidden="true" />
-          <span>管理小队</span>
-        </NavLink>
+          <span>在设置中创建小队</span>
+        </Link>}
       </nav>
       <p className="mc-sidebar-note">任务和运行全团队可见；指派给小队不会自动分派。</p>
     </aside>

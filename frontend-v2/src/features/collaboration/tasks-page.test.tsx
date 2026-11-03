@@ -7,14 +7,14 @@ import { UserContext } from '@/app/auth/user'
 import type { User } from '@/api/generated.schemas'
 import type { Project } from '@/lib/projects-api/generated'
 import * as projectsApi from '@/lib/projects-api/generated'
-import * as squadsApi from './api/generated'
+import * as squadsApi from '@/lib/squads-api/generated'
 import * as api from './tasks-api/generated'
 import type { Task } from './tasks-api/generated'
 import TasksPage from './tasks-page'
 
 vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: 'owner' }] }, isLoading: false, isError: false }) }))
 vi.mock('./tasks-api/generated', () => ({ listTasks: vi.fn(), createTask: vi.fn(), listPendingMentions: vi.fn() }))
-vi.mock('./api/generated', () => ({ listSquads: vi.fn() }))
+vi.mock('@/lib/squads-api/generated', () => ({ listSquads: vi.fn() }))
 vi.mock('@/lib/projects-api/generated', () => ({ getApiV2TenantsTidProjects: vi.fn() }))
 
 const me: User = { id: 'user-me', displayName: '演示用户', status: 'active', version: 1, createdAt: '2026-10-01T00:00:00Z', deletedAt: null }

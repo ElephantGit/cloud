@@ -1,9 +1,10 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import './panel.css'
 
 /**
- * Modal panel shared by the collaboration page's views: create, edit, detail and pickers. The
+ * Modal panel shared by the team workspace pages (协作 and 设置 / 小队): create, edit, detail and pickers. The
  * native dialog supplies focus containment, Escape and return-to-trigger behavior without extra
  * state.
  */
@@ -29,7 +30,7 @@ export function PanelDialog({ icon, eyebrow, title, subtitle, onClose, children 
       queueMicrotask(() => { if (trigger?.isConnected) trigger.focus() })
     }
   }, [])
-  return <dialog ref={ref} className="mc-dialog collaboration-feature" aria-labelledby="mc-dialog-title" onCancel={event => { event.preventDefault(); onClose() }}>
+  return <dialog ref={ref} className="mc-dialog mc-scope" aria-labelledby="mc-dialog-title" onCancel={event => { event.preventDefault(); onClose() }}>
     <header className="mc-dialog-header">
       <div>
         <span className="mc-eyebrow">{icon}{eyebrow}</span>

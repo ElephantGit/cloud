@@ -1,7 +1,8 @@
-import { Bot, Cable, Monitor, Puzzle, Sparkles, Users } from 'lucide-react'
+import { Bot, Cable, Monitor, Puzzle, Sparkles, UsersRound, Users } from 'lucide-react'
 
 export const settingsPages = [
   { path: 'members', title: '成员', icon: Users },
+  { path: 'squads', title: '小队', icon: UsersRound },
   { path: 'roles', title: '角色', icon: Bot },
   { path: 'model-connections', title: '模型连接', icon: Cable },
   { path: 'theme', title: '主题', icon: Monitor },

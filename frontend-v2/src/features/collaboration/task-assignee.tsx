@@ -3,10 +3,9 @@ import { useGetApiV1TenantsTidCollaborationTargets } from '@/api/tenants/tenants
 import { useGetApiV1TenantsTidSpaces, useGetApiV1TenantsTidSpacesSpaceIdPlugins } from '@/api/spaces/spaces'
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from '@/components/ui/native-select'
 import type { SpacePlugin } from '@/api/generated.schemas'
-import type { SquadSummary } from './api/generated'
-import { pluginLabel } from './member-model'
+import type { SquadSummary } from '@/lib/squads-api/generated'
 import type { TaskAssigneeRef } from './tasks-api/generated'
-import { isRunnableAgent } from '@/lib/plugin-runtime'
+import { isRunnableAgent, pluginLabel } from '@/lib/plugin-runtime'
 
 /** The select value for one typed reference; '' means unassigned. */
 const encode = (value: TaskAssigneeRef | null): string => (value ? `${value.type}:${value.id}` : '')

@@ -1,4 +1,4 @@
-import type { SquadDetail, SquadMember, SquadSummary } from './api/generated'
+import type { SquadDetail, SquadMember, SquadSummary } from '@/lib/squads-api/generated'
 
 /** Members still in the squad, in the order the server returns them. */
 export const activeMembers = (squad: SquadDetail): SquadMember[] => squad.members.filter(m => m.endedAt === null)

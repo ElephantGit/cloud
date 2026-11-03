@@ -1,5 +1,5 @@
 import { AtSign, Bot, MessageSquare, Play } from 'lucide-react'
-import { formatTime } from './squad-model'
+import { formatTime } from './task-model'
 import { runEndLabel } from './task-model'
 import type { TaskComment, TaskRun } from './tasks-api/generated'
 

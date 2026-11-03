@@ -1,0 +1,72 @@
+/* Shared look of the team workspace pages (协作 and 设置 / 小队): tokens, page sections, forms and the
+ * panel dialog. Wrap a page in `.mc-scope` to use it. */
+.mc-scope {
+  --mc-line: var(--border); --mc-muted: var(--muted-foreground);
+  --mc-surface: color-mix(in oklch, var(--muted) 60%, var(--background));
+  --mc-human: var(--info); --mc-human-bg: var(--info-soft); --mc-agent: var(--brand); --mc-agent-bg: var(--brand-soft);
+  --mc-maintainer: var(--success); --mc-done-bg: var(--success-soft); --mc-danger: var(--destructive);
+  --mc-scrim: var(--scrim); --mc-shadow: var(--shadow-color);
+  color: var(--foreground); background: var(--background); font-size: 14px; line-height: 1.6;
+}
+.mc-scope button { cursor: pointer; touch-action: manipulation; }
+.mc-scope button:disabled { cursor: not-allowed; }
+.mc-scope button:focus-visible, .mc-scope summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.mc-scope h1, .mc-scope h2, .mc-scope h3, .mc-scope p { margin: 0; }
+
+.mc-content { max-width: 1200px; margin: 0 auto; padding: 32px 40px 48px; }
+
+
+
+.mc-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--mc-line); color: var(--mc-muted); font-size: 12px; }
+
+
+.mc-description { font-size: 14px; }
+/* A big requirement's decomposition and subtasks, or the requirement a subtask came from. */
+.mc-section { display: flex; flex-direction: column; gap: 8px; }
+.mc-section h3 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--mc-muted); text-transform: none; }
+.mc-empty-line { color: var(--mc-muted); font-size: 13px; }
+.mc-note { display: flex; align-items: flex-start; gap: 6px; color: var(--mc-muted); font-size: 12px; }
+.mc-note svg { flex-shrink: 0; margin-top: 3px; }
+.mc-error { color: var(--mc-danger); font-size: 12px; }
+.mc-muted { color: var(--mc-muted); font-size: 12px; }
+
+.mc-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.mc-form-scroll { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
+.mc-form-error { padding: 0 24px 4px; color: var(--mc-danger); font-size: 12px; }
+.mc-form-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--mc-line); background: var(--mc-surface); }
+
+
+@media (max-width: 640px) {
+  .mc-content { padding: 20px 16px 32px; }
+}
+
+/* Layout: the feature's own sidebar beside the outlet. */
+
+/* Who is working on a task. */
+
+/* Board. */
+/* The board fills the window below the header; each column scrolls on its own once it outgrows it. */
+/* Dragging: the lifted card follows the pointer; columns show where it may land. */
+
+/* Task page: runs and discussion beside the task's properties. */
+
+/* Discussion. */
+
+/* Composer. */
+
+
+/* Card and row tags: who owns the task, and an @ still waiting on the viewer. */
+
+/* The panel dialog itself (panel-dialog.tsx). */
+.mc-dialog { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--card); color: var(--foreground); box-shadow: 0 24px 64px var(--mc-shadow); overflow: hidden; }
+.mc-dialog[open] { display: flex; flex-direction: column; }
+.mc-dialog::backdrop { background: var(--mc-scrim); }
+.mc-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--mc-line); }
+.mc-eyebrow { display: inline-flex; align-items: center; gap: 6px; color: var(--mc-muted); font-size: 11px; }
+.mc-dialog-header h2 { font-size: 18px; font-weight: 600; margin-top: 4px; }
+.mc-dialog-header p { color: var(--mc-muted); font-size: 12px; margin-top: 4px; }
+@media (max-width: 640px) {
+  .mc-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  .mc-dialog-header, .mc-form-scroll { padding-left: 16px; padding-right: 16px; }
+  .mc-form-actions { padding-left: 16px; padding-right: 16px; flex-wrap: wrap; }
+}

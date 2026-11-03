@@ -45,8 +45,30 @@ func TestGraphs(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := doc.Nodes[1].Data["agentConfig"].(map[string]any)["outputContract"].(map[string]any)["schema"].(map[string]any)
-	if _, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"增加筛选","description":"按负责人筛选；覆盖空列表测试"}]}`, schema); err != nil {
+	parsed, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"增加筛选","description":"按负责人筛选；覆盖空列表测试"}]}`, schema)
+	if err != nil {
 		t.Fatal(err)
+	}
+	g, err := workflow.ParseGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := workflow.NewPool(g)
+	if err := pool.Set("decompose.structured_output", "decompose", parsed); err != nil {
+		t.Fatal(err)
+	}
+	output := doc.Nodes[2].Data["outputs"].([]any)[0].(map[string]any)
+	var selector []string
+	for _, part := range output["variableSelector"].([]any) {
+		selector = append(selector, part.(string))
+	}
+	value, assigned, err := pool.Resolve(selector)
+	if err != nil || !assigned {
+		t.Fatalf("child task output cannot resolve: assigned=%v err=%v", assigned, err)
+	}
+	tasks, ok := value.([]any)
+	if !ok || len(tasks) != 1 || tasks[0].(map[string]any)["title"] != "增加筛选" {
+		t.Fatalf("child task importer requires the tasks array, got %#v", value)
 	}
 	if _, err := workflow.ParseStructuredOutput(`{"tasks":[{"title":"缺少验收条件"}]}`, schema); err == nil {
 		t.Fatal("malformed child task accepted")

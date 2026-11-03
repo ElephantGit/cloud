@@ -11,7 +11,7 @@ func DecompositionGraph(seed WorkflowSeed) (string, error) {
 			"properties": map[string]any{"tasks": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"title", "description"}, "additionalProperties": false, "properties": map[string]any{"title": map[string]string{"type": "string"}, "description": map[string]string{"type": "string"}}}}}},
 	}
 	return chainGraph(seed, demoNode{ID: "start", Data: map[string]any{"kind": "start", "title": "开始：团队大需求"}}, step,
-		demoNode{ID: "output", Data: map[string]any{"kind": "output", "title": "输出子任务", "outputs": []any{map[string]any{"name": "tasks", "variableSelector": []string{"decompose", "tasks"}}}}})
+		demoNode{ID: "output", Data: map[string]any{"kind": "output", "title": "输出子任务", "outputs": []any{map[string]any{"name": "tasks", "variableSelector": []string{"decompose", "structured_output", "tasks"}}}}})
 }
 
 // SeedDecomposition installs B's workflow without assuming A or C ran first.

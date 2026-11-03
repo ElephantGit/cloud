@@ -68,16 +68,6 @@
   margin: auto;
   padding: 28px 40px 56px;
 }
-.settings-demo-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: var(--muted);
-  border-radius: var(--radius-lg);
-  padding: 12px 14px;
-  margin-bottom: 32px;
-  font-size: 12px;
-}
 .settings-page-header {
   display: flex;
   align-items: center;
@@ -546,13 +536,6 @@
   .settings-page-header {
     align-items: flex-start;
     flex-wrap: wrap;
-  }
-  .settings-demo-notice {
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-  }
-  .settings-demo-notice > button {
-    margin-left: auto;
   }
   .settings-resource-row {
     flex-wrap: wrap;

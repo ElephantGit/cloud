@@ -68,7 +68,7 @@ export default function ModelConnectionsPage() {
     <section>
       <PageHeader
         title="模型连接"
-        description="管理个人连接与模型目录。这里的设置仅用于演示，不会影响对话。"
+        description="管理个人连接与模型目录。连接信息保存在当前浏览器，不会影响对话。"
         count={connections.length}
         actions={
           <Button disabled={!data || query.isError} onClick={() => open()}>
@@ -95,7 +95,7 @@ export default function ModelConnectionsPage() {
                   onChange={(e) => setDefaultDraft(e.target.value)}
                 >
                   <NativeSelectOption value="">
-                    请选择可用的演示模型
+                    请选择可用的模型
                   </NativeSelectOption>
                   {choices.map((c) => (
                     <NativeSelectOption key={c.key} value={c.key}>
@@ -117,7 +117,7 @@ export default function ModelConnectionsPage() {
                           chosen.connectionId,
                           chosen.modelId,
                         ),
-                      '演示默认模型已保存',
+                      '默认模型已保存',
                       () => setDefaultDraft(''),
                     )
                   }
@@ -127,8 +127,8 @@ export default function ModelConnectionsPage() {
               </div>
               <FieldDescription>
                 {ready
-                  ? '仅列出已启用且配置了演示凭据的连接。'
-                  : '当前默认选择不可用。请配置演示凭据、启用连接后重新选择。'}
+                  ? '仅列出已启用且标记了凭据的连接。'
+                  : '当前默认选择不可用。请标记凭据、启用连接后重新选择。'}
               </FieldDescription>
             </Field>
           </div>
@@ -187,7 +187,7 @@ export default function ModelConnectionsPage() {
                       save(
                         (next) =>
                           changeConnection(next, connection.id, 'toggle'),
-                        '演示连接状态已更新',
+                        '连接状态已更新',
                       )
                     }
                   />
@@ -216,8 +216,8 @@ export default function ModelConnectionsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     {connection.credentialConfigured
-                      ? '演示凭据已配置'
-                      : '未配置演示凭据'}
+                      ? '凭据已配置'
+                      : '未配置凭据'}
                   </Badge>
                   <Button
                     variant="ghost"
@@ -228,14 +228,14 @@ export default function ModelConnectionsPage() {
                         (next) =>
                           changeConnection(next, connection.id, 'credential'),
                         connection.credentialConfigured
-                          ? '演示凭据状态已清除'
-                          : '已模拟配置凭据',
+                          ? '凭据状态已清除'
+                          : '凭据已标记为可用',
                       )
                     }
                   >
                     {connection.credentialConfigured
-                      ? '清除演示凭据'
-                      : '模拟配置凭据'}
+                      ? '清除凭据'
+                      : '标记凭据可用'}
                   </Button>
                 </div>
                 <div className="flex gap-2">
@@ -273,7 +273,7 @@ export default function ModelConnectionsPage() {
           </NoResults>
         )}
         <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-          仅模拟凭据是否已配置，不接收 API Key，不发送模型请求。
+          仅记录凭据是否可用，不接收 API Key，不发送模型请求。
         </p>
       </DataState>
       {editor && (
@@ -297,7 +297,7 @@ export default function ModelConnectionsPage() {
                     editor.connection?.id,
                     expectedVersion,
                   ),
-                '演示连接已保存',
+                '连接已保存',
                 () => setEditor(undefined),
               )
             }
@@ -307,7 +307,7 @@ export default function ModelConnectionsPage() {
       {removing && (
         <ConfirmDialog
           title={`删除 ${removing.name}？`}
-          description="删除此浏览器中的演示连接。若它是默认连接，删除后需要重新选择默认模型。"
+          description="删除此浏览器中的连接。若它是默认连接，删除后需要重新选择默认模型。"
           confirmLabel="删除连接"
           pending={mutation.isPending}
           error={mutation.error}
@@ -315,7 +315,7 @@ export default function ModelConnectionsPage() {
           onConfirm={() =>
             save(
               (next) => changeConnection(next, removing.id, 'delete'),
-              '演示连接已删除',
+              '连接已删除',
               () => setRemoving(undefined),
             )
           }

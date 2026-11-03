@@ -426,7 +426,7 @@ export default function PluginsPage() {
     <section>
       <PageHeader
         title="Plugins"
-        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill 与市场 Agent 的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作仅为本地演示。"
+        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill 与市场 Agent 的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作只改变当前浏览器中的状态。"
         count={catalog.length}
         actions={
           <>
@@ -456,7 +456,7 @@ export default function PluginsPage() {
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          MCP、Hook 与运行时预装 Agent 的安装仅用于界面演示，不下载或启动插件；市场 Agent 的安装只记录空间选择。
+          MCP、Hook 与运行时预装 Agent 的安装只改变当前浏览器中的状态，不下载或启动插件；市场 Agent 的安装只记录空间选择。
         </p>
         <div className="settings-toolbar">
           {market.spaces.length > 1 && (
@@ -598,7 +598,7 @@ export default function PluginsPage() {
             {installedServerPackages.length} 个服务端插件
           </span>
           <span>
-            Skill 由项目节点确认；MCP/Hook 与预装 Agent 为本地演示；市场 Agent
+            Skill 由项目节点确认；MCP/Hook 与预装 Agent 只改变本地状态；市场 Agent
             仅保存空间选择
           </span>
         </div>
@@ -670,9 +670,9 @@ export default function PluginsPage() {
             <dt>安装选择</dt>
             <dd>
               {demoSelected(selected)
-                ? `演示安装 ${selected.version}`
+                ? `本地安装 ${selected.version}`
                 : selectedSelection && isPreinstalledAgent(selectedSelection)
-                  ? '运行时预装，未开始演示安装'
+                  ? '运行时预装，未开始本地安装'
                   : selectedSelection?.desiredState === 'installed'
                   ? `安装 ${selectedSelection?.desiredVersion}`
                   : '未选择'}
@@ -680,7 +680,7 @@ export default function PluginsPage() {
             <dt>安装结果</dt>
             <dd>
               {demoSelected(selected)
-                ? '浏览器本地演示状态'
+                ? '浏览器本地状态'
                 : selectedSelection && isPreinstalledAgent(selectedSelection)
                   ? '运行时预装（服务端未变更）'
                   : (selectedSelection?.observedVersion ?? '尚未安装')}
@@ -699,9 +699,9 @@ export default function PluginsPage() {
           )}
           <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             {demoPlugin(selected)
-              ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器演示状态，不会下载或运行插件包。'
+              ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
               : selectedSelection && isPreinstalledAgent(selectedSelection)
-                ? '该 Agent 由运行时预装；安装只改变浏览器演示状态，不写服务端，也不影响执行器候选。'
+                ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
               : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
           </p>
           <Separator />
@@ -730,7 +730,7 @@ export default function PluginsPage() {
           title={`移除 ${removing.entry.title}？`}
           description={
             removing.demo
-              ? '将清除当前浏览器中的演示安装状态，不会卸载真实插件包。'
+              ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
               : removing.entry.kind === 'skill'
               ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
               : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'

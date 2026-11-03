@@ -112,7 +112,7 @@ export function ConnectionForm({
             onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
           />
           <FieldDescription>
-            仅保存演示元数据，不会访问此地址。
+            仅保存连接元数据，不会访问此地址。
           </FieldDescription>
         </Field>
         <Field>
@@ -136,7 +136,7 @@ export function ConnectionForm({
           </NativeSelect>
         </Field>
         <Field orientation="horizontal">
-          <FieldLabel htmlFor={id + '-enabled'}>启用演示连接</FieldLabel>
+          <FieldLabel htmlFor={id + '-enabled'}>启用连接</FieldLabel>
           <Switch
             id={id + '-enabled'}
             checked={draft.enabled}

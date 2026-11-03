@@ -101,6 +101,22 @@ test('settings subroutes, refresh, history and the existing shell remain navigab
   }
 })
 
+test('settings pages avoid demo labels and the reset control', async ({ page }) => {
+  await login(page, '/settings/model-connections')
+  for (const path of ['model-connections', 'roles', 'skills', 'plugins']) {
+    await page.goto('/settings/' + path)
+    await expect(
+      page.getByRole('heading', { level: 1 }).first(),
+    ).toBeVisible()
+    await expect(
+      page.locator('.settings-content').getByText(/演示/),
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: '重置演示', exact: true }),
+    ).toHaveCount(0)
+  }
+})
+
 test('server-backed plugin and skill install lifecycle survives reload and a new browser context', async ({
   page,
   browser,
@@ -419,7 +435,7 @@ test('member can inspect market sources but cannot manage them', async ({
   ).toHaveCount(0)
 })
 
-test('corrupt local data shows a recoverable error and requires reset confirmation', async ({
+test('corrupt local data reports the failure and recovers after clearing the site data', async ({
   page,
 }) => {
   await login(page, '/settings/model-connections')
@@ -433,20 +449,11 @@ test('corrupt local data shows a recoverable error and requires reset confirmati
     localStorage.setItem(key, '{broken')
   })
   await page.reload()
-  await expect(page.getByRole('alert')).toContainText('演示数据无法读取')
+  await expect(page.getByRole('alert')).toContainText('本地设置无法读取')
   await page.getByRole('button', { name: '重试', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('演示数据无法读取')
-  await page.getByRole('button', { name: '重置演示', exact: true }).click()
-  await page
-    .getByRole('alertdialog')
-    .getByRole('button', { name: '取消' })
-    .click()
-  await expect(page.getByRole('article')).toHaveCount(0)
-  await page.getByRole('button', { name: '重置演示', exact: true }).click()
-  await page
-    .getByRole('alertdialog')
-    .getByRole('button', { name: '重置演示', exact: true })
-    .click()
+  await expect(page.getByRole('alert')).toContainText('本地设置无法读取')
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
   await expect(
     page.getByRole('article', { name: '团队日常模型 · 示例' }),
   ).toBeVisible()
@@ -656,7 +663,7 @@ test('the roster comes from the server and a member sees no invitation entry', a
   await expect(page.getByRole('row', { name: new RegExp(ownerName) })).toBeVisible()
 })
 
-test('model metadata and simulated credentials never send model requests', async ({
+test('model metadata and credential state never send model requests', async ({
   page,
 }) => {
   const modelRequests: string[] = []
@@ -674,8 +681,8 @@ test('model metadata and simulated credentials never send model requests', async
   await page.getByLabel('显示名称', { exact: true }).fill('验收模型')
   await page.getByRole('button', { name: '保存连接', exact: true }).click()
   const row = page.getByRole('article', { name: '浏览器验收连接' })
-  await row.getByRole('button', { name: '模拟配置凭据' }).click()
-  await expect(row.getByText('演示凭据已配置', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: '标记凭据可用' }).click()
+  await expect(row.getByText('凭据已配置', { exact: true })).toBeVisible()
   await page
     .getByLabel('默认模型', { exact: true })
     .selectOption({ label: '浏览器验收连接 / 验收模型' })

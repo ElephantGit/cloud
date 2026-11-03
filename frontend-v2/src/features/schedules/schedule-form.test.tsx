@@ -46,3 +46,32 @@ it('selects an Agent and one of its models independently', async () => {
   await user.click(screen.getByRole('button', { name: '创建并启用' }))
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'official/claude', agent: 'Claude Code', model: 'messages' }), data)
 })
+
+it('requires a project for a workflow while keeping projectless chat', async () => {
+  const user = userEvent.setup()
+  const onSave = vi.fn()
+  const data = {
+    projects: [{ id: 'project', name: 'Demo', description: '' }],
+    workflows: [{ id: 'workflow', name: '周报流程', version: 'v1', snapshotId: 'snapshot' }],
+    available: { projects: true, models: true, agents: true, workflows: true },
+  }
+  render(<QueryClientProvider client={new QueryClient()}><ScheduleForm onSave={onSave} onCancel={() => {}} data={data} /></QueryClientProvider>)
+  fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '定时周报' } })
+  await user.click(screen.getByRole('button', { name: /运行工作流/ }))
+  await user.selectOptions(screen.getByLabelText('工作流'), 'workflow')
+  const project = screen.getByLabelText('关联项目')
+  expect(project).toHaveValue('')
+  expect(within(project).getByRole('option', { name: '请选择项目' })).toBeDisabled()
+  expect(within(project).queryByRole('option', { name: '不关联项目' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '创建并启用' }))
+  expect(onSave).not.toHaveBeenCalled()
+  expect(screen.getByText('工作流要在项目中运行，请选择项目')).toBeInTheDocument()
+
+  await user.selectOptions(project, 'project')
+  await user.click(screen.getByRole('button', { name: '创建并启用' }))
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'workflow', projectId: 'project' }), data)
+
+  await user.click(screen.getByRole('button', { name: /直接对话/ }))
+  expect(within(project).getByRole('option', { name: '不关联项目' })).toBeEnabled()
+})

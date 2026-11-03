@@ -5,7 +5,7 @@ export default defineConfig({
   squads: {
     input: { target: '../v2-server/squads.openapi.json' },
     output: {
-      target: 'src/features/collaboration/api/generated.ts',
+      target: 'src/lib/squads-api/generated.ts',
       client: 'react-query',
       httpClient: 'axios',
       clean: true,

@@ -1,4 +1,4 @@
-import type { SquadSummary } from './api/generated'
+import type { SquadSummary } from '@/lib/squads-api/generated'
 import { formatTime } from './squad-model'
 
 /**

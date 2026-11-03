@@ -19,6 +19,7 @@ async function resetScroll(page: Page) {
 }
 const titles = [
   ['members', '成员'],
+  ['squads', '小队'],
   ['roles', '角色'],
   ['model-connections', '模型连接'],
   ['theme', '主题'],
@@ -497,7 +498,7 @@ test('theme survives reload and follows system changes across existing pages', a
   await expect(page.locator('html')).not.toHaveClass(/dark/)
 })
 
-test('six settings pages and keyboard-accessible details', async ({
+test('seven settings pages and keyboard-accessible details', async ({
   page,
 }, info) => {
   const errors: string[] = []
@@ -609,7 +610,7 @@ test('Agent plugin screenshots', async ({ page }, info) => {
 })
 
 for (const width of [768, 375]) {
-  test(`six settings pages at ${width}px keep the active link visible`, async ({
+  test(`seven settings pages at ${width}px keep the active link visible`, async ({
     page,
   }, info) => {
     await page.setViewportSize({ width: 1440, height: 900 })

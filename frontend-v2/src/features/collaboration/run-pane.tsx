@@ -1,6 +1,6 @@
 import { Bot, LoaderCircle } from 'lucide-react'
 import { Thread } from '@/components/agent-thread/thread'
-import { formatTime } from './squad-model'
+import { formatTime } from './task-model'
 import { useRunSession } from './run-session'
 import { runEndLabel, runResultLabel, runStateLabel } from './task-model'
 import type { TaskRun } from './tasks-api/generated'

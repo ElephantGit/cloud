@@ -1,7 +1,7 @@
 import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
-import type { SquadDetail } from './api/generated'
+import type { SquadDetail } from '@/lib/squads-api/generated'
 import { activeMembers } from './squad-model'
-import { isRunnableAgent } from '@/lib/plugin-runtime'
+import { isRunnableAgent, pluginLabel } from '@/lib/plugin-runtime'
 
 /**
  * Workspace members who may still join a squad: active accounts with no live membership in it.
@@ -21,9 +21,6 @@ export function agentCandidatesFor(squad: SquadDetail, plugins: readonly SpacePl
   const joined = new Set(activeMembers(squad).flatMap(member => (member.spaceAgentId === null ? [] : [member.spaceAgentId])))
   return plugins.filter(plugin => isRunnableAgent(plugin) && !joined.has(plugin.id))
 }
-
-/** The install identifier people recognize an agent plugin by, such as official/ora-space.opencode. */
-export const pluginLabel = (plugin: SpacePlugin): string => `${plugin.sourceNamespace}/${plugin.identifier}`
 
 /** Filters agent plugins by identifier; an empty query leaves the list unchanged. */
 export function matchingPlugins(plugins: readonly SpacePlugin[], query: string): SpacePlugin[] {

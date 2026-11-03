@@ -5,9 +5,9 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
 import type { MemberListItem, SpacePlugin, User } from '@/api/generated.schemas'
 import { MemoryRouter } from 'react-router'
-import SquadsPage from './squads-page'
-import * as api from './api/generated'
-import type { SquadDetail, SquadSummary } from './api/generated'
+import SquadsPage from './page'
+import * as api from '@/lib/squads-api/generated'
+import type { SquadDetail, SquadSummary } from '@/lib/squads-api/generated'
 
 const roster = vi.hoisted(() => ({ items: [] as MemberListItem[] }))
 const spacePlugins = vi.hoisted(() => ({ items: [] as SpacePlugin[] }))
@@ -17,7 +17,7 @@ vi.mock('@/api/spaces/spaces', () => ({
   useGetApiV1TenantsTidSpaces: () => ({ data: { items: [{ id: 'space-1' }], nextCursor: '' }, isLoading: false, isError: false }),
   useGetApiV1TenantsTidSpacesSpaceIdPlugins: () => ({ data: spacePlugins, isLoading: false, isError: false }),
 }))
-vi.mock('./api/generated', () => ({
+vi.mock('@/lib/squads-api/generated', () => ({
   listSquads: vi.fn(), getSquad: vi.fn(), createSquad: vi.fn(), updateSquad: vi.fn(), archiveSquad: vi.fn(),
   addSquadMember: vi.fn(), removeSquadMember: vi.fn(), updateSquadMember: vi.fn(),
 }))

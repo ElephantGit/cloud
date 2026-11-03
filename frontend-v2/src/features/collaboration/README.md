@@ -1,14 +1,14 @@
 # 协作
 
-页面和导航叫「协作」（路由 `/collaboration`），承载两块真实数据：任务（task）与小队（squad）。任务是工作区里指派给人、Agent 或小队的一件活，属于一个项目，全团队可见；小队是工作区内人和 Agent 的协作编组，回答「哪些人和 Agent 一起承接哪类任务」，与工作区成员资格分开。两块数据都来自 v2-server 的候选接口。
+页面和导航叫「协作」（路由 `/collaboration`），承载任务（task）：工作区里指派给人、Agent 或小队的一件活，属于一个项目，全团队可见，数据来自 v2-server 的候选接口。小队（squad）是工作区内人和 Agent 的协作编组，属于配置，在「设置 / 小队」里管理（`features/settings/squads/`）；协作页只按小队筛选任务、把任务指派给小队。
 
 ## 页面结构
 
 协作页有自己的侧栏（`page.tsx`），右侧是子路由（`index.ts`）：
 
-- `/collaboration`：任务看板（默认）或列表（`tasks-page.tsx`）。看板占满窗口高度，每列各自滚动。侧栏的视图「我的任务 / 待我处理 / 全部任务」和小队都是同一份全团队任务列表的筛选，写在 URL 里（`?view=`、`?squad=`、`?layout=list`），链接发给队友看到的是同一个视图。没有推送：有 Agent 在执行时列表每 3 秒重读，否则 15 秒。
+- `/collaboration`：任务看板（默认）或列表（`tasks-page.tsx`）。看板占满窗口高度，每列各自滚动。侧栏的视图「我的任务 / 待我处理 / 全部任务」和各小队都是同一份全团队任务列表的筛选；还没有小队时，侧栏给出去设置里创建的链接，写在 URL 里（`?view=`、`?squad=`、`?layout=list`），链接发给队友看到的是同一个视图。没有推送：有 Agent 在执行时列表每 3 秒重读，否则 15 秒。
 - `/collaboration/tasks/:taskId`：一个任务（`task-page.tsx`）。左边是「Agent 运行」与「讨论」两个页签和一个输入框，右边是任务信息、指派、执行和状态推进。
-- `/collaboration/squads`：小队列表与详情（`squads-page.tsx`），`?squad=<id>` 直接打开那个小队。
+- `/collaboration/squads`：旧地址，带着查询参数重定向到 `/settings/squads`。
 
 协作里的一切都属于团队；个人的对话留在对话页。运行过程用 `src/components/agent-thread` 的线程视图，和对话页、工作流运行页是同一套。
 
@@ -23,7 +23,6 @@
 - **讨论与 @**：能发给这个任务的 Agent 时（指派了 Agent、它没在执行、调用者是当前运行的发起人或还没有运行），输入框默认发给 Agent，评论同时全团队可见；关掉「发给 Agent」就只发团队评论；发不了时开关关闭并说明原因。输入 `@` 弹出工作区成员和 Agent：选成员是提及，被提及的人在回复前会在「待我处理」里看到这个任务，卡片标着谁 @ 了他；选这个任务的 Agent 等同打开「发给 Agent」。只有从菜单选中的对象算数，正文里手打的「@名字」不路由。
 - **谁能追问**：运行属于发起人，只有发起人能追问（不然就是用别人的身份跑）；其他成员的「发给 Agent」是灰的并写明原因，他们可以评论，或重新执行用自己的身份开一次新运行。
 - 写操作按任务 version 做乐观校验；被拒绝时按服务端的码给出原因，不静默重试。
-- 小队：列表显示有效的人类成员、Agent 成员与维护者计数，详情按类型列成员、职责、维护者与 leader，并保留已退出历史；维护者可编辑、归档、加入成员与可执行的 Space Agent、移除成员，任何成员可以自己退出，维护者可以交接维护者标记、设置 Agent leader。小队关系不授予私人模型、Git 凭据或运行时权限。
 
 ## 还没有的
 
@@ -34,6 +33,6 @@
 
 ## 接口与检查
 
-小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `api/generated.ts`；任务（含运行、评论、时间线与拆分）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `tasks-api/generated.ts`。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
+小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `src/lib/squads-api/generated.ts`（协作页与设置共用）；任务（含运行、评论、时间线与拆分）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `tasks-api/generated.ts`。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
 
-`npm run check` 运行类型检查、lint、单元测试和构建；`npm run e2e` 用真实 v2-server 与 PostgreSQL 跑建任务、指派、推进、评论、看板，以及建队、增删成员、归档流程；设了 `V2_NODE_ASSETS_DIR` 时另跑真实 Agent 执行任务、另一个成员旁观与评论、发起人追问和停止，并通过 `E2E_DATABASE_URL` 与 `PW_CHROMIUM_PATH` 指定数据库和浏览器。
+`npm run check` 运行类型检查、lint、单元测试和构建；`npm run e2e` 用真实 v2-server 与 PostgreSQL 跑建任务、指派、推进、评论、看板，以及在设置 / 小队里建队、增删成员、归档的流程；设了 `V2_NODE_ASSETS_DIR` 时另跑真实 Agent 执行任务、另一个成员旁观与评论、发起人追问和停止，并通过 `E2E_DATABASE_URL` 与 `PW_CHROMIUM_PATH` 指定数据库和浏览器。

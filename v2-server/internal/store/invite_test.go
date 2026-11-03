@@ -196,6 +196,64 @@ func TestRetireLegacyDemoUserKeepsItsHistory(t *testing.T) {
 	}
 }
 
+func TestEndDeletedSquadMembersMovesThemToHistory(t *testing.T) {
+	f := newSquadFixture(t)
+	ctx := f.ctx
+	owner := f.login(t, "owner", store.RoleOwner)
+	squad, e := f.store.CreateSquad(ctx, f.tenant, owner, store.SquadInput{Name: "演示小队"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	// An older build created squads as the dev login and retired it without ending its memberships.
+	var legacy string
+	if e := f.db.QueryRow(ctx, `
+		INSERT INTO users (source, subject, display_name) VALUES ('dev', 'demo', '演示用户')
+		RETURNING id::text`).Scan(&legacy); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Exec(ctx, `
+		INSERT INTO v2_squad_members (squad_id, member_type, user_id, maintainer)
+		VALUES ($1, 'human', $2, true)`, squad.ID, legacy); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.store.RetireLegacyDemoUser(ctx); e != nil {
+		t.Fatal(e)
+	}
+
+	if e := f.store.EndDeletedSquadMembers(ctx); e != nil {
+		t.Fatal(e)
+	}
+	got, e := f.store.Squad(ctx, f.tenant, squad.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	live := liveMembers(got)
+	if len(live) != 1 || *live[0].UserID != owner {
+		t.Fatalf("live members after cleanup = %+v", got.Members)
+	}
+	if got.HumanCount != 1 || got.MaintainerCount != 1 || got.Version != squad.Version+1 {
+		t.Fatalf("counts or version after cleanup = %+v", got.SquadSummary)
+	}
+	var ended bool
+	for _, m := range got.Members {
+		if m.UserID != nil && *m.UserID == legacy {
+			ended = m.EndedAt != nil && m.DisplayName == "演示用户"
+		}
+	}
+	if !ended {
+		t.Fatalf("deleted account is not kept as history: %+v", got.Members)
+	}
+
+	// Nothing is left to end, so a later startup leaves the squad untouched.
+	if e := f.store.EndDeletedSquadMembers(ctx); e != nil {
+		t.Fatal(e)
+	}
+	again, e := f.store.Squad(ctx, f.tenant, squad.ID)
+	if e != nil || again.Version != got.Version {
+		t.Fatalf("second cleanup = %+v %v", again.SquadSummary, e)
+	}
+}
+
 func TestInviteMemberRequiresOwnerAndCreatesTheAccount(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx

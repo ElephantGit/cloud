@@ -85,7 +85,9 @@ export default function SettingsPage() {
                     ? '个人设置'
                     : location.pathname === '/settings/roles'
                       ? '本机角色'
-                      : '工作空间成员'}
+                      : location.pathname === '/settings/squads'
+                        ? '工作空间小队'
+                        : '工作空间成员'}
           </span>
         </div>
         <div className="settings-content">

@@ -148,3 +148,7 @@ export function decompositionMessageFor(error: unknown): string {
   }
   return statusOf(error) === 404 ? '任务不存在或你已无权查看。' : '拆分没有启动，请重试。'
 }
+
+/** Local date and time of a server instant; the demo runs in one timezone. */
+export const formatTime = (iso: string): string =>
+  new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))

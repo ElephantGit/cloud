@@ -36,7 +36,7 @@ export default function TaskPage() {
   const client = useQueryClient()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'discussion' ? 'discussion' : 'runs'
-  const [pickedRun, setPickedRun] = useState<string | null>(null)
+  const pickedRun=params.get("run")
   const [error, setError] = useState('')
   const [composeError, setComposeError] = useState('')
   const [editing, setEditing] = useState(false)
@@ -76,7 +76,7 @@ export default function TaskPage() {
   const splitting = decompositions.latest?.status === 'running'
   const runs = timeline.data?.runs ?? []
   const comments = timeline.data?.comments ?? []
-  const selected = runs.find(r => r.id === pickedRun) ?? runs.at(-1)
+  const selected = pickedRun ? runs.find(r=>r.id===pickedRun) : runs.at(-1)
   const refresh = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: ['task', tenantId, taskId] }),
@@ -84,13 +84,14 @@ export default function TaskPage() {
       client.invalidateQueries({ queryKey: ['tasks', tenantId] }),
     ])
   }
-  const showTab = (next: 'runs' | 'discussion') => {
+  const showTab = (next: 'runs' | 'discussion', id?:string) => {
     const p = new URLSearchParams(params)
+    if(id)p.set('run',id)
     if (next === 'runs') p.delete('tab')
     else p.set('tab', next)
     setParams(p, { replace: true })
   }
-  const showRun = (id: string) => { setPickedRun(id); showTab('runs') }
+  const showRun = (id: string) => showTab('runs',id)
 
   const settle = (updated: Task) => {
     client.setQueryData(['task', tenantId, updated.id], updated)
@@ -114,7 +115,7 @@ export default function TaskPage() {
   })
   const start = useMutation({
     mutationFn: () => startTaskRun(tenantId, taskId, { executorId }, keyed()),
-    onSuccess: async run => { setError(''); setPickedRun(run.id); showTab('runs'); await refresh() },
+    onSuccess: async run => { setError(''); showRun(run.id); await refresh() },
     onError: e => setError(taskRunMessageFor(e)),
   })
   const stop = useMutation({
@@ -164,7 +165,7 @@ export default function TaskPage() {
           {timeline.isError
             ? <p role="alert">运行与讨论加载失败，请刷新重试。</p>
             : tab === 'runs'
-              ? <RunPane tenantId={tenantId} taskId={task.id} runs={runs} selected={selected} onSelect={setPickedRun} />
+              ? pickedRun&&!selected&&!timeline.isPending ? <p role="status">这次运行已不存在或不可见。</p> : <RunPane tenantId={tenantId} taskId={task.id} runs={runs} selected={selected} onSelect={showRun} />
               : <TaskDiscussion comments={comments} runs={runs} onRun={showRun} />}
         </div>
         <TaskComposer tenantId={tenantId} task={task} me={me.id} sending={comment.isPending} error={composeError}

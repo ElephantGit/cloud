@@ -1,3 +1,4 @@
+import { listTasks } from '../collaboration/tasks-api/generated'
 import { useUser } from '@/app/auth/user'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -41,7 +42,11 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const resourceQuery = useQuery({ queryKey:['schedule-resources',scope],queryFn:({signal})=>getScheduleResources(tenantId,undefined,signal),enabled:!!tenantId,retry:false,refetchInterval:30_000 })
   const hasResources = resourceQuery.data !== undefined
   const resources = resourceQuery.data ?? emptyResources
-  const data=resourceCatalog(resources)
+  const [panel, setPanel] = useState<Panel>(null)
+  const me=useUser()
+  const directory=useQuery({queryKey:['schedule-personal-tasks',scope],queryFn:({signal})=>listTasks(tenantId,undefined,signal),enabled:!!tenantId&&!!panel,retry:false})
+  const data:Catalog={...resourceCatalog(resources),tenantId,taskDirectoryError:directory.isError,
+    tasks:directory.data?.items.filter(t=>t.assignee?.type==='human' && t.assignee.id===me.id && (t.status==='pending'||t.status==='running'))}
   const observed=useQuery<Record<string,ScheduleActionReceipt>>({queryKey:['schedule-observed',scope],queryFn:()=>({}),enabled:false,initialData:{}})
   const onObserved=useCallback((record:ScheduleActionReceipt)=>{
     client.setQueryData<Record<string,ScheduleActionReceipt>>(['schedule-observed',scope],old=>{
@@ -57,12 +62,10 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
   const [conflict, setConflict] = useState(false)
   const [editTask, setEditTask] = useState<Task>()
   const saveMutation = useMutation({ mutationFn: async ({ draft, task, data }: { draft: Draft; task?: Task; data: Catalog }) => {
-    if (draft.kind === 'task') throw new Error('此执行方式尚未接入真实资源')
     const payload = { name: draft.name.trim(), projectId: draft.projectId, target: targetFromDraft(draft, data), rule: draft.rule }
     return task ? updateScheduleConfig(tenantId, task.id, { ...payload, version: task.version! }) : createScheduleConfig(tenantId, payload)
   }, onSuccess: async (item, variables) => { await refresh(); setPanel(current => current && (current.kind === 'create' || (current.kind === 'edit' && current.id === variables.task?.id)) ? { kind: 'detail', id: item.id } : current); setSaveError(''); setConflict(false); setToast(variables.task ? '修改已保存' : '任务配置已保存') }, onError: error => { setConflict(statusOf(error) === 409); setSaveError(scheduleError(error,'保存失败，请重试。')); if (statusOf(error) === 409) void refresh() } })
   const toggleMutation = useMutation({ mutationFn: (task: Task) => setScheduleConfigEnabled(tenantId, task.id, { version: task.version!, enabled: !task.enabled }), onSuccess: async () => { await refresh(); setToast('任务状态已更新') }, onError: error => { setToast(scheduleError(error,'更新失败，请重试')); void refresh() } })
-  const [panel, setPanel] = useState<Panel>(null)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [kind, setKind] = useState('all')
@@ -95,7 +98,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
 
       <div className="sp-resource-status" aria-live="polite">
         {resourceQuery.isPending?'正在读取执行资源…':resourceQuery.isError?`${scheduleError(resourceQuery.error,'执行资源加载失败。')}${hasResources?' 当前继续使用上次读取的资源。':''}`:!resources.available.models?'执行服务尚未就绪，当前可保存未绑定模型的配置。':'项目、Agent 与模型来自当前工作空间；执行以运行记录为准。'}
-        <Button variant="outline" size="sm" disabled={resourceQuery.isFetching} onClick={()=>void resourceQuery.refetch()}>刷新资源</Button>
+        <Button variant="outline" size="sm" disabled={resourceQuery.isFetching} onClick={()=>{void resourceQuery.refetch();if(panel)void directory.refetch()}}>刷新资源</Button>
       </div>
       <div className="sp-summary-strip" aria-label="任务概览">
         <div className="sp-summary-counts"><span><i className="sp-dot enabled" />已启用 <strong>{enabled}</strong></span><span><i className="sp-dot paused" />已暂停 <strong>{tasks.length - enabled}</strong></span></div>
@@ -107,7 +110,7 @@ function SchedulesPage({ tenantId, scope, tenantsLoading, tenantsError }: { tena
           <div className="sp-search"><Search size={15} aria-hidden="true" /><Input aria-label="搜索任务" placeholder="搜索任务…" value={query} onChange={e => setQuery(e.target.value)} /></div>
           <div className="sp-filter-selects"><SlidersHorizontal size={14} aria-hidden="true" />
             <NativeSelect aria-label="状态筛选" value={status} onChange={e => setStatus(e.target.value)}><NativeSelectOption value="all">全部状态</NativeSelectOption><NativeSelectOption value="enabled">已启用</NativeSelectOption><NativeSelectOption value="paused">已暂停</NativeSelectOption></NativeSelect>
-            <NativeSelect aria-label="执行方式筛选" value={kind} onChange={e => setKind(e.target.value)}><NativeSelectOption value="all">全部类型</NativeSelectOption><NativeSelectOption value="chat">直接对话</NativeSelectOption><NativeSelectOption value="workflow">工作流</NativeSelectOption><NativeSelectOption value="task">已有任务</NativeSelectOption></NativeSelect>
+            <NativeSelect aria-label="执行方式筛选" value={kind} onChange={e => setKind(e.target.value)}><NativeSelectOption value="all">全部类型</NativeSelectOption><NativeSelectOption value="chat">直接对话</NativeSelectOption><NativeSelectOption value="workflow">工作流</NativeSelectOption><NativeSelectOption value="task">协作任务</NativeSelectOption></NativeSelect>
             <NativeSelect aria-label="项目筛选" value={project} onChange={e => setProject(e.target.value)}><NativeSelectOption value="all">全部项目</NativeSelectOption><NativeSelectOption value="none">不关联项目</NativeSelectOption>{resources.projects.map(p=><NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}</NativeSelect>
           </div>
         </div>

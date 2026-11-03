@@ -1,34 +1,38 @@
 /** Schedule-owned configuration and read-only legacy target metadata. */
-export type Rule = { kind: 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
+export type Rule = { date?:string; kind: 'once' | 'daily' | 'weekdays' | 'weekly' | 'hours'; time: string; days: number[]; hours: number; timezone: string }
 export type ChatTarget = { kind: 'chat'; prompt: string; agent: string; agentId?: string; model: string; executorId?: string }
 export type AgentModel = { id: string; name: string }
 export type AgentChoice = { id: string; name: string; version: string; models: AgentModel[] }
 /** A workflow run in the schedule's project: the published snapshot frozen at save, and its kickoff input. */
 export type WorkflowTarget = { kind: 'workflow'; workflowId: string; snapshotId: string; input: string }
+export type PersonalTarget = { kind: 'task'; taskId: string; executorId: string; note: string }
+export function isPersonalTarget(t: Target): t is PersonalTarget {
+  return t.kind === 'task' && typeof t.taskId === 'string' && !!t.taskId && typeof t.executorId === 'string' && !!t.executorId && typeof t.note === 'string'
+}
 export type LegacyTarget = { kind: 'workflow' | 'task'; [key:string]:unknown }
-export type Target = ChatTarget | WorkflowTarget | LegacyTarget
+export type Target = ChatTarget | WorkflowTarget | PersonalTarget | LegacyTarget
 /** A workflow target this version can run, as opposed to an older reference kept read-only. */
 export function isWorkflowTarget(target: Target): target is WorkflowTarget {
   return target.kind === 'workflow' && typeof target.workflowId === 'string' && typeof target.snapshotId === 'string'
 }
 export type Run = { id: string; startedAt: string; status: 'recorded'|'starting'|'reconciling'|'running'|'cancelling'|'succeeded'|'success'|'failed'|'cancelled'|'interrupted'|'skipped'; reason?:string;released?:boolean }
 export type Task = { version?: number; id: string; name: string; projectId: string; target: Target; rule: Rule; enabled: boolean; createdAt: string; runs: Run[] }
-export type Draft = { name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;agentId:string;model:string;executorId?:string;workflowId:string;snapshotId:string;input:string;rule:Rule }
-export type Catalog = { projects:{id:string;name:string;description:string}[];models?:AgentModel[];agents?:AgentChoice[];workflows?:{id:string;name:string;version:string;snapshotId:string}[];available?:{projects:boolean;models:boolean;agents:boolean;workflows?:boolean} }
+export type Draft = { taskId:string;note:string;name:string;kind:Target['kind'];projectId:string;prompt:string;agent:string;agentId:string;model:string;executorId?:string;workflowId:string;snapshotId:string;input:string;rule:Rule }
+export type Catalog = { tenantId?:string; tasks?:{id:string;title:string;projectId:string}[]; taskDirectoryError?:boolean; projects:{id:string;name:string;description:string}[];models?:AgentModel[];agents?:AgentChoice[];workflows?:{id:string;name:string;version:string;snapshotId:string}[];available?:{projects:boolean;models:boolean;agents:boolean;workflows?:boolean} }
 export const catalog: Catalog = {projects:[]}
 export const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
 export function emptyDraft(): Draft {
-  return { name: '', kind: 'chat', projectId: '', prompt: '', agent: '', agentId: '', model: '', workflowId: '', snapshotId: '', input: '', rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
+  return { taskId:'',note:'',name: '', kind: 'chat', projectId: '', prompt: '', agent: '', agentId: '', model: '', workflowId: '', snapshotId: '', input: '', rule: { kind: 'daily', time: '09:00', days: [1], hours: 6, timezone: 'Asia/Shanghai' } }
 }
 export function taskDraft(task: Task): Draft {
   const d = emptyDraft()
   const t = task.target
-  const target = t.kind === 'chat' ? t : isWorkflowTarget(t) ? { workflowId: t.workflowId, snapshotId: t.snapshotId, input: t.input ?? '' } : {}
+  const target = t.kind === 'chat' ? t : isPersonalTarget(t) ? {taskId:t.taskId,note:t.note,executorId:t.executorId} : isWorkflowTarget(t) ? { workflowId: t.workflowId, snapshotId: t.snapshotId, input: t.input ?? '' } : {}
   return { ...d, name: task.name, projectId: task.projectId, kind: t.kind, rule: structuredClone(task.rule), ...target }
 }
-/** Whether a draft's target can be saved: a conversation, or a workflow; older references stay read-only. */
+/** Only older unbound references stay read-only. */
 export function editableDraft(d: Draft, task?: Task) {
-  return d.kind === 'chat' || (d.kind === 'workflow' && (!task || task.target.kind !== 'workflow' || isWorkflowTarget(task.target)))
+  return d.kind === 'chat' || (d.kind === 'task' && (!task || task.target.kind !== 'task' || isPersonalTarget(task.target))) || (d.kind === 'workflow' && (!task || task.target.kind !== 'workflow' || isWorkflowTarget(task.target)))
 }
 /** The Agent selected by ID, or by display name for a task frozen before agent IDs existed. */
 export function agentChoice(d: Pick<Draft,'agentId'|'agent'>, data: Catalog = catalog): AgentChoice | undefined {
@@ -54,13 +58,17 @@ export function validateDraft(d: Draft, data: Catalog = catalog): Record<string,
   const errors: Record<string, string> = {}
   if (!d.name.trim()) errors.name = '请输入任务名称'
   if (d.kind === 'chat' && !d.prompt.trim()) errors.prompt = '请告诉 AI 每次需要做什么'
-  if (d.kind === 'task') errors.target = '此执行方式尚未接入，原配置仅供查看'
+  if (d.kind === 'task') {
+    if (!data.tasks?.some(t=>t.id===d.taskId && t.projectId===d.projectId)) errors.taskId='请选择仍分配给你的可处理任务'
+    if (!d.executorId) errors.executorId='请选择 Agent 与模型'
+  }
   if (d.kind === 'workflow') {
     if (!d.workflowId) errors.workflowId = '请选择要运行的工作流'
     else if (!data.workflows?.some(w => w.id === d.workflowId)) errors.workflowId = '该工作流已不可用或没有发布版本，请重新选择'
     if (!d.projectId) errors.projectId = '工作流要在项目中运行，请选择项目'
   }
   if (d.kind !== 'task' && d.projectId && !data.projects.some(p => p.id === d.projectId)) errors.projectId = '该项目已不可用，请重新选择'
+  if(d.rule.kind==='once' && (!d.rule.date || !nextTimes(d.rule).length)) errors.date='请选择该时区内未来的有效日期和时间'
   if (d.rule.kind === 'weekly' && !d.rule.days.length) errors.days = '请至少选择一天'
   if (d.rule.kind !== 'hours' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.rule.time)) errors.time = '请输入有效时间'
   if (d.rule.kind === 'hours' && (!Number.isInteger(d.rule.hours) || d.rule.hours < 1 || d.rule.hours > 24)) errors.hours = '间隔应为 1–24 小时的整数'
@@ -68,7 +76,11 @@ export function validateDraft(d: Draft, data: Catalog = catalog): Record<string,
   return errors
 }
 /** The target to save. A workflow freezes the version published right now; a later one applies once the task is saved again. */
-export function targetFromDraft(d: Draft, data: Catalog = catalog): ChatTarget | WorkflowTarget {
+export function targetFromDraft(d: Draft, data: Catalog = catalog): ChatTarget | WorkflowTarget | PersonalTarget {
+  if(d.kind==='task'){
+    if(!d.taskId || !d.executorId) throw new Error('请选择任务和执行器')
+    return {kind:'task',taskId:d.taskId,executorId:d.executorId,note:d.note.trim()}
+  }
   if (d.kind === 'workflow') {
     const workflow = data.workflows?.find(w => w.id === d.workflowId)
     if (!workflow) throw new Error('所选工作流已不可用')
@@ -86,6 +98,7 @@ export function targetFromDraft(d: Draft, data: Catalog = catalog): ChatTarget |
 }
 export function projectName(id: string, data:Catalog=catalog) { return !id?'不关联项目':data.projects.find(p => p.id === id)?.name ?? '项目暂不可用' }
 export function ruleText(rule: Rule) {
+  if(rule.kind==='once') return (rule.date??'')+' '+rule.time+'（仅一次）'
   if (rule.kind === 'hours') return `每隔 ${rule.hours} 小时`
   const prefix = rule.kind === 'daily' ? '每天' : rule.kind === 'weekdays' ? '每个工作日' : `每周${[...rule.days].sort((a,b) => ((a+6)%7)-((b+6)%7)).map(d => weekdayNames[d]).join('、')}`
   return `${prefix} ${rule.time}`
@@ -95,6 +108,7 @@ export function summary(d:Draft,data:Catalog=catalog) {
     const workflow=data.workflows?.find(w=>w.id===d.workflowId)
     return workflow?`${ruleText(d.rule)}，在「${projectName(d.projectId,data)}」中运行工作流「${workflow.name}」（${workflow.version}）。`:'选择项目和已发布的工作流后预览。'
   }
+  if(d.kind==='task'){const t=data.tasks?.find(t=>t.id===d.taskId);return t?ruleText(d.rule)+'，处理《'+t.title+'》，过程和结果写回原任务。':'选择分配给你的协作任务。'}
   if(d.kind!=='chat')return '原引用配置已保留；此执行方式尚未接入。'
   return `${ruleText(d.rule)}，${d.projectId?`在「${projectName(d.projectId,data)}」中`:'不关联项目，'}新建对话执行任务指令。`
 }
@@ -115,7 +129,8 @@ export function nextTimes(rule: Rule, now = new Date(), anchor = now): Date[] {
   const local = parts(now, rule.timezone)
   const [hour, minute] = rule.time.split(':').map(Number)
   const result: Date[] = []
-  for (let day = 0; day < 24 && result.length < 3; day++) {
+  const startDay=rule.kind==='once'?Math.round((Date.parse((rule.date??'')+'T00:00:00Z')-Date.UTC(local.year,local.month-1,local.day))/86400000):0
+  for (let day = startDay; day < (rule.kind==='once'?startDay+1:24) && result.length < 3; day++) {
     const calendar = new Date(Date.UTC(local.year, local.month - 1, local.day + day, hour, minute))
     const weekday = calendar.getUTCDay()
     if (rule.kind === 'weekdays' && (weekday === 0 || weekday === 6)) continue

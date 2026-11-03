@@ -17,6 +17,9 @@ func NewScheduleCoordinator(records scheduler.CoordinatorStore, o Options, now f
 		return nil, err
 	}
 	runner := scheduler.TargetRunner{Conversation: adapter}
+	if runs, ok := records.(scheduler.TaskRecords); ok && o.TaskRuns != nil {
+		runner.Task = scheduler.NewTaskAdapter(records, runs, o.TaskRuns, o.Execution)
+	}
 	if runs, ok := records.(scheduleWorkflowStore); ok && o.WorkflowRuns != nil {
 		workflows, err := scheduler.NewWorkflowAdapter(records, scheduleWorkflowRuns{store: runs, host: o.WorkflowRuns})
 		if err != nil {

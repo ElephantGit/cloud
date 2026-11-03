@@ -335,12 +335,12 @@ func (a *WorkflowAdapter) Cancel(ctx context.Context, scope execution.Scope, occ
 	return a.finish(ctx, scope, o, run)
 }
 
-// TargetRunner routes each occurrence to the adapter for its frozen target's kind: conversations
-// to the conversation adapter, workflows to the workflow adapter. Without a workflow adapter the
-// conversation adapter refuses workflow targets as unsupported.
+// TargetRunner routes frozen targets to their owning adapters; the conversation adapter
+// rejects unsupported kinds when their owning service is not installed.
 type TargetRunner struct {
 	Conversation Runner
 	Workflow     Runner
+	Task         Runner
 }
 
 func (r TargetRunner) pick(o store.Occurrence) Runner {
@@ -349,8 +349,13 @@ func (r TargetRunner) pick(o store.Occurrence) Runner {
 			Kind string `json:"kind"`
 		} `json:"target"`
 	}
-	if r.Workflow != nil && json.Unmarshal(o.Snapshot, &config) == nil && config.Target.Kind == "workflow" {
-		return r.Workflow
+	if json.Unmarshal(o.Snapshot, &config) == nil {
+		if config.Target.Kind == "workflow" && r.Workflow != nil {
+			return r.Workflow
+		}
+		if config.Target.Kind == "task" && r.Task != nil {
+			return r.Task
+		}
 	}
 	return r.Conversation
 }

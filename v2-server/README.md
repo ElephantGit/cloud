@@ -148,7 +148,7 @@ Skill 占用同名路径时保留原内容，不覆盖；已经启动的会话�
 
 定时任务只负责计划、触发身份、防重叠、调用提供方的执行接口，以及关联和展示外部运行事实。工作流的定义、发布快照、参数模式/语义校验、节点调度和执行由工作流模块拥有；任务目录、描述、项目和执行绑定由任务模块拥有。定时模块不要求这些提供方实现自己预设的解析协议。
 
-写入契约接受 chat 配置和工作流目标；task 写入明确返回 `503 schedule_target_unavailable`，没有 ScheduleTargetResolver、参数字符串化或可由替身开启的引用写入通道。
+写入契约接受 chat、工作流和本人协作任务目标；缺少可执行绑定的旧 task 引用仅供读取，没有 ScheduleTargetResolver、参数字符串化或可由替身开启的引用写入通道。
 
 **工作流目标** `{kind: "workflow", workflowId, snapshotId, input}` 在配置的 `projectId`（必填）里运行一个工作流。保存时校验项目属于当前用户、`snapshotId` 是这个工作流在本租户的非草稿版本；`schedule-resources` 的 `workflows` 列出已发布的工作流和它当前生效的快照，页面保存时固定这个快照，之后发布的新版本要重新保存任务才会使用。启动变量用快照里的默认值，`input` 作为开始节点的初始输入。进程没有执行桥时（`Options.WorkflowRuns` 为空）不列出工作流，写入返回 `503 schedule_target_unavailable`。旧的、没有这些字段的 workflow 引用照旧只读，按它写入返回 `400 invalid_target`。
 
@@ -449,6 +449,8 @@ End 和重启不自动删除目录。停止服务后 `go run . -cleanup` 只删�
 ConversationAdapter 按冻结配置分流：无项目文本对话用公共 StartModel 和明确模型 ID，有项目文本对话用公共 Start 和明确的 projectId、target.agentId、target.model；旧任务仍可传冻结的 target.executorId。每次触发新建会话，有项目时由公共服务创建独立目录，两路不相互降级。适配层共用 ReadAttempt/Cancel/End，不直接调用 provider 或 Node，也不另存 Session/Turn。成功要求 AnswerComplete；结果终态和 End 确认分开，End 失败不释放任务占位。缺失 Agent/model、工作流目标明确拒绝，不从展示名称猜测可执行绑定。
 
 协调器本身不创建 goroutine；main 的 Host 接入周期扫描和上述 HTTP 操作，前端页面已接入运行与取消等操作。main 注入公共 `executionruntime.Service` 驱动实际派发；普通测试通过公共 Stub 和实际 PostgreSQL 验证编排、HTTP 和生命周期，opt-in 测试另组合真实公共 Service。
+
+协作任务目标保存原任务 ID、执行器和可选补充说明；项目继承自任务，创建和触发时均校验归属和状态。调度器以计划创建者身份通过协作运行入口启动，使用到期记录的稳定身份核对原始执行，避免重复派发。历史只保存任务和运行引用，不复制原任务的过程或回答。仅一次规则按配置时区的指定日期触发，重启不补跑。候选契约见 `schedules.openapi.json`、`tasks.openapi.json`。
 
 `server.NewScheduleCoordinator(records, options, now)` 使用页面统一的 `Options.Execution`，不另建执行服务；宿主在公共启动恢复完成后调用 Recover，再驱动 Tick/Manual。Start 与同记录的核对/取消不会并行。启动错误或本地引用未保存时只按原 Caller 读取；无引用且确定没有进行中的 Start，查询未命中可记 skipped/execution_not_started。读取错误或已有引用但缺失记录时保留占位，不重放 prompt。Agent Cancel 结束会话，model-only Cancel 只停当前轮；定时对话两路都随后确认 End，保留历史与目录。详细状态、原因及 released 含义见 [状态说明](internal/store/occurrence-states.md)。
 

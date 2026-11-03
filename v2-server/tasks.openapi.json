@@ -1942,6 +1942,10 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "scheduled": {
+            "type": "boolean",
+            "description": "The original task run was started by a schedule."
           }
         }
       },

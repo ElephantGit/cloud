@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/wanglongan587/cloud/v2-server/internal/store"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 	_ "time/tzdata"
+
+	"github.com/wanglongan587/cloud/v2-server/internal/execution"
+	"github.com/wanglongan587/cloud/v2-server/internal/schedule"
+	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 )
 
 type scheduleStore interface {
@@ -79,6 +83,7 @@ func validateSchedule(in *store.ScheduleInput) string {
 		}
 	}
 	var rule struct {
+		Date     string `json:"date,omitempty"`
 		Kind     string `json:"kind"`
 		Time     string `json:"time"`
 		Days     []int  `json:"days"`
@@ -100,6 +105,12 @@ func validateSchedule(in *store.ScheduleInput) string {
 	case "hours":
 		if rule.Hours < 1 || rule.Hours > 24 {
 			return "invalid_interval"
+		}
+	case "once":
+		now := time.Now()
+		times, err := schedule.Next(schedule.Rule{Kind: "once", Date: rule.Date, Time: rule.Time, Timezone: rule.Timezone}, now, now, 1)
+		if err != nil || len(times) == 0 {
+			return "invalid_time"
 		}
 	case "daily", "weekdays", "weekly":
 		if !scheduleTime.MatchString(rule.Time) {
@@ -181,7 +192,22 @@ func (h *handler) scheduleConfigs(w http.ResponseWriter, r *http.Request, u stor
 		}
 		target, _ := decodeScheduleChat(in.Target)
 		var err error
-		if target.Kind == "workflow" {
+		if target.Kind == "task" {
+			if h.opts.TaskRuns == nil {
+				fault(w, 503, "schedule_target_unavailable")
+				return
+			}
+			var t taskrun.ScheduledTarget
+			if err := json.Unmarshal(in.Target, &t); err != nil {
+				fault(w, 400, "invalid_target")
+				return
+			}
+			err = h.opts.TaskRuns.ValidateScheduled(r.Context(), execution.Scope{TenantID: tenant, UserID: u.ID}, t, in.ProjectID)
+			if errors.Is(err, taskrun.ErrNotAssignee) || errors.Is(err, taskrun.ErrScheduleTaskChanged) || errors.Is(err, taskrun.ErrNoExecutor) {
+				fault(w, 400, "task_binding_invalid")
+				return
+			}
+		} else if target.Kind == "workflow" {
 			workflow, _ := decodeScheduleWorkflow(in.Target)
 			err = h.resolveScheduleWorkflow(r.Context(), tenant, u.ID, &in, workflow)
 		} else {

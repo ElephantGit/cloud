@@ -42,10 +42,10 @@ const run = (overrides: Partial<TaskRun> = {}): TaskRun => ({
 })
 const empty: TaskTimeline = { runs: [], comments: [] }
 
-function renderPage() {
+function renderPage(query='') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={client}><UserContext.Provider value={me}>
-    <MemoryRouter initialEntries={['/collaboration/tasks/task-1']}>
+    <MemoryRouter initialEntries={['/collaboration/tasks/task-1'+query]}>
       <Routes><Route path="/collaboration/tasks/:taskId" element={<TaskPage />} /></Routes>
     </MemoryRouter>
   </UserContext.Provider></QueryClientProvider>)
@@ -246,4 +246,14 @@ it('names the requirement a subtask came from and offers no split', async () => 
   renderPage()
   expect(await screen.findByRole('link', { name: '账号体系' })).toHaveAttribute('href', '/collaboration/tasks/parent-1')
   expect(screen.queryByRole('button', { name: '拆分' })).not.toBeInTheDocument()
+})
+
+it('opens the linked historical run instead of the newest run',async()=>{
+  vi.mocked(api.getTaskTimeline).mockResolvedValue({runs:[run({id:'earlier',scheduled:true}),run({id:'later'})],comments:[]})
+  const first=renderPage('?run=earlier')
+  expect(await screen.findByRole('tab',{name:/运行 1/,selected:true})).toBeVisible()
+  expect(screen.getByLabelText('运行概况')).toHaveTextContent('定时计划触发')
+  first.unmount();renderPage('?run=missing')
+  expect(await screen.findByText('这次运行已不存在或不可见。')).toBeVisible()
+  expect(screen.queryByLabelText('运行概况')).not.toBeInTheDocument()
 })

@@ -183,6 +183,61 @@ func (h *Host) executor(ctx context.Context, scope execution.Scope, task store.T
 	return execution.Executor{}, ErrNoExecutor
 }
 
+// ScheduledTarget is a binding to a personal collaboration task. The project is
+// inherited at save; a changed owner, status or project invalidates the binding.
+type ScheduledTarget struct {
+	Kind       string `json:"kind"`
+	TaskID     string `json:"taskId"`
+	ExecutorID string `json:"executorId"`
+	Note       string `json:"note"`
+}
+
+var ErrScheduleTaskChanged = errors.New("schedule task changed")
+
+// ErrScheduledStartUnknown retains the provisional task run until its original attempt can be read.
+var ErrScheduledStartUnknown = errors.New("scheduled task start needs lookup")
+
+func (h *Host) scheduledTask(ctx context.Context, scope execution.Scope, target ScheduledTarget, project string) (store.Task, error) {
+	task, err := h.store.Task(ctx, scope.TenantID, scope.UserID, target.TaskID)
+	if err != nil {
+		return task, err
+	}
+	if task.Assignee == nil || task.Assignee.Type != store.AssigneeHuman || task.Assignee.ID != scope.UserID {
+		return task, ErrNotAssignee
+	}
+	if task.ProjectID != project || (task.Status != store.TaskPending && task.Status != store.TaskRunning) {
+		return task, ErrScheduleTaskChanged
+	}
+	return task, nil
+}
+
+// ValidateScheduled checks the same binding used at trigger time.
+func (h *Host) ValidateScheduled(ctx context.Context, scope execution.Scope, target ScheduledTarget, project string) error {
+	task, err := h.scheduledTask(ctx, scope, target, project)
+	if err != nil {
+		return err
+	}
+	_, err = h.executor(ctx, scope, task, target.ExecutorID)
+	return err
+}
+
+// StartScheduled serializes with manual starts. Replays retain their accepted identity.
+func (h *Host) StartScheduled(ctx context.Context, scope execution.Scope, target ScheduledTarget, project, key string) (store.TaskRun, error) {
+	defer h.lock(target.TaskID)()
+	if r, err := h.store.TaskRunByKey(ctx, scope.TenantID, target.TaskID, scope.UserID, key); !errors.Is(err, store.ErrNotFound) {
+		return r, err
+	}
+	task, err := h.scheduledTask(ctx, scope, target, project)
+	if err != nil {
+		return store.TaskRun{}, err
+	}
+	note := "由定时计划触发。"
+	if target.Note != "" {
+		note += "\n" + target.Note
+	}
+	return h.start(ctx, scope, task, key, target.ExecutorID, brief(task, note), task.Version)
+}
+
 // StartInput starts a run. ExecutorID is empty for the Agent's default; Note adds to the brief.
 type StartInput struct {
 	ExecutorID string
@@ -201,11 +256,11 @@ func (h *Host) Start(ctx context.Context, scope execution.Scope, taskID, key str
 	if run, e := h.store.TaskRunByKey(ctx, scope.TenantID, taskID, scope.UserID, key); e == nil {
 		return run, nil
 	}
-	return h.start(ctx, scope, task, key, in.ExecutorID, brief(task, in.Note))
+	return h.start(ctx, scope, task, key, in.ExecutorID, brief(task, in.Note), 0)
 }
 
 // start runs the task's Agent in a new session. The caller holds the task's lock.
-func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task, key, executorID, prompt string) (store.TaskRun, error) {
+func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task, key, executorID, prompt string, expectedVersion int64) (store.TaskRun, error) {
 	if task.Status == store.TaskDone || task.Status == store.TaskCancelled {
 		return store.TaskRun{}, ErrTaskClosed
 	}
@@ -225,7 +280,7 @@ func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task
 	}
 	run, e := h.store.CreateTaskRun(ctx, store.NewTaskRun{
 		TenantID: task.TenantID, TaskID: task.ID, StartedBy: scope.UserID, StartKey: key,
-		ExecutorID: ex.ID, ExecutorName: ex.Name,
+		ExecutorID: ex.ID, ExecutorName: ex.Name, ExpectedVersion: expectedVersion,
 	})
 	if e != nil {
 		return run, e
@@ -234,10 +289,12 @@ func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task
 	ref, e := h.exec.Start(ctx, scope, execution.StartRequest{
 		Caller: caller, Target: execution.Target{ProjectID: task.ProjectID}, ExecutorID: ex.ID, Prompt: execution.TextPrompt(prompt),
 	})
-	if e != nil && uncertain(e) {
+	if e != nil && (uncertain(e) || expectedVersion != 0 && errors.Is(e, execution.ErrConflict)) {
 		// The outcome is unknown: if the service did accept the turn, the run is its owner.
 		if turn, re := h.exec.ReadAttempt(context.WithoutCancel(ctx), scope, caller); re == nil {
 			ref, e = turn.Ref, nil
+		} else if expectedVersion != 0 && !errors.Is(re, execution.ErrNotFound) {
+			return run, errors.Join(ErrScheduledStartUnknown, e, re)
 		}
 	}
 	if e != nil {
@@ -247,6 +304,9 @@ func (h *Host) start(ctx context.Context, scope execution.Scope, task store.Task
 	// would hold the task with nothing to stop.
 	ctx = context.WithoutCancel(ctx)
 	if e := h.store.RecordTaskTurn(ctx, run.ID, ref.SessionID, ref.TurnID); e != nil {
+		if expectedVersion != 0 {
+			return run, errors.Join(ErrScheduledStartUnknown, e)
+		}
 		return run, e
 	}
 	h.moveTask(ctx, task.TenantID, task.ID, task.Status, store.TaskRunning)
@@ -326,7 +386,7 @@ func (h *Host) followUp(ctx context.Context, scope execution.Scope, task store.T
 		h.watch(scope, live, ref)
 		return live.ID, ref.TurnID, nil
 	}
-	run, e := h.start(ctx, scope, task, key, in.ExecutorID, brief(task, in.Body))
+	run, e := h.start(ctx, scope, task, key, in.ExecutorID, brief(task, in.Body), 0)
 	if e != nil {
 		return "", "", e
 	}
@@ -351,6 +411,51 @@ func (h *Host) Stop(ctx context.Context, scope execution.Scope, taskID, runID st
 		return run, e
 	}
 	return h.store.TaskRun(ctx, scope.TenantID, taskID, runID)
+}
+
+// RecoverScheduledStart reconnects a provisional run to its already accepted
+// turn, without calling Start. A definite miss releases the provisional task slot.
+func (h *Host) RecoverScheduledStart(ctx context.Context, scope execution.Scope, taskID, key string) (store.TaskRun, error) {
+	defer h.lock(taskID)()
+	r, e := h.store.TaskRunByKey(ctx, scope.TenantID, taskID, scope.UserID, key)
+	if e != nil || r.SessionID != "" {
+		return r, e
+	}
+	turn, e := h.exec.ReadAttempt(ctx, scope, execution.Caller{Kind: execution.CallerTask, ID: r.ID, AttemptID: key})
+	if errors.Is(e, execution.ErrNotFound) {
+		if err := h.store.DeleteTaskRun(ctx, r.ID); err != nil {
+			return r, err
+		}
+		return r, store.ErrNotFound
+	}
+	if e != nil {
+		return r, e
+	}
+	if e = h.store.RecordTaskTurn(ctx, r.ID, turn.Ref.SessionID, turn.Ref.TurnID); e != nil {
+		return r, e
+	}
+	if r.Live() {
+		h.moveTask(ctx, r.TenantID, taskID, store.TaskPending, store.TaskRunning)
+		h.watch(scope, r, turn.Ref)
+	}
+	return h.store.TaskRun(ctx, r.TenantID, taskID, r.ID)
+}
+
+// StopScheduledTurn stops the original turn only. A follow-up that started
+// between the scheduler's history lookup and cancellation belongs to the user.
+func (h *Host) StopScheduledTurn(ctx context.Context, scope execution.Scope, taskID, runID, key, turnID string) error {
+	defer h.lock(taskID)()
+	r, e := h.store.TaskRunByKey(ctx, scope.TenantID, taskID, scope.UserID, key)
+	if e != nil {
+		return e
+	}
+	if r.ID != runID {
+		return store.ErrConflict
+	}
+	if !r.TurnActive() || r.LastTurnID != turnID {
+		return nil
+	}
+	return h.end(ctx, r, store.TaskRunStopped)
 }
 
 // Release ends the task's idle run once the task is done or cancelled; nobody can follow it up.

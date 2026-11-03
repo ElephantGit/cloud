@@ -15,6 +15,11 @@ describe('schedule rules', () => {
     const rule = { ...emptyDraft().rule, time: '02:30', timezone: 'America/New_York' }
     expect(nextTimes(rule, new Date('2026-03-08T00:00:00Z'))[0]?.toISOString()).toBe('2026-03-09T06:30:00.000Z')
   })
+  it('offers the single future instant even outside the recurring preview horizon',()=>{
+    const rule={...emptyDraft().rule, kind:'once' as const, date:'2027-01-15'}
+    expect(nextTimes(rule,new Date('2026-10-01T00:00:00Z')).map(t=>t.toISOString())).toEqual(['2027-01-15T01:00:00.000Z'])
+    expect(nextTimes(rule,new Date('2027-01-15T01:00:00Z'))).toEqual([])
+  })
   it('anchors hourly recurrence to creation, not each render', () => {
     const rule = { ...emptyDraft().rule, kind: 'hours' as const, hours: 6 }
     expect(nextTimes(rule, new Date('2026-10-29T08:30:00Z'), new Date('2026-10-29T01:00:00Z')).map(d => d.toISOString())).toEqual(['2026-10-29T13:00:00.000Z', '2026-10-29T19:00:00.000Z', '2026-10-30T01:00:00.000Z'])
@@ -25,8 +30,8 @@ describe('execution target boundaries',()=>{
   const draft={...emptyDraft(),name:'简报',prompt:'汇总变化'}
   expect(validateDraft(draft)).toEqual({})
   expect(targetFromDraft(draft)).toEqual({kind:'chat',prompt:'汇总变化',agent:'',model:''})
-  expect(validateDraft({...draft,kind:'task'})).toHaveProperty('target')
-  expect(()=>targetFromDraft({...draft,kind:'task'})).toThrow('引用目标只读')
+  expect(validateDraft({...draft,kind:'task'})).toHaveProperty('taskId')
+  expect(()=>targetFromDraft({...draft,kind:'task'})).toThrow('请选择任务和执行器')
  })
  it('saves independent Agent and model IDs without an executor binding',()=>{
   const data={projects:[{id:'p',name:'Demo',description:''}],models:[],agents:[{id:'official/claude',name:'Claude Code',version:'1.0.0',models:[{id:'messages-fixture',name:'Fixture'}]}],available:{projects:true,models:true,agents:true}}

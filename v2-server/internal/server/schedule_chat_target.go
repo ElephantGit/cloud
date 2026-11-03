@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
+	"github.com/wanglongan587/cloud/v2-server/internal/taskrun"
 )
 
 // ScheduleChatTarget contains only the currently supported conversation binding.
@@ -27,9 +28,18 @@ func decodeScheduleChat(raw json.RawMessage) (ScheduleChatTarget, string) {
 	if json.Unmarshal(fields["kind"], &kind) != nil {
 		return target, "invalid_target"
 	}
-	// Legacy task references remain readable; their provider contract is not defined here.
+	// Only the personal task binding is writable. Unbound legacy references stay read-only.
 	if kind == "task" {
-		return target, "schedule_target_unavailable"
+		var t taskrun.ScheduledTarget
+		d := json.NewDecoder(strings.NewReader(string(raw)))
+		d.DisallowUnknownFields()
+		if len(fields["taskId"]) == 0 || len(fields["executorId"]) == 0 {
+			return target, "schedule_target_unavailable"
+		}
+		if d.Decode(&t) != nil || !scheduleUUID.MatchString(t.TaskID) || strings.TrimSpace(t.ExecutorID) == "" || len(t.ExecutorID) > 200 || len(t.Note) > 32000 || len(fields["note"]) == 0 || string(fields["note"]) == "null" {
+			return target, "invalid_target"
+		}
+		return ScheduleChatTarget{Kind: kind}, ""
 	}
 	// A workflow target has its own shape (decodeScheduleWorkflow).
 	if kind == "workflow" {

@@ -43,7 +43,7 @@ function RunHeader({ run }: { run: TaskRun }) {
   return <div className="mc-run-head" aria-label="运行概况">
     <span className={`mc-run-state ${run.state}`}>{outcome}</span>
     <span>{run.executorName}</span>
-    <span>{run.startedByName} 发起 · {formatTime(run.createdAt)}</span>
+    <span>{run.scheduled?'定时计划触发 · ':''}{run.startedByName} 发起 · {formatTime(run.createdAt)}</span>
     {result && run.state !== 'running' && <span>最近一轮：{result}{run.failureCode && `（${run.failureCode}）`}</span>}
   </div>
 }

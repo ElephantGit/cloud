@@ -10,6 +10,7 @@ import (
 
 // Rule matches the saved v2 schedule configuration.
 type Rule struct {
+	Date     string `json:"date,omitempty"`
 	Kind     string `json:"kind"`
 	Time     string `json:"time"`
 	Days     []int  `json:"days"`
@@ -45,7 +46,7 @@ func Next(r Rule, created, after time.Time, count int) ([]time.Time, error) {
 		}
 		return out, nil
 	}
-	if r.Kind != "daily" && r.Kind != "weekdays" && r.Kind != "weekly" {
+	if r.Kind != "once" && r.Kind != "daily" && r.Kind != "weekdays" && r.Kind != "weekly" {
 		return nil, errors.New("invalid frequency")
 	}
 	parsed, e := time.Parse("15:04", r.Time)
@@ -67,7 +68,18 @@ func Next(r Rule, created, after time.Time, count int) ([]time.Time, error) {
 	}
 	local := after.In(loc)
 	start := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
-	for d := 0; d < 32 && len(out) < count; d++ {
+	limit := 32
+	if r.Kind == "once" {
+		start, e = time.Parse("2006-01-02", r.Date)
+		if e != nil {
+			return nil, e
+		}
+		if r.Date < local.Format("2006-01-02") {
+			return out, nil
+		}
+		limit = 1
+	}
+	for d := 0; d < limit && len(out) < count; d++ {
 		date := start.AddDate(0, 0, d)
 		weekday := int(date.Weekday())
 		if r.Kind == "weekdays" && (weekday == 0 || weekday == 6) || r.Kind == "weekly" && !days[weekday] {
@@ -84,6 +96,9 @@ func Next(r Rule, created, after time.Time, count int) ([]time.Time, error) {
 				break
 			}
 		}
+	}
+	if r.Kind == "once" {
+		return out, nil
 	}
 	if len(out) != count {
 		return nil, fmt.Errorf("no valid times in preview horizon")

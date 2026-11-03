@@ -375,16 +375,16 @@ function RunActInspectorPanel({
                 <span
                   className={cn(
                     "inline-block size-1.5 rounded-full",
-                    round.status === "succeeded" && "bg-emerald-500",
+                    round.status === "succeeded" && "bg-success",
                     round.status === "failed" && "bg-destructive",
                     round.status === "running" &&
-                      "bg-sky-500 theater-live-breathe",
+                      "bg-info theater-live-breathe",
                     (round.status === "idle" ||
                       round.status === "inactive" ||
                       round.status === "cancelled") &&
                       "bg-muted-foreground/40",
-                    round.status === "awaiting_input" && "bg-amber-500",
-                    round.status === "retry_waiting" && "bg-orange-500",
+                    round.status === "awaiting_input" && "bg-warning",
+                    round.status === "retry_waiting" && "bg-caution",
                   )}
                 />
               </button>
@@ -423,7 +423,7 @@ function RunActInspectorPanel({
           {data.description}
         </p>
         {state.status === "retry_waiting" && state.retryWait !== undefined && (
-          <p className="mt-1 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+          <p className="mt-1 text-[11px] font-medium text-caution">
             <RunRetryWaitLabel wait={state.retryWait} />
           </p>
         )}
@@ -692,7 +692,7 @@ function RunActInspectorPanel({
               </div>
             )}
           {state.status === "failed" && startedAutoRetries > 0 && (
-            <p className="text-[11px] font-medium text-orange-700 dark:text-orange-300">
+            <p className="text-[11px] font-medium text-caution">
               {t("workflowRun.retry.exhausted", {
                 count: startedAutoRetries,
               })}

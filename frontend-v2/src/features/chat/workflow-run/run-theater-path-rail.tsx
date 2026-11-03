@@ -131,11 +131,11 @@ export function RunTheaterPathRail({
           <div
             className={cn(
               "relative h-full overflow-hidden rounded-full bg-foreground/75 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              run.status === "running" && "bg-sky-600/80",
-              run.status === "awaiting_input" && "bg-amber-600/80",
-              run.status === "succeeded" && "bg-emerald-600/75",
-              run.status === "failed" && "bg-rose-600/75",
-              run.status === "cancelled" && "bg-zinc-500/60",
+              run.status === "running" && "bg-info/80",
+              run.status === "awaiting_input" && "bg-warning/80",
+              run.status === "succeeded" && "bg-success/75",
+              run.status === "failed" && "bg-destructive/75",
+              run.status === "cancelled" && "bg-muted-foreground/40",
             )}
             style={{ width: `${progress.percent}%` }}
           >
@@ -199,17 +199,17 @@ export function RunTheaterPathRail({
                         ? "min-w-48 max-w-[24rem] rounded-xl py-3"
                         : "max-w-[12rem]",
                       selected && waiting
-                        ? "theater-chip-pop border-amber-500/55 bg-amber-500/15 text-amber-950 shadow-sm dark:text-amber-50"
+                        ? "theater-chip-pop border-warning/55 bg-warning/15 text-warning shadow-sm"
                         : selected && state.status === "retry_waiting"
-                          ? "theater-chip-pop border-orange-500/55 bg-background shadow-sm"
+                          ? "theater-chip-pop border-caution/55 bg-background shadow-sm"
                           : selected
                             ? "theater-chip-pop border-foreground/35 bg-background shadow-sm"
                             : waiting
-                              ? "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+                              ? "border-warning/40 bg-warning/10 text-warning"
                               : state.status === "retry_waiting"
-                                ? "border-orange-500/40 bg-orange-500/10 text-orange-950 dark:text-orange-100"
+                                ? "border-caution/40 bg-caution/10 text-caution"
                                 : active
-                                  ? "border-sky-500/40 bg-sky-500/10"
+                                  ? "border-info/40 bg-info/10"
                                   : "border-transparent bg-background/60 hover:border-border hover:bg-background",
                     )}
                     aria-current={selected ? "step" : undefined}
@@ -227,7 +227,7 @@ export function RunTheaterPathRail({
                       <RunRetryWaitLabel
                         wait={retryWait}
                         variant="compact"
-                        className="shrink-0 text-[9px] tabular-nums text-orange-800 dark:text-orange-200"
+                        className="shrink-0 text-[9px] tabular-nums text-caution"
                       />
                     )}
                     {stage.type === "region" && (
@@ -267,18 +267,18 @@ export function RunTheaterPathRail({
                     showResultAct
                       ? cn(
                           "theater-chip-pop bg-background shadow-sm",
-                          run.status === "succeeded" && "border-emerald-500/45",
-                          run.status === "failed" && "border-rose-500/45",
-                          run.status === "cancelled" && "border-zinc-400/45",
+                          run.status === "succeeded" && "border-success/45",
+                          run.status === "failed" && "border-destructive/45",
+                          run.status === "cancelled" && "border-muted-foreground/40",
                         )
                       : cn(
                           "bg-background/60 hover:bg-background",
                           run.status === "succeeded" &&
-                            "border-emerald-500/25 hover:border-emerald-500/40",
+                            "border-success/25 hover:border-success/40",
                           run.status === "failed" &&
-                            "border-rose-500/25 hover:border-rose-500/40",
+                            "border-destructive/25 hover:border-destructive/40",
                           run.status === "cancelled" &&
-                            "border-zinc-400/25 hover:border-zinc-400/40",
+                            "border-muted-foreground/25 hover:border-muted-foreground/40",
                         ),
                   )}
                   aria-current={showResultAct ? "step" : undefined}

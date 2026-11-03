@@ -176,7 +176,7 @@ export function RunTheaterActCard({
   const metrics = (
     <div className="space-y-2.5">
       {retryWait !== undefined && (
-        <p className="text-[11px] font-medium tabular-nums text-orange-700 dark:text-orange-300">
+        <p className="text-[11px] font-medium tabular-nums text-caution">
           <RunRetryWaitLabel wait={retryWait} />
         </p>
       )}
@@ -214,9 +214,9 @@ export function RunTheaterActCard({
       typeof interaction === "function" ? (
         interaction({ accessory })
       ) : (
-        <div className="overflow-hidden rounded-xl border border-amber-500/25 bg-amber-500/[0.04]">
-          <div className="flex items-center justify-between gap-2 border-b border-amber-500/15 px-2.5 py-1.5">
-            <p className="truncate text-[11px] font-medium text-amber-950/75 dark:text-amber-100/75">
+        <div className="overflow-hidden rounded-xl border border-warning/25 bg-warning/[0.04]">
+          <div className="flex items-center justify-between gap-2 border-b border-warning/15 px-2.5 py-1.5">
+            <p className="truncate text-[11px] font-medium text-warning/75">
               {t("workflowRun.hitl.panelLabel")}
             </p>
             {accessory}
@@ -271,8 +271,8 @@ export function RunTheaterActCard({
       frameClassName={cn(
         tone.ring,
         "ring-1 transition-[box-shadow,ring-color] duration-300",
-        live && state.status === "running" && "ring-sky-500/35",
-        live && state.status === "awaiting_input" && "ring-amber-500/35",
+        live && state.status === "running" && "ring-info/35",
+        live && state.status === "awaiting_input" && "ring-warning/35",
       )}
       detailsClassName={
         isConversationOpen ? "min-h-0 flex-1 overflow-hidden" : undefined

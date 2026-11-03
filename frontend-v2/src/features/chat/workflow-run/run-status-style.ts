@@ -26,60 +26,60 @@ export function runStatusTone(
   switch (status) {
     case "running":
       return {
-        dot: "bg-sky-500",
-        ring: "border-sky-500/50 ring-sky-500/20",
-        badge: "border-sky-500/30 bg-sky-500/10 text-sky-800 dark:text-sky-300",
+        dot: "bg-info",
+        ring: "border-info/50 ring-info/20",
+        badge: "border-info/30 bg-info/10 text-info",
         labelKey: "workflowRun.status.running",
       };
     case "awaiting_input":
       // Amber matches HITL “must handle—chrome on the dock and stage card.
       return {
-        dot: "bg-amber-500",
-        ring: "border-amber-500/50 ring-amber-500/20",
+        dot: "bg-warning",
+        ring: "border-warning/50 ring-warning/20",
         badge:
-          "border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+          "border-warning/35 bg-warning/10 text-warning",
         labelKey: "workflowRun.status.awaiting_input",
       };
     case "retry_waiting":
       // Orange sits between amber (“needs you”) and rose (failed): an attempt failed and the
       // engine will run the node again by itself, so no action is expected from the user.
       return {
-        dot: "bg-orange-500",
-        ring: "border-orange-500/45 ring-orange-500/15",
+        dot: "bg-caution",
+        ring: "border-caution/45 ring-caution/15",
         badge:
-          "border-orange-500/30 bg-orange-500/10 text-orange-800 dark:text-orange-300",
+          "border-caution/30 bg-caution/10 text-caution",
         labelKey: "workflowRun.status.retry_waiting",
       };
     case "succeeded":
       return {
-        dot: "bg-emerald-500",
-        ring: "border-emerald-500/45 ring-emerald-500/15",
+        dot: "bg-success",
+        ring: "border-success/45 ring-success/15",
         badge:
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+          "border-success/30 bg-success/10 text-success",
         labelKey: "workflowRun.status.succeeded",
       };
     case "failed":
       return {
-        dot: "bg-rose-500",
-        ring: "border-rose-500/45 ring-rose-500/15",
+        dot: "bg-destructive",
+        ring: "border-destructive/45 ring-destructive/15",
         badge:
-          "border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300",
+          "border-destructive/30 bg-destructive/10 text-destructive",
         labelKey: "workflowRun.status.failed",
       };
     case "cancelled":
       return {
-        dot: "bg-zinc-400",
-        ring: "border-zinc-400/45 ring-zinc-400/10",
+        dot: "bg-muted-foreground/50",
+        ring: "border-muted-foreground/40 ring-muted-foreground/10",
         badge:
-          "border-zinc-400/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+          "border-muted-foreground/30 bg-muted text-muted-foreground",
         labelKey: "workflowRun.status.cancelled",
       };
     case "pending":
       return {
-        dot: "bg-amber-400",
-        ring: "border-amber-400/40 ring-amber-400/10",
+        dot: "bg-warning/60",
+        ring: "border-warning/40 ring-warning/10",
         badge:
-          "border-amber-400/30 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+          "border-warning/30 bg-warning/10 text-warning",
         labelKey: "workflowRun.status.pending",
       };
     case "idle":

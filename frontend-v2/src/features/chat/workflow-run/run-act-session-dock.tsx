@@ -41,11 +41,10 @@ export function RunActSessionDock({
         "transition-[transform,background-color,border-color,box-shadow,color] duration-200 motion-reduce:transition-none",
         hitlTone
           ? cn(
-              "size-8 border border-amber-500/25 bg-background/70 text-amber-950/80",
-              "hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-950",
-              "dark:text-amber-100/85 dark:hover:text-amber-50",
+              "size-8 border border-warning/25 bg-background/70 text-warning/80",
+              "hover:border-warning/40 hover:bg-warning/10 hover:text-warning",
               open &&
-                "border-amber-500/45 bg-amber-500/15 text-amber-950 dark:text-amber-50",
+                "border-warning/45 bg-warning/15 text-warning",
             )
           : cn(
               "ml-auto size-9 border shadow-sm",
@@ -82,7 +81,7 @@ export function RunActSessionDock({
               className={cn(
                 "absolute rounded-full border bg-background p-0.5 shadow-sm",
                 hitlTone
-                  ? "-right-1.5 -top-1.5 border-amber-500/25"
+                  ? "-right-1.5 -top-1.5 border-warning/25"
                   : "-right-2 -top-2 border-border/60",
               )}
             >
@@ -90,7 +89,7 @@ export function RunActSessionDock({
                 className={cn(
                   "size-2.5 transition-transform duration-200 group-hover/session-dock:rotate-12 motion-reduce:transition-none",
                   hitlTone
-                    ? "text-amber-700 dark:text-amber-300"
+                    ? "text-warning"
                     : "text-primary/85",
                 )}
               />
@@ -101,7 +100,7 @@ export function RunActSessionDock({
               className={cn(
                 "absolute flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-4",
                 hitlTone
-                  ? "-right-1 -top-1 border border-amber-600/20 bg-amber-700 text-amber-50 dark:bg-amber-500 dark:text-amber-950"
+                  ? "-right-1 -top-1 border border-warning/20 bg-warning text-background"
                   : "-right-1.5 -top-1 border border-background bg-primary text-primary-foreground",
               )}
             >

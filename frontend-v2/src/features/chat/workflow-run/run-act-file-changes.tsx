@@ -61,8 +61,8 @@ export function RunActFileChanges({ files }: RunActFileChangesProps) {
             className="flex shrink-0 gap-1.5 font-mono text-[10px]"
             aria-label={t("chat.toolGroup.changeStats", totals)}
           >
-            <span className="text-emerald-600">+{totals.additions}</span>
-            <span className="text-red-600">-{totals.deletions}</span>
+            <span className="text-success">+{totals.additions}</span>
+            <span className="text-destructive">-{totals.deletions}</span>
           </span>
         </button>
       </header>
@@ -92,8 +92,8 @@ export function RunActFileChanges({ files }: RunActFileChangesProps) {
                     deletions: file.deletions,
                   })}
                 >
-                  <span className="text-emerald-600">+{file.additions}</span>
-                  <span className="text-red-600">-{file.deletions}</span>
+                  <span className="text-success">+{file.additions}</span>
+                  <span className="text-destructive">-{file.deletions}</span>
                 </span>
                 <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
               </button>

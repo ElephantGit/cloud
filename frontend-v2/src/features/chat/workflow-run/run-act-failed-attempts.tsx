@@ -75,14 +75,14 @@ function FailedAttemptEntry({
 
   return (
     <li
-      className="space-y-1.5 rounded-lg border border-rose-500/20 bg-rose-500/[0.03] px-3 py-2 text-[11px] leading-5"
+      className="space-y-1.5 rounded-lg border border-destructive/20 bg-destructive/[0.03] px-3 py-2 text-[11px] leading-5"
       data-attempt={attempt.attempt}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium text-foreground">
           {t("workflowRun.errorAttempt", { count: attempt.attempt })}
         </span>
-        <span className="text-rose-700 dark:text-rose-300">{kindLabel}</span>
+        <span className="text-destructive">{kindLabel}</span>
         {roundLabel !== null && (
           <span className="rounded bg-violet-500/12 px-1 py-0.5 text-[9px] font-medium tabular-nums text-violet-700 dark:text-violet-300">
             {roundLabel}
@@ -148,7 +148,7 @@ function AttemptChip({
       className={cn(
         "rounded-full border px-1.5 py-px text-[9px] font-medium",
         automatic
-          ? "border-orange-500/30 bg-orange-500/10 text-orange-800 dark:text-orange-300"
+          ? "border-caution/30 bg-caution/10 text-caution"
           : "border-border bg-muted/60 text-muted-foreground",
       )}
     >

@@ -53,7 +53,7 @@ export function RunStatusMark({
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-full text-white",
           ICON_BOX,
-          status === "awaiting_input" ? "bg-amber-500" : "bg-sky-500",
+          status === "awaiting_input" ? "bg-warning" : "bg-info",
           className,
         )}
         aria-hidden
@@ -86,7 +86,7 @@ export function RunStatusMark({
     return (
       <span
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-full bg-orange-500 text-white",
+          "inline-flex shrink-0 items-center justify-center rounded-full bg-caution text-background",
           ICON_BOX,
           className,
         )}
@@ -162,11 +162,11 @@ function TerminalGlyph({
 function terminalSurface(status: Status): string {
   switch (status) {
     case "succeeded":
-      return "bg-emerald-500";
+      return "bg-success";
     case "failed":
-      return "bg-rose-500";
+      return "bg-destructive";
     case "cancelled":
-      return "bg-zinc-400 dark:bg-zinc-500";
+      return "bg-muted-foreground/50";
     default:
       return "bg-muted text-muted-foreground";
   }

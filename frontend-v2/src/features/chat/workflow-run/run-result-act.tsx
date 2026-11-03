@@ -129,9 +129,9 @@ function ResultHeroMark({ status }: { status: GraphWorkflowRunStatus }) {
     <span
       className={cn(
         "mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full text-white",
-        status === "succeeded" && "bg-emerald-500",
-        status === "failed" && "bg-rose-500",
-        status === "cancelled" && "bg-zinc-400 dark:bg-zinc-500",
+        status === "succeeded" && "bg-success",
+        status === "failed" && "bg-destructive",
+        status === "cancelled" && "bg-muted-foreground/50",
         (status === "pending" ||
           status === "running" ||
           status === "awaiting_input") &&

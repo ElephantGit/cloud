@@ -62,6 +62,7 @@ function StateBadge({
   const label =
     selection?.kind !== 'skill' &&
     selection?.kind !== 'agent' &&
+    selection?.kind !== 'workflow' &&
     selection?.desiredState === 'installed'
       ? '仅空间选择'
       : (stateLabels[state] ?? state)
@@ -246,7 +247,9 @@ export default function PluginsPage() {
         toast.success(`已安装 ${entry.title}`)
       } else {
         await Promise.all([market.install(entry), delay])
-        toast.success(`已选择 ${entry.title}`)
+        toast.success(
+          `${entry.kind === 'workflow' ? '已安装' : '已选择'} ${entry.title}`,
+        )
       }
     } catch {
       await delay
@@ -369,6 +372,7 @@ export default function PluginsPage() {
     if (
       entry.kind !== 'skill' &&
       entry.kind !== 'agent' &&
+      entry.kind !== 'workflow' &&
       selection?.desiredState !== 'installed'
     )
       return (
@@ -378,7 +382,7 @@ export default function PluginsPage() {
       )
     return selection?.desiredState === 'installed' ? (
       <>
-        {entry.kind === 'skill' &&
+        {(entry.kind === 'skill' || entry.kind === 'workflow') &&
           (entry.version !== selection.desiredVersion ||
             selection.observedState === 'failed' ||
             selection.observedState === 'pending') && (
@@ -426,7 +430,7 @@ export default function PluginsPage() {
     <section>
       <PageHeader
         title="Plugins"
-        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill 与市场 Agent 的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作只改变当前浏览器中的状态。"
+        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill、市场 Agent 与工作流插件的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作只改变当前浏览器中的状态。"
         count={catalog.length}
         actions={
           <>
@@ -598,8 +602,8 @@ export default function PluginsPage() {
             {installedServerPackages.length} 个服务端插件
           </span>
           <span>
-            Skill 由项目节点确认；MCP/Hook 与预装 Agent 只改变本地状态；市场 Agent
-            仅保存空间选择
+            Skill 由项目节点确认；工作流安装会导入并发布工作流；MCP/Hook 与预装
+            Agent 只改变本地状态
           </span>
         </div>
       </DataState>
@@ -700,9 +704,11 @@ export default function PluginsPage() {
           <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             {demoPlugin(selected)
               ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
-              : selectedSelection && isPreinstalledAgent(selectedSelection)
-                ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
-              : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
+              : selected.kind === 'workflow'
+                ? '安装会下载并校验插件包，导入其中的工作流并发布初始版本；移除只清除插件选择，已导入的工作流和历史会保留。'
+                : selectedSelection && isPreinstalledAgent(selectedSelection)
+                  ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
+                  : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
           </p>
           <Separator />
           {selected.readme ? (
@@ -732,8 +738,10 @@ export default function PluginsPage() {
             removing.demo
               ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
               : removing.entry.kind === 'skill'
-              ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
-              : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'
+                ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
+                : removing.entry.kind === 'workflow'
+                  ? '将从空间移除该插件选择；已导入的工作流和运行历史会保留。'
+                  : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'
           }
           confirmLabel="移除"
           pending={removing.demo ? false : market.mutating}

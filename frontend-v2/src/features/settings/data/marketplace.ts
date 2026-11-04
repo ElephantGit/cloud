@@ -86,7 +86,11 @@ export function usePluginMarketplace() {
   const install = useMutation({
     mutationFn: async (entry: PluginCatalogEntry) => {
       if (!tenantId || !spaceId) throw new Error('cloud space not resolved')
-      if (entry.kind !== 'skill' && entry.kind !== 'agent')
+      if (
+        entry.kind !== 'skill' &&
+        entry.kind !== 'agent' &&
+        entry.kind !== 'workflow'
+      )
         throw new Error('此插件类型不支持在此处安装。')
       const current = (selections.data?.items ?? []).find(
         (item) => pluginKey(item) === pluginKey(entry),

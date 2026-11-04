@@ -73,6 +73,7 @@ export function TaskDetailView({ task, me, projectName, squads, busy, error, run
         : <>
           <label className="mc-field-label" htmlFor="mc-executor">{personal ? 'Agent 与模型' : '模型'}</label>
           <NativeSelect id="mc-executor" aria-label="执行模型" value={run.executorId} disabled={running || run.executors.length === 0} onChange={e => run.onExecutor(e.target.value)}>
+            {run.executors.length === 0 && <NativeSelectOption value="">暂无可用的执行器</NativeSelectOption>}
             {run.executors.map(x => <NativeSelectOption key={x.id} value={x.id}>{x.name}</NativeSelectOption>)}
           </NativeSelect>
           <div className="mc-actions">

@@ -161,6 +161,7 @@ function ChatPane({ session, workspace }: { session?: Session; workspace?: { ope
   const notice = useChatStore((s) => s.notices[key])
   // A backend conversation whose session ended (stopped, or the server restarted) is read-only.
   const ended = useChatStore((s) => !!session?.remote && isEnded(s.views[session.id]))
+  const executorUnavailable = !!session?.executorUnavailable
   const { send, sendNewChat, startNewChat, stop, setNewChat, setDraft, unqueue, dismiss, createProject } = useChatStore.getState()
   const landing = conversation.turns.length === 0
   // A conversation runs on the backend, text only, and keeps the agent and model it started with.
@@ -219,10 +220,14 @@ function ChatPane({ session, workspace }: { session?: Session; workspace?: { ope
                 {backend === 'loading' ? '正在连接后端…' : '后端还不能运行 Agent，暂时无法开始新对话。'}
               </p>
             )}
-            {notice && !ended && <Notice notice={notice} onDismiss={() => dismiss(key)} />}
-            {session && ended ? (
-              <div role="status" className="flex items-center gap-3 rounded-2xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-                <p className="min-w-0 flex-1">这个对话已结束，Agent 不能继续。要接着做，请新开一个对话。</p>
+            {notice && !ended && !executorUnavailable && <Notice notice={notice} onDismiss={() => dismiss(key)} />}
+            {session && (executorUnavailable || ended) ? (
+              <div role={executorUnavailable ? 'alert' : 'status'} className="flex items-center gap-3 rounded-2xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                <p className="min-w-0 flex-1">
+                  {executorUnavailable
+                    ? '原来的 Agent 或模型已不可用，这个对话不能继续。请新开对话并选择当前可用的模型。'
+                    : '这个对话已结束，Agent 不能继续。要接着做，请新开一个对话。'}
+                </p>
                 <Button size="sm" variant="outline" className="shrink-0" onClick={() => startNewChat({ projectId: session.projectId })}>
                   <SquarePenIcon />
                   新对话

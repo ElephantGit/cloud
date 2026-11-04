@@ -252,7 +252,15 @@ it('retains loaded tasks, resources and active history occupancy across poll err
  vi.mocked(actions.runScheduleNow).mockRejectedValueOnce({isAxiosError:true,response:{status:409,data:{code:'execution_target_unavailable',params:{occurrenceId:'run-skipped-target'}}}})
  await userEvent.click(within(dialog).getByRole('button',{name:'立即运行'}))
  expect(await within(dialog).findByText(/所选 Agent、模型或项目当前不可用/)).toBeInTheDocument()
- expect(await within(dialog).findByText('执行目标已不可用')).toBeInTheDocument()
+ expect(await within(dialog).findByText(/执行目标已不可用/)).toBeInTheDocument()
+})
+
+it('points a saved fixture selection to edit instead of failing at run',async()=>{
+ const stale={...item,projectId:'project-id',target:{kind:'chat' as const,prompt:'摘要',agent:'Agent',model:'fixture-removed'}}
+ vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[stale],nextCursor:''})
+ mount();const dialog=await detail()
+ expect(within(dialog).getByRole('alert')).toHaveTextContent('原来的 Agent 或模型已不可用')
+ expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeDisabled()
 })
 
 it('opens the run named by the selected occurrence even after the plan target changes',async()=>{

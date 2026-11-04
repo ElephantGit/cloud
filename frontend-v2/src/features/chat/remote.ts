@@ -53,8 +53,8 @@ async function allProjects(tid: string): Promise<RemoteProject[]> {
   return all
 }
 
-/** Turns a failed request into a {@link Failure}. */
-export function failureOf(error: unknown): Failure {
+/** Turns a failed request into a {@link Failure}; only sends explain a stale Agent or model. */
+export function failureOf(error: unknown, operation: 'send' | 'other' = 'other'): Failure {
   const status = statusOf(error)
   const body = isAxiosError(error) ? (error.response?.data as { code?: string } | undefined) : undefined
   if (status === 409 && body?.code === 'turn_running') return { kind: 'running' }
@@ -62,6 +62,9 @@ export function failureOf(error: unknown): Failure {
   if (status === 503 && body?.code === 'execution_unavailable') return { kind: 'unavailable' }
   if (status === 503 && body?.code === 'stop_unconfirmed') return { kind: 'error', message: '还没确认停下，请稍后再试。' }
   if (status === 400 && body?.code === 'unsupported_content') return { kind: 'error', message: '首版只能发送文字消息。' }
+  if (operation === 'send' && ((status === 404 && body?.code === 'not_found') || (status === 400 && body?.code === 'invalid_executor'))) {
+    return { kind: 'error', message: '原来的 Agent 或模型已不可用，请新建对话并重新选择。' }
+  }
   return { kind: 'error', message: '请求失败，请重试。' }
 }
 

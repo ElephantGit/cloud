@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { http } from '@/lib/api-client'
 import { fakeBackend } from '@/test/backend'
-import { demoMcpEntry, demoHookEntry } from '@/features/settings/plugins/demo'
+import { demoMcpEntry, demoHookEntry } from '@/lib/settings-demo/plugin-catalog'
 import { workflowDemoMcps } from './demo-mcp-catalog'
 
 const original = http.defaults.adapter
@@ -38,5 +38,15 @@ it('does not invent installed MCPs from empty selections or a failed catalog', a
     ? { status: 200, data: { items: [{ id: 'a' }] } }
     : { status: 503 })
   expect(await workflowDemoMcps('t', 'u', {})).toEqual([])
-  await expect(workflowDemoMcps('t', 'u', { 'u:t:a': ['demo/sample-mcp'] })).rejects.toThrow()
+  expect(await workflowDemoMcps('t', 'u', { 'u:t:a': ['demo/sample-mcp'] })).toEqual([])
+})
+
+it('preserves choices from healthy spaces when another catalog fails', async () => {
+  fakeBackend((config) => config.url === '/api/v1/tenants/t/spaces'
+    ? { status: 200, data: { items: [{ id: 'a' }, { id: 'b' }] } }
+    : config.url?.includes('/spaces/a/') ? { status: 503 }
+      : { status: 200, data: { items: [demoMcpEntry] } })
+  expect((await workflowDemoMcps('t', 'u', {
+    'u:t:a': ['demo/sample-mcp'], 'u:t:b': ['demo/sample-mcp'],
+  })).map((p) => p.id)).toEqual(['demo/sample-mcp'])
 })

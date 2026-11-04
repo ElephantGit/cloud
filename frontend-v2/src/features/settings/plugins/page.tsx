@@ -26,11 +26,11 @@ import { DetailPanel } from '../components/detail-panel'
 import { ConfirmDialog } from '../components/confirm-dialog'
 import { MarkdownPreview } from '../components/markdown-preview'
 import { useUser } from '@/app/auth/user'
-import { demoPlugin, withDemoCatalog } from './demo'
+import { demoPlugin, withDemoCatalog } from '@/lib/settings-demo/plugin-catalog'
 import {
   demoSelectionFor,
   useDemoPluginSelections,
-} from './demo-state'
+} from '@/lib/settings-demo/plugin-selections'
 import { pluginKind, pluginKindOrder } from './plugin-kind'
 import { PluginMark } from './plugin-mark'
 import { isPreinstalledAgent } from '@/lib/plugin-runtime'

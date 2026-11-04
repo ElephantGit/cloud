@@ -3,7 +3,9 @@ package server
 import (
 	"errors"
 	"net/http"
+	"os"
 
+	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
@@ -71,9 +73,47 @@ func (h *handler) installSpacePlugin(w http.ResponseWriter, r *http.Request, u s
 		}
 		version = *body.Version
 	}
-	resource, e := h.store.InstallSpacePlugin(r.Context(), tenant, space, u.ID, r.URL.Path, key, store.PluginInstallInput{
+	in := store.PluginInstallInput{
 		Identifier: body.Identifier, PluginVersion: body.PluginVersion, Version: version,
-	})
+	}
+	source, e := h.store.PluginPackageSource(r.Context(), tenant, space, u.ID, in.Identifier)
+	if e != nil {
+		pluginError(w, "install plugin", e)
+		return
+	}
+	if in.PluginVersion != "" && in.PluginVersion != source.Entry.Version {
+		pluginError(w, "install plugin", store.ErrPluginVersionUnavailable)
+		return
+	}
+	var resource store.SpacePlugin
+	if source.Entry.Kind == "workflow" {
+		if h.opts.ValidateWorkflow == nil {
+			fault(w, http.StatusServiceUnavailable, "workflow_validation_unavailable")
+			return
+		}
+		download := h.opts.DownloadPluginPackage
+		if download == nil {
+			download = pluginmarket.Download
+		}
+		file, e := download(r.Context(), source.Locator, source.Digest, source.Retrieval, source.Credentials)
+		if e != nil {
+			pluginPackageError(w, e)
+			return
+		}
+		defer os.Remove(file)
+		documents, e := pluginmarket.VerifyWorkflowArchive(file, in.Identifier, source.Entry.Version)
+		if e != nil {
+			fault(w, http.StatusBadRequest, "plugin_package_invalid")
+			return
+		}
+		resource, e = h.store.InstallWorkflowPlugin(
+			r.Context(), tenant, space, u.ID, r.URL.Path, key, in, documents, h.opts.ValidateWorkflow,
+		)
+	} else {
+		resource, e = h.store.InstallSpacePlugin(
+			r.Context(), tenant, space, u.ID, r.URL.Path, key, in,
+		)
+	}
 	if e != nil {
 		pluginError(w, "install plugin", e)
 		return
@@ -136,11 +176,32 @@ func pluginError(w http.ResponseWriter, operation string, e error) {
 		fault(w, http.StatusBadRequest, "plugin_kind_not_installable")
 	case errors.Is(e, store.ErrPluginRuntimeManaged):
 		fault(w, http.StatusConflict, "plugin_runtime_managed")
+	case errors.Is(e, store.ErrPluginWorkflowConflict):
+		fault(w, http.StatusConflict, "workflow_name_conflict")
+	case errors.Is(e, store.ErrPluginWorkflowInvalid):
+		fault(w, http.StatusBadRequest, "plugin_workflow_invalid")
+	case errors.Is(e, store.ErrPluginPackageCredentials):
+		fault(w, http.StatusServiceUnavailable, "market_credentials_unavailable")
 	case errors.Is(e, store.ErrConflict):
 		fault(w, http.StatusConflict, "version_conflict")
 	case errors.Is(e, store.ErrIdempotencyConflict):
 		fault(w, http.StatusConflict, "idempotency_conflict")
 	default:
 		internal(w, operation, e)
+	}
+}
+
+func pluginPackageError(w http.ResponseWriter, e error) {
+	switch {
+	case errors.Is(e, pluginmarket.ErrSource):
+		fault(w, http.StatusBadRequest, "plugin_package_source_invalid")
+	case errors.Is(e, pluginmarket.ErrCredentials):
+		fault(w, http.StatusServiceUnavailable, "market_credentials_unavailable")
+	case errors.Is(e, pluginmarket.ErrPackage):
+		fault(w, http.StatusBadRequest, "plugin_package_invalid")
+	case errors.Is(e, pluginmarket.ErrTransient):
+		fault(w, http.StatusServiceUnavailable, "plugin_package_unavailable")
+	default:
+		fault(w, http.StatusServiceUnavailable, "plugin_package_unavailable")
 	}
 }

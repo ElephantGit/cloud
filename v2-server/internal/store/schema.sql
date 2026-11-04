@@ -418,6 +418,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS v2_workflow_snapshots_one_draft
 CREATE INDEX IF NOT EXISTS v2_workflow_snapshots_history
 	ON v2_workflow_snapshots (workflow_id, created_at DESC, id DESC) WHERE deleted_at IS NULL;
 
+-- A workflow plugin imports its documents once per space selection. The mapping keeps repeat
+-- installs and upgrades idempotent while the imported workflows remain user data after removal.
+CREATE TABLE IF NOT EXISTS v2_workflow_plugin_imports (
+	selection_id  uuid NOT NULL REFERENCES v2_space_agents (id) ON DELETE CASCADE,
+	document_path text NOT NULL,
+	workflow_id   uuid NOT NULL REFERENCES v2_workflows (id),
+	snapshot_id   uuid NOT NULL REFERENCES v2_workflow_snapshots (id),
+	created_at    timestamptz NOT NULL DEFAULT now(),
+	PRIMARY KEY (selection_id, document_path)
+);
+
 -- A workflow run freezes one published snapshot for its whole readable life; the graph stays in the
 -- snapshot and the run only points at it. Status is stored without the derived `awaitingInput`:
 -- a running run with a pending node is awaiting input, and that framing changes as nodes move, so it
@@ -568,7 +579,7 @@ WHERE kind='skill' AND desired_state='installed' AND observed_state IN ('pending
  AND NOT EXISTS(SELECT 1 FROM v2_skill_plans p WHERE p.selection_id=a.id);
 
 UPDATE v2_space_agents SET observed_state='pending',observed_version=NULL
-WHERE kind NOT IN ('agent','skill') AND desired_state='installed' AND observed_state='installed';
+WHERE kind NOT IN ('agent','skill','workflow') AND desired_state='installed' AND observed_state='installed';
 
 -- A subtask is an ordinary task with a parent: the big requirement it was split from. Only one level
 -- exists; a subtask is never split again.

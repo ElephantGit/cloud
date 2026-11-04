@@ -23,6 +23,9 @@ var (
 	ErrPluginKindNotInstallable = errors.New("plugin kind not installable")
 	ErrPluginRuntimeManaged     = errors.New("plugin runtime managed")
 	ErrIdempotencyConflict      = errors.New("idempotency key reused")
+	ErrPluginWorkflowConflict   = errors.New("workflow plugin name conflict")
+	ErrPluginWorkflowInvalid    = errors.New("workflow plugin document invalid")
+	ErrPluginPackageCredentials = errors.New("plugin package credentials unavailable")
 )
 
 // PluginCatalogEntry mirrors Cloud's PluginCatalogEntry. Logo, release targets and pack members
@@ -61,6 +64,16 @@ type PluginInstallInput struct {
 type PluginRemoveInput struct {
 	Identifier string
 	Version    int64
+}
+
+// PluginPackageSource is the frozen package location for a workflow plugin. Credentials are
+// decrypted only for an administrator who is about to install the package.
+type PluginPackageSource struct {
+	Entry       PluginCatalogEntry
+	Locator     string
+	Digest      string
+	Retrieval   pluginmarket.Retrieval
+	Credentials pluginmarket.Credentials
 }
 
 // ReplacePluginCatalog atomically replaces the marketplace snapshot after a successful scan.
@@ -176,10 +189,93 @@ func (s *Store) SpacePlugins(ctx context.Context, tenant, space, caller string) 
 	return querySpacePlugins(ctx, s.pool, space, false)
 }
 
+// PluginPackageSource returns the frozen download location for a marketplace entry. Only an
+// administrator may resolve package credentials or trigger a package download.
+func (s *Store) PluginPackageSource(ctx context.Context, tenant, space, caller, id string) (PluginPackageSource, error) {
+	role, e := requireSpaceAccess(ctx, s.pool, tenant, space, caller)
+	if e != nil {
+		return PluginPackageSource{}, e
+	}
+	if !isAdministrator(role) {
+		return PluginPackageSource{}, ErrForbidden
+	}
+	namespace, identifier, ok := pluginIdentity(id)
+	if !ok {
+		return PluginPackageSource{}, ErrInvalidPluginID
+	}
+	kind, _, raw, e := pluginCatalogRow(ctx, s.pool, space, namespace, identifier)
+	if e != nil {
+		return PluginPackageSource{}, e
+	}
+	var entry PluginCatalogEntry
+	if e := json.Unmarshal(raw, &entry); e != nil {
+		return PluginPackageSource{}, fmt.Errorf("decode catalog entry: %w", e)
+	}
+	source := PluginPackageSource{Entry: entry}
+	if kind != "workflow" {
+		return source, nil
+	}
+	if entry.URL == nil || entry.SHA256 == nil || *entry.URL == "" || *entry.SHA256 == "" {
+		return PluginPackageSource{}, ErrPluginVersionUnavailable
+	}
+	source.Locator, source.Digest = *entry.URL, *entry.SHA256
+	if namespace == "official" {
+		return source, nil
+	}
+	var retrievalJSON, credentials []byte
+	e = s.pool.QueryRow(ctx, `
+		SELECT retrieval, credentials FROM v2_market_sources
+		WHERE space_id = $1 AND namespace = $2 AND enabled`, space, namespace).
+		Scan(&retrievalJSON, &credentials)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return PluginPackageSource{}, ErrPluginNotFound
+	}
+	if e != nil {
+		return PluginPackageSource{}, fmt.Errorf("read market source: %w", e)
+	}
+	if e := json.Unmarshal(retrievalJSON, &source.Retrieval); e != nil {
+		return PluginPackageSource{}, fmt.Errorf("decode market retrieval: %w", e)
+	}
+	if len(credentials) > 0 {
+		binding := strings.Join([]string{space, namespace, source.Retrieval.Endpoint, source.Retrieval.Bucket}, "/")
+		source.Credentials, e = pluginmarket.OpenCredentials(credentials, binding)
+		if e != nil {
+			return PluginPackageSource{}, ErrPluginPackageCredentials
+		}
+	}
+	return source, nil
+}
+
 // InstallSpacePlugin records an owner's selection and terminal install result. v2 has no generic
 // plugin executor, so the simplified backend settles the selection immediately instead of
 // claiming that package bytes were downloaded or executed.
 func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in PluginInstallInput) (SpacePlugin, error) {
+	return s.installSpacePlugin(ctx, tenant, space, caller, path, key, in, nil, nil)
+}
+
+// InstallWorkflowPlugin imports the documents from a verified workflow package and records the
+// marketplace selection in the same transaction. The imported workflows remain user data after
+// removal; the import table makes repeated installs and upgrades idempotent.
+func (s *Store) InstallWorkflowPlugin(
+	ctx context.Context,
+	tenant, space, caller, path, key string,
+	in PluginInstallInput,
+	documents []pluginmarket.WorkflowDocument,
+	validate func(string) error,
+) (SpacePlugin, error) {
+	if len(documents) == 0 || validate == nil {
+		return SpacePlugin{}, ErrPluginKindNotInstallable
+	}
+	return s.installSpacePlugin(ctx, tenant, space, caller, path, key, in, documents, validate)
+}
+
+func (s *Store) installSpacePlugin(
+	ctx context.Context,
+	tenant, space, caller, path, key string,
+	in PluginInstallInput,
+	workflowDocuments []pluginmarket.WorkflowDocument,
+	validate func(string) error,
+) (SpacePlugin, error) {
 	var out SpacePlugin
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		role, e := requireSpaceAccess(ctx, tx, tenant, space, caller)
@@ -201,18 +297,14 @@ func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, p
 		if _, e := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1,1))`, space+"/"+in.Identifier); e != nil {
 			return e
 		}
-		var kind, version string
-		var raw []byte
-		e = tx.QueryRow(ctx, `
-			SELECT kind, version, data FROM v2_plugin_catalog
-			WHERE source_namespace = $1 AND identifier = $2 UNION ALL SELECT item->>'kind',item->>'version',item FROM v2_market_sources CROSS JOIN LATERAL jsonb_array_elements(snapshot) item WHERE space_id=$3 AND enabled AND namespace=$1 AND item->>'identifier'=$2`, namespace, identifier, space).Scan(&kind, &version, &raw)
-		if errors.Is(e, pgx.ErrNoRows) {
-			return ErrPluginNotFound
-		}
+		kind, version, raw, e := pluginCatalogRow(ctx, tx, space, namespace, identifier)
 		if e != nil {
-			return fmt.Errorf("read catalog entry: %w", e)
+			return e
 		}
-		if kind != "skill" && kind != "agent" {
+		if kind != "skill" && kind != "agent" && kind != "workflow" {
+			return ErrPluginKindNotInstallable
+		}
+		if kind == "workflow" && (len(workflowDocuments) == 0 || validate == nil) {
 			return ErrPluginKindNotInstallable
 		}
 		desired := in.PluginVersion
@@ -235,7 +327,7 @@ func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, p
 			if in.Version != old.Version {
 				return ErrConflict
 			}
-			if old.DesiredState == "installed" && old.ObservedState == "installed" && old.DesiredVersion == desired {
+			if kind != "workflow" && old.DesiredState == "installed" && old.ObservedState == "installed" && old.DesiredVersion == desired {
 				out = old
 				return recordPluginMutation(ctx, tx, tenant, caller, "POST", path, key, pluginInstallHash(in), out)
 			}
@@ -280,9 +372,120 @@ func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, p
 				return e
 			}
 		}
+		if kind == "workflow" {
+			if e := importWorkflowDocuments(ctx, tx, out, workflowDocuments, validate); e != nil {
+				return e
+			}
+			if _, e := tx.Exec(ctx, `
+				UPDATE v2_space_agents
+				SET observed_state = 'installed', observed_version = $4, install_error = NULL, updated_at = now()
+				WHERE id = $1 AND tenant_id = $2 AND space_id = $3`,
+				out.ID, tenant, space, desired); e != nil {
+				return fmt.Errorf("settle workflow install: %w", e)
+			}
+			out, e = querySpacePlugin(ctx, tx, space, namespace, identifier, false)
+			if e != nil {
+				return e
+			}
+		}
 		return recordPluginMutation(ctx, tx, tenant, caller, "POST", path, key, pluginInstallHash(in), out)
 	})
 	return out, e
+}
+
+func pluginCatalogRow(ctx context.Context, q dbTX, space, namespace, identifier string) (kind, version string, raw []byte, e error) {
+	e = q.QueryRow(ctx, `
+		SELECT kind, version, data FROM v2_plugin_catalog
+		WHERE source_namespace = $1 AND identifier = $2
+		UNION ALL
+		SELECT item->>'kind', item->>'version', item
+		FROM v2_market_sources CROSS JOIN LATERAL jsonb_array_elements(snapshot) item
+		WHERE space_id = $3 AND enabled AND namespace = $1 AND item->>'identifier' = $2`,
+		namespace, identifier, space).Scan(&kind, &version, &raw)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return "", "", nil, ErrPluginNotFound
+	}
+	if e != nil {
+		return "", "", nil, fmt.Errorf("read catalog entry: %w", e)
+	}
+	return kind, version, raw, nil
+}
+
+func importWorkflowDocuments(
+	ctx context.Context,
+	tx pgx.Tx,
+	selection SpacePlugin,
+	documents []pluginmarket.WorkflowDocument,
+	validate func(string) error,
+) error {
+	for _, document := range documents {
+		var importedWorkflow string
+		e := tx.QueryRow(ctx, `
+			SELECT i.workflow_id::text
+			FROM v2_workflow_plugin_imports i
+			JOIN v2_workflows w ON w.id = i.workflow_id AND w.deleted_at IS NULL
+			WHERE i.selection_id = $1 AND i.document_path = $2`,
+			selection.ID, document.Path).Scan(&importedWorkflow)
+		switch {
+		case e == nil:
+			continue
+		case !errors.Is(e, pgx.ErrNoRows):
+			return fmt.Errorf("read workflow import: %w", e)
+		}
+		if _, e := tx.Exec(ctx, `
+			DELETE FROM v2_workflow_plugin_imports
+			WHERE selection_id = $1 AND document_path = $2`, selection.ID, document.Path); e != nil {
+			return fmt.Errorf("clear stale workflow import: %w", e)
+		}
+		if e := validate(document.Graph); e != nil {
+			return fmt.Errorf("%w: %s: %w", ErrPluginWorkflowInvalid, document.Path, e)
+		}
+		var existing string
+		e = tx.QueryRow(ctx, `
+			SELECT id::text FROM v2_workflows
+			WHERE tenant_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL`,
+			selection.TenantID, document.Name).Scan(&existing)
+		switch {
+		case e == nil:
+			return fmt.Errorf("%w: %s", ErrPluginWorkflowConflict, document.Name)
+		case !errors.Is(e, pgx.ErrNoRows):
+			return fmt.Errorf("check workflow name: %w", e)
+		}
+		var workflowID string
+		if e := tx.QueryRow(ctx, `
+			INSERT INTO v2_workflows (tenant_id, name) VALUES ($1, $2)
+			RETURNING id::text`, selection.TenantID, document.Name).Scan(&workflowID); e != nil {
+			if errors.Is(workflowError("create workflow", e), ErrWorkflowNameConflict) {
+				return fmt.Errorf("%w: %s", ErrPluginWorkflowConflict, document.Name)
+			}
+			return fmt.Errorf("create workflow: %w", e)
+		}
+		if _, e := tx.Exec(ctx, `
+			INSERT INTO v2_workflow_snapshots (tenant_id, workflow_id, version, graph, updated_at)
+			VALUES ($1, $2, $3, $4, now())`,
+			selection.TenantID, workflowID, WorkflowDraftVersion, document.Graph); e != nil {
+			return fmt.Errorf("create workflow draft: %w", e)
+		}
+		var snapshotID string
+		if e := tx.QueryRow(ctx, `
+			INSERT INTO v2_workflow_snapshots (tenant_id, workflow_id, version, graph)
+			VALUES ($1, $2, 'v1', $3)
+			RETURNING id::text`, selection.TenantID, workflowID, document.Graph).Scan(&snapshotID); e != nil {
+			return fmt.Errorf("publish workflow: %w", e)
+		}
+		if _, e := tx.Exec(ctx, `
+			UPDATE v2_workflows SET published_snapshot_id = $3, updated_at = now()
+			WHERE tenant_id = $1 AND id = $2`, selection.TenantID, workflowID, snapshotID); e != nil {
+			return fmt.Errorf("activate workflow: %w", e)
+		}
+		if _, e := tx.Exec(ctx, `
+			INSERT INTO v2_workflow_plugin_imports (selection_id, document_path, workflow_id, snapshot_id)
+			VALUES ($1, $2, $3, $4)`,
+			selection.ID, document.Path, workflowID, snapshotID); e != nil {
+			return fmt.Errorf("record workflow import: %w", e)
+		}
+	}
+	return nil
 }
 
 // RemoveSpacePlugin records an owner's removal and settles the simplified terminal state.

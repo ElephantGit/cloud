@@ -37,6 +37,10 @@ type squadFixture struct {
 }
 
 func newSquadServer(t *testing.T) *squadFixture {
+	return newSquadServerWith(t, server.Options{SessionTTL: time.Hour})
+}
+
+func newSquadServerWith(t *testing.T, options server.Options) *squadFixture {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -70,7 +74,7 @@ func newSquadServer(t *testing.T) *squadFixture {
 	t.Cleanup(s.Close)
 	seedTestPluginCatalog(t, s)
 	storetest.SignIn(t, s, "squad-demo", "演示用户", store.RoleOwner)
-	srv := httptest.NewServer(server.New(s, server.Options{SessionTTL: time.Hour}))
+	srv := httptest.NewServer(server.New(s, options))
 	t.Cleanup(srv.Close)
 	return &squadFixture{t: t, ctx: ctx, store: s, db: db, srv: srv}
 }

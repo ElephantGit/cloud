@@ -122,6 +122,15 @@ func (h *Host) finishCancel(st *runState, runID string) {
 // the session and report the outcome to the engine.
 func (h *Host) runAgent(st *runState, d workflow.AgentDispatch) {
 	cfg := d.Node.Agent()
+	if len(cfg.MCPs) > 0 {
+		h.fail(d, workflow.Failure{Kind: workflow.FailureMissingAgentConfig, Message: "MCP is unavailable: the v2 Node session protocol cannot receive MCP servers. Disable this binding until Node support is available."})
+		return
+	}
+	skills, err := h.store.ResolveWorkflowSkills(h.ctx, st.scope, d.ProjectID, cfg.Skills)
+	if err != nil {
+		h.fail(d, workflow.Failure{Kind: workflow.FailureMissingAgentConfig, Message: err.Error()})
+		return
+	}
 	executor, failure := h.resolveExecutor(st.scope, cfg)
 	if failure != nil {
 		h.fail(d, *failure)
@@ -134,7 +143,7 @@ func (h *Host) runAgent(st *runState, d workflow.AgentDispatch) {
 	}
 	caller := execution.Caller{Kind: execution.CallerWorkflow, ID: d.RunID, NodeID: d.Node.ID, AttemptID: d.NodeRunID}
 	request := execution.StartRequest{
-		Caller: caller, Target: execution.Target{ProjectID: d.ProjectID},
+		Skills: skills, Caller: caller, Target: execution.Target{ProjectID: d.ProjectID},
 		ExecutorID: executor.executor.ID, Prompt: agentPrompt(d, task),
 	}
 
@@ -356,6 +365,7 @@ func completionKeys(r execution.Result, ex resolvedExecutor, cfg workflow.AgentC
 			"requested": cfg.ModelID, "fallback": ex.fallback,
 		},
 		"unapplied": unapplied,
+		"skills":    cfg.Skills,
 		"task":      task,
 	}
 }

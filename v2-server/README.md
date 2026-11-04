@@ -488,7 +488,9 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 - **Condition**：按 desktop 的 `condition.rs` 依次判断各个 case，第一个成立的 case 胜出，都不成立走 `else`（没有 `sourceHandle` 的出边就是 `else`）；还没写规则的 case 直接跳过。16 个比较运算符同 desktop；只有 `exists`/`not_exists`/`empty`/`not_empty` 容忍未赋值，其余读到未赋值、未声明或类型不符的变量时节点以 `condition_evaluation` 失败，不猜分支。比较值只写一个 `{{#…#}}` 时保留变量的原类型，混排时按字符串渲染。选中的分支写进运行 payload 的 `conditionDecisions`，不写节点输出，也不进变量池；启动时拒绝重复的 case id（`workflow_run_duplicate_condition_case`）和指向不存在分支的出边（`workflow_run_unknown_condition_branch`）。没走的分支上的节点不建节点行（desktop 同样不落库分支激活），运行详情返回 `conditionDecisions`，由客户端投影为“未激活分支”。
 - **Aggregator**：按 desktop 的 V1 契约，按声明顺序取第一个**已赋值**的候选原样传出（键存在即算，`null`、`false`、`0`、`""`、`[]`、`{}` 都命中），写入 `{node}.output`；全部未赋值时以 `aggregator_no_match` 失败，读到未声明的候选直接失败。它不读分支决策，只看变量池。
 - **Agent 结构化输出**：`outputContract.type` 为 `structured` 的 Agent，prompt 末尾追加 desktop 的输出约定（示例和 Schema）；回答按 desktop 的顺序提取 JSON 对象（整段 → 代码块 → 文中第一个完整对象），再按 Schema 子集（`type`、`properties`、`required`、`additionalProperties`、`items`）校验。通过时原回答仍是 `{node}.output`，对象写入 `{node}.structured_output`；不通过时节点以 `structured_output` 失败并保留原回答。
-- **角色、per-node Skill、MCP 不应用**：节点照常运行，节点 payload 的 `unapplied` 列出被忽略的配置（`role`、`skill`、`mcp`、`retry`、`interactive`），不静默忽略。
+- **节点 Skill**：启用的个人 Skill 按启动运行的用户读取，在节点开始时冻结文档；插件 Skill 使用 `namespace/identifier`，必须有目标项目当前安装版本的成功回执。启动 Agent 前，仅将所选导入放到运行目录的 `.opencode/skills`、`.claude/skills`，并在 prompt 中要求读取。插件选择包含该包内全部 Skill；下一节点替换上一个节点的投影，未选择的导入不会自动继承。项目自带的技能保留，同名冲突、已修改的投影文档、缺失包或失效回执会让节点失败，不覆盖或静默略过。节点 payload 的 `skills` 记录所选标识，执行会话保留冻结的文档和插件版本。
+- **MCP 尚不支持**：当前固定 Node 的 `AgentSessionSpec` 不接收 MCP 服务配置，v2 没有凭据交付、服务生命周期和工具调用回执链路。启用 MCP 的节点以 `missing_agent_config` 失败，禁用绑定可继续执行；不会声称成功调用工具。
+- **角色、重试与交互模式不应用**：节点 payload 的 `unapplied` 列出被忽略的配置（`role`、`retry`、`interactive`）。历史运行保存的 `skill`、`mcp` 标记仍按原样展示。
 - **执行器映射**：节点的 `executor.agentCli` 匹配执行目录里执行器的 `AgentID`（`official/ora-space.opencode`、`official/ora-space.claude`），找不到时节点以 `missing_agent_ref` 失败；`modelId` 匹配该 Agent 执行器的模型 ID 或名称，找不到时退回该 Agent 的第一个（默认）执行器。成功节点的 payload 写入 `stop_reason`、实际使用的 `executor`（`id`、`agentId`、`name`、`pluginVersion`）、`model`（`id`、`name`、`requested`、`fallback`），以及按变量池渲染后的任务要求 `task`（节点尝试的 `input` 保留模板原文）。
 - **重启**：启动时先把上个进程留下的所有非终态节点以 `interrupted_by_restart` 失败，运行随之失败，然后才开始服务；不重放 Agent。
 
@@ -534,7 +536,7 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 与 desktop 的差异：
 
 - **同一运行的 Agent 串行执行**：公共执行服务让一个运行的所有会话共用一个目录，并以 `ErrWorkspaceBusy` 拒绝并发 turn，所以执行桥按派发顺序逐个执行同一运行的 Agent；上一个 turn 收尾期间短暂的 busy 会在有限时间内重试。排在后面的 Agent 开始前先确认运行仍在执行：前面的节点已让运行失败时，它还没有启动任何东西，直接收为 `cancelled`，不再发起注定被丢弃的 turn（desktop 的兄弟节点本来就在并行执行，迟到结果照常记录；v2 串行，排队的兄弟还没开始）。
-- **prompt**：按 desktop 的 `assemble_workflow_prompt` 组装 `workspace_root`、`current_workflow_step`、`workflow_context`，按运行冻结的 locale 选文案；不带角色、Skill 和上次失败注入。节点 prompt 的 `{{#…#}}` 先按变量池渲染，渲染失败的节点以 `prompt_template` 失败，不启动 Agent。公共执行服务在接受 prompt 之后才在 Node 里克隆运行目录，也不暴露它的路径，所以 `workspace_root` 写 `.`（Agent 进程的工作目录就是运行目录），不写 desktop 的绝对路径。
+- **prompt**：按 desktop 的 `assemble_workflow_prompt` 组装 `workspace_root`、`current_workflow_step`、`workflow_context`，按运行冻结的 locale 选文案；选择 Skill 时附加 `required_skills`，不带角色和上次失败注入。节点 prompt 的 `{{#…#}}` 先按变量池渲染，渲染失败的节点以 `prompt_template` 失败，不启动 Agent。公共执行服务在接受 prompt 之后才在 Node 里克隆运行目录，也不暴露它的路径，所以 `workspace_root` 写 `.`（Agent 进程的工作目录就是运行目录），不写 desktop 的绝对路径。
 - **会话绑定时机**：`Start` 返回 turn 引用即视为 prompt 已被接受，随后把 session 绑定到节点尝试（desktop 同样在 prompt 被接受后才发布绑定）；绑定被拒（尝试已不在运行）时结束该会话。turn 结束后执行桥结束会话，对话历史保留。
 - **结果映射**：只有 `completed` 且答案完整（`AnswerComplete`）才可能成功，再按 desktop 的停止原因映射：`end_turn`、`max_tokens`、`max_turn_requests` 成功；`refusal` 为 `agent_refusal`；缺少停止原因为 `session_ended_without_stop_reason`；其他为 `unknown_stop_reason`。turn 失败、取消、中断或答案不完整一律以 `session` 失败，失败节点保留已有的回答。
 - **取消**：先用发起运行的用户身份取消活动 turn 并等待确认，再关闭运行；Start 正在进行时先等它返回。停止未确认时返回 `503 workflow_run_stop_unconfirmed`，运行保持打开但不再推进，turn 结束后由执行桥自行关闭为已取消。
@@ -595,4 +597,6 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 - Desktop 从 Agent 插件声明中发现 Skill 目录，复制到工作区并写 ownership marker；v2 固定使用 `.opencode/skills`、`.claude/skills`，以 symlink 指向该项目的 Node 内部安装目录，因此依赖当前 Node 的目录布局。
 - Desktop 会先让 Agent 停下，再在会话进行中应用变化；v2 只在项目 Node 已在线且项目空闲时安装或移除。新选择要等该项目有一个会话结束后才生效，服务启动后的第一个会话也拿不到尚未应用的 Skill。
 
-测试真实 Node 时设置 `V2_NODE_ASSETS_DIR`、`V2_TEST_SKILL_ARCHIVE`（官方 Matt Pocock Skills 1.3.1）和可选的 `V2_TEST_SKILL_UPDATE_ARCHIVE`（1.3.2），在 Linux 原生、路径足够短的用户目录下运行 `go test -run TestRealMarketSkillNode ./internal/agentruntime`。
+测试真实 Node 时设置 `V2_NODE_ASSETS_DIR`、`V2_TEST_SKILL_ARCHIVE`（官方 Matt Pocock Skills 1.3.1）和可选的 `V2_TEST_SKILL_UPDATE_ARCHIVE`（1.3.2），在 Linux 原生、路径足够短的用户目录下运行 `go test -run TestRealMarketSkillNode ./internal/agentruntime`。该测试用真实 OpenCode 读取插件 Skill 和工作流所选个人 Skill，并验证下一节点清除两者；模型响应仍为 fixture，不验证真实模型的指令遵循能力。
+
+同时提供 `TEST_DATABASE_URL` 后，`go test -race -run TestRealWorkflowSelectedSkills ./internal/workflowhost` 覆盖发布后的完整两节点工作流：真实插件安装回执、节点选择、执行会话的数据库快照、Agent 读取产物与下一节点清理。模型请求仍由 fixture 提供，MCP 不在该测试范围内。

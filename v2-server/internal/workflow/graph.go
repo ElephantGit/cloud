@@ -225,10 +225,11 @@ func (n Node) OutputBindings() []OutputBinding {
 	return result
 }
 
-// AgentConfig is the part of agentConfig that v2 executes. Role, Skill and MCP bindings and
-// retry/interactive settings are kept in the document but not applied by v2.
+// AgentConfig includes selected Skills and MCP bindings. The host rejects MCP bindings until
+// Node supports them; role and retry/interactive settings remain explicitly unapplied.
 type AgentConfig struct {
 	Prompt, AgentCLI, ModelID string
+	Skills, MCPs              []string
 	// Unapplied names configured capabilities v2 runs without, so the run can say so.
 	Unapplied []string
 	// Structured is the output schema when the node requires a JSON object answer.
@@ -250,8 +251,13 @@ func (n Node) Agent() AgentConfig {
 		items, _ := c[key].([]any)
 		for _, item := range items {
 			if v, _ := item.(object); v["enabled"] != false {
-				cfg.Unapplied = append(cfg.Unapplied, strings.TrimSuffix(key, "s"))
-				break
+				if key == "skills" {
+					id, _ := v["skillId"].(string)
+					cfg.Skills = append(cfg.Skills, id)
+				} else {
+					id, _ := v["mcpId"].(string)
+					cfg.MCPs = append(cfg.MCPs, id)
+				}
 			}
 		}
 	}

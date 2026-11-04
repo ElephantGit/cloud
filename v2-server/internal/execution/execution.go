@@ -69,6 +69,7 @@ type Target struct {
 // independently; ExecutorID is retained for older frozen configs that selected the pair as one
 // binding. Neither form contains provider credentials or executable paths.
 type StartRequest struct {
+	Skills     *Skills
 	Caller     Caller
 	Target     Target
 	AgentID    string
@@ -131,7 +132,8 @@ type Turn struct {
 // Session is shared execution metadata; page titles, ordering and deletion remain page-owned.
 // EndedAt means the execution session can no longer accept Append, not merely that a turn ended.
 type Session struct {
-	ID string
+	Skills *Skills `json:",omitempty"`
+	ID     string
 	// Target/Executor are nil only for model-only sessions. Selection snapshots never
 	// change when the configured catalog changes; no credentials are retained here.
 	Target   *Target

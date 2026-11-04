@@ -40,6 +40,7 @@ type Options struct {
 	AssetsDirectory string
 	GitBackend      string
 	Bindings        map[string]nodeservices.Binding
+	ObserveProvider func(execution.Ref, nodeservices.Binding) nodeservices.Provider
 	ResolveProject  func(context.Context, execution.Scope, string) (Project, error)
 	// UserSkills returns the caller's live skill catalog. Nil skips user-skill projection.
 	UserSkills func(context.Context, execution.Scope) ([]UserSkill, error)

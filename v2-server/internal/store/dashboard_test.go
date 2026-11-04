@@ -15,12 +15,17 @@ import (
 
 func dashboardExecution(t *testing.T, f *executionFixture, id string) execution.Ref {
 	t.Helper()
+	return dashboardExecutionWithStartKey(t, f, id, id)
+}
+
+func dashboardExecutionWithStartKey(t *testing.T, f *executionFixture, id, startKey string) execution.Ref {
+	t.Helper()
 	ctx := t.Context()
 	task, err := f.s.CreateTask(ctx, f.scope.TenantID, f.scope.UserID, store.TaskInput{ProjectID: "dashboard-project", Title: "分析 " + id})
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.CreateTaskRun(ctx, store.NewTaskRun{TaskID: task.ID, TenantID: f.scope.TenantID, StartedBy: f.scope.UserID, StartKey: id, ExecutorID: "opencode:fixture", ExecutorName: "OpenCode"})
+	run, err := f.s.CreateTaskRun(ctx, store.NewTaskRun{TaskID: task.ID, TenantID: f.scope.TenantID, StartedBy: f.scope.UserID, StartKey: startKey, ExecutorID: "opencode:fixture", ExecutorName: "OpenCode"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +38,56 @@ func dashboardExecution(t *testing.T, f *executionFixture, id string) execution.
 		t.Fatal(err)
 	}
 	return ref
+}
+
+func TestDashboardExcludesScheduledTaskSessions(t *testing.T) {
+	f := executionDatabase(t)
+	ctx := t.Context()
+	if _, err := f.s.CreateProject(ctx, f.scope, store.Project{ID: "dashboard-project", Name: "Dashboard", RepositoryURL: "fixture://demo", Commit: "abc", MirrorPath: "/tmp/dashboard"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id, startKey string
+		excluded     bool
+	}{
+		{"manual", "manual-key", false},
+		{"manual-schedule-word", "schedule:manual-key", false},
+		{"manual-literal-escape", `\nschedule:manual-key`, false},
+		{"scheduled", store.ScheduledTaskStartPrefix + "occurrence", true},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			ref := dashboardExecutionWithStartKey(t, f, tc.id, tc.startKey)
+			if _, err := f.s.AppendExecutionEvent(ctx, f.scope, execution.Event{Ref: ref, Kind: execution.EventHistorySnapshot, History: &execution.HistorySnapshot{Records: []execution.HistoryRecord{{Sequence: 1, Data: json.RawMessage(`{"seq":1,"type":"turnEnded"}`)}}}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.s.BeginModelRequest(ctx, ref, requestmetrics.Attempt{Protocol: "openai-completions", Usage: requestmetrics.Usage{InputSemantics: "unknown", Availability: "unavailable"}}); err != nil {
+				t.Fatal(err)
+			}
+			checks := map[string]func() error{
+				"metadata":   func() error { _, err := f.s.DashboardMetadata(ctx, f.scope, ref.SessionID); return err },
+				"history":    func() error { _, _, err := f.s.DashboardHistory(ctx, f.scope, ref.SessionID); return err },
+				"requests":   func() error { _, _, err := f.s.DashboardRequests(ctx, f.scope, ref.SessionID, ""); return err },
+				"statistics": func() error { _, err := f.s.DashboardStatistics(ctx, f.scope, ref.SessionID); return err },
+			}
+			for name, check := range checks {
+				err := check()
+				if tc.excluded && !errors.Is(err, execution.ErrNotFound) || !tc.excluded && err != nil {
+					t.Errorf("%s: excluded=%t, error=%v", name, tc.excluded, err)
+				}
+			}
+		})
+	}
+	for _, filter := range []store.DashboardFilter{{}, {Project: "dashboard-project", Agent: "opencode", Status: "running"}} {
+		page, next, err := f.s.DashboardSessions(ctx, f.scope, filter)
+		if err != nil || len(page) != 3 || next != "" {
+			t.Fatalf("manual sessions: %v, cursor=%q, error=%v", page, next, err)
+		}
+		for _, session := range page {
+			if session.ID == "scheduled" {
+				t.Fatal("scheduled task session appeared in the manual-task dashboard")
+			}
+		}
+	}
 }
 
 func TestDashboardPaginationHistoryStatisticsAndPrivacy(t *testing.T) {

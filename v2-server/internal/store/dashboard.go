@@ -29,6 +29,7 @@ type DashboardSession struct {
 type DashboardFilter struct{ Project, Agent, Status, From, To, After string }
 
 // Only a current tenant member can read an Agent session bound to its original task run.
+// Bind ScheduledTaskStartPrefix as $3 so SQL string escaping cannot change its newline.
 const dashboardRows = ` FROM v2_execution_sessions s
  JOIN v2_task_runs tr ON tr.session_id=s.id AND tr.tenant_id=s.tenant_id AND tr.started_by=s.user_id
  JOIN v2_tasks task ON task.id=tr.task_id AND task.tenant_id=s.tenant_id
@@ -38,7 +39,7 @@ const dashboardRows = ` FROM v2_execution_sessions s
    ON f.caller->>'Kind'='task' AND f.caller->>'ID'=tr.id::text
  JOIN LATERAL(SELECT data FROM v2_execution_turns WHERE session_id=s.id ORDER BY position DESC LIMIT 1) l ON true
  WHERE s.tenant_id=$1::uuid AND s.data->'Executor'<>'null'::jsonb
- AND NOT starts_with(tr.start_key, E'\\nschedule:')`
+ AND NOT starts_with(tr.start_key, $3)`
 
 const dashboardColumns = `SELECT s.id,task.title,p.id,p.data->>'Name',
  coalesce(s.data->'Executor'->>'AgentID',''),coalesce(s.data->'Model'->>'ID',''),
@@ -67,12 +68,12 @@ func (s *Store) DashboardSessions(ctx context.Context, scope execution.Scope, f 
 		}
 	}
 	rows, err := s.pool.Query(ctx, dashboardColumns+dashboardRows+`
- AND ($3='' OR p.id=$3) AND ($4='' OR s.data->'Executor'->>'AgentID'=$4)
- AND ($5='' OR CASE WHEN l.data->'Result' IS NULL OR l.data->'Result'='null'::jsonb THEN 'running' ELSE l.data->'Result'->>'Status' END=$5)
- AND ($6='' OR (s.data->>'CreatedAt')::timestamptz>=nullif($6,'')::timestamptz)
- AND ($7='' OR (s.data->>'CreatedAt')::timestamptz<nullif($7,'')::timestamptz)
- AND ($8='' OR ((s.data->>'CreatedAt')::timestamptz,s.id)<($9::timestamptz,$8))
- ORDER BY (s.data->>'CreatedAt')::timestamptz DESC,s.id DESC LIMIT 51`, scope.TenantID, scope.UserID, f.Project, f.Agent, f.Status, f.From, f.To, anchor.ID, anchor.At)
+ AND ($4='' OR p.id=$4) AND ($5='' OR s.data->'Executor'->>'AgentID'=$5)
+ AND ($6='' OR CASE WHEN l.data->'Result' IS NULL OR l.data->'Result'='null'::jsonb THEN 'running' ELSE l.data->'Result'->>'Status' END=$6)
+ AND ($7='' OR (s.data->>'CreatedAt')::timestamptz>=nullif($7,'')::timestamptz)
+ AND ($8='' OR (s.data->>'CreatedAt')::timestamptz<nullif($8,'')::timestamptz)
+ AND ($9='' OR ((s.data->>'CreatedAt')::timestamptz,s.id)<($10::timestamptz,$9))
+ ORDER BY (s.data->>'CreatedAt')::timestamptz DESC,s.id DESC LIMIT 51`, scope.TenantID, scope.UserID, ScheduledTaskStartPrefix, f.Project, f.Agent, f.Status, f.From, f.To, anchor.ID, anchor.At)
 	if err != nil {
 		return nil, "", err
 	}
@@ -111,7 +112,7 @@ func (s *Store) dashboardSession(ctx context.Context, scope execution.Scope, id 
 	if err := s.CheckExecutionScope(ctx, scope); err != nil {
 		return item, err
 	}
-	err := scanDashboard(s.pool.QueryRow(ctx, dashboardColumns+dashboardRows+` AND s.id=$3`, scope.TenantID, scope.UserID, id), &item)
+	err := scanDashboard(s.pool.QueryRow(ctx, dashboardColumns+dashboardRows+` AND s.id=$4`, scope.TenantID, scope.UserID, ScheduledTaskStartPrefix, id), &item)
 	return item, executionError(err)
 }
 

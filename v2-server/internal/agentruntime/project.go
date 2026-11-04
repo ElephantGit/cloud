@@ -392,12 +392,13 @@ func (p *projectRuntime) clonePath(ctx context.Context, key string, config Proje
 }
 
 // A failed speculative checkout has no workspace owner. Retry through normal admission.
-func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, config Project, spare, entry *checkout) (string, error) {
+func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, config Project, spare, entry *checkout, timing *preparation) (string, error) {
 	if spare != nil {
 		select {
 		case <-spare.ready:
 			if spare.err == nil {
 				entry.id = spare.id
+				timing.reused()
 				return spare.path, nil
 			}
 		case <-ctx.Done():
@@ -409,7 +410,7 @@ func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, con
 	return p.clonePath(ctx, workspace, config, entry)
 }
 
-func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project, caller execution.CallerKind) (*checkout, error) {
+func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project, caller execution.CallerKind, timing *preparation) (*checkout, error) {
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
@@ -428,7 +429,7 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 				p.mu.Unlock()
 				close(entry.ready)
 			}()
-			path, err := p.checkoutPath(ctx, workspace, config, spare, entry)
+			path, err := p.checkoutPath(ctx, workspace, config, spare, entry, timing)
 			if err != nil {
 				entry.err = err
 				return

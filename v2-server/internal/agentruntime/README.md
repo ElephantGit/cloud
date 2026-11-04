@@ -38,6 +38,12 @@ err = driver.Close(ctx)
 
 End 等待当前 Node incarnation 的有效 `agent_session_ended`；缺字段、未知原因、错 Node / incarnation 或传输断开不能当成停止确认。项目已 dead/fatal 时，End 使用调用方 context 走 supervisor 清理；确认旧进程树停止并完成关闭后移除原项目条目，不需要另一个 Run 触发回收。停止失败或超时返回 `ErrStopUnconfirmed`，保留原项目，供后续 End 重试；上层不能释放目录或派发后继。Close 最后通过已有 Node supervisor 确认所有自有进程退出；失败可重试。目录和工具写入在正常 End/Close 后保留。
 
+## 首次输出前的等待
+
+会话第一轮到首个可见输出之前的等待按五段计时：`runtime`（启动项目 Node）、`workspace`（准备工作目录和技能，用上预热副本时标 `reused`）、`plugin`（等插件安装剩余部分，安装与 clone 并行，这里只算 clone 之后还要等的时间）、`agent`（从发出 `start_agent_session` 到 Node 记录会话）、`response`（从会话记录到首个思考、回答或工具调用）。每段接着上一段开始，加起来就是这段等待。
+
+每次变化发布一条替换式 `preparation` 事件，页面实时显示并在重放时恢复。计时只用于诊断，发布失败不影响这一轮。后续轮次复用已有 Agent，不产生这类事件。
+
 ## 恢复与清理
 
 项目目录使用稳定 ID 摘要，并在启动 Node 前 fsync `project-runtime.json` 登记。`New` 返回前调用 `Recover`，通过 `node.RecoverRuntime` 获取既有 runtime 锁、清理已识别的自有进程并确认没有未知残留；它不删 checkout、JSONL 或 Node SQLite。调用方须先完成此步骤，再把旧 SQL session 标为 ended/interrupted，之后才开放服务。未知目录、symlink、登记不一致或停止未确认都使启动失败。

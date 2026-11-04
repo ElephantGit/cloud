@@ -24,6 +24,8 @@ type chatEvent struct {
 	TextDelta  string                     `json:"textDelta,omitempty"`
 	Result     *chatResult                `json:"result,omitempty"`
 	Prompt     string                     `json:"prompt,omitempty"`
+	// Preparation is set on preparation events: what the session's first turn waited for.
+	Preparation *execution.Preparation `json:"preparation,omitempty"`
 }
 
 // turnPrompt reads the text a turn of the session was asked.
@@ -96,7 +98,7 @@ func relaySessionEvents(w http.ResponseWriter, r *http.Request, stream execution
 				return
 			}
 			ev := n.event
-			out := chatEvent{Sequence: ev.Sequence, OccurredAt: ev.OccurredAt, Kind: ev.Kind, TurnID: ev.Ref.TurnID, History: ev.History, TextDelta: ev.TextDelta}
+			out := chatEvent{Sequence: ev.Sequence, OccurredAt: ev.OccurredAt, Kind: ev.Kind, TurnID: ev.Ref.TurnID, History: ev.History, TextDelta: ev.TextDelta, Preparation: ev.Preparation}
 			if ev.Result != nil {
 				res := resultOf(*ev.Result)
 				out.Result = &res

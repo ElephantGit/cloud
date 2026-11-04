@@ -135,7 +135,10 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 	if err != nil {
 		return failed("agent_project_unavailable"), execution.ErrUnavailable
 	}
-	a, err := d.session(ctx, scope, session, project, turn.Caller.Kind)
+	timing := newPreparation(turn.Ref, emit)
+	// A session that is already prepared never starts a stage, so later turns publish nothing.
+	defer func() { timing.finish(time.Now()) }()
+	a, err := d.session(ctx, scope, session, project, turn.Caller.Kind, timing)
 	if err != nil {
 		if ctx.Err() != nil {
 			return d.cancelledRun(session.ID, ctx.Err())
@@ -150,6 +153,12 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 	if err != nil {
 		a.commandMu.Unlock()
 		return failed("agent_session_unavailable"), err
+	}
+	if fresh {
+		timing.enter(stageAgent, time.Now())
+		a.mu.Lock()
+		a.timing = timing
+		a.mu.Unlock()
 	}
 	err = a.submit(turn.Ref.TurnID, text, fresh)
 	a.commandMu.Unlock()

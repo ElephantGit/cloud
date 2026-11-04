@@ -81,9 +81,9 @@ it("says when a workflow schedule still runs an older version, and shows an occu
  expect(within(dialog).getByRole('button',{name:'立即运行'})).toBeEnabled()
  await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
  expect(await within(dialog).findByText('工作流运行 · 成功')).toBeInTheDocument()
- expect(within(dialog).getByText('{"summary":"本周合并了 3 个改动"}')).toBeInTheDocument()
+ expect(within(dialog).getByText('本周合并了 3 个改动')).toBeInTheDocument()
  expect(workflowRuns.getWorkflowRun).toHaveBeenCalledWith('tenant','run-9',undefined,expect.anything())
- expect(within(dialog).getByRole('link',{name:'打开运行页'})).toHaveAttribute('href','/chat?run=run-9')
+ expect(within(dialog).getByRole('link',{name:'查看执行详情'})).toHaveAttribute('href','/chat?run=run-9')
  // The schedule's own result route is for conversations; a workflow's result is its run.
  expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
 })
@@ -96,7 +96,7 @@ it('offers no run page once the occurrence\'s workflow run was deleted',async()=
  mount();const dialog=await detail()
  await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
  expect(await within(dialog).findByText('工作流运行已被删除')).toBeInTheDocument()
- expect(within(dialog).queryByRole('link',{name:'打开运行页'})).not.toBeInTheDocument()
+ expect(within(dialog).queryByRole('link',{name:'查看执行详情'})).not.toBeInTheDocument()
  expect(within(dialog).queryByRole('button',{name:'重试读取运行'})).not.toBeInTheDocument()
 })
 
@@ -107,7 +107,7 @@ it('offers no run page for a workflow occurrence that started no run',async()=>{
  mount();const dialog=await detail()
  await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
  expect(await within(dialog).findByText(/工作流不能启动/)).toBeInTheDocument()
- expect(within(dialog).queryByRole('link',{name:'打开运行页'})).not.toBeInTheDocument()
+ expect(within(dialog).queryByRole('link',{name:'查看执行详情'})).not.toBeInTheDocument()
  expect(workflowRuns.getWorkflowRun).not.toHaveBeenCalled()
 })
 
@@ -258,7 +258,7 @@ it('retains loaded tasks, resources and active history occupancy across poll err
 it('opens the run named by the selected occurrence even after the plan target changes',async()=>{
  vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[{...occurrence,status:'succeeded',released:true,executionRef:JSON.stringify({taskId:'original',taskRunId:'first'})}],nextCursor:''})
  mount();const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
- expect(await within(dialog).findByRole('link',{name:'查看本次执行'})).toHaveAttribute('href','/collaboration/tasks/original?run=first')
+ expect(await within(dialog).findByRole('link',{name:'查看执行详情'})).toHaveAttribute('href','/collaboration/tasks/original?run=first')
  expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
 })
 

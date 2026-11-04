@@ -3,7 +3,7 @@ import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from 'rem
 import {
   cameraAt, cursorAt, lastAt, rampAt, toOutputTime, toRecordTime, viewFor, type Recording,
 } from '../timeline.ts'
-import { FPS, stageFor, TITLE_BAR } from './layout.ts'
+import { FPS, SHOT_BACKGROUND, stageFor, TITLE_BAR } from './layout.ts'
 import { Cursor, Ripple, RIPPLE_MS } from './Cursor.tsx'
 
 /** Props of a shot composition: the recording, loaded from `out/<shot>/timeline.json`. */
@@ -30,7 +30,7 @@ export function ShotVideo({ recording }: ShotProps) {
   const captionAge = caption ? out - toOutputTime(recording.speed, caption.t) : 0
 
   const { content } = stage
-  return <AbsoluteFill style={{ background: 'radial-gradient(120% 120% at 20% 10%, #eef2ff 0%, #dfe7f5 45%, #cfd8ea 100%)' }}>
+  return <AbsoluteFill style={{ background: SHOT_BACKGROUND }}>
     <AbsoluteFill style={{
       transformOrigin: '0 0',
       transform: `translate(${stage.width / 2 - view.cx * view.scale}px, ${stage.height / 2 - view.cy * view.scale}px) scale(${view.scale})`,

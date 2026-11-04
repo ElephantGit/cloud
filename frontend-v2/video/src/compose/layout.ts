@@ -5,6 +5,9 @@ export const WIDTH = 3840
 export const HEIGHT = 2160
 export const FPS = 60
 
+/** The canvas behind the browser window in every shot; the opening dissolves into it. */
+export const SHOT_BACKGROUND = 'radial-gradient(120% 120% at 20% 10%, #eef2ff 0%, #dfe7f5 45%, #cfd8ea 100%)'
+
 /** The window's title bar, in canvas pixels. */
 export const TITLE_BAR = 76
 

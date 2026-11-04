@@ -1,13 +1,18 @@
+import '@fontsource-variable/geist'
 import '@fontsource-variable/noto-sans-sc'
 import { Composition, staticFile } from 'remotion'
 import { shots } from '../shots/index.ts'
 import { toOutputTime, type Recording } from '../timeline.ts'
+import { Intro, INTRO_FRAMES } from './Intro.tsx'
 import { FPS, HEIGHT, WIDTH } from './layout.ts'
+import { Outro, OUTRO_FRAMES } from './Outro.tsx'
 import { ShotVideo, type ShotProps } from './ShotVideo.tsx'
 
-/** One composition per shot, sized from its latest recording in `out/<shot>/`. */
+/** The opening and closing, and one composition per shot, sized from its latest recording in `out/<shot>/`. */
 export function Root() {
   return <>
+    <Composition id="intro" component={Intro} width={WIDTH} height={HEIGHT} fps={FPS} durationInFrames={INTRO_FRAMES} />
+    <Composition id="outro" component={Outro} width={WIDTH} height={HEIGHT} fps={FPS} durationInFrames={OUTRO_FRAMES} />
     {Object.keys(shots).map(name => <Composition key={name} id={name} component={ShotVideo}
       width={WIDTH} height={HEIGHT} fps={FPS} durationInFrames={1}
       defaultProps={{ recording: undefined as unknown as Recording } satisfies ShotProps}

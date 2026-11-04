@@ -12,6 +12,7 @@ npx playwright install chromium-headless-shell   # 第一次
 npm run record -- lead-decompose                 # 录制，写入 out/lead-decompose/
 npm run studio                                   # 在浏览器里预览和调整
 npm run render -- lead-decompose out/lead-decompose.mp4
+npm run render -- intro out/intro.mp4            # 片头，片尾是 outro，不需要录制
 npm run check                                    # 类型检查和单元测试
 ```
 
@@ -37,6 +38,9 @@ src/
     transcript.ts      从时间线生成文字稿
   shots/               镜头脚本，一个镜头一个文件，登记在 index.ts
   compose/             Remotion：窗口、运镜、光标、字幕
+    Intro.tsx          片头：点阵和连线背景、logo 和 Ora Cloud 字样（合成 intro）
+    Outro.tsx          片尾：logo、字样和标语（合成 outro）
+    brand/             片头片尾共用的 logo、背景、颗粒和 logo 字样组合
 ```
 
 ## 约定

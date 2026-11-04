@@ -48,14 +48,18 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request, u store.User
 	var result any
 	var err error
 	if id == "" {
-		f := store.DashboardFilter{Project: q.Get("project"), Agent: q.Get("agent"), Status: q.Get("status"), From: q.Get("from"), To: q.Get("to"), After: q.Get("after")}
+		f := store.DashboardFilter{Project: q.Get("project"), Agent: q.Get("agent"), Source: q.Get("source"), Status: q.Get("status"), From: q.Get("from"), To: q.Get("to"), After: q.Get("after")}
 		for key := range q {
-			if len(q[key]) != 1 || (key != "project" && key != "agent" && key != "status" && key != "from" && key != "to" && key != "after") {
+			if len(q[key]) != 1 || (key != "project" && key != "agent" && key != "source" && key != "status" && key != "from" && key != "to" && key != "after") {
 				fault(w, 400, "invalid_session_filter")
 				return
 			}
 		}
 		var from, to time.Time
+		if f.Source != "" && f.Source != "task" && f.Source != "chat" {
+			fault(w, 400, "invalid_session_filter")
+			return
+		}
 		if f.From != "" {
 			from, err = time.Parse(time.RFC3339Nano, f.From)
 			if err != nil {

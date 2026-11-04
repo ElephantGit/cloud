@@ -33,6 +33,14 @@
           },
           {
             "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string",
+              "enum": ["task", "chat"]
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "schema": {
               "type": "string"

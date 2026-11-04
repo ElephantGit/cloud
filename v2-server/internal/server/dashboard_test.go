@@ -107,7 +107,7 @@ func TestDashboardHTTPContractAndAuthorization(t *testing.T) {
 			}
 		}
 	}
-	for _, query := range []string{"?status=not-a-status", "?from=broken", "?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z", "?after=bad", "?unknown=1"} {
+	for _, query := range []string{"?source=workflow", "?status=not-a-status", "?from=broken", "?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z", "?after=bad", "?unknown=1"} {
 		request := httptest.NewRequest("GET", base+query, nil)
 		request.AddCookie(&http.Cookie{Name: server.SessionCookie, Value: token})
 		response := httptest.NewRecorder()
@@ -125,5 +125,57 @@ func TestDashboardHTTPContractAndAuthorization(t *testing.T) {
 	var body any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
+	}
+
+	chat, err := s.CreateChatConversation(ctx, store.NewChatConversation{TenantID: scope.TenantID, UserID: scope.UserID, ProjectID: "dashboard-project", ExecutorID: "opencode:fixture", CreateKey: "chat", Title: "普通对话"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatRef := execution.Ref{SessionID: "chat-session", TurnID: "chat-turn"}
+	if err := s.CreateExecutionSession(ctx, scope, execution.Session{ID: chatRef.SessionID, Target: &execution.Target{ProjectID: chat.ProjectID}, Executor: &execution.Executor{ID: chat.ExecutorID, AgentID: "official/ora-space.opencode"}, Model: execution.Model{ID: "fixture"}}, execution.Turn{Ref: chatRef, Caller: execution.Caller{Kind: execution.CallerChat, ID: chat.ID, AttemptID: "chat"}, Prompt: execution.TextPrompt("hi")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordChatTurn(ctx, chat.ID, chatRef.SessionID, "chat", chatRef.TurnID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	otherToken := storetest.SignIn(t, s, "other", "Other", store.RoleOwner)
+	for _, suffix := range []string{"?source=chat", "/chat-session", "/chat-session/history", "/chat-session/statistics", "/chat-session/model-calls"} {
+		for _, credential := range []string{token, otherToken} {
+			request := httptest.NewRequest("GET", base+suffix, nil)
+			request.AddCookie(&http.Cookie{Name: server.SessionCookie, Value: credential})
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			want := 200
+			if credential == otherToken && suffix != "?source=chat" {
+				want = 404
+			}
+			if response.Code != want {
+				t.Fatalf("chat %s: %d %s", suffix, response.Code, response.Body.String())
+			}
+			if suffix == "?source=chat" {
+				var page struct{ Items []store.DashboardSession }
+				if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				count := 1
+				if credential == otherToken {
+					count = 0
+				}
+				if len(page.Items) != count {
+					t.Fatalf("private chat list: %s", response.Body.String())
+				}
+			}
+			if want == 200 {
+				route, params, err := routes.FindRoute(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				validation := &openapi3filter.ResponseValidationInput{RequestValidationInput: &openapi3filter.RequestValidationInput{Request: request, PathParams: params, Route: route}, Status: response.Code, Header: response.Header(), Options: &openapi3filter.Options{IncludeResponseStatus: true}}
+				validation.SetBodyBytes(response.Body.Bytes())
+				if err := openapi3filter.ValidateResponse(ctx, validation); err != nil {
+					t.Fatalf("chat contract: %v", err)
+				}
+			}
+		}
 	}
 }

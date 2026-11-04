@@ -26,7 +26,8 @@ import (
 )
 
 // The recordings run the OpenCode Agent on the model scripts/deepseek.sh configures, which the
-// execution catalog lists as "configured". The fixture model never reaches a demo.
+// execution catalog lists as "configured". The labelled Dashboard history uses "fixture" metadata
+// without calling a provider; live tasks and workflow seeds use the configured model.
 const (
 	demoAgentCLI = "official/ora-space.opencode"
 	demoModelID  = "configured"

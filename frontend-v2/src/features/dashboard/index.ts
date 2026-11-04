@@ -5,5 +5,10 @@ export const dashboard: Feature = {
   path: 'dashboard',
   title: '仪表盘',
   icon: LayoutDashboard,
-  page: () => import('./page'),
+  page: () => import('./layout'),
+  children: [
+    { index: true, lazy: async () => ({ Component: (await import('./page')).default }) },
+    { path: 'sessions', lazy: async () => ({ Component: (await import('./analysis/list')).default }) },
+    { path: 'sessions/:id', lazy: async () => ({ Component: (await import('./analysis/detail')).default }) },
+  ],
 }

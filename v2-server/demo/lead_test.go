@@ -146,6 +146,7 @@ func TestScenesComposeInOneTenant(t *testing.T) {
 		"协作看板服务 | 状态推进只能按顺序 | 周衡 | done | 陈默",
 		"协作看板服务 | 看板列显示任务数 | 苏芮 | running | 陈默",
 		"协作看板服务 | 看板按状态分列 | 苏芮 | done | 陈默",
+		"协作看板服务 | 预置分析样例 · 看板变更检查（非现场执行） | OpenCode | review | 陈默",
 	}; !slices.Equal(lead.tasks, want) {
 		t.Fatalf("board history: %q", lead.tasks)
 	}

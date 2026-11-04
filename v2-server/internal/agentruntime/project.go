@@ -191,7 +191,26 @@ func (p *projectRuntime) start() error {
 	}
 	var err error
 	p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: p.configuration.MirrorPath, GitBackend: opts.GitBackend,
-		Packages: packages, Bindings: opts.Bindings})
+		Packages: packages, Bindings: opts.Bindings, ProviderFor: func(id string, binding nodeservices.Binding) nodeservices.Provider {
+			if opts.ObserveProvider == nil {
+				return binding.Provider
+			}
+			p.mu.Lock()
+			a := p.agents[id]
+			p.mu.Unlock()
+			if a == nil {
+				return nil
+			}
+			if !a.observeTask {
+				return binding.Provider
+			}
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			if a.active == nil {
+				return nil
+			}
+			return opts.ObserveProvider(execution.Ref{SessionID: a.frozen.ID, TurnID: a.active.id}, binding)
+		}})
 	if err != nil {
 		return err
 	}

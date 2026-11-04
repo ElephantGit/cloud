@@ -25,6 +25,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
+	"github.com/wanglongan587/cloud/v2-server/internal/requestmetrics"
 	"github.com/wanglongan587/cloud/v2-server/internal/scheduler"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
@@ -123,7 +124,9 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 		for id, choice := range models {
 			bindings[id] = choice.Binding
 		}
-		driver, e = agentruntime.New(agentruntime.Options{Root: filepath.Join(base, "nodes"), AssetsDirectory: assets, GitBackend: filepath.Join(strings.TrimSpace(string(gitDir)), "git-http-backend"), Bindings: bindings, ResolveProject: func(c context.Context, scope execution.Scope, id string) (agentruntime.Project, error) {
+		driver, e = agentruntime.New(agentruntime.Options{Root: filepath.Join(base, "nodes"), AssetsDirectory: assets, GitBackend: filepath.Join(strings.TrimSpace(string(gitDir)), "git-http-backend"), Bindings: bindings, ObserveProvider: func(ref execution.Ref, binding nodeservices.Binding) nodeservices.Provider {
+			return requestmetrics.Wrap(db, ref, binding)
+		}, ResolveProject: func(c context.Context, scope execution.Scope, id string) (agentruntime.Project, error) {
 			p, e := db.GetProject(c, scope, id)
 			return agentruntime.Project{MirrorPath: p.MirrorPath, Commit: p.Commit, SnapshotRef: p.SnapshotRef}, e
 		}, UserSkills: func(c context.Context, scope execution.Scope) ([]agentruntime.UserSkill, error) {

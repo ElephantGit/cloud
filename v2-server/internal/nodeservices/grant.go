@@ -132,5 +132,13 @@ func (s *Service) model(w http.ResponseWriter, r *http.Request, protocol Protoco
 	defer stop()
 	r = r.Clone(ctx)
 	r.Body = http.MaxBytesReader(w, r.Body, 4*1024*1024)
-	binding.Provider.Complete(w, r, binding.Model)
+	provider := binding.Provider
+	if s.opts.ProviderFor != nil {
+		provider = s.opts.ProviderFor(selected.execution, binding)
+		if provider == nil {
+			fault(w, 503, "model_metrics_unavailable")
+			return
+		}
+	}
+	provider.Complete(w, r, binding.Model)
 }

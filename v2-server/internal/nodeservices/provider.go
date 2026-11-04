@@ -59,22 +59,28 @@ func newRemoteProvider(protocol Protocol, baseURL, path, apiKey string, transpor
 // Complete preserves successful JSON/SSE payloads and usage fields. Only selected content and
 // protocol headers cross the boundary, and the Agent's token is never forwarded to the provider.
 func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model Model) {
+	p.CompleteObserved(w, r, model, nil)
+}
+
+// CompleteObserved runs begin immediately before dispatch, after local validation. A rejected
+// admission has already written its response. Zero means no upstream status was received.
+func (p *RemoteProvider) CompleteObserved(w http.ResponseWriter, r *http.Request, model Model, begin func() bool) int {
 	var body map[string]json.RawMessage
 	d := json.NewDecoder(r.Body)
 	if d.Decode(&body) != nil || body == nil || d.Decode(new(any)) != io.EOF {
 		fault(w, 400, "invalid_completion")
-		return
+		return 0
 	}
 	body["model"], _ = json.Marshal(model.ID)
 	data, err := json.Marshal(body)
 	if err != nil {
 		fault(w, 400, "invalid_completion")
-		return
+		return 0
 	}
 	req, err := http.NewRequestWithContext(r.Context(), "POST", p.endpoint, bytes.NewReader(data))
 	if err != nil {
 		fault(w, 502, "provider_unavailable")
-		return
+		return 0
 	}
 	if p.protocol == AnthropicMessages {
 		if p.bearer {
@@ -91,26 +97,30 @@ func (p *RemoteProvider) Complete(w http.ResponseWriter, r *http.Request, model 
 		req.Header.Set("Authorization", "Bearer "+p.key)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if begin != nil && !begin() {
+		return 0
+	}
 	resp, err := p.client.Do(req)
 	if err != nil {
 		fault(w, 502, "provider_unavailable")
-		return
+		return 0
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.WarnContext(r.Context(), "model provider rejected request", "status", resp.StatusCode)
 		fault(w, 502, "provider_rejected")
-		return
+		return resp.StatusCode
 	}
 	content := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(content, "application/json") && !strings.HasPrefix(content, "text/event-stream") {
 		fault(w, 502, "provider_response_invalid")
-		return
+		return resp.StatusCode
 	}
 	w.Header().Set("Content-Type", content)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(flushWriter{w}, resp.Body)
+	return resp.StatusCode
 }
 
 type flushWriter struct{ http.ResponseWriter }

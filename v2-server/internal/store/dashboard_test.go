@@ -31,7 +31,7 @@ func dashboardExecutionWithStartKey(t *testing.T, f *executionFixture, id, start
 	}
 	ref := execution.Ref{SessionID: id, TurnID: id + "-turn"}
 	turn := execution.Turn{Ref: ref, Caller: execution.Caller{Kind: execution.CallerTask, ID: run.ID, AttemptID: id}, Prompt: execution.TextPrompt("synthetic")}
-	if err := f.s.CreateExecutionSession(ctx, f.scope, execution.Session{ID: id, Executor: &execution.Executor{AgentID: "opencode"}, Model: execution.Model{ID: "fixture"}}, turn); err != nil {
+	if err := f.s.CreateExecutionSession(ctx, f.scope, execution.Session{ID: id, Executor: &execution.Executor{AgentID: "official/ora-space.opencode"}, Model: execution.Model{ID: "fixture"}}, turn); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.RecordTaskTurn(ctx, run.ID, ref.SessionID, ref.TurnID); err != nil {
@@ -77,7 +77,7 @@ func TestDashboardExcludesScheduledTaskSessions(t *testing.T) {
 			}
 		})
 	}
-	for _, filter := range []store.DashboardFilter{{}, {Project: "dashboard-project", Agent: "opencode", Status: "running"}} {
+	for _, filter := range []store.DashboardFilter{{}, {Project: "dashboard-project", Agent: "official/ora-space.opencode", Status: "running"}} {
 		page, next, err := f.s.DashboardSessions(ctx, f.scope, filter)
 		if err != nil || len(page) != 3 || next != "" {
 			t.Fatalf("manual sessions: %v, cursor=%q, error=%v", page, next, err)

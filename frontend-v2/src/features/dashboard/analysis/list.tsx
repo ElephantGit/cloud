@@ -104,7 +104,8 @@ export default function SessionList() {
             aria-label='Agent 标识'
             name='agent'
             defaultValue={filters.agent}
-            placeholder='例如 opencode'
+            placeholder='例如 official/ora-space.opencode'
+            className='w-80'
           />
         </label>
         <label className='text-sm'>

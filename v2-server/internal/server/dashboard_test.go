@@ -45,7 +45,7 @@ func TestDashboardHTTPContractAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := execution.Ref{SessionID: "dashboard-session", TurnID: "dashboard-turn"}
-	err = s.CreateExecutionSession(ctx, scope, execution.Session{ID: ref.SessionID, Model: execution.Model{ID: "fixture"}, Executor: &execution.Executor{AgentID: "opencode"}}, execution.Turn{Ref: ref, Caller: execution.Caller{Kind: execution.CallerTask, ID: run.ID, AttemptID: "one"}, Prompt: execution.TextPrompt("synthetic")})
+	err = s.CreateExecutionSession(ctx, scope, execution.Session{ID: ref.SessionID, Model: execution.Model{ID: "fixture"}, Executor: &execution.Executor{AgentID: "official/ora-space.opencode"}}, execution.Turn{Ref: ref, Caller: execution.Caller{Kind: execution.CallerTask, ID: run.ID, AttemptID: "one"}, Prompt: execution.TextPrompt("synthetic")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +87,24 @@ func TestDashboardHTTPContractAndAuthorization(t *testing.T) {
 		validation.SetBodyBytes(response.Body.Bytes())
 		if err := openapi3filter.ValidateResponse(ctx, validation); err != nil {
 			t.Fatalf("%s: %v\n%s", suffix, err, response.Body.String())
+		}
+	}
+	for _, tc := range []struct {
+		agent string
+		count int
+	}{{"official%2Fora-space.opencode", 1}, {"opencode", 0}, {"OpenCode", 0}, {"official%2Fora-space.claude", 0}} {
+		request := httptest.NewRequest("GET", base+"?agent="+tc.agent, nil)
+		request.AddCookie(&http.Cookie{Name: server.SessionCookie, Value: token})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		var page struct{ Items []store.DashboardSession }
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Items) != tc.count {
+			t.Fatalf("Agent filter %q: %d %s", tc.agent, response.Code, response.Body.String())
+		}
+		for _, item := range page.Items {
+			if item.Agent != "official/ora-space.opencode" {
+				t.Fatalf("Agent identity changed: %+v", item)
+			}
 		}
 	}
 	for _, query := range []string{"?status=not-a-status", "?from=broken", "?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z", "?after=bad", "?unknown=1"} {

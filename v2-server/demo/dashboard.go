@@ -35,7 +35,7 @@ func seedDashboard(ctx context.Context, s *Seeder, scope execution.Scope, projec
 	}
 	at := s.Now.Add(-time.Hour)
 	ref := execution.Ref{SessionID: sid, TurnID: sid + "-turn"}
-	session := execution.Session{ID: sid, CreatedAt: at, Target: &execution.Target{ProjectID: project.ID}, Executor: &execution.Executor{ID: "opencode:fixture", AgentID: "opencode", AgentName: "OpenCode", Model: execution.Model{ID: "fixture", Name: "Fixture"}}, Model: execution.Model{ID: "fixture", Name: "Fixture"}}
+	session := execution.Session{ID: sid, CreatedAt: at, Target: &execution.Target{ProjectID: project.ID}, Executor: &execution.Executor{ID: "opencode:fixture", AgentID: demoAgentCLI, AgentName: "OpenCode", Model: execution.Model{ID: "fixture", Name: "Fixture"}}, Model: execution.Model{ID: "fixture", Name: "Fixture"}}
 	turn := execution.Turn{Ref: ref, StartedAt: at, Caller: execution.Caller{Kind: execution.CallerTask, ID: run.ID, AttemptID: sid}, Prompt: execution.TextPrompt("预置样例：检查看板状态转换。")}
 	if err := s.Store.CreateExecutionSession(ctx, scope, session, turn); err != nil {
 		return err

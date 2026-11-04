@@ -15,7 +15,7 @@ const session = {
   title: '真实执行会话',
   projectId: 'project-1',
   projectName: '演示项目',
-  agent: 'opencode',
+  agent: 'official/ora-space.opencode',
   model: 'fixture',
   status: 'completed',
   source: 'task',
@@ -110,8 +110,36 @@ it('resets pagination when filters change', async () => {
   show()
   await userEvent.click(await screen.findByRole('button', { name: '加载更多会话' }))
   await screen.findAllByRole('link', { name: session.title })
-  await userEvent.type(screen.getByRole('textbox', { name: 'Agent 标识' }), 'opencode')
+  await userEvent.type(screen.getByRole('textbox', { name: 'Agent 标识' }), session.agent)
   await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
-  await vi.waitFor(() => expect(requests.at(-1)).toMatchObject({ agent: 'opencode' }))
+  await vi.waitFor(() => expect(requests.at(-1)).toMatchObject({ agent: session.agent }))
   expect(requests.at(-1)?.after).toBeUndefined()
+})
+
+it('filters seeded and live sessions using the full Agent ID shown in the hint', async () => {
+  const seeded = { ...session, id: 'seeded', title: '预置分析样例（非现场执行）' }
+  fakeBackend((config) => {
+    if (config.url === '/api/v1/me/tenants') {
+      return { status: 200, data: { items: [{ id: tenant }] } }
+    }
+    if (config.url === base) {
+      const agent = config.params?.agent
+      return {
+        status: 200,
+        data: { items: !agent || agent === session.agent ? [session, seeded] : [], nextCursor: '' },
+      }
+    }
+    if (config.url?.endsWith('/projects')) return { status: 200, data: { items: [] } }
+  })
+  show()
+  await screen.findByRole('link', { name: session.title })
+  const filter = screen.getByPlaceholderText('例如 official/ora-space.opencode')
+  await userEvent.type(filter, 'opencode')
+  await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
+  expect(await screen.findByText('暂无符合条件的任务 Agent 会话。')).toBeInTheDocument()
+  await userEvent.clear(screen.getByRole('textbox', { name: 'Agent 标识' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Agent 标识' }), session.agent)
+  await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
+  expect(await screen.findByRole('link', { name: session.title })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: seeded.title })).toBeInTheDocument()
 })

@@ -318,11 +318,22 @@ func (s *Store) RemoveSpacePlugin(ctx context.Context, tenant, space, caller, pa
 			return ErrPluginRuntimeManaged
 		}
 		if _, e := tx.Exec(ctx, `
-			UPDATE v2_space_agents
-			SET desired_state = 'removed', observed_state = CASE WHEN EXISTS(SELECT 1 FROM v2_skill_results r WHERE r.selection_id=v2_space_agents.id AND (r.installed_version IS NOT NULL OR r.state IN ('applying','failed'))) THEN 'removing' ELSE 'removed' END,
-				observed_version = CASE WHEN EXISTS(SELECT 1 FROM v2_skill_results r WHERE r.selection_id=v2_space_agents.id AND (r.installed_version IS NOT NULL OR r.state IN ('applying','failed'))) THEN observed_version ELSE NULL END,
+			WITH removal_state AS (
+				SELECT a.id, EXISTS(
+					SELECT 1 FROM v2_skill_results r
+					WHERE r.selection_id = a.id
+						AND (r.installed_version IS NOT NULL OR r.state IN ('applying','failed'))
+				) AS outstanding
+				FROM v2_space_agents a
+				WHERE a.space_id = $1 AND a.tenant_id = $2 AND a.source_namespace = $3 AND a.identifier = $5
+			)
+			UPDATE v2_space_agents a
+			SET desired_state = 'removed',
+				observed_state = CASE WHEN removal_state.outstanding THEN 'removing' ELSE 'removed' END,
+				observed_version = CASE WHEN removal_state.outstanding THEN a.observed_version ELSE NULL END,
 				install_error = NULL, requested_by_user_id = $4, version = version + 1, updated_at = now()
-			WHERE space_id = $1 AND tenant_id = $2 AND source_namespace = $3 AND identifier = $5`,
+			FROM removal_state
+			WHERE a.id = removal_state.id`,
 			space, tenant, namespace, caller, identifier); e != nil {
 			return fmt.Errorf("remove plugin selection: %w", e)
 		}

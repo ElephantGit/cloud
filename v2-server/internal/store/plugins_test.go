@@ -34,6 +34,52 @@ func TestEmptyPluginCatalogKeepsThePreviousSnapshot(t *testing.T) {
 	}
 }
 
+func TestRemoveSpacePluginKeepsObservedVersionWhileSkillRemovalIsPending(t *testing.T) {
+	f := newSquadFixture(t)
+	owner := f.login(t, "owner", "owner")
+	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
+	if e != nil || len(spaces) != 1 {
+		t.Fatalf("spaces = %v %v", spaces, e)
+	}
+	space := spaces[0].ID
+	entry := pluginmarket.Entry{
+		Namespace: "official", Identifier: "pending.skill", Title: "Pending Skill",
+		Kind: "skill", Version: "1.0.0", URL: "https://example.org/pending.skill",
+		SHA256:             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		MarketplaceVisible: true, SourceURL: "https://github.com/ora-space/marketplace",
+	}
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{entry}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	installed, e := f.store.InstallSpacePlugin(f.ctx, f.tenant, space, owner, "plugins", "install-pending", store.PluginInstallInput{
+		Identifier: "official/pending.skill",
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Exec(f.ctx, `INSERT INTO v2_projects(id,tenant_id,data,plugin_space_id) VALUES('pending-project',$1,'{}',$2)`, f.tenant, space); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Exec(f.ctx, `UPDATE v2_space_agents SET observed_state='installed', observed_version='1.0.0' WHERE id=$1`, installed.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Exec(f.ctx, `INSERT INTO v2_skill_results(selection_id,project_id,revision,state,installed_version)
+		VALUES($1,'pending-project',$2,'applying','1.0.0')`, installed.ID, installed.Version); e != nil {
+		t.Fatal(e)
+	}
+
+	removed, e := f.store.RemoveSpacePlugin(f.ctx, f.tenant, space, owner, "plugins", "remove-pending", store.PluginRemoveInput{
+		Identifier: "official/pending.skill", Version: installed.Version,
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if removed.DesiredState != "removed" || removed.ObservedState != "removing" ||
+		removed.ObservedVersion == nil || *removed.ObservedVersion != "1.0.0" {
+		t.Fatalf("removed = %+v", removed)
+	}
+}
+
 func TestPluginMarketLifecycle(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx

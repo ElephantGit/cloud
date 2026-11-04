@@ -191,7 +191,7 @@ func (p *projectRuntime) start() error {
 	}
 	var err error
 	p.services, err = nodeservices.Start(nodeservices.Options{StateDirectory: p.root, Repository: p.configuration.MirrorPath, GitBackend: opts.GitBackend,
-		Packages: packages, Bindings: opts.Bindings})
+		Packages: packages, Bindings: opts.Bindings, ProviderFor: p.providerFor})
 	if err != nil {
 		return err
 	}
@@ -231,6 +231,30 @@ func (p *projectRuntime) start() error {
 	p.receiveStarted = true
 	go p.receive()
 	return nil
+}
+
+// providerFor binds each observed HTTP request to the current admitted turn, not a browser ID.
+// Returning nil denies a request when its execution or active turn is no longer present.
+func (p *projectRuntime) providerFor(id string, binding nodeservices.Binding) nodeservices.Provider {
+	observe := p.driver.opts.ObserveProvider
+	if observe == nil {
+		return binding.Provider
+	}
+	p.mu.Lock()
+	a := p.agents[id]
+	p.mu.Unlock()
+	if a == nil {
+		return nil
+	}
+	if !a.observeRequests {
+		return binding.Provider
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active == nil {
+		return nil
+	}
+	return observe(execution.Ref{SessionID: a.frozen.ID, TurnID: a.active.id}, binding)
 }
 
 func (p *projectRuntime) ipc() nodeClient {
@@ -392,12 +416,13 @@ func (p *projectRuntime) clonePath(ctx context.Context, key string, config Proje
 }
 
 // A failed speculative checkout has no workspace owner. Retry through normal admission.
-func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, config Project, spare, entry *checkout) (string, error) {
+func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, config Project, spare, entry *checkout, timing *preparation) (string, error) {
 	if spare != nil {
 		select {
 		case <-spare.ready:
 			if spare.err == nil {
 				entry.id = spare.id
+				timing.reused()
 				return spare.path, nil
 			}
 		case <-ctx.Done():
@@ -409,7 +434,7 @@ func (p *projectRuntime) checkoutPath(ctx context.Context, workspace string, con
 	return p.clonePath(ctx, workspace, config, entry)
 }
 
-func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project, caller execution.CallerKind) (*checkout, error) {
+func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Scope, workspace string, config Project, caller execution.CallerKind, timing *preparation) (*checkout, error) {
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
@@ -428,7 +453,7 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 				p.mu.Unlock()
 				close(entry.ready)
 			}()
-			path, err := p.checkoutPath(ctx, workspace, config, spare, entry)
+			path, err := p.checkoutPath(ctx, workspace, config, spare, entry, timing)
 			if err != nil {
 				entry.err = err
 				return

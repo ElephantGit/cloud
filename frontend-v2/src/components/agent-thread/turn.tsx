@@ -25,10 +25,12 @@ import {
 } from '@/components/ui/trace'
 import { buildRows, type FileChange, type Folder, fileTree, turnFileChanges, turnSources } from './model/display'
 import type { PermissionRequest, Turn } from './model/types'
+import type { SessionPreparation } from './model/wire'
 import { Rows, TurnProvider } from './activity'
 import { AttachmentList, PluginList } from './attachments'
 import { formatDuration, formatTokens } from './format'
 import { hostname } from './links'
+import { PreparationRow } from './preparation'
 import { useWorkspaceNavigation } from '@/components/workspace-panel/navigation'
 
 /** The person's prompt, right-aligned, with what they attached. */
@@ -50,10 +52,12 @@ export function UserPrompt({ turn }: { turn: Turn }) {
 /** Everything the agent did for one prompt, followed by its sources, changed files and ending. */
 export function AgentTurn({
   turn,
+  preparation,
   permissions,
   onAnswer,
 }: {
   turn: Turn
+  preparation?: SessionPreparation
   permissions: PermissionRequest[]
   onAnswer: (permissionId: string, optionId: string) => void
 }) {
@@ -61,7 +65,7 @@ export function AgentTurn({
   const sources = useMemo(() => turnSources(turn), [turn])
   const changes = useMemo(() => turnFileChanges(turn), [turn])
   const scope = useMemo(() => ({ status: turn.status, permissions, sources, onAnswer }), [turn.status, permissions, sources, onAnswer])
-  const waitingForFirstOutput = turn.status === 'streaming' && rows.length === 0
+  const waitingForFirstOutput = turn.status === 'streaming' && rows.length === 0 && !preparation
   return (
     <TurnProvider value={scope}>
       <Message>
@@ -71,6 +75,7 @@ export function AgentTurn({
               <TraceTitle>正在准备…</TraceTitle>
             </TraceLine>
           )}
+          {preparation && <PreparationRow preparation={preparation} live={turn.status === 'streaming'} />}
           <Rows rows={rows} />
           {sources.length > 0 && <Sources sources={sources} />}
           {changes.length > 0 && turn.status !== 'streaming' && <FileChanges changes={changes} />}

@@ -33,6 +33,7 @@ type activeTurn struct {
 }
 
 type agentSession struct {
+	observeRequests   bool
 	frozen            execution.Session
 	scope             execution.Scope
 	execution         string
@@ -58,9 +59,10 @@ type agentSession struct {
 	previewQueued bool
 	previewAt     time.Time // when the last preview flush ran
 	previewSent   []byte    // the pending set the page last received
+	timing        *preparation
 }
 
-func (d *Driver) session(ctx context.Context, scope execution.Scope, session execution.Session, config Project, caller execution.CallerKind) (*agentSession, error) {
+func (d *Driver) session(ctx context.Context, scope execution.Scope, session execution.Session, config Project, caller execution.CallerKind, timing *preparation) (*agentSession, error) {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
@@ -74,7 +76,7 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 	if a == nil {
 		target, executor := *session.Target, *session.Executor
 		session.Target, session.Executor = &target, &executor
-		a = &agentSession{frozen: session, scope: scope, execution: d.nextID("a") + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
+		a = &agentSession{observeRequests: caller == execution.CallerTask || caller == execution.CallerChat, frozen: session, scope: scope, execution: d.nextID("a") + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
 		d.sessions[session.ID] = a
 		go func() {
 			defer func() {
@@ -92,6 +94,7 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			}()
 			prepare, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
+			timing.enter(stageRuntime, time.Now())
 			p, err := d.project(prepare, session.Target.ProjectID, config)
 			a.project = p
 			if err != nil {
@@ -118,10 +121,13 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			// Run has checked the executor names a known plugin; its install overlaps the clone.
 			plugin, _ := findPlugin(session.Executor.AgentID, session.Executor.PluginVersion)
 			installed := p.install(plugin)
-			a.checkout, a.prepareErr = p.prepareCheckout(prepare, scope, session.WorkspaceID, config, caller)
+			timing.enter(stageWorkspace, time.Now())
+			a.checkout, a.prepareErr = p.prepareCheckout(prepare, scope, session.WorkspaceID, config, caller, timing)
 			if a.prepareErr != nil {
 				return
 			}
+			// The install overlaps the clone; this stage is only what remains of it.
+			timing.enter(stagePlugin, time.Now())
 			if a.prepareErr = installed.wait(prepare, p); a.prepareErr != nil {
 				return
 			}
@@ -373,6 +379,12 @@ func (a *agentSession) observe(message node.Message) (*turnOutcome, bool) {
 		return &turnOutcome{call.id, result, errors.New(result.FailureCode)}, true
 	}
 	snapshot := historyOf(observation.Snapshot)
+	a.mu.Lock()
+	timing := a.timing
+	a.mu.Unlock()
+	if timing != nil {
+		timing.observeHistory(snapshot)
+	}
 	if observation.Preview {
 		a.queuePreview(snapshot)
 		return nil, true

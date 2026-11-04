@@ -255,6 +255,16 @@ CREATE TABLE IF NOT EXISTS v2_execution_events (
  data jsonb NOT NULL,
  PRIMARY KEY (session_id, sequence)
 );
+-- Request-level observations never contain prompts or provider response bodies. Dispatch is
+-- refused until this row is durable; finalization can only replace the started observation.
+CREATE TABLE IF NOT EXISTS v2_model_requests (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ session_id text NOT NULL REFERENCES v2_execution_sessions(id),
+ turn_id text NOT NULL REFERENCES v2_execution_turns(id),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ data jsonb NOT NULL
+);
+CREATE INDEX IF NOT EXISTS v2_model_requests_session ON v2_model_requests(session_id,created_at,id);
 CREATE TABLE IF NOT EXISTS v2_projects (
  id text PRIMARY KEY,
  tenant_id uuid NOT NULL REFERENCES tenants(id),

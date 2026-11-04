@@ -51,6 +51,22 @@ describe('chat page', () => {
     expect(useChatStore.getState().selectedRunId).toBe('run-9')
   })
 
+  it('opens the conversation a dashboard link names after loading', async () => {
+    renderPage('/chat?conversation=c-style&run=run-9')
+    expect(await screen.findByRole('heading', { level: 2, name: '对话页样式' })).toBeInTheDocument()
+    expect(useChatStore.getState().selectedId).toBe('c-style')
+    expect(useChatStore.getState().selectedRunId).toBeUndefined()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not substitute another chat for a deleted or inaccessible source link', async () => {
+    renderPage('/chat?conversation=missing')
+    expect(await screen.findByRole('alert')).toHaveTextContent('此对话已删除或无权访问。')
+    expect(screen.queryByRole('region', { name: '会话' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '返回对话' }))
+    expect(await screen.findByRole('heading', { level: 2, name: '新对话' })).toBeInTheDocument()
+  })
+
   it('opens on a new chat in the first project, as desktop lands', async () => {
     await renderReady()
     expect(screen.getByRole('heading', { level: 2, name: '新对话' })).toBeInTheDocument()

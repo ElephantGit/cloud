@@ -1,5 +1,13 @@
 # v2-server
 
+## 会话分析与模型请求观测
+
+`dashboard.openapi.json` 定义临时 v2 分析契约：`/api/v2/tenants/{tid}/dashboard/sessions` 及其详情、history、statistics、model-calls 子接口。这些接口读取真实 PostgreSQL 数据，按来源展示普通 Chat 与手动任务 Agent 会话。任务保留成员共享权限；Chat 只对 conversation 所属用户可见，同时校验当前成员关系、原始 caller、项目与执行器绑定，删除 conversation 后所有分析接口均不可读。读接口返回 private/no-store，不触发执行。列表按创建时间倒序，筛选和游标绑定；请求明细每页 25 条，汇总独立覆盖全部已记录 attempt。
+
+历史返回有界的定型快照，标为 `persisted_snapshot`，不冒充正式 Cloud 的 Revision 归档，不静默回填缺失数据。普通 Chat 与任务 Agent 模型代理通过 `internal/requestmetrics` 在派发前记录可信 session/turn；登记失败返回 503 且不发上游；完成记录只接受同 ID 同结果的有界幂等重试，失败保留 started。已有 Chat 历史可直接读取，过去未观测的模型请求保持未采集，不从回复反推调用次数或用量。记录仅包含允许的数字和状态，不保存请求/响应正文、模型 key 或 provider URL。OpenAI/Anthropic、JSON/SSE 的 Token 独立、未知和真实零保持原义，fixture/上游来源明确。
+
+B 段及合成 demo 的陈默账号会预置一条有标记的分析历史，未调用模型，也没有虚构 HTTP 请求统计。现场任务的模型请求由真实执行采集。分析使用现有 demo 数据库、用户、重置和 seed 机制，前端团队 mock 开启不影响真实分析读取。
+
 Cloud v2 的**临时**单体后端：一个进程、一个 PostgreSQL 库，实现 `api/openapi.json` 里 v2 用到的子集，供 `frontend-v2` 演示和快速端到端测试。`frontend-v2` 切到正式 Cloud 后删除。
 
 ## 运行
@@ -86,6 +94,8 @@ seed 在 [`demo/`](demo/README.md)：`env.go` 是上表和重置、准备本地 
 | `DELETE /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | owner 移除 Skill 或市场 Agent 选择，保留 `desiredState=removed` 行；预装 Agent 同样返回 `409 plugin_runtime_managed`；要求版本与幂等键 |
 
 ## 契约之外
+
+任务 Agent 会话分析的五个只读接口见上文「会话分析与模型请求观测」和 `dashboard.openapi.json`。
 
 ### 成员邀请
 

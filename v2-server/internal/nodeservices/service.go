@@ -72,6 +72,8 @@ type Options struct {
 	GitBackend     string
 	Packages       []Package
 	Bindings       map[string]Binding
+	// ProviderFor binds an authorized physical execution to its persisted current turn.
+	ProviderFor func(string, Binding) Provider
 }
 
 type servedPackage struct {

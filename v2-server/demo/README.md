@@ -7,7 +7,8 @@
 - `env.go`：各段的库、数据目录和端口表；重置；`Seeder` 的写入辅助：`Scope` 按邮箱找到本段账号，`Project` 把 `fixtures/<段>/` 准备成一个本地 Git 提交的项目（UUID 与 snapshot ref 齐全），`WorkflowSeed` 把账号和项目交给下面的工作流 seed。
 - `scenes.go`：三段的接线和合成时的顺序。
 - `newcomer.go`、`lead.go`、`ops.go`：各段的数据，由各段负责人维护。每段只用 `users/<段>.json` 里的账号和自己的项目，不依赖其他段先跑过。
-- B 段（`lead.go`）：陈默（owner）带苏芮、周衡和 OpenCode、Claude Code 组成「看板小队」，项目「协作看板服务」，「需求拆分」工作流，以及几张人类成员已经在做或做完的任务。Agent 任务在录屏时现场执行，seed 不写任务运行和评论。
+- B 段（`lead.go`）：陈默（owner）带苏芮、周衡和 OpenCode、Claude Code 组成「看板小队」，项目「协作看板服务」，「需求拆分」工作流，以及几张人类成员已经在做或做完的任务。`seedDashboard` 另写入一条明确标为「预置分析样例」的 Agent 任务、运行及历史，使用 fixture 元数据但不调用模型、不伪造请求台账，也不写讨论评论。现场 Agent 任务仍使用 configured 模型真实执行。
+- Dashboard 的预置样例与现场 OpenCode 会话统一使用完整 Agent ID `official/ora-space.opencode`；按此 ID 精确筛选可同时看到两类记录。模型与预置标记继续区分两类来源，旧 seed 不自动改写，重置 B 段或合成 demo 后使用新 seed。
 
 ## 工作流 seed
 

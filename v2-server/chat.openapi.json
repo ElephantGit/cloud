@@ -1180,6 +1180,55 @@
         ],
         "description": "On history_snapshot, a full replacement of the session's displayed history. On history_preview, only the records still being written (all preview): they replace the preview records of the latest snapshot, and a settled record at the same position wins."
       },
+      "ChatPreparation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatPreparationStage"
+            }
+          }
+        },
+        "required": [
+          "stages"
+        ],
+        "description": "What the session's first turn waited for, stage by stage. Each stage starts when the previous one ends."
+      },
+      "ChatPreparationStage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "runtime",
+              "workspace",
+              "plugin",
+              "agent",
+              "response"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent while the stage runs."
+          },
+          "reused": {
+            "type": "boolean",
+            "description": "Work prepared in advance served this stage."
+          }
+        },
+        "required": [
+          "id",
+          "startedAt"
+        ]
+      },
       "ChatEvent": {
         "type": "object",
         "additionalProperties": false,
@@ -1199,7 +1248,8 @@
               "history_preview",
               "turn_ended",
               "text_delta",
-              "session_ended"
+              "session_ended",
+              "preparation"
             ]
           },
           "turnId": {
@@ -1217,6 +1267,9 @@
           "prompt": {
             "type": "string",
             "description": "On turn_ended, the text the turn was asked. A turn stopped before its Agent started never appears in a history snapshot; this is how a page still shows it. Absent when it could not be read; the event and the stream are unaffected."
+          },
+          "preparation": {
+            "$ref": "#/components/schemas/ChatPreparation"
           }
         },
         "required": [

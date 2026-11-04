@@ -165,6 +165,33 @@ export interface ChatHistory {
   incomplete: boolean;
 }
 
+export type ChatPreparationStageId = typeof ChatPreparationStageId[keyof typeof ChatPreparationStageId];
+
+
+export const ChatPreparationStageId = {
+  runtime: 'runtime',
+  workspace: 'workspace',
+  plugin: 'plugin',
+  agent: 'agent',
+  response: 'response',
+} as const;
+
+export interface ChatPreparationStage {
+  id: ChatPreparationStageId;
+  startedAt: string;
+  /** Absent while the stage runs. */
+  endedAt?: string;
+  /** Work prepared in advance served this stage. */
+  reused?: boolean;
+}
+
+/**
+ * What the session's first turn waited for, stage by stage. Each stage starts when the previous one ends.
+ */
+export interface ChatPreparation {
+  stages: ChatPreparationStage[];
+}
+
 export type ChatEventKind = typeof ChatEventKind[keyof typeof ChatEventKind];
 
 
@@ -174,6 +201,7 @@ export const ChatEventKind = {
   turn_ended: 'turn_ended',
   text_delta: 'text_delta',
   session_ended: 'session_ended',
+  preparation: 'preparation',
 } as const;
 
 /**
@@ -189,6 +217,7 @@ export interface ChatEvent {
   result?: ChatResult;
   /** On turn_ended, the text the turn was asked. A turn stopped before its Agent started never appears in a history snapshot; this is how a page still shows it. Absent when it could not be read; the event and the stream are unaffected. */
   prompt?: string;
+  preparation?: ChatPreparation;
 }
 
 export interface ChatProjectOrder {

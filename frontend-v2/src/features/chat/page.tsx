@@ -36,7 +36,7 @@ const slide = { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
 
 /**
  * Chat: history on the left; on the right the selected session, a picked workflow run, or a new
- * chat when neither is. `?run=<id>` opens that run, so other pages can link straight to it.
+ * chat when neither is. Source links select a conversation or workflow run after loading it.
  */
 export default function Page() {
   const user = useUser()
@@ -47,11 +47,14 @@ export default function Page() {
   const connected = useChatStore((s) => !!tenantId && s.tenantId === tenantId && s.userId === user.id)
   const [params, setParams] = useSearchParams()
   const linkedRun = params.get('run')
+  const linkedConversation = params.get('conversation')
+  const linkedChat = useChatStore((s) => s.sessions.find((x) => x.id === linkedConversation))
+  const loading = useChatStore((s) => s.backend === 'loading' || s.backend === 'idle')
   useEffect(() => {
     if (tenantId) void useChatStore.getState().connect(tenantId, user.id)
   }, [tenantId, user.id])
   useEffect(() => {
-    if (!connected || !linkedRun) return
+    if (!connected || !linkedRun || linkedConversation) return
     useChatStore.getState().selectRun(linkedRun)
     setParams(
       (p) => {
@@ -60,7 +63,16 @@ export default function Page() {
       },
       { replace: true },
     )
-  }, [connected, linkedRun, setParams])
+  }, [connected, linkedRun, linkedConversation, setParams])
+  useEffect(() => {
+    if (!connected || !linkedConversation || !linkedChat) return
+    useChatStore.getState().select(linkedConversation)
+    setParams((p) => {
+      p.delete('conversation')
+      p.delete('run')
+      return p
+    }, { replace: true })
+  }, [connected, linkedConversation, linkedChat, setParams])
   if (tenants.isError) {
     return (
       <div role="alert" className="flex min-h-0 flex-1 items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
@@ -76,10 +88,18 @@ export default function Page() {
       </div>
     )
   }
-  if (!connected) {
+  if (!connected || (linkedConversation && loading)) {
     return (
       <div role="status" className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
         正在加载对话…
+      </div>
+    )
+  }
+  if (linkedConversation && !linkedChat) {
+    return (
+      <div className="space-y-3 p-6">
+        <p role="alert">此对话已删除或无权访问。</p>
+        <Button variant="outline" onClick={() => setParams({})}>返回对话</Button>
       </div>
     )
   }

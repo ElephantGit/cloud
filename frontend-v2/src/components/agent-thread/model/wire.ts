@@ -24,15 +24,31 @@ export interface SessionHistoryRecord {
 /** Why the page ended the session; empty when it ended on its own (a restart) or is live. */
 export type SessionEndReason = '' | 'stopped' | 'deleted' | 'interrupted'
 
+/** One timed stage of a session's path to first output; endedAt is absent while it runs. */
+export interface SessionPreparationStage {
+  id: 'runtime' | 'workspace' | 'plugin' | 'agent' | 'response'
+  startedAt: string
+  endedAt?: string
+  /** Work prepared in advance served this stage. */
+  reused?: boolean
+}
+
+/** What a session's first turn waited for; each stage starts when the previous one ends. */
+export interface SessionPreparation {
+  stages: SessionPreparationStage[]
+}
+
 /** The data of one event-stream message. */
 export interface SessionEvent {
   sequence: number
   occurredAt: string
-  kind: 'history_snapshot' | 'history_preview' | 'turn_ended' | 'text_delta' | 'session_ended'
+  kind: 'history_snapshot' | 'history_preview' | 'turn_ended' | 'text_delta' | 'session_ended' | 'preparation'
   turnId: string
   history?: { records: SessionHistoryRecord[]; incomplete: boolean }
   textDelta?: string
   result?: SessionResult
   /** On turn_ended, the text the turn was asked, when it could be read. */
   prompt?: string
+  /** On preparation, the stages so far; it replaces the previous set. */
+  preparation?: SessionPreparation
 }

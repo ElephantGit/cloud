@@ -67,7 +67,7 @@ func (s *Store) ReadExecutionEvents(ctx context.Context, scope execution.Scope, 
 // Terminal events must use FinishExecutionTurn/EndExecutionSession to update state atomically.
 // This runtime write checks admitted ownership, even when current membership has been revoked.
 func (s *Store) AppendExecutionEvent(ctx context.Context, scope execution.Scope, event execution.Event) (execution.Event, error) {
-	if event.Result != nil || (event.Kind != execution.EventTextDelta && event.Kind != execution.EventHistorySnapshot && event.Kind != execution.EventHistoryPreview) {
+	if event.Result != nil || (event.Kind != execution.EventTextDelta && event.Kind != execution.EventHistorySnapshot && event.Kind != execution.EventHistoryPreview && event.Kind != execution.EventPreparation) {
 		return execution.Event{}, execution.ErrInvalidRequest
 	}
 	err := s.executionRuntimeTransaction(ctx, scope, event.Ref.SessionID, func(tx pgx.Tx, session execution.Session) error {

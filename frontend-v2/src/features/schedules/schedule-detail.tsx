@@ -53,12 +53,15 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const target=task.target
  const workflow=isWorkflowTarget(target)?resources.workflows.find(w=>w.id===target.workflowId):undefined
  const targetAgent=target.kind==='chat'?resources.agents.find(a=>target.agentId?a.id===target.agentId:a.name===target.agent):undefined
+ const catalogReady=target.kind==='chat'&&(task.projectId?resources.available.projects&&resources.available.agents:resources.available.models)
+ const staleSelection=catalogReady&&((!!task.projectId&&!!target.agent&&!targetAgent)||(!!target.model&&!modelLabel(target,data)))
  const canCancel=!!selected&&!selected.released&&['running','cancelling','succeeded','failed','cancelled','interrupted'].includes(selected.status)
  const cleanup=!!selected&&['succeeded','failed','cancelled','interrupted'].includes(selected.status)
  return <div className="sp-detail">
   <div className="sp-detail-toolbar"><span className={`sp-enabled ${task.enabled?'':'paused'}`}>{task.enabled?'已启用':'已暂停'}</span><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy} onClick={onEdit}><Pencil data-icon="inline-start"/>编辑</Button></div>
   <div className="sp-tabs" aria-label="详情视图"><button aria-pressed={tab==='config'} onClick={()=>setTab('config')}><Settings2 size={15} aria-hidden="true"/>任务配置</button><button aria-pressed={tab==='history'} onClick={()=>setTab('history')}><History size={15} aria-hidden="true"/>运行历史</button></div>
   <div className="sp-detail-scroll">
+   {staleSelection&&<p role="alert" className="sp-alert">原来的 Agent 或模型已不可用，请点“编辑”重新选择并保存后再运行。</p>}
    {tab==='config'?<>
     <Card className="sp-config-card"><CardHeader><CardDescription>执行内容</CardDescription><CardTitle>{target.kind==='chat'?'直接对话':isWorkflowTarget(target)?'运行工作流':target.kind==='workflow'?'工作流（旧引用）':isPersonalTarget(target)?'处理协作任务':'已有任务（旧引用）'}</CardTitle></CardHeader><CardContent>
     {target.kind==='chat'?<p className="sp-prompt-preview">{target.prompt}</p>:isPersonalTarget(target)?<Link to={'/collaboration/tasks/'+target.taskId}>{data.tasks?.find(t=>t.id===target.taskId)?.title??'查看原任务'}</Link>:isWorkflowTarget(target)?<p className="sp-prompt-preview">{target.input||'没有初始输入'}</p>:<p className="sp-helper">此类型的真实目录和执行入口尚未就绪，已有配置已保留。</p>}
@@ -98,7 +101,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
      </CardContent></Card></section>}
     </>}
    </>}
-   {!available&&<p className="sp-helper">执行资源尚未就绪或已失效，请刷新目录并编辑配置后再运行。</p>}
+   {!available&&!staleSelection&&<p className="sp-helper">执行资源尚未就绪或已失效，请刷新目录并编辑配置后再运行。</p>}
    {exact.isError&&runId&&<p role="alert">{scheduleError(exact.error,'本次运行记录暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void exact.refetch()}>核对本次运行</Button></p>}
    {operationError&&<p role="alert">{operationError}</p>}
    {notice&&!operationError&&<p role="status">{notice}</p>}

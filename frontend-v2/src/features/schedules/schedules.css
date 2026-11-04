@@ -112,6 +112,7 @@
 .sp-config-heading:not(:first-child) { padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--sp-line); }
 .sp-prompt-preview { padding: 16px; background: var(--sp-surface); border: 1px solid var(--sp-line); border-radius: 8px; line-height: 1.9; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 12px !important; }
 .sp-helper { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--sp-muted); line-height: 1.7; }
+.sp-alert { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--sp-warning) 30%, transparent); border-radius: 8px; background: var(--sp-warning-bg); color: var(--sp-warning); font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
 .sp-key-values > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; font-size: 13px; }
 .sp-key-values dt { color: var(--sp-muted); flex-shrink: 0; }
 .sp-key-values dd { text-align: right; overflow-wrap: anywhere; }

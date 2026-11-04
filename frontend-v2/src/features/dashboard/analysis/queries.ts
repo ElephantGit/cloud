@@ -19,7 +19,7 @@ export function accessFailure(error: unknown) {
 }
 export function failureMessage(error: unknown) {
   return accessFailure(error)
-    ? '会话不可访问，请确认登录、成员关系及来源任务。'
+    ? '会话不可访问，请确认登录、成员关系及来源会话或任务。'
     : '读取失败，请刷新重试。'
 }
 
@@ -29,4 +29,9 @@ export const sessionStatus: Record<string, string> = {
   failed: '失败',
   cancelled: '已取消',
   interrupted: '已中断',
+}
+
+export const sessionSource: Record<string, string> = {
+  task: '协作任务',
+  chat: '普通对话',
 }

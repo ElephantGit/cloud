@@ -33,7 +33,7 @@ type activeTurn struct {
 }
 
 type agentSession struct {
-	observeTask       bool
+	observeRequests   bool
 	frozen            execution.Session
 	scope             execution.Scope
 	execution         string
@@ -75,7 +75,7 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 	if a == nil {
 		target, executor := *session.Target, *session.Executor
 		session.Target, session.Executor = &target, &executor
-		a = &agentSession{observeTask: caller == execution.CallerTask, frozen: session, scope: scope, execution: d.nextID("a") + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
+		a = &agentSession{observeRequests: caller == execution.CallerTask || caller == execution.CallerChat, frozen: session, scope: scope, execution: d.nextID("a") + "-" + digest(session.ID), ready: make(chan struct{}), stopped: make(chan struct{})}
 		d.sessions[session.ID] = a
 		go func() {
 			defer func() {

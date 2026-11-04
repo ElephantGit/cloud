@@ -5,14 +5,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiV2TenantsTidProjects } from '@/lib/projects-api/generated'
 import { listDashboardSessions } from '../api/generated'
-import { failureMessage, sessionStatus, useAnalysisScope } from './queries'
+import { failureMessage, sessionSource, sessionStatus, useAnalysisScope } from './queries'
 
 /** Real persisted Agent sessions, independent of the team's demo mock switch. */
 export default function SessionList() {
   const scope = useAnalysisScope()
   const [params, setParams] = useSearchParams()
   const filters = Object.fromEntries(
-    ['project', 'agent', 'status', 'from', 'to'].flatMap((key) =>
+    ['project', 'agent', 'source', 'status', 'from', 'to'].flatMap((key) =>
       params.get(key) ? [[key, params.get(key)!]] : []
     ),
   )
@@ -39,7 +39,7 @@ export default function SessionList() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget), next = new URLSearchParams()
-    for (const key of ['project', 'agent', 'status', 'from', 'to']) {
+    for (const key of ['project', 'agent', 'source', 'status', 'from', 'to']) {
       let value = String(form.get(key) ?? '').trim()
       if (value && (key === 'from' || key === 'to')) {
         const date = new Date(value)
@@ -70,7 +70,7 @@ export default function SessionList() {
         <div>
           <h1 className='text-xl font-semibold'>会话分析</h1>
           <p className='mt-1 text-sm text-muted-foreground'>
-            查看任务 Agent 的运行记录、时间轴和模型请求。
+            查看自己的普通对话和协作任务的运行记录、时间轴与模型请求。
           </p>
         </div>
         <Button
@@ -86,6 +86,19 @@ export default function SessionList() {
         onSubmit={submit}
         className='flex flex-wrap items-end gap-3 rounded-xl border p-4'
       >
+        <label className='text-sm'>
+          来源<select
+            aria-label='来源'
+            name='source'
+            defaultValue={filters.source ?? ''}
+            className='ml-2 rounded border p-2'
+          >
+            <option value=''>全部来源</option>
+            {Object.entries(sessionSource).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
         <label className='text-sm'>
           项目<select
             aria-label='项目'
@@ -163,7 +176,7 @@ export default function SessionList() {
                     <p className='mt-1 text-xs text-muted-foreground'>
                       {session.projectName || '未绑定项目'} · {session.agent} · {session.model} ·
                       {' '}
-                      {session.source}
+                      {sessionSource[session.source] ?? session.source}
                     </p>
                   </div>
                   <div className='text-right text-sm'>
@@ -175,7 +188,7 @@ export default function SessionList() {
                 </li>
               ))}
             </ul>
-            {sessions.data?.pages[0]?.items.length === 0 && <p>暂无符合条件的任务 Agent 会话。</p>}
+            {sessions.data?.pages[0]?.items.length === 0 && <p>暂无符合条件的会话。</p>}
             {sessions.hasNextPage && (
               <Button
                 variant='outline'

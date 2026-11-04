@@ -194,3 +194,6 @@
   .sp-key-values > div { flex-wrap: wrap; gap: 4px 12px; }
   .sp-key-values dd { text-align: left; min-width: 0; }
 }
+.sp-output-content table { min-width: 520px; }
+.sp-output-content th { white-space: nowrap; }
+.sp-output-content td { min-width: 4em; }

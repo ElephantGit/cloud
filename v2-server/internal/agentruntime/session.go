@@ -125,6 +125,12 @@ func (d *Driver) session(ctx context.Context, scope execution.Scope, session exe
 			if a.prepareErr = installed.wait(prepare, p); a.prepareErr != nil {
 				return
 			}
+			if session.Skills != nil {
+				if err := p.applyWorkflowSkills(a.checkout.path, session.WorkspaceID, *session.Skills); err != nil {
+					a.prepareErr = err
+					return
+				}
+			}
 			a.projection = nodehistory.NewProjection(p.reader, a.execution)
 			p.skillsMu.Lock()
 			defer p.skillsMu.Unlock()

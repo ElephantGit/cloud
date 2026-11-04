@@ -140,6 +140,9 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 		if ctx.Err() != nil {
 			return d.cancelledRun(session.ID, ctx.Err())
 		}
+		if workflowSkillError(err) {
+			return failed(err.Error()), err
+		}
 		return failed("agent_prepare_failed"), err
 	}
 	a.commandMu.Lock()

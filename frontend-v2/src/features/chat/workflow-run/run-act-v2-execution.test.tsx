@@ -37,7 +37,7 @@ describe('unappliedAgentSettings', () => {
       mcps: [{ mcpId: 'github', enabled: true }],
       interactive: true,
     })
-    expect(unappliedAgentSettings(configured)).toEqual(['role', 'skill', 'mcp', 'interactive'])
+    expect(unappliedAgentSettings(configured)).toEqual(['role', 'mcp', 'interactive'])
   })
 
   it('ignores turned-off bindings and a blank role', () => {

@@ -169,6 +169,9 @@ func (p *projectRuntime) publishSkills(id, version string, remove bool) error {
 	var paths []string
 	p.mu.Lock()
 	for _, c := range p.checkouts {
+		if c.workflow {
+			continue
+		}
 		select {
 		case <-c.ready:
 			if c.err == nil && c.path != "" {

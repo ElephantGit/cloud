@@ -29,7 +29,8 @@ func (marketSkillFixture) Complete(w http.ResponseWriter, r *http.Request, m nod
 		}
 	}
 	w.WriteHeader(buffer.Code)
-	_, _ = w.Write(bytes.ReplaceAll(buffer.Body.Bytes(), []byte("(cat README.md"), []byte("(cp .opencode/skills/ask-matt/SKILL.md used-market-skill.md; cat README.md")))
+	command := "(if [ -f .opencode/skills/ask-matt/SKILL.md ]; then cp .opencode/skills/ask-matt/SKILL.md used-market-skill.md; else echo absent > used-market-skill.md; fi; if [ -f .opencode/skills/workflow-review/SKILL.md ]; then cp .opencode/skills/workflow-review/SKILL.md used-personal-skill.md; else echo absent > used-personal-skill.md; fi; cat README.md"
+	_, _ = w.Write(bytes.ReplaceAll(buffer.Body.Bytes(), []byte("(cat README.md"), []byte(command)))
 }
 
 // Uses the official mattpocock.skills 1.3.1 release and the same real Node assets as chat.
@@ -47,7 +48,7 @@ func TestRealMarketSkillNode(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer os.RemoveAll(tmp)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	repo := filepath.Join(tmp, "repo.git")
 	if out, e := exec.Command("git", "init", "--bare", repo).CombinedOutput(); e != nil {
@@ -165,6 +166,35 @@ func TestRealMarketSkillNode(t *testing.T) {
 	}
 	if e := d.End(ctx, session.ID); e != nil {
 		t.Fatal(e)
+	}
+	// Workflow nodes use the same real Agent and package installation, but only expose their
+	// selected imports. The second node reuses the checkout and must not inherit either Skill.
+	session.WorkspaceID = "workflow"
+	turn.Caller.Kind = execution.CallerWorkflow
+	for i, selected := range []bool{true, false} {
+		session.ID = []string{"dbcd65db-675d-4c23-8f80-603c109847ac", "d631e0d2-883d-48f8-a6f2-3edb7a450e22"}[i]
+		turn.Ref.SessionID = session.ID
+		session.Skills = &execution.Skills{}
+		if selected {
+			session.Skills.Plugins = []execution.SkillPlugin{{ID: id, Version: removeVersion}}
+			session.Skills.Documents = []execution.SkillDocument{{Name: "workflow-review", Description: "Review", Content: "WORKFLOW_SELECTED_INSTRUCTIONS"}}
+		}
+		result, e := d.Run(ctx, execution.Scope{TenantID: "tenant", UserID: "user"}, session, turn, func(context.Context, execution.Event) error { return nil })
+		if e != nil || result.Status != execution.StatusCompleted {
+			t.Fatal("workflow Skill Agent turn", result, e)
+		}
+		p.mu.Lock()
+		used := p.checkouts[session.WorkspaceID].path
+		p.mu.Unlock()
+		for file, content := range map[string]string{"used-market-skill.md": "ask-matt", "used-personal-skill.md": "WORKFLOW_SELECTED_INSTRUCTIONS"} {
+			data, err := os.ReadFile(filepath.Join(used, file))
+			if err != nil || (selected && !strings.Contains(string(data), content)) || (!selected && strings.TrimSpace(string(data)) != "absent") {
+				t.Fatalf("workflow selection=%v %s: %s %v", selected, file, data, err)
+			}
+		}
+		if e := d.End(ctx, session.ID); e != nil {
+			t.Fatal(e)
+		}
 	}
 	if e := d.ApplySkill(ctx, "test", id, removeVersion, "", digest, true); e != nil {
 		t.Fatal(e)

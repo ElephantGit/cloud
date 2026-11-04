@@ -16,7 +16,7 @@ import (
 const promptWorkspaceRoot = "."
 
 // agentPrompt is desktop's assemble_workflow_prompt (crates/backend/src/workflow/run/prompt.rs)
-// without the parts v2 does not apply: required Skills, the role block and previous-failure
+// without the parts v2 does not apply: the role block and previous-failure
 // injection (v2 never retries). The node's prompt is already rendered against the pool. Each
 // section is one ACP text block, separated by a blank line because providers may concatenate
 // block text verbatim. A structured-output node ends with its output contract, last so the
@@ -27,6 +27,9 @@ func agentPrompt(d workflow.AgentDispatch, renderedTask string) execution.Prompt
 		workspaceRootBlock(d.Locale),
 		currentStepBlock(d.Node, renderedTask, c),
 		workflowContextBlock(d, c),
+	}
+	if names := d.Node.Agent().Skills; len(names) > 0 {
+		sections = append(sections, "<required_skills>\nRead and follow the selected imported skills before doing this step. They are available under .opencode/skills or .claude/skills in this workspace. A plugin selection supplies its packaged skills.\n"+strings.Join(names, "\n")+"\n</required_skills>")
 	}
 	if schema := d.Node.Agent().Structured; schema != nil {
 		sections = append(sections, structuredContractBlock(schema, d.Locale))

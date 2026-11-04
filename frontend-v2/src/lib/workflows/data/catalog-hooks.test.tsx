@@ -56,7 +56,8 @@ describe("workflow executor catalog", () => {
             createdAt: "2026-11-02T08:00:00Z",
             updatedAt: "2026-11-02T08:00:00Z",
           }] } }
-        : undefined);
+        : config.url === `/api/v1/tenants/${tid}/spaces`
+          ? { status: 200, data: { items: [] } } : undefined);
     const { result, client } = mount();
     await waitFor(() => expect(result.current.agentModels).toHaveLength(3));
     expect(result.current.agents.map((a) => a.agentRef)).toEqual([
@@ -75,7 +76,7 @@ describe("workflow executor catalog", () => {
       availability: "available",
     }]);
     expect(seen).toContain(`GET /api/v2/tenants/${tid}/skills`);
-    expect((await client.plugin.listInstalled({})).plugins.map((p) => p.kind)).toEqual(["mcp", "mcp"]);
+    expect((await client.plugin.listInstalled({})).plugins).toEqual([]);
   });
 
   it("keeps an empty real directory empty", async () => {

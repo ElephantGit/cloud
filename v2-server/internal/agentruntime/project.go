@@ -28,6 +28,7 @@ type controlWait struct {
 }
 
 type checkout struct {
+	workflow bool
 	id, path string
 	ready    chan struct{}
 	err      error
@@ -412,7 +413,7 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 	p.mu.Lock()
 	entry := p.checkouts[workspace]
 	if entry == nil {
-		entry = &checkout{id: p.driver.nextID("c") + "-" + digest(workspace), ready: make(chan struct{})}
+		entry = &checkout{workflow: caller == execution.CallerWorkflow, id: p.driver.nextID("c") + "-" + digest(workspace), ready: make(chan struct{})}
 		p.checkouts[workspace] = entry
 		var spare *checkout
 		if caller == execution.CallerChat && p.configuration == config && p.spare != nil {
@@ -432,13 +433,15 @@ func (p *projectRuntime) prepareCheckout(ctx context.Context, scope execution.Sc
 				entry.err = err
 				return
 			}
-			if err := p.attachSkills(path); err != nil {
-				entry.err = err
-				return
-			}
-			if err := p.attachUserSkills(ctx, path, scope); err != nil {
-				entry.err = err
-				return
+			if caller != execution.CallerWorkflow {
+				if err := p.attachSkills(path); err != nil {
+					entry.err = err
+					return
+				}
+				if err := p.attachUserSkills(ctx, path, scope); err != nil {
+					entry.err = err
+					return
+				}
 			}
 			if record := p.driver.opts.RecordWorkspace; record != nil {
 				if err := record(ctx, workspace, Checkout{Path: path, BaseCommit: config.Commit}); err != nil {

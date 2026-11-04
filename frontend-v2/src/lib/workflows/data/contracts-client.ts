@@ -55,7 +55,7 @@ import type {
   WorkflowVersion,
 } from "../contracts";
 import { ContractError } from "../contracts";
-import { demoPlugins } from "./demo-catalog";
+import { workflowPluginCatalog } from "./plugin-catalog";
 import { listSkills } from "@/lib/skills-api/generated";
 
 type Options = { signal?: AbortSignal };
@@ -166,33 +166,28 @@ export function createHttpWorkflowContracts(tenantId: string): WorkflowContracts
 /**
  * The client every copied workflow query and mutation hook calls: the definition operations, and
  * the catalogs the Agent node's pickers read. Roles come from Settings, Skills from the
- * server-backed user catalog, MCP retains its placeholder, and executors come from Chat's real
- * catalog.
+ * server-backed user and installed plugin catalogs, and executors come from Chat's real catalog.
  */
 export function createContractsClient(workflow: WorkflowContracts, tenantId: string) {
-  const answer =
-    <Request, Response>(operation: (request: Request) => Response) =>
-    async (request: Request, _options?: Options) =>
-      operation(request);
   return {
     tenantId,
     workflow,
     skill: {
       list: async (_request: Record<string, never>) => ({
-        skills: (await listSkills(tenantId)).items.map((skill) => ({
+        skills: [...(await listSkills(tenantId)).items.map((skill) => ({
           id: skill.id,
           namespace: "local",
           name: skill.name,
           description: skill.description,
           source: { kind: "local" as const },
           availability: "available" as const,
-        })),
+        })), ...(await workflowPluginCatalog(tenantId)).skills],
       }),
     },
     plugin: {
-      listInstalled: answer((_request: Record<string, never>) => ({
-        plugins: demoPlugins,
-      })),
+      listInstalled: async (_request: Record<string, never>) => ({
+        plugins: (await workflowPluginCatalog(tenantId)).plugins,
+      }),
     },
     executors: {
       list: () => listChatExecutors(tenantId),

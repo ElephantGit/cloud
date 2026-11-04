@@ -1,9 +1,9 @@
 import { listTaskExecutors } from '../collaboration/tasks-api/generated'
 import { useEffect, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
-import { Check, Clock3, Pause, Pencil, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, History, Settings2, Check, Clock3, Pause, Pencil, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { getWorkflowRun } from '@/lib/workflows/api/generated'
 import { listScheduleHistory, getScheduleHistoryItem, getScheduleExecutionResult } from './api/history/generated'
 import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
@@ -12,9 +12,12 @@ import type { ScheduleResources } from './api/generated'
 import { type PersonalTarget, type Catalog, formatTime, isPersonalTarget, isWorkflowTarget, modelLabel, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
 import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isDeletedWorkflowRun, isTerminalActionRejection, manualRequestKey, occurrenceTaskPath, occurrenceWorkflowRun, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { ScheduleOutput } from './schedule-output'
+
 const workflowRunLabels: Record<string,string> = { pending: '未开始', running: '运行中', awaitingInput: '等待输入', succeeded: '成功', failed: '失败', cancelled: '已取消' }
 
-export function RunStatus({run}:{run?:Run}) {
+export function RunStatus({run}:{run?:Pick<Run,'status'>}) {
  const success=run?.status==='succeeded'||run?.status==='success'
  const Icon=success?Check:run?.status==='failed'?TriangleAlert:Clock3
  return <span className={`sp-run-status ${success?'success':run?.status??'none'}`}><Icon size={13}/>{run?runLabels[run.status]:'查看记录'}</span>
@@ -54,41 +57,45 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const cleanup=!!selected&&['succeeded','failed','cancelled','interrupted'].includes(selected.status)
  return <div className="sp-detail">
   <div className="sp-detail-toolbar"><span className={`sp-enabled ${task.enabled?'':'paused'}`}>{task.enabled?'已启用':'已暂停'}</span><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy} onClick={onEdit}><Pencil data-icon="inline-start"/>编辑</Button></div>
-  <div className="sp-tabs" aria-label="详情视图"><button aria-pressed={tab==='config'} onClick={()=>setTab('config')}>任务配置</button><button aria-pressed={tab==='history'} onClick={()=>setTab('history')}>运行历史</button></div>
+  <div className="sp-tabs" aria-label="详情视图"><button aria-pressed={tab==='config'} onClick={()=>setTab('config')}><Settings2 size={15} aria-hidden="true"/>任务配置</button><button aria-pressed={tab==='history'} onClick={()=>setTab('history')}><History size={15} aria-hidden="true"/>运行历史</button></div>
   <div className="sp-detail-scroll">
    {tab==='config'?<>
-    <div className="sp-config-heading">执行内容</div><strong>{target.kind==='chat'?'直接对话':isWorkflowTarget(target)?'运行工作流':target.kind==='workflow'?'工作流（旧引用）':isPersonalTarget(target)?'处理协作任务':'已有任务（旧引用）'}</strong>
+    <Card className="sp-config-card"><CardHeader><CardDescription>执行内容</CardDescription><CardTitle>{target.kind==='chat'?'直接对话':isWorkflowTarget(target)?'运行工作流':target.kind==='workflow'?'工作流（旧引用）':isPersonalTarget(target)?'处理协作任务':'已有任务（旧引用）'}</CardTitle></CardHeader><CardContent>
     {target.kind==='chat'?<p className="sp-prompt-preview">{target.prompt}</p>:isPersonalTarget(target)?<Link to={'/collaboration/tasks/'+target.taskId}>{data.tasks?.find(t=>t.id===target.taskId)?.title??'查看原任务'}</Link>:isWorkflowTarget(target)?<p className="sp-prompt-preview">{target.input||'没有初始输入'}</p>:<p className="sp-helper">此类型的真实目录和执行入口尚未就绪，已有配置已保留。</p>}
-    <div className="sp-config-heading">运行环境</div><dl className="sp-key-values">
+    </CardContent></Card><Card className="sp-config-card"><CardHeader><CardTitle>运行环境</CardTitle><CardDescription>执行所使用的项目与资源</CardDescription></CardHeader><CardContent><dl className="sp-key-values">
      <div><dt>关联项目</dt><dd>{projectName(task.projectId,data)}</dd></div>
      {isPersonalTarget(target)&&<><PersonalExecutor target={target} tenantId={tenantId}/>{target.note&&<div><dt>补充说明</dt><dd>{target.note}</dd></div>}</>}
      {isWorkflowTarget(target)&&<div><dt>工作流</dt><dd>{!workflow?'原工作流暂不可用':workflow.snapshotId===target.snapshotId?`${workflow.name}（${workflow.version}）`:`${workflow.name}（固定的旧版本；生效版本已是 ${workflow.version}，编辑保存后改用）`}</dd></div>}
      {target.kind==='chat'&&<><div><dt>Agent</dt><dd>{!task.projectId?'无需 Agent':targetAgent?.name??(target.agent?'原 Agent 暂不可用':'尚未选择 Agent')}</dd></div><div><dt>模型</dt><dd>{target.model?modelLabel(target,data)||'原模型暂不可用':'尚未选择模型'}</dd></div></>}
+    </dl></CardContent></Card><Card className="sp-config-card"><CardHeader><CardTitle>执行计划</CardTitle><CardDescription>按任务时区安排下一次运行</CardDescription></CardHeader><CardContent><dl className="sp-key-values">
      <div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div>
     </dl>
     <div className="sp-time-preview"><div><Clock3 size={15}/><strong>预计触发时间</strong></div>{nextTimes(task.rule,now,new Date(task.createdAt)).map((date,i)=><p key={date.toISOString()}><span>{i+1}</span>{formatTime(date,task.rule.timezone)}</p>)}</div>
-    <p className="sp-helper">{target.kind==='task'?'过程和结果保存在原协作任务里；运行历史可定位到每次执行。':'每次独立执行，结果保存在本任务的运行历史。'}计划暂停不停止已开始的运行。</p>
+    </CardContent></Card><p className="sp-helper">{target.kind==='task'?'过程和结果保存在原协作任务里；运行历史可定位到每次执行。':'每次独立执行，结果保存在本任务的运行历史。'}计划暂停不停止已开始的运行。</p>
    </>:<>
-    <div className="sp-detail-toolbar"><strong>运行记录</strong><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={history.isFetching} onClick={()=>void history.refetch()}><RefreshCw data-icon="inline-start"/>刷新状态</Button></div>
+    <div className="sp-detail-toolbar"><div><h3>运行记录</h3><p className="sp-helper">选择一条记录，查看结果与执行详情</p></div><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={history.isFetching} onClick={()=>void history.refetch()}><RefreshCw data-icon="inline-start"/>刷新状态</Button></div>
     {history.isError&&hasHistory&&<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>}
     {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError&&!hasHistory?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')}</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
-     <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><span>{runLabels[r.status]}</span><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small></button>)}</div>
+     <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><RunStatus run={r}/><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small><ChevronRight size={16} aria-hidden="true"/></button>)}</div>
      {history.hasNextPage&&<Button variant="outline" disabled={history.isFetchingNextPage} onClick={()=>void history.fetchNextPage()}>{history.isFetchingNextPage?'加载中…':'加载更多记录'}</Button>}
-     <p className="sp-helper">记录按记录时间倒序分页读取。停留在详情时自动刷新。</p>
-     {selected&&<section aria-label="选中运行的结果">
-      <div className="sp-config-heading">{runLabels[selected.status]}{!selected.released?' · 等待结束确认':''}</div>
+     <p className="sp-helper">最近记录在前 · 状态自动更新</p>
+     {selected&&<section className="sp-run-result" aria-label="选中运行的结果">
+      <Card><CardHeader><div className="sp-run-heading"><div><CardDescription>本次运行</CardDescription><CardTitle>{formatTime(selected.scheduledAt,task.rule.timezone)}</CardTitle></div>
+      {(taskPath||(workflowRunId&&!workflowRunDeleted))&&<Button render={<Link to={taskPath||`/chat?run=${encodeURIComponent(workflowRunId)}`}/>} nativeButton={false} role="link" size="lg" className="sp-execution-link">查看执行详情<ArrowUpRight data-icon="inline-end"/></Button>}</div>
+      <div className="sp-run-meta"><RunStatus run={selected}/><span>{selected.kind==='manual'?'手动触发':'定时触发'}</span><span>{task.rule.timezone}</span></div>
+      {!selected.released&&<CardDescription>等待结束确认，状态会自动更新</CardDescription>}
+      </CardHeader><CardContent>
       {selected.reason&&<p className="sp-helper">{reasonText(selected.reason)}</p>}
-      {workflowRunId&&!workflowRunDeleted&&<Link className={buttonVariants({variant:'outline',size:'sm'})} to={`/chat?run=${encodeURIComponent(workflowRunId)}`}>打开运行页</Link>}
-      {taskPath?<Link className={buttonVariants({variant:'outline',size:'sm'})} to={taskPath}>查看本次执行</Link>:workflowRunId?workflowRun.isPending?<p role="status">正在读取工作流运行…</p>:workflowRunDeleted?selected.reason!=='workflow_run_deleted'&&<p className="sp-helper">{reasonText('workflow_run_deleted')}</p>:workflowRun.isError?<p role="alert">{scheduleError(workflowRun.error,'工作流运行暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void workflowRun.refetch()}>重试读取运行</Button></p>:<>
+      {taskPath?<p className="sp-helper">在执行详情中查看本次协作任务的对话、工具调用与结果。</p>:workflowRunId?workflowRun.isPending?<p role="status">正在读取工作流运行…</p>:workflowRunDeleted?selected.reason!=='workflow_run_deleted'&&<p className="sp-helper">{reasonText('workflow_run_deleted')}</p>:workflowRun.isError?<p role="alert">{scheduleError(workflowRun.error,'工作流运行暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void workflowRun.refetch()}>重试读取运行</Button></p>:<>
        <div className="sp-config-heading">工作流运行 · {workflowRunLabels[workflowRun.data.run.status]??workflowRun.data.run.status}</div>
-       <pre className="sp-prompt-preview" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{workflowRun.data.run.output??workflowRun.data.run.error??'运行尚未产生输出'}</pre>
+       <ScheduleOutput text={workflowRun.data.run.output??workflowRun.data.run.error??'运行尚未产生输出'}/>
       </>:!selected.executionRef?<p className="sp-helper">此次运行尚无可读取的执行结果。</p>:output.isPending?<p role="status">正在读取结果…</p>:output.isError?<p role="alert">{scheduleError(output.error,'完整结果暂时无法读取。')} <Button variant="outline" size="sm" onClick={()=>void output.refetch()}>重试读取结果</Button></p>:output.data?.result?<>
        <div className="sp-config-heading">{completeResult(output.data)?'完整结果':'部分结果或未完成结果'}</div>
-       <pre className="sp-prompt-preview" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{output.data.result.answer||'未返回文本回答'}</pre>
+       <ScheduleOutput text={output.data.result.answer||'未返回文本回答'}/>
        {output.data.result.failureCode&&<p>{reasonText(output.data.result.failureCode)}</p>}
       </>:<p role="status">执行尚未返回最终结果。</p>}
       {canCancel&&<Button variant="outline" disabled={busy} onClick={()=>cancel.mutate(selected.id)}><Square data-icon="inline-start"/>{cancel.isPending?'正在请求…':cleanup?'重试收尾':'取消此次运行'}</Button>}
-     </section>}
+     </CardContent></Card></section>}
     </>}
    </>}
    {!available&&<p className="sp-helper">执行资源尚未就绪或已失效，请刷新目录并编辑配置后再运行。</p>}

@@ -84,7 +84,7 @@ for (const containers of [false, true]) {
     await expect(dialog.getByText('已暂停')).toBeVisible()
 
     // The history opens the occurrence's own run page directly.
-    await dialog.getByRole('link', { name: '打开运行页' }).click()
+    await dialog.getByRole('link', { name: '查看执行详情' }).click()
     const pane = page.getByRole('region', { name: '工作流运行' })
     await expect(pane.getByRole('heading', { name: taskName })).toBeVisible({ timeout: 15_000 })
     // The chat page drops the parameter once it has opened the run.

@@ -77,7 +77,7 @@ test('a scheduled personal task opens the exact run on its original collaboratio
   await expect(dialog.getByText('OpenCode',{exact:true})).toBeVisible()
   await expect(dialog.getByText('Fixture',{exact:true})).toBeVisible()
   await dialog.getByRole('button',{name:'立即运行'}).click()
-  const link=dialog.getByRole('link',{name:'查看本次执行'})
+  const link=dialog.getByRole('link',{name:'查看执行详情'})
   await expect(link).toBeVisible({timeout:180_000})
   const href=(await link.getAttribute('href'))!
   expect(href).toContain('/collaboration/tasks/'+taskId+'?run=')
@@ -92,6 +92,6 @@ test('a scheduled personal task opens the exact run on its original collaboratio
   await page.getByRole('button',{name:'查看'+title,exact:true}).click()
   await dialog.getByRole('button',{name:'运行历史'}).click()
   await expect(dialog.getByRole('button',{name:/成功/})).toBeVisible({timeout:30_000})
-  await expect(dialog.getByRole('link',{name:'查看本次执行'})).toHaveAttribute('href',href)
+  await expect(dialog.getByRole('link',{name:'查看执行详情'})).toHaveAttribute('href',href)
   await page.screenshot({path:test.info().outputPath('personal-schedule-history.png'),fullPage:true})
 })

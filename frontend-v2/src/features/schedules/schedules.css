@@ -152,3 +152,45 @@
 @media (prefers-reduced-motion: reduce) { .sp-spin { animation: none; } .schedules-feature * { transition-duration: 0s !important; } }
 
 .sp-resource-status { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; color:var(--muted-foreground); font-size:13px; }
+
+/* Detail surfaces follow the shared components and theme, with one prominent run destination. */
+.sp-detail-scroll { display: flex; flex-direction: column; gap: 20px; }
+.sp-config-card { flex-shrink: 0; }
+.sp-detail-scroll > .sp-detail-toolbar { padding: 0; }
+.sp-detail-scroll h3 { font-size: 14px; font-weight: 600; }
+.sp-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; }
+.sp-detail .sp-enabled { padding: 4px 9px; border-radius: 6px; background: var(--sp-success-bg); }
+.sp-detail .sp-enabled.paused { background: var(--muted); }
+.sp-config-card .sp-prompt-preview { margin: 0 !important; }
+.sp-config-card .sp-key-values { margin: 0; }
+.sp-config-card .sp-key-values > div:first-child { padding-top: 0; }
+.sp-config-card .sp-time-preview { margin-top: 16px; }
+.sp-history-list { margin: 0; max-height: 240px; flex-shrink: 0; }
+.sp-history-list button { min-height: 60px; text-align: left; border-left: 3px solid transparent; }
+.sp-history-list button[aria-pressed="true"] { border-left-color: var(--sp-accent); background: var(--sp-accent-bg); }
+.sp-history-list button:hover { background: var(--sp-surface); }
+.sp-history-list button:focus-visible { outline-offset: -3px; }
+.sp-history-list button > svg { color: var(--sp-muted); margin-left: auto; flex-shrink: 0; }
+.sp-run-result { min-width: 0; }
+.sp-run-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.sp-run-heading [data-slot="card-title"] { margin-top: 6px; font-variant-numeric: tabular-nums; }
+.sp-execution-link { min-height: 44px; }
+.sp-run-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--sp-muted); font-size: 12px; }
+.sp-run-result .sp-config-heading { margin: 0 0 16px; padding: 0; border: 0; }
+.sp-output { min-width: 0; }
+.sp-output-content { overflow-wrap: anywhere; }
+.sp-output-content > section + section { margin-top: 20px; }
+.sp-output-content h4 { color: var(--sp-muted); font-size: 12px; margin-bottom: 8px; }
+.sp-output pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.8; }
+.sp-output-source { margin-top: 20px; border-top: 1px solid var(--sp-line); padding-top: 12px; }
+.sp-output-source summary { cursor: pointer; color: var(--sp-muted); font-size: 12px; padding: 6px 0; }
+.sp-output-source pre { margin-top: 12px; max-height: 320px; overflow: auto; padding: 12px; background: var(--sp-surface); border-radius: 8px; }
+.sp-run-result [data-slot="card-content"] > button { margin-top: 16px; }
+@media (max-width: 460px) {
+  .sp-history-list button { flex-wrap: wrap; gap: 8px; }
+  .sp-history-list small { display: block; flex-basis: auto; }
+  .sp-run-heading { align-items: stretch; }
+  .sp-run-heading > a { width: 100%; }
+  .sp-key-values > div { flex-wrap: wrap; gap: 4px 12px; }
+  .sp-key-values dd { text-align: left; min-width: 0; }
+}

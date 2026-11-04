@@ -29,7 +29,7 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
   合集暂不可安装。目录来自 v2-server 对
   `ora-space/marketplace` 的真实 Git 同步，而不是前端内置数据。目录把来源发布的明暗主题
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
-  member 只读。MCP、Hook 与预装 Agent 的安装选择保存在 `plugins/demo-state.ts` 的浏览器
+  member 只读。MCP、Hook 与预装 Agent 的安装选择保存在 `@/lib/settings-demo/plugin-selections.ts` 的浏览器
   存储中，按用户、团队和空间分键；Skill 与市场 Agent 不读取这份状态。
 - 用户技能通过候选契约 `v2-server/skills.openapi.json` 持久化在 PostgreSQL，按登录用户和
   工作区隔离；`npm run api:generate:skills` 生成共享客户端到 `src/lib/skills-api`。页面可新建、

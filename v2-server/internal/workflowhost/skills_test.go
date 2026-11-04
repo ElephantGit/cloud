@@ -2,6 +2,9 @@ package workflowhost
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,8 +40,8 @@ func TestWorkflowFreezesSelectedSkillAndClearsItForNextNode(t *testing.T) {
 	f.await(t, runID, terminal)
 }
 
-func TestWorkflowRejectsMissingSkillAndUnsupportedMCPBeforeExecution(t *testing.T) {
-	for _, config := range []string{`"skills":[{"skillId":"missing-skill","enabled":true}]`, `"mcps":[{"mcpId":"official/tavily","enabled":true}]`} {
+func TestWorkflowRejectsMissingSkillBeforeExecution(t *testing.T) {
+	for _, config := range []string{`"skills":[{"skillId":"missing-skill","enabled":true}]`} {
 		t.Run(config, func(t *testing.T) {
 			f := newFixture(t)
 			graph := strings.Replace(twoAgents, `"roleId":"reviewer"`, config, 1)
@@ -54,6 +57,42 @@ func TestWorkflowRejectsMissingSkillAndUnsupportedMCPBeforeExecution(t *testing.
 			defer f.exec.mu.Unlock()
 			if len(f.exec.started) != 0 {
 				t.Fatal("started despite missing dependency")
+			}
+		})
+	}
+}
+
+func TestWorkflowRunsWithMCPAndReportsOnlyEnabledBindingsUnapplied(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			f := newFixture(t)
+			config := fmt.Sprintf(`"mcps":[{"mcpId":"official/tavily","enabled":%t},{"mcpId":"demo/other","enabled":%t}]`, enabled, enabled)
+			graph := strings.Replace(twoAgents, `"roleId":"reviewer"`, config, 1)
+			runID := f.run(t, graph, str("check"))
+			if _, err := f.host.StartRun(context.Background(), f.scope, runID); err != nil {
+				t.Fatal(err)
+			}
+			a := f.exec.awaitStart(t)
+			if strings.Contains(promptText(t, f.exec.request(a).Prompt), "official/tavily") {
+				t.Fatal("MCP binding leaked into the Agent prompt")
+			}
+			f.exec.finish(a, completed("reviewed"))
+			f.exec.finish(f.exec.awaitStart(t), completed("done"))
+			run, nodes := f.await(t, runID, terminal)
+			if run.Status != store.WorkflowStatusSucceeded || run.Output == nil || *run.Output != `{"review":"done"}` {
+				t.Fatalf("MCP configuration prevented completion: %+v", run)
+			}
+			for _, id := range []string{"a", "b"} {
+				var payload struct {
+					Unapplied []string `json:"unapplied"`
+				}
+				if err := json.Unmarshal(node(nodes, id).Payload, &payload); err != nil {
+					t.Fatal(err)
+				}
+				want := enabled && id == "a"
+				if slices.Contains(payload.Unapplied, "mcp") != want || (want && len(payload.Unapplied) != 1) {
+					t.Fatalf("node %s unapplied = %v, want MCP = %v", id, payload.Unapplied, want)
+				}
 			}
 		})
 	}

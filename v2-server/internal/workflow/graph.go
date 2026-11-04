@@ -225,8 +225,8 @@ func (n Node) OutputBindings() []OutputBinding {
 	return result
 }
 
-// AgentConfig includes selected Skills and MCP bindings. The host rejects MCP bindings until
-// Node supports them; role and retry/interactive settings remain explicitly unapplied.
+// AgentConfig includes selected Skills and MCP bindings. Skills are applied; MCP bindings,
+// role and retry/interactive settings remain explicitly unapplied.
 type AgentConfig struct {
 	Prompt, AgentCLI, ModelID string
 	Skills, MCPs              []string
@@ -260,6 +260,9 @@ func (n Node) Agent() AgentConfig {
 				}
 			}
 		}
+	}
+	if len(cfg.MCPs) > 0 {
+		cfg.Unapplied = append(cfg.Unapplied, "mcp")
 	}
 	if interactive, _ := c["interactive"].(bool); interactive {
 		cfg.Unapplied = append(cfg.Unapplied, "interactive")

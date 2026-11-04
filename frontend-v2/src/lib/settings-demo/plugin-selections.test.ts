@@ -1,5 +1,5 @@
 import { beforeEach, expect, it } from 'vitest'
-import { useDemoPluginSelections } from './demo-state'
+import { useDemoPluginSelections } from './plugin-selections'
 
 beforeEach(() => {
   useDemoPluginSelections.getState().reset()

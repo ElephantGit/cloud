@@ -99,7 +99,7 @@ e2e/            Playwright 端到端测试
 
 `server-run-adapter.ts` 把服务端的节点运行按 desktop 读取后端运行时的规则投影成节点状态：节点状态、开始结束时间、输入输出、失败原因和失败详情（`payload.error_detail`）照搬。运行详情的 `variables`（根变量池）和 `failedAttempts`（被替换的失败尝试）也照 desktop 的运行适配器读：开始节点显示这次运行的初始输入，输入变量显示运行变量池里的值（声明了但没赋值的显示为空；运行开始前还没有变量池，先保留快照里的值），所以节点详情的“输入变量”是这次运行实际用的值；之前失败的尝试按节点归到“之前失败的尝试”，从旧到新，服务端说不清被什么替换，所以不标“已自动重试”之类。v2 没有重试和续跑，这个列表目前总是空的；Loop 和 Iteration 轮内的尝试等轮次接入后再映射。节点会话按节点尝试（`nodeRunId`，适配器从节点行带上）读：尝试绑定了会话后，`node-session.ts` 订阅 `GET …/workflow-runs/{rid}/nodes/{nodeRunId}/events`，帧格式和对话页的事件流相同，用对话页的 `applySessionEvent` / `conversationOf` 归并，所以能看到 Agent 的思考、工具调用和回答，运行中也实时更新。执行桥在一轮结束后就结束节点的会话，所以不显示对话页“会话已结束”的标记。会话只有启动运行的人能读（公共执行服务按用户隔离会话），其他成员读到 404，浏览器只看到事件流一开始就被永久关闭：这时节点会话说明只有启动这次运行的人能看实时会话，不再一直显示“正在等待”；还没有收到任何事件时也一样，节点会话退回两条消息：发给 Agent 的任务（服务端记下的渲染后任务 `payload.task`，没有时用节点的输入）和 Agent 的回答。成功的 Agent 还带着 v2 自己记下的三项：实际使用的执行器（`payload.executor`，Agent 名和插件版本）、模型（`payload.model`，配置的模型找不到或没配时 `fallback` 为真，用的是 Agent 的默认模型）和没有应用的设置（`payload.unapplied`）。节点详情在配置的"Agent 模型"下面显示"实际执行"，退回默认模型时说明原因。
 
-节点详情列出"v2 未应用"：角色、启用的 MCP、交互模式，以及自动重试（desktop 的重试策略会重跑这个节点时就算，包括没写 `retry` 时的默认策略，因为 v2 从不重试）。启用 MCP 会在启动 Agent 前明确失败；Skill 已按节点实际应用，不再从配置推导为未应用。历史运行记下的 `unapplied` 仍保留，所以旧运行不会被改写成已经应用 Skill。
+节点详情列出"v2 未应用"：角色、启用的 MCP、交互模式，以及自动重试（desktop 的重试策略会重跑这个节点时就算，包括没写 `retry` 时的默认策略，因为 v2 从不重试）。启用 MCP 的节点照常运行，但不启动或调用 MCP，并在结果 payload.unapplied 中记录 mcp；Skill 已按节点实际应用，不再从配置推导为未应用。历史运行记下的 `unapplied` 仍保留，所以旧运行不会被改写成已经应用 Skill。
 
 v2 只做核心执行，有几项界面在、但不会出现或不可用：服务端不执行需要人工参与的节点，回答人工介入的 hook 直接拒绝；没有重试和从失败处恢复，Iteration 内失败可按配置继续；AI 诊断、会话索引和文件变更评审没有搬。条件分支没走的节点投影为“未激活分支”，规则沿用 desktop 的 `computeInactiveNodes`。根决策读取 `conditionDecisions`；Iteration 以 `iterationConditionDecisions` 和 0 基 `iteration` 投影 `roundStates`，包含本轮未走的成员；Loop 按 scope 的 1 基 `roundIndex`、独立决策和节点行投影 `rounds`。切换轮次只展示该轮会话与输出，循环结果区分条件满足、达到上限和 LoopExit 主动退出。
 
@@ -128,7 +128,7 @@ v2 只做核心执行，有几项界面在、但不会出现或不可用：服�
 
 以前的版本把工作流存在浏览器 localStorage 里。`data/legacy-library.ts` 只读这份旧数据：浏览器里还有旧工作流时，左栏顶部提示一次，点"导入"按名字逐个建到服务端（只带草稿，旧的发布版本要重新发布；同名的跳过），点"不导入"就不再提示；两种情况都不删浏览器里的旧数据。`data/local-workflow-backend.ts` 照搬 desktop Rust 实现的规则（名称去空格后不能为空、不能重名；一个可编辑的 `draft` 加不可变的发布版本；不能删除草稿和当前生效的版本等），现在用来读取旧数据，也是单元测试的假服务端（`lib/workflows/test/workflow-server.ts`）。
 
-Agent 和模型清单读取与 Chat 相同的 `/chat/executors`，保存后端返回的 `agentId` / `modelId`，目录为空或读取失败时不提供演示选项。旧占位配置保留并提示重新选择。角色目录读取 Settings 保存的本机角色；Skill 清单合并当前用户的服务端技能库与租户各空间已确认安装的 Skill 插件，插件标识保留 `namespace/identifier`，运行时检查目标项目的安装回执。MCP 也只读取服务端实际安装记录，不读取浏览器演示安装；当前 Node 尚不支持 MCP，因此通常为空，旧绑定会在运行时明确失败。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。
+Agent 和模型清单读取与 Chat 相同的 `/chat/executors`，保存后端返回的 `agentId` / `modelId`，目录为空或读取失败时不提供演示选项。旧占位配置保留并提示重新选择。角色目录读取 Settings 保存的本机角色；Skill 清单合并当前用户的服务端技能库与租户各空间已确认安装的 Skill 插件，插件标识保留 `namespace/identifier`，运行时检查目标项目的安装回执。MCP 候选合并服务端安装记录与设置页已有的浏览器演示安装选择；演示项按当前用户、团队及可访问空间读取，保留 namespace/identifier，标注“演示”，安装/卸载后同步更新。未安装的插件不会凭空加入候选，卸载后已有节点绑定保留并提示不可用。此接入仅用于节点配置，当前 Node 仍不支持 MCP，启用的绑定在运行时不应用，Agent 照常执行，结果 payload.unapplied 明确记录 mcp。工作流页本身不运行工作流，运行在对话页里（见"运行工作流"）。
 
 ## 设置
 

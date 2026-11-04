@@ -5,6 +5,9 @@ import type { WorkflowAgentModel } from "../mock";
 import { useRoleCatalog } from "@/lib/settings-demo/role-hooks";
 import { useContractsClient } from "./contracts-client";
 import { useAgentCatalog, type AgentEntry } from "./use-agent-catalog";
+import { useUser } from "@/app/auth/user";
+import { useDemoPluginSelections } from "@/lib/settings-demo/plugin-selections";
+import { workflowDemoMcps } from "./demo-mcp-catalog";
 
 // Desktop's catalog hooks (`state/hooks/use-agents`, `use-skills`, `use-installed-plugins`,
 // `use-workflow-agent-models`) over the local client. Model discovery needs no Workspace here, so
@@ -47,10 +50,20 @@ export function useSkills() {
 /** Loads MCP packages for the workflow's existing dependency picker. */
 export function useInstalledPlugins() {
   const client = useContractsClient();
+  const user = useUser();
+  const selections = useDemoPluginSelections((state) => state.byScope);
+  const scoped = Object.fromEntries(Object.entries(selections).filter(([scope]) =>
+    scope.startsWith(`${user.id}:${client.tenantId}:`)));
   return useQuery({
-    queryKey: [...catalogKeys.plugins, client.tenantId],
-    queryFn: () =>
-      client.plugin.listInstalled({}).then((response) => response.plugins),
+    queryKey: [...catalogKeys.plugins, client.tenantId, user.id, scoped],
+    queryFn: async () => {
+      const [server, demo] = await Promise.all([
+        client.plugin.listInstalled({}),
+        // Browser-only choices are supplemental: their directory must not hide server installs.
+        workflowDemoMcps(client.tenantId, user.id, scoped).catch(() => []),
+      ]);
+      return [...new Map([...demo, ...server.plugins].map((plugin) => [plugin.id, plugin])).values()];
+    },
   });
 }
 

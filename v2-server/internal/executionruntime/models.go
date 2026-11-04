@@ -8,19 +8,17 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/nodeservices"
 )
 
-// messagesPrefix marks the Anthropic Messages bindings. Their executors drop it, so the same
-// slot reads opencode:fixture for OpenCode and claude:fixture for Claude Code.
+// messagesPrefix marks the Anthropic Messages bindings. Their executors drop it, so a model
+// slot reads opencode:<slot> or claude:<slot>.
 const messagesPrefix = "messages-"
 
-// ModelsFromEnvironment always includes a credential-free fixture for each protocol. Each
-// protocol may add one configured provider, selected by three environment values together:
-// V2_MODEL_* for OpenAI chat completions and V2_ANTHROPIC_MODEL_* for Anthropic Messages.
+// ModelsFromEnvironment returns only real provider choices configured by the deployment. Each
+// protocol may add one provider, selected by three environment values together: V2_MODEL_* for
+// OpenAI chat completions and V2_ANTHROPIC_MODEL_* for Anthropic Messages. An empty result means
+// no real model is available; callers must expose an empty catalog instead of falling back to
+// deterministic fixtures.
 func ModelsFromEnvironment(getenv func(string) string) (map[string]ModelChoice, error) {
-	fixture := nodeservices.Model{ID: "fixture", Name: "Fixture", ContextWindow: 128000, MaxTokens: 16384}
-	choices := map[string]ModelChoice{
-		"fixture":                  {Model: execution.Model{ID: "fixture", Name: "Fixture", BindingVersion: "fixture-v1"}, Binding: nodeservices.Binding{Model: fixture, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}},
-		messagesPrefix + "fixture": {Model: execution.Model{ID: messagesPrefix + "fixture", Name: "Fixture", BindingVersion: "messages-fixture-v1"}, Binding: nodeservices.Binding{Model: fixture, Protocol: nodeservices.AnthropicMessages, Provider: nodeservices.MessagesFixtureProvider{}}},
-	}
+	choices := make(map[string]ModelChoice, 2)
 	for _, c := range []struct {
 		env, id  string
 		protocol nodeservices.Protocol
@@ -55,11 +53,30 @@ func ModelsFromEnvironment(getenv func(string) string) (map[string]ModelChoice, 
 		if err != nil {
 			return nil, err
 		}
-		model := fixture
-		model.ID, model.Name = name, name
+		model := nodeservices.Model{ID: name, Name: name, ContextWindow: 128000, MaxTokens: 16384}
 		choices[c.id] = ModelChoice{Model: execution.Model{ID: c.id, Name: name, BindingVersion: c.id + "-v1"}, Binding: nodeservices.Binding{Model: model, Protocol: c.protocol, Provider: provider}}
 	}
 	return choices, nil
+}
+
+// WithFixtureModels adds the deterministic credential-free bindings used by fixture-check and
+// end-to-end tests. It returns a copy so callers cannot mutate the configured model map. Normal
+// server startup must not call this helper because fixtures are not real user-selectable models.
+func WithFixtureModels(models map[string]ModelChoice) map[string]ModelChoice {
+	choices := make(map[string]ModelChoice, len(models)+2)
+	for id, choice := range models {
+		choices[id] = choice
+	}
+	fixture := nodeservices.Model{ID: "fixture", Name: "Fixture", ContextWindow: 128000, MaxTokens: 16384}
+	choices["fixture"] = ModelChoice{
+		Model:   execution.Model{ID: "fixture", Name: "Fixture", BindingVersion: "fixture-v1"},
+		Binding: nodeservices.Binding{Model: fixture, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}},
+	}
+	choices[messagesPrefix+"fixture"] = ModelChoice{
+		Model:   execution.Model{ID: messagesPrefix + "fixture", Name: "Fixture", BindingVersion: "messages-fixture-v1"},
+		Binding: nodeservices.Binding{Model: fixture, Protocol: nodeservices.AnthropicMessages, Provider: nodeservices.MessagesFixtureProvider{}},
+	}
+	return choices
 }
 
 // agentExecutor is one installed Agent plugin; it runs every model binding of its protocol.

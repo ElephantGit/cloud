@@ -86,6 +86,7 @@ func runtimeDatabase(t *testing.T, provider nodeservices.Provider) *runtimeFixtu
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.models = WithFixtureModels(f.models)
 	if provider != nil {
 		choice := f.models["fixture"]
 		choice.Binding.Provider = provider
@@ -176,6 +177,24 @@ func TestRuntimeCatalogAdvertisesOnlyAUsableService(t *testing.T) {
 	}
 	if _, err := f.service.ListExecutors(f.ctx, f.scope); !errors.Is(err, execution.ErrUnavailable) {
 		t.Fatalf("closed runtime advertised Agent readiness: %v", err)
+	}
+}
+
+func TestRuntimeCatalogWithoutConfiguredModelsIsEmpty(t *testing.T) {
+	f := runtimeDatabase(t, nil)
+	if err := f.service.Close(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	f.service, err = New(f.ctx, Config{Store: f.db, Models: map[string]ModelChoice{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models, err := f.service.ListModels(f.ctx, f.scope); err != nil || len(models) != 0 {
+		t.Fatalf("unconfigured models=%+v err=%v", models, err)
+	}
+	if executors, err := f.service.ListExecutors(f.ctx, f.scope); err != nil || len(executors) != 0 {
+		t.Fatalf("unconfigured executors=%+v err=%v", executors, err)
 	}
 }
 
@@ -827,12 +846,16 @@ func TestModelsFromEnvironmentRejectsPartialConfigurationWithoutSecrets(t *testi
 		}
 	}
 	models, err := ModelsFromEnvironment(func(string) string { return "" })
-	if err != nil || len(models) != 2 || models["fixture"].Binding.Protocol != nodeservices.OpenAICompletions || models["messages-fixture"].Binding.Protocol != nodeservices.AnthropicMessages {
-		t.Fatalf("fixtures=%v err=%v", models, err)
+	if err != nil || len(models) != 0 {
+		t.Fatalf("unconfigured providers=%v err=%v", models, err)
+	}
+	fixtures := WithFixtureModels(models)
+	if len(fixtures) != 2 || fixtures["fixture"].Binding.Protocol != nodeservices.OpenAICompletions || fixtures["messages-fixture"].Binding.Protocol != nodeservices.AnthropicMessages {
+		t.Fatalf("fixtures=%v", fixtures)
 	}
 	env := map[string]string{"V2_ANTHROPIC_MODEL_BASE_URL": "https://provider.example/v1", "V2_ANTHROPIC_MODEL_API_KEY": "secret-key", "V2_ANTHROPIC_MODEL_NAME": "claude-model"}
 	models, err = ModelsFromEnvironment(func(name string) string { return env[name] })
-	if err != nil || models["messages-configured"].Binding.Model.ID != "claude-model" {
+	if err != nil || len(models) != 1 || models["messages-configured"].Binding.Model.ID != "claude-model" {
 		t.Fatalf("API key provider not configured: %v", err)
 	}
 	env["V2_ANTHROPIC_MODEL_AUTH_TOKEN"] = "token"
@@ -841,7 +864,7 @@ func TestModelsFromEnvironmentRejectsPartialConfigurationWithoutSecrets(t *testi
 	}
 	delete(env, "V2_ANTHROPIC_MODEL_API_KEY")
 	models, err = ModelsFromEnvironment(func(name string) string { return env[name] })
-	if c := models["messages-configured"]; err != nil || len(models) != 3 || c.Binding.Protocol != nodeservices.AnthropicMessages || c.Binding.Model.ID != "claude-model" || c.Model.Name != "claude-model" {
+	if c := models["messages-configured"]; err != nil || len(models) != 1 || c.Binding.Protocol != nodeservices.AnthropicMessages || c.Binding.Model.ID != "claude-model" || c.Model.Name != "claude-model" {
 		t.Fatalf("configured Messages provider=%v err=%v", models, err)
 	}
 }

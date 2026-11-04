@@ -78,6 +78,7 @@ func TestRealWorkflowSelectedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	models = executionruntime.WithFixtureModels(models)
 	model := models["fixture"]
 	model.Binding.Provider = workflowSkillFixture{}
 	models["fixture"] = model

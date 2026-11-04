@@ -28,12 +28,16 @@ Agent Cancel 使用固定 Node 的 EndSession，因此会结束整个物理会�
 停止或终态写入无法确认时保留目录、阻止后续接收，返回 StopUnconfirmed 或 Unavailable。
 Close 取消并 join worker，再关闭 Agent driver，必须在数据库关闭前完成。
 
-`ModelsFromEnvironment` 始终提供两个 fixture 绑定：OpenAI 协议的 `fixture` 和 Messages 协议的
-`messages-fixture`；`V2_MODEL_*` 和 `V2_ANTHROPIC_MODEL_*` 各可再加一个配置的 provider
-（`configured` / `messages-configured`），每组三个值必须同时设置。执行器按 Agent 的协议配对绑定：
-OpenCode 得到 `opencode:fixture` / `opencode:configured`，Claude Code 得到去掉 `messages-` 前缀的
-`claude:fixture` / `claude:configured`；OpenCode 排在前面。Messages 绑定不进模型清单，纯模型 Start 选它
-返回 NotFound。无 driver 时执行器清单为空，Agent Start 返回 Unavailable；纯模型仍可执行。
+`ModelsFromEnvironment` 只返回真实配置：`V2_MODEL_*` 和 `V2_ANTHROPIC_MODEL_*` 各可提供一个 provider
+（`configured` / `messages-configured`），每组三个值必须同时设置；没有完整配置时返回空目录。
+执行器按 Agent 的协议配对绑定：OpenCode 得到 `opencode:configured`，Claude Code 得到去掉
+`messages-` 前缀的 `claude:configured`；OpenCode 排在前面。Messages 绑定不进模型清单，纯模型 Start
+选它返回 NotFound。无 driver 时执行器清单为空，Agent Start 返回 Unavailable；纯模型仍可执行。
+服务在没有真实模型时也能启动，两个目录都返回空列表，不回退 fixture。
+
+fixture 目录只由 `WithFixtureModels` 显式合入，供 fixture-check、编排测试和 Playwright 使用：
+OpenAI 协议的 `fixture` 与 Messages 协议的 `messages-fixture` 分别生成 `opencode:fixture` 和
+`claude:fixture`。正常启动不调用这个函数。
 公开清单只有模型名/绑定版本和执行器选择，不返回 provider 地址、密钥或本地路径。
 服务关闭、后台持久化失败或停止未确认时，清单也返回 Unavailable，供消费侧阻止新触发。
 

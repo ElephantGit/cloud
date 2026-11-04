@@ -260,7 +260,7 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 - **重启**：进程启动前把上一个进程留下的活运行记为 `interrupted`，正在执行的任务回到 `pending`；不重放、不恢复。
 - **派给人的任务**：负责人本人可以用自己选的 Agent 处理，执行器就决定了 Agent。只有负责人能开运行（包括重新执行和 `toAgent` 评论开的新运行），
   别人是 409 `not_assignee`；别人仍能看过程、停止。跑完、停止对任务状态的推进与 Agent 任务相同。
-- **执行器**：`executorId` 必须是上面 `executors` 列出的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
+- **执行器**：`executorId` 必须是上面 `executors` 列出的执行器，否则 400 `invalid_executor`；不填时选目录中的第一项，目录为空时不启动执行。
 - **列表**：任务带 `activeRun`（活着的运行的发起人、执行器与 `running`/`idle`），列表不用逐个读时间线就能显示谁在干活。
 
 评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的
@@ -314,9 +314,11 @@ v2 不向小队自动派发，工作流在自己的页面运行。
 [`catalog.openapi.json`](internal/server/catalog.openapi.json) 定义
 `GET /api/v2/tenants/{tid}/execution/models` 和 `GET /api/v2/tenants/{tid}/execution/executors`。
 两者要求登录和当前成员关系，响应为 `{ "items": [...] }`，不返回 provider URL、凭据或磁盘路径。
-始终提供免密钥 `fixture` 模型；有 Node 资源时提供 `opencode:fixture` 和 `claude:fixture` 执行器；
-完整 OpenAI 兼容 provider 配置再提供 `configured` 模型和 `opencode:configured` 执行器，
-完整 Anthropic 兼容 provider 配置再提供 `claude:configured` 执行器，无 Node 资源时执行器清单为空。
+目录只包含部署配置的真实 provider，不再默认提供 `fixture`。完整 OpenAI 兼容 provider 配置提供
+`configured` 模型和 `opencode:configured` 执行器；完整 Anthropic 兼容 provider 配置提供
+`claude:configured` 执行器。没有配置模型时两个目录都为空，服务仍可启动并返回可理解的空状态；
+无 Node 资源时执行器清单也为空。fixture 只供内部测试使用：Playwright 启动 v2-server 时显式传
+`-test-fixtures`，`-fixture-check` 也只在自身进程内合入 fixture 目录。
 每个 Agent 只用自己协议的绑定：OpenCode 走 OpenAI chat completions，Claude Code 走 Anthropic Messages；
 Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不能选它。清单里 OpenCode 排在前面，默认选择不变。
 
@@ -532,7 +534,10 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 [desktop-loop-exit]: https://github.com/ora-space/desktop/blob/df694c8836fc70b1c789cc7e8e523d4d5b1b6c66/crates/backend/src/workflow/run/executor/loop_exit.rs
 [desktop-iteration]: https://github.com/ora-space/desktop/blob/df694c8836fc70b1c789cc7e8e523d4d5b1b6c66/crates/application/src/workflow_run/engine/node_runtime/iteration.rs
 
-领域测试验证纯规则；`workflowhost` 用真实 PostgreSQL 与可控执行替身验证事务、取消和回调次序。浏览器验收运行真实前后端；设置 `V2_NODE_ASSETS_DIR` 并准备 Node 资产后，以下组合通过真实 Node + fixture 执行全部八类节点，并检查轮次选择、会话归属和失败提示：
+领域测试验证纯规则；`workflowhost` 用真实 PostgreSQL 与可控执行替身验证事务、取消和回调次序。
+浏览器验收运行真实前后端；Playwright 启动 v2-server 时传 `-test-fixtures`。设置
+`V2_NODE_ASSETS_DIR` 并准备 Node 资产后，以下组合通过真实 Node + fixture 执行全部八类节点，
+并检查轮次选择、会话归属和失败提示：
 
 ```sh
 cd frontend-v2

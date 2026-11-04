@@ -43,15 +43,16 @@ func main() {
 	dbURL := flag.String("db", envOr("V2_DATABASE_URL", defaultDatabase), "PostgreSQL URL")
 	cleanup := flag.Bool("cleanup", false, "stop and remove owned conversation directories; retain repository mirrors and database history")
 	fixture := flag.Bool("fixture-check", false, "run the real Node fixture through the public execution service, then exit")
+	testFixtures := flag.Bool("test-fixtures", false, "include deterministic fixture models for end-to-end tests")
 	flag.Parse()
 
-	if e := run(*addr, *dbURL, *cleanup, *fixture); e != nil {
+	if e := run(*addr, *dbURL, *cleanup, *fixture, *testFixtures); e != nil {
 		slog.Error("v2-server", "error", e)
 		os.Exit(1)
 	}
 }
 
-func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
+func run(addr, dbURL string, cleanup, fixture, testFixtures bool) (resultErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	base, e := dataDirectory()
@@ -114,8 +115,11 @@ func run(addr, dbURL string, cleanup, fixture bool) (resultErr error) {
 	if e != nil {
 		return e
 	}
+	if fixture || testFixtures {
+		models = executionruntime.WithFixtureModels(models)
+	}
 	var driver *agentruntime.Driver
-	if assets := os.Getenv("V2_NODE_ASSETS_DIR"); assets != "" {
+	if assets := os.Getenv("V2_NODE_ASSETS_DIR"); assets != "" && len(models) > 0 {
 		gitDir, e := exec.CommandContext(ctx, "git", "--exec-path").Output()
 		if e != nil {
 			return errors.New("git executable unavailable")

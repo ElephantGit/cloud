@@ -91,6 +91,14 @@ it('starts the Agent with the configured model and shows the run being prepared'
   expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
 })
 
+it('shows an empty executor state instead of a mock model', async () => {
+  vi.mocked(api.listTaskExecutors).mockResolvedValue({ items: [] })
+  renderPage()
+  const select = await screen.findByLabelText('执行模型')
+  await waitFor(() => expect(select).toBeDisabled())
+  expect(within(select).getByRole('option', { name: '暂无可用的执行器' })).toBeInTheDocument()
+})
+
 it('lets the assignee of a person\'s task pick an Agent to handle it, and nobody else', async () => {
   const mine = task({ assignee: { type: 'human', id: 'user-me', displayName: '演示用户' } })
   vi.mocked(api.getTask).mockResolvedValue(mine)

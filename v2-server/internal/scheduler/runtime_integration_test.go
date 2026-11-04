@@ -192,6 +192,7 @@ func TestScheduledRuntimeProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	models = executionruntime.WithFixtureModels(models)
 	gate := &gateFixture{started: make(chan struct{}, 1)}
 	choice := models["fixture"]
 	choice.Binding.Provider = gate

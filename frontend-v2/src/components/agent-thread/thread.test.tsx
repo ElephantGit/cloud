@@ -25,6 +25,72 @@ const renderThread = (conversation: Conversation, onAnswer = vi.fn()) =>
     </TooltipProvider>,
   )
 
+describe('Thread preparation', () => {
+  const at = (ms: number) => new Date(Date.UTC(2026, 10, 3, 0, 0, 0, ms)).toISOString()
+  const prompt: ChatEvent = { type: 'prompt', turnId: 't', text: '你好' }
+
+  it('names the running stage and what already finished', () => {
+    const conversation = { ...conversationOf([prompt]), preparation: { stages: [
+      { id: 'workspace' as const, startedAt: at(0), endedAt: at(2400) },
+      { id: 'agent' as const, startedAt: at(2400) },
+    ] } }
+    renderThread(conversation)
+    expect(screen.getByText('正在启动 Agent…（第 4/5 步）')).toBeTruthy()
+    expect(screen.getByText('准备工作目录')).toBeTruthy()
+    expect(screen.getByText('2.4 秒')).toBeTruthy()
+    expect(screen.queryByText('正在准备…')).toBeNull()
+  })
+
+  it('lists every stage up front, with what is left and what was already ready', () => {
+    const conversation = { ...conversationOf([prompt]), preparation: { stages: [
+      { id: 'runtime' as const, startedAt: at(0), endedAt: at(10) },
+      { id: 'workspace' as const, startedAt: at(10) },
+    ] } }
+    renderThread(conversation)
+    expect(screen.getByText('正在准备工作目录…（第 2/5 步）')).toBeTruthy()
+    const state = (label: string) => screen.getByText(label).closest('li')?.textContent?.replace(label, '')
+    expect(state('启动运行环境')).toBe('已就绪')
+    expect(state('准备工作目录')).toBe('进行中')
+    expect(state('安装插件')).toBe('等待中')
+    expect(state('启动 Agent')).toBe('等待中')
+    expect(state('等待首次输出')).toBe('等待中')
+  })
+
+  it('does not promise stages a turn that stopped early never reached', async () => {
+    const conversation = { ...conversationOf([prompt, { type: 'turnError', message: '失败' }]), preparation: { stages: [
+      { id: 'workspace' as const, startedAt: at(0) },
+    ] } }
+    renderThread(conversation)
+    await userEvent.click(screen.getByText('准备'))
+    expect(screen.getByText('未完成')).toBeTruthy()
+    expect(screen.queryByText('等待中')).toBeNull()
+  })
+
+  it('folds into the total and opens into every stage, keeping the ones that were ready', async () => {
+    const conversation = { ...conversationOf([prompt, say('好')]), preparation: { stages: [
+      { id: 'runtime' as const, startedAt: at(0), endedAt: at(10) },
+      { id: 'workspace' as const, startedAt: at(10), endedAt: at(20), reused: true },
+      { id: 'agent' as const, startedAt: at(20), endedAt: at(4020) },
+      { id: 'response' as const, startedAt: at(4020), endedAt: at(7020) },
+    ] } }
+    renderThread(conversation)
+    await userEvent.click(screen.getByText('首次输出用时 7.0 秒'))
+    const state = (label: string) => screen.getByText(label).closest('li')?.textContent?.replace(label, '')
+    expect(state('启动运行环境')).toBe('已就绪')
+    expect(state('准备工作目录（已预热）')).toBe('已就绪')
+    expect(state('启动 Agent')).toBe('4.0 秒')
+  })
+
+  it('shows it only on the first turn', () => {
+    const conversation = { ...conversationOf([prompt, say('好'), { type: 'turnEnd', stopReason: 'end_turn' }, { type: 'prompt', turnId: 'u', text: '再来' }]), preparation: { stages: [
+      { id: 'agent' as const, startedAt: at(0), endedAt: at(1000) },
+    ] } }
+    renderThread(conversation)
+    expect(screen.getAllByText('首次输出用时 1.0 秒')).toHaveLength(1)
+    expect(screen.getByText('正在准备…')).toBeTruthy()
+  })
+})
+
 describe('Thread', () => {
   it('shows an estimated reasoning duration after settling and a cold event replay', () => {
     const record = (sequence: number, sessionUpdate: string, text: string, preview = false) => ({

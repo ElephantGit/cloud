@@ -1,5 +1,5 @@
 import type * as acp from '@agentclientprotocol/sdk'
-import type { SessionEndReason as ChatSessionEndReason, SessionEvent as ChatEvent, SessionHistoryRecord as ChatHistoryRecord, SessionResult as ChatResult } from './wire'
+import type { SessionEndReason as ChatSessionEndReason, SessionEvent as ChatEvent, SessionHistoryRecord as ChatHistoryRecord, SessionPreparation, SessionResult as ChatResult } from './wire'
 import { applyEvent } from './conversation'
 import { observeThoughts, type ThoughtTimings } from './thought-timing'
 import { type ChatEvent as ModelEvent, type Conversation, emptyConversation, type Turn } from './types'
@@ -13,6 +13,8 @@ export interface SessionView {
   records: ChatHistoryRecord[]
   /** Estimates recovered from retained preview event times, independent of settled history. */
   thoughtTimings: ThoughtTimings
+  /** What the first turn waited for; absent until the first stage starts. */
+  preparation?: SessionPreparation
   /** The snapshot left out process detail; the answers themselves are judged by `results`. */
   incomplete: boolean
   /** One per ended turn, in turn order. */
@@ -46,6 +48,8 @@ export function applySessionEvent(base: SessionView, event: ChatEvent): SessionV
       return event.result ? { ...view, results: [...view.results, event.result], prompts: [...view.prompts, event.prompt ?? ''] } : view
     case 'session_ended':
       return { ...view, ended: true }
+    case 'preparation':
+      return event.preparation ? { ...view, preparation: event.preparation } : view
     default:
       return view
   }
@@ -66,6 +70,7 @@ export function conversationOf(sessions: SessionView[]): Conversation {
   let conversation = emptyConversation
   for (const session of sessions) {
     conversation = appendSession(conversation, session)
+    conversation = { ...conversation, preparation: conversation.preparation ?? session.preparation }
     if (session.ended && session.endReason !== 'deleted') {
       const afterTurn = conversation.turns.length
       conversation = {

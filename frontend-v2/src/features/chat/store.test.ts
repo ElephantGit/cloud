@@ -41,6 +41,30 @@ describe('chat store: backend conversations', () => {
     expect(state().newChat).toEqual({ projectId: 'p-cloud', agent: 'OpenCode', model: 'Fixture' })
   })
 
+  it('marks a conversation whose saved executor is no longer in the catalog', async () => {
+    resetChatStore()
+    backend = chatBackend()
+    backend.conversations[0] = { ...backend.conversations[0]!, executorId: 'removed-executor' }
+    await state().connect(tenantId, userId)
+    expect(state().sessions.find((s) => s.id === 'c-main')).toMatchObject({
+      agent: '原执行器已不可用',
+      model: '',
+      executorUnavailable: true,
+    })
+  })
+
+  it('explains a send refused because the saved executor disappeared', async () => {
+    state().select('c-main')
+    backend.refuse = { status: 404, data: { code: 'not_found' } }
+    state().send('c-main', { ...emptyDraft, text: '继续' })
+    await vi.waitFor(() =>
+      expect(state().notices['c-main']).toMatchObject({
+        kind: 'error',
+        message: '原来的 Agent 或模型已不可用，请新建对话并重新选择。',
+      }),
+    )
+  })
+
   it('follows a conversation once it is opened and shows each snapshot whole', () => {
     state().select('c-main')
     const stream = FakeEventSource.of('c-main')

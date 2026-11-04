@@ -259,11 +259,20 @@ export interface SessionModelStatistics {
 export type ListDashboardSessionsParams = {
 project?: string;
 agent?: string;
+source?: ListDashboardSessionsSource;
 status?: string;
 from?: string;
 to?: string;
 after?: string;
 };
+
+export type ListDashboardSessionsSource = typeof ListDashboardSessionsSource[keyof typeof ListDashboardSessionsSource];
+
+
+export const ListDashboardSessionsSource = {
+  task: 'task',
+  chat: 'chat',
+} as const;
 
 export type ListDashboardSessions400 = {
   code: string;

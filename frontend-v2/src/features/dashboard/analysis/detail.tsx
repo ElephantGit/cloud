@@ -11,7 +11,7 @@ import {
 import { adaptArchive } from './data'
 import { SessionRecords, SessionTimeline, ToolSummary } from './timeline'
 import { SessionMetrics } from './metrics'
-import { accessFailure, failureMessage, sessionStatus, useAnalysisScope } from './queries'
+import { accessFailure, failureMessage, sessionSource, sessionStatus, useAnalysisScope } from './queries'
 
 const tabs = ['概览', '模型请求', '时间轴', '工具统计', '完整事件'] as const
 
@@ -107,7 +107,7 @@ function SessionDetailBody({ id }: { id: string }) {
         </div>
       </header>
       <p className='text-xs text-muted-foreground'>
-        来源：任务执行时保存的记录。{history.data?.incomplete
+        来源：{sessionSource[metadata.data?.source ?? ''] ?? '会话'}执行时保存的记录。{history.data?.incomplete
           ? '过程观测不完整。'
           : '显示已定型的事件。'}
       </p>

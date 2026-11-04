@@ -43,14 +43,15 @@ function show(detail = false) {
 }
 afterEach(() => vi.unstubAllEnvs())
 
-it('reads real session data even when the demo mock is enabled and opens a stable detail link', async () => {
+it.each(['task', 'chat'])('reads real %s session data with demo mock enabled and opens its source link', async (source) => {
   vi.stubEnv('VITE_DEMO_MOCK', '1')
+  const current = { ...session, source, href: source === 'chat' ? '/chat?conversation=chat-1' : session.href }
   const seen = fakeBackend((config) => {
     if (config.url === '/api/v1/me/tenants') {
       return { status: 200, data: { items: [{ id: tenant }] } }
     }
-    if (config.url === base) return { status: 200, data: { items: [session], nextCursor: '' } }
-    if (config.url === `${base}/session-1`) return { status: 200, data: session }
+    if (config.url === base) return { status: 200, data: { items: [current], nextCursor: '' } }
+    if (config.url === `${base}/session-1`) return { status: 200, data: current }
     if (config.url === `${base}/session-1/history`) {
       return { status: 200, data: { source: 'persisted_snapshot', records: [], incomplete: false } }
     }
@@ -61,7 +62,7 @@ it('reads real session data even when the demo mock is enabled and opens a stabl
   show()
   await userEvent.click(await screen.findByRole('link', { name: session.title }))
   expect(await screen.findByRole('region', { name: '会话概览' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: '返回来源' })).toHaveAttribute('href', session.href)
+  expect(screen.getByRole('link', { name: '返回来源' })).toHaveAttribute('href', current.href)
   expect(seen).toContain(`GET ${base}/session-1/history`)
   expect(screen.queryByText('陈默')).not.toBeInTheDocument()
 })
@@ -111,8 +112,9 @@ it('resets pagination when filters change', async () => {
   await userEvent.click(await screen.findByRole('button', { name: '加载更多会话' }))
   await screen.findAllByRole('link', { name: session.title })
   await userEvent.type(screen.getByRole('textbox', { name: 'Agent 标识' }), session.agent)
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: '来源' }), 'chat')
   await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
-  await vi.waitFor(() => expect(requests.at(-1)).toMatchObject({ agent: session.agent }))
+  await vi.waitFor(() => expect(requests.at(-1)).toMatchObject({ agent: session.agent, source: 'chat' }))
   expect(requests.at(-1)?.after).toBeUndefined()
 })
 
@@ -136,7 +138,7 @@ it('filters seeded and live sessions using the full Agent ID shown in the hint',
   const filter = screen.getByPlaceholderText('例如 official/ora-space.opencode')
   await userEvent.type(filter, 'opencode')
   await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
-  expect(await screen.findByText('暂无符合条件的任务 Agent 会话。')).toBeInTheDocument()
+  expect(await screen.findByText('暂无符合条件的会话。')).toBeInTheDocument()
   await userEvent.clear(screen.getByRole('textbox', { name: 'Agent 标识' }))
   await userEvent.type(screen.getByRole('textbox', { name: 'Agent 标识' }), session.agent)
   await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))

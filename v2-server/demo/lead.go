@@ -22,7 +22,8 @@ const (
 const leadSquad = "看板小队"
 
 // leadHistory is the work the squad finished or is doing before the recording starts. Only people
-// hold these tasks: an Agent task is started live, so the seed never writes task runs or comments.
+// hold these tasks. seedDashboard separately adds one labelled historical Agent task/run; live
+// Agent work starts during recording, and the seed does not write discussion comments.
 var leadHistory = []struct {
 	title, description, assignee, status string
 }{

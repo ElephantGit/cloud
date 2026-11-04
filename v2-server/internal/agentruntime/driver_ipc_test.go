@@ -701,6 +701,9 @@ func TestDriverIPCPreviewsStreamPendingRecordsWithoutAck(t *testing.T) {
 	var events []execution.Event
 	published := make(chan execution.Event, 64)
 	done := startIPCRun(h, ctx, session, "turn", func(_ context.Context, event execution.Event) error {
+		if event.Kind == execution.EventPreparation {
+			return nil
+		}
 		mu.Lock()
 		events = append(events, event)
 		mu.Unlock()

@@ -1,4 +1,5 @@
 import type * as acp from '@agentclientprotocol/sdk'
+import type { SessionPreparation } from './wire'
 
 /** Provider metadata kept on an item without being interpreted, except where a renderer needs it. */
 export type Meta = Record<string, unknown>
@@ -128,6 +129,8 @@ export interface Conversation {
   markers: Marker[]
   permissions: PermissionRequest[]
   context?: ContextUsage
+  /** What the first turn waited for, when the backend timed it. */
+  preparation?: SessionPreparation
 }
 
 /**

@@ -217,3 +217,21 @@ describe('conversationOf', () => {
     expect(turn.prompt.text).toBe('第一行第二行')
   })
 })
+
+describe('preparation', () => {
+  const event = (sequence: number, stages: { id: 'runtime' | 'agent'; startedAt: string; endedAt?: string }[]): ChatEvent => ({
+    sequence, occurredAt: at(sequence), kind: 'preparation', turnId: 't1', preparation: { stages },
+  })
+
+  it('keeps the latest stages, so a replayed stream restores them', () => {
+    const first = applySessionEvent(view({}), event(1, [{ id: 'runtime', startedAt: at(0) }]))
+    const next = applySessionEvent(first, event(2, [{ id: 'runtime', startedAt: at(0), endedAt: at(1) }, { id: 'agent', startedAt: at(1) }]))
+    expect(next.preparation?.stages.map((stage) => stage.id)).toEqual(['runtime', 'agent'])
+    expect(applySessionEvent(next, event(2, []))).toBe(next)
+  })
+
+  it('reaches the conversation before any history exists', () => {
+    const session = applySessionEvent(view({}), event(1, [{ id: 'runtime', startedAt: at(0) }]))
+    expect(conversationOf([session]).preparation?.stages).toHaveLength(1)
+  })
+})

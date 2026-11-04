@@ -36,7 +36,12 @@ export function Thread({ conversation, onAnswer }: { conversation: Conversation;
                   <UserPrompt turn={turn} />
                 </MessageScrollerItem>
                 <MessageScrollerItem messageId={turn.id}>
-                  <AgentTurn turn={turn} permissions={permissionsOf(conversation, turn)} onAnswer={onAnswer} />
+                  <AgentTurn
+                    turn={turn}
+                    preparation={i === 0 ? conversation.preparation : undefined}
+                    permissions={permissionsOf(conversation, turn)}
+                    onAnswer={onAnswer}
+                  />
                 </MessageScrollerItem>
                 {markersAfter(i + 1).map((m) => (
                   <MarkerRow key={m.id} marker={m} />

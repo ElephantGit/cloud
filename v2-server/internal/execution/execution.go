@@ -163,6 +163,8 @@ const (
 	EventTurnEnded      EventKind = "turn_ended"
 	EventTextDelta      EventKind = "text_delta"
 	EventSessionEnded   EventKind = "session_ended"
+	// EventPreparation replaces the timed stages of the session's path to first output.
+	EventPreparation EventKind = "preparation"
 )
 
 // Event is immutable after publication. Sequence starts at 1 and increases without gaps within
@@ -179,6 +181,22 @@ type Event struct {
 	// TextDelta carries model-only text without inventing ACP tools or Agent events.
 	TextDelta string
 	Result    *Result
+	// Preparation is set only on EventPreparation.
+	Preparation *Preparation
+}
+
+// Preparation is what a session's first turn waited for, stage by stage. It is diagnostic only.
+type Preparation struct {
+	Stages []PreparationStage `json:"stages"`
+}
+
+// PreparationStage is one timed stage; EndedAt is nil while it runs. Reused means work prepared
+// in advance served it.
+type PreparationStage struct {
+	ID        string     `json:"id"`
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	Reused    bool       `json:"reused,omitempty"`
 }
 
 // HistorySnapshot is a full replacement of the available settled/pending Node history.

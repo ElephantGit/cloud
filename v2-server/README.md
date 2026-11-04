@@ -260,7 +260,7 @@ Agent 正在执行一轮时，人工推进返回 409 `run_active`。
 - **重启**：进程启动前把上一个进程留下的活运行记为 `interrupted`，正在执行的任务回到 `pending`；不重放、不恢复。
 - **派给人的任务**：负责人本人可以用自己选的 Agent 处理，执行器就决定了 Agent。只有负责人能开运行（包括重新执行和 `toAgent` 评论开的新运行），
   别人是 409 `not_assignee`；别人仍能看过程、停止。跑完、停止对任务状态的推进与 Agent 任务相同。
-- **执行器**：`executorId` 必须是上面 `executors` 列出的执行器，否则 400 `invalid_executor`；不填时选已配置的模型，没有再用 fixture。
+- **执行器**：`executorId` 必须是上面 `executors` 列出的执行器，否则 400 `invalid_executor`；不填时选目录中的第一项，目录为空时不启动执行。
 - **列表**：任务带 `activeRun`（活着的运行的发起人、执行器与 `running`/`idle`），列表不用逐个读时间线就能显示谁在干活。
 
 评论存在 `v2_task_comments`，全团队可见。`mentions` 只接受从 @ 菜单选出的类型化对象（`user` 为有效成员、`agent` 为预装且已安装的
@@ -314,9 +314,11 @@ v2 不向小队自动派发，工作流在自己的页面运行。
 [`catalog.openapi.json`](internal/server/catalog.openapi.json) 定义
 `GET /api/v2/tenants/{tid}/execution/models` 和 `GET /api/v2/tenants/{tid}/execution/executors`。
 两者要求登录和当前成员关系，响应为 `{ "items": [...] }`，不返回 provider URL、凭据或磁盘路径。
-始终提供免密钥 `fixture` 模型；有 Node 资源时提供 `opencode:fixture` 和 `claude:fixture` 执行器；
-完整 OpenAI 兼容 provider 配置再提供 `configured` 模型和 `opencode:configured` 执行器，
-完整 Anthropic 兼容 provider 配置再提供 `claude:configured` 执行器，无 Node 资源时执行器清单为空。
+目录只包含部署配置的真实 provider，不再默认提供 `fixture`。完整 OpenAI 兼容 provider 配置提供
+`configured` 模型和 `opencode:configured` 执行器；完整 Anthropic 兼容 provider 配置提供
+`claude:configured` 执行器。没有配置模型时两个目录都为空，服务仍可启动并返回可理解的空状态；
+无 Node 资源时执行器清单也为空。fixture 只供内部测试使用：Playwright 启动 v2-server 时显式传
+`-test-fixtures`，`-fixture-check` 也只在自身进程内合入 fixture 目录。
 每个 Agent 只用自己协议的绑定：OpenCode 走 OpenAI chat completions，Claude Code 走 Anthropic Messages；
 Messages 绑定只给 Agent，不出现在模型清单里，纯模型对话不能选它。清单里 OpenCode 排在前面，默认选择不变。
 
@@ -499,7 +501,7 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 - **Aggregator**：按 desktop 的 V1 契约，按声明顺序取第一个**已赋值**的候选原样传出（键存在即算，`null`、`false`、`0`、`""`、`[]`、`{}` 都命中），写入 `{node}.output`；全部未赋值时以 `aggregator_no_match` 失败，读到未声明的候选直接失败。它不读分支决策，只看变量池。
 - **Agent 结构化输出**：`outputContract.type` 为 `structured` 的 Agent，prompt 末尾追加 desktop 的输出约定（示例和 Schema）；回答按 desktop 的顺序提取 JSON 对象（整段 → 代码块 → 文中第一个完整对象），再按 Schema 子集（`type`、`properties`、`required`、`additionalProperties`、`items`）校验。通过时原回答仍是 `{node}.output`，对象写入 `{node}.structured_output`；不通过时节点以 `structured_output` 失败并保留原回答。
 - **节点 Skill**：启用的个人 Skill 按启动运行的用户读取，在节点开始时冻结文档；插件 Skill 使用 `namespace/identifier`，必须有目标项目当前安装版本的成功回执。启动 Agent 前，仅将所选导入放到运行目录的 `.opencode/skills`、`.claude/skills`，并在 prompt 中要求读取。插件选择包含该包内全部 Skill；下一节点替换上一个节点的投影，未选择的导入不会自动继承。项目自带的技能保留，同名冲突、已修改的投影文档、缺失包或失效回执会让节点失败，不覆盖或静默略过。节点 payload 的 `skills` 记录所选标识，执行会话保留冻结的文档和插件版本。
-- **MCP 尚不支持**：当前固定 Node 的 `AgentSessionSpec` 不接收 MCP 服务配置，v2 没有凭据交付、服务生命周期和工具调用回执链路。启用 MCP 的节点以 `missing_agent_config` 失败，禁用绑定可继续执行；不会声称成功调用工具。
+- **MCP 尚不支持**：当前固定 Node 的 `AgentSessionSpec` 不接收 MCP 服务配置，v2 没有凭据交付、服务生命周期和工具调用回执链路。Agent 可以选择并启用 MCP，运行时忽略 MCP 绑定照常执行，并在节点结果 `payload.unapplied` 中记录 `mcp`；禁用的绑定不记为未应用，不会声称成功调用工具。
 - **角色、重试与交互模式不应用**：节点 payload 的 `unapplied` 列出被忽略的配置（`role`、`retry`、`interactive`）。历史运行保存的 `skill`、`mcp` 标记仍按原样展示。
 - **执行器映射**：节点的 `executor.agentCli` 匹配执行目录里执行器的 `AgentID`（`official/ora-space.opencode`、`official/ora-space.claude`），找不到时节点以 `missing_agent_ref` 失败；`modelId` 匹配该 Agent 执行器的模型 ID 或名称，找不到时退回该 Agent 的第一个（默认）执行器。成功节点的 payload 写入 `stop_reason`、实际使用的 `executor`（`id`、`agentId`、`name`、`pluginVersion`）、`model`（`id`、`name`、`requested`、`fallback`），以及按变量池渲染后的任务要求 `task`（节点尝试的 `input` 保留模板原文）。
 - **重启**：启动时先把上个进程留下的所有非终态节点以 `interrupted_by_restart` 失败，运行随之失败，然后才开始服务；不重放 Agent。
@@ -532,7 +534,10 @@ ConversationAdapter 按冻结配置分流：无项目文本对话用公共 Start
 [desktop-loop-exit]: https://github.com/ora-space/desktop/blob/df694c8836fc70b1c789cc7e8e523d4d5b1b6c66/crates/backend/src/workflow/run/executor/loop_exit.rs
 [desktop-iteration]: https://github.com/ora-space/desktop/blob/df694c8836fc70b1c789cc7e8e523d4d5b1b6c66/crates/application/src/workflow_run/engine/node_runtime/iteration.rs
 
-领域测试验证纯规则；`workflowhost` 用真实 PostgreSQL 与可控执行替身验证事务、取消和回调次序。浏览器验收运行真实前后端；设置 `V2_NODE_ASSETS_DIR` 并准备 Node 资产后，以下组合通过真实 Node + fixture 执行全部八类节点，并检查轮次选择、会话归属和失败提示：
+领域测试验证纯规则；`workflowhost` 用真实 PostgreSQL 与可控执行替身验证事务、取消和回调次序。
+浏览器验收运行真实前后端；Playwright 启动 v2-server 时传 `-test-fixtures`。设置
+`V2_NODE_ASSETS_DIR` 并准备 Node 资产后，以下组合通过真实 Node + fixture 执行全部八类节点，
+并检查轮次选择、会话归属和失败提示：
 
 ```sh
 cd frontend-v2

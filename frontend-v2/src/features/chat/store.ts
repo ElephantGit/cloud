@@ -31,6 +31,8 @@ export interface Session {
   model: string
   /** Set for conversations the backend runs, each in its own directory: with which executor. */
   remote?: { executorId: string }
+  /** The saved executor is no longer in the catalog; history remains readable. */
+  executorUnavailable?: boolean
   createdAt: number
 }
 
@@ -194,9 +196,10 @@ function sessionOf(c: ChatConversation, executors: ChatExecutor[]): Session {
     id: c.id,
     projectId: c.projectId,
     title: c.title,
-    agent: executor?.agentName ?? c.executorId,
+    agent: executor?.agentName ?? '原执行器已不可用',
     model: executor?.modelName ?? '',
     remote: { executorId: c.executorId },
+    executorUnavailable: !executor,
     createdAt: Date.parse(c.createdAt),
   }
 }
@@ -347,7 +350,7 @@ export const useChatStore = create<State>()(
           absorb(conversation)
         } catch (error) {
           if (!isCurrent(tid, userId)) return
-          const failure = failureOf(error)
+          const failure = failureOf(error, 'send')
           // Set before the refresh below, which would otherwise send the requeued prompt at once.
           if (failure.kind === 'running') awaitingTurnEnd.add(id)
           refresh(id, (s) => {
@@ -477,7 +480,7 @@ export const useChatStore = create<State>()(
             if (!isCurrent(tid, userId)) return
             drop()
             set((s) => ({ selectedId: s.selectedId === placeholder ? undefined : s.selectedId, drafts: { ...s.drafts, [newChatKey]: draft } }))
-            notify(newChatKey, failureOf(error))
+            notify(newChatKey, failureOf(error, 'send'))
           }
         },
         renameSession: (id, title) => {

@@ -10,7 +10,7 @@
 - `StartModel`：无项目，直接通过共享 provider 调模型，只需要 `ModelID`；不启动 Agent、不建目录、不提供工具。
 - 两者共用 `Append`、Ref、Result、会话订阅、取消和历史读取。Append 沿用 session 的模式和绑定。
 - `Prompt` 是 ACP ContentBlock 数组；首版只接 text，其他块返回 `ErrUnsupported`，空或畸形输入返回 `ErrInvalidRequest`。
-- `Catalog.ListExecutors/ListModels` 提供可运行的 ID 和显示名：默认 fixture，以及已配置的一个 OpenAI 兼容真实 provider。
+- `Catalog.ListExecutors/ListModels` 提供可运行的 ID 和显示名；默认目录只含部署配置的真实 provider，没有配置时为空。fixture 只能由测试入口显式注入。
   Agent 与模型直连共用这份配置，凭据只留在后端。未配置的模型或不可用的 Agent 产物不能列为可运行项。
 
 项目由共享项目服务创建：同步 `clone --mirror` 仓库和指定分支，成功后保存项目及 snapshot ref。

@@ -10,7 +10,7 @@ import {
   renderSettingsPage,
 } from '../test-utils'
 import PluginsPage from './page'
-import { useDemoPluginSelections } from './demo-state'
+import { useDemoPluginSelections } from '@/lib/settings-demo/plugin-selections'
 
 const installDelay = vi.hoisted(() => ({ ms: 0 }))
 

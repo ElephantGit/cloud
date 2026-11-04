@@ -94,6 +94,16 @@ describe('chat page', () => {
     expect(screen.queryByText(/^样例：/)).not.toBeInTheDocument()
   })
 
+  it('keeps a conversation with a removed executor readable and points to a new chat', async () => {
+    backend.conversations[0] = { ...backend.conversations[0]!, executorId: 'removed-executor' }
+    await renderReady()
+    await userEvent.click(within(sidebar()).getByRole('button', { name: '梳理 v2 接口缺口' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('原来的 Agent 或模型已不可用')
+    expect(screen.queryByRole('textbox', { name: '消息' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument()
+    expect(backend.seen.filter((request) => request.endsWith('/messages'))).toHaveLength(0)
+  })
+
   it('starts a conversation in a project with a text prompt, and shows the Agent\'s reply', async () => {
     await renderReady()
     await userEvent.click(within(sidebar()).getByRole('button', { name: '在 ora-space/desktop 新建对话' }))

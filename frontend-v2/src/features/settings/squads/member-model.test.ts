@@ -3,7 +3,7 @@ import type { MemberListItem, SpacePlugin } from '@/api/generated.schemas'
 import type { SquadDetail, SquadMember } from '@/lib/squads-api/generated'
 import { pluginLabel } from '@/lib/plugin-runtime'
 import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins } from './member-model'
-import { useDemoPluginSelections } from '@/features/settings/plugins/demo-state'
+import { useDemoPluginSelections } from '@/lib/settings-demo/plugin-selections'
 
 const account = (overrides: Partial<MemberListItem>): MemberListItem => ({
   id: 'user', tenantId: 'tenant', userId: 'user', displayName: '成员', role: 'member', status: 'active', version: 1,

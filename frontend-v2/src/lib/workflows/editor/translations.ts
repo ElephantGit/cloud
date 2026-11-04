@@ -449,7 +449,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.mcp.loading": "正在加载已安装的 MCP…",
     "settings.workflow.mcp.loadError": "无法加载已安装的 MCP，已有配置已保留。",
     "settings.workflow.mcp.retry": "重新加载 MCP",
-    "settings.workflow.mcp.installHint": "当前 v2 暂不支持 MCP 执行；请禁用已有绑定后运行。",
+    "settings.workflow.mcp.installHint": "请先在设置中安装 MCP。已有绑定可保留并启用，运行时会标记为未应用。",
     "settings.workflow.mcp.missing": "插件未安装或不可用",
     "settings.workflow.mcp.configurationIncomplete": "插件配置未完成",
     "settings.workflow.mcp.configurationUnavailable": "无法读取插件配置",
@@ -461,7 +461,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.toggleMcp": "启用或禁用 {{name}}",
     "settings.workflow.removeMcp": "移除 {{name}}",
     "settings.workflow.mcpAuthorizationHint":
-      "安装只会加入全局可选目录；只有在此启用的 MCP 才会授权给本节点会话。",
+      "可选择设置中已安装的 MCP；启用后 Agent 照常运行，MCP 不参与执行，结果标记为“未应用”。",
     "settings.workflow.field.prompt": "自定义 Prompt",
     "settings.workflow.field.insertVariable": "插入变量",
     "settings.workflow.field.promptCharacterCount": "{{count}} 个字符",
@@ -1044,7 +1044,7 @@ export const workflowEditorTranslations = {
       "Could not load installed MCPs. Existing bindings are preserved.",
     "settings.workflow.mcp.retry": "Reload MCPs",
     "settings.workflow.mcp.installHint":
-      "MCP execution is not supported in v2 yet. Disable existing bindings before running.",
+      "Install MCPs in Settings first. Existing bindings may stay enabled and are reported as unapplied when running.",
     "settings.workflow.mcp.missing": "Plugin is not installed or unavailable",
     "settings.workflow.mcp.configurationIncomplete":
       "Plugin configuration is incomplete",
@@ -1059,7 +1059,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.toggleMcp": "Enable or disable {{name}}",
     "settings.workflow.removeMcp": "Remove {{name}}",
     "settings.workflow.mcpAuthorizationHint":
-      "Installation only adds an MCP to the global catalog. This node session is authorized to receive enabled MCPs only.",
+      "Choose MCPs installed in Settings. The Agent runs normally with MCP enabled, but MCPs are not used and are reported as unapplied.",
     "settings.workflow.field.prompt": "Custom prompt",
     "settings.workflow.field.insertVariable": "Insert variable",
     "settings.workflow.field.promptCharacterCount": "{{count}} characters",

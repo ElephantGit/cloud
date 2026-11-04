@@ -27,7 +27,7 @@ import (
 func TestExecutionCatalogHTTP(t *testing.T) {
 	s := openStore(t)
 	runtime, err := executionruntime.New(t.Context(), executionruntime.Config{Store: s, Models: map[string]executionruntime.ModelChoice{
-		"fixture": {Model: execution.Model{ID: "fixture", Name: "Fixture", BindingVersion: "fixture-v1"}, Binding: nodeservices.Binding{Model: nodeservices.Model{ID: "private-upstream-model", Name: "Private configuration", MaxTokens: 1024}, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}},
+		"configured": {Model: execution.Model{ID: "configured", Name: "Configured model", BindingVersion: "configured-v1"}, Binding: nodeservices.Binding{Model: nodeservices.Model{ID: "private-upstream-model", Name: "Private configuration", MaxTokens: 1024}, Protocol: nodeservices.OpenAICompletions, Provider: nodeservices.FixtureProvider{}}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestExecutionCatalogHTTP(t *testing.T) {
 	_, tenants := call("GET", "/api/v1/me/tenants", nil)
 	tenant := tenants["items"].([]any)[0].(map[string]any)["id"].(string)
 	base := "/api/v2/tenants/" + tenant + "/execution/"
-	if status, out := call("GET", base+"models", nil); status != 200 || !reflect.DeepEqual(out, map[string]any{"items": []any{map[string]any{"id": "fixture", "name": "Fixture", "bindingVersion": "fixture-v1"}}}) {
+	if status, out := call("GET", base+"models", nil); status != 200 || !reflect.DeepEqual(out, map[string]any{"items": []any{map[string]any{"id": "configured", "name": "Configured model", "bindingVersion": "configured-v1"}}}) {
 		t.Fatalf("models=%d %v", status, out)
 	}
 	if status, out := call("GET", base+"executors", nil); status != 200 || !reflect.DeepEqual(out, map[string]any{"items": []any{}}) {

@@ -461,7 +461,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.toggleMcp": "启用或禁用 {{name}}",
     "settings.workflow.removeMcp": "移除 {{name}}",
     "settings.workflow.mcpAuthorizationHint":
-      "安装只会加入全局可选目录；只有在此启用的 MCP 才会授权给本节点会话。",
+      "可选择设置中已安装的 MCP；演示项仅用于节点配置，当前 v2 不支持 MCP 执行。",
     "settings.workflow.field.prompt": "自定义 Prompt",
     "settings.workflow.field.insertVariable": "插入变量",
     "settings.workflow.field.promptCharacterCount": "{{count}} 个字符",
@@ -1059,7 +1059,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.toggleMcp": "Enable or disable {{name}}",
     "settings.workflow.removeMcp": "Remove {{name}}",
     "settings.workflow.mcpAuthorizationHint":
-      "Installation only adds an MCP to the global catalog. This node session is authorized to receive enabled MCPs only.",
+      "Choose MCPs installed in Settings. Demo entries are for node configuration only; v2 does not support MCP execution.",
     "settings.workflow.field.prompt": "Custom prompt",
     "settings.workflow.field.insertVariable": "Insert variable",
     "settings.workflow.field.promptCharacterCount": "{{count}} characters",

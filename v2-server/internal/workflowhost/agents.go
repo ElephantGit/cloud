@@ -122,10 +122,6 @@ func (h *Host) finishCancel(st *runState, runID string) {
 // the session and report the outcome to the engine.
 func (h *Host) runAgent(st *runState, d workflow.AgentDispatch) {
 	cfg := d.Node.Agent()
-	if len(cfg.MCPs) > 0 {
-		h.fail(d, workflow.Failure{Kind: workflow.FailureMissingAgentConfig, Message: "MCP is unavailable: the v2 Node session protocol cannot receive MCP servers. Disable this binding until Node support is available."})
-		return
-	}
 	skills, err := h.store.ResolveWorkflowSkills(h.ctx, st.scope, d.ProjectID, cfg.Skills)
 	if err != nil {
 		h.fail(d, workflow.Failure{Kind: workflow.FailureMissingAgentConfig, Message: err.Error()})

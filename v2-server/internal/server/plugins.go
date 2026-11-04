@@ -176,8 +176,6 @@ func pluginError(w http.ResponseWriter, operation string, e error) {
 		fault(w, http.StatusBadRequest, "plugin_kind_not_installable")
 	case errors.Is(e, store.ErrPluginRuntimeManaged):
 		fault(w, http.StatusConflict, "plugin_runtime_managed")
-	case errors.Is(e, store.ErrPluginWorkflowConflict):
-		fault(w, http.StatusConflict, "workflow_name_conflict")
 	case errors.Is(e, store.ErrPluginWorkflowInvalid):
 		fault(w, http.StatusBadRequest, "plugin_workflow_invalid")
 	case errors.Is(e, store.ErrPluginPackageCredentials):

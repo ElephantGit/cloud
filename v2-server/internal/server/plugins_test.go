@@ -281,6 +281,10 @@ func TestWorkflowPluginHTTPInstallAndRemoveKeepWorkflow(t *testing.T) {
 	}}, time.Now()); e != nil {
 		t.Fatal(e)
 	}
+	original, _, e := f.store.CreateWorkflow(context.Background(), tenant, "需求开发", `{"nodes":[],"edges":[]}`)
+	if e != nil {
+		t.Fatal(e)
+	}
 	base := "/api/v1/tenants/" + tenant + "/spaces/" + space + "/plugins"
 	input := map[string]any{
 		"identifier":    "official/ora-space.test-workflow",
@@ -298,8 +302,18 @@ func TestWorkflowPluginHTTPInstallAndRemoveKeepWorkflow(t *testing.T) {
 	}
 	version := resource["version"].(float64)
 	workflows, e := f.store.Workflows(context.Background(), tenant)
-	if e != nil || len(workflows) != 1 || workflows[0].Name != "需求开发" {
+	if e != nil || len(workflows) != 2 {
 		t.Fatalf("workflows = %+v %v", workflows, e)
+	}
+	names := map[string]bool{}
+	for _, workflow := range workflows {
+		names[workflow.Name] = true
+	}
+	if !names["需求开发"] || !names["需求开发（插件）"] {
+		t.Fatalf("import did not preserve original and rename conflict: %+v", workflows)
+	}
+	if unchanged, e := f.store.Workflow(context.Background(), tenant, original.ID); e != nil || unchanged.Name != "需求开发" {
+		t.Fatalf("original workflow changed = %+v %v", unchanged, e)
 	}
 	status, body = c.doHeaders("POST", base, input, map[string]string{"Idempotency-Key": "install-workflow"})
 	if status != 200 || body["resource"].(map[string]any)["version"] != version {
@@ -312,7 +326,7 @@ func TestWorkflowPluginHTTPInstallAndRemoveKeepWorkflow(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("remove workflow = %d %v", status, body)
 	}
-	if workflows, e := f.store.Workflows(context.Background(), tenant); e != nil || len(workflows) != 1 {
+	if workflows, e := f.store.Workflows(context.Background(), tenant); e != nil || len(workflows) != 2 {
 		t.Fatalf("remove deleted workflows: %+v %v", workflows, e)
 	}
 }

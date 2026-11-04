@@ -61,7 +61,8 @@ func TestWorkflowPluginImportsAndKeepsWorkflowsOnRemoval(t *testing.T) {
 		t.Fatalf("installed = %+v", installed)
 	}
 	workflows, e := f.store.Workflows(f.ctx, f.tenant)
-	if e != nil || len(workflows) != 1 || workflows[0].PublishedVersion == nil || *workflows[0].PublishedVersion != "v1" {
+	if e != nil || len(workflows) != 1 || workflows[0].Name != "需求开发" ||
+		workflows[0].PublishedVersion == nil || *workflows[0].PublishedVersion != "v1" {
 		t.Fatalf("workflows = %+v %v", workflows, e)
 	}
 	version, e := f.store.WorkflowVersion(f.ctx, f.tenant, workflows[0].ID, "v1")
@@ -109,7 +110,7 @@ func TestWorkflowPluginImportsAndKeepsWorkflowsOnRemoval(t *testing.T) {
 	}
 }
 
-func TestWorkflowPluginRejectsInvalidDocumentAndNameConflict(t *testing.T) {
+func TestWorkflowPluginRejectsInvalidDocument(t *testing.T) {
 	f := newSquadFixture(t)
 	owner := f.login(t, "owner", "owner")
 	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
@@ -120,11 +121,7 @@ func TestWorkflowPluginRejectsInvalidDocumentAndNameConflict(t *testing.T) {
 	path := "/api/v1/tenants/" + f.tenant + "/spaces/" + space + "/plugins"
 	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{
 		{Namespace: "official", Identifier: "bad.workflow", Title: "Bad", Kind: "workflow", Version: "1.0.0", URL: "https://example.org/bad.orax", SHA256: strings.Repeat("b", 64), MarketplaceVisible: true},
-		{Namespace: "official", Identifier: "conflict.workflow", Title: "Conflict", Kind: "workflow", Version: "1.0.0", URL: "https://example.org/conflict.orax", SHA256: strings.Repeat("c", 64), MarketplaceVisible: true},
 	}, time.Now()); e != nil {
-		t.Fatal(e)
-	}
-	if _, _, e := f.store.CreateWorkflow(f.ctx, f.tenant, "需求开发", `{"nodes":[],"edges":[]}`); e != nil {
 		t.Fatal(e)
 	}
 	bad := []pluginmarket.WorkflowDocument{{Path: "assets/workflows/bad.json", Name: "坏图", Graph: "not-json"}}
@@ -134,15 +131,108 @@ func TestWorkflowPluginRejectsInvalidDocumentAndNameConflict(t *testing.T) {
 	if !errors.Is(e, store.ErrPluginWorkflowInvalid) {
 		t.Fatalf("invalid workflow = %v", e)
 	}
-	if all, _ := f.store.Workflows(f.ctx, f.tenant); len(all) != 1 {
+	if all, _ := f.store.Workflows(f.ctx, f.tenant); len(all) != 0 {
 		t.Fatalf("invalid install imported a workflow: %+v", all)
 	}
+}
 
-	conflict := []pluginmarket.WorkflowDocument{{Path: "assets/workflows/conflict.json", Name: "需求开发", Graph: `{"nodes":[],"edges":[]}`}}
-	_, e = f.store.InstallWorkflowPlugin(f.ctx, f.tenant, space, owner, path, "conflict-install", store.PluginInstallInput{
-		Identifier: "official/conflict.workflow", PluginVersion: "1.0.0",
-	}, conflict, func(string) error { return nil })
-	if !errors.Is(e, store.ErrPluginWorkflowConflict) {
-		t.Fatalf("workflow name conflict = %v", e)
+func TestWorkflowPluginAutoNamesConflictsAndKeepsSpacesIndependent(t *testing.T) {
+	f := newSquadFixture(t)
+	owner := f.login(t, "owner", "owner")
+	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
+	if e != nil || len(spaces) != 1 {
+		t.Fatalf("spaces = %v %v", spaces, e)
+	}
+	firstSpace := spaces[0].ID
+	var secondSpace string
+	if e := f.db.QueryRow(f.ctx, `
+		INSERT INTO v2_spaces(tenant_id, name, slug, created_by)
+		VALUES($1, 'Other', 'other', $2) RETURNING id::text`,
+		f.tenant, owner).Scan(&secondSpace); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{{
+		Namespace: "official", Identifier: "ora-space.requirement-development",
+		Title: "Requirement Development", Kind: "workflow", Version: "0.1.0",
+		URL: "https://example.org/workflow.orax", SHA256: strings.Repeat("d", 64),
+		MarketplaceVisible: true,
+	}}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	original, _, e := f.store.CreateWorkflow(f.ctx, f.tenant, "需求开发", `{"nodes":[],"edges":[]}`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e := f.store.CreateWorkflow(f.ctx, f.tenant, "需求开发（插件）", `{"nodes":[],"edges":[]}`); e != nil {
+		t.Fatal(e)
+	}
+	documents := []pluginmarket.WorkflowDocument{{
+		Path: "assets/workflows/requirement-development.json", Name: "需求开发",
+		Graph: `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"output"}]}`,
+	}}
+	validate := func(string) error { return nil }
+	image := store.PluginInstallInput{
+		Identifier: "official/ora-space.requirement-development", PluginVersion: "0.1.0",
+	}
+	first, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, firstSpace, owner,
+		"/api/v1/tenants/"+f.tenant+"/spaces/"+firstSpace+"/plugins",
+		"first-space", image, documents, validate)
+	if e != nil || first.ObservedState != "installed" {
+		t.Fatalf("first space install = %+v %v", first, e)
+	}
+	all, e := f.store.Workflows(f.ctx, f.tenant)
+	if e != nil || len(all) != 3 {
+		t.Fatalf("workflows after first space = %+v %v", all, e)
+	}
+	names := map[string]bool{}
+	for _, workflow := range all {
+		names[workflow.Name] = true
+	}
+	if !names["需求开发"] || !names["需求开发（插件）"] || !names["需求开发（插件 2）"] {
+		t.Fatalf("auto names = %v", names)
+	}
+	if got, e := f.store.Workflow(f.ctx, f.tenant, original.ID); e != nil || got.Name != "需求开发" {
+		t.Fatalf("original workflow changed = %+v %v", got, e)
+	}
+
+	second, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, secondSpace, owner,
+		"/api/v1/tenants/"+f.tenant+"/spaces/"+secondSpace+"/plugins",
+		"second-space", image, documents, validate)
+	if e != nil || second.ObservedState != "installed" {
+		t.Fatalf("second space install = %+v %v", second, e)
+	}
+	all, e = f.store.Workflows(f.ctx, f.tenant)
+	if e != nil || len(all) != 4 {
+		t.Fatalf("workflows after second space = %+v %v", all, e)
+	}
+	foundThird := false
+	for _, workflow := range all {
+		if workflow.Name == "需求开发（插件 3）" {
+			foundThird = true
+		}
+	}
+	if !foundThird {
+		t.Fatalf("second space did not receive an independent name: %+v", all)
+	}
+	var independentMappings int
+	if e := f.db.QueryRow(f.ctx, `
+		SELECT count(DISTINCT i.workflow_id)
+		FROM v2_workflow_plugin_imports i
+		WHERE i.selection_id IN ($1, $2)`,
+		first.ID, second.ID).Scan(&independentMappings); e != nil {
+		t.Fatal(e)
+	}
+	if independentMappings != 2 {
+		t.Fatalf("spaces share import mappings: %d", independentMappings)
+	}
+	if _, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, secondSpace, owner,
+		"/api/v1/tenants/"+f.tenant+"/spaces/"+secondSpace+"/plugins",
+		"second-space-reapply", store.PluginInstallInput{
+			Identifier: image.Identifier, PluginVersion: "0.1.0", Version: second.Version,
+		}, documents, validate); e != nil {
+		t.Fatal(e)
+	}
+	if all, _ := f.store.Workflows(f.ctx, f.tenant); len(all) != 4 {
+		t.Fatalf("reapply duplicated a second-space workflow: %+v", all)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
@@ -23,7 +24,6 @@ var (
 	ErrPluginKindNotInstallable = errors.New("plugin kind not installable")
 	ErrPluginRuntimeManaged     = errors.New("plugin runtime managed")
 	ErrIdempotencyConflict      = errors.New("idempotency key reused")
-	ErrPluginWorkflowConflict   = errors.New("workflow plugin name conflict")
 	ErrPluginWorkflowInvalid    = errors.New("workflow plugin document invalid")
 	ErrPluginPackageCredentials = errors.New("plugin package credentials unavailable")
 )
@@ -418,6 +418,12 @@ func importWorkflowDocuments(
 	documents []pluginmarket.WorkflowDocument,
 	validate func(string) error,
 ) error {
+	// Serialize name selection in one tenant so two Spaces installing the same package cannot
+	// choose the same fallback name between the lookup and insert.
+	if _, e := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 2))`,
+		"workflow-plugin-import:"+selection.TenantID); e != nil {
+		return fmt.Errorf("lock workflow plugin imports: %w", e)
+	}
 	for _, document := range documents {
 		var importedWorkflow string
 		e := tx.QueryRow(ctx, `
@@ -440,24 +446,14 @@ func importWorkflowDocuments(
 		if e := validate(document.Graph); e != nil {
 			return fmt.Errorf("%w: %s: %w", ErrPluginWorkflowInvalid, document.Path, e)
 		}
-		var existing string
-		e = tx.QueryRow(ctx, `
-			SELECT id::text FROM v2_workflows
-			WHERE tenant_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL`,
-			selection.TenantID, document.Name).Scan(&existing)
-		switch {
-		case e == nil:
-			return fmt.Errorf("%w: %s", ErrPluginWorkflowConflict, document.Name)
-		case !errors.Is(e, pgx.ErrNoRows):
-			return fmt.Errorf("check workflow name: %w", e)
+		name, e := uniqueWorkflowPluginName(ctx, tx, selection.TenantID, document.Name)
+		if e != nil {
+			return e
 		}
 		var workflowID string
 		if e := tx.QueryRow(ctx, `
 			INSERT INTO v2_workflows (tenant_id, name) VALUES ($1, $2)
-			RETURNING id::text`, selection.TenantID, document.Name).Scan(&workflowID); e != nil {
-			if errors.Is(workflowError("create workflow", e), ErrWorkflowNameConflict) {
-				return fmt.Errorf("%w: %s", ErrPluginWorkflowConflict, document.Name)
-			}
+			RETURNING id::text`, selection.TenantID, name).Scan(&workflowID); e != nil {
 			return fmt.Errorf("create workflow: %w", e)
 		}
 		if _, e := tx.Exec(ctx, `
@@ -486,6 +482,42 @@ func importWorkflowDocuments(
 		}
 	}
 	return nil
+}
+
+// uniqueWorkflowPluginName keeps the imported definition independent from an existing workflow
+// with the same name. It preserves the document name when free; conflicting imports become
+// "（插件）", then "（插件 2）", and so on.
+func uniqueWorkflowPluginName(ctx context.Context, tx pgx.Tx, tenant, base string) (string, error) {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "工作流"
+	}
+	for attempt := 0; ; attempt++ {
+		candidate := base
+		if attempt > 0 {
+			suffix := "（插件）"
+			if attempt > 1 {
+				suffix = fmt.Sprintf("（插件 %d）", attempt)
+			}
+			maxBaseRunes := 200 - utf8.RuneCountInString(suffix)
+			runes := []rune(base)
+			if len(runes) > maxBaseRunes {
+				runes = runes[:maxBaseRunes]
+			}
+			candidate = string(runes) + suffix
+		}
+		var exists bool
+		if e := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM v2_workflows
+				WHERE tenant_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL)`,
+			tenant, candidate).Scan(&exists); e != nil {
+			return "", fmt.Errorf("check workflow name: %w", e)
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
 }
 
 // RemoveSpacePlugin records an owner's removal and settles the simplified terminal state.

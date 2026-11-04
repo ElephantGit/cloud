@@ -121,6 +121,7 @@ func (f *realSchedulerFixture) startService() {
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	models = executionruntime.WithFixtureModels(models)
 	if f.provider != nil {
 		choice := models["fixture"]
 		choice.Binding.Provider = f.provider

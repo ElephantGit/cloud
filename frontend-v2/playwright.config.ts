@@ -25,7 +25,8 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: 'go run .',
+          // Fixtures are test-only; a normal server start never exposes them in user catalogs.
+          command: 'go run . -test-fixtures',
           cwd: '../v2-server',
           url: `${server}/healthz`,
           env: {

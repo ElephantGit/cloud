@@ -11,6 +11,9 @@ task v2:dev    # PostgreSQL + v2-server（:8090）+ 前端（http://localhost:51
 task v2:e2e    # Playwright 端到端测试
 ```
 
+`task v2:dev` 不注入任何模型 provider，因此 Agent 与模型目录为空；要显示真实模型，设置
+`V2_MODEL_*` / `V2_ANTHROPIC_MODEL_*`，或使用带 DeepSeek 配置的 `task v2:deepseek`。
+
 打开页面后在登录页填预置账号的邮箱（默认 owner 是 `owner@demo.ora-space.dev`，见 `v2-server/users.json`）即可进入；没有密码，只用于演示。只改前端时也可以在本目录：
 
 ```sh
@@ -23,7 +26,7 @@ npm run e2e           # 端到端测试，自己拉起 v2-server（:8091）和�
 
 端到端测试默认连接 `task v2:db` 的 PostgreSQL（库 `ora_v2_e2e`，可用 `E2E_DATABASE_URL` 指定）。第一次运行前执行 `npx playwright install chromium`；本机已有 Chromium 时，也可以用 `PW_CHROMIUM_PATH` 指定可执行文件。
 
-默认不运行真实 Agent，和 CI 一样。设了 `V2_NODE_ASSETS_DIR`（先 `task v2:node:prepare`）后，对话的端到端测试改为在真实 Node 和 Agent 上跑 fixture 模型：新建对话等到真实回复，停止另一个对话后只读，刷新后历史一致；工作流运行的用例改为断言两个 Agent 串起来的运行成功，并截三张图（结果、全图、节点会话）到测试输出目录。没有 Node 资源时，工作流运行的用例断言第一个 Agent 节点因没有 Agent 可用而失败。项目第一次启动 Node 要装插件，整条用例约一两分钟。`V2_DATA_DIR` 要用短路径（如 `mktemp -d /tmp/v2e2e.XXXX`），否则 Node 的 Unix socket 路径会超长；也别和正在运行的 `task v2:dev` 共用同一个数据目录。
+默认不运行真实 Agent，和 CI 一样。Playwright 拉起 v2-server 时传 `-test-fixtures`，fixture 只存在于测试启动的 v2-server 进程，正常启动不会出现在用户目录中。设了 `V2_NODE_ASSETS_DIR`（先 `task v2:node:prepare`）后，对话的端到端测试改为在真实 Node 和 Agent 上跑 fixture 模型：新建对话等到真实回复，停止另一个对话后只读，刷新后历史一致；工作流运行的用例改为断言两个 Agent 串起来的运行成功，并截三张图（结果、全图、节点会话）到测试输出目录。没有 Node 资源时，工作流运行的用例断言第一个 Agent 节点因没有 Agent 可用而失败。项目第一次启动 Node 要装插件，整条用例约一两分钟。`V2_DATA_DIR` 要用短路径（如 `mktemp -d /tmp/v2e2e.XXXX`），否则 Node 的 Unix socket 路径会超长；也别和正在运行的 `task v2:dev` 共用同一个数据目录。
 
 ## 结构
 

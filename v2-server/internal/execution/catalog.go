@@ -28,8 +28,9 @@ type Executor struct {
 	Model         Model
 }
 
-// Catalog supplies configured choices, including fixture entries, from the shared module.
-// It cannot invent runnable entries for unavailable artifacts or disclose provider credentials.
+// Catalog supplies configured choices from the shared module. Test entry points may explicitly
+// add fixture choices, but normal callers expose only real deployment providers. It cannot
+// invent runnable entries for unavailable artifacts or disclose provider credentials.
 type Catalog interface {
 	ListExecutors(context.Context, Scope) ([]Executor, error)
 	ListModels(context.Context, Scope) ([]Model, error)

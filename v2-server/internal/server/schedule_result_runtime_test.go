@@ -134,6 +134,7 @@ func TestScheduleResultRuntimeProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	models = executionruntime.WithFixtureModels(models)
 	var driver *agentruntime.Driver
 	if mode == "agent" {
 		if phase == "execute" {

@@ -1,3 +1,4 @@
+import { listTaskExecutors } from '../collaboration/tasks-api/generated'
 import { useEffect, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
 import { Check, Clock3, Pause, Pencil, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react'
@@ -8,7 +9,7 @@ import { listScheduleHistory, getScheduleHistoryItem, getScheduleExecutionResult
 import { runScheduleNow, cancelScheduleRun } from './api/actions/generated'
 import type { ScheduleActionReceipt } from './api/actions/generated'
 import type { ScheduleResources } from './api/generated'
-import { type Catalog, formatTime, isPersonalTarget, isWorkflowTarget, modelLabel, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
+import { type PersonalTarget, type Catalog, formatTime, isPersonalTarget, isWorkflowTarget, modelLabel, nextTimes, projectName, ruleText, type Run, type Task } from './schedule-model'
 import { compareOccurrences, compareTimestampsDesc, completeResult, errorOccurrenceId, finishManualRequest, isDeletedWorkflowRun, isTerminalActionRejection, manualRequestKey, occurrenceTaskPath, occurrenceWorkflowRun, reasonText, runLabels, runnable, scheduleError } from './runtime'
 
 const workflowRunLabels: Record<string,string> = { pending: '未开始', running: '运行中', awaitingInput: '等待输入', succeeded: '成功', failed: '失败', cancelled: '已取消' }
@@ -60,7 +61,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     {target.kind==='chat'?<p className="sp-prompt-preview">{target.prompt}</p>:isPersonalTarget(target)?<Link to={'/collaboration/tasks/'+target.taskId}>{data.tasks?.find(t=>t.id===target.taskId)?.title??'查看原任务'}</Link>:isWorkflowTarget(target)?<p className="sp-prompt-preview">{target.input||'没有初始输入'}</p>:<p className="sp-helper">此类型的真实目录和执行入口尚未就绪，已有配置已保留。</p>}
     <div className="sp-config-heading">运行环境</div><dl className="sp-key-values">
      <div><dt>关联项目</dt><dd>{projectName(task.projectId,data)}</dd></div>
-     {isPersonalTarget(target)&&<><div><dt>执行器</dt><dd>{target.executorId}</dd></div>{target.note&&<div><dt>补充说明</dt><dd>{target.note}</dd></div>}</>}
+     {isPersonalTarget(target)&&<><PersonalExecutor target={target} tenantId={tenantId}/>{target.note&&<div><dt>补充说明</dt><dd>{target.note}</dd></div>}</>}
      {isWorkflowTarget(target)&&<div><dt>工作流</dt><dd>{!workflow?'原工作流暂不可用':workflow.snapshotId===target.snapshotId?`${workflow.name}（${workflow.version}）`:`${workflow.name}（固定的旧版本；生效版本已是 ${workflow.version}，编辑保存后改用）`}</dd></div>}
      {target.kind==='chat'&&<><div><dt>Agent</dt><dd>{!task.projectId?'无需 Agent':targetAgent?.name??(target.agent?'原 Agent 暂不可用':'尚未选择 Agent')}</dd></div><div><dt>模型</dt><dd>{target.model?modelLabel(target,data)||'原模型暂不可用':'尚未选择模型'}</dd></div></>}
      <div><dt>执行频率</dt><dd>{ruleText(task.rule)}</dd></div><div><dt>时区</dt><dd>{task.rule.timezone}</dd></div>
@@ -97,4 +98,13 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
   </div>
   <footer className="sp-detail-footer"><Button size="sm" disabled={!available||busy||occupied} onClick={()=>{setNotice('');run.mutate()}}><Play data-icon="inline-start"/>{run.isPending?'正在提交…':run.isError&&!isTerminalActionRejection(run.error)?'重试运行请求':'立即运行'}</Button><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={busy||toggling} onClick={onToggle}>{task.enabled?<Pause data-icon="inline-start"/>:<Play data-icon="inline-start"/>}{task.enabled?'暂停任务':'恢复任务'}</Button></footer>
  </div>
+}
+
+/** Old plans resolve their exact executor; new plans retain the saved names. */
+function PersonalExecutor({target,tenantId}:{target:PersonalTarget;tenantId:string}){
+ const saved=!!target.agentName && !!target.modelName
+ const catalog=useQuery({queryKey:['task-executors',tenantId,target.taskId],queryFn:({signal})=>listTaskExecutors(tenantId,target.taskId,undefined,signal),enabled:!saved&&!!tenantId,retry:false})
+ const executor=catalog.data?.items.find(x=>x.id===target.executorId)
+ const missing=catalog.isPending&&!saved?'正在读取名称…':'名称暂不可用'
+ return <><div><dt>Agent</dt><dd>{target.agentName||executor?.agentName||missing}</dd></div><div><dt>模型</dt><dd>{target.modelName||executor?.modelName||missing}</dd></div></>
 }

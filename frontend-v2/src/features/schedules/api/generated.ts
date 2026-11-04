@@ -53,6 +53,10 @@ export interface ScheduleTaskTarget {
   taskId: string;
   executorId: string;
   note: string;
+  /** Server-resolved Agent name captured when saving. */
+  agentName?: string;
+  /** Server-resolved model name captured when saving. */
+  modelName?: string;
 }
 
 export type ScheduleWorkflowTargetKind = typeof ScheduleWorkflowTargetKind[keyof typeof ScheduleWorkflowTargetKind];

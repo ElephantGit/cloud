@@ -74,6 +74,8 @@ test('a scheduled personal task opens the exact run on its original collaboratio
   await dialog.getByLabel('补充说明').fill('检查项目的 README。')
   await page.screenshot({path:test.info().outputPath('personal-schedule.png'),fullPage:true})
   await dialog.getByRole('button',{name:'创建并启用'}).click()
+  await expect(dialog.getByText('OpenCode',{exact:true})).toBeVisible()
+  await expect(dialog.getByText('Fixture',{exact:true})).toBeVisible()
   await dialog.getByRole('button',{name:'立即运行'}).click()
   const link=dialog.getByRole('link',{name:'查看本次执行'})
   await expect(link).toBeVisible({timeout:180_000})

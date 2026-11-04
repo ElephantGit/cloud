@@ -1017,6 +1017,14 @@
           },
           "note": {
             "type": "string"
+          },
+          "agentName": {
+            "type": "string",
+            "description": "Server-resolved Agent name captured when saving."
+          },
+          "modelName": {
+            "type": "string",
+            "description": "Server-resolved model name captured when saving."
           }
         }
       }

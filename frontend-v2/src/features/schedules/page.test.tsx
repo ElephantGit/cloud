@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Page from './page'
+import * as tasksApi from '../collaboration/tasks-api/generated'
 import * as api from './api/generated'
 import * as actions from './api/actions/generated'
 import * as history from './api/history/generated'
@@ -259,4 +260,23 @@ it('opens the run named by the selected occurrence even after the plan target ch
  mount();const dialog=await detail();await userEvent.click(within(dialog).getByRole('button',{name:'运行历史'}))
  expect(await within(dialog).findByRole('link',{name:'查看本次执行'})).toHaveAttribute('href','/collaboration/tasks/original?run=first')
  expect(history.getScheduleExecutionResult).not.toHaveBeenCalled()
+})
+
+it('shows saved Agent and model names without exposing executor IDs',async()=>{
+ vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[{...item,target:{kind:'task',taskId:'source',executorId:'internal-executor',note:'',agentName:'OpenCode',modelName:'Fixture'}}],nextCursor:''})
+ mount();const dialog=await detail()
+ expect(within(dialog).getByText('OpenCode',{exact:true})).toBeVisible()
+ expect(within(dialog).getByText('Fixture',{exact:true})).toBeVisible()
+ expect(within(dialog).queryByText('internal-executor')).not.toBeInTheDocument()
+})
+
+it('resolves an old plan by its exact executor and does not guess from the first option',async()=>{
+ vi.mocked(api.listScheduleConfigs).mockResolvedValue({items:[{...item,target:{kind:'task',taskId:'source',executorId:'selected',note:''}}],nextCursor:''})
+ vi.mocked(tasksApi.listTaskExecutors).mockResolvedValue({items:[
+ {id:'other',name:'Other',agentId:'other',agentName:'Wrong Agent',modelId:'wrong',modelName:'Wrong Model'},
+ {id:'selected',name:'OpenCode / Fixture',agentId:'opencode',agentName:'OpenCode',modelId:'fixture',modelName:'Fixture'}]})
+ mount();const dialog=await detail()
+ expect(await within(dialog).findByText('OpenCode',{exact:true})).toBeVisible()
+ expect(within(dialog).getByText('Fixture',{exact:true})).toBeVisible()
+ expect(within(dialog).queryByText('Wrong Agent')).not.toBeInTheDocument()
 })

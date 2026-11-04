@@ -32,7 +32,7 @@ func testPersonalTask(t *testing.T, lost bool) {
 	var called execution.Caller
 	starts := 0
 	f.catalog.ListExecutorsFunc = func(context.Context, execution.Scope) ([]execution.Executor, error) {
-		return []execution.Executor{{ID: "fixture", Name: "fixture"}}, nil
+		return []execution.Executor{{ID: "fixture", Name: "fixture", AgentName: "OpenCode", Model: execution.Model{Name: "Fixture"}}}, nil
 	}
 	f.catalog.StartFunc = func(_ context.Context, s execution.Scope, in execution.StartRequest) (execution.Ref, error) {
 		if s != scope || in.Target.ProjectID != src.ProjectID || in.ExecutorID != "fixture" {
@@ -70,7 +70,7 @@ func testPersonalTask(t *testing.T, lost bool) {
 	opts := f.options(false)
 	opts.TaskRuns = host
 	http := f.client(t, opts)
-	cfg := f.config(src.ProjectID, map[string]any{"kind": "task", "taskId": src.ID, "executorId": "fixture", "note": "核对附件"})
+	cfg := f.config(src.ProjectID, map[string]any{"kind": "task", "taskId": src.ID, "executorId": "fixture", "note": "核对附件", "agentName": "forged", "modelName": "forged"})
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
 	cfg["rule"] = map[string]any{"kind": "once", "time": due.Format("15:04"), "date": due.Format("2006-01-02"), "timezone": "UTC", "days": []int{}, "hours": 1}
 	saved := http("POST", "/schedule-configs", cfg)
@@ -80,6 +80,10 @@ func testPersonalTask(t *testing.T, lost bool) {
 	var plan store.ScheduleConfig
 	if e := json.Unmarshal(saved.Body.Bytes(), &plan); e != nil {
 		t.Fatal(e)
+	}
+	var savedTarget taskrun.ScheduledTarget
+	if e := json.Unmarshal(plan.Target, &savedTarget); e != nil || savedTarget.AgentName != "OpenCode" || savedTarget.ModelName != "Fixture" {
+		t.Fatalf("saved labels: %+v %v", savedTarget, e)
 	}
 	now := due.Add(-time.Minute)
 	coord, e := server.NewScheduleCoordinator(f.db, opts, func() time.Time { return now })

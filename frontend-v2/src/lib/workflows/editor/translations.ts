@@ -449,7 +449,7 @@ export const workflowEditorTranslations = {
     "settings.workflow.mcp.loading": "正在加载已安装的 MCP…",
     "settings.workflow.mcp.loadError": "无法加载已安装的 MCP，已有配置已保留。",
     "settings.workflow.mcp.retry": "重新加载 MCP",
-    "settings.workflow.mcp.installHint": "请先在插件设置中安装 MCP 插件。",
+    "settings.workflow.mcp.installHint": "当前 v2 暂不支持 MCP 执行；请禁用已有绑定后运行。",
     "settings.workflow.mcp.missing": "插件未安装或不可用",
     "settings.workflow.mcp.configurationIncomplete": "插件配置未完成",
     "settings.workflow.mcp.configurationUnavailable": "无法读取插件配置",
@@ -1044,7 +1044,7 @@ export const workflowEditorTranslations = {
       "Could not load installed MCPs. Existing bindings are preserved.",
     "settings.workflow.mcp.retry": "Reload MCPs",
     "settings.workflow.mcp.installHint":
-      "Install an MCP plugin in plugin settings first.",
+      "MCP execution is not supported in v2 yet. Disable existing bindings before running.",
     "settings.workflow.mcp.missing": "Plugin is not installed or unavailable",
     "settings.workflow.mcp.configurationIncomplete":
       "Plugin configuration is incomplete",

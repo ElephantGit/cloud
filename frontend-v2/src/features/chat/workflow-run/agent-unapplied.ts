@@ -25,7 +25,6 @@ export function unappliedAgentSettings(
   const normalized = normalizeWorkflowAgentConfig(config)
   const found = new Set(recorded)
   if (normalized.roleId.trim() !== '') found.add('role')
-  if (normalized.skills.some((skill) => skill.enabled)) found.add('skill')
   if (normalized.mcps.some((mcp) => mcp.enabled)) found.add('mcp')
   if (normalized.interactive === true) found.add('interactive')
   if (resolveAgentRetryDisplay(normalized).kind === 'enabled') found.add('retry')

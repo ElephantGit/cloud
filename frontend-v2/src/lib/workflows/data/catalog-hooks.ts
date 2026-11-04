@@ -39,7 +39,7 @@ export function availableSkills(skills: readonly Skill[]): Skill[] {
 export function useSkills() {
   const client = useContractsClient();
   return useQuery({
-    queryKey: catalogKeys.skills,
+    queryKey: [...catalogKeys.skills, client.tenantId],
     queryFn: () => client.skill.list({}).then((response) => response.skills),
   });
 }
@@ -48,7 +48,7 @@ export function useSkills() {
 export function useInstalledPlugins() {
   const client = useContractsClient();
   return useQuery({
-    queryKey: catalogKeys.plugins,
+    queryKey: [...catalogKeys.plugins, client.tenantId],
     queryFn: () =>
       client.plugin.listInstalled({}).then((response) => response.plugins),
   });

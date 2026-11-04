@@ -202,7 +202,10 @@ func (h *handler) scheduleConfigs(w http.ResponseWriter, r *http.Request, u stor
 				fault(w, 400, "invalid_target")
 				return
 			}
-			err = h.opts.TaskRuns.ValidateScheduled(r.Context(), execution.Scope{TenantID: tenant, UserID: u.ID}, t, in.ProjectID)
+			t, err = h.opts.TaskRuns.ResolveScheduled(r.Context(), execution.Scope{TenantID: tenant, UserID: u.ID}, t, in.ProjectID)
+			if err == nil {
+				in.Target, err = json.Marshal(t)
+			}
 			if errors.Is(err, taskrun.ErrNotAssignee) || errors.Is(err, taskrun.ErrScheduleTaskChanged) || errors.Is(err, taskrun.ErrNoExecutor) {
 				fault(w, 400, "task_binding_invalid")
 				return

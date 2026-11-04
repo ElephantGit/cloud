@@ -5,7 +5,7 @@ export type AgentModel = { id: string; name: string }
 export type AgentChoice = { id: string; name: string; version: string; models: AgentModel[] }
 /** A workflow run in the schedule's project: the published snapshot frozen at save, and its kickoff input. */
 export type WorkflowTarget = { kind: 'workflow'; workflowId: string; snapshotId: string; input: string }
-export type PersonalTarget = { kind: 'task'; taskId: string; executorId: string; note: string }
+export type PersonalTarget = { kind: 'task'; agentName?:string;modelName?:string;taskId: string; executorId: string; note: string }
 export function isPersonalTarget(t: Target): t is PersonalTarget {
   return t.kind === 'task' && typeof t.taskId === 'string' && !!t.taskId && typeof t.executorId === 'string' && !!t.executorId && typeof t.note === 'string'
 }

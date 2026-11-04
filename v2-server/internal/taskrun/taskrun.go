@@ -189,6 +189,8 @@ type ScheduledTarget struct {
 	Kind       string `json:"kind"`
 	TaskID     string `json:"taskId"`
 	ExecutorID string `json:"executorId"`
+	AgentName  string `json:"agentName,omitempty"`
+	ModelName  string `json:"modelName,omitempty"`
 	Note       string `json:"note"`
 }
 
@@ -211,14 +213,16 @@ func (h *Host) scheduledTask(ctx context.Context, scope execution.Scope, target 
 	return task, nil
 }
 
-// ValidateScheduled checks the same binding used at trigger time.
-func (h *Host) ValidateScheduled(ctx context.Context, scope execution.Scope, target ScheduledTarget, project string) error {
+// ResolveScheduled validates the binding and freezes catalog labels at save time.
+func (h *Host) ResolveScheduled(ctx context.Context, scope execution.Scope, target ScheduledTarget, project string) (ScheduledTarget, error) {
 	task, err := h.scheduledTask(ctx, scope, target, project)
 	if err != nil {
-		return err
+		return target, err
 	}
-	_, err = h.executor(ctx, scope, task, target.ExecutorID)
-	return err
+	executor, err := h.executor(ctx, scope, task, target.ExecutorID)
+	target.AgentName = executor.AgentName
+	target.ModelName = executor.Model.Name
+	return target, err
 }
 
 // StartScheduled serializes with manual starts. Replays retain their accepted identity.

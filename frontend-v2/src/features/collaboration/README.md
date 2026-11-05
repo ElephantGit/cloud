@@ -36,6 +36,6 @@
 
 ## 接口与检查
 
-小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `src/lib/squads-api/generated.ts`（协作页与设置共用）；任务（含运行、评论、时间线与拆分）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `tasks-api/generated.ts`。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
+小队与任务接口都不在正式 Cloud 契约里：小队由 `v2-server/squads.openapi.json` 描述，用 `npm run api:generate:squads` 生成 `src/lib/squads-api/generated.ts`（协作页与设置共用）；任务（含运行、评论、时间线与拆分）由 `v2-server/tasks.openapi.json` 描述；@ 目录是正式契约的 `collaboration/targets`，用 `src/api` 的生成客户端，用 `npm run api:generate:tasks` 生成 `src/lib/tasks-api/generated.ts`（旧 feature 路径保留转导出）。两个客户端分目录存放，各自的 Orval 配置会清空自己的输出目录。任务表单用的项目列表来自 `src/lib/projects-api`（聊天页与协作页共用，因此放在 `src/lib/`），由 `api:generate:chat` 生成。`npm run check` 会先做 `api:check:squads`、`api:check:tasks`、`api:check:chat`，确认生成结果没有漂移。会话与租户继续走正式生成客户端。
 
 `npm run check` 运行类型检查、lint、单元测试和构建；`npm run e2e` 用真实 v2-server 与 PostgreSQL 跑建任务、指派、推进、评论、看板，以及在设置 / 小队里建队、增删成员、归档的流程；设了 `V2_NODE_ASSETS_DIR` 时另跑真实 Agent 执行任务、另一个成员旁观与评论、发起人追问和停止，并通过 `E2E_DATABASE_URL` 与 `PW_CHROMIUM_PATH` 指定数据库和浏览器。

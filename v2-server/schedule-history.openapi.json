@@ -678,6 +678,9 @@
           "snapshot": {
             "type": "object",
             "additionalProperties": true
+          },
+          "waitingForInput": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

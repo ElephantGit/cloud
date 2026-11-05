@@ -14,6 +14,7 @@ import (
 // keys so persisted runs stay readable by the same projections. v2 freezes no Skill
 // materialization (per-node Skills are not applied), so that receipt is always empty.
 type RunPayload struct {
+	DemoSeed                    bool                            `json:"demoSeed,omitempty"`
 	Locale                      string                          `json:"locale"`
 	SkillMaterialization        skillReceipt                    `json:"skillMaterialization"`
 	StartNodeID                 *string                         `json:"startNodeId"`
@@ -114,7 +115,7 @@ func (p *RunPayload) Complete(nodeID, kind string, iteration *int, output *strin
 				p.ConditionDecisions[nodeID] = *output
 			}
 		}
-	case "agent":
+	case "agent", "form", "createTasks":
 		if structured != nil {
 			if _, err := p.VariablePool.write(nodeID+".structured_output", nodeID, structured); err != nil {
 				return err

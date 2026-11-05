@@ -4,12 +4,15 @@ package workflowforms
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
 
 // MaxRows bounds one review and its eventual task batch.
 const MaxRows = 100
+
+var memberID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Field describes an author-configured column. Source values remain server-owned.
 type Field struct {
@@ -131,7 +134,7 @@ func ValidateAnswers(fields []Field, findings []Finding, answers []Answer, final
 			return invalid(a.Key, "decision", "unknown decision")
 		}
 		if a.Assignee != nil {
-			if strings.TrimSpace(a.Assignee.ID) == "" {
+			if !memberID.MatchString(a.Assignee.ID) {
 				return invalid(a.Key, "assignee", "identifier required")
 			}
 			switch a.Assignee.Type {

@@ -6,7 +6,7 @@ func TestFrozenReviewBoundary(t *testing.T) {
 	fields := []Field{{Name: "severity", Label: "严重程度", Type: "select", Required: true, Options: []string{"high", "low"}}, {Name: "evidence", Label: "证据", Type: "readonly"}}
 	rows := []Finding{{Key: "disk:root", Title: "磁盘占用过高"}}
 	valid := func() []Answer {
-		return []Answer{{Key: "disk:root", Decision: "confirmed", Assignee: &Assignee{Type: "human", ID: "member"}, Values: map[string]string{"severity": "high"}}}
+		return []Answer{{Key: "disk:root", Decision: "confirmed", Assignee: &Assignee{Type: "human", ID: "00000000-0000-0000-0000-000000000001"}, Values: map[string]string{"severity": "high"}}}
 	}
 	for _, tc := range []struct {
 		name      string

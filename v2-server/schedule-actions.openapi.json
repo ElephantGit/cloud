@@ -328,6 +328,9 @@
           "scheduledAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "waitingForInput": {
+            "type": "boolean"
           }
         }
       },

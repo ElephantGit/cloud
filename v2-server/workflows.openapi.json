@@ -6,6 +6,174 @@
     "description": "Desktop's workflow definition contract served over HTTP. A changed document is saved as the draft and only publish freezes an immutable version; rollback and activate answer the draft they synchronized."
   },
   "paths": {
+    "/api/v2/tenants/{tid}/workflow-runs/{rid}/form": {
+      "get": {
+        "operationId": "getWorkflowForm",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveWorkflowFormDraft",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowFormWrite"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "submitWorkflowForm",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowFormWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/workflow-runs/{rid}/form/retry": {
+      "post": {
+        "operationId": "retryWorkflowFormTasks",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/tenants/{tid}/workflows": {
       "get": {
         "operationId": "listWorkflows",
@@ -448,6 +616,100 @@
       }
     },
     "schemas": {
+      "WorkflowForm": {
+        "type": "object",
+        "required": [
+          "id",
+          "runId",
+          "nodeId",
+          "reviewerId",
+          "config",
+          "findings",
+          "report",
+          "answers",
+          "status",
+          "version",
+          "submittedBy",
+          "results",
+          "canEdit"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "reviewerId": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAt": {"type":"string","nullable":true,"format":"date-time"},
+          "existingTasks": {"type":"array","items":{"type":"object","additionalProperties":true}},
+          "version": {
+            "type": "integer"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "WorkflowFormWrite": {
+        "type": "object",
+        "required": [
+          "version",
+          "answers"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
       "WorkflowError": {
         "type": "object",
         "required": ["code", "params", "requestId"],

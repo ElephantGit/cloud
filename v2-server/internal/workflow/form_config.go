@@ -39,6 +39,12 @@ func validateFormPlacement(d *document, scopes map[string]*scope) error {
 		}
 	}
 	for _, n := range root.nodes {
+		if n.owner != "" {
+			continue
+		}
+		if form != nil && n.id != form.id && !root.ancestors(form.id)[n.id] && !root.ancestors(n.id)[form.id] {
+			return invalid("invalid_form", n.id, "edges", "all root work must precede or follow the form")
+		}
 		if n.kind == "createTasks" {
 			id := rootNodeView(n).TaskFormNode()
 			if form == nil || id != form.id || !root.ancestors(n.id)[form.id] {

@@ -99,6 +99,8 @@ func NewPool(g *Graph) VariablePool {
 					}
 				}
 			}
+		case "form", "createTasks":
+			p.Declare(n.id+".structured_output", "object", n.id)
 		case "agent":
 			if n.structured {
 				p.Declare(n.id+".structured_output", "object", n.id)

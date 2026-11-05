@@ -63,6 +63,7 @@ export interface Occurrence {
   version: number;
   released: boolean;
   snapshot: OccurrenceSnapshot;
+  waitingForInput?: boolean;
 }
 
 export type ExecutionResultMode = typeof ExecutionResultMode[keyof typeof ExecutionResultMode];

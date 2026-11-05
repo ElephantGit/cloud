@@ -47,7 +47,7 @@ HTTP 错误码由适配层映射；诊断措辞不承诺逐字匹配 desktop。
 
 Loop 的每一轮是独立 scope，调度使用该轮的变量池和 Condition 决策；Iteration 的成员共享根 scope，以数组下标隔离节点记录与分支决策。
 `ContainerRepository.AdvanceContainer` 将轮次 ledger、旧 scope 关闭、下一轮入口或父节点终态一次提交。LoopExit 先提交冻结输出和取消事实，再通过 `LoopExitDispatcher` 异步排空执行中的 session；清理回调持有运行门禁核对同一个父节点和 scope 后结算。
-持久化仍由 store 实现，host 仍负责每次运行内的 Agent 串行执行。服务重启只中断，不恢复调度或重放 Agent。
+持久化仍由 store 实现，host 仍负责每次运行内的 Agent 串行执行。普通 Agent 执行在服务重启时中断，不重放。根流程的冻结 form 及提交后的 createTasks/output 确定性步骤可恢复，详见 ../workflowforms/README.md。
 
 ```sh
 go test -race ./internal/workflow

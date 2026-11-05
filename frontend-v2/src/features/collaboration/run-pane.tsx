@@ -1,4 +1,5 @@
-import { Bot, LoaderCircle } from 'lucide-react'
+import { Bot } from 'lucide-react'
+import { FirstTurnWait } from '@/components/agent-thread/preparation'
 import { Thread } from '@/components/agent-thread/thread'
 import { formatTime } from './task-model'
 import { useRunSession } from './run-session'
@@ -23,7 +24,7 @@ export function RunPane({ tenantId, taskId, runs, selected, onSelect }: {
   if (!selected) {
     return <div className="mc-run-empty">
       <Bot size={22} aria-hidden="true" />
-      <p>还没有运行。把任务指派给 Agent 后点「开始处理」，或在下面的输入框 @ 它；派给人的任务由负责人点「用 Agent 处理」。</p>
+      <p>还没有运行。把任务指派给 Agent 后点「开始处理」，或在下面的输入框 @ 它；派给人或小队的任务由负责人或队员点「用 Agent 处理」。</p>
     </div>
   }
   return <div className="mc-run-pane">
@@ -52,11 +53,8 @@ function RunThread({ tenantId, taskId, run }: { tenantId: string; taskId: string
   const { conversation, refused } = useRunSession(tenantId, taskId, run.id)
   if (refused) return <p role="alert" className="mc-run-note">这次运行的过程读不到了，只能看到上面的结果。</p>
   if (!conversation || conversation.turns.length === 0) {
-    return <p role="status" className="mc-run-note">
-      {run.state === 'running'
-        ? <><LoaderCircle className="mc-spin" size={14} />正在准备 Agent：项目首次使用某个 Agent 时要先安装，约需一分钟。</>
-        : '这次运行没有留下过程记录。'}
-    </p>
+    if (run.state === 'running') return <div role="status" className="mc-run-thread"><FirstTurnWait preparation={conversation?.preparation} /></div>
+    return <p role="status" className="mc-run-note">这次运行没有留下过程记录。</p>
   }
   return <div className="mc-run-thread"><Thread conversation={conversation} onAnswer={noAnswer} /></div>
 }

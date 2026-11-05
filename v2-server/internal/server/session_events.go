@@ -103,9 +103,9 @@ func relaySessionEvents(w http.ResponseWriter, r *http.Request, stream execution
 				res := resultOf(*ev.Result)
 				out.Result = &res
 			}
-			if ev.Kind == execution.EventTurnEnded {
-				// The prompt only lets a page show a turn no history snapshot holds; without it the
-				// event is still the turn's authoritative result, so the stream goes on.
+			if ev.Kind == execution.EventTurnEnded || ev.Kind == execution.EventPreparation {
+				// The prompt only lets a page show a turn no history snapshot holds yet; without it
+				// the event still stands, so the stream goes on.
 				if text, e := prompt(ctx, ev.Ref.SessionID, ev.Ref.TurnID); e == nil {
 					out.Prompt = text
 				} else if ctx.Err() == nil {

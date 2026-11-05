@@ -391,6 +391,17 @@ export interface TaskDecompositionList {
   items: TaskDecomposition[];
 }
 
+export interface MySquadTask {
+  taskId: string;
+  squadId: string;
+  squadName: string;
+  waiting: boolean;
+}
+
+export interface MySquadTaskList {
+  items: MySquadTask[];
+}
+
 export type StreamTaskRunEventsParams = {
 /**
  * Resume after this sequence; Last-Event-ID takes precedence.
@@ -1620,6 +1631,96 @@ export function useListPendingMentions<TData = Awaited<ReturnType<typeof listPen
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListPendingMentionsQueryOptions(tid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+/**
+ * The tasks assigned to squads the caller belongs to. `waiting` marks an open task someone else created that the caller has neither commented on nor started a run on.
+ */
+export const listMySquadTasks = (
+    tid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<MySquadTaskList>(
+      {url: `/api/v2/tenants/${tid}/my-squad-tasks`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListMySquadTasksQueryKey = (tid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/my-squad-tasks`
+    ] as const;
+    }
+
+
+export const getListMySquadTasksQueryOptions = <TData = Awaited<ReturnType<typeof listMySquadTasks>>, TError = ErrorType<TaskError>>(tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMySquadTasksQueryKey(tid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMySquadTasks>>> = ({ signal }) => listMySquadTasks(tid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMySquadTasksQueryResult = NonNullable<Awaited<ReturnType<typeof listMySquadTasks>>>
+export type ListMySquadTasksQueryError = ErrorType<TaskError>
+
+
+export function useListMySquadTasks<TData = Awaited<ReturnType<typeof listMySquadTasks>>, TError = ErrorType<TaskError>>(
+ tid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMySquadTasks>>,
+          TError,
+          Awaited<ReturnType<typeof listMySquadTasks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMySquadTasks<TData = Awaited<ReturnType<typeof listMySquadTasks>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMySquadTasks>>,
+          TError,
+          Awaited<ReturnType<typeof listMySquadTasks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMySquadTasks<TData = Awaited<ReturnType<typeof listMySquadTasks>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListMySquadTasks<TData = Awaited<ReturnType<typeof listMySquadTasks>>, TError = ErrorType<TaskError>>(
+ tid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySquadTasks>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListMySquadTasksQueryOptions(tid,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

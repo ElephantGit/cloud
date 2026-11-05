@@ -8,6 +8,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import type { SquadDetail } from '@/lib/squads-api/generated'
 import { pluginLabel } from '@/lib/plugin-runtime'
+import { InviteForm } from './invite-form'
 import { agentCandidatesFor, candidatesFor, matchingMembers, matchingPlugins } from './member-model'
 
 /** Workspace roles as people read them; unknown roles stay as the server sent them. */
@@ -16,11 +17,14 @@ const ROLE_LABELS: Record<string, string> = { owner: '管理员', admin: '管理
 /**
  * Picks an existing workspace member or an installed Space Agent to add to one squad. Both lists
  * come from contract routes, so the picker can never offer an account outside this workspace or an
- * agent that is not installed in its space.
+ * agent that is not installed in its space. The workspace owner can also invite someone new, who
+ * joins this squad directly.
  */
-export function MemberPicker({ squad, tenantId, adding, error, onAdd, onAddAgent, onClose }: {
+export function MemberPicker({ squad, tenantId, canInvite, adding, error, onAdd, onAddAgent, onClose }: {
   squad: SquadDetail
   tenantId: string
+  /** The caller is the workspace owner, the only one who may invite. */
+  canInvite: boolean
   /** A member is being added right now. */
   adding: boolean
   /** Error from the last add attempt. */
@@ -40,6 +44,7 @@ export function MemberPicker({ squad, tenantId, adding, error, onAdd, onAddAgent
 
   return <div className="mc-picker">
     <div className="mc-picker-scroll">
+      {canInvite && <InviteForm tenantId={tenantId} squadId={squad.id} />}
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="mc-member-search">搜索工作区成员</FieldLabel>
@@ -58,7 +63,7 @@ export function MemberPicker({ squad, tenantId, adding, error, onAdd, onAddAgent
           : roster.isError
             ? <p role="alert" className="mc-empty-line">工作区成员加载失败，请关闭后重试。</p>
             : candidates.length === 0
-              ? <p className="mc-empty-line">{query ? '没有匹配的成员。' : '工作区里没有可以加入的成员；先把人加入工作区。'}</p>
+              ? <p className="mc-empty-line">{query ? '没有匹配的成员。' : '工作区里没有可以加入的成员。'}</p>
               : <ul className="mc-candidates">{candidates.map(member => <li key={member.id}>
                 <span className="mc-member-name">{member.displayName}<em>{ROLE_LABELS[member.role] ?? member.role}</em></span>
                 <Button type="button" variant="outline" size="sm" disabled={adding} onClick={() => onAdd(member, role)}>加入</Button>

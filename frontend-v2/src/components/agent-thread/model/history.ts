@@ -15,6 +15,8 @@ export interface SessionView {
   thoughtTimings: ThoughtTimings
   /** What the first turn waited for; absent until the first stage starts. */
   preparation?: SessionPreparation
+  /** What the first turn was asked, shown from preparation until its history arrives. */
+  preparingPrompt?: string
   /** The snapshot left out process detail; the answers themselves are judged by `results`. */
   incomplete: boolean
   /** One per ended turn, in turn order. */
@@ -49,7 +51,7 @@ export function applySessionEvent(base: SessionView, event: ChatEvent): SessionV
     case 'session_ended':
       return { ...view, ended: true }
     case 'preparation':
-      return event.preparation ? { ...view, preparation: event.preparation } : view
+      return event.preparation ? { ...view, preparation: event.preparation, preparingPrompt: event.prompt ?? view.preparingPrompt } : view
     default:
       return view
   }
@@ -151,6 +153,11 @@ function appendSession(base: Conversation, session: SessionView): Conversation {
     const at = Date.now()
     conversation = applyEvent(conversation, { type: 'prompt', turnId: `${session.id}:turn-${i}`, text: session.prompts[i] ?? '' }, at)
     conversation = applyEvent(conversation, endOf(session.results[i]), at)
+  }
+  // The history holds the first turn only once its Agent has started; until then it is still asked.
+  if (conversation.turns.length === startTurns && !session.ended && session.preparingPrompt !== undefined) {
+    const at = timeOf(session.preparation?.stages[0]?.startedAt)
+    conversation = applyEvent(conversation, { type: 'prompt', turnId: `${session.id}:preparing`, text: session.preparingPrompt }, at)
   }
   return markFailures(conversation, startTurns, session.results)
 }

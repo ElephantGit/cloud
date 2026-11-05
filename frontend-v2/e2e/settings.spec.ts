@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { ownerName, signIn, signInAsInvitedMember } from './login.ts'
+import { signIn, signInAsInvitedMember } from './login.ts'
 
 async function login(page: Page, path: string, email?: string) {
   await page.goto(path)
@@ -18,7 +18,6 @@ async function resetScroll(page: Page) {
   })
 }
 const titles = [
-  ['members', '成员'],
   ['squads', '小队'],
   ['roles', '角色'],
   ['model-connections', '模型连接'],
@@ -68,7 +67,7 @@ test('settings subroutes, refresh, history and the existing shell remain navigab
 }) => {
   await login(page, '/settings/plugins')
   await page.getByRole('link', { name: '设置', exact: true }).click()
-  await expect(page).toHaveURL(/\/settings\/members$/)
+  await expect(page).toHaveURL(/\/settings\/squads$/)
   for (const [path, title] of titles) {
     await page
       .getByRole('navigation', { name: '设置导航' })
@@ -695,23 +694,6 @@ for (const width of [768, 375]) {
     }
   })
 }
-
-test('the roster comes from the server and a member sees no invitation entry', async ({
-  page,
-}) => {
-  await login(page, '/settings/members')
-  // The preset owner is the only guaranteed row; the badge names the real role.
-  const row = page.getByRole('row', { name: new RegExp(ownerName) })
-  await expect(row.getByRole('cell').nth(1)).toHaveText('owner')
-  await expect(page.getByRole('form', { name: '邀请成员' })).toBeVisible()
-
-  // A real invited member reads the same roster and has nothing to invite with.
-  const member = await signInAsInvitedMember(page)
-  await expect(page.getByRole('img', { name: member.name })).toBeVisible()
-  await expect(page.getByText(/邀请入口只向 owner 开放/)).toBeVisible()
-  await expect(page.getByRole('form', { name: '邀请成员' })).toHaveCount(0)
-  await expect(page.getByRole('row', { name: new RegExp(ownerName) })).toBeVisible()
-})
 
 test('model metadata and credential state never send model requests', async ({
   page,

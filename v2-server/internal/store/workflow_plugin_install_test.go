@@ -136,6 +136,165 @@ func TestWorkflowPluginRejectsInvalidDocument(t *testing.T) {
 	}
 }
 
+func TestWorkflowPluginUpgradeRefreshesUntouchedImport(t *testing.T) {
+	f := newSquadFixture(t)
+	owner := f.login(t, "owner", "owner")
+	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
+	if e != nil || len(spaces) != 1 {
+		t.Fatalf("spaces = %v %v", spaces, e)
+	}
+	space := spaces[0].ID
+	path := "/api/v1/tenants/" + f.tenant + "/spaces/" + space + "/plugins"
+	oldGraph := `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"output"}]}`
+	newGraph := `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"agent","data":{"kind":"agent","agentConfig":{"executor":{"agentCli":"official/ora-space.opencode"}}}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"agent"},{"source":"agent","target":"output"}]}`
+	entry := pluginmarket.Entry{
+		Namespace: "official", Identifier: "ora-space.daily-inspection",
+		Title: "Daily Inspection", Kind: "workflow", Version: "0.1.0",
+		Description: "A workflow", URL: "https://example.org/daily-inspection.orax",
+		SHA256: strings.Repeat("a", 64), MarketplaceVisible: true,
+		SourceURL: "https://github.com/ora-space/marketplace",
+	}
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{entry}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	documents := []pluginmarket.WorkflowDocument{{
+		Path:  "assets/workflows/daily-inspection.json",
+		Name:  "每日巡检",
+		Graph: oldGraph,
+	}}
+	validate := func(graph string) error {
+		if !strings.Contains(graph, `"start"`) {
+			return errors.New("missing start")
+		}
+		return nil
+	}
+	installed, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, space, owner, path, "install-010", store.PluginInstallInput{
+		Identifier: "official/ora-space.daily-inspection", PluginVersion: "0.1.0",
+	}, documents, validate)
+	if e != nil {
+		t.Fatal(e)
+	}
+	workflows, e := f.store.Workflows(f.ctx, f.tenant)
+	if e != nil || len(workflows) != 1 {
+		t.Fatalf("workflows = %+v %v", workflows, e)
+	}
+	workflow := workflows[0]
+
+	entry.Version = "0.1.1"
+	entry.SHA256 = strings.Repeat("b", 64)
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{entry}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	upgraded, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, space, owner, path, "upgrade-011", store.PluginInstallInput{
+		Identifier: "official/ora-space.daily-inspection", PluginVersion: "0.1.1", Version: installed.Version,
+	}, []pluginmarket.WorkflowDocument{{
+		Path:  "assets/workflows/daily-inspection.json",
+		Name:  "每日巡检",
+		Graph: newGraph,
+	}}, validate)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if upgraded.DesiredVersion != "0.1.1" || upgraded.ObservedState != "installed" ||
+		upgraded.ObservedVersion == nil || *upgraded.ObservedVersion != "0.1.1" {
+		t.Fatalf("upgraded = %+v", upgraded)
+	}
+	all, e := f.store.Workflows(f.ctx, f.tenant)
+	if e != nil || len(all) != 1 || all[0].ID != workflow.ID {
+		t.Fatalf("workflows after upgrade = %+v %v", all, e)
+	}
+	if all[0].PublishedVersion == nil || *all[0].PublishedVersion != "v2" {
+		t.Fatalf("published version after upgrade = %v", all[0].PublishedVersion)
+	}
+	draft, e := f.store.WorkflowDraft(f.ctx, f.tenant, workflow.ID)
+	if e != nil || draft.Graph != newGraph {
+		t.Fatalf("draft after upgrade = %+v %v", draft, e)
+	}
+	versions, e := f.store.ListWorkflowVersions(f.ctx, f.tenant, workflow.ID)
+	if e != nil || len(versions) != 2 {
+		t.Fatalf("versions after upgrade = %+v %v", versions, e)
+	}
+	oldVersion, e := f.store.WorkflowVersion(f.ctx, f.tenant, workflow.ID, "v1")
+	if e != nil || oldVersion.Graph != oldGraph {
+		t.Fatalf("old version after upgrade = %+v %v", oldVersion, e)
+	}
+	newVersion, e := f.store.WorkflowVersion(f.ctx, f.tenant, workflow.ID, "v2")
+	if e != nil || newVersion.Graph != newGraph {
+		t.Fatalf("new version after upgrade = %+v %v", newVersion, e)
+	}
+}
+
+func TestWorkflowPluginUpgradeKeepsEditedImport(t *testing.T) {
+	f := newSquadFixture(t)
+	owner := f.login(t, "owner", "owner")
+	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
+	if e != nil || len(spaces) != 1 {
+		t.Fatalf("spaces = %v %v", spaces, e)
+	}
+	space := spaces[0].ID
+	path := "/api/v1/tenants/" + f.tenant + "/spaces/" + space + "/plugins"
+	importedGraph := `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"output"}]}`
+	editedGraph := `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"edited","data":{"kind":"output"}}],"edges":[{"source":"start","target":"edited"}]}`
+	upgradedGraph := `{"nodes":[{"id":"start","data":{"kind":"start"}},{"id":"agent","data":{"kind":"agent","agentConfig":{"executor":{"agentCli":"official/ora-space.opencode"}}}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"agent"},{"source":"agent","target":"output"}]}`
+	entry := pluginmarket.Entry{
+		Namespace: "official", Identifier: "ora-space.daily-inspection",
+		Title: "Daily Inspection", Kind: "workflow", Version: "0.1.0",
+		Description: "A workflow", URL: "https://example.org/daily-inspection.orax",
+		SHA256: strings.Repeat("a", 64), MarketplaceVisible: true,
+		SourceURL: "https://github.com/ora-space/marketplace",
+	}
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{entry}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	validate := func(string) error { return nil }
+	documents := []pluginmarket.WorkflowDocument{{
+		Path:  "assets/workflows/daily-inspection.json",
+		Name:  "每日巡检",
+		Graph: importedGraph,
+	}}
+	installed, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, space, owner, path, "install-edited", store.PluginInstallInput{
+		Identifier: "official/ora-space.daily-inspection", PluginVersion: "0.1.0",
+	}, documents, validate)
+	if e != nil {
+		t.Fatal(e)
+	}
+	workflows, e := f.store.Workflows(f.ctx, f.tenant)
+	if e != nil || len(workflows) != 1 {
+		t.Fatalf("workflows = %+v %v", workflows, e)
+	}
+	workflow := workflows[0]
+	if _, e := f.store.UpdateWorkflowDraft(f.ctx, f.tenant, workflow.ID, editedGraph); e != nil {
+		t.Fatal(e)
+	}
+
+	entry.Version = "0.1.1"
+	entry.SHA256 = strings.Repeat("b", 64)
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{entry}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	upgraded, e := f.store.InstallWorkflowPlugin(f.ctx, f.tenant, space, owner, path, "upgrade-edited", store.PluginInstallInput{
+		Identifier: "official/ora-space.daily-inspection", PluginVersion: "0.1.1", Version: installed.Version,
+	}, []pluginmarket.WorkflowDocument{{
+		Path:  "assets/workflows/daily-inspection.json",
+		Name:  "每日巡检",
+		Graph: upgradedGraph,
+	}}, validate)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if upgraded.ObservedVersion == nil || *upgraded.ObservedVersion != "0.1.1" {
+		t.Fatalf("upgraded = %+v", upgraded)
+	}
+	draft, e := f.store.WorkflowDraft(f.ctx, f.tenant, workflow.ID)
+	if e != nil || draft.Graph != editedGraph {
+		t.Fatalf("edited draft was replaced: %+v %v", draft, e)
+	}
+	versions, e := f.store.ListWorkflowVersions(f.ctx, f.tenant, workflow.ID)
+	if e != nil || len(versions) != 1 || versions[0].Version != "v1" {
+		t.Fatalf("versions after edited upgrade = %+v %v", versions, e)
+	}
+}
+
 func TestWorkflowPluginAutoNamesConflictsAndKeepsSpacesIndependent(t *testing.T) {
 	f := newSquadFixture(t)
 	owner := f.login(t, "owner", "owner")

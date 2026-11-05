@@ -14,7 +14,7 @@ import TasksPage from './tasks-page'
 
 vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: 'owner' }] }, isLoading: false, isError: false }) }))
 vi.mock('./tasks-api/generated', () => ({ listTasks: vi.fn(), createTask: vi.fn(), listPendingMentions: vi.fn() }))
-vi.mock('@/lib/squads-api/generated', () => ({ listSquads: vi.fn() }))
+vi.mock('@/lib/squads-api/generated', () => ({ listSquads: vi.fn(), getSquad: vi.fn() }))
 vi.mock('@/lib/projects-api/generated', () => ({ getApiV2TenantsTidProjects: vi.fn() }))
 
 const me: User = { id: 'user-me', displayName: '演示用户', status: 'active', version: 1, createdAt: '2026-10-01T00:00:00Z', deletedAt: null }
@@ -91,6 +91,25 @@ it('scopes the list by the view in the URL', async () => {
   expect(screen.getByRole('button', { name: '查看任务 写周报' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '查看任务 修复登录页' })).not.toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '待我处理' })).toBeInTheDocument()
+})
+
+it('narrows to one squad from the header, with the caller\'s squads first', async () => {
+  const row = { archivedAt: null, description: '', charter: '', leaderAgentId: null, version: 1, createdBy: 'user-me', createdAt: '', updatedAt: '', humanCount: 1, agentCount: 0, maintainerCount: 1 }
+  vi.mocked(squadsApi.listSquads).mockResolvedValue({ items: [{ ...row, id: 'squad-other', name: '运维组' }, { ...row, id: 'squad-mine', name: '前端组' }], nextCursor: '' })
+  vi.mocked(squadsApi.getSquad).mockImplementation(async (_tenant, id) => ({ ...row, id, name: id, members: id === 'squad-mine' ? [{ id: 'm', type: 'human', userId: 'user-me', spaceAgentId: null, displayName: '演示用户', role: '', maintainer: true, joinedAt: '', endedAt: null }] : [] }))
+  vi.mocked(api.listTasks).mockResolvedValue({ items: [
+    task({ id: 'a', title: '前端任务', assignee: { type: 'squad', id: 'squad-mine', displayName: '前端组' } }),
+    task({ id: 'b', title: '运维任务', assignee: { type: 'squad', id: 'squad-other', displayName: '运维组' } }),
+  ], nextCursor: '' })
+  renderAt('/collaboration?view=all&layout=list')
+  const select = await screen.findByRole('combobox', { name: '小队' })
+  expect(await within(select).findByRole('group', { name: '我的小队' })).toHaveTextContent('前端组')
+  expect(within(select).getByRole('group', { name: '其他小队' })).toHaveTextContent('运维组')
+  expect(await screen.findByText('运维任务')).toBeInTheDocument()
+  await userEvent.selectOptions(select, 'squad-mine')
+  expect(await screen.findByText('前端任务')).toBeInTheDocument()
+  expect(screen.queryByText('运维任务')).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '小队成员' })).toHaveAttribute('href', '/settings/squads?squad=squad-mine')
 })
 
 it('shows a board by default with one column per status', async () => {

@@ -5,12 +5,14 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
 import type { CollaborationTarget, User } from '@/api/generated.schemas'
+import { type Conversation, emptyConversation } from '@/components/agent-thread/model/types'
 import * as workflowsApi from '@/lib/workflows/api/generated'
 import * as api from './tasks-api/generated'
 import type { Task, TaskDecomposition, TaskRun, TaskTimeline } from './tasks-api/generated'
 import TaskPage from './task-page'
 
 const targets = vi.hoisted(() => ({ items: [] as CollaborationTarget[] }))
+const session = vi.hoisted(() => ({ conversation: null as Conversation | null }))
 vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: 'owner' }] }, isLoading: false, isError: false }) }))
 vi.mock('@/api/members/members', () => ({ useGetApiV1TenantsTidMembers: () => ({ data: { items: [] }, isLoading: false, isError: false }) }))
 vi.mock('@/api/spaces/spaces', () => ({
@@ -21,7 +23,7 @@ vi.mock('@/api/tenants/tenants', () => ({ useGetApiV1TenantsTidCollaborationTarg
 vi.mock('@/lib/squads-api/generated', () => ({ listSquads: vi.fn().mockResolvedValue({ items: [], nextCursor: '' }) }))
 vi.mock('@/lib/projects-api/generated', () => ({ getApiV2TenantsTidProjects: vi.fn().mockResolvedValue({ items: [], nextCursor: '' }) }))
 // The live thread has its own tests; here a run shows the session its stream would fold.
-vi.mock('./run-session', () => ({ useRunSession: () => ({ conversation: null, refused: false }) }))
+vi.mock('./run-session', () => ({ useRunSession: () => ({ conversation: session.conversation, refused: false }) }))
 vi.mock('./tasks-api/generated', () => ({
   getTask: vi.fn(), getTaskTimeline: vi.fn(), listTaskExecutors: vi.fn(), startTaskRun: vi.fn(), stopTaskRun: vi.fn(),
   createTaskComment: vi.fn(), setTaskStatus: vi.fn(), setTaskAssignee: vi.fn(), updateTask: vi.fn(),
@@ -55,6 +57,7 @@ beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   vi.clearAllMocks()
+  session.conversation = null
   targets.items = [
     { type: 'user', id: 'user-2', displayName: '鲍勃', description: '工作区成员', interactionDescriptor: { mode: 'mention', requiresTask: false, formRef: null } },
     { type: 'agent', id: 'agent-1', displayName: 'Claude Code', description: 'official/ora-space.claude', interactionDescriptor: { mode: 'task', requiresTask: true, formRef: null } },
@@ -86,9 +89,29 @@ it('starts the Agent with the configured model and shows the run being prepared'
   await userEvent.click(screen.getByRole('button', { name: '开始处理' }))
   await waitFor(() => expect(api.startTaskRun).toHaveBeenCalledWith('tenant', 'task-1', { executorId: 'claude:configured' }, expect.objectContaining({ headers: expect.anything() })))
 
-  expect(await screen.findByText(/正在准备 Agent/)).toBeInTheDocument()
+  expect(await screen.findByText('正在准备…')).toBeInTheDocument()
   expect(await screen.findByText('Agent 正在执行，结束后再推进。')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
+})
+
+it('shows a running run\'s preparation stages before its first turn reaches the history', async () => {
+  session.conversation = { ...emptyConversation, preparation: { stages: [
+    { id: 'runtime', startedAt: '2026-11-05T00:00:00.000Z', endedAt: '2026-11-05T00:00:01.500Z' },
+    { id: 'workspace', startedAt: '2026-11-05T00:00:01.500Z' },
+  ] } }
+  vi.mocked(api.getTask).mockResolvedValue(task({ status: 'running', activeRun: { id: 'run-1', state: 'running', startedBy: 'user-me', startedByName: '演示用户', executorName: 'Claude Code / Sonnet' } }))
+  vi.mocked(api.getTaskTimeline).mockResolvedValue({ runs: [run()], comments: [] })
+  renderPage()
+  expect(await screen.findByText('正在准备工作目录…（第 2/5 步）')).toBeInTheDocument()
+  expect(screen.getByText('1.5 秒')).toBeInTheDocument()
+  expect(screen.queryByText('正在准备…')).not.toBeInTheDocument()
+})
+
+it('says an ended run left no record instead of showing it as still preparing', async () => {
+  vi.mocked(api.getTaskTimeline).mockResolvedValue({ runs: [run({ state: 'ended', endReason: 'stopped' })], comments: [] })
+  renderPage()
+  expect(await screen.findByText('这次运行没有留下过程记录。')).toBeInTheDocument()
+  expect(screen.queryByText('正在准备…')).not.toBeInTheDocument()
 })
 
 it('shows an empty executor state instead of a mock model', async () => {

@@ -28,6 +28,9 @@ func (s *scope) validateDeclarations(globals map[string]string) error {
 		default:
 			declare(n, "output", "string")
 		}
+		if n.kind == "form" || n.kind == "createTasks" {
+			declare(n, "structured_output", "object")
+		}
 		if n.kind == "agent" && n.structured {
 			declare(n, "structured_output", "object")
 		}

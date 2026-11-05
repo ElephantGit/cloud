@@ -45,7 +45,7 @@ type document struct {
 
 func knownKind(kind string) bool {
 	switch kind {
-	case "start", "agent", "prompt", "condition", "aggregator", "tool", "output", "loop", "loopExit", "iteration":
+	case "form", "createTasks", "start", "agent", "prompt", "condition", "aggregator", "tool", "output", "loop", "loopExit", "iteration":
 		return true
 	}
 	return false

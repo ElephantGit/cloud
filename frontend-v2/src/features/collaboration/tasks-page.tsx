@@ -1,3 +1,4 @@
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router'
@@ -38,7 +39,7 @@ export default function TasksPage() {
   const projects = useQuery({ queryKey: ['projects', tenantId], queryFn: () => getApiV2TenantsTidProjects(tenantId, { limit: 100 }), enabled: !!tenantId })
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
   const squad = squads.data?.items.find(s => s.id === squadId)
-  const items = filterTasks(list.data?.items ?? [], view, me.id, squadId, new Set(mentions.keys()))
+  const items = filterTasks(list.data?.items ?? [], view, me.id, squadId, new Set(mentions.keys())).filter(task => !params.get("project") || task.projectId === params.get("project"))
   const families = useMemo(() => familyLabels(list.data?.items ?? []), [list.data])
   const projectList = projects.data?.items ?? []
   const setParam = (key: string, value: string | null) => {
@@ -88,7 +89,7 @@ export default function TasksPage() {
         <h2>{title}</h2>
         <p>{subtitle}</p>
       </div>
-      <div className="mc-header-actions">
+      <div className="mc-header-actions"><NativeSelect aria-label="按项目筛选" value={params.get("project") ?? ""} onChange={e => setParam("project", e.target.value || null)}><NativeSelectOption value="">全部项目</NativeSelectOption>{projectList.map(p => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}</NativeSelect>
         <ToggleGroup aria-label="展示方式" value={[layout]} onValueChange={next => { const picked = next.at(-1); if (picked) setParam('layout', picked === 'list' ? 'list' : null) }}>
           <ToggleGroupItem value="board" aria-label="看板"><SquareKanban /></ToggleGroupItem>
           <ToggleGroupItem value="list" aria-label="列表"><LayoutList /></ToggleGroupItem>

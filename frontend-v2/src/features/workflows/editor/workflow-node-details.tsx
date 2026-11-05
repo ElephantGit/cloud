@@ -1,3 +1,4 @@
+import { WorkflowFormFields } from './workflow-form-fields';
 import { WorkflowLoopLimitFields } from "./workflow-loop-limit-fields";
 import { selectorToText, textToSelector } from "./workflow-selector-text";
 import { useState } from "react";
@@ -76,6 +77,8 @@ export function WorkflowNodeDetailsLayout({
   globalVariables,
 }: WorkflowNodeDetailsLayoutProps) {
   switch (node.data.kind) {
+    case "form":
+    case "createTasks": return <WorkflowFormFields node={node} onUpdate={onUpdate} onClose={onClose} />;
     case "start":
       return (
         <StartNodeDetails

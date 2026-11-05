@@ -54,6 +54,8 @@ const STORAGE_KEY = "ora.v2.workflows";
 
 /** Node kinds desktop's engine registers (`NodeType`); any other kind is unrecognized. */
 const RECOGNIZED_KINDS = new Set([
+  "form",
+  "createTasks",
   "start",
   "agent",
   "prompt",

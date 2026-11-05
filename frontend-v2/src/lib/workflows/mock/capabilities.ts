@@ -137,6 +137,8 @@ export function createMockWorkflowCapabilities(
   agentModels: WorkflowAgentModel[] = MOCK_AGENT_MODELS,
 ): WorkflowCapabilities {
   const nodeTypes: WorkflowNodeType[] = [
+    createMockWorkflowNodeType("form", locale),
+    createMockWorkflowNodeType("createTasks", locale),
     createMockWorkflowNodeType("start", locale),
     createMockWorkflowNodeType("agent", locale),
     createMockWorkflowNodeType("condition", locale),
@@ -256,6 +258,8 @@ export function createMockWorkflowNodeType(
   locale: "zh-CN" | "en-US",
 ): WorkflowNodeType {
   switch (kind) {
+    case "form": return {kind,label:locale === "zh-CN" ? "动态表单" : "Dynamic form",description:"等待确认并输出结构化答案",configFields:[],supportedScopes:["workflow"]};
+    case "createTasks": return {kind,label:locale === "zh-CN" ? "创建任务" : "Create tasks",description:"根据表单确认创建或关联任务",configFields:[],supportedScopes:["workflow"]};
     case "start":
       return {
         kind,

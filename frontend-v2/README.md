@@ -152,3 +152,9 @@ Agent 和模型清单读取与 Chat 相同的 `/chat/executors`，保存后端�
 和正式 Cloud 一样，以 `GET /api/v1/me` 判断是否登录：`401` 时在当前位置显示登录页，登录后回到原页面；`403` 表示账号已停用。登录页按 `GET /auth/providers` 显示登录方式：v2-server 只提供 `email`，表单填邮箱，`POST /auth/login` 带上邮箱后跳转到返回的地址；不在演示团队里的邮箱得到 `email_not_invited`，页面据此提示找 owner 邀请。其他 provider 仍按按钮呈现，接入正式 Gateway 时前端不用改。
 
 当前用户的角色不在 `GET /api/v1/me` 里（契约禁止额外字段），由 `GET /api/v1/me/tenants` 的 `role` 得出，见 `app/auth/user.ts` 的 `useRole()`；邀请入口只对 owner 显示。
+
+## 巡检动态表单
+
+工作流目录新增动态表单和创建任务节点。表单配置固定字段、报告与数组变量以及确认人；运行页展示冻结报告、问题确认、人员/Agent/小队选择和备注，支持服务端草稿、提交记录、现有任务提示和结果链接。创建任务在后续节点执行。运行链接保留 run 参数供刷新和分享；窄屏打开运行自动收起聊天列表。
+
+DTS 模拟通过 lib/demo/dts.ts 提供，只有 VITE_DEMO_MOCK=1 才显示。回执按真实任务 ID 稳定生成，明确标为模拟，失败重试不改变 Cloud 任务。协作页项目筛选保存在 URL 的 project 参数中。

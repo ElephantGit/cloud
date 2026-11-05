@@ -81,3 +81,22 @@ export function PreparationRow({ preparation, live }: { preparation: SessionPrep
     </TraceCollapsible>
   )
 }
+
+/**
+ * A session waiting for its first turn to reach the history, which happens only once the Agent has
+ * started: pages with no prompt of their own to show, a task run or a workflow node, show the
+ * stages here, in the thread's own column. Until the first stage arrives there is only the wait.
+ */
+export function FirstTurnWait({ preparation }: { preparation?: SessionPreparation }) {
+  return (
+    <div className="mx-auto w-full max-w-[760px] px-3 pt-5 pb-4 text-sm sm:px-5 sm:pt-8">
+      {preparation ? (
+        <PreparationRow preparation={preparation} live />
+      ) : (
+        <TraceLine status="running">
+          <TraceTitle>正在准备…</TraceTitle>
+        </TraceLine>
+      )}
+    </div>
+  )
+}

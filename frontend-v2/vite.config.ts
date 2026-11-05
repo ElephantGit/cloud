@@ -23,6 +23,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // settings-css.test.ts minifies this file; vitest empties every other stylesheet.
+    css: { include: [/settings\.css/] },
     include: ['src/**/*.test.{ts,tsx}'],
   },
 })

@@ -388,7 +388,8 @@
   max-width: 100%;
   height: 100dvh;
   max-height: 100dvh;
-  transform: none;
+  /* Keep only this reset: beside `transform: none`, the production minifier folds both into
+     `transform: translate(0, 0)` and the dialog's centering `translate` survives. */
   translate: none;
   border-radius: 0;
   display: flex;

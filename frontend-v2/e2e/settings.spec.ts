@@ -118,6 +118,23 @@ test('settings pages avoid demo labels and the reset control', async ({ page }) 
   }
 })
 
+test('Workflow Examples persists locally across reload and never writes to the server', async ({ page }) => {
+  await login(page, '/settings/plugins')
+  const writes: string[] = []
+  page.on('request', (req) => {
+    if (new URL(req.url()).pathname.startsWith('/api/') &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method())) writes.push(req.url())
+  })
+  const row = page.getByRole('article', { name: 'Workflow Examples' })
+  await row.getByRole('button', { name: '安装', exact: true }).click()
+  await expect(row.getByText('已安装', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await page.reload()
+  await row.getByRole('button', { name: '卸载' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '卸载' }).click()
+  await expect(row.getByText('未安装', { exact: true })).toBeVisible()
+  expect(writes).toEqual([])
+})
+
 test('server-backed plugin and skill install lifecycle survives reload and a new browser context', async ({
   page,
   browser,

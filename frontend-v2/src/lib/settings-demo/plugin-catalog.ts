@@ -45,8 +45,24 @@ export const demoHookEntry = demoEntry(
   '生命周期 Hook 的安装与卸载不会执行自动化脚本。',
 )
 
-export function demoPlugin(entry: Pick<PluginCatalogEntry, 'kind'>) {
-  return entry.kind === 'mcp' || entry.kind === 'hook'
+const serverWorkflowKeys = new Set([
+  'official/ora-space.requirement-development',
+  'official/ora-space.requirement-decomposition',
+  'official/ora-space.customer-feedback-triage',
+  'official/ora-space.daily-inspection',
+])
+
+type PluginIdentity = Pick<PluginCatalogEntry, 'identifier' | 'sourceNamespace'> & {
+  kind?: string | null
+}
+
+export function localWorkflow(entry: PluginIdentity) {
+  return entry.kind === 'workflow' &&
+    !serverWorkflowKeys.has(`${entry.sourceNamespace}/${entry.identifier}`)
+}
+
+export function demoPlugin(entry: PluginIdentity) {
+  return localWorkflow(entry) || entry.kind === 'mcp' || entry.kind === 'hook'
 }
 
 /**

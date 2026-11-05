@@ -4,11 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { PluginCatalogEntry } from '@/api/generated.schemas'
 import {
+  MARKET_TENANT,
+  MARKET_SPACE,
   installMarketplaceBackend,
   marketplaceEntry,
   marketplaceSelection,
   renderSettingsPage,
 } from '../test-utils'
+import { demoUser } from '@/test/backend'
 import PluginsPage from './page'
 import { useDemoPluginSelections } from '@/lib/settings-demo/plugin-selections'
 
@@ -201,7 +204,12 @@ it('installs and removes a marketplace Agent', async () => {
   })
 })
 
-it('installs and removes a workflow plugin while keeping imported workflows', async () => {
+it('uses the server for a runnable workflow even with a stale browser installation', async () => {
+  useDemoPluginSelections.getState().setSelected(
+    `${demoUser.id}:${MARKET_TENANT}:${MARKET_SPACE}`,
+    'official/ora-space.requirement-development',
+    true,
+  )
   const backend = installMarketplaceBackend({
     catalog: [workflow],
   })
@@ -219,11 +227,36 @@ it('installs and removes a workflow plugin while keeping imported workflows', as
     pluginVersion: '0.1.0',
     version: 0,
   })
-  await user.click(within(row).getByRole('button', { name: '移除' }))
+  await user.click(within(row).getByRole('button', { name: '卸载' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(dialog).toHaveTextContent('已导入的工作流和运行历史会保留')
-  await user.click(within(dialog).getByRole('button', { name: '移除' }))
+  await user.click(within(dialog).getByRole('button', { name: '卸载' }))
   await waitFor(() => expect(within(row).getByText('未安装')).toBeInTheDocument())
+})
+
+it('installs and removes a workflow plugin without sending any mutations', async () => {
+  const example = marketplaceEntry('ora-space.workflow-examples', {
+    kind: 'workflow', title: 'Workflow Examples', sourceNamespace: 'official',
+  })
+  const backend = installMarketplaceBackend({
+    catalog: [example],
+    selections: [marketplaceSelection(example)],
+  })
+  const user = userEvent.setup()
+  renderSettingsPage(<PluginsPage />)
+  const row = await screen.findByRole('article', { name: 'Workflow Examples' })
+  expect(screen.getByRole('heading', { name: '工作流' })).toBeInTheDocument()
+  expect(
+    within(row).queryByText('当前节点不支持此类型'),
+  ).not.toBeInTheDocument()
+  await user.click(within(row).getByRole('button', { name: '安装' }))
+  await waitFor(() => expect(within(row).getByText('已安装')).toBeInTheDocument())
+  await user.click(within(row).getByRole('button', { name: '卸载' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog).not.toHaveTextContent(/演示|本地|浏览器/)
+  await user.click(within(dialog).getByRole('button', { name: '卸载' }))
+  await waitFor(() => expect(within(row).getByText('未安装')).toBeInTheDocument())
+  expect(backend.bodies).toHaveLength(0)
 })
 
 it('lets a runtime-preinstalled Agent use the demo install flow', async () => {

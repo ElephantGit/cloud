@@ -40,7 +40,7 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	}
 	t.Cleanup(s.Close)
 
-	var user, tenant, space, plugin, squad, task string
+	var user, tenant, space, plugin, hook, squad, task string
 	if e := s.pool.QueryRow(ctx, `
 		INSERT INTO users(source,subject,display_name) VALUES('test','owner','Owner') RETURNING id::text`).Scan(&user); e != nil {
 		t.Fatal(e)
@@ -56,6 +56,13 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	if e := s.pool.QueryRow(ctx, `
 		INSERT INTO v2_space_agents(tenant_id,space_id,name,source_namespace,identifier,kind)
 		VALUES($1,$2,'Legacy','demo','legacy.skill','skill') RETURNING id::text`, tenant, space).Scan(&plugin); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.pool.QueryRow(ctx, `
+		INSERT INTO v2_space_agents(tenant_id,space_id,name,source_namespace,identifier,kind,
+			desired_state,desired_version,observed_state,observed_version)
+		VALUES($1,$2,'示例 Hooks','demo','sample-hooks','hook','installed','1.0.0','installed','1.0.0')
+		RETURNING id::text`, tenant, space).Scan(&hook); e != nil {
 		t.Fatal(e)
 	}
 	if e := s.pool.QueryRow(ctx, `
@@ -84,9 +91,12 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	if _, e := s.pool.Exec(ctx, schema); e != nil {
 		t.Fatal(e)
 	}
-	var plugins, members, mutations int
+	var plugins, hooks, members, mutations int
 	var assigneeType, leader *string
-	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_space_agents WHERE source_namespace='demo'`).Scan(&plugins); e != nil {
+	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_space_agents WHERE source_namespace='demo' AND kind <> 'hook'`).Scan(&plugins); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_space_agents WHERE id=$1`, hook).Scan(&hooks); e != nil {
 		t.Fatal(e)
 	}
 	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_squad_members WHERE space_agent_id=$1`, plugin).Scan(&members); e != nil {
@@ -101,8 +111,8 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	if e := s.pool.QueryRow(ctx, `SELECT leader_agent_id::text FROM v2_squads WHERE id=$1`, squad).Scan(&leader); e != nil {
 		t.Fatal(e)
 	}
-	if plugins != 0 || members != 0 || mutations != 0 || assigneeType != nil || leader != nil {
-		t.Fatalf("legacy cleanup: plugins=%d members=%d mutations=%d assignee=%v leader=%v",
-			plugins, members, mutations, assigneeType, leader)
+	if plugins != 0 || hooks != 1 || members != 0 || mutations != 0 || assigneeType != nil || leader != nil {
+		t.Fatalf("legacy cleanup: plugins=%d hooks=%d members=%d mutations=%d assignee=%v leader=%v",
+			plugins, hooks, members, mutations, assigneeType, leader)
 	}
 }

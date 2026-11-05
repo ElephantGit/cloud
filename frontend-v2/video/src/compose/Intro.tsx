@@ -4,9 +4,6 @@ import { Lockup } from './brand/Lockup.tsx'
 import { Network } from './brand/Network.tsx'
 import { FPS, SHOT_BACKGROUND } from './layout.ts'
 
-/** The opening, 6 s at 60 fps. */
-export const INTRO_FRAMES = 360
-
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 const easeOut = Easing.bezier(0.16, 1, 0.3, 1)
 const easeInOut = Easing.bezier(0.65, 0, 0.35, 1)

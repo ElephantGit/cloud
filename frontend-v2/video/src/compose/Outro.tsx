@@ -3,9 +3,6 @@ import { Grain } from './brand/Grain.tsx'
 import { Lockup } from './brand/Lockup.tsx'
 import { SHOT_BACKGROUND } from './layout.ts'
 
-/** The closing, 5 s at 60 fps. */
-export const OUTRO_FRAMES = 300
-
 const TAGLINE = '协同办公新常态'
 const LIFT = -90
 

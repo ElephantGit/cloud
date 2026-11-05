@@ -47,7 +47,7 @@ export interface SessionEvent {
   history?: { records: SessionHistoryRecord[]; incomplete: boolean }
   textDelta?: string
   result?: SessionResult
-  /** On turn_ended, the text the turn was asked, when it could be read. */
+  /** On turn_ended and preparation, the text the turn was asked, when it could be read. */
   prompt?: string
   /** On preparation, the stages so far; it replaces the previous set. */
   preparation?: SessionPreparation

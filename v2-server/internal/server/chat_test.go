@@ -354,6 +354,38 @@ func TestChatEventStream(t *testing.T) {
 	}
 }
 
+func TestChatEventStreamPreparationCarriesPrompt(t *testing.T) {
+	rt := withRuntime(nil)
+	rt.SubscribeFunc = func(_ context.Context, _ execution.Scope, sid string, _ uint64) (execution.Stream, error) {
+		return &events{list: []execution.Event{{
+			Ref: execution.Ref{SessionID: sid, TurnID: "t1"}, Sequence: 1, OccurredAt: time.Now(), Kind: execution.EventPreparation,
+			Preparation: &execution.Preparation{Stages: []execution.PreparationStage{{ID: "runtime", StartedAt: time.Now()}}},
+		}}}, nil
+	}
+	c := newChatClient(t, rt)
+	_, created := c.post("/conversations", "k1", map[string]any{"projectId": "demo", "executorId": "fixture", "prompt": "你好"})
+	id := created["conversation"].(map[string]any)["id"].(string)
+	res, e := c.http.Get(c.base + "/api/v2/tenants/" + c.tenant + "/chat/conversations/" + id + "/events")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer res.Body.Close()
+	sc := bufio.NewScanner(res.Body)
+	for sc.Scan() {
+		data, ok := strings.CutPrefix(sc.Text(), "data: ")
+		if !ok || data == "{}" {
+			continue
+		}
+		var event map[string]any
+		_ = json.Unmarshal([]byte(data), &event)
+		if event["kind"] != "preparation" || event["prompt"] != "你好" {
+			t.Fatalf("a preparation event must carry its turn's prompt: %v", event)
+		}
+		return
+	}
+	t.Fatal("no preparation event")
+}
+
 func TestChatEventStreamWithoutPrompt(t *testing.T) {
 	rt := withRuntime(nil)
 	rt.ReadTurnsFunc = func(context.Context, execution.Scope, string, string, int) (execution.TurnPage, error) {

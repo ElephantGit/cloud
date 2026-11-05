@@ -28,7 +28,7 @@ func TestResolveFollowsTheEnvironmentTable(t *testing.T) {
 	}{
 		"newcomer": {"ora_v2_demo_newcomer", "a", 8191, 5191, false, []string{"newcomer"}},
 		"lead":     {"ora_v2_demo_lead", "b", 8192, 5192, true, []string{"lead"}},
-		"ops":      {"ora_v2_demo_ops", "c", 8193, 5193, false, []string{"ops"}},
+		"ops":      {"ora_v2_demo_ops", "c", 8193, 5193, true, []string{"ops"}},
 		"all":      {"ora_v2_demo", "all", 8190, 5190, true, []string{"newcomer", "lead", "ops"}},
 	}
 	for name, w := range want {
@@ -72,7 +72,7 @@ func TestSceneUsersStayApartAndMerge(t *testing.T) {
 	for _, u := range all.Users {
 		names = append(names, u.DisplayName)
 	}
-	if !slices.Equal(names, []string{"林新", "陈默", "苏芮", "周衡", "许运"}) {
+	if !slices.Equal(names, []string{"林新", "陈默", "苏芮", "周衡", "许运", "林维"}) {
 		t.Fatalf("merged accounts: %v", names)
 	}
 	// Each scene file is a valid preset on its own: v2-server refuses a file without an owner.
@@ -120,7 +120,7 @@ func TestResetEmptiesTheEnvironment(t *testing.T) {
 			t.Fatalf("previous run's data survived: %v", err)
 		}
 		preset, err := store.LoadPreset(c.UsersFile)
-		if err != nil || len(preset.Users) != 2 {
+		if err != nil || len(preset.Users) != 3 {
 			t.Fatalf("users file: %+v %v", preset, err)
 		}
 		conn, err := pgx.Connect(ctx, dbURL)

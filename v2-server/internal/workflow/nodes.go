@@ -3,6 +3,9 @@ package workflow
 import "fmt"
 
 func validateNode(n *node) error {
+	if err := validateFormNode(n); err != nil {
+		return err
+	}
 	r := newReader(n.data, "invalid_node", n.id, "data")
 	for _, key := range []string{"title", "description", "instruction", "input"} {
 		r.str(key)

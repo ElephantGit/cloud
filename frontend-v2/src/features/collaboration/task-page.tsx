@@ -158,6 +158,7 @@ export default function TaskPage() {
     <div className="mc-task-body">
       <section className="mc-task-main-col" aria-label="运行与讨论">
         {task.description && <p className="mc-description">{task.description}</p>}
+        {task.workflowSources?.map(source=><p key={source.runId}><Link className="underline" to={`/chat?run=${source.runId}`}>查看来源巡检报告 · {source.name}{source.submittedAt ? ` · ${new Date(source.submittedAt).toLocaleString()}` : ''}</Link></p>)}
         <TaskFamily tenantId={tenantId} task={task} latest={decompositions.latest} onRetry={() => setDecomposing(true)} />
         <div className="mc-tabs" role="tablist" aria-label="任务内容">
           <button type="button" role="tab" aria-selected={tab === 'runs'} onClick={() => showTab('runs')}>Agent 运行 <b>{runs.length}</b></button>

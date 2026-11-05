@@ -62,7 +62,9 @@ ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS released boolean NO
 ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 ALTER TABLE v2_schedule_occurrences DROP CONSTRAINT IF EXISTS v2_schedule_occurrences_status_check;
 ALTER TABLE v2_schedule_occurrences ADD CONSTRAINT v2_schedule_occurrences_status_check CHECK(status IN ('recorded','starting','reconciling','running','cancelling','succeeded','failed','cancelled','interrupted','skipped'));
-CREATE UNIQUE INDEX IF NOT EXISTS v2_schedule_active_occurrence ON v2_schedule_occurrences(schedule_id) WHERE NOT released;
+ALTER TABLE v2_schedule_occurrences ADD COLUMN IF NOT EXISTS waiting_for_input boolean NOT NULL DEFAULT false;
+DROP INDEX IF EXISTS v2_schedule_active_occurrence;
+CREATE UNIQUE INDEX v2_schedule_active_occurrence ON v2_schedule_occurrences(schedule_id) WHERE NOT released AND NOT waiting_for_input;
 
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash bytea PRIMARY KEY,
@@ -622,3 +624,19 @@ CREATE TABLE IF NOT EXISTS v2_workspaces (
 	base_commit text NOT NULL,
 	created_at  timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE v2_workflow_runs ADD COLUMN IF NOT EXISTS started_by uuid REFERENCES users(id);
+CREATE TABLE IF NOT EXISTS v2_workflow_forms (
+ id uuid PRIMARY KEY REFERENCES v2_workflow_node_runs(id), tenant_id uuid NOT NULL REFERENCES tenants(id),
+ run_id uuid NOT NULL UNIQUE REFERENCES v2_workflow_runs(id), node_id text NOT NULL,
+ reviewer_id uuid NOT NULL REFERENCES users(id), config jsonb NOT NULL, findings jsonb NOT NULL, report text NOT NULL,
+ answers jsonb NOT NULL DEFAULT '[]', status text NOT NULL DEFAULT 'open' CHECK(status IN ('open','submitted')),
+ version bigint NOT NULL DEFAULT 1, submitted_by uuid REFERENCES users(id), submit_key text NOT NULL DEFAULT '',
+ results jsonb NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS v2_workflow_finding_tasks (
+ tenant_id uuid NOT NULL REFERENCES tenants(id), project_id text NOT NULL, finding_key text NOT NULL,
+ task_id uuid REFERENCES v2_tasks(id), PRIMARY KEY(tenant_id,project_id,finding_key)
+);
+
+ALTER TABLE v2_workflow_forms ADD COLUMN IF NOT EXISTS submitted_at timestamptz;

@@ -278,6 +278,8 @@ describe("graph node sanitization", () => {
     // Spelled out rather than derived from WORKFLOW_NODE_KINDS: the list under test is the
     // thing that can shrink by mistake, and a derived expectation would shrink with it.
     const renderableKinds = [
+      "form",
+      "createTasks",
       "start",
       "agent",
       "condition",

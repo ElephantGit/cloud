@@ -154,7 +154,16 @@ func TestScenesComposeInOneTenant(t *testing.T) {
 	// The combined environment seeds all three into one tenant in reverse order; B's board, squad
 	// and the workflow names are exactly what B alone shows, so A and C never reach B's screens.
 	all := seed(t, openSeeder(t), "ops", "lead", "newcomer")
-	if !slices.Equal(all.tasks, lead.tasks) || !slices.Equal(all.squads, lead.squads) {
+	bTasks := []string{}
+	for _, task := range all.tasks {
+		if strings.HasPrefix(task, "协作看板服务 | ") {
+			bTasks = append(bTasks, task)
+		}
+	}
+	if len(all.tasks) != len(lead.tasks)+2 {
+		t.Fatal("missing inspection task examples")
+	}
+	if !slices.Equal(bTasks, lead.tasks) || !slices.Equal(all.squads, lead.squads) {
 		t.Fatalf("other scenes changed B's board or squad: %+v", all)
 	}
 	if want := []string{"协作看板服务", "团队任务清单", "巡检演示服务"}; !slices.Equal(all.projects, want) {

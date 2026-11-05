@@ -226,3 +226,49 @@ func TestExecutionStateRules(t *testing.T) {
 		t.Fatal("foreign transition")
 	}
 }
+
+func TestWaitingReviewDoesNotBlockNextOccurrence(t *testing.T) {
+	s := storetest.Open(t)
+	user, tenant := storetest.Login(t, s, "review-schedule")
+	ctx := context.Background()
+	config, err := s.CreateScheduleConfig(ctx, tenant, user, store.ScheduleInput{Name: "Daily review", Target: json.RawMessage(`{"kind":"workflow"}`), Rule: json.RawMessage(`{"kind":"hours","hours":24,"timezone":"UTC"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := config.CreatedAt.Add(time.Hour)
+	record := func(key string) store.Occurrence {
+		t.Helper()
+		o, err := s.RecordOccurrence(ctx, tenant, user, config.ID, store.Trigger{Kind: "manual", Key: key, At: at, Version: 1}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	apply := func(o store.Occurrence, event, ref string) store.Occurrence {
+		t.Helper()
+		next, err := s.ApplyOccurrenceEvidence(ctx, tenant, user, o.ID, o.Version, store.ExecutionEvidence{Event: event, Ref: ref})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return next
+	}
+	first := apply(record("day-one"), "begin", "")
+	first = apply(first, "accepted", "run-one")
+	first = apply(first, "waiting_for_input", "run-one")
+	if first.Released || !first.WaitingForInput {
+		t.Fatalf("waiting occurrence=%+v", first)
+	}
+	next := apply(record("day-two"), "begin", "")
+	if next.Status != "starting" {
+		t.Fatalf("next occurrence blocked: %+v", next)
+	}
+	first = apply(first, "completed", "run-one")
+	first = apply(first, "released", "run-one")
+	if !first.Released {
+		t.Fatal("completed review did not settle")
+	}
+	third := record("overlap")
+	if third.Status != "skipped" || third.Reason != "previous_unfinished" {
+		t.Fatalf("automatic overlap protection lost: %+v", third)
+	}
+}

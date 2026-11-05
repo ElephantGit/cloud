@@ -429,15 +429,15 @@ func (s *Store) UpdateWorkflowEngineRunInput(ctx context.Context, runID string, 
 }
 
 // InterruptWorkflowRuns fails every attempt and run a previous process left executing, before
-// the process serves requests. v2 has no interactive nodes and never replays an Agent, so every
-// non-terminal attempt fails with the detail built for it and its run fails with it.
+// the process serves requests. Frozen root reviews are excluded and recovered separately;
+// every other non-terminal attempt fails without replaying an Agent.
 func (s *Store) InterruptWorkflowRuns(ctx context.Context, message string, detail func(attempt int, node []byte) ([]byte, error)) ([]string, error) {
 	var interrupted []string
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT `+prefixed("n", workflowNodeRunColumns)+`
 			FROM v2_workflow_node_runs n JOIN v2_workflow_runs r ON r.id = n.run_id
-			WHERE n.deleted_at IS NULL AND n.status IN ('pending', 'running') AND r.deleted_at IS NULL
+			WHERE n.deleted_at IS NULL AND n.status IN ('pending', 'running') AND r.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM v2_workflow_forms f WHERE f.run_id=r.id)
 			ORDER BY n.run_id, n.created_at
 			FOR UPDATE OF n`)
 		if err != nil {
@@ -474,7 +474,7 @@ func (s *Store) InterruptWorkflowRuns(ctx context.Context, message string, detai
 		}
 		runRows, err := tx.Query(ctx, `
 			UPDATE v2_workflow_runs SET status = 'failed', error = $1, finished_at = now(), updated_at = now()
-			WHERE deleted_at IS NULL AND (status = 'running' OR (status = 'pending' AND state->'current_nodes' <> '[]'::jsonb))
+			WHERE deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM v2_workflow_forms f WHERE f.run_id=v2_workflow_runs.id) AND (status = 'running' OR (status = 'pending' AND state->'current_nodes' <> '[]'::jsonb))
 			RETURNING id`, message)
 		if err != nil {
 			return fmt.Errorf("interrupt runs: %w", err)

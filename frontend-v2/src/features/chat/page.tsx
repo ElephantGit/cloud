@@ -53,17 +53,25 @@ export default function Page() {
   useEffect(() => {
     if (tenantId) void useChatStore.getState().connect(tenantId, user.id)
   }, [tenantId, user.id])
+  const appliedRun = useRef<string | null>(null)
   useEffect(() => {
-    if (!connected || !linkedRun || linkedConversation) return
+    if (!connected || !linkedRun || linkedConversation || appliedRun.current === linkedRun) return
+    appliedRun.current = linkedRun
     useChatStore.getState().selectRun(linkedRun)
-    setParams(
-      (p) => {
-        p.delete('run')
-        return p
-      },
-      { replace: true },
-    )
-  }, [connected, linkedRun, linkedConversation, setParams])
+  }, [connected, linkedRun, linkedConversation])
+  useEffect(() => {
+    if (!connected || linkedConversation) return
+    const selected = useChatStore.getState().selectedRunId
+    if (selected === linkedRun) return
+    setParams(p => { if (selected) p.set('run', selected); else p.delete('run'); return p }, { replace: true })
+  }, [connected, runId, linkedRun, linkedConversation, setParams])
+  useEffect(() => {
+    if (!runId) return
+    const media = window.matchMedia('(max-width: 767px)')
+    const collapse = () => { if (media.matches) useChatStore.getState().setSidebar({ open: false }) }
+    collapse(); media.addEventListener('change', collapse)
+    return () => media.removeEventListener('change', collapse)
+  }, [runId])
   useEffect(() => {
     if (!connected || !linkedConversation || !linkedChat) return
     useChatStore.getState().select(linkedConversation)

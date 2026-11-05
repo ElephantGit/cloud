@@ -19,6 +19,7 @@ export interface DemoMock {
 }
 
 export const demoMocks: readonly DemoMock[] = [
+ {module:'dts.ts',scene:'ops',covers:'DTS simulated receipts after real Cloud task creation',replacedBy:'An authenticated DTS connector with durable external delivery receipts'},
   {
     module: 'dashboard.ts',
     scene: 'lead',

@@ -48,7 +48,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
  const run=useMutation({mutationFn:()=>runScheduleNow(tenantId,task.id,{requestId:manualRequestKey(scope,task.id)}),retry:false,onSuccess:receipt=>{finishManualRequest(scope,task.id);setRunId(receipt.id);onObserved?.(receipt);setOperationError('');setNotice('运行请求已记录，当前状态见运行历史。');setTab('history');void history.refetch()},onError:error=>{const oid=errorOccurrenceId(error);if(oid)setRunId(oid);if(isTerminalActionRejection(error))finishManualRequest(scope,task.id);setOperationError(scheduleError(error,'运行请求失败，请重试同一请求。'));setTab('history');void history.refetch()}})
  const cancel=useMutation({mutationFn:(id:string)=>cancelScheduleRun(tenantId,task.id,id,{}),retry:false,onSuccess:receipt=>{onObserved?.(receipt);setOperationError('');setNotice('取消请求已处理，当前状态见运行历史。');void history.refetch();if(selected?.executionRef&&!taskPath&&!workflowRunId)void output.refetch()},onError:error=>{setOperationError(scheduleError(error,'取消失败，运行状态未确认，请稍后重试。'));void history.refetch()}})
  const busy=run.isPending||cancel.isPending
- const occupied=rows.some(r=>!r.released)||!!selected&&!selected.released
+ const occupied=rows.some(r=>!r.released&&!r.waitingForInput)||!!selected&&!selected.released&&!selected.waitingForInput
  const available=runnable(task,resources)
  const target=task.target
  const workflow=isWorkflowTarget(target)?resources.workflows.find(w=>w.id===target.workflowId):undefined
@@ -79,7 +79,7 @@ export function ScheduleDetail({data,resources,tenantId,scope,task,initialTab='c
     <div className="sp-detail-toolbar"><div><h3>运行记录</h3><p className="sp-helper">选择一条记录，查看结果与执行详情</p></div><span className="sp-footer-spacer"/><Button variant="outline" size="sm" disabled={history.isFetching} onClick={()=>void history.refetch()}><RefreshCw data-icon="inline-start"/>刷新状态</Button></div>
     {history.isError&&hasHistory&&<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')} 既有记录未被清除。</p>}
     {history.isPending?<p role="status">正在读取运行记录…</p>:history.isError&&!hasHistory?<p role="alert">{scheduleError(history.error,'运行记录读取失败，请重试。')}</p>:!rows.length&&!selected?<p className="sp-empty-small">{runId?'正在核对本次运行记录…':'尚无运行记录。'}</p>:<>
-     <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><RunStatus run={r}/><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{!r.released?' · 尚未结束':''}</small><ChevronRight size={16} aria-hidden="true"/></button>)}</div>
+     <div className="sp-history-list">{rows.map(r=><button key={r.id} aria-pressed={selected?.id===r.id} onClick={()=>setRunId(r.id)}><RunStatus run={r}/><span>{formatTime(r.scheduledAt,task.rule.timezone)}</span><small>{r.kind==='manual'?'手动':'定时'}{r.waitingForInput&&!r.released?' · 待确认':!r.released?' · 尚未结束':''}</small><ChevronRight size={16} aria-hidden="true"/></button>)}</div>
      {history.hasNextPage&&<Button variant="outline" disabled={history.isFetchingNextPage} onClick={()=>void history.fetchNextPage()}>{history.isFetchingNextPage?'加载中…':'加载更多记录'}</Button>}
      <p className="sp-helper">最近记录在前 · 状态自动更新</p>
      {selected&&<section className="sp-run-result" aria-label="选中运行的结果">

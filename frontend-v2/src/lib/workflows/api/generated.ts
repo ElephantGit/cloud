@@ -26,6 +26,131 @@ import type {
 
 import { customInstance } from '../../api-client';
 import type { ErrorType , BodyType } from '../../api-client';
+export type WorkflowFormExistingTaskAssigneeType = typeof WorkflowFormExistingTaskAssigneeType[keyof typeof WorkflowFormExistingTaskAssigneeType];
+
+
+export const WorkflowFormExistingTaskAssigneeType = {
+  human: 'human',
+  agent: 'agent',
+  squad: 'squad',
+} as const;
+
+/**
+ * @nullable
+ */
+export type WorkflowFormExistingTaskAssignee = {
+  type: WorkflowFormExistingTaskAssigneeType;
+  id: string;
+  displayName: string;
+  identifier?: string;
+} | null;
+
+export interface WorkflowFormExistingTask {
+  key: string;
+  taskId: string;
+  status: string;
+  /** @nullable */
+  assignee: WorkflowFormExistingTaskAssignee;
+}
+
+export type WorkflowFormFieldType = typeof WorkflowFormFieldType[keyof typeof WorkflowFormFieldType];
+
+
+export const WorkflowFormFieldType = {
+  readonly: 'readonly',
+  text: 'text',
+  textarea: 'textarea',
+  select: 'select',
+} as const;
+
+export interface WorkflowFormField {
+  name: string;
+  label: string;
+  type: WorkflowFormFieldType;
+  required: boolean;
+  options?: string[];
+}
+
+export interface WorkflowFormConfig {
+  title: string;
+  submitLabel: string;
+  reportSelector: string[];
+  itemsSelector: string[];
+  reviewerId?: string;
+  fields: WorkflowFormField[];
+}
+
+export interface WorkflowFormFinding {
+  key: string;
+  title: string;
+  description: string;
+  evidence: string;
+  severity: string;
+  module: string;
+}
+
+export type WorkflowFormAssigneeType = typeof WorkflowFormAssigneeType[keyof typeof WorkflowFormAssigneeType];
+
+
+export const WorkflowFormAssigneeType = {
+  human: 'human',
+  agent: 'agent',
+  squad: 'squad',
+} as const;
+
+export interface WorkflowFormAssignee {
+  type: WorkflowFormAssigneeType;
+  id: string;
+}
+
+export type WorkflowFormAnswerValues = {[key: string]: string};
+
+export interface WorkflowFormAnswer {
+  key: string;
+  decision?: string;
+  assignee?: WorkflowFormAssignee;
+  values?: WorkflowFormAnswerValues;
+}
+
+export type WorkflowFormTaskResultAction = typeof WorkflowFormTaskResultAction[keyof typeof WorkflowFormTaskResultAction];
+
+
+export const WorkflowFormTaskResultAction = {
+  created: 'created',
+  reused: 'reused',
+} as const;
+
+export interface WorkflowFormTaskResult {
+  key: string;
+  taskId: string;
+  action: WorkflowFormTaskResultAction;
+}
+
+export interface WorkflowForm {
+  id: string;
+  runId: string;
+  nodeId: string;
+  reviewerId: string;
+  report: string;
+  status: string;
+  submittedBy: string;
+  /** @nullable */
+  submittedAt?: string | null;
+  existingTasks?: WorkflowFormExistingTask[];
+  version: number;
+  canEdit: boolean;
+  config: WorkflowFormConfig;
+  findings: WorkflowFormFinding[];
+  answers: WorkflowFormAnswer[];
+  results: WorkflowFormTaskResult[];
+}
+
+export interface WorkflowFormWrite {
+  /** @minimum 1 */
+  version: number;
+  answers: WorkflowFormAnswer[];
+}
+
 export type WorkflowErrorParams = { [key: string]: unknown };
 
 export interface WorkflowError {
@@ -435,6 +560,289 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getWorkflowForm = (
+    tid: string,
+    rid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowForm>(
+      {url: `/api/v2/tenants/${tid}/workflow-runs/${rid}/form`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetWorkflowFormQueryKey = (tid: string,
+    rid: string,) => {
+    return [
+    `/api/v2/tenants/${tid}/workflow-runs/${rid}/form`
+    ] as const;
+    }
+
+
+export const getGetWorkflowFormQueryOptions = <TData = Awaited<ReturnType<typeof getWorkflowForm>>, TError = ErrorType<unknown>>(tid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkflowFormQueryKey(tid,rid);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkflowForm>>> = ({ signal }) => getWorkflowForm(tid,rid, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tid !== null && tid !== undefined && rid !== null && rid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWorkflowFormQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkflowForm>>>
+export type GetWorkflowFormQueryError = ErrorType<unknown>
+
+
+export function useGetWorkflowForm<TData = Awaited<ReturnType<typeof getWorkflowForm>>, TError = ErrorType<unknown>>(
+ tid: string,
+    rid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWorkflowForm>>,
+          TError,
+          Awaited<ReturnType<typeof getWorkflowForm>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWorkflowForm<TData = Awaited<ReturnType<typeof getWorkflowForm>>, TError = ErrorType<unknown>>(
+ tid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWorkflowForm>>,
+          TError,
+          Awaited<ReturnType<typeof getWorkflowForm>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWorkflowForm<TData = Awaited<ReturnType<typeof getWorkflowForm>>, TError = ErrorType<unknown>>(
+ tid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetWorkflowForm<TData = Awaited<ReturnType<typeof getWorkflowForm>>, TError = ErrorType<unknown>>(
+ tid: string,
+    rid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWorkflowForm>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWorkflowFormQueryOptions(tid,rid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const saveWorkflowFormDraft = (
+    tid: string,
+    rid: string,
+    workflowFormWrite: BodyType<WorkflowFormWrite>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowForm>(
+      {url: `/api/v2/tenants/${tid}/workflow-runs/${rid}/form`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: workflowFormWrite, signal
+    },
+      options);
+    }
+
+
+
+
+export const getSaveWorkflowFormDraftMutationKey = () => ['saveWorkflowFormDraft'] as const;
+
+export const getSaveWorkflowFormDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveWorkflowFormDraft>>, TError,SaveWorkflowFormDraftMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveWorkflowFormDraft>>, TError,SaveWorkflowFormDraftMutationVariables, TContext> => {
+
+const mutationKey = getSaveWorkflowFormDraftMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveWorkflowFormDraft>>, SaveWorkflowFormDraftMutationVariables> = (props) => {
+          const {tid,rid,data} = props ?? {};
+
+          return  saveWorkflowFormDraft(tid,rid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveWorkflowFormDraftMutationResult = NonNullable<Awaited<ReturnType<typeof saveWorkflowFormDraft>>>
+    export type SaveWorkflowFormDraftMutationBody = BodyType<WorkflowFormWrite>
+    export type SaveWorkflowFormDraftMutationError = ErrorType<unknown>
+    export type SaveWorkflowFormDraftMutationVariables = {tid: string;rid: string;data: BodyType<WorkflowFormWrite>}
+
+    export const useSaveWorkflowFormDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveWorkflowFormDraft>>, TError,SaveWorkflowFormDraftMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof saveWorkflowFormDraft>>,
+        TError,
+        SaveWorkflowFormDraftMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveWorkflowFormDraftMutationOptions(options), queryClient);
+    }
+
+export const submitWorkflowForm = (
+    tid: string,
+    rid: string,
+    workflowFormWrite: BodyType<WorkflowFormWrite>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowForm>(
+      {url: `/api/v2/tenants/${tid}/workflow-runs/${rid}/form`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: workflowFormWrite, signal
+    },
+      options);
+    }
+
+
+
+
+export const getSubmitWorkflowFormMutationKey = () => ['submitWorkflowForm'] as const;
+
+export const getSubmitWorkflowFormMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitWorkflowForm>>, TError,SubmitWorkflowFormMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitWorkflowForm>>, TError,SubmitWorkflowFormMutationVariables, TContext> => {
+
+const mutationKey = getSubmitWorkflowFormMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitWorkflowForm>>, SubmitWorkflowFormMutationVariables> = (props) => {
+          const {tid,rid,data} = props ?? {};
+
+          return  submitWorkflowForm(tid,rid,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitWorkflowFormMutationResult = NonNullable<Awaited<ReturnType<typeof submitWorkflowForm>>>
+    export type SubmitWorkflowFormMutationBody = BodyType<WorkflowFormWrite>
+    export type SubmitWorkflowFormMutationError = ErrorType<unknown>
+    export type SubmitWorkflowFormMutationVariables = {tid: string;rid: string;data: BodyType<WorkflowFormWrite>}
+
+    export const useSubmitWorkflowForm = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitWorkflowForm>>, TError,SubmitWorkflowFormMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof submitWorkflowForm>>,
+        TError,
+        SubmitWorkflowFormMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitWorkflowFormMutationOptions(options), queryClient);
+    }
+
+export const retryWorkflowFormTasks = (
+    tid: string,
+    rid: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<WorkflowForm>(
+      {url: `/api/v2/tenants/${tid}/workflow-runs/${rid}/form/retry`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getRetryWorkflowFormTasksMutationKey = () => ['retryWorkflowFormTasks'] as const;
+
+export const getRetryWorkflowFormTasksMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryWorkflowFormTasks>>, TError,RetryWorkflowFormTasksMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryWorkflowFormTasks>>, TError,RetryWorkflowFormTasksMutationVariables, TContext> => {
+
+const mutationKey = getRetryWorkflowFormTasksMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryWorkflowFormTasks>>, RetryWorkflowFormTasksMutationVariables> = (props) => {
+          const {tid,rid} = props ?? {};
+
+          return  retryWorkflowFormTasks(tid,rid,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryWorkflowFormTasksMutationResult = NonNullable<Awaited<ReturnType<typeof retryWorkflowFormTasks>>>
+
+    export type RetryWorkflowFormTasksMutationError = ErrorType<unknown>
+    export type RetryWorkflowFormTasksMutationVariables = {tid: string;rid: string}
+
+    export const useRetryWorkflowFormTasks = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryWorkflowFormTasks>>, TError,RetryWorkflowFormTasksMutationVariables, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof retryWorkflowFormTasks>>,
+        TError,
+        RetryWorkflowFormTasksMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRetryWorkflowFormTasksMutationOptions(options), queryClient);
+    }
 
 export const listWorkflows = (
     tid: string,

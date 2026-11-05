@@ -23,6 +23,8 @@ export interface WorkflowNodeMetadata {
 }
 
 const WORKFLOW_NODE_METADATA: Record<WorkflowNodeKind, WorkflowNodeMetadata> = {
+  form: {kind:"form",icon:IconUserCheck,tone:"bg-muted text-foreground"},
+  createTasks: {kind:"createTasks",icon:IconBraces,tone:"bg-muted text-foreground"},
   start: {
     kind: "start",
     icon: IconPlayerPlay,

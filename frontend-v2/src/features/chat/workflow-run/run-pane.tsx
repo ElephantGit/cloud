@@ -1,3 +1,4 @@
+import { RunForm } from './run-form'
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { MapIcon, MessageSquareIcon, PlayIcon, RotateCcwIcon, SquareIcon, TheaterIcon, WorkflowIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -119,7 +120,7 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
   const revealedArtifactId: string | null = null
   const selectRun = useChatStore((s) => s.selectRun)
   // A live run opens on its Theater; a pending or finished one on Overview, as desktop primes it.
-  const [viewMode, setViewMode] = useState<ViewMode>(run.status === 'running' || run.status === 'awaiting_input' ? 'theater' : 'overview')
+  const [viewMode, setViewMode] = useState<ViewMode>(run.status === 'running' || run.status === 'awaiting_input' || run.definitionSnapshot.nodes.some(n=>n.data.kind==='form') ? 'theater' : 'overview')
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   /** Node whose conversation is open; it pins the act until closed. */
   const [conversationNodeId, setConversationNodeId] = useState<string | null>(null)
@@ -354,7 +355,7 @@ function RunWorkspace({ tenantId, run, refreshProjectRuns }: { tenantId: string;
               还没开始：点右上角「启动」，填写输入后运行
             </p>
           )}
-          {viewMode === 'theater' ? (
+          {viewMode === 'theater' && run.definitionSnapshot.nodes.some(n => n.data.kind === 'form' && ['awaiting_input','succeeded','cancelled'].includes(run.nodeStates[n.id]?.status ?? '')) ? <RunForm tenantId={tenantId} runId={run.id} runStatus={run.status} /> : viewMode === 'theater' ? (
             <RunTheater
               run={run}
               focusNodeId={stageFocusNodeId}

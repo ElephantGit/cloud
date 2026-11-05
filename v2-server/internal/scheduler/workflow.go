@@ -237,6 +237,15 @@ func (a *WorkflowAdapter) Reconcile(ctx context.Context, scope execution.Scope, 
 		return fmt.Errorf("occurrence names another workflow run: %w", execution.ErrConflict)
 	}
 	switch run.Status {
+	case "awaitingInput":
+		if o.Status == "starting" || o.Status == "reconciling" {
+			o, err = a.apply(ctx, scope, o, "accepted", ref, "")
+			if err != nil {
+				return err
+			}
+		}
+		_, err = a.apply(ctx, scope, o, "waiting_for_input", ref, "")
+		return err
 	case store.WorkflowStatusPending:
 		if o.ExecutionRef != "" {
 			return fmt.Errorf("an accepted workflow run is pending: %w", execution.ErrConflict)

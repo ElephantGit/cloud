@@ -1,3 +1,4 @@
+import { panelProgress } from './panel-motion.ts'
 import { useMemo } from 'react'
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from 'remotion'
 import {
@@ -6,7 +7,7 @@ import {
 } from '../timeline.ts'
 import { Cursor, Ripple, RIPPLE_MS } from './Cursor.tsx'
 import { FPS, HEIGHT, SHOT_BACKGROUND, stageFor, TITLE_BAR, WIDTH } from './layout.ts'
-import { ASIDE_CENTER, ASIDE_SCALE, ExplainPanel, MarkBox, panelProgress, SlidePanel } from './Panels.tsx'
+import { ASIDE_CENTER, ASIDE_SCALE, ExplainPanel, MarkBox, SlidePanel } from './Panels.tsx'
 
 /** Props of a shot composition: the recording, loaded from `out/<shot>/timeline.json`. */
 export type ShotProps = { recording: Recording }

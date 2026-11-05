@@ -1,5 +1,7 @@
 /** Node variants understood by the graph workflow execution contract, in canonical order. */
 export const WORKFLOW_NODE_KINDS = [
+  "form",
+  "createTasks",
   "start",
   "agent",
   "condition",

@@ -13,6 +13,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/store/storetest"
 	"github.com/wanglongan587/cloud/v2-server/internal/workflow"
 )
 
@@ -444,7 +445,8 @@ func TestRefusedStartForgetsTheStarter(t *testing.T) {
 	}
 
 	// A teammate fixes the input and starts the run: the Agent executes under their scope.
-	teammate := server.WorkflowRunScope{TenantID: f.scope.TenantID, UserID: "00000000-0000-0000-0000-0000000000aa"}
+	teammateID, _ := storetest.Login(t, f.s, "review-teammate")
+	teammate := server.WorkflowRunScope{TenantID: f.scope.TenantID, UserID: teammateID}
 	if _, err := f.host.UpdateRunInput(ctx, teammate, runID, nil, map[string]json.RawMessage{"topic": json.RawMessage(`"支付"`)}); err != nil {
 		t.Fatal(err)
 	}

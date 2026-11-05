@@ -59,7 +59,7 @@ export default function TasksPage() {
   // A link to a squad that has since been archived falls back to every squad.
   const squad = squadChoices.squads.find(s => s.id === params.get('squad'))
   const squadId = squadChoices.loaded ? squad?.id : params.get('squad')
-  const scoped = filterTasks(list.data?.items ?? [], view, me.id, new Set(mentions.keys()), squadTasks, squadId)
+  const scoped = filterTasks(list.data?.items ?? [], view, me.id, new Set(mentions.keys()), squadTasks, squadId).filter(task => !params.get("project") || task.projectId === params.get("project"))
   // The filter counts what the page can show, so a number never exceeds the cards on the board.
   const choices = view === 'all' ? assigneeChoices(layout === 'board' && !showCancelled ? scoped.filter(t => t.status !== 'cancelled') : scoped) : []
   // A link to someone who no longer holds work falls back to everyone.
@@ -122,6 +122,7 @@ export default function TasksPage() {
         <p>{subtitle}</p>
       </div>
       <div className="mc-header-actions">
+        <NativeSelect aria-label="按项目筛选" value={params.get("project") ?? ""} onChange={e => setParam("project", e.target.value || null)}><NativeSelectOption value="">全部项目</NativeSelectOption>{projectList.map(p => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}</NativeSelect>
         {view === 'all' && <AssigneeFilter choices={choices} value={assignee ?? ''} onChange={value => narrow('assignee', value)} />}
         <NativeSelect aria-label="小队" value={squadId ?? ''} onChange={e => narrow('squad', e.target.value)}>
           <NativeSelectOption value="">全部小队</NativeSelectOption>

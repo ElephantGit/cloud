@@ -58,6 +58,7 @@ export interface ScheduleActionReceipt {
   /** @minimum 1 */
   version: number;
   scheduledAt: string;
+  waitingForInput?: boolean;
 }
 
 export interface ScheduleManualRequest {

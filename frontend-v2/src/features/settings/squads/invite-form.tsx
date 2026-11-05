@@ -1,13 +1,11 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { getGetApiV1TenantsTidMembersQueryKey } from '@/api/members/members'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { codeOf } from '@/lib/api-client'
-import { listSquads } from '@/lib/squads-api/generated'
 import { inviteMember } from '../api/generated'
-import { membersKey } from './query'
 
 const errors: Record<string, string> = {
   member_exists: '这个邮箱已经是团队成员。',
@@ -19,35 +17,31 @@ const errors: Record<string, string> = {
 }
 
 /**
- * Owner-only invitation. The address alone creates the account, so the invitee signs in with it
- * and nothing else — there is no acceptance step. An optional squad joins the invitee to that
- * squad in the same transaction; the choices come from the workspace's live squads, so an
- * archived squad is never offered.
+ * Owner-only invitation into one squad. The address alone creates the account, so the invitee
+ * signs in with it and nothing else — there is no acceptance step — and joins the squad in the
+ * same transaction.
  */
-export function InviteForm({ tenantId }: { tenantId: string }) {
+export function InviteForm({ tenantId, squadId }: { tenantId: string; squadId: string }) {
   const client = useQueryClient()
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [squadId, setSquadId] = useState('')
   const [invited, setInvited] = useState('')
-  const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: tenantId !== '' })
-  const liveSquads = (squads.data?.items ?? []).filter((squad) => squad.archivedAt === null)
   const invite = useMutation({
     mutationFn: () =>
       inviteMember(tenantId, {
         email: email.trim(),
         displayName: displayName.trim() || undefined,
-        squadId: squadId || undefined,
+        squadId,
       }),
     onSuccess: async (member) => {
       setEmail('')
       setDisplayName('')
-      setSquadId('')
       setInvited(member.displayName)
       await Promise.all([
-        client.invalidateQueries({ queryKey: membersKey(tenantId) }),
-        // The squad's version moved, so the 协作 page must not keep serving the old list.
+        client.invalidateQueries({ queryKey: getGetApiV1TenantsTidMembersQueryKey(tenantId) }),
+        // The squad's version moved, so neither its detail nor the list may stay on the old one.
         client.invalidateQueries({ queryKey: ['squads', tenantId] }),
+        client.invalidateQueries({ queryKey: ['squad', tenantId, squadId] }),
       ])
     },
   })
@@ -83,24 +77,6 @@ export function InviteForm({ tenantId }: { tenantId: string }) {
           onChange={(event) => setDisplayName(event.target.value)}
         />
       </div>
-      {liveSquads.length > 0 && (
-        <div className="flex min-w-40 flex-1 flex-col gap-2">
-          <Label htmlFor="invite-squad">小队（选填）</Label>
-          <NativeSelect
-            id="invite-squad"
-            className="w-full"
-            value={squadId}
-            onChange={(event) => setSquadId(event.target.value)}
-          >
-            <NativeSelectOption value="">不加入小队</NativeSelectOption>
-            {liveSquads.map((squad) => (
-              <NativeSelectOption key={squad.id} value={squad.id}>
-                {squad.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </div>
-      )}
       <Button type="submit" disabled={invite.isPending || email.trim() === ''}>
         邀请
       </Button>

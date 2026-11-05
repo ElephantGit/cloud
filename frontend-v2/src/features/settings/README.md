@@ -26,7 +26,7 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
   浏览器本地状态并显示“已安装”，刷新后保持。该操作不写服务端、不改变运行时，执行器
   候选仍只看 `lib/plugin-runtime.ts` 对服务端选择的判定。等待逻辑在
   `plugins/install-delay.ts`，不占用 v2-server 事务。
-  工作流卡片与详情共用按用户、租户、空间保存的浏览器选择；安装和卸载不提交服务端变更，也不导入或删除工作流。合集暂不可安装。目录来自 v2-server 对
+  官方工作流插件（`official/ora-space.` 前缀下的 `requirement-development`、`requirement-decomposition`、`customer-feedback-triage`、`daily-inspection`）以服务端安装记录为准；安装会把工作流导入库并发布 v1，卸载保留工作流和历史。其余工作流插件（如 Workflow Examples）只在浏览器按用户、租户、空间记录安装状态，不提交服务端变更。合集暂不可安装。目录来自 v2-server 对
   `ora-space/marketplace` 的真实 Git 同步，而不是前端内置数据。目录把来源发布的明暗主题
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
   member 只读。MCP、Hook 与预装 Agent 的安装选择保存在 `@/lib/settings-demo/plugin-selections.ts` 的浏览器

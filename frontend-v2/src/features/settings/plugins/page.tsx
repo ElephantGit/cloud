@@ -26,7 +26,7 @@ import { DetailPanel } from '../components/detail-panel'
 import { ConfirmDialog } from '../components/confirm-dialog'
 import { MarkdownPreview } from '../components/markdown-preview'
 import { useUser } from '@/app/auth/user'
-import { demoPlugin, withDemoCatalog } from '@/lib/settings-demo/plugin-catalog'
+import { demoPlugin, localWorkflow, withDemoCatalog } from '@/lib/settings-demo/plugin-catalog'
 import {
   demoSelectionFor,
   useDemoPluginSelections,
@@ -62,6 +62,7 @@ function StateBadge({
   const label =
     selection?.kind !== 'skill' &&
     selection?.kind !== 'agent' &&
+    selection?.kind !== 'workflow' &&
     selection?.desiredState === 'installed'
       ? '仅空间选择'
       : (stateLabels[state] ?? state)
@@ -166,9 +167,8 @@ export default function PluginsPage() {
   const selected = catalog.find(
     (entry) => pluginKey(entry) === params.get('plugin'),
   )
-  // Workflow cards reflect browser selections independently of any imported workflows.
   const serverSelection = (entry: PluginCatalogEntry) =>
-    entry.kind === 'workflow' ? undefined : market.selection(entry)
+    localWorkflow(entry) ? undefined : market.selection(entry)
   const selectedSelection = selected ? serverSelection(selected) : undefined
   const demoInstallable = (entry: PluginCatalogEntry) => {
     const selection = serverSelection(entry)
@@ -220,7 +220,7 @@ export default function PluginsPage() {
     }))
     .filter((group) => group.items.length > 0)
   const installedSelections = market.installations.filter(
-    (selection) => selection.kind !== 'workflow' && pluginInstalled(selection),
+    (selection) => !localWorkflow(selection) && pluginInstalled(selection),
   )
   const installedKeys = new Set([
     ...installedSelections.map(pluginKey),
@@ -250,7 +250,7 @@ export default function PluginsPage() {
         toast.success(`已安装 ${entry.title}`)
       } else {
         await Promise.all([market.install(entry), delay])
-        toast.success(`已选择 ${entry.title}`)
+        toast.success(`${entry.kind === 'workflow' ? '已安装' : '已选择'} ${entry.title}`)
       }
     } catch {
       await delay
@@ -348,7 +348,7 @@ export default function PluginsPage() {
         </Button>
       )
     if (
-      (!available.has(pluginKey(entry)) || entry.kind !== 'skill') &&
+      (!available.has(pluginKey(entry)) || (entry.kind !== 'skill' && entry.kind !== 'workflow')) &&
       selection?.desiredState === 'installed'
     )
       return (
@@ -358,7 +358,7 @@ export default function PluginsPage() {
           disabled={!market.canManage || market.mutating}
           onClick={() => requestRemove(entry)}
         >
-          移除
+          {entry.kind === 'workflow' ? '卸载' : '移除'}
         </Button>
       )
     if (entry.kind === 'pack')
@@ -373,6 +373,7 @@ export default function PluginsPage() {
     if (
       entry.kind !== 'skill' &&
       entry.kind !== 'agent' &&
+      entry.kind !== 'workflow' &&
       selection?.desiredState !== 'installed'
     )
       return (
@@ -382,7 +383,7 @@ export default function PluginsPage() {
       )
     return selection?.desiredState === 'installed' ? (
       <>
-        {entry.kind === 'skill' &&
+        {(entry.kind === 'skill' || entry.kind === 'workflow') &&
           (entry.version !== selection.desiredVersion ||
             selection.observedState === 'failed' ||
             selection.observedState === 'pending') && (
@@ -405,7 +406,7 @@ export default function PluginsPage() {
           disabled={!market.canManage || busy}
           onClick={() => requestRemove(entry)}
         >
-          移除
+          {entry.kind === 'workflow' ? '卸载' : '移除'}
         </Button>
       </>
     ) : (
@@ -666,7 +667,7 @@ export default function PluginsPage() {
                 ? selected.version
                 : '来源不可用'}
             </dd>
-            {selected.kind === 'workflow' ? (
+            {localWorkflow(selected) ? (
               <>
                 <dt>安装状态</dt>
                 <dd>{demoSelected(selected) ? `已安装 ${selected.version}` : '未安装'}</dd>
@@ -705,10 +706,12 @@ export default function PluginsPage() {
               {selectedSelection?.installError}
             </p>
           )}
-          {selected.kind !== 'workflow' && (
+          {!localWorkflow(selected) && (
             <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
               {demoPlugin(selected)
                 ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
+                : selected.kind === 'workflow'
+                  ? '安装会导入工作流并发布初始版本，可在工作流库中运行。'
                 : selectedSelection && isPreinstalledAgent(selectedSelection)
                   ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
                   : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
@@ -740,7 +743,7 @@ export default function PluginsPage() {
           title={`${removing.entry.kind === 'workflow' ? '卸载' : '移除'} ${removing.entry.title}？`}
           description={
             removing.entry.kind === 'workflow'
-              ? '卸载后可以重新安装。'
+              ? removing.demo ? '卸载后可以重新安装。' : '已导入的工作流和运行历史会保留。'
               : removing.demo
                 ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
                 : removing.entry.kind === 'skill'

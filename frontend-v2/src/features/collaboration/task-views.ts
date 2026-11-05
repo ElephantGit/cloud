@@ -49,6 +49,32 @@ export const canCloseTask = (task: Task, me: string, role: string | undefined): 
 /** Why the caller cannot end the task, named after who can. */
 export const closeRefusal = (task: Task, action: string): string => `只有创建人 ${task.createdByName} 或工作区 owner 能${action}。`
 
+/** The filter value of a task's assignee; unassigned work has its own. */
+export const UNASSIGNED = 'none'
+export const assigneeKey = (task: Task): string => (task.assignee ? `${task.assignee.type}:${task.assignee.id}` : UNASSIGNED)
+
+/** One assignee the filter offers, with how many of the given tasks it holds. */
+export interface AssigneeChoice {
+  value: string
+  label: string
+  type: 'human' | 'agent' | 'squad' | typeof UNASSIGNED
+  count: number
+}
+
+const CHOICE_ORDER: AssigneeChoice['type'][] = ['human', 'agent', 'squad', UNASSIGNED]
+
+/** The assignees of these tasks, people first and by name within a kind, so the filter lists exactly who holds work. */
+export function assigneeChoices(tasks: Task[]): AssigneeChoice[] {
+  const choices = new Map<string, AssigneeChoice>()
+  for (const t of tasks) {
+    const value = assigneeKey(t)
+    const known = choices.get(value)
+    if (known) known.count += 1
+    else choices.set(value, { value, label: t.assignee?.displayName ?? '未指派', type: t.assignee?.type ?? UNASSIGNED, count: 1 })
+  }
+  return [...choices.values()].sort((a, b) => CHOICE_ORDER.indexOf(a.type) - CHOICE_ORDER.indexOf(b.type) || a.label.localeCompare(b.label, 'zh-CN'))
+}
+
 /** Whether 「拆分」 applies: a big requirement still open, not a subtask. */
 export const canDecompose = (task: Task): boolean => !task.parentId && !isTaskFinished(task.status)
 

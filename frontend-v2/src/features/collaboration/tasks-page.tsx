@@ -15,13 +15,30 @@ import { PanelDialog } from '@/components/panel/panel-dialog'
 import { TaskForm, type TaskDraft } from './task-form'
 import { TaskBoardColumns, TaskRows } from './task-list'
 import { boardMoveMessageFor, taskMessageFor } from './task-model'
-import { canCloseTask, familyLabels, filterTasks, TASK_VIEWS, viewOf } from './task-views'
+import { assigneeChoices, assigneeKey, canCloseTask, familyLabels, filterTasks, TASK_VIEWS, UNASSIGNED, viewOf, type AssigneeChoice } from './task-views'
 import { createTask, setTaskStatus, type Task, type TaskList, type TaskStatusProperty } from './tasks-api/generated'
 import { useMySquadTasks, usePendingMentions, useSquadChoices, useTaskList, useWorkspace } from './workspace'
 
+const CHOICE_GROUPS: { type: AssigneeChoice['type']; label: string }[] = [
+  { type: 'human', label: '成员' }, { type: 'agent', label: 'Agent' }, { type: 'squad', label: '小队' },
+]
+
+/** Narrows the whole team's list to one assignee, so anyone can see what each person holds. */
+function AssigneeFilter({ choices, value, onChange }: { choices: AssigneeChoice[]; value: string; onChange: (value: string) => void }) {
+  const option = (choice: AssigneeChoice) => <NativeSelectOption key={choice.value} value={choice.value}>{choice.label}（{choice.count}）</NativeSelectOption>
+  return <NativeSelect aria-label="指派对象" value={value} onChange={e => onChange(e.target.value)}>
+    <NativeSelectOption value="">全部指派对象</NativeSelectOption>
+    {CHOICE_GROUPS.map(group => {
+      const members = choices.filter(c => c.type === group.type)
+      return members.length > 0 && <NativeSelectOptGroup key={group.type} label={group.label}>{members.map(option)}</NativeSelectOptGroup>
+    })}
+    {choices.filter(c => c.type === UNASSIGNED).map(option)}
+  </NativeSelect>
+}
+
 /**
- * One scope of the team's tasks, as a board (the default) or a list. The scope, squad and layout
- * live in the URL so a link shows a teammate the same view; `new=1` opens the create form the sidebar links to.
+ * One scope of the team's tasks, as a board (the default) or a list. The scope, squad, assignee and
+ * layout live in the URL so a link shows a teammate the same view; `new=1` opens the create form the sidebar links to.
  */
 export default function TasksPage() {
   const me = useUser()
@@ -42,13 +59,26 @@ export default function TasksPage() {
   // A link to a squad that has since been archived falls back to every squad.
   const squad = squadChoices.squads.find(s => s.id === params.get('squad'))
   const squadId = squadChoices.loaded ? squad?.id : params.get('squad')
-  const items = filterTasks(list.data?.items ?? [], view, me.id, new Set(mentions.keys()), squadTasks, squadId)
+  const scoped = filterTasks(list.data?.items ?? [], view, me.id, new Set(mentions.keys()), squadTasks, squadId)
+  // The filter counts what the page can show, so a number never exceeds the cards on the board.
+  const choices = view === 'all' ? assigneeChoices(layout === 'board' && !showCancelled ? scoped.filter(t => t.status !== 'cancelled') : scoped) : []
+  // A link to someone who no longer holds work falls back to everyone.
+  const assignee = choices.find(c => c.value === params.get('assignee'))?.value
+  const items = assignee ? scoped.filter(t => assigneeKey(t) === assignee) : scoped
   const families = useMemo(() => familyLabels(list.data?.items ?? []), [list.data])
   const projectList = projects.data?.items ?? []
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
     if (value === null) next.delete(key)
     else next.set(key, value)
+    setParams(next, { replace: true })
+  }
+  // A squad narrows to the tasks assigned to it, so it and another assignee would always be empty.
+  const narrow = (key: 'squad' | 'assignee', value: string) => {
+    const next = new URLSearchParams(params)
+    next.delete(key === 'squad' ? 'assignee' : 'squad')
+    if (value) next.set(key, value)
+    else next.delete(key)
     setParams(next, { replace: true })
   }
   const openCreate = () => { setError(''); setParam('new', '1') }
@@ -92,7 +122,8 @@ export default function TasksPage() {
         <p>{subtitle}</p>
       </div>
       <div className="mc-header-actions">
-        <NativeSelect aria-label="小队" value={squadId ?? ''} onChange={e => setParam('squad', e.target.value || null)}>
+        {view === 'all' && <AssigneeFilter choices={choices} value={assignee ?? ''} onChange={value => narrow('assignee', value)} />}
+        <NativeSelect aria-label="小队" value={squadId ?? ''} onChange={e => narrow('squad', e.target.value)}>
           <NativeSelectOption value="">全部小队</NativeSelectOption>
           {squadChoices.mine.length > 0 && <NativeSelectOptGroup label="我的小队">
             {squadChoices.mine.map(s => <NativeSelectOption key={s.id} value={s.id}>{s.name}</NativeSelectOption>)}
@@ -123,7 +154,7 @@ export default function TasksPage() {
             : <TaskRows tasks={items} projects={projectList} mentions={mentions} squadTasks={squadTasks} families={families} onOpen={open} />
           : <Empty className="min-h-56 border">
             <EmptyHeader><EmptyMedia variant="icon"><ClipboardList /></EmptyMedia>
-              <EmptyTitle>{view === 'all' && !squad ? '还没有任务' : '这里还没有任务'}</EmptyTitle>
+              <EmptyTitle>{view === 'all' && !squad && !assignee ? '还没有任务' : '这里还没有任务'}</EmptyTitle>
               <EmptyDescription>建一个任务，指派给一个人、一个 Agent 或一个小队；指派给 Agent 或小队的任务可以在任务里开始执行。</EmptyDescription>
             </EmptyHeader>
             <EmptyContent><Button variant="outline" onClick={openCreate} disabled={!tenantId}>创建任务</Button></EmptyContent>

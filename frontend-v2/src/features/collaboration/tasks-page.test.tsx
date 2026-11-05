@@ -60,6 +60,36 @@ beforeEach(() => {
   vi.mocked(api.listPendingMentions).mockResolvedValue({ items: [] })
 })
 
+const su = { type: 'human' as const, id: 'user-su', displayName: '苏芮' }
+
+it('narrows the whole team\'s tasks to one assignee, in the URL', async () => {
+  vi.mocked(api.listTasks).mockResolvedValue({ items: [
+    task({ id: 'a', title: '苏芮的活', assignee: su }), task({ id: 'b', title: '第二件', assignee: su }), task({ id: 'c', title: '没人管' }),
+    task({ id: 'd', title: '取消的活', status: 'cancelled', assignee: su }),
+  ], nextCursor: '' })
+  renderAt('/collaboration?view=all')
+  const filter = await screen.findByRole('combobox', { name: '指派对象' })
+  // The board hides cancelled work, so the count does too.
+  expect(await within(filter).findByRole('option', { name: '苏芮（2）' })).toBeInTheDocument()
+  expect(within(filter).getByRole('option', { name: '未指派（1）' })).toBeInTheDocument()
+  await userEvent.selectOptions(filter, '苏芮（2）')
+  await waitFor(() => expect(screen.queryByRole('button', { name: '查看任务 没人管' })).not.toBeInTheDocument())
+  expect(screen.getByRole('button', { name: '查看任务 苏芮的活' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '查看任务 第二件' })).toBeInTheDocument()
+  expect(screen.getByText('3 个任务')).toBeInTheDocument()
+})
+
+it('offers the assignee filter only on 全部任务, and falls back from someone without work', async () => {
+  vi.mocked(api.listTasks).mockResolvedValue({ items: [task({ title: '我的活', assignee: su })], nextCursor: '' })
+  const { unmount } = renderAt('/collaboration?view=all&assignee=human:gone')
+  expect(await screen.findByRole('button', { name: '查看任务 我的活' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '指派对象' })).toHaveValue('')
+  unmount()
+  renderAt('/collaboration?view=mine')
+  await screen.findByRole('list', { name: '任务看板' })
+  expect(screen.queryByRole('combobox', { name: '指派对象' })).not.toBeInTheDocument()
+})
+
 it('shows an explicit empty state instead of sample tasks', async () => {
   renderAt('/collaboration')
   const board = await screen.findByRole('list', { name: '任务看板' })

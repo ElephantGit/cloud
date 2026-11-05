@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './tasks-api/generated'
-import { agentReach, boardDraggable, boardMove, canCloseTask, canDecompose, familyLabels, filterTasks, runsAgent, viewOf } from './task-views'
+import { agentReach, assigneeChoices, assigneeKey, boardDraggable, boardMove, canCloseTask, canDecompose, familyLabels, filterTasks, runsAgent, viewOf } from './task-views'
 
 const task = (overrides: Partial<Task>): Task => ({
   id: 'task', tenantId: 'tenant', title: '任务', description: '', projectId: 'project', assignee: null, status: 'pending',
@@ -110,6 +110,16 @@ describe('who may send the Agent a turn', () => {
     expect(boardMove(assigned, 'cancelled', false).reason).toBe('只有创建人 陈默 或工作区 owner 能取消任务。')
     // Handing the work to 待验收 stays with whoever does it.
     expect(boardMove({ ...assigned, status: 'running' }, 'review', false).ok).toBe(true)
+  })
+
+  it('lists who holds work, people first, with unassigned last', () => {
+    const su = { type: 'human' as const, id: 'su', displayName: '苏芮' }
+    const zhou = { type: 'human' as const, id: 'zhou', displayName: '周衡' }
+    const crew = { type: 'squad' as const, id: 'crew', displayName: '看板小队' }
+    const tasks = [task({ assignee: crew }), task({}), task({ assignee: agent }), task({ assignee: zhou }), task({ assignee: su }), task({ assignee: su })]
+    expect(assigneeChoices(tasks).map(c => [c.label, c.count])).toEqual([['苏芮', 2], ['周衡', 1], ['OpenCode', 1], ['看板小队', 1], ['未指派', 1]])
+    expect(assigneeKey(task({ assignee: su }))).toBe('human:su')
+    expect(assigneeChoices([])).toEqual([])
   })
 
   it('names a subtask\'s requirement and counts a requirement\'s subtasks', () => {

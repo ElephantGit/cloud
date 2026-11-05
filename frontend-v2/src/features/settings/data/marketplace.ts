@@ -89,7 +89,8 @@ export function usePluginMarketplace() {
       if (
         entry.kind !== 'skill' &&
         entry.kind !== 'agent' &&
-        entry.kind !== 'workflow'
+        entry.kind !== 'workflow' &&
+        entry.kind !== 'hook'
       )
         throw new Error('此插件类型不支持在此处安装。')
       const current = (selections.data?.items ?? []).find(

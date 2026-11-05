@@ -38,13 +38,6 @@ export const demoMcpEntry = demoEntry(
   'MCP 插件的安装与卸载不会连接外部服务。',
 )
 
-export const demoHookEntry = demoEntry(
-  'sample-hooks',
-  'hook',
-  '示例 Hooks',
-  '生命周期 Hook 的安装与卸载不会执行自动化脚本。',
-)
-
 const serverWorkflowKeys = new Set([
   'official/ora-space.requirement-development',
   'official/ora-space.requirement-decomposition',
@@ -61,18 +54,19 @@ export function localWorkflow(entry: PluginIdentity) {
     !serverWorkflowKeys.has(`${entry.sourceNamespace}/${entry.identifier}`)
 }
 
+/** Browser-local demo entries are limited to MCP; Hook demo state lives in the Space plugin API. */
 export function demoPlugin(entry: PluginIdentity) {
-  return localWorkflow(entry) || entry.kind === 'mcp' || entry.kind === 'hook'
+  return localWorkflow(entry) || entry.kind === 'mcp'
 }
 
 /**
- * v2-server has no MCP/Hook executor yet. Keep one clearly labelled local example visible so the
- * plugin page can still demonstrate the lifecycle when the synced marketplace has no such entry.
+ * v2-server has no MCP executor yet. Keep one clearly labelled local example visible so the plugin
+ * page can still demonstrate that lifecycle when the synced marketplace has no MCP entry. Hook
+ * demo entries come from the server so their install state can be stored in PostgreSQL.
  */
 export function withDemoCatalog(catalog: PluginCatalogEntry[]) {
   return [
     ...catalog,
     ...(catalog.some((entry) => entry.kind === 'mcp') ? [] : [demoMcpEntry]),
-    ...(catalog.some((entry) => entry.kind === 'hook') ? [] : [demoHookEntry]),
   ]
 }

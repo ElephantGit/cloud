@@ -6,26 +6,29 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-it('keeps demo installs scoped and persists them in browser storage', () => {
+it('keeps browser-local MCP and Agent installs scoped and persisted', () => {
   const { setSelected } = useDemoPluginSelections.getState()
 
-  setSelected('owner:tenant:space-a', 'demo/sample-hooks', true)
-  setSelected('owner:tenant:space-a', 'demo/sample-hooks', true)
+  setSelected('owner:tenant:space-a', 'demo/sample-mcp', true)
+  setSelected('owner:tenant:space-a', 'official/ora-space.opencode', true)
   setSelected('owner:tenant:space-b', 'demo/sample-mcp', true)
 
   expect(useDemoPluginSelections.getState().byScope).toEqual({
-    'owner:tenant:space-a': ['demo/sample-hooks'],
+    'owner:tenant:space-a': [
+      'demo/sample-mcp',
+      'official/ora-space.opencode',
+    ],
     'owner:tenant:space-b': ['demo/sample-mcp'],
   })
   expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
     'tenant:space-a',
   )
 
-  setSelected('owner:tenant:space-a', 'demo/sample-hooks', false)
+  setSelected('owner:tenant:space-a', 'demo/sample-mcp', false)
 
   expect(
     useDemoPluginSelections.getState().byScope['owner:tenant:space-a'],
-  ).toEqual([])
+  ).toEqual(['official/ora-space.opencode'])
   expect(
     useDemoPluginSelections.getState().byScope['owner:tenant:space-b'],
   ).toEqual(['demo/sample-mcp'])

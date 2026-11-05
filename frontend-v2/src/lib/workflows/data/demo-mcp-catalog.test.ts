@@ -1,8 +1,16 @@
 import { afterEach, expect, it } from 'vitest'
 import { http } from '@/lib/api-client'
 import { fakeBackend } from '@/test/backend'
-import { demoMcpEntry, demoHookEntry } from '@/lib/settings-demo/plugin-catalog'
+import { demoMcpEntry } from '@/lib/settings-demo/plugin-catalog'
 import { workflowDemoMcps } from './demo-mcp-catalog'
+
+const demoHookEntry = {
+  ...demoMcpEntry,
+  id: 'demo/sample-hooks',
+  identifier: 'sample-hooks',
+  title: '示例 Hooks',
+  kind: 'hook' as const,
+}
 
 const original = http.defaults.adapter
 afterEach(() => { http.defaults.adapter = original })

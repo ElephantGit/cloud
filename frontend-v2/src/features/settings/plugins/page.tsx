@@ -62,7 +62,6 @@ function StateBadge({
   const label =
     selection?.kind !== 'skill' &&
     selection?.kind !== 'agent' &&
-    selection?.kind !== 'workflow' &&
     selection?.desiredState === 'installed'
       ? '仅空间选择'
       : (stateLabels[state] ?? state)
@@ -167,9 +166,12 @@ export default function PluginsPage() {
   const selected = catalog.find(
     (entry) => pluginKey(entry) === params.get('plugin'),
   )
-  const selectedSelection = selected ? market.selection(selected) : undefined
+  // Workflow cards reflect browser selections independently of any imported workflows.
+  const serverSelection = (entry: PluginCatalogEntry) =>
+    entry.kind === 'workflow' ? undefined : market.selection(entry)
+  const selectedSelection = selected ? serverSelection(selected) : undefined
   const demoInstallable = (entry: PluginCatalogEntry) => {
-    const selection = market.selection(entry)
+    const selection = serverSelection(entry)
     return (
       demoPlugin(entry) ||
       (selection != null && isPreinstalledAgent(selection))
@@ -179,7 +181,7 @@ export default function PluginsPage() {
     demoInstallable(entry) && demoSelection.includes(pluginKey(entry))
   const filtered = catalog
     .filter((entry) => {
-      const selection = market.selection(entry)
+      const selection = serverSelection(entry)
       return (
         `${entry.title} ${entry.description} ${pluginKey(entry)}`
           .toLowerCase()
@@ -217,8 +219,9 @@ export default function PluginsPage() {
       items: filtered.filter((entry) => entry.kind === kindValue),
     }))
     .filter((group) => group.items.length > 0)
-  const installedSelections = market.installations.filter(pluginInstalled)
-  const installedServerPackages = installedSelections
+  const installedSelections = market.installations.filter(
+    (selection) => selection.kind !== 'workflow' && pluginInstalled(selection),
+  )
   const installedKeys = new Set([
     ...installedSelections.map(pluginKey),
     ...catalog.filter(demoSelected).map(pluginKey),
@@ -247,9 +250,7 @@ export default function PluginsPage() {
         toast.success(`已安装 ${entry.title}`)
       } else {
         await Promise.all([market.install(entry), delay])
-        toast.success(
-          `${entry.kind === 'workflow' ? '已安装' : '已选择'} ${entry.title}`,
-        )
+        toast.success(`已选择 ${entry.title}`)
       }
     } catch {
       await delay
@@ -269,7 +270,7 @@ export default function PluginsPage() {
         setRemoving({ entry, demo: true })
       return
     }
-    const selection = market.selection(entry)
+    const selection = serverSelection(entry)
     if (selection) setRemoving({ entry, selection, demo: false })
   }
   const confirmRemove = () => {
@@ -290,7 +291,7 @@ export default function PluginsPage() {
       .catch(() => undefined)
   }
   function actions(entry: PluginCatalogEntry) {
-    const selection = market.selection(entry)
+    const selection = serverSelection(entry)
     const pending = installing(entry)
     if (pending)
       return (
@@ -307,7 +308,7 @@ export default function PluginsPage() {
           disabled={!market.canManage}
           onClick={() => requestRemove(entry)}
         >
-          移除
+          {entry.kind === 'workflow' ? '卸载' : '移除'}
         </Button>
       ) : (
         <Button
@@ -372,7 +373,6 @@ export default function PluginsPage() {
     if (
       entry.kind !== 'skill' &&
       entry.kind !== 'agent' &&
-      entry.kind !== 'workflow' &&
       selection?.desiredState !== 'installed'
     )
       return (
@@ -382,7 +382,7 @@ export default function PluginsPage() {
       )
     return selection?.desiredState === 'installed' ? (
       <>
-        {(entry.kind === 'skill' || entry.kind === 'workflow') &&
+        {entry.kind === 'skill' &&
           (entry.version !== selection.desiredVersion ||
             selection.observedState === 'failed' ||
             selection.observedState === 'pending') && (
@@ -430,7 +430,7 @@ export default function PluginsPage() {
     <section>
       <PageHeader
         title="Plugins"
-        description="浏览并管理空间插件；安装会展示 3–5 秒的随机等待。Skill、市场 Agent 与工作流插件的安装状态保存在服务端，MCP、Hook 与预装 Agent 的安装操作只改变当前浏览器中的状态。"
+        description="浏览空间插件，查看详情并管理安装状态。"
         count={catalog.length}
         actions={
           <>
@@ -577,7 +577,7 @@ export default function PluginsPage() {
                           </span>
                           <div className="settings-resource-actions">
                             <StateBadge
-                              selection={market.selection(entry)}
+                              selection={serverSelection(entry)}
                               demoSelected={demoSelected(entry)}
                               installing={installing(entry)}
                             />
@@ -598,12 +598,7 @@ export default function PluginsPage() {
         <div className="settings-list-footer">
           <span>
             显示 {filtered.length} / {catalog.length} 个插件 · 共{' '}
-            {installedKeys.size} 个已安装或已选择 · 其中{' '}
-            {installedServerPackages.length} 个服务端插件
-          </span>
-          <span>
-            Skill 由项目节点确认；工作流安装会导入并发布工作流；MCP/Hook 与预装
-            Agent 只改变本地状态
+            {installedKeys.size} 个已安装或已选择
           </span>
         </div>
       </DataState>
@@ -644,7 +639,7 @@ export default function PluginsPage() {
                 <span>{pluginKey(selected)}</span>
               </span>
               <StateBadge
-                selection={market.selection(selected)}
+                selection={selectedSelection}
                 demoSelected={demoSelected(selected)}
                 installing={installing(selected)}
               />
@@ -671,24 +666,33 @@ export default function PluginsPage() {
                 ? selected.version
                 : '来源不可用'}
             </dd>
-            <dt>安装选择</dt>
-            <dd>
-              {demoSelected(selected)
-                ? `本地安装 ${selected.version}`
-                : selectedSelection && isPreinstalledAgent(selectedSelection)
-                  ? '运行时预装，未开始本地安装'
-                  : selectedSelection?.desiredState === 'installed'
-                  ? `安装 ${selectedSelection?.desiredVersion}`
-                  : '未选择'}
-            </dd>
-            <dt>安装结果</dt>
-            <dd>
-              {demoSelected(selected)
-                ? '浏览器本地状态'
-                : selectedSelection && isPreinstalledAgent(selectedSelection)
-                  ? '运行时预装（服务端未变更）'
-                  : (selectedSelection?.observedVersion ?? '尚未安装')}
-            </dd>
+            {selected.kind === 'workflow' ? (
+              <>
+                <dt>安装状态</dt>
+                <dd>{demoSelected(selected) ? `已安装 ${selected.version}` : '未安装'}</dd>
+              </>
+            ) : (
+              <>
+                <dt>安装选择</dt>
+                <dd>
+                  {demoSelected(selected)
+                    ? `本地安装 ${selected.version}`
+                    : selectedSelection && isPreinstalledAgent(selectedSelection)
+                      ? '运行时预装，未开始本地安装'
+                      : selectedSelection?.desiredState === 'installed'
+                      ? `安装 ${selectedSelection?.desiredVersion}`
+                      : '未选择'}
+                </dd>
+                <dt>安装结果</dt>
+                <dd>
+                  {demoSelected(selected)
+                    ? '浏览器本地状态'
+                    : selectedSelection && isPreinstalledAgent(selectedSelection)
+                      ? '运行时预装（服务端未变更）'
+                      : (selectedSelection?.observedVersion ?? '尚未安装')}
+                </dd>
+              </>
+            )}
             <dt>来源</dt>
             <dd>
               {selected.sourceNamespace} · {selected.sourceUrl}
@@ -696,20 +700,20 @@ export default function PluginsPage() {
             <dt>许可证</dt>
             <dd>{selected.license ?? '未提供'}</dd>
           </dl>
-          {market.selection(selected)?.installError && (
+          {selectedSelection?.installError && (
             <p role="alert" className="text-sm text-destructive">
-              {market.selection(selected)?.installError}
+              {selectedSelection?.installError}
             </p>
           )}
-          <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
-            {demoPlugin(selected)
-              ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
-              : selected.kind === 'workflow'
-                ? '安装会下载并校验插件包，导入其中的工作流并发布初始版本；移除只清除插件选择，已导入的工作流和历史会保留。'
+          {selected.kind !== 'workflow' && (
+            <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+              {demoPlugin(selected)
+                ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
                 : selectedSelection && isPreinstalledAgent(selectedSelection)
                   ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
                   : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
-          </p>
+            </p>
+          )}
           <Separator />
           {selected.readme ? (
             <MarkdownPreview content={selected.readme} />
@@ -733,17 +737,17 @@ export default function PluginsPage() {
       )}
       {removing && (
         <ConfirmDialog
-          title={`移除 ${removing.entry.title}？`}
+          title={`${removing.entry.kind === 'workflow' ? '卸载' : '移除'} ${removing.entry.title}？`}
           description={
-            removing.demo
-              ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
-              : removing.entry.kind === 'skill'
-                ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
-                : removing.entry.kind === 'workflow'
-                  ? '将从空间移除该插件选择；已导入的工作流和运行历史会保留。'
+            removing.entry.kind === 'workflow'
+              ? '卸载后可以重新安装。'
+              : removing.demo
+                ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
+                : removing.entry.kind === 'skill'
+                  ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
                   : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'
           }
-          confirmLabel="移除"
+          confirmLabel={removing.entry.kind === 'workflow' ? '卸载' : '移除'}
           pending={removing.demo ? false : market.mutating}
           error={removing.demo ? undefined : market.mutationError}
           onClose={() => setRemoving(undefined)}

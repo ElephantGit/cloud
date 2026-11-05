@@ -46,7 +46,7 @@ export const demoHookEntry = demoEntry(
 )
 
 export function demoPlugin(entry: Pick<PluginCatalogEntry, 'kind'>) {
-  return entry.kind === 'mcp' || entry.kind === 'hook'
+  return entry.kind === 'workflow' || entry.kind === 'mcp' || entry.kind === 'hook'
 }
 
 /**

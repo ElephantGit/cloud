@@ -18,7 +18,7 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 丢弃已经由服务端目录取代的技能和本地插件镜像，同时保留已有角色或为旧快照补上角色。保存
 失败和损坏数据会报错，不会自动清空。
 
-- 插件复用生成的 `PluginCatalogEntry` 与 `SpacePlugin`；目录、安装和卸载全部走
+- 插件复用生成的 `PluginCatalogEntry` 与 `SpacePlugin`；目录读取与服务端安装、卸载走
   `frontend-v2/src/api` 的生成客户端。以 `sourceNamespace/identifier` 对应，写入带
   `Idempotency-Key` 和当前选择 version。Skill 与市场 Agent 可安装/移除；Agent 只保存空间
   选择，不触发下载或执行。所有安装操作都显示 3–5 秒随机等待；系统预装的 OpenCode、
@@ -26,7 +26,7 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
   浏览器本地状态并显示“已安装”，刷新后保持。该操作不写服务端、不改变运行时，执行器
   候选仍只看 `lib/plugin-runtime.ts` 对服务端选择的判定。等待逻辑在
   `plugins/install-delay.ts`，不占用 v2-server 事务。
-  合集暂不可安装。目录来自 v2-server 对
+  工作流卡片与详情共用按用户、租户、空间保存的浏览器选择；安装和卸载不提交服务端变更，也不导入或删除工作流。合集暂不可安装。目录来自 v2-server 对
   `ora-space/marketplace` 的真实 Git 同步，而不是前端内置数据。目录把来源发布的明暗主题
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
   member 只读。MCP、Hook 与预装 Agent 的安装选择保存在 `@/lib/settings-demo/plugin-selections.ts` 的浏览器

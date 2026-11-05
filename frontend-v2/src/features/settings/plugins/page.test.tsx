@@ -201,9 +201,10 @@ it('installs and removes a marketplace Agent', async () => {
   })
 })
 
-it('installs and removes a workflow plugin while keeping imported workflows', async () => {
+it('installs and removes a workflow plugin without sending any mutations', async () => {
   const backend = installMarketplaceBackend({
     catalog: [workflow],
+    selections: [marketplaceSelection(workflow)],
   })
   const user = userEvent.setup()
   renderSettingsPage(<PluginsPage />)
@@ -214,16 +215,12 @@ it('installs and removes a workflow plugin while keeping imported workflows', as
   ).not.toBeInTheDocument()
   await user.click(within(row).getByRole('button', { name: '安装' }))
   await waitFor(() => expect(within(row).getByText('已安装')).toBeInTheDocument())
-  expect(backend.bodies.at(-1)).toEqual({
-    identifier: 'official/ora-space.requirement-development',
-    pluginVersion: '0.1.0',
-    version: 0,
-  })
-  await user.click(within(row).getByRole('button', { name: '移除' }))
+  await user.click(within(row).getByRole('button', { name: '卸载' }))
   const dialog = await screen.findByRole('alertdialog')
-  expect(dialog).toHaveTextContent('已导入的工作流和运行历史会保留')
-  await user.click(within(dialog).getByRole('button', { name: '移除' }))
+  expect(dialog).not.toHaveTextContent(/演示|本地|浏览器/)
+  await user.click(within(dialog).getByRole('button', { name: '卸载' }))
   await waitFor(() => expect(within(row).getByText('未安装')).toBeInTheDocument())
+  expect(backend.bodies).toHaveLength(0)
 })
 
 it('lets a runtime-preinstalled Agent use the demo install flow', async () => {

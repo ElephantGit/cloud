@@ -1,6 +1,6 @@
-# 仪表盘
+# Dashboard
 
-仪表盘包含 `/dashboard` 的团队概览和 `/dashboard/sessions` 的真实会话分析。布局及子路由位于 `layout.tsx`、`index.ts`，分析页面、投影、时间轴与请求统计在 `analysis/`，生成客户端在 `api/`。
+`/dashboard` 在同一滚动页面内上方展示团队概览，下方展示完整的真实会话分析，顶部提供分区锚点。`/dashboard/sessions` 保留为兼容入口，显示同一个 Dashboard。详情仍位于 `/dashboard/sessions/:id`。筛选采用响应式网格，宽屏四列、平板两列、窄屏单列。布局及子路由位于 `layout.tsx`、`index.ts`，分析页面、投影、时间轴与请求统计在 `analysis/`，生成客户端在 `api/`。
 
 会话分析始终读取真实后端，不受 `VITE_DEMO_MOCK` 控制。支持来源、项目、Agent、最后一轮状态与时间范围筛选；时间按本地下界含/上界不含转为 UTC，游标绑定用户、租户及筛选。列出自己的普通对话和当前成员可读的手动协作任务 Agent 会话，普通对话不向其他成员共享。详情有概览、模型请求、时间轴、工具统计、完整事件，并可返回来源；Chat 通过 `/chat?conversation=<id>` 选中原对话，失效链接提示已删除或无权访问。
 
@@ -16,7 +16,7 @@ Agent 筛选按会话冻结的完整标识精确匹配，例如 `official/ora-sp
 
 任务聚合接口还不存在，所以页面目前只有演示数据：`src/lib/demo/dashboard.ts` 注册一份符合 `DashboardData` 形状的固定数据集，`page.tsx` 只从这个模块取数，不为展示另算一份数字（成员合计与概览数字一致）。真实统计接入时替换 `src/lib/demo/dashboard.ts`，页面不改。
 
-演示层由 `src/lib/demo/flags.ts` 的 `demoMockEnabled()` 统一开关：只有 `VITE_DEMO_MOCK=1` 才渲染演示仪表盘，未设置时页面保持占位。`npm run check` 和 `npm run e2e` 都不设置这个变量，只用真实数据；页面不直接 import 任何假数据模块，mock 只登记在 `src/lib/demo/` 下作为某条真实后端接口的占位。
+演示层由 `src/lib/demo/flags.ts` 的 `demoMockEnabled()` 统一开关：只有 `VITE_DEMO_MOCK=1` 才渲染演示仪表盘，未设置时仅团队概览保持占位，会话分析仍可用。`npm run check` 和 `npm run e2e` 都不设置这个变量，只用真实数据；页面不直接 import 任何假数据模块，mock 只登记在 `src/lib/demo/` 下作为某条真实后端接口的占位。
 
 任务与小队的数据客户端在 `features/collaboration/` 内部，跨 feature 导入或把它们挪到 `src/lib/` 属于共享改动；在任务聚合写入契约之前，页面不从那里读数据，也不自己拼真实统计。
 

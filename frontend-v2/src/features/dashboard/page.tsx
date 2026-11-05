@@ -1,5 +1,7 @@
-import { Bot, CheckCircle2, ChevronRight, ClipboardCheck, PlayCircle, TrendingUp, Users } from 'lucide-react'
-import { Placeholder } from '@/app/placeholder'
+import { Bot, CheckCircle2, ClipboardCheck, PlayCircle, TrendingUp, Users } from 'lucide-react'
+import { useEffect } from 'react'
+import { useLocation } from 'react-router'
+import SessionList from './analysis/list'
 import { Badge } from '@/components/ui/badge'
 import { dashboardDemo, type AgentOutput, type DashboardData, type TeamMemberProgress } from '@/lib/demo/dashboard'
 import { demoMockEnabled } from '@/lib/demo/flags'
@@ -9,28 +11,50 @@ import './dashboard.css'
 /**
  * Team progress and agent output.
  *
- * Without `VITE_DEMO_MOCK=1` the page keeps its placeholder: the aggregation contract does not
+ * Without `VITE_DEMO_MOCK=1` the team section keeps its placeholder: the aggregation contract does not
  * exist yet, and the mock must never stand in for real statistics outside a demo run. The demo
  * dataset is registered in `src/lib/demo/dashboard.ts`.
  */
 export default function Page() {
-  if (!demoMockEnabled()) {
-    return <Placeholder title="仪表盘" description="团队和 Agent 的运行概况。" />
-  }
-  return <Dashboard data={dashboardDemo} />
+  const { hash, pathname } = useLocation()
+  useEffect(() => {
+    const target = hash || (pathname === '/dashboard/sessions' ? '#session-analysis' : '')
+    if (target) document.getElementById(target.slice(1))?.scrollIntoView?.()
+  }, [hash, pathname])
+  return <main className="dashboard-feature db-page">
+    <div className="db-content">
+      <header className="db-page-header">
+        <div>
+          <span className="db-eyebrow">工作空间 / 运行洞察</span>
+          <h1>Dashboard</h1>
+          <p>从团队协作进度，到每一次 Agent 会话的执行细节。</p>
+        </div>
+        <nav className="db-section-links" aria-label="Dashboard 分区">
+          <a href="#team-overview">团队概览</a>
+          <a href="#session-analysis">会话分析 ↓</a>
+        </nav>
+      </header>
+      <section id="team-overview" aria-label="团队概览" className="db-team-section">
+        {demoMockEnabled()
+          ? <Dashboard data={dashboardDemo} />
+          : <div className="db-panel p-6 text-center">
+              <h2 className="db-section-title">团队概览</h2>
+              <p className="text-sm text-muted-foreground">团队和 Agent 的运行概况。</p>
+              <p className="text-xs text-muted-foreground">开发中</p>
+            </div>}
+      </section>
+      <SessionList />
+    </div>
+  </main>
 }
 
 function Dashboard({ data }: { data: DashboardData }) {
   const totals = teamTotals(data.members)
   const max = trendMax(data.trend)
-  return <div className="dashboard-feature db-page">
-    <div className="db-workspace-bar">
-      <span className="db-breadcrumb">工作空间<ChevronRight size={13} />仪表盘</span>
-    </div>
-    <div className="db-content">
+  return <>
       <header className="db-page-header">
         <div>
-          <h1>仪表盘</h1>
+          <h2 className="db-section-title">团队概览</h2>
           <p>团队进度与 Agent 产出 · {data.period}</p>
         </div>
         <div className="db-head-counts" aria-label="团队概况">
@@ -85,8 +109,7 @@ function Dashboard({ data }: { data: DashboardData }) {
           </li>)}
         </ol>
       </section>
-    </div>
-  </div>
+  </>
 }
 
 function MemberRow({ member }: { member: TeamMemberProgress }) {

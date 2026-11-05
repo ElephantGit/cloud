@@ -82,7 +82,7 @@ function SessionDetailBody({ id }: { id: string }) {
   if (scope.error || denied || metadata.isError) {
     return (
       <main className='p-6'>
-        <Link to='/dashboard/sessions'>返回会话分析</Link>
+        <Link to='/dashboard#session-analysis'>返回会话分析</Link>
         <p role='alert'>
           {failureMessage(metadata.error ?? queries.find((q) => accessFailure(q.error))?.error)}
         </p>
@@ -94,7 +94,7 @@ function SessionDetailBody({ id }: { id: string }) {
     <main className='space-y-5 p-4 md:p-6'>
       <header className='flex flex-wrap justify-between gap-3'>
         <div>
-          <Link className='text-sm text-muted-foreground underline' to='/dashboard/sessions'>
+          <Link className='text-sm text-muted-foreground underline' to='/dashboard#session-analysis'>
             会话分析
           </Link>
           <h1 className='mt-2 text-xl font-semibold'>{metadata.data?.title || 'Agent 会话'}</h1>

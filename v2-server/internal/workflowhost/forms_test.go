@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 	"github.com/wanglongan587/cloud/v2-server/internal/workflow"
+	"strings"
 	"testing"
 )
 
@@ -74,6 +75,19 @@ func TestFormSubmissionCreatesTasksAndReusesAcrossRuns(t *testing.T) {
 		}
 		if err != nil || len(tasks) != wantCount {
 			t.Fatalf("tasks=%v error=%v", tasks, err)
+		}
+		if i == 1 {
+			current, err := f.s.Task(ctx, f.scope.TenantID, f.scope.UserID, tasks[0].ID)
+			if err != nil || len(current.WorkflowSources) != 2 {
+				t.Fatalf("missing report associations: %+v %v", current, err)
+			}
+			if _, err := f.s.UpdateTask(ctx, f.scope.TenantID, f.scope.UserID, current.ID, store.TaskInput{Title: current.Title, Description: "Edited task text", ProjectID: current.ProjectID, Version: current.Version}); err != nil {
+				t.Fatal(err)
+			}
+			current, err = f.s.Task(ctx, f.scope.TenantID, f.scope.UserID, current.ID)
+			if err != nil || len(current.WorkflowSources) != 2 {
+				t.Fatalf("task edit lost report associations: %+v %v", current, err)
+			}
 		}
 		form, err = f.host.ReadForm(ctx, f.scope, id)
 		if err != nil {
@@ -176,8 +190,9 @@ func TestFormOnlyReviewerOrAdministratorCanSubmit(t *testing.T) {
 }
 
 func TestSubmittedFormRecoversBeforeAndDuringTaskCreation(t *testing.T) {
-	for _, started := range []bool{false, true} {
-		t.Run(fmt.Sprint(started), func(t *testing.T) {
+	for _, scenario := range []struct{ started, disable bool }{{false, false}, {true, false}, {true, true}} {
+		started := scenario.started
+		t.Run(fmt.Sprintf("%t-%t", started, scenario.disable), func(t *testing.T) {
 			f := newFixture(t)
 			ctx := context.Background()
 			report := "Evidence"
@@ -192,7 +207,18 @@ func TestSubmittedFormRecoversBeforeAndDuringTaskCreation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			values := []any{map[string]any{"key": "disk:root", "decision": "confirmed", "assignee": map[string]string{"type": "human", "id": f.scope.UserID}, "values": map[string]string{}}}
+			assignee := f.scope.UserID
+			if scenario.disable {
+				if _, err := f.s.UpsertUser(ctx, store.PresetUser{Email: "retired-reviewer-target@demo.test", DisplayName: "Target", Role: store.RoleMember}); err != nil {
+					t.Fatal(err)
+				}
+				user, err := f.s.UserByEmail(ctx, "retired-reviewer-target@demo.test")
+				if err != nil {
+					t.Fatal(err)
+				}
+				assignee = user.ID
+			}
+			values := []any{map[string]any{"key": "disk:root", "decision": "confirmed", "assignee": map[string]string{"type": "human", "id": assignee}, "values": map[string]string{}}}
 			answers, _ := json.Marshal(values)
 			_, err = f.s.SaveWorkflowForm(ctx, f.scope.TenantID, f.scope.UserID, id, form.Version, "crash-gap", answers, true, func(store.WorkflowForm) error { return nil }, func(raw []byte, form store.WorkflowForm) ([]byte, error) {
 				p, _, err := workflow.DecodeRunPayload(raw)
@@ -213,10 +239,27 @@ func TestSubmittedFormRecoversBeforeAndDuringTaskCreation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if scenario.disable {
+				if err := f.s.RetireUsers(ctx, []store.RetiredUser{{Email: "retired-reviewer-target@demo.test"}}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			f.host.Close()
 			f.host = f.newHost(t)
 			if err := f.host.Interrupt(ctx); err != nil {
 				t.Fatal(err)
+			}
+			if scenario.disable {
+				for range 2 {
+					run, err := f.s.WorkflowRun(ctx, f.scope.TenantID, id)
+					if err != nil || run.Status != "failed" {
+						t.Fatalf("recovery failure stranded run: %+v %v", run, err)
+					}
+					if _, err := f.host.RetryForm(ctx, f.scope, id); err == nil {
+						t.Fatal("invalid assignee retry unexpectedly succeeded")
+					}
+				}
+				return
 			}
 			f.await(t, id, func(r store.WorkflowRun, _ []store.WorkflowNodeRun) bool { return r.Status == "succeeded" })
 			if err := f.host.Interrupt(ctx); err != nil {
@@ -227,5 +270,74 @@ func TestSubmittedFormRecoversBeforeAndDuringTaskCreation(t *testing.T) {
 				t.Fatalf("recovery tasks=%v err=%v", tasks, err)
 			}
 		})
+	}
+}
+
+func TestExistingTaskClosedAfterSubmitUsesFrozenAssignee(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	report := "Evidence"
+	start := func() (string, store.WorkflowForm) {
+		t.Helper()
+		id := f.run(t, formGraph, &report)
+		if _, err := f.host.StartRun(ctx, f.scope, id); err != nil {
+			t.Fatal(err)
+		}
+		f.await(t, id, func(_ store.WorkflowRun, nodes []store.WorkflowNodeRun) bool {
+			return node(nodes, "review").Status == "pending"
+		})
+		form, err := f.host.ReadForm(ctx, f.scope, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id, form
+	}
+	id, form := start()
+	answers, _ := json.Marshal([]map[string]any{{"key": "disk:root", "decision": "confirmed", "assignee": map[string]string{"type": "human", "id": f.scope.UserID}, "values": map[string]string{}}})
+	if _, err := f.host.SaveForm(ctx, f.scope, id, form.Version, "first", answers, true); err != nil {
+		t.Fatal(err)
+	}
+	f.await(t, id, func(r store.WorkflowRun, _ []store.WorkflowNodeRun) bool { return r.Status == "succeeded" })
+	tasks, err := f.s.Tasks(ctx, f.scope.TenantID, f.scope.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := tasks[0]
+	id, form = start()
+	answers = json.RawMessage(`[{"key":"disk:root","decision":"confirmed","values":{}}]`)
+	frozen, err := f.s.SaveWorkflowForm(ctx, f.scope.TenantID, f.scope.UserID, id, form.Version, "second", answers, true, func(store.WorkflowForm) error { return nil }, func(raw []byte, form store.WorkflowForm) ([]byte, error) {
+		p, _, err := workflow.DecodeRunPayload(raw)
+		if err != nil {
+			return nil, err
+		}
+		var values any
+		if err := json.Unmarshal(form.Answers, &values); err != nil {
+			return nil, err
+		}
+		text := string(form.Answers)
+		if err := p.Complete(form.NodeID, "form", nil, &text, map[string]any{"answers": values}); err != nil {
+			return nil, err
+		}
+		return p.Encode()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(frozen.Answers), f.scope.UserID) {
+		t.Fatal("fallback assignee was not frozen")
+	}
+	for _, status := range []string{"running", "review", "done"} {
+		old, err = f.s.SetTaskStatus(ctx, f.scope.TenantID, f.scope.UserID, old.ID, status, old.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.host.resumeReviewRun(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	f.await(t, id, func(r store.WorkflowRun, _ []store.WorkflowNodeRun) bool { return r.Status == "succeeded" })
+	tasks, err = f.s.Tasks(ctx, f.scope.TenantID, f.scope.UserID)
+	if err != nil || len(tasks) != 2 {
+		t.Fatalf("new task after close: %+v %v", tasks, err)
 	}
 }

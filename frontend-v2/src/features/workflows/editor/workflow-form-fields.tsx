@@ -1,5 +1,5 @@
 import { useGetApiV1TenantsTidMembers } from '@/api/members/members'
-import { useChatStore } from '@/features/chat/store'
+import { useContractsClient } from '@/lib/workflows/data/contracts-client'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import type { Node } from '@xyflow/react'
 import type { WorkflowNodeData } from '@/lib/workflows/mock'
@@ -18,7 +18,7 @@ const defaultReviewConfig = {
 
 /** Edits frozen review bindings; task effects remain a separate successor node. */
 export function WorkflowFormFields({ node, onUpdate, onClose }: { node: Node<WorkflowNodeData, 'workflow'>; onUpdate: (node: Node<WorkflowNodeData, 'workflow'>) => void; onClose: () => void }) {
-  const tenantId=useChatStore(s=>s.tenantId)??''
+  const tenantId=useContractsClient().tenantId
   const members=useGetApiV1TenantsTidMembers(tenantId,undefined,{query:{enabled:!!tenantId}})
   const isForm = node.data.kind === 'form'
   const config = { ...defaultReviewConfig, ...(node.data.formConfig as Partial<typeof defaultReviewConfig> | undefined) }

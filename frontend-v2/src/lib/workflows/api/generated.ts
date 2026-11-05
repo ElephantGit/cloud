@@ -26,15 +26,105 @@ import type {
 
 import { customInstance } from '../../api-client';
 import type { ErrorType , BodyType } from '../../api-client';
-export type WorkflowFormExistingTasksItem = { [key: string]: unknown };
+export type WorkflowFormExistingTaskAssigneeType = typeof WorkflowFormExistingTaskAssigneeType[keyof typeof WorkflowFormExistingTaskAssigneeType];
 
-export type WorkflowFormConfig = { [key: string]: unknown };
 
-export type WorkflowFormFindingsItem = { [key: string]: unknown };
+export const WorkflowFormExistingTaskAssigneeType = {
+  human: 'human',
+  agent: 'agent',
+  squad: 'squad',
+} as const;
 
-export type WorkflowFormAnswersItem = { [key: string]: unknown };
+/**
+ * @nullable
+ */
+export type WorkflowFormExistingTaskAssignee = {
+  type: WorkflowFormExistingTaskAssigneeType;
+  id: string;
+  displayName: string;
+  identifier?: string;
+} | null;
 
-export type WorkflowFormResultsItem = { [key: string]: unknown };
+export interface WorkflowFormExistingTask {
+  key: string;
+  taskId: string;
+  status: string;
+  /** @nullable */
+  assignee: WorkflowFormExistingTaskAssignee;
+}
+
+export type WorkflowFormFieldType = typeof WorkflowFormFieldType[keyof typeof WorkflowFormFieldType];
+
+
+export const WorkflowFormFieldType = {
+  readonly: 'readonly',
+  text: 'text',
+  textarea: 'textarea',
+  select: 'select',
+} as const;
+
+export interface WorkflowFormField {
+  name: string;
+  label: string;
+  type: WorkflowFormFieldType;
+  required: boolean;
+  options?: string[];
+}
+
+export interface WorkflowFormConfig {
+  title: string;
+  submitLabel: string;
+  reportSelector: string[];
+  itemsSelector: string[];
+  reviewerId?: string;
+  fields: WorkflowFormField[];
+}
+
+export interface WorkflowFormFinding {
+  key: string;
+  title: string;
+  description: string;
+  evidence: string;
+  severity: string;
+  module: string;
+}
+
+export type WorkflowFormAssigneeType = typeof WorkflowFormAssigneeType[keyof typeof WorkflowFormAssigneeType];
+
+
+export const WorkflowFormAssigneeType = {
+  human: 'human',
+  agent: 'agent',
+  squad: 'squad',
+} as const;
+
+export interface WorkflowFormAssignee {
+  type: WorkflowFormAssigneeType;
+  id: string;
+}
+
+export type WorkflowFormAnswerValues = {[key: string]: string};
+
+export interface WorkflowFormAnswer {
+  key: string;
+  decision?: string;
+  assignee?: WorkflowFormAssignee;
+  values?: WorkflowFormAnswerValues;
+}
+
+export type WorkflowFormTaskResultAction = typeof WorkflowFormTaskResultAction[keyof typeof WorkflowFormTaskResultAction];
+
+
+export const WorkflowFormTaskResultAction = {
+  created: 'created',
+  reused: 'reused',
+} as const;
+
+export interface WorkflowFormTaskResult {
+  key: string;
+  taskId: string;
+  action: WorkflowFormTaskResultAction;
+}
 
 export interface WorkflowForm {
   id: string;
@@ -46,21 +136,19 @@ export interface WorkflowForm {
   submittedBy: string;
   /** @nullable */
   submittedAt?: string | null;
-  existingTasks?: WorkflowFormExistingTasksItem[];
+  existingTasks?: WorkflowFormExistingTask[];
   version: number;
   canEdit: boolean;
   config: WorkflowFormConfig;
-  findings: WorkflowFormFindingsItem[];
-  answers: WorkflowFormAnswersItem[];
-  results: WorkflowFormResultsItem[];
+  findings: WorkflowFormFinding[];
+  answers: WorkflowFormAnswer[];
+  results: WorkflowFormTaskResult[];
 }
-
-export type WorkflowFormWriteAnswersItem = { [key: string]: unknown };
 
 export interface WorkflowFormWrite {
   /** @minimum 1 */
   version: number;
-  answers: WorkflowFormWriteAnswersItem[];
+  answers: WorkflowFormAnswer[];
 }
 
 export type WorkflowErrorParams = { [key: string]: unknown };

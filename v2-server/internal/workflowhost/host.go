@@ -117,7 +117,7 @@ func (h *Host) Interrupt(ctx context.Context) error {
 	}
 	for _, id := range reviews {
 		if err := h.resumeReviewRun(ctx, id); err != nil {
-			return err
+			h.log.Error("recover review run", "run", id, "error", err)
 		}
 	}
 	if len(ids) != 0 {

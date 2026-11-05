@@ -12,6 +12,7 @@ import (
 )
 
 func (h *Host) dispatchReview(d workflow.AgentDispatch) {
+	defer h.retireReview(d.RunID)
 	var err error
 	if d.Node.Kind == "form" {
 		var c workflowforms.Config
@@ -40,7 +41,7 @@ func (h *Host) dispatchReview(d workflow.AgentDispatch) {
 					err = fmt.Errorf("form report must be text")
 				} else {
 					raw, _ := json.Marshal(findings)
-					_, err = h.store.OpenWorkflowForm(h.ctx, d.RunID, d.NodeRunID, store.WorkflowForm{ReviewerID: c.ReviewerID, Config: d.Node.FormConfig(), Findings: raw, Report: text})
+					_, err = h.store.OpenWorkflowForm(h.ctx, d.RunID, d.NodeRunID, store.WorkflowForm{ReviewerID: c.ReviewerID, Config: canonicalFormConfig(c), Findings: raw, Report: text})
 				}
 			}
 		}
@@ -127,7 +128,20 @@ func (h *Host) SaveForm(ctx context.Context, s server.WorkflowRunScope, id strin
 	if err := decoder.Decode(&parsed); err != nil {
 		return store.WorkflowForm{}, &workflowforms.FieldError{Field: "answers", Reason: "invalid answer shape"}
 	}
+	for i := range parsed {
+		if parsed[i].Values == nil {
+			parsed[i].Values = map[string]string{}
+		}
+	}
+	normalized, err := json.Marshal(parsed)
+	if err != nil {
+		return store.WorkflowForm{}, err
+	}
+	answers = normalized
 	f, err := h.store.SaveWorkflowForm(ctx, s.TenantID, s.UserID, id, version, key, answers, final, func(f store.WorkflowForm) error {
+		if err := json.Unmarshal(f.Answers, &parsed); err != nil {
+			return err
+		}
 		config, err := workflowforms.DecodeConfig(f.Config)
 		if err != nil {
 			return err
@@ -136,21 +150,17 @@ func (h *Host) SaveForm(ctx context.Context, s server.WorkflowRunScope, id strin
 		if err := json.Unmarshal(f.Findings, &findings); err != nil {
 			return err
 		}
-		existing := map[string]bool{}
-		for _, task := range f.ExistingTasks {
-			existing[task.Key] = true
-		}
-		return workflowforms.ValidateAnswers(config.Fields, findings, parsed, final, existing)
+		return workflowforms.ValidateAnswers(config.Fields, findings, parsed, final, nil)
 	}, func(raw []byte, f store.WorkflowForm) ([]byte, error) {
 		p, _, err := workflow.DecodeRunPayload(raw)
 		if err != nil {
 			return nil, err
 		}
 		var values any
-		if err := json.Unmarshal(answers, &values); err != nil {
+		if err := json.Unmarshal(f.Answers, &values); err != nil {
 			return nil, err
 		}
-		output := string(answers)
+		output := string(f.Answers)
 		if err := p.Complete(f.NodeID, "form", nil, &output, map[string]any{"answers": values}); err != nil {
 			return nil, err
 		}
@@ -170,6 +180,7 @@ func (h *Host) SaveForm(ctx context.Context, s server.WorkflowRunScope, id strin
 
 // resumeReviewRun replays only committed, deterministic review work.
 func (h *Host) resumeReviewRun(ctx context.Context, id string) error {
+	defer h.retireReview(id)
 	nodes, err := h.store.WorkflowEngineNodeRuns(ctx, id)
 	if err != nil {
 		return err
@@ -177,6 +188,9 @@ func (h *Host) resumeReviewRun(ctx context.Context, id string) error {
 	for _, n := range nodes {
 		if n.NodeType == "createTasks" && n.Status == store.WorkflowStatusRunning {
 			if err := h.createFormTasks(ctx, id, n.ID); err != nil {
+				if recordErr := h.engine.FailNode(ctx, id, n.ID, workflow.Failure{Kind: workflow.FailureSession, Message: "任务创建失败，请核对负责人后重试"}); recordErr != nil {
+					return recordErr
+				}
 				return err
 			}
 		}
@@ -194,4 +208,15 @@ func (h *Host) RetryForm(ctx context.Context, s server.WorkflowRunScope, id stri
 	}
 	h.hub.Publish(id)
 	return h.ReadForm(ctx, s, id)
+}
+
+func (h *Host) retireReview(id string) {
+	if state := h.state(id); state != nil {
+		h.forgetFinished(id, state)
+	}
+}
+
+func canonicalFormConfig(c workflowforms.Config) json.RawMessage {
+	raw, _ := json.Marshal(c)
+	return raw
 }

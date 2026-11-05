@@ -12,12 +12,17 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { getWorkflowForm, saveWorkflowFormDraft, submitWorkflowForm, retryWorkflowFormTasks, type WorkflowForm } from '@/lib/workflows/api/generated'
-import { TaskAssigneePicker } from '@/features/collaboration/task-assignee'
+import { TaskAssigneePicker } from '@/components/task-assignee-picker'
 import type { TaskAssigneeRef } from '@/features/collaboration/tasks-api/generated'
 import { listSquads } from '@/lib/squads-api/generated'
 
 type Answer = { key: string; decision: string; assignee?: TaskAssigneeRef; values: Record<string, string> }
 const text = (v: unknown) => typeof v === 'string' ? v : ''
+
+function readAnswers(form:WorkflowForm):Answer[]{return form.findings.map(row=>{
+ const saved=form.answers.find(a=>a.key===row.key)
+ return {key:row.key,decision:saved?.decision||'pending',values:saved?.values??{},assignee:saved?.assignee??form.existingTasks?.find(t=>t.key===row.key)?.assignee??undefined}
+})}
 
 /** Reads a durable review; refreshing never invents a new form or task. */
 export function RunForm({ tenantId, runId, runStatus }: { tenantId: string; runId: string; runStatus: string }) {
@@ -31,10 +36,11 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
   const roster=useGetApiV1TenantsTidMembers(tenantId,undefined,{query:{enabled:!!tenantId}})
   const client = useQueryClient()
   const [version, setVersion] = useState(form.version)
-  const [answers, setAnswers] = useState<Answer[]>(() => form.findings.map(row => {
-    const saved = form.answers.find(a => a.key === row.key)
-    return { key: text(row.key), decision: text(saved?.decision) || 'pending', values: (saved?.values ?? {}) as Record<string, string>, assignee: (saved?.assignee ?? form.existingTasks?.find(t=>t.key===row.key)?.assignee) as TaskAssigneeRef | undefined }
-  }))
+  const [answers, setAnswers] = useState<Answer[]>(() => readAnswers(form))
+  const [dirty,setDirty]=useState(false)
+  const [locallySubmitted,setLocallySubmitted]=useState(false)
+  if(!dirty && form.version>version){setVersion(form.version);setAnswers(readAnswers(form))}
+  const displayAnswers = form.status==='open' ? answers : readAnswers(form)
   const [notice, setNotice] = useState('')
   const [errors,setErrors]=useState<Record<string,string>>({})
   const [pendingOnly, setPendingOnly] = useState(false)
@@ -47,6 +53,7 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
       if(isAxiosError(error)){const data=error.response?.data as {key?:string;field?:string}|undefined;if(data?.key&&data.field)setErrors({[`${data.key}:${data.field}`]:'请检查这一项的输入。'})}
     },
     onSuccess: (saved, final) => {
+      setDirty(false);if(final)setLocallySubmitted(true)
       setVersion(saved.version)
       setNotice(final ? '确认已提交，正在创建或关联任务。' : '草稿已保存。')
       void client.invalidateQueries({ queryKey: ['workflow-form', tenantId, form.runId] })
@@ -54,11 +61,11 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
     },
   })
   const retry = useMutation({mutationFn:()=>retryWorkflowFormTasks(tenantId,form.runId),onSuccess:()=>client.invalidateQueries({queryKey:['workflow-form',tenantId,form.runId]})})
-  const readOnly = !form.canEdit || mutation.isPending
-  const remaining = answers.filter(a => a.decision === 'pending').length
+  const readOnly = !form.canEdit || mutation.isPending || locallySubmitted
+  const remaining = displayAnswers.filter(a => a.decision === 'pending').length
   const complete = remaining === 0 && answers.every(a => a.decision !== 'confirmed' || a.assignee || form.existingTasks?.some(t=>t.key===a.key))
-  const fields = Array.isArray(form.config.fields) ? form.config.fields as Record<string, unknown>[] : []
-  function patch(key: string, change: Partial<Answer>) { setErrors({}); setAnswers(current => current.map(a => a.key === key ? { ...a, ...change } : a)); setNotice('有未保存的修改') }
+  const fields = form.config.fields
+  function patch(key: string, change: Partial<Answer>) { setDirty(true);setErrors({}); setAnswers(current => current.map(a => a.key === key ? { ...a, ...change } : a)); setNotice('有未保存的修改') }
   function save(final:boolean){
     const found:Record<string,string>={}
     if(final)for(const a of answers){
@@ -71,13 +78,13 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
     setErrors(found);if(Object.keys(found).length)return;mutation.mutate(final)
   }
   return <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 overflow-auto p-4 md:p-6" aria-label="巡检报告与问题确认">
-    <div><h2 className="text-xl font-semibold">{text(form.config.title) || '问题确认'}</h2><p className="text-sm text-muted-foreground">{form.status === 'cancelled' ? '运行已取消，表单不可提交' : form.status === 'submitted' ? '已提交 · 任务由后续节点处理' : `已确认 ${answers.length - remaining}/${answers.length} 项`}</p></div>
+    <div><h2 className="text-xl font-semibold">{text(form.config.title) || '问题确认'}</h2><p className="text-sm text-muted-foreground">{form.status === 'cancelled' ? '运行已取消，表单不可提交' : form.status === 'submitted' ? runStatus==='failed' ? '确认已保存 · 提单失败，可重试' : runStatus==='succeeded' ? '确认完成 · 查看下方处理结果' : '确认已保存 · 正在生成任务' : `已确认 ${answers.length - remaining}/${answers.length} 项`}</p></div>
     {form.status==='submitted' && <p className="text-sm text-muted-foreground">提交人：{roster.data?.items.find(m=>m.userId===form.submittedBy)?.displayName ?? '确认人'}{form.submittedAt ? ` · ${new Date(form.submittedAt).toLocaleString()}` : ''}</p>}
     <details open><summary className="cursor-pointer font-medium">巡检报告</summary><div className="mt-3 overflow-x-auto rounded-lg border p-4 text-sm [&_h1]:mb-3 [&_h1]:text-lg [&_h2]:my-3 [&_p]:my-2 [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{form.report}</ReactMarkdown></div></details>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pendingOnly} onChange={e => setPendingOnly(e.target.checked)} />只看待确认问题</label>
     {form.findings.length === 0 && <p>本次未发现需要人工处理的问题。</p>}
     {form.findings.map(row => {
-      const key = text(row.key), answer = answers.find(a => a.key === key)!
+      const key = text(row.key), answer = displayAnswers.find(a => a.key === key)!
       if (pendingOnly && answer.decision !== 'pending') return null
       const result = form.results.find(r => r.key === key)
       const existing = form.existingTasks?.find(r=>r.key===key)
@@ -88,10 +95,10 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
         <FieldGroup>
           <Field><FieldLabel htmlFor={`${key}-decision`}>是否为问题</FieldLabel><NativeSelect id={`${key}-decision`} disabled={readOnly} value={answer.decision} onChange={e => patch(key, { decision: e.target.value })}><NativeSelectOption value="pending">待确认</NativeSelectOption><NativeSelectOption value="confirmed">是问题</NativeSelectOption><NativeSelectOption value="rejected">不是问题</NativeSelectOption></NativeSelect></Field>
           {existing && !result && <p className="text-sm">确认后将关联已有任务，沿用其负责人：<Link className="underline" to={`/collaboration/tasks/${text(existing.taskId)}`}>查看任务</Link></p>}
-          {answer.decision === 'confirmed' && !existing && <Field><FieldLabel>负责人</FieldLabel><TaskAssigneePicker tenantId={tenantId} squads={squads.data?.items ?? []} value={answer.assignee ?? null} disabled={readOnly} onAssign={assignee => patch(key, { assignee: assignee ?? undefined })} /></Field>}
+          {answer.decision === 'confirmed' && <Field><FieldLabel>{existing ? '新建时的备用负责人（不改变已有任务）' : '负责人'}</FieldLabel><TaskAssigneePicker tenantId={tenantId} squads={squads.data?.items ?? []} value={answer.assignee ?? null} disabled={readOnly} onAssign={assignee => patch(key, { assignee: assignee ?? undefined })} /></Field>}
           {fields.map(f => {
             const name = text(f.name), value = answer.values[name] ?? ''
-            if(f.type==='readonly')return <Field key={name}><FieldLabel>{text(f.label)}</FieldLabel><p className="text-sm whitespace-pre-wrap">{text(row[name])}</p></Field>
+            if(f.type==='readonly')return <Field key={name}><FieldLabel>{text(f.label)}</FieldLabel><p className="text-sm whitespace-pre-wrap">{text(Object.entries(row).find(([key])=>key===name)?.[1])}</p></Field>
             const update = (value: string) => patch(key, { values: { ...answer.values, [name]: value } })
             return <Field key={name} data-invalid={!!errors[`${key}:${name}`]}><FieldLabel htmlFor={`${key}-${name}`}>{text(f.label)}{f.required === true ? ' *' : ''}</FieldLabel>
               {f.type === 'select' ? <NativeSelect id={`${key}-${name}`} aria-invalid={!!errors[`${key}:${name}`]} disabled={readOnly} value={value} onChange={e => update(e.target.value)}><NativeSelectOption value="">请选择</NativeSelectOption>{(Array.isArray(f.options) ? f.options : []).map(o => <NativeSelectOption key={String(o)} value={String(o)}>{String(o)}</NativeSelectOption>)}</NativeSelect> : f.type === 'textarea' ? <Textarea id={`${key}-${name}`} aria-invalid={!!errors[`${key}:${name}`]} disabled={readOnly} value={value} onChange={e => update(e.target.value)} /> : <Input id={`${key}-${name}`} aria-invalid={!!errors[`${key}:${name}`]} disabled={readOnly} value={value} onChange={e => update(e.target.value)} />}
@@ -99,10 +106,12 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
             </Field>
           })}
         </FieldGroup>
+        {form.status==='submitted' && answer.decision==='rejected' && <p className="mt-4 text-sm">已确认无需处理</p>}
         {result && <p className="mt-4 text-sm">{result.action === 'created' ? '已创建任务' : '已关联现有任务'} · <Link className="underline" to={`/collaboration/tasks/${text(result.taskId)}`}>打开任务</Link></p>}
         {result && <DtsReceipt taskId={text(result.taskId)} title={text(row.title)} description={text(row.description)} severity={text(row.severity)} module={text(row.module)} runId={form.runId} />}
       </article>
     })}
+    {dirty && form.version>version && <div role="alert" className="rounded-lg border p-3 text-sm">其他确认人已更新这份表单；当前已提交结果以服务端为准。<details><summary>查看未保存的本地修改</summary>{answers.map(a=><p key={a.key}>{form.findings.find(f=>f.key===a.key)?.title}：{a.decision==='confirmed'?'是问题':a.decision==='rejected'?'不是问题':'待确认'} · {Object.values(a.values).join('；')}</p>)}</details>{form.status==='open'&&<Button variant="outline" onClick={()=>{setAnswers(readAnswers(form));setVersion(form.version);setDirty(false);setNotice('已载入最新草稿。')}}>载入最新草稿</Button>}</div>}
     {mutation.isError && <p role="alert">保存失败，请检查必填项或刷新核对最新版本。你的输入仍保留在页面中。</p>}
     {notice && <p role="status">{form.status==='submitted' && form.results.length>0 ? '任务已创建或关联，可打开查看。' : form.status==='submitted' && !answers.some(a=>a.decision==='confirmed') ? '确认已提交，无需创建任务。' : notice}</p>}
     {runStatus==='failed' && form.status==='submitted' && form.results.length===0 && answers.some(a=>a.decision==='confirmed') && <Button variant="outline" disabled={retry.isPending} onClick={()=>retry.mutate()}>重试任务创建</Button>}

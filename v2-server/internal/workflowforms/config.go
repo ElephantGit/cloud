@@ -47,6 +47,9 @@ func DecodeConfig(raw []byte) (Config, error) {
 	if c.ReviewerID != "" && !memberID.MatchString(c.ReviewerID) {
 		return c, fmt.Errorf("invalid reviewer ID")
 	}
+	if c.Fields == nil {
+		c.Fields = []Field{}
+	}
 	if len(c.Fields) > 20 {
 		return c, fmt.Errorf("too many form columns")
 	}

@@ -189,6 +189,34 @@ func (s *Store) SaveWorkflowForm(ctx context.Context, tenant, user, runID string
 		if err != nil {
 			return err
 		}
+		if final {
+			var values []map[string]json.RawMessage
+			if err := json.Unmarshal(f.Answers, &values); err != nil {
+				return err
+			}
+			byKey := map[string]*TaskAssignee{}
+			for _, task := range f.ExistingTasks {
+				byKey[task.Key] = task.Assignee
+			}
+			for _, row := range values {
+				var key, decision string
+				if err := json.Unmarshal(row["key"], &key); err != nil {
+					return err
+				}
+				if err := json.Unmarshal(row["decision"], &decision); err != nil {
+					return err
+				}
+				if decision == "confirmed" && (len(row["assignee"]) == 0 || string(row["assignee"]) == "null") && byKey[key] != nil {
+					row["assignee"], _ = json.Marshal(map[string]string{"type": byKey[key].Type, "id": byKey[key].ID})
+				}
+			}
+			var err error
+			answers, err = json.Marshal(values)
+			if err != nil {
+				return err
+			}
+			f.Answers = answers
+		}
 		if err := validate(f); err != nil {
 			return err
 		}
@@ -204,12 +232,8 @@ func (s *Store) SaveWorkflowForm(ctx context.Context, tenant, user, runID string
 			if err := json.Unmarshal(answers, &rows); err != nil {
 				return err
 			}
-			existing := map[string]bool{}
-			for _, task := range f.ExistingTasks {
-				existing[task.Key] = true
-			}
 			for _, row := range rows {
-				if row.Decision == "confirmed" && row.Assignee != nil && !existing[row.Key] {
+				if row.Decision == "confirmed" && row.Assignee != nil {
 					if err := requireAssignee(ctx, tx, tenant, TaskAssigneeRef{Type: row.Assignee.Type, ID: row.Assignee.ID}); err != nil {
 						return err
 					}

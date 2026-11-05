@@ -150,7 +150,9 @@ func (s *Store) FinishSkillJob(ctx context.Context, j SkillJob, outcome SkillJob
 	}
 }
 
-// Re-evaluate against all bound projects, including ones created while the service was offline.
+// RefreshSkillStates re-evaluates Node-confirmed plugin selections against all bound projects,
+// including ones created while the service was offline. Skills are left out: a Skill selection is
+// usable from its record, so a project that never confirms must not move it back to pending.
 func (s *Store) RefreshSkillStates(ctx context.Context) error {
 	_, e := s.pool.Exec(ctx, `with totals as (
  select a.id,a.desired_state,a.desired_version,count(p.id) as n,
@@ -160,7 +162,8 @@ func (s *Store) RefreshSkillStates(ctx context.Context) error {
  count(*) filter(where r.state='applying' or r.installed_version is not null or (r.state='failed' and r.revision<>a.version)) as outstanding
  from v2_space_agents a join v2_skill_plans f on f.selection_id=a.id
  left join v2_projects p on p.plugin_space_id=a.space_id and p.tenant_id=a.tenant_id
- left join v2_skill_results r on r.selection_id=a.id and r.project_id=p.id group by a.id
+ left join v2_skill_results r on r.selection_id=a.id and r.project_id=p.id
+ where a.kind<>'skill' group by a.id
  ), states as (select *,case when failed>0 then 'failed' when desired_state='removed' and outstanding=0 then 'removed' when desired_state='removed' then 'removing' when retrying>0 then 'failed' when n>0 and installed=n then 'installed' else 'pending' end as state,
  case when failed>0 then '部分项目操作失败，请查看项目状态。' when retrying>0 then '部分项目暂时失败，将自动重试。' end as install_error from totals)
  update v2_space_agents a set observed_state=t.state,observed_version=case when t.state='installed' then t.desired_version when t.state='removed' then null else a.observed_version end,install_error=t.install_error from states t where t.id=a.id and (a.observed_state is distinct from t.state or a.install_error is distinct from t.install_error)`)

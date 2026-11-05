@@ -16,11 +16,7 @@ import type {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import {
-  pluginInstalled,
-  pluginKey,
-  usePluginMarketplace,
-} from '../data/marketplace'
+import { pluginKey, usePluginMarketplace } from '../data/marketplace'
 import {
   ActionError,
   DataState,
@@ -63,10 +59,6 @@ type Removing =
 
 function skillStatus(skill: SkillRow, detail = false) {
   if (skill.availability === 'available') return '可用'
-  if (skill.selection?.observedState === 'removing') return '移除中'
-  if (skill.selection?.observedState === 'failed')
-    return skill.selection.desiredState === 'removed' ? '移除失败' : '安装失败'
-  if (skill.selection?.desiredState === 'installed') return '等待节点'
   return detail ? '不可用，来源插件未安装' : '来源插件未安装'
 }
 
@@ -100,7 +92,7 @@ function pluginSkillRows(
         description: entry.description,
         content: entry.readme ?? '',
         source: { kind: 'plugin', pluginId: pluginKey(entry) },
-        availability: pluginInstalled(chosen) ? 'available' : 'unavailable',
+        availability: chosen?.desiredState === 'installed' ? 'available' : 'unavailable',
         entry,
         selection: chosen,
       }
@@ -219,26 +211,6 @@ export default function SkillsPage() {
   }
   function pluginActions(skill: SkillRow) {
     if (!skill.entry || !market.canManage) return null
-    if (skill.selection?.observedState === 'removing')
-      return (
-        <span className="text-xs text-muted-foreground">
-          正在等待项目节点确认
-        </span>
-      )
-    if (
-      skill.selection?.desiredState === 'removed' &&
-      skill.selection.observedState === 'failed'
-    )
-      return (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={market.mutating}
-          onClick={() => requestPluginRemove(skill)}
-        >
-          重试移除
-        </Button>
-      )
     return skill.selection?.desiredState === 'installed' ? (
       <Button
         variant="outline"
@@ -561,7 +533,7 @@ export default function SkillsPage() {
       {removing?.kind === 'plugin' && (
         <ConfirmDialog
           title={`移除技能 ${removing.skill.name}？`}
-          description="将从空间卸载来源技能包。技能说明仍可预览，但会显示为不可用；重新安装可恢复。"
+          description="将移除这条空间技能选择；工作流节点的技能候选会同时更新。技能说明仍可预览，重新安装可恢复。"
           confirmLabel="移除技能"
           pending={market.mutating}
           error={market.mutationError}

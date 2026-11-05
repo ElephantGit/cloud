@@ -90,8 +90,8 @@ seed 在 [`demo/`](demo/README.md)：`env.go` 是上表和重置、准备本地 
 | `GET /api/v1/tenants/{tid}/spaces` | 契约 | 当前用户所在工作区的空间，一页返回全部；v2 每个租户一个「演示空间」，`role` 取调用者的工作区角色；非成员 `403 forbidden` |
 | `GET /api/v1/tenants/{tid}/spaces/{sid}/plugins/catalog` | 契约 | 从 `ora-space/marketplace` 的 `registry/**/orax.toml` 同步的真实市场快照，包含 Agent；启动时先同步，之后每 5 分钟刷新并原子替换 PostgreSQL 目录。成员可读 |
 | `GET /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | 当前空间的全部活动插件选择，包括显式移除的行；空间不属于调用者的工作区时 `403 forbidden` |
-| `POST /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | owner 安装目录中的 Skill、市场 Agent 或工作流插件。工作流包由服务端下载并校验 `.orax`，导入其中的工作流并发布 `v1`；已有同名工作流时自动改名为「名称（插件）」并递增序号，不改动已有定义。重复安装幂等，卸载不删除已导入工作流。升级工作流包时，仍保持导入原样（草稿和生效版本都未改动）的工作流会更新草稿并发布新的顺序版本；用户已保存或发布过编辑的定义保持原样。Agent 立即记录为空间选择，不下载或执行；预装 Agent 返回 `409 plugin_runtime_managed`。支持版本保护与 `Idempotency-Key` 重放 |
-| `DELETE /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | owner 移除 Skill、市场 Agent 或工作流选择，保留 `desiredState=removed` 行；工作流及其历史保留为用户数据。预装 Agent 返回 `409 plugin_runtime_managed`；要求版本与幂等键 |
+| `POST /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | owner 安装目录中的 Skill、市场 Agent 或工作流插件。工作流包由服务端下载并校验 `.orax`，导入其中的工作流并发布 `v1`；已有同名工作流时自动改名为「名称（插件）」并递增序号，不改动已有定义。重复安装幂等，卸载不删除已导入工作流。升级工作流包时，仍保持导入原样（草稿和生效版本都未改动）的工作流会更新草稿并发布新的顺序版本；用户已保存或发布过编辑的定义保持原样。Skill 与 Agent 立即记录为空间选择，不等项目 Node 确认；预装 Agent 返回 `409 plugin_runtime_managed`。支持版本保护与 `Idempotency-Key` 重放 |
+| `DELETE /api/v1/tenants/{tid}/spaces/{sid}/plugins` | 契约 | owner 移除 Skill、市场 Agent 或工作流选择。Skill 删除整条选择行，立即不再出现在设置页和工作流节点的技能候选里；市场 Agent 和工作流选择保留 `desiredState=removed` 行；工作流及其历史保留为用户数据。预装 Agent 返回 `409 plugin_runtime_managed`；要求版本与幂等键 |
 
 ## 契约之外
 
@@ -584,7 +584,7 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 - 会话存在同一个库里，只存 token 的 SHA-256；没有 Gateway 现签的内部 JWT。
 - 对话与插件市场写请求检查 `Idempotency-Key`；插件市场同时保存成功响应以重放同一选择。其余写请求不检查该头，也没有执行代次隔离。定时任务配置与小队更新使用乐观版本检查，对话的创建和发消息把 `Idempotency-Key` 用作执行的 attempt ID。
 - 小队权限把 workspace `owner` 角色当作工作区管理员；成员撤销不会自动关闭其小队编组（由后续接入撤销事务的运行承接）。
-- 空间与插件：每个租户固定一个「演示空间」，开发登录时自动创建；里面登记两个真实安装、不可从设置页移除的 Agent 插件——`official/ora-space.opencode@0.6.11` 和 `official/ora-space.claude@0.4.5`，即 [`scripts/prepare-node.sh`](scripts/prepare-node.sh) 校验 SHA 后准备、chat、工作流与定时任务真正加载的那两个。目录来自配置的 marketplace Git 仓库，不读取仓库内硬编码条目；解析 `orax.toml`、README 和 logo，校验后事务替换 PostgreSQL 快照，同步失败或没有可见条目时保留上一版。Plugins 页允许 owner 安装或移除其他市场 Agent，但这些操作只保存空间选择，不下载、部署或执行 Agent，也不改变系统预装 Agent 的可执行候选。Skill 按空间选择，由项目 Node 确认安装或移除。工作流插件由 v2-server 下载并校验 `.orax`，在安装事务里导入 `assets/workflows/*.json`、发布 `v1` 并记录来源幂等表；租户已有同名工作流时给新导入的定义加「（插件）」或序号，不改动已有定义；移除只清除选择，不删除工作流、快照或运行历史。其他未接入宿主的类型仅可浏览。安装写入口要求 owner、`Idempotency-Key` 和当前 version。
+- 空间与插件：每个租户固定一个「演示空间」，开发登录时自动创建；里面登记两个真实安装、不可从设置页移除的 Agent 插件——`official/ora-space.opencode@0.6.11` 和 `official/ora-space.claude@0.4.5`，即 [`scripts/prepare-node.sh`](scripts/prepare-node.sh) 校验 SHA 后准备、chat、工作流与定时任务真正加载的那两个。目录来自配置的 marketplace Git 仓库，不读取仓库内硬编码条目；解析 `orax.toml`、README 和 logo，校验后事务替换 PostgreSQL 快照，同步失败或没有可见条目时保留上一版。Plugins 页允许 owner 安装或移除其他市场 Agent，但这些操作只保存空间选择，不下载、部署或执行 Agent，也不改变系统预装 Agent 的可执行候选。Skill 就是空间选择本身，写入即可用、删除即移除，项目 Node 只按选择接收安装包，不参与状态确认。工作流插件由 v2-server 下载并校验 `.orax`，在安装事务里导入 `assets/workflows/*.json`、发布 `v1` 并记录来源幂等表；租户已有同名工作流时给新导入的定义加「（插件）」或序号，不改动已有定义；移除只清除选择，不删除工作流、快照或运行历史。其他未接入宿主的类型仅可浏览。安装写入口要求 owner、`Idempotency-Key` 和当前 version。
 - 成员列表：`memberships` 没有成员 id、版本和加入来源，所以 `id` 直接用 user id、`version` 恒为 1、`status` 取用户状态，`joinMethod` / `joinedAt` / `actorDisplayName` 恒为空；分页参数被忽略，一页返回全部。切到正式 Cloud 的成员接口时替换。
 - 启动时直接建表，没有迁移。
 - 本地 Node 的传输、监督和配套服务位于 [`internal/node`](internal/node/README.md) 与
@@ -606,9 +606,9 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 
 ### 项目 Skill 安装
 
-空间选择冻结 Skill 的来源、版本、目标平台和 SHA-256，项目 Node 负责确认安装或移除。历史项目绑定到同一租户的默认演示空间；创建项目可传 `spaceId`，省略则沿用默认演示空间。离线时保留选择；已上线的项目通过 Node 的 `install_plugins` / `remove_plugins` 处理。目录升级不会改变现有选择。成员可读项目回执；只有全部关联项目确认后空间才显示已安装。
+空间选择冻结 Skill 的来源、版本、目标平台和 SHA-256，已上线的项目 Node 通过 `install_plugins` / `remove_plugins` 接收并应用。状态不经过 Node：选择写入即为已安装，删除选择行即为移除，所以没有绑定项目、Node 离线或项目还没应用时，设置页和工作流节点的技能候选照常反映选择结果。历史项目绑定到同一租户的默认演示空间；创建项目可传 `spaceId`，省略则沿用默认演示空间。目录升级不会改变现有选择。成员可读项目回执；项目回执只记录交付情况，不再决定空间的已安装状态。
 
-下载限制为公网 HTTPS、归属来源的 S3 SigV4 或直接 HTTPS；DNS 域名经本地透明代理的 fake-IP（`198.18.0.0/15`）应答时仍固定该地址，字面量地址不放宽。校验摘要和归档中的 Skill 标识、版本后，才通过节点已有的包服务交付。网络、临时 HTTP 状态、Node 中途退出等可恢复错误会按 5 秒起步、最长 5 分钟的指数退避自动重试；摘要不符、包校验失败、同名冲突等确定错误立即失败，等待用户重新选择，并把可定位的安全摘要写入项目回执和服务端日志。旧版本升级后若 Skill 选择缺少冻结安装计划，会显示“请重新安装”，不会静默卡在等待节点。技能在项目工作副本的 `.opencode/skills`、`.claude/skills` 中发现；已有项目文件不被覆盖，同名冲突返回失败。Agent 的固定运行时版本保持独立；市场 Agent 选择只保存在空间选择状态。MCP 和其他未验证类型仅供浏览；Hook 的演示安装只写空间选择，不下载或执行包。
+下载限制为公网 HTTPS、归属来源的 S3 SigV4 或直接 HTTPS；DNS 域名经本地透明代理的 fake-IP（`198.18.0.0/15`）应答时仍固定该地址，字面量地址不放宽。校验摘要和归档中的 Skill 标识、版本后，才通过节点已有的包服务交付。网络、临时 HTTP 状态、Node 中途退出等可恢复错误会按 5 秒起步、最长 5 分钟的指数退避自动重试；摘要不符、包校验失败、同名冲突等确定错误立即失败，并把可定位的安全摘要写入项目回执和服务端日志，不影响空间选择本身。技能在项目工作副本的 `.opencode/skills`、`.claude/skills` 中发现；已有项目文件不被覆盖，同名冲突返回失败。Agent 的固定运行时版本保持独立；市场 Agent 选择只保存在空间选择状态。MCP 和其他未验证类型仅供浏览；Hook 的演示安装只写空间选择，不下载或执行包。
 
 与 Desktop 的差异：
 

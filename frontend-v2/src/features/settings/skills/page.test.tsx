@@ -146,6 +146,23 @@ it('installs and removes the source plugin from the skill row and keeps the docu
   ).toHaveAttribute('href', '/settings/plugins?plugin=demo%2Fwriting-kit')
 })
 
+it('treats a selected market skill as available without a project node receipt', async () => {
+  installMarketplaceBackend({
+    catalog: [writing],
+    selections: [
+      marketplaceSelection(writing, {
+        observedState: 'pending',
+        observedVersion: null,
+      }),
+    ],
+  })
+  renderSettingsPage(<SkillsPage />)
+  const row = await screen.findByRole('article', { name: 'writing-guide' })
+  expect(within(row).getByText('可用')).toBeInTheDocument()
+  expect(within(row).queryByText('等待节点')).not.toBeInTheDocument()
+  expect(within(row).getByRole('button', { name: '移除技能' })).toBeVisible()
+})
+
 it('shows a member the market state without market write controls', async () => {
   installMarketplaceBackend({
     role: 'member',

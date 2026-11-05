@@ -16,7 +16,7 @@ it('keeps the placeholder while the demo mock is off', () => {
 it('renders the demo dashboard only when the demo mock is on', () => {
   vi.stubEnv('VITE_DEMO_MOCK', '1')
   render(<Page />)
-  expect(screen.getByText('演示数据')).toBeInTheDocument()
+  expect(screen.queryByText('演示数据')).not.toBeInTheDocument()
 
   // Every member row is shown, with the counts it was given.
   const team = screen.getByRole('region', { name: '团队进度' })
@@ -33,6 +33,5 @@ it('renders the demo dashboard only when the demo mock is on', () => {
   expect(within(outputs).getAllByText('待验收')).toHaveLength(dashboardDemo.outputs.filter(output => output.status === 'review').length)
   expect(within(outputs).getAllByText(/OpenCode ·/)).toHaveLength(dashboardDemo.outputs.filter(output => output.agent === 'OpenCode').length)
 
-  // The page says the numbers are demo data rather than real statistics.
-  expect(screen.getByText(/真实统计待任务聚合接口接入后替换/)).toBeInTheDocument()
+  expect(screen.queryByText(/真实统计待任务聚合接口接入后替换/)).not.toBeInTheDocument()
 })

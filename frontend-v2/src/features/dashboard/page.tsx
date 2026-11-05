@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, ChevronRight, ClipboardCheck, FlaskConical, PlayCircle, TrendingUp, Users } from 'lucide-react'
+import { Bot, CheckCircle2, ChevronRight, ClipboardCheck, PlayCircle, TrendingUp, Users } from 'lucide-react'
 import { Placeholder } from '@/app/placeholder'
 import { Badge } from '@/components/ui/badge'
 import { dashboardDemo, type AgentOutput, type DashboardData, type TeamMemberProgress } from '@/lib/demo/dashboard'
@@ -26,7 +26,6 @@ function Dashboard({ data }: { data: DashboardData }) {
   return <div className="dashboard-feature db-page">
     <div className="db-workspace-bar">
       <span className="db-breadcrumb">工作空间<ChevronRight size={13} />仪表盘</span>
-      <Badge variant="outline"><FlaskConical data-icon="inline-start" />演示数据</Badge>
     </div>
     <div className="db-content">
       <header className="db-page-header">
@@ -86,8 +85,6 @@ function Dashboard({ data }: { data: DashboardData }) {
           </li>)}
         </ol>
       </section>
-
-      <p className="db-note">统计来自演示数据，真实统计待任务聚合接口接入后替换；任务执行本身仍是真实运行。</p>
     </div>
   </div>
 }

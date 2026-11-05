@@ -464,3 +464,57 @@ func (s *Store) PendingMentions(ctx context.Context, tenant, caller string) ([]P
 	}
 	return out, rows.Err()
 }
+
+// InSquad reports whether the user is a current human member of the squad.
+func (s *Store) InSquad(ctx context.Context, tenant, squad, user string) (bool, error) {
+	var member bool
+	e := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM v2_squad_members m JOIN v2_squads q ON q.id = m.squad_id
+			WHERE q.tenant_id = $1 AND m.squad_id = $2 AND m.user_id = $3
+				AND m.member_type = 'human' AND m.ended_at IS NULL)`, tenant, squad, user).Scan(&member)
+	if e != nil {
+		return false, fmt.Errorf("look up squad member: %w", e)
+	}
+	return member, nil
+}
+
+// MySquadTask is a task assigned to a squad the caller belongs to. Waiting says the caller has yet
+// to act on it: the task is open, someone else created it, and they have neither commented nor
+// started a run. It is how a squad task reaches each member: it waits on them until they do.
+type MySquadTask struct {
+	TaskID    string `json:"taskId"`
+	SquadID   string `json:"squadId"`
+	SquadName string `json:"squadName"`
+	Waiting   bool   `json:"waiting"`
+}
+
+// MySquadTasks lists the tasks of the caller's squads, each with whether it still waits on them.
+func (s *Store) MySquadTasks(ctx context.Context, tenant, caller string) ([]MySquadTask, error) {
+	if _, e := tenantRole(ctx, s.pool, tenant, caller); e != nil {
+		return nil, e
+	}
+	rows, e := s.pool.Query(ctx, `
+		SELECT t.id, q.id, q.name,
+			t.status NOT IN ('done', 'cancelled') AND t.created_by <> $2::uuid
+				AND NOT EXISTS (SELECT 1 FROM v2_task_comments c WHERE c.task_id = t.id AND c.author_id = $2::uuid)
+				AND NOT EXISTS (SELECT 1 FROM v2_task_runs r WHERE r.task_id = t.id AND r.started_by = $2::uuid)
+		FROM v2_tasks t
+		JOIN v2_squads q ON q.id = t.assignee_id
+		JOIN v2_squad_members m ON m.squad_id = q.id
+		WHERE t.tenant_id = $1 AND t.assignee_type = 'squad' AND m.user_id = $2::uuid
+			AND m.member_type = 'human' AND m.ended_at IS NULL
+		ORDER BY t.updated_at DESC, t.id DESC`, tenant, caller)
+	if e != nil {
+		return nil, fmt.Errorf("list my squad tasks: %w", e)
+	}
+	defer rows.Close()
+	out := []MySquadTask{}
+	for rows.Next() {
+		var m MySquadTask
+		if e := rows.Scan(&m.TaskID, &m.SquadID, &m.SquadName, &m.Waiting); e != nil {
+			return nil, e
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

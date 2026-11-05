@@ -374,7 +374,7 @@ func (s *Store) TransitionTaskStatus(ctx context.Context, tenant, id, from, to s
 }
 
 // SetTaskAssignee replaces or clears the typed assignee under a version check. Assigning a squad
-// only records that the squad owns the task; it dispatches nothing.
+// puts the task in front of every member; none of them is picked for it.
 func (s *Store) SetTaskAssignee(ctx context.Context, tenant, user, id string, ref *TaskAssigneeRef, version int64) (Task, error) {
 	var out Task
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {

@@ -60,12 +60,15 @@ function StateBadge({
     return <Badge variant="outline">运行时预装</Badge>
   const state = selection?.observedState ?? 'removed'
   const label =
-    selection?.kind !== 'skill' &&
-    selection?.kind !== 'agent' &&
-    selection?.kind !== 'workflow' &&
-    selection?.desiredState === 'installed'
-      ? '仅空间选择'
-      : (stateLabels[state] ?? state)
+    selection?.kind === 'hook' && state === 'installed'
+      ? '已安装（演示）'
+      : selection?.kind !== 'skill' &&
+          selection?.kind !== 'agent' &&
+          selection?.kind !== 'workflow' &&
+          selection?.kind !== 'hook' &&
+          selection?.desiredState === 'installed'
+        ? '仅空间选择'
+        : (stateLabels[state] ?? state)
   return (
     <Badge
       variant={
@@ -250,7 +253,11 @@ export default function PluginsPage() {
         toast.success(`已安装 ${entry.title}`)
       } else {
         await Promise.all([market.install(entry), delay])
-        toast.success(`${entry.kind === 'workflow' ? '已安装' : '已选择'} ${entry.title}`)
+        const message =
+          entry.kind === 'hook'
+            ? `已记录演示安装 ${entry.title}`
+            : `${entry.kind === 'workflow' ? '已安装' : '已选择'} ${entry.title}`
+        toast.success(message)
       }
     } catch {
       await delay
@@ -285,7 +292,11 @@ export default function PluginsPage() {
     void market
       .remove(removing.selection)
       .then(() => {
-        toast.success(`已提交移除 ${removing.entry.title}`)
+        toast.success(
+          removing.entry.kind === 'hook'
+            ? `已移除演示 Hook ${removing.entry.title}`
+            : `已提交移除 ${removing.entry.title}`,
+        )
         setRemoving(undefined)
       })
       .catch(() => undefined)
@@ -293,6 +304,11 @@ export default function PluginsPage() {
   function actions(entry: PluginCatalogEntry) {
     const selection = serverSelection(entry)
     const pending = installing(entry)
+    const busy =
+      market.mutating ||
+      pending ||
+      selection?.observedState === 'installing' ||
+      selection?.observedState === 'removing'
     if (pending)
       return (
         <Button size="sm" variant="secondary" disabled>
@@ -347,6 +363,18 @@ export default function PluginsPage() {
           重试移除
         </Button>
       )
+    if (entry.kind === 'hook' && selection?.observedState === 'failed')
+      return (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!market.canManage || busy}
+          onClick={() => void install(entry)}
+        >
+          <Download data-icon="inline-start" />
+          {pending ? '安装中…' : '重试安装'}
+        </Button>
+      )
     if (
       (!available.has(pluginKey(entry)) || (entry.kind !== 'skill' && entry.kind !== 'workflow')) &&
       selection?.desiredState === 'installed'
@@ -365,15 +393,11 @@ export default function PluginsPage() {
       return (
         <span className="text-xs text-muted-foreground">合集安装尚未支持</span>
       )
-    const busy =
-      market.mutating ||
-      pending ||
-      selection?.observedState === 'installing' ||
-      selection?.observedState === 'removing'
     if (
       entry.kind !== 'skill' &&
       entry.kind !== 'agent' &&
       entry.kind !== 'workflow' &&
+      entry.kind !== 'hook' &&
       selection?.desiredState !== 'installed'
     )
       return (
@@ -461,7 +485,9 @@ export default function PluginsPage() {
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          MCP、Hook 与运行时预装 Agent 的安装只改变当前浏览器中的状态，不下载或启动插件；市场 Agent 的安装只记录空间选择。
+          MCP 与运行时预装 Agent 的安装只改变当前浏览器中的状态；Hook
+          的安装/卸载只写入服务端空间选择，不下载或执行包；市场 Agent
+          的安装只记录空间选择。
         </p>
         <div className="settings-toolbar">
           {market.spaces.length > 1 && (
@@ -688,9 +714,12 @@ export default function PluginsPage() {
                 <dd>
                   {demoSelected(selected)
                     ? '浏览器本地状态'
-                    : selectedSelection && isPreinstalledAgent(selectedSelection)
-                      ? '运行时预装（服务端未变更）'
-                      : (selectedSelection?.observedVersion ?? '尚未安装')}
+                    : selected.kind === 'hook' &&
+                        selectedSelection?.observedState === 'installed'
+                      ? '服务端已记录（演示，不执行）'
+                      : selectedSelection && isPreinstalledAgent(selectedSelection)
+                        ? '运行时预装（服务端未变更）'
+                        : (selectedSelection?.observedVersion ?? '尚未安装')}
                 </dd>
               </>
             )}
@@ -710,11 +739,13 @@ export default function PluginsPage() {
             <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
               {demoPlugin(selected)
                 ? '此插件类型在当前 v2-server 中没有执行器；安装和卸载只改变浏览器本地状态，不会下载或运行插件包。'
-                : selected.kind === 'workflow'
-                  ? '安装会导入工作流并发布初始版本，可在工作流库中运行。'
-                : selectedSelection && isPreinstalledAgent(selectedSelection)
-                  ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
-                  : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
+                : selected.kind === 'hook'
+                  ? '此 Hook 仅用于演示安装和卸载；状态保存在服务端空间选择中，不会下载、注册或执行 Hook 包。'
+                  : selected.kind === 'workflow'
+                    ? '安装会导入工作流并发布初始版本，可在工作流库中运行。'
+                    : selectedSelection && isPreinstalledAgent(selectedSelection)
+                      ? '该 Agent 由运行时预装；安装只改变浏览器本地状态，不写服务端，也不影响执行器候选。'
+                      : '空间选择适用于该空间的项目。 只有项目节点确认后才显示已安装。'}
             </p>
           )}
           <Separator />
@@ -746,9 +777,11 @@ export default function PluginsPage() {
               ? removing.demo ? '卸载后可以重新安装。' : '已导入的工作流和运行历史会保留。'
               : removing.demo
                 ? '将清除当前浏览器中的安装状态，不会卸载真实插件包。'
-                : removing.entry.kind === 'skill'
-                  ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
-                  : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'
+                : removing.entry.kind === 'hook'
+                  ? '将从空间移除该演示 Hook 选择；不会下载、执行或卸载任何真实 Hook 包。'
+                  : removing.entry.kind === 'skill'
+                    ? '将请求项目节点卸载该技能包，完成后不再提供其中的技能。'
+                    : '将从空间移除该插件选择。此操作不会卸载其他工作空间或 Agent 运行时中的包。'
           }
           confirmLabel={removing.entry.kind === 'workflow' ? '卸载' : '移除'}
           pending={removing.demo ? false : market.mutating}

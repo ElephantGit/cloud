@@ -102,16 +102,18 @@ test('settings subroutes, refresh, history and the existing shell remain navigab
   }
 })
 
-test('settings pages avoid demo labels and the reset control', async ({ page }) => {
+test('settings pages avoid global demo labels and the reset control', async ({ page }) => {
   await login(page, '/settings/model-connections')
   for (const path of ['model-connections', 'roles', 'skills', 'plugins']) {
     await page.goto('/settings/' + path)
     await expect(
       page.getByRole('heading', { level: 1 }).first(),
     ).toBeVisible()
-    await expect(
-      page.locator('.settings-content').getByText(/演示/),
-    ).toHaveCount(0)
+    if (path !== 'plugins') {
+      await expect(
+        page.locator('.settings-content').getByText(/演示/),
+      ).toHaveCount(0)
+    }
     await expect(
       page.getByRole('button', { name: '重置演示', exact: true }),
     ).toHaveCount(0)
@@ -140,7 +142,7 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
   browser,
 }) => {
   // Four plugin installs each wait 3-5 seconds before reaching the server.
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   await login(page, '/settings/plugins')
   const row = page.getByRole('article', { name: 'Matt Pocock Skills' })
   await expect(row).toBeVisible()
@@ -228,12 +230,36 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
 
   const hooks = page.getByRole('article', { name: '示例 Hooks' })
   await expect(page.getByRole('heading', { name: 'Hooks' })).toBeVisible()
-  await hooks.getByRole('button', { name: '安装' }).click()
-  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible({
-    timeout: 15_000,
-  })
+  const hookInstall = hooks.getByRole('button', { name: '安装' })
+  if (await hookInstall.count()) await hookInstall.click()
+  await expect(
+    hooks.getByText('已安装（演示）', { exact: true }),
+  ).toBeVisible({ timeout: 15_000 })
   await page.reload()
-  await expect(hooks.getByText('已安装', { exact: true })).toBeVisible()
+  await expect(
+    hooks.getByText('已安装（演示）', { exact: true }),
+  ).toBeVisible()
+
+  const hookContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  })
+  const hookPage = await hookContext.newPage()
+  await login(hookPage, '/settings/plugins')
+  await expect(
+    hookPage
+      .getByRole('article', { name: '示例 Hooks' })
+      .getByText('已安装（演示）', { exact: true }),
+  ).toBeVisible()
+  await hookContext.close()
+
+  await hooks.getByRole('button', { name: '移除' }).click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: '移除' })
+    .click()
+  await expect(hooks.getByText('未安装', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(hooks.getByText('未安装', { exact: true })).toBeVisible()
 })
 
 test('server-backed user skills create, import, overwrite, reload and isolate by browser context', async ({
@@ -539,6 +565,12 @@ test('seven settings pages and keyboard-accessible details', async ({
       await expect(
         page.getByRole('article', { name: 'Tavily' }).getByText(
           '已安装',
+          { exact: true },
+        ),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByRole('article', { name: '示例 Hooks' }).getByText(
+          '已安装（演示）',
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })

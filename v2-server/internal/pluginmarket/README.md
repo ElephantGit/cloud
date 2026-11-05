@@ -5,6 +5,9 @@ v2-server 的临时 marketplace 同步包。启动时从配置的 Git 仓库浅�
 `v2_plugin_catalog` 快照。Agent 条目不进入目录，其版本由已安装的 Node 运行时管理；
 扫描没有可见非 Agent 条目时拒绝替换上一版快照。读取 API 只访问 PostgreSQL，不在请求路径出网。
 
+目录同步在没有任何 Hook 条目时补一条无包体的 `demo/sample-hooks`。它只用于 v2
+插件页演示安装/卸载，不携带 URL、摘要或生命周期命令；安装只写空间选择，不下载或执行。
+
 - `manifest.go`：清单字段、kind、semver、release、目标三元组和文本边界校验。
 - `catalog.go`：扫描 registry、解析 logo 变体/README，返回排序后的目录条目。
 - `sync.go`：Git 同步、原子更换 checkout、单次同步与定时刷新；每次同步有 2 分钟上限，失败时调用方保留上一版数据库快照。

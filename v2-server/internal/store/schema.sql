@@ -549,7 +549,9 @@ SET leader_agent_id = NULL
 WHERE leader_agent_id IN (SELECT id FROM v2_space_agents WHERE source_namespace = 'demo');
 DELETE FROM v2_squad_members
 WHERE space_agent_id IN (SELECT id FROM v2_space_agents WHERE source_namespace = 'demo');
-DELETE FROM v2_space_agents WHERE source_namespace = 'demo';
+-- Hook demo selections are current server-backed state and must survive restarts; older demo
+-- agents and skills no longer have a catalog entry.
+DELETE FROM v2_space_agents WHERE source_namespace = 'demo' AND kind <> 'hook';
 DELETE FROM v2_plugin_mutations
 WHERE response->'resource'->>'sourceNamespace' = 'demo';
 

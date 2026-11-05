@@ -236,6 +236,87 @@ func TestPluginMarketHTTP(t *testing.T) {
 	}
 }
 
+func TestHookPluginHTTPDemoSelection(t *testing.T) {
+	f := newSquadServer(t)
+	c := newContractClient(t, f.srv.URL)
+	c.login()
+	tenant := c.tenant()
+	status, body := c.do("GET", "/api/v1/tenants/"+tenant+"/spaces", nil)
+	if status != 200 {
+		t.Fatalf("spaces = %d %v", status, body)
+	}
+	spaces, _ := body["items"].([]any)
+	if len(spaces) != 1 {
+		t.Fatalf("spaces = %v", body)
+	}
+	space := spaces[0].(map[string]any)["id"].(string)
+	base := "/api/v1/tenants/" + tenant + "/spaces/" + space + "/plugins"
+	if e := f.store.ReplacePluginCatalog(context.Background(), []pluginmarket.Entry{pluginmarket.DemoHookEntry()}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+
+	status, body = c.do("GET", base+"/catalog", nil)
+	if status != 200 {
+		t.Fatalf("catalog = %d %v", status, body)
+	}
+	catalog, _ := body["items"].([]any)
+	if len(catalog) != 1 {
+		t.Fatalf("hook catalog = %v", body)
+	}
+	entry := catalog[0].(map[string]any)
+	if entry["id"] != "demo/sample-hooks" || entry["kind"] != "hook" ||
+		entry["url"] != nil || entry["sha256"] != nil {
+		t.Fatalf("hook catalog entry = %v", entry)
+	}
+
+	status, body = c.doHeaders("POST", base, map[string]any{
+		"identifier":    "demo/sample-hooks",
+		"pluginVersion": "1.0.0",
+		"version":       0,
+	}, map[string]string{"Idempotency-Key": "install-demo-hook"})
+	if status != 200 {
+		t.Fatalf("install hook = %d %v", status, body)
+	}
+	resource := body["resource"].(map[string]any)
+	if resource["kind"] != "hook" || resource["desiredState"] != "installed" ||
+		resource["observedState"] != "installed" || resource["observedVersion"] != "1.0.0" {
+		t.Fatalf("installed hook = %v", resource)
+	}
+	version := resource["version"].(float64)
+
+	status, body = c.do("GET", base, nil)
+	if status != 200 {
+		t.Fatalf("plugins = %d %v", status, body)
+	}
+	items, _ := body["items"].([]any)
+	found := false
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["identifier"] == "sample-hooks" {
+			found = true
+			if item["kind"] != "hook" || item["observedState"] != "installed" {
+				t.Fatalf("hook selection = %v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("hook selection missing: %v", body)
+	}
+
+	status, body = c.doHeaders("DELETE", base, map[string]any{
+		"identifier": "demo/sample-hooks",
+		"version":    int64(version),
+	}, map[string]string{"Idempotency-Key": "remove-demo-hook"})
+	if status != 200 {
+		t.Fatalf("remove hook = %d %v", status, body)
+	}
+	removed := body["resource"].(map[string]any)
+	if removed["desiredState"] != "removed" || removed["observedState"] != "removed" ||
+		removed["observedVersion"] != nil {
+		t.Fatalf("removed hook = %v", removed)
+	}
+}
+
 func TestWorkflowPluginHTTPInstallAndRemoveKeepWorkflow(t *testing.T) {
 	archive := workflowPluginArchive(t)
 	f := newSquadServerWith(t, server.Options{

@@ -65,6 +65,11 @@ const workflow = marketplaceEntry('ora-space.requirement-development', {
   sourceNamespace: 'official',
   version: '0.1.0',
 })
+const hook = marketplaceEntry('sample-hooks', {
+  kind: 'hook',
+  title: '示例 Hooks',
+  description: '生命周期 Hook 的安装和卸载只记录空间选择。',
+})
 
 beforeEach(() => {
   installDelay.ms = 0
@@ -113,7 +118,7 @@ it('searches and filters the server catalog, then confirms a server-backed remov
   })
 })
 
-it('installs and removes MCP and Hooks as browser-local demo state', async () => {
+it('installs and removes MCP as browser-local demo state', async () => {
   const backend = installMarketplaceBackend({
     catalog: [writing, github, pack],
   })
@@ -124,21 +129,14 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
   expect(
     await within(row).findByText('已安装', { exact: true }),
   ).toBeInTheDocument()
+  expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
+    'demo/github-tools',
+  )
   await user.click(within(row).getByRole('button', { name: '移除' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(dialog).toHaveTextContent('不会卸载真实插件包')
   await user.click(within(dialog).getByRole('button', { name: '移除' }))
   expect(within(row).getByText('未安装', { exact: true })).toBeInTheDocument()
-
-  const hook = screen.getByRole('article', { name: '示例 Hooks' })
-  expect(screen.getByRole('heading', { name: 'Hooks' })).toBeInTheDocument()
-  await user.click(within(hook).getByRole('button', { name: '安装' }))
-  expect(
-    await within(hook).findByText('已安装', { exact: true }),
-  ).toBeInTheDocument()
-  expect(localStorage.getItem('ora-v2-plugin-demo:v1')).toContain(
-    'demo/sample-hooks',
-  )
 
   await user.click(
     within(row).getByRole('button', { name: '查看插件 GitHub 工具' }),
@@ -147,6 +145,39 @@ it('installs and removes MCP and Hooks as browser-local demo state', async () =>
     'demo/github-tools',
   )
   expect(backend.bodies).toHaveLength(0)
+})
+
+it('persists Hook install and removal through the space plugin API', async () => {
+  const backend = installMarketplaceBackend({ catalog: [hook] })
+  const user = userEvent.setup()
+  renderSettingsPage(<PluginsPage />)
+  const row = await screen.findByRole('article', { name: '示例 Hooks' })
+  expect(screen.getByRole('heading', { name: 'Hooks' })).toBeInTheDocument()
+
+  await user.click(within(row).getByRole('button', { name: '安装' }))
+  expect(
+    await within(row).findByText('已安装（演示）', { exact: true }),
+  ).toBeInTheDocument()
+  expect(backend.bodies.at(-1)).toEqual({
+    identifier: 'demo/sample-hooks',
+    pluginVersion: '1.0.0',
+    version: 0,
+  })
+  expect(localStorage.getItem('ora-v2-plugin-demo:v1') ?? '').not.toContain(
+    'demo/sample-hooks',
+  )
+
+  await user.click(within(row).getByRole('button', { name: '移除' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog).toHaveTextContent('不会下载、执行或卸载任何真实 Hook 包')
+  await user.click(within(dialog).getByRole('button', { name: '移除' }))
+  expect(
+    await within(row).findByText('未安装', { exact: true }),
+  ).toBeInTheDocument()
+  expect(backend.bodies.at(-1)).toEqual({
+    identifier: 'demo/sample-hooks',
+    version: 1,
+  })
 })
 
 it('keeps unsupported packs disabled and clears no-result filters', async () => {
@@ -160,7 +191,7 @@ it('keeps unsupported packs disabled and clears no-result filters', async () => 
     'nothing-matches',
   )
   await user.click(screen.getByRole('button', { name: '清除筛选' }))
-  expect(screen.getAllByRole('article')).toHaveLength(4)
+  expect(screen.getAllByRole('article')).toHaveLength(3)
 })
 
 it('lets a member browse the catalog but not change it', async () => {

@@ -9,7 +9,7 @@
 小队页（`squads/`，`/settings/squads`）管理工作区内人和 Agent 的协作编组，数据来自候选契约 `v2-server/squads.openapi.json`，客户端在 `src/lib/squads-api`（协作页按小队筛选和指派任务也用它），`npm run api:generate:squads` 生成。列表显示有效的人类成员、Agent 成员与维护者计数，详情按类型列成员、职责、维护者与 leader，并保留已退出历史；工作区 owner 和本队维护者可编辑、归档、加入成员与可执行的 Space Agent、移除成员，任何成员可以自己退出，维护者可以交接维护者标记、设置 Agent leader。已删除的账号由 v2-server 结束其成员关系，并且不再出现在小队里，「已退出」历史也不列出。小队关系不授予私人模型、Git 凭据或运行时权限。`?squad=<id>` 直接打开那个小队；协作页的旧地址 `/collaboration/squads` 会重定向过来。弹窗和基础样式来自 `src/components/panel/`，与协作页共用。
 
 成员、Plugins、技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
-契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 与 Hook 没有 v2 执行器，安装和卸载状态只保存在浏览器，不会调用安装 API 或伪造服务端成功；目录缺少对应类型时提供本地条目。模型连接和角色同样只保存在当前浏览器。所有本地写入按登录用户隔离，其中 MCP/Hook 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
+契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 没有 v2 执行器，安装和卸载状态只保存在浏览器，不会调用安装 API 或伪造服务端成功；目录缺少 MCP 类型时提供本地条目。Hook 的演示安装/卸载写入服务端空间选择，不下载、注册或执行包；目录同步会补一个无包体的示例 Hook。模型连接和角色同样只保存在当前浏览器。所有本地写入按登录用户隔离，其中 MCP 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
 
 `lib/settings-demo/` 是本机模型连接和角色的共享存储边界，键包含版本、当前用户 ID 和空间
 ID；Settings 与工作流的角色选择读同一份快照。`members/`、`skills/` 与
@@ -29,8 +29,9 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
   官方工作流插件（`official/ora-space.` 前缀下的 `requirement-development`、`requirement-decomposition`、`customer-feedback-triage`、`daily-inspection`）以服务端安装记录为准；安装会把工作流导入库并发布 v1，卸载保留工作流和历史。其余工作流插件（如 Workflow Examples）只在浏览器按用户、租户、空间记录安装状态，不提交服务端变更。合集暂不可安装。目录来自 v2-server 对
   `ora-space/marketplace` 的真实 Git 同步，而不是前端内置数据。目录把来源发布的明暗主题
   图标嵌入快照；页面按插件类型分组，未发布图标的条目使用对应的类型图标。owner 可写，
-  member 只读。MCP、Hook 与预装 Agent 的安装选择保存在 `@/lib/settings-demo/plugin-selections.ts` 的浏览器
-  存储中，按用户、团队和空间分键；Skill 与市场 Agent 不读取这份状态。
+  member 只读。MCP 与预装 Agent 的安装选择保存在 `@/lib/settings-demo/plugin-selections.ts` 的浏览器
+  存储中，按用户、团队和空间分键；Hook 使用同一份空间插件选择与卸载路由，只记录演示
+  安装状态，不下载或执行包；Skill 与市场 Agent 不读取这份浏览器状态。
 - 用户技能通过候选契约 `v2-server/skills.openapi.json` 持久化在 PostgreSQL，按登录用户和
   工作区隔离；`npm run api:generate:skills` 生成共享客户端到 `src/lib/skills-api`。页面可新建、
   编辑、删除，或导入单个带 YAML front matter 的 `SKILL.md`；新账号首次登录获得
@@ -67,4 +68,4 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 `e2e/multiuser.spec.ts` 覆盖 owner 邀请（含邀请入队）、被邀请者登录、未邀请邮箱被拒与
 member 被服务端拒绝。模型连接和角色的资源操作仍只保存在当前浏览器。
 
-插件市场区分空间选择与项目实际结果。来源管理使用临时市场契约生成的客户端；空间选择供插件和技能页面共享。当前会进入项目运行时的市场类型是 Skill；Agent 选择只保存空间状态，可执行 Agent 仍只有系统预装的 OpenCode 和 Claude Code；MCP、Hook 与预装 Agent 的安装只改变浏览器本地状态，不写服务端。插件详情列出各项目等待、成功或失败的状态。移除市场仅隐藏可安装目录，不移除空间中已有选择。
+插件市场区分空间选择与项目实际结果。来源管理使用临时市场契约生成的客户端；空间选择供插件和技能页面共享。当前会进入项目运行时的市场类型是 Skill；Agent 选择只保存空间状态，可执行 Agent 仍只有系统预装的 OpenCode 和 Claude Code；MCP 与预装 Agent 的安装只改变浏览器本地状态，Hook 的演示安装/卸载只写空间选择，不下载或执行包。插件详情列出各项目等待、成功或失败的状态。移除市场仅隐藏可安装目录，不移除空间中已有选择。

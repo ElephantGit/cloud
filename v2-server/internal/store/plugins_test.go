@@ -256,3 +256,90 @@ func TestPluginMarketLifecycle(t *testing.T) {
 		t.Fatalf("agent selections = %+v %v", agents, e)
 	}
 }
+
+func TestHookSelectionIsDatabaseBackedWithoutExecuting(t *testing.T) {
+	f := newSquadFixture(t)
+	owner := f.login(t, "owner", "owner")
+	member := f.login(t, "member", "member")
+	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
+	if e != nil || len(spaces) != 1 {
+		t.Fatalf("spaces = %v %v", spaces, e)
+	}
+	space := spaces[0].ID
+	path := "/api/v1/tenants/" + f.tenant + "/spaces/" + space + "/plugins"
+	if e := f.store.ReplacePluginCatalog(f.ctx, []pluginmarket.Entry{pluginmarket.DemoHookEntry()}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+
+	installed, e := f.store.InstallSpacePlugin(f.ctx, f.tenant, space, owner, path, "install-hook", store.PluginInstallInput{
+		Identifier: "demo/sample-hooks", PluginVersion: "1.0.0", Version: 0,
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if installed.Kind != "hook" || installed.DesiredState != "installed" ||
+		installed.ObservedState != "installed" || installed.ObservedVersion == nil ||
+		*installed.ObservedVersion != "1.0.0" || installed.RequestedByUserID == nil ||
+		*installed.RequestedByUserID != owner {
+		t.Fatalf("installed hook = %+v", installed)
+	}
+
+	var kind, desired, observed string
+	var observedVersion *string
+	if e := f.db.QueryRow(f.ctx, `
+		SELECT kind, desired_state, observed_state, observed_version
+		FROM v2_space_agents WHERE id = $1`, installed.ID).
+		Scan(&kind, &desired, &observed, &observedVersion); e != nil {
+		t.Fatal(e)
+	}
+	if kind != "hook" || desired != "installed" || observed != "installed" ||
+		observedVersion == nil || *observedVersion != "1.0.0" {
+		t.Fatalf("hook row = kind=%q desired=%q observed=%q version=%v", kind, desired, observed, observedVersion)
+	}
+
+	selections, e := f.store.SpacePlugins(f.ctx, f.tenant, space, member)
+	if e != nil {
+		t.Fatal(e)
+	}
+	found := false
+	for _, selection := range selections {
+		if selection.Identifier == "sample-hooks" {
+			found = true
+			if selection.Kind != "hook" || selection.ObservedState != "installed" {
+				t.Fatalf("member view of hook = %+v", selection)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("member cannot read hook selection: %+v", selections)
+	}
+	agents, e := f.store.SpaceAgentPlugins(f.ctx, f.tenant, space, member)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, agent := range agents {
+		if agent.Identifier == "sample-hooks" {
+			t.Fatalf("hook leaked into executable Agents: %+v", agent)
+		}
+	}
+
+	removed, e := f.store.RemoveSpacePlugin(f.ctx, f.tenant, space, owner, path, "remove-hook", store.PluginRemoveInput{
+		Identifier: "demo/sample-hooks", Version: installed.Version,
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if removed.DesiredState != "removed" || removed.ObservedState != "removed" ||
+		removed.ObservedVersion != nil {
+		t.Fatalf("removed hook = %+v", removed)
+	}
+	after, e := f.store.SpacePlugins(f.ctx, f.tenant, space, member)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, selection := range after {
+		if selection.Identifier == "sample-hooks" && selection.ObservedState != "removed" {
+			t.Fatalf("hook after removal = %+v", selection)
+		}
+	}
+}

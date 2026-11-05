@@ -10,8 +10,9 @@ interface DemoPluginSelections {
 }
 
 /**
- * Browser-local MCP/Hook selections used only for the v2 demo. Scoping by user, tenant and space
- * keeps one person's demo from changing another workspace or login.
+ * Browser-local MCP and runtime-preinstalled Agent selections used only for the v2 demo. Scoping by
+ * user, tenant and space keeps one person's demo from changing another workspace or login. Hook
+ * selections use the Space plugin API instead so other clients can read them.
  */
 export const useDemoPluginSelections = create<DemoPluginSelections>()(
   persist(

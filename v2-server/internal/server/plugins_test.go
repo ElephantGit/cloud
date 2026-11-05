@@ -1,13 +1,49 @@
 package server_test
 
 import (
+	"archive/zip"
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
+	"github.com/wanglongan587/cloud/v2-server/internal/server"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
+
+func workflowPluginArchive(t *testing.T) string {
+	t.Helper()
+	f, e := os.CreateTemp(t.TempDir(), "workflow-*.orax")
+	if e != nil {
+		t.Fatal(e)
+	}
+	z := zip.NewWriter(f)
+	manifest, e := z.Create("orax.toml")
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, _ = manifest.Write([]byte(`resolver = 1
+title = "Requirement Development"
+identifier = "ora-space.test-workflow"
+namespace = "official"
+kind = "workflow"
+version = "0.1.0"
+description = "A workflow."
+`))
+	document, e := z.Create("assets/workflows/requirement-development.json")
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, _ = document.Write([]byte(`{"name":"需求开发","nodes":[{"id":"start","data":{"kind":"start"}},{"id":"output","data":{"kind":"output"}}],"edges":[{"source":"start","target":"output"}]}`))
+	if e := z.Close(); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.Close(); e != nil {
+		t.Fatal(e)
+	}
+	return f.Name()
+}
 
 func seedTestPluginCatalog(t *testing.T, s *store.Store) {
 	t.Helper()
@@ -197,5 +233,100 @@ func TestPluginMarketHTTP(t *testing.T) {
 	}
 	if items, _ := body["items"].([]any); len(items) != 4 {
 		t.Fatalf("plugins after remove = %v", body)
+	}
+}
+
+func TestWorkflowPluginHTTPInstallAndRemoveKeepWorkflow(t *testing.T) {
+	archive := workflowPluginArchive(t)
+	f := newSquadServerWith(t, server.Options{
+		SessionTTL:       time.Hour,
+		ValidateWorkflow: func(string) error { return nil },
+		DownloadPluginPackage: func(context.Context, string, string, pluginmarket.Retrieval, pluginmarket.Credentials) (string, error) {
+			raw, e := os.ReadFile(archive)
+			if e != nil {
+				return "", e
+			}
+			file, e := os.CreateTemp(t.TempDir(), "download-*.orax")
+			if e != nil {
+				return "", e
+			}
+			if _, e := file.Write(raw); e != nil {
+				_ = file.Close()
+				return "", e
+			}
+			if e := file.Close(); e != nil {
+				return "", e
+			}
+			return file.Name(), nil
+		},
+	})
+	c := newContractClient(t, f.srv.URL)
+	c.login()
+	tenant := c.tenant()
+	status, body := c.do("GET", "/api/v1/tenants/"+tenant+"/spaces", nil)
+	if status != 200 {
+		t.Fatalf("spaces = %d %v", status, body)
+	}
+	spaces, _ := body["items"].([]any)
+	if len(spaces) != 1 {
+		t.Fatalf("spaces = %v", body)
+	}
+	space := spaces[0].(map[string]any)["id"].(string)
+	if e := f.store.ReplacePluginCatalog(context.Background(), []pluginmarket.Entry{{
+		Namespace: "official", Identifier: "ora-space.test-workflow",
+		Title: "Requirement Development", Kind: "workflow", Version: "0.1.0",
+		Description: "A workflow", URL: "https://example.org/workflow.orax",
+		SHA256:             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		MarketplaceVisible: true, SourceURL: "https://github.com/ora-space/marketplace",
+	}}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	original, _, e := f.store.CreateWorkflow(context.Background(), tenant, "需求开发", `{"nodes":[],"edges":[]}`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	base := "/api/v1/tenants/" + tenant + "/spaces/" + space + "/plugins"
+	input := map[string]any{
+		"identifier":    "official/ora-space.test-workflow",
+		"pluginVersion": "0.1.0",
+		"version":       0,
+	}
+	status, body = c.doHeaders("POST", base, input, map[string]string{"Idempotency-Key": "install-workflow"})
+	if status != 200 {
+		t.Fatalf("install workflow = %d %v", status, body)
+	}
+	resource := body["resource"].(map[string]any)
+	if resource["kind"] != "workflow" || resource["observedState"] != "installed" ||
+		resource["observedVersion"] != "0.1.0" {
+		t.Fatalf("installed workflow = %v", resource)
+	}
+	version := resource["version"].(float64)
+	workflows, e := f.store.Workflows(context.Background(), tenant)
+	if e != nil || len(workflows) != 2 {
+		t.Fatalf("workflows = %+v %v", workflows, e)
+	}
+	names := map[string]bool{}
+	for _, workflow := range workflows {
+		names[workflow.Name] = true
+	}
+	if !names["需求开发"] || !names["需求开发（插件）"] {
+		t.Fatalf("import did not preserve original and rename conflict: %+v", workflows)
+	}
+	if unchanged, e := f.store.Workflow(context.Background(), tenant, original.ID); e != nil || unchanged.Name != "需求开发" {
+		t.Fatalf("original workflow changed = %+v %v", unchanged, e)
+	}
+	status, body = c.doHeaders("POST", base, input, map[string]string{"Idempotency-Key": "install-workflow"})
+	if status != 200 || body["resource"].(map[string]any)["version"] != version {
+		t.Fatalf("workflow replay = %d %v", status, body)
+	}
+	status, body = c.doHeaders("DELETE", base, map[string]any{
+		"identifier": "official/ora-space.test-workflow",
+		"version":    int64(version),
+	}, map[string]string{"Idempotency-Key": "remove-workflow"})
+	if status != 200 {
+		t.Fatalf("remove workflow = %d %v", status, body)
+	}
+	if workflows, e := f.store.Workflows(context.Background(), tenant); e != nil || len(workflows) != 2 {
+		t.Fatalf("remove deleted workflows: %+v %v", workflows, e)
 	}
 }

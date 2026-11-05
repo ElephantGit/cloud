@@ -56,6 +56,12 @@ const codex = marketplaceEntry('ora-space.codex', {
   sourceNamespace: 'official',
   version: '0.3.14',
 })
+const workflow = marketplaceEntry('ora-space.requirement-development', {
+  kind: 'workflow',
+  title: '需求开发',
+  sourceNamespace: 'official',
+  version: '0.1.0',
+})
 
 beforeEach(() => {
   installDelay.ms = 0
@@ -193,6 +199,31 @@ it('installs and removes a marketplace Agent', async () => {
     identifier: 'official/ora-space.codex',
     version: 1,
   })
+})
+
+it('installs and removes a workflow plugin while keeping imported workflows', async () => {
+  const backend = installMarketplaceBackend({
+    catalog: [workflow],
+  })
+  const user = userEvent.setup()
+  renderSettingsPage(<PluginsPage />)
+  const row = await screen.findByRole('article', { name: '需求开发' })
+  expect(screen.getByRole('heading', { name: '工作流' })).toBeInTheDocument()
+  expect(
+    within(row).queryByText('当前节点不支持此类型'),
+  ).not.toBeInTheDocument()
+  await user.click(within(row).getByRole('button', { name: '安装' }))
+  await waitFor(() => expect(within(row).getByText('已安装')).toBeInTheDocument())
+  expect(backend.bodies.at(-1)).toEqual({
+    identifier: 'official/ora-space.requirement-development',
+    pluginVersion: '0.1.0',
+    version: 0,
+  })
+  await user.click(within(row).getByRole('button', { name: '移除' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog).toHaveTextContent('已导入的工作流和运行历史会保留')
+  await user.click(within(dialog).getByRole('button', { name: '移除' }))
+  await waitFor(() => expect(within(row).getByText('未安装')).toBeInTheDocument())
 })
 
 it('lets a runtime-preinstalled Agent use the demo install flow', async () => {

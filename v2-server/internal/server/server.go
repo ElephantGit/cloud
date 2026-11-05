@@ -16,6 +16,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/chat"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution"
 	"github.com/wanglongan587/cloud/v2-server/internal/execution/executiontest"
+	"github.com/wanglongan587/cloud/v2-server/internal/pluginmarket"
 	"github.com/wanglongan587/cloud/v2-server/internal/projectrepos"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 	"github.com/wanglongan587/cloud/v2-server/internal/taskdecomp"
@@ -43,6 +44,8 @@ type Store interface {
 	SpacePlugins(ctx context.Context, tenant, space, caller string) ([]store.SpacePlugin, error)
 	PluginCatalog(ctx context.Context, tenant, space, caller string) ([]store.PluginCatalogEntry, time.Time, error)
 	InstallSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in store.PluginInstallInput) (store.SpacePlugin, error)
+	PluginPackageSource(ctx context.Context, tenant, space, caller, identifier string) (store.PluginPackageSource, error)
+	InstallWorkflowPlugin(ctx context.Context, tenant, space, caller, path, key string, in store.PluginInstallInput, documents []pluginmarket.WorkflowDocument, validate func(string) error) (store.SpacePlugin, error)
 	RemoveSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in store.PluginRemoveInput) (store.SpacePlugin, error)
 	ListSkills(ctx context.Context, tenant, caller string) ([]store.Skill, error)
 	GetSkill(ctx context.Context, tenant, caller, id string) (store.Skill, error)
@@ -51,6 +54,9 @@ type Store interface {
 	DeleteSkill(ctx context.Context, tenant, caller, id string) error
 	ImportSkill(ctx context.Context, tenant, caller string, raw []byte, overwrite bool) (store.Skill, error)
 }
+
+// PluginPackageDownloader stages one verified marketplace archive and returns its local path.
+type PluginPackageDownloader func(context.Context, string, string, pluginmarket.Retrieval, pluginmarket.Credentials) (string, error)
 
 // Options tune the server.
 type Options struct {
@@ -86,6 +92,9 @@ type Options struct {
 	TaskRuns *taskrun.Host
 	// TaskDecompositions splits a task into subtasks with a workflow; nil keeps 「拆分」 unavailable.
 	TaskDecompositions *taskdecomp.Host
+	// DownloadPluginPackage stages a workflow package before import. Nil uses the public
+	// marketplace downloader.
+	DownloadPluginPackage PluginPackageDownloader
 }
 
 // New returns the handler for every route v2-server serves.

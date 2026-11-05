@@ -7,6 +7,7 @@
     "record": "node src/record/cli.ts",
     "studio": "remotion studio src/compose/index.ts --public-dir out",
     "render": "remotion render src/compose/index.ts --public-dir out --concurrency 50%",
+    "film": "node src/film/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test"

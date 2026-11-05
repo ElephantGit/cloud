@@ -13,10 +13,13 @@ async function readOverview(tenant: string, signal?: AbortSignal): Promise<Overv
   const list = await listTasks(tenant, undefined, signal)
   if (list.nextCursor) throw new Error('Incomplete task list')
   const timelines: OverviewSnapshot['timelines'] = {}
-  // Bound concurrent reads while this preview uses the existing per-task timeline contract.
+  // Bound concurrent reads while the overview uses the existing per-task timeline contract.
   for (let index = 0; index < list.items.length; index += 4) {
     const batch = await Promise.all(list.items.slice(index, index + 4).map(async task => [task.id, await getTaskTimeline(tenant, task.id, undefined, signal)] as const))
-    for (const [id, timeline] of batch) timelines[id] = timeline
+    for (const [id, timeline] of batch) {
+      if (timeline.runs.some(run => typeof run.demoSeed !== 'boolean')) throw new Error('Task run provenance is unavailable')
+      timelines[id] = timeline
+    }
   }
   return { tasks: list.items, timelines, fetchedAt: new Date().toISOString() }
 }
@@ -40,12 +43,12 @@ export default function RealOverview() {
     { label: '进行中', value: model.counts.running, note: `${model.counts.pending} 项待处理` },
     { label: '待验收', value: model.counts.review, note: '等待人工检查与确认' },
     { label: '已完成', value: model.counts.done, note: '当前处于已完成状态的任务' },
-    { label: '本周任务 Agent 运行', value: model.weekRuns.length, note: `${model.weekRuns.filter(run => run.lastResult === 'completed').length} 次最新一轮执行成功` },
+    { label: '本周任务 Agent 运行', value: model.weekRuns.length, note: `${model.successfulWeekRuns.length} 次最新一轮执行成功` },
   ]
   return <>
     <header className='db-page-header'>
       <div><h2 className='db-section-title'>团队概览</h2><p>当前工作区 · {snapshot.tasks.length} 项任务 · 更新于 {new Date(snapshot.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div>
-      <div className='flex items-center gap-3'><Badge variant='outline'>真实数据</Badge>{refresh}</div>
+      <div className='flex items-center gap-3'>{refresh}</div>
     </header>
     <section className='db-stats' aria-label='任务概览'>
       {stats.map(stat => <article className='db-stat' key={stat.label}><span className='db-stat-label'>{stat.label}</span><strong className='db-stat-value'>{stat.value}</strong><span className='db-stat-note'>{stat.note}</span></article>)}

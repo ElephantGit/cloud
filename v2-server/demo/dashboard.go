@@ -15,7 +15,7 @@ import (
 // seedDashboard provides a labelled task history example for B and the combined demo. No
 // provider is called and no request usage is invented; the metrics tab explicitly stays uncollected.
 func seedDashboard(ctx context.Context, s *Seeder, scope execution.Scope, project store.Project) error {
-	sid := "demo-dashboard-" + project.ID
+	sid := store.DemoSeedSessionPrefix + project.ID
 	if _, err := s.Store.ReadExecutionSession(ctx, scope, sid); err == nil {
 		return nil
 	} else if !errors.Is(err, execution.ErrNotFound) {

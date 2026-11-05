@@ -29,11 +29,12 @@ export function overviewModel(snapshot: OverviewSnapshot, now = new Date()) {
     const updated = new Date(task.updatedAt)
     const day = days.find(day => day.date.toDateString() === updated.toDateString())
     if (day) day.count++
-    const runs = [...(snapshot.timelines[task.id]?.runs ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    const runs = [...(snapshot.timelines[task.id]?.runs ?? [])].filter(run => !run.demoSeed).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     weekRuns.push(...runs.filter(run => Date.parse(run.createdAt) >= start.getTime() && Date.parse(run.createdAt) <= now.getTime()))
     const successful = runs[0]?.lastResult === 'completed' && runs[0].state !== 'running' ? runs[0] : undefined
     if (successful && (task.status === 'review' || task.status === 'done')) outputs.push({ task, run: successful })
   }
   outputs.sort((a, b) => Date.parse(b.task.updatedAt) - Date.parse(a.task.updatedAt))
-  return { counts, owners: [...owners.values()], days, weekRuns, outputs, max: Math.max(1, ...days.map(day => day.count)) }
+  const successfulWeekRuns = weekRuns.filter(run => run.lastResult === 'completed' && run.state !== 'running')
+  return { counts, successfulWeekRuns, owners: [...owners.values()], days, weekRuns, outputs, max: Math.max(1, ...days.map(day => day.count)) }
 }

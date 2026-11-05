@@ -9,7 +9,7 @@ import RealOverview from './real-overview'
 
 const base = '/api/v2/tenants/team/tasks'
 const task = { id: 'task-1', title: '真实任务交付', description: '实际任务描述', tenantId: 'team', projectId: 'project', assignee: { type: 'agent', id: 'agent', displayName: '执行 Agent' }, status: 'review', createdBy: 'user', createdByName: '成员', version: 1, createdAt: '2026-11-05T00:00:00Z', updatedAt: '2026-11-05T01:00:00Z', activeRun: null }
-const timeline = { runs: [{ id: 'run', taskId: task.id, startedBy: 'user', startedByName: '成员', executorId: 'executor', executorName: '真实执行器', state: 'ended', lastResult: 'completed', failureCode: '', endReason: 'closed', createdAt: '2026-11-05T00:00:00Z', endedAt: '2026-11-05T01:00:00Z' }], comments: [] }
+const timeline = { runs: [{ demoSeed: false, id: 'run', taskId: task.id, startedBy: 'user', startedByName: '成员', executorId: 'executor', executorName: '真实执行器', state: 'ended', lastResult: 'completed', failureCode: '', endReason: 'closed', createdAt: '2026-11-05T00:00:00Z', endedAt: '2026-11-05T01:00:00Z' }], comments: [] }
 const tenants = { status: 200, data: { items: [{ id: 'team' }] } }
 function show() {
   return render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><UserContext.Provider value={demoUser}><RealOverview /></UserContext.Provider></QueryClientProvider></MemoryRouter>)
@@ -26,6 +26,7 @@ it.each(['', '1'])('reads real task ownership and output with demo flag %s', asy
   show()
   const link = await screen.findByRole('link', { name: task.title })
   expect(link).toHaveAttribute('href', '/collaboration/tasks/task-1')
+  expect(screen.queryByText('真实数据', { exact: true })).not.toBeInTheDocument()
   expect(screen.getByText('真实执行器', { exact: false })).toBeInTheDocument()
   expect(screen.getByRole('progressbar', { name: '执行 Agent 完成率' })).toHaveAttribute('aria-valuenow', '0')
   expect(seen).toContain(`GET ${base}/${task.id}/timeline`)
@@ -78,4 +79,16 @@ it('does not remain loading when no workspace is available', async () => {
   fakeBackend(config => config.url === '/api/v1/me/tenants' ? { status: 200, data: { items: [] } } : undefined)
   show()
   expect(await screen.findByText('暂无可访问的工作区。')).toBeInTheDocument()
+})
+
+it('does not publish statistics when the backend omits run provenance', async () => {
+  const legacyRun = Object.fromEntries(Object.entries(timeline.runs[0]).filter(([key]) => key !== 'demoSeed'))
+  fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return { status: 200, data: { items: [task], nextCursor: '' } }
+    if (config.url === `${base}/${task.id}/timeline`) return { status: 200, data: { runs: [legacyRun], comments: [] } }
+  })
+  show()
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('region', { name: '任务概览' })).not.toBeInTheDocument()
 })

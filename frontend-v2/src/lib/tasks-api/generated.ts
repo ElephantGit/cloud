@@ -252,6 +252,8 @@ export interface TaskRun {
   endedAt: string | null;
   /** The original task run was started by a schedule. */
   scheduled?: boolean;
+  /** True only for a prebuilt nonexecuting demo history example. Fixture-backed actual execution remains false. */
+  demoSeed: boolean;
 }
 
 export type TaskMentionType = typeof TaskMentionType[keyof typeof TaskMentionType];

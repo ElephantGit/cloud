@@ -1951,7 +1951,8 @@
           "failureCode",
           "endReason",
           "createdAt",
-          "endedAt"
+          "endedAt",
+          "demoSeed"
         ],
         "properties": {
           "id": {
@@ -2018,6 +2019,10 @@
           "scheduled": {
             "type": "boolean",
             "description": "The original task run was started by a schedule."
+          },
+          "demoSeed": {
+            "type": "boolean",
+            "description": "True only for a prebuilt nonexecuting demo history example. Fixture-backed actual execution remains false."
           }
         }
       },

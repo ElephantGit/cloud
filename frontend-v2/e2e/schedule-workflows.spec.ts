@@ -65,7 +65,8 @@ for (const containers of [false, true]) {
     await expect(dialog.getByRole('button', { name: '运行历史' })).toHaveAttribute('aria-pressed', 'true')
     if (realAgents) {
       await expect(dialog.getByText('工作流运行 · 成功')).toBeVisible({ timeout: 200_000 })
-      await expect(dialog.getByText(/V2 fixture complete/)).toBeVisible()
+      // Container output includes the same fixture text in a scalar and an array.
+      await expect(dialog.getByText(/V2 fixture complete/).first()).toBeVisible()
     } else {
       // No Agent is installed: v2-server fails the run at its Agent node, and the history says so.
       await expect(dialog.getByText('工作流运行 · 失败')).toBeVisible({ timeout: 60_000 })

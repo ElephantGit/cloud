@@ -91,7 +91,7 @@ test('settings subroutes, refresh, history and the existing shell remain navigab
   await expect(
     page.getByRole('heading', { level: 1, name: 'Skills', exact: true }),
   ).toBeVisible()
-  for (const title of ['对话', '工作流', '定时任务', '仪表盘']) {
+  for (const title of ['对话', '工作流', '定时任务', 'Dashboard']) {
     await page
       .getByRole('navigation', { name: '主导航' })
       .getByRole('link', { name: title, exact: true })

@@ -19,6 +19,11 @@ test('dashboard analysis reads the real server with mock disabled', async ({ pag
   await expect(page.getByText('暂无符合条件的会话。')).toBeVisible()
   await page.reload()
   await expect(page.getByLabel('Agent 标识')).not.toHaveValue('')
+  await page.goto('/dashboard/sessions?source=chat')
+  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByLabel('来源', { exact: true })).toHaveValue('chat')
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
 })
 
 test('ordinary chat appears in dashboard with observed requests and a working return link', async ({ page }) => {

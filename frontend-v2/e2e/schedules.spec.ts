@@ -44,3 +44,23 @@ test('configuration persists through reload, edits, pause and resume', async ({ 
   await expect(dialog.getByRole('heading', { name: `移动端-${suffix}` })).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('mobile.png'), fullPage: true })
 })
+
+test('clicking the backdrop closes the drawer and keeps the discard confirmation', async ({ page }) => {
+  await page.goto('/schedules')
+  await signIn(page)
+  const create = page.locator('header').getByRole('button', { name: '新建任务', exact: true })
+  await create.click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('heading', { name: '新建定时任务' }).click()
+  await expect(dialog).toBeVisible()
+
+  await dialog.getByRole('textbox', { name: '任务名称' }).fill('未保存的遮罩验收')
+  await page.mouse.click(40, 240)
+  await expect(dialog.getByText('放弃未保存的修改？')).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('backdrop-discard.png'), fullPage: true })
+
+  await dialog.getByRole('button', { name: '放弃修改' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(create).toBeFocused()
+})

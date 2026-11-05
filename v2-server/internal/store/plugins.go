@@ -248,7 +248,8 @@ func (s *Store) PluginPackageSource(ctx context.Context, tenant, space, caller, 
 
 // InstallSpacePlugin records an owner's selection and terminal install result. v2 has no generic
 // plugin executor, so the simplified backend settles the selection immediately instead of
-// claiming that package bytes were downloaded or executed.
+// claiming that package bytes were downloaded or executed. Hook selections are demo-only: they
+// are settled as installed but never download or run a Hook package.
 func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in PluginInstallInput) (SpacePlugin, error) {
 	return s.installSpacePlugin(ctx, tenant, space, caller, path, key, in, nil, nil)
 }
@@ -301,7 +302,7 @@ func (s *Store) installSpacePlugin(
 		if e != nil {
 			return e
 		}
-		if kind != "skill" && kind != "agent" && kind != "workflow" {
+		if kind != "skill" && kind != "agent" && kind != "workflow" && kind != "hook" {
 			return ErrPluginKindNotInstallable
 		}
 		if kind == "workflow" && (len(workflowDocuments) == 0 || validate == nil) {
@@ -332,7 +333,7 @@ func (s *Store) installSpacePlugin(
 				return recordPluginMutation(ctx, tx, tenant, caller, "POST", path, key, pluginInstallHash(in), out)
 			}
 			observedState, observedVersion := "pending", any(nil)
-			if kind == "agent" {
+			if kind == "agent" || kind == "hook" {
 				observedState, observedVersion = "installed", desired
 			}
 			if _, e := tx.Exec(ctx, `
@@ -349,7 +350,7 @@ func (s *Store) installSpacePlugin(
 				return ErrConflict
 			}
 			observedState, observedVersion := "pending", any(nil)
-			if kind == "agent" {
+			if kind == "agent" || kind == "hook" {
 				observedState, observedVersion = "installed", desired
 			}
 			if _, e := tx.Exec(ctx, `

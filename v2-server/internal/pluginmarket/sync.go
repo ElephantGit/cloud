@@ -78,6 +78,7 @@ func (s *Syncer) Sync(ctx context.Context, sink CatalogSink, now time.Time) erro
 	if len(entries) == 0 {
 		return errors.New("marketplace scan produced no visible entries; retaining previous snapshot")
 	}
+	entries = WithDemoHook(entries)
 	if e := sink.ReplacePluginCatalog(ctx, entries, now.UTC()); e != nil {
 		return fmt.Errorf("replace marketplace catalog: %w", e)
 	}

@@ -45,7 +45,8 @@ func TestSyncerClonesAndRefreshesARealisticMarketplace(t *testing.T) {
 	if e := syncer.Sync(context.Background(), sink, time.Now()); e != nil {
 		t.Fatal(e)
 	}
-	if sink.calls != 1 || len(sink.entries) != 1 || sink.entries[0].Version != "1.2.3" {
+	if sink.calls != 1 || len(sink.entries) != 2 || sink.entries[0].Version != "1.2.3" ||
+		sink.entries[1].Kind != "hook" || sink.entries[1].Namespace != "demo" {
 		t.Fatalf("first sync = %+v", sink)
 	}
 
@@ -56,7 +57,7 @@ func TestSyncerClonesAndRefreshesARealisticMarketplace(t *testing.T) {
 	if e := syncer.Sync(context.Background(), sink, time.Now()); e != nil {
 		t.Fatal(e)
 	}
-	if sink.calls != 2 || sink.entries[0].Version != "1.2.4" ||
+	if sink.calls != 2 || len(sink.entries) != 2 || sink.entries[0].Version != "1.2.4" ||
 		sink.entries[0].Readme != "# Acme Skill\n\nVersion two.\n" {
 		t.Fatalf("second sync = %+v", sink)
 	}
@@ -73,8 +74,9 @@ func TestSyncerClonesAndRefreshesARealisticMarketplace(t *testing.T) {
 	if e := syncer.Sync(context.Background(), sink, time.Now()); e != nil {
 		t.Fatal(e)
 	}
-	if sink.calls != 3 || len(sink.entries) != 1 ||
-		sink.entries[0].Identifier != "replacement.skill" {
+	if sink.calls != 3 || len(sink.entries) != 2 ||
+		sink.entries[0].Identifier != "replacement.skill" ||
+		sink.entries[1].Kind != "hook" {
 		t.Fatalf("source URL change = %+v", sink)
 	}
 
@@ -112,8 +114,28 @@ func TestSyncerAcceptsAgentOnlySnapshot(t *testing.T) {
 	if e := syncer.Sync(context.Background(), sink, time.Now()); e != nil {
 		t.Fatal(e)
 	}
-	if sink.calls != 1 || len(sink.entries) != 1 || sink.entries[0].Kind != "agent" {
+	if sink.calls != 1 || len(sink.entries) != 2 || sink.entries[0].Kind != "agent" ||
+		sink.entries[1].Kind != "hook" {
 		t.Fatalf("agent-only sync = %+v", sink)
+	}
+}
+
+func TestWithDemoHookAddsOnlyAPackageLessHookWhenNeeded(t *testing.T) {
+	entries := WithDemoHook([]Entry{{Namespace: "official", Identifier: "acme.skill", Kind: "skill"}})
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	hook := entries[1]
+	if hook.Namespace != "demo" || hook.Identifier != "sample-hooks" || hook.Kind != "hook" {
+		t.Fatalf("demo hook = %+v", hook)
+	}
+	if hook.URL != "" || hook.SHA256 != "" || len(hook.Targets) != 0 {
+		t.Fatalf("demo hook must not carry a package: %+v", hook)
+	}
+
+	real := []Entry{{Namespace: "official", Identifier: "acme.hooks", Kind: "hook"}}
+	if got := WithDemoHook(real); len(got) != 1 || got[0].Identifier != "acme.hooks" {
+		t.Fatalf("real Hook should take precedence: %+v", got)
 	}
 }
 

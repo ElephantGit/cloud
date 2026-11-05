@@ -33,6 +33,35 @@ type Entry struct {
 	SourceURL          string
 }
 
+// DemoHookEntry returns the package-less Hook listing used by the v2 plugin demo. The entry
+// deliberately has no URL or digest: installing it only records a Space selection, and no Hook
+// package or lifecycle command is ever downloaded or run.
+func DemoHookEntry() Entry {
+	return Entry{
+		Namespace:          "demo",
+		Identifier:         "sample-hooks",
+		Title:              "示例 Hooks",
+		Kind:               "hook",
+		Version:            "1.0.0",
+		Description:        "生命周期 Hook 的安装和卸载只记录空间选择，不下载或执行脚本。",
+		License:            "MIT",
+		Readme:             "# 示例 Hooks\n\n这是 v2 插件页的示例条目。安装和卸载只写入空间插件选择，不会下载、注册或执行任何 Hook。",
+		MarketplaceVisible: true,
+		SourceURL:          "本地示例",
+	}
+}
+
+// WithDemoHook ensures the catalog has one Hook entry for the v2 demo. A real Hook listing from
+// the synced marketplace takes precedence, so this never hides an actual package.
+func WithDemoHook(entries []Entry) []Entry {
+	for _, entry := range entries {
+		if entry.Kind == "hook" {
+			return entries
+		}
+	}
+	return append(entries, DemoHookEntry())
+}
+
 type logoCandidate struct {
 	Role      string `json:"role"`
 	Extension string `json:"extension"`

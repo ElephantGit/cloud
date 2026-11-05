@@ -65,10 +65,10 @@ export default function SessionList() {
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
   }
   return (
-    <main className='space-y-5 p-4 md:p-6'>
+    <section id='session-analysis' aria-labelledby='session-analysis-title' className='db-analysis space-y-5'>
       <header className='flex flex-wrap items-start justify-between gap-3'>
         <div>
-          <h1 className='text-xl font-semibold'>会话分析</h1>
+          <h2 id='session-analysis-title' className='db-section-title'>会话分析</h2>
           <p className='mt-1 text-sm text-muted-foreground'>
             查看自己的普通对话和协作任务的运行记录、时间轴与模型请求。
           </p>
@@ -84,14 +84,14 @@ export default function SessionList() {
       <form
         key={params.toString()}
         onSubmit={submit}
-        className='flex flex-wrap items-end gap-3 rounded-xl border p-4'
+        className='db-filters'
       >
         <label className='text-sm'>
           来源<select
             aria-label='来源'
             name='source'
             defaultValue={filters.source ?? ''}
-            className='ml-2 rounded border p-2'
+            className='rounded border bg-background p-2'
           >
             <option value=''>全部来源</option>
             {Object.entries(sessionSource).map(([value, label]) => (
@@ -104,7 +104,7 @@ export default function SessionList() {
             aria-label='项目'
             name='project'
             defaultValue={filters.project ?? ''}
-            className='ml-2 rounded border p-2'
+            className='rounded border bg-background p-2'
           >
             <option value=''>全部项目</option>
             {projects.data?.items.map((project) => (
@@ -118,7 +118,7 @@ export default function SessionList() {
             name='agent'
             defaultValue={filters.agent}
             placeholder='例如 official/ora-space.opencode'
-            className='w-80'
+            className='w-full min-w-0'
           />
         </label>
         <label className='text-sm'>
@@ -126,7 +126,7 @@ export default function SessionList() {
             aria-label='状态'
             name='status'
             defaultValue={filters.status ?? ''}
-            className='ml-2 rounded border p-2'
+            className='rounded border bg-background p-2'
           >
             <option value=''>全部状态</option>
             {Object.entries(sessionStatus).map(([value, label]) => (
@@ -160,7 +160,7 @@ export default function SessionList() {
         ? <p role='status'>正在读取会话…</p>
         : (
           <>
-            <ul aria-label='Agent 会话' className='divide-y rounded-xl border'>
+            <ul aria-label='Agent 会话' className='db-session-list divide-y rounded-xl border bg-card'>
               {sessions.data?.pages.flatMap((page) => page.items).map((session) => (
                 <li
                   key={session.id}
@@ -168,12 +168,12 @@ export default function SessionList() {
                 >
                   <div>
                     <Link
-                      className='font-medium underline-offset-4 hover:underline'
+                      className='break-words font-medium underline-offset-4 hover:underline'
                       to={`/dashboard/sessions/${encodeURIComponent(session.id)}`}
                     >
                       {session.title || session.id}
                     </Link>
-                    <p className='mt-1 text-xs text-muted-foreground'>
+                    <p className='mt-1 break-words text-xs text-muted-foreground'>
                       {session.projectName || '未绑定项目'} · {session.agent} · {session.model} ·
                       {' '}
                       {sessionSource[session.source] ?? session.source}
@@ -200,6 +200,6 @@ export default function SessionList() {
             )}
           </>
         )}
-    </main>
+    </section>
   )
 }

@@ -46,7 +46,7 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 				return ErrIneligible
 			}
 			var active bool
-			if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM v2_schedule_occurrences WHERE schedule_id=$1 AND NOT released)`, scheduleID).Scan(&active); e != nil {
+			if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM v2_schedule_occurrences WHERE schedule_id=$1 AND NOT released AND NOT waiting_for_input)`, scheduleID).Scan(&active); e != nil {
 				return e
 			}
 			if active {
@@ -91,6 +91,15 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 				return ErrIneligible
 			}
 			o.Status, o.Reason, o.Released = "skipped", "execution_not_started", true
+		case "waiting_for_input":
+			if o.Status != "running" || o.ExecutionRef != proof.Ref {
+				return ErrIneligible
+			}
+			if o.WaitingForInput {
+				out = o
+				return nil
+			}
+			o.WaitingForInput = true
 		case "cancel_requested":
 			if o.Status != "running" {
 				return ErrIneligible
@@ -127,7 +136,7 @@ func (s *Store) ApplyOccurrenceEvidence(ctx context.Context, tenant, user, id st
 		default:
 			return ErrIneligible
 		}
-		out, e = scanOccurrence(tx.QueryRow(ctx, `UPDATE v2_schedule_occurrences SET status=$2,reason=$3,execution_ref=$4,released=$5,version=version+1 WHERE id=$1 RETURNING `+occurrenceColumns, id, o.Status, o.Reason, o.ExecutionRef, o.Released))
+		out, e = scanOccurrence(tx.QueryRow(ctx, `UPDATE v2_schedule_occurrences SET status=$2,reason=$3,execution_ref=$4,released=$5,version=version+1,waiting_for_input=$6 WHERE id=$1 RETURNING `+occurrenceColumns, id, o.Status, o.Reason, o.ExecutionRef, o.Released, o.WaitingForInput))
 		return e
 	})
 	return out, err

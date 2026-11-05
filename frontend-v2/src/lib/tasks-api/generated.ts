@@ -47,6 +47,13 @@ export interface TaskAssigneeRef {
   id: string;
 }
 
+export type TaskWorkflowSourcesItem = {
+  runId: string;
+  name: string;
+  /** @nullable */
+  submittedAt: string | null;
+};
+
 export type TaskAssigneeType = typeof TaskAssigneeType[keyof typeof TaskAssigneeType];
 
 
@@ -104,6 +111,7 @@ export interface Task {
   title: string;
   description: string;
   projectId: string;
+  workflowSources?: TaskWorkflowSourcesItem[];
   /**
      * The task this one was split from; null for a task created by hand.
      * @nullable

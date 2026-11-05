@@ -4,7 +4,7 @@ import { useGetApiV1TenantsTidSpaces, useGetApiV1TenantsTidSpacesSpaceIdPlugins 
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from '@/components/ui/native-select'
 import type { SpacePlugin } from '@/api/generated.schemas'
 import type { SquadSummary } from '@/lib/squads-api/generated'
-import type { TaskAssigneeRef } from './tasks-api/generated'
+type TaskAssigneeRef = { type: 'human' | 'agent' | 'squad'; id: string }
 import { isRunnableAgent, pluginLabel } from '@/lib/plugin-runtime'
 
 /** The select value for one typed reference; '' means unassigned. */

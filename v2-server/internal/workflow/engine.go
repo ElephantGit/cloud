@@ -134,6 +134,8 @@ func rank(r int) *int { return &r }
 
 // runtimes registers the kinds v2 executes. Kinds absent here are refused at start.
 var runtimes = map[string]runtime{
+	"form":        {async: true},
+	"createTasks": {async: true},
 	"start": {
 		swift: func(_ Node, c swiftCompletion) (string, error) {
 			if c.runInput == nil {
@@ -200,7 +202,10 @@ func completeOutput(n Node, c swiftCompletion) (string, error) {
 }
 
 // Start validates the frozen graph and inputs, then starts the run and its first wave.
-func (e *Engine) Start(ctx context.Context, runID string) error {
+func (e *Engine) Start(ctx context.Context, runID string) error { return e.StartAs(ctx, runID, "") }
+
+// StartAs freezes the admitted actor under the same gate that starts the run.
+func (e *Engine) StartAs(ctx context.Context, runID, actor string) error {
 	defer e.gate(runID)()
 	run, err := e.repo.RunContext(ctx, runID)
 	if err != nil {
@@ -220,6 +225,15 @@ func (e *Engine) Start(ctx context.Context, runID string) error {
 	}
 	if err := payload.ValidateStartInputs(start); err != nil {
 		return err
+	}
+	if actor != "" {
+		if starters, ok := e.repo.(interface {
+			BindStarter(context.Context, string, string) error
+		}); ok {
+			if err := starters.BindStarter(ctx, runID, actor); err != nil {
+				return err
+			}
+		}
 	}
 	entry := NodeStart{NodeID: start.ID, NodeType: start.Kind, Input: run.Input}
 	started, err := e.repo.StartRun(ctx, runID, entry, func(raw []byte) ([]byte, error) {

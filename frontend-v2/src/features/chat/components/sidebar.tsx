@@ -84,7 +84,7 @@ export function Sidebar() {
   return (
     <>
       {sidebar.open && (
-        <aside aria-label="聊天记录" style={{ width: sidebar.width }} className="flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+        <aside aria-label="聊天记录" style={{ width: sidebar.width }} className="flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl">
           <div className="flex h-12 items-center justify-between pr-2 pl-4">
             <h1 className="text-sm font-semibold">对话</h1>
             <Button variant="ghost" size="icon-xs" aria-label="收起对话列表" onClick={() => setSidebar({ open: false })}>

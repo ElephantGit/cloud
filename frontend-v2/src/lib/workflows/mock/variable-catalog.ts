@@ -145,6 +145,13 @@ export function deriveWorkflowVariableCatalog(
       entries.push(nodeVariable(node, "output", "string"));
     }
     switch (node.data.kind) {
+      case "form":
+      case "createTasks": {
+        entries.push(nodeVariable(node, "structured_output", "object"));
+        const name = node.data.kind === "form" ? "answers" : "tasks";
+        appendStructuredProperties(entries, node, { type: "object", properties: { [name]: { type: "array", items: { type: "object" } } } }, []);
+        break;
+      }
       case "agent": {
         const contract = node.data.agentConfig?.outputContract;
         if (contract?.type === "structured") {

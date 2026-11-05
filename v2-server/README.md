@@ -218,7 +218,7 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `POST /api/v2/tenants/{tid}/tasks` | 创建任务，返回 201，初始状态 `pending`、version 为 1；不接受调用方给 version |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}` | 任务详情 |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}` | 携带 version 修改标题、描述与所属项目 |
-| `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态；确认完成和取消只限任务创建人和工作区 owner，其他人 `403 forbidden` |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}/assignment` | 携带 version 指派或清除指派人，显式 `null` 表示清除 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/timeline` | 任务的运行与评论，各按时间先后 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行这个任务的执行器：指派给 Agent 时是该 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；指派给人时，只有负责人本人能读，返回他能用的全部执行器，别人是 409 `not_assignee`；指派给小队或未指派是 409 `not_agent_task` |
@@ -558,7 +558,7 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 - **会话绑定时机**：`Start` 返回 turn 引用即视为 prompt 已被接受，随后把 session 绑定到节点尝试（desktop 同样在 prompt 被接受后才发布绑定）；绑定被拒（尝试已不在运行）时结束该会话。turn 结束后执行桥结束会话，对话历史保留。
 - **结果映射**：只有 `completed` 且答案完整（`AnswerComplete`）才可能成功，再按 desktop 的停止原因映射：`end_turn`、`max_tokens`、`max_turn_requests` 成功；`refusal` 为 `agent_refusal`；缺少停止原因为 `session_ended_without_stop_reason`；其他为 `unknown_stop_reason`。turn 失败、取消、中断或答案不完整一律以 `session` 失败，失败节点保留已有的回答。
 - **取消**：先用发起运行的用户身份取消活动 turn 并等待确认，再关闭运行；Start 正在进行时先等它返回。停止未确认时返回 `503 workflow_run_stop_unconfirmed`，运行保持打开但不再推进，turn 结束后由执行桥自行关闭为已取消。
-- **运行发起者只在内存里**：执行会话按用户隔离，执行桥记住每个运行由谁启动，进程重启后靠上面的中断收尾，不需要持久化。启动被拒（输入不合法、有不支持的节点）时运行仍是 pending，执行桥随即忘掉这次的发起者，之后由谁成功启动，Agent 就在谁的 scope 下执行。
+- **运行发起者持久化**：启动门禁内保存 started_by，表单默认确认人为实际发起者。会话队列仍在进程内；普通 Agent 执行重启后中断，冻结表单及提交后的确定性任务步骤可以恢复。
 - **失效事件**：`workflowhost.Hub` 在每次提交的状态转移、会话绑定和取消后按运行发布一个不带数据的失效通知，供运行事件流使用；读者收到后重新读取运行，未消费的通知会合并。
 - **失败后的操作**：顶栏“再跑一次”创建新的运行，再从 Start 启动；不会续跑原失败节点或恢复原运行。失败提示指向这个现有入口。
 - **根作用域的并行 swift 行**：同波次一个 swift 节点失败后，另一个节点行可能仍保留 `running`，desktop 基线也有这一表现。运行本身已经失败，历史展示应以运行终态判断能否继续，不能将该行解释为仍有执行活动。Loop scope 的兄弟节点取消不受这一边界影响。
@@ -618,3 +618,7 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 测试真实 Node 时设置 `V2_NODE_ASSETS_DIR`、`V2_TEST_SKILL_ARCHIVE`（官方 Matt Pocock Skills 1.3.1）和可选的 `V2_TEST_SKILL_UPDATE_ARCHIVE`（1.3.2），在 Linux 原生、路径足够短的用户目录下运行 `go test -run TestRealMarketSkillNode ./internal/agentruntime`。该测试用真实 OpenCode 读取插件 Skill 和工作流所选个人 Skill，并验证下一节点清除两者；模型响应仍为 fixture，不验证真实模型的指令遵循能力。
 
 同时提供 `TEST_DATABASE_URL` 后，`go test -race -run TestRealWorkflowSelectedSkills ./internal/workflowhost` 覆盖发布后的完整两节点工作流：真实插件安装回执、节点选择、执行会话的数据库快照、Agent 读取产物与下一节点清理。模型请求仍由 fixture 提供，MCP 不在该测试范围内。
+
+## 动态表单与巡检提单
+
+`form` 负责冻结证据并等待确认，`createTasks` 根据确认结果创建或关联任务；二者使用 `workflows.openapi.json` 中的 v2 契约。表单的 GET/PUT/POST `/api/v2/tenants/{tid}/workflow-runs/{rid}/form` 与 POST `…/form/retry` 属于正式 Cloud 尚未提供的候选接口。行为、权限、幂等、去重与恢复边界见 [动态表单说明](internal/workflowforms/README.md)。等待确认的轮次不占用下一晚的自动执行资格，但仍保留未完成状态和终态跟踪。DTS 只有前端演示回执，不代表外部工单已提交。

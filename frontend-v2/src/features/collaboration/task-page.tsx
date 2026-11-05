@@ -18,7 +18,7 @@ import {
   createTaskComment, getTask, getTaskTimeline, listTaskExecutors, setTaskAssignee, setTaskStatus, startTaskRun, stopTaskRun, updateTask,
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
 } from './tasks-api/generated'
-import { canDecompose, runsAgent } from './task-views'
+import { canCloseTask, canDecompose, runsAgent } from './task-views'
 import { useDecompositions, useMySquadTasks, useWorkspace } from './workspace'
 
 /** Fresh idempotency key for one submission: a retry of the same click reuses it. */
@@ -32,7 +32,7 @@ const keyed = () => ({ headers: { 'Idempotency-Key': crypto.randomUUID() } })
 export default function TaskPage() {
   const { taskId = '' } = useParams()
   const me = useUser()
-  const { tenantId } = useWorkspace()
+  const { tenantId, role } = useWorkspace()
   const client = useQueryClient()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'discussion' ? 'discussion' : 'runs'
@@ -158,6 +158,7 @@ export default function TaskPage() {
     <div className="mc-task-body">
       <section className="mc-task-main-col" aria-label="运行与讨论">
         {task.description && <p className="mc-description">{task.description}</p>}
+        {task.workflowSources?.map(source=><p key={source.runId}><Link className="underline" to={`/chat?run=${source.runId}`}>查看来源巡检报告 · {source.name}{source.submittedAt ? ` · ${new Date(source.submittedAt).toLocaleString()}` : ''}</Link></p>)}
         <TaskFamily tenantId={tenantId} task={task} latest={decompositions.latest} onRetry={() => setDecomposing(true)} />
         <div className="mc-tabs" role="tablist" aria-label="任务内容">
           <button type="button" role="tab" aria-selected={tab === 'runs'} onClick={() => showTab('runs')}>Agent 运行 <b>{runs.length}</b></button>
@@ -174,7 +175,7 @@ export default function TaskPage() {
           onSend={async draft => { try { await comment.mutateAsync(draft); return true } catch { return false } }} />
       </section>
       <aside className="mc-task-side-col" aria-label="任务属性">
-        <TaskDetailView task={task} me={me.id} inSquad={inSquad} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
+        <TaskDetailView task={task} me={me.id} inSquad={inSquad} canClose={canCloseTask(task, me.id, role)} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
           busy={move.isPending || assign.isPending} error={error}
           run={{
             executors: executorList, executorId, onExecutor: setExecutorId, hasRuns: runs.length > 0,

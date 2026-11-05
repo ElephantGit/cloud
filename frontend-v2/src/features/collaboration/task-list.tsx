@@ -98,8 +98,8 @@ function BoardCard({ task, projects, mention, squadTask, family, movable, onOpen
  * legal move, dimmed otherwise. A dimmed column still takes the drop, so letting go over it says
  * why instead of landing the card in a neighbor.
  */
-function BoardColumn({ status, children, count, lifted }: { status: string; children: ReactNode; count: number; lifted?: Task }) {
-  const move = lifted ? boardMove(lifted, status) : undefined
+function BoardColumn({ status, children, count, lifted, canClose }: { status: string; children: ReactNode; count: number; lifted?: Task; canClose: (task: Task) => boolean }) {
+  const move = lifted ? boardMove(lifted, status, canClose(lifted)) : undefined
   const { setNodeRef, isOver } = useDroppable({ id: status })
   const state = !move || lifted?.status === status ? '' : move.ok ? (isOver ? ' mc-drop-over' : ' mc-drop-open') : ' mc-drop-closed'
   return <section ref={setNodeRef} className={`mc-column${state}`} role="listitem" aria-label={`${taskStatusLabel(status)}列`}>
@@ -114,8 +114,8 @@ function BoardColumn({ status, children, count, lifted }: { status: string; chil
  * Agent's card stays put, and an Agent task enters 进行中 only by starting its run. A refused drop
  * says why through `onRefuse`; the keyboard keeps the task page's buttons.
  */
-export function TaskBoardColumns({ tasks, projects, mentions, squadTasks = new Map(), families = new Map(), showCancelled, onOpen, onMove, onRefuse }: {
-  tasks: Task[]; projects: Projects; mentions: Mentions; squadTasks?: SquadTasks; families?: Families; showCancelled: boolean; onOpen: (task: Task) => void
+export function TaskBoardColumns({ tasks, projects, mentions, squadTasks = new Map(), families = new Map(), showCancelled, canClose = () => true, onOpen, onMove, onRefuse }: {
+  tasks: Task[]; projects: Projects; mentions: Mentions; squadTasks?: SquadTasks; families?: Families; showCancelled: boolean; canClose?: (task: Task) => boolean; onOpen: (task: Task) => void
   onMove?: (task: Task, status: string) => void; onRefuse?: (reason: string) => void
 }) {
   const columns: string[] = showCancelled ? [...BOARD_COLUMNS, 'cancelled'] : [...BOARD_COLUMNS]
@@ -125,7 +125,7 @@ export function TaskBoardColumns({ tasks, projects, mentions, squadTasks = new M
   const drop = (to?: string) => {
     setLiftedId(undefined)
     if (!lifted || !to || to === lifted.status) return
-    const move = boardMove(lifted, to)
+    const move = boardMove(lifted, to, canClose(lifted))
     if (move.ok) onMove?.(lifted, to)
     else if (move.reason) onRefuse?.(move.reason)
   }
@@ -145,7 +145,7 @@ export function TaskBoardColumns({ tasks, projects, mentions, squadTasks = new M
     <div className="mc-board" role="list" aria-label="任务看板">
       {columns.map(status => {
         const items = tasks.filter(t => t.status === status)
-        return <BoardColumn key={status} status={status} count={items.length} lifted={lifted}>
+        return <BoardColumn key={status} status={status} count={items.length} lifted={lifted} canClose={canClose}>
           {items.map(item => <BoardCard key={item.id} task={item} projects={projects} mention={mentions.get(item.id)} squadTask={squadTasks.get(item.id)} family={families.get(item.id)} movable={!!onMove} onOpen={onOpen} />)}
           {items.length === 0 && <li className="mc-column-empty">暂无</li>}
         </BoardColumn>

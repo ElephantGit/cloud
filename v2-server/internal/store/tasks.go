@@ -49,19 +49,20 @@ type TaskAssignee struct {
 // a private conversation stays private. ParentID is the task it was split from, nil for a task
 // created by hand.
 type Task struct {
-	ID            string        `json:"id"`
-	TenantID      string        `json:"tenantId"`
-	Title         string        `json:"title"`
-	Description   string        `json:"description"`
-	ProjectID     string        `json:"projectId"`
-	ParentID      *string       `json:"parentId"`
-	Assignee      *TaskAssignee `json:"assignee"`
-	Status        string        `json:"status"`
-	CreatedBy     string        `json:"createdBy"`
-	CreatedByName string        `json:"createdByName"`
-	Version       int64         `json:"version"`
-	CreatedAt     time.Time     `json:"createdAt"`
-	UpdatedAt     time.Time     `json:"updatedAt"`
+	WorkflowSources []WorkflowTaskSource `json:"workflowSources,omitempty"`
+	ID              string               `json:"id"`
+	TenantID        string               `json:"tenantId"`
+	Title           string               `json:"title"`
+	Description     string               `json:"description"`
+	ProjectID       string               `json:"projectId"`
+	ParentID        *string              `json:"parentId"`
+	Assignee        *TaskAssignee        `json:"assignee"`
+	Status          string               `json:"status"`
+	CreatedBy       string               `json:"createdBy"`
+	CreatedByName   string               `json:"createdByName"`
+	Version         int64                `json:"version"`
+	CreatedAt       time.Time            `json:"createdAt"`
+	UpdatedAt       time.Time            `json:"updatedAt"`
 	// ActiveRun is the task's live Agent run, so a list can show who is working without reading
 	// each timeline; nil when no run is live.
 	ActiveRun *TaskRunSummary `json:"activeRun"`
@@ -105,6 +106,13 @@ func CanTransitionTask(from, to string) bool {
 		return to == TaskDone || to == TaskCancelled
 	}
 	return false
+}
+
+// canCloseTask reports whether the caller may end the task, by confirming it done or cancelling it.
+// That is the decision of whoever asked for the work or a workspace administrator; doing the work
+// does not grant it.
+func canCloseTask(role, user string, task Task) bool {
+	return isAdministrator(role) || task.CreatedBy == user
 }
 
 // CanRunTransitionTask reports the moves a task's Agent run makes: starting or following up a run
@@ -266,8 +274,26 @@ func (s *Store) Task(ctx context.Context, tenant, caller, id string) (Task, erro
 	if _, e := tenantRole(ctx, s.pool, tenant, caller); e != nil {
 		return Task{}, e
 	}
-	return scanTask(s.pool.QueryRow(ctx, `SELECT `+taskColumns+` `+taskJoins+`
-		WHERE t.tenant_id = $1 AND t.id = $2`, tenant, id))
+	task, err := scanTask(s.pool.QueryRow(ctx, `SELECT `+taskColumns+` `+taskJoins+`
+        WHERE t.tenant_id = $1 AND t.id = $2`, tenant, id))
+	if err != nil {
+		return task, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT f.run_id::text,r.name,f.submitted_at FROM v2_workflow_forms f JOIN v2_workflow_runs r ON r.id=f.run_id
+ WHERE f.tenant_id=$1 AND r.deleted_at IS NULL AND EXISTS(SELECT 1 FROM jsonb_array_elements(f.results) result WHERE result->>'taskId'=$2)
+ ORDER BY f.submitted_at DESC,f.id`, tenant, id)
+	if err != nil {
+		return task, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var source WorkflowTaskSource
+		if err := rows.Scan(&source.RunID, &source.Name, &source.SubmittedAt); err != nil {
+			return task, err
+		}
+		task.WorkflowSources = append(task.WorkflowSources, source)
+	}
+	return task, rows.Err()
 }
 
 // CreateTask records a task for the caller's workspace. Its project and assignee must already
@@ -328,8 +354,9 @@ func (s *Store) UpdateTask(ctx context.Context, tenant, user, id string, in Task
 }
 
 // SetTaskStatus moves a task by hand under a version check. Only the lifecycle's legal moves are
-// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen. While an Agent
-// turn runs the run owns the status, and a manual move returns ErrRunActive.
+// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen. Ending the task
+// is limited by canCloseTask; anyone else gets ErrForbidden. While an Agent turn runs the run owns
+// the status, and a manual move returns ErrRunActive.
 func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status string, version int64) (Task, error) {
 	var out Task
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -339,6 +366,15 @@ func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status stri
 		}
 		if !CanTransitionTask(task.Status, status) {
 			return ErrInvalidTransition
+		}
+		if status == TaskDone || status == TaskCancelled {
+			role, e := tenantRole(ctx, tx, tenant, user)
+			if e != nil {
+				return e
+			}
+			if !canCloseTask(role, user, task) {
+				return ErrForbidden
+			}
 		}
 		if task.ActiveRun != nil && task.ActiveRun.State == TaskRunRunning {
 			return ErrRunActive
@@ -398,4 +434,11 @@ func (s *Store) SetTaskAssignee(ctx context.Context, tenant, user, id string, re
 		return e
 	})
 	return out, e
+}
+
+// WorkflowTaskSource is one persisted report association, independent of task text.
+type WorkflowTaskSource struct {
+	RunID       string     `json:"runId"`
+	Name        string     `json:"name"`
+	SubmittedAt *time.Time `json:"submittedAt"`
 }

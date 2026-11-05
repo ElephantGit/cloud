@@ -1,7 +1,7 @@
 // Package workflowhost runs v2 workflow runs in this process: it adapts the store to the
 // workflow engine, drives Agent nodes through the shared execution service and implements the
-// HTTP layer's run lifecycle. Runs never outlive the process; startup interrupts what a previous
-// process left executing.
+// HTTP layer's run lifecycle. Startup interrupts active Agent work and preserves durable
+// form reviews for deterministic continuation.
 package workflowhost
 
 import (
@@ -149,4 +149,12 @@ func (r repository) AdvanceContainer(ctx context.Context, runID, parentID string
 		result[i] = nodeRun(row)
 	}
 	return result, changed, err
+}
+
+func (r repository) BindStarter(ctx context.Context, id, actor string) error {
+	c, err := r.s.WorkflowEngineContext(ctx, id)
+	if err != nil {
+		return err
+	}
+	return r.s.SetWorkflowStarter(ctx, c.Run.TenantID, id, actor)
 }

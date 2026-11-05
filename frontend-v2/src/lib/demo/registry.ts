@@ -8,7 +8,7 @@
  * `registry.test.ts` fails when a module is added without an entry or an entry outlives its module.
  */
 export interface DemoMock {
-  /** The module in this directory. */
+  /** The module in this directory, e.g. `dashboard.ts`. */
   module: string
   /** The recording scene whose screens show it. */
   scene: 'newcomer' | 'lead' | 'ops'
@@ -18,4 +18,6 @@ export interface DemoMock {
   replacedBy: string
 }
 
-export const demoMocks: readonly DemoMock[] = []
+export const demoMocks: readonly DemoMock[] = [
+ {module:'dts.ts',scene:'ops',covers:'DTS simulated receipts after real Cloud task creation',replacedBy:'An authenticated DTS connector with durable external delivery receipts'},
+]

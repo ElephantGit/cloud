@@ -32,3 +32,7 @@
 没有10分钟等待、自动重试执行或停机补跑。跳过和手动运行均不改变原计划锚点。PostgreSQL 测试证明本层状态和占位，Stub 只证明公共接口消费行为，不能替代真实执行/目录/完整历史验收。
 
 取消恢复前提：cancelling 经 recover 转为 reconciling 后不保留取消意图。本流程依赖公共执行在服务重启时将旧轮次结算为 interrupted，且宿主须先完成公共恢复再恢复调度；否则核对到仍运行的轮次可能回到 running。
+
+## 等待表单
+
+工作流投影为 awaitingInput 时，可信适配器提交 waiting_for_input 证据，保存 waitingForInput=true，released 仍为 false。录入和开始触发两处的占位检查及唯一索引都排除 waiting_for_input；未结束轮次查询仍保留它。这样历史会继续更新，而下一晚不因人工等待被跳过。表单后只允许数据库任务创建及输出，无需重新占用 Agent 执行资格；最终成功、失败或取消仍按原终态收尾。

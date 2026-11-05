@@ -15,6 +15,11 @@ import (
 // attempts execute one at a time: v2's execution service lends every workflow run one shared
 // directory and refuses a second concurrent turn with ErrWorkspaceBusy.
 func (h *Host) Dispatch(d workflow.AgentDispatch) {
+	if d.Node.Kind == "form" || d.Node.Kind == "createTasks" {
+		h.workers.Add(1)
+		go func() { defer h.workers.Done(); h.dispatchReview(d) }()
+		return
+	}
 	st := h.state(d.RunID)
 	if st == nil {
 		// Only StartRun admits runs, and it registers the owner first; reaching here is a bug,

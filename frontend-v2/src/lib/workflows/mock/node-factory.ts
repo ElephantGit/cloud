@@ -86,6 +86,8 @@ function createMockNodeExecutionData(
           maxIterations: DEFAULT_ITERATION_MAX_ITERATIONS,
         },
       };
+    case "form":
+    case "createTasks":
     case "human":
     case "subflow":
       return {};

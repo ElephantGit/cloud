@@ -1,5 +1,7 @@
 /** Lists the node variants supported by the workflow demo. */
 export const WORKFLOW_NODE_KINDS = [
+  "form",
+  "createTasks",
   "start",
   "agent",
   "condition",

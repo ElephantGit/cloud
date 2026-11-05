@@ -64,12 +64,17 @@ func seedLead(ctx context.Context, s *Seeder) error {
 		if err != nil {
 			return fmt.Errorf("task %s: %w", h.title, err)
 		}
-		// The assignee moves their own task through the lifecycle, as they would on the board.
+		// The assignee moves their own task up to 待验收, as they would on the board; only 陈默, who
+		// asked for the work, confirms it.
 		for _, status := range []string{store.TaskRunning, store.TaskReview, store.TaskDone} {
 			if task.Status == h.status {
 				break
 			}
-			if task, err = s.Store.SetTaskStatus(ctx, lead.TenantID, members[h.assignee].UserID, task.ID, status, task.Version); err != nil {
+			actor := members[h.assignee].UserID
+			if status == store.TaskDone {
+				actor = lead.UserID
+			}
+			if task, err = s.Store.SetTaskStatus(ctx, lead.TenantID, actor, task.ID, status, task.Version); err != nil {
 				return fmt.Errorf("task %s → %s: %w", h.title, status, err)
 			}
 		}

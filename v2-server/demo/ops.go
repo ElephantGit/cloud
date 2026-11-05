@@ -11,7 +11,7 @@ import (
 )
 
 // OpsGraph inspects the local demonstration service, never a production environment.
-func OpsGraph(seed WorkflowSeed) (string, error) {
+func legacyOpsGraph(seed WorkflowSeed) (string, error) {
 	return chainGraph(seed,
 		demoNode{ID: "start", Data: map[string]any{"kind": "start", "title": "开始：每日巡检"}},
 		agentStep("inspect", "检查服务与资源", "只读巡检当前仓库中的演示服务。读取 README.md、ops/metrics.json 和 ops/service.log，运行 node scripts/inspect.mjs。不要访问外网、改动配置或修复系统。下面是巡检要求：{{#start.input#}}\n逐项列出实际观察到的服务状态、错误率、磁盘和备份信息，不把示例数据说成生产环境状态。"),
@@ -26,7 +26,7 @@ func SeedOps(ctx context.Context, seed WorkflowSeed) (SeededWorkflow, error) {
 	if seed.Pool == nil || seed.Now.IsZero() {
 		return SeededWorkflow{}, fmt.Errorf("ops history requires a database pool and an explicit clock")
 	}
-	graph, err := OpsGraph(seed)
+	graph, err := legacyOpsGraph(seed)
 	if err != nil {
 		return SeededWorkflow{}, err
 	}
@@ -34,6 +34,19 @@ func SeedOps(ctx context.Context, seed WorkflowSeed) (SeededWorkflow, error) {
 	if err != nil {
 		return w, err
 	}
+	oldVersion := w
+	nextGraph, err := OpsGraph(seed)
+	if err != nil {
+		return w, err
+	}
+	if _, err = seed.Store.UpdateWorkflowDraft(ctx, seed.Scope.TenantID, w.Workflow.ID, nextGraph); err != nil {
+		return w, err
+	}
+	w.Snapshot, err = seed.Store.PublishWorkflow(ctx, seed.Scope.TenantID, w.Workflow.ID, "v2", nil)
+	if err != nil {
+		return w, err
+	}
+	w.Workflow.PublishedSnapshotID = &w.Snapshot.ID
 	target, err := json.Marshal(map[string]string{"kind": "workflow", "workflowId": w.Workflow.ID, "snapshotId": w.Snapshot.ID, "input": "检查服务可用性、错误率、磁盘占用和备份；输出报告，不执行修复。"})
 	if err != nil {
 		return w, err
@@ -55,14 +68,20 @@ func SeedOps(ctx context.Context, seed WorkflowSeed) (SeededWorkflow, error) {
 	schedule.CreatedAt = created
 	for days := 3; days >= 1; days-- {
 		at := time.Date(today.Year(), today.Month(), today.Day(), 2, 0, 0, 0, loc).AddDate(0, 0, -days).UTC()
-		if err := seedOpsHistory(ctx, seed, w, schedule, at); err != nil {
+		if err := seedOpsHistory(ctx, seed, oldVersion, schedule, at); err != nil {
 			return w, fmt.Errorf("seed ops history %s: %w", at, err)
+		}
+		if days < 3 {
+			if err := seedOpsReviewHistory(ctx, seed, w, schedule, at, days == 2); err != nil {
+				return w, err
+			}
 		}
 	}
 	return w, nil
 }
 
 func seedOpsHistory(ctx context.Context, seed WorkflowSeed, w SeededWorkflow, schedule store.ScheduleConfig, at time.Time) error {
+	schedule.Target, _ = json.Marshal(map[string]string{"kind": "workflow", "workflowId": w.Workflow.ID, "snapshotId": w.Snapshot.ID, "input": "每日巡检"})
 	// Historical reports are prepared recording data, not a claim of real past execution. The visible
 	// text carries no marker; payload.demoSeed on the run and its nodes says they were seeded.
 	report := fmt.Sprintf("# 每日巡检报告\n\n日期：%s\n\n| 检查项 | 结果 |\n| --- | --- |\n| 服务 | 健康，3/3 服务可用 |\n| 错误率 | 0.2%%，低于 1%% 阈值 |\n| 磁盘 | 61%%，低于 80%% 阈值 |\n| 备份 | 已完成，校验通过 |\n\n结论：无需人工处置。继续关注磁盘增长。", at.In(time.FixedZone("CST", 8*3600)).Format("2006-01-02"))

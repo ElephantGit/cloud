@@ -6,6 +6,174 @@
     "description": "Desktop's workflow definition contract served over HTTP. A changed document is saved as the draft and only publish freezes an immutable version; rollback and activate answer the draft they synchronized."
   },
   "paths": {
+    "/api/v2/tenants/{tid}/workflow-runs/{rid}/form": {
+      "get": {
+        "operationId": "getWorkflowForm",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveWorkflowFormDraft",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowFormWrite"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "submitWorkflowForm",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowFormWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/tenants/{tid}/workflow-runs/{rid}/form/retry": {
+      "post": {
+        "operationId": "retryWorkflowFormTasks",
+        "tags": [
+          "Workflows"
+        ],
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frozen form and current review state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowForm"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/tenants/{tid}/workflows": {
       "get": {
         "operationId": "listWorkflows",
@@ -448,6 +616,332 @@
       }
     },
     "schemas": {
+      "WorkflowForm": {
+        "type": "object",
+        "required": [
+          "id",
+          "runId",
+          "nodeId",
+          "reviewerId",
+          "config",
+          "findings",
+          "report",
+          "answers",
+          "status",
+          "version",
+          "submittedBy",
+          "results",
+          "canEdit"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "reviewerId": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "existingTasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormExistingTask"
+            }
+          },
+          "version": {
+            "type": "integer"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/WorkflowFormConfig"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormFinding"
+            }
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormAnswer"
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormTaskResult"
+            }
+          }
+        }
+      },
+      "WorkflowFormWrite": {
+        "type": "object",
+        "required": [
+          "version",
+          "answers"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormAnswer"
+            }
+          }
+        }
+      },
+      "WorkflowFormField": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "label",
+          "type",
+          "required"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "readonly",
+              "text",
+              "textarea",
+              "select"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkflowFormConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "submitLabel",
+          "reportSelector",
+          "itemsSelector",
+          "fields"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "submitLabel": {
+            "type": "string"
+          },
+          "reportSelector": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "itemsSelector": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reviewerId": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFormField"
+            }
+          }
+        }
+      },
+      "WorkflowFormFinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "title",
+          "description",
+          "evidence",
+          "severity",
+          "module"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkflowFormAssignee": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent",
+              "squad"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "WorkflowFormAnswer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "assignee": {
+            "$ref": "#/components/schemas/WorkflowFormAssignee"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkflowFormTaskResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "taskId",
+          "action"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "reused"
+            ]
+          }
+        }
+      },
+      "WorkflowFormExistingTask": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "taskId",
+          "status",
+          "assignee"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent",
+                  "squad"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "identifier": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "displayName"
+            ]
+          }
+        }
+      },
       "WorkflowError": {
         "type": "object",
         "required": ["code", "params", "requestId"],

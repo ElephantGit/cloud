@@ -100,8 +100,8 @@ func (h *Host) Close() {
 const interruptedMessage = "the server restarted while this run was executing"
 
 // Interrupt fails every attempt and run a previous process left executing, with desktop's
-// interrupted_by_restart detail. v2 replays no Agent turn and has no interactive node to keep
-// waiting, so nothing survives a restart. It must run before the host serves requests.
+// interrupted_by_restart detail. Frozen forms and deterministic post-review work survive;
+// no Agent turn is replayed. It must run before the host serves requests.
 func (h *Host) Interrupt(ctx context.Context) error {
 	f := workflow.Failure{Kind: workflow.FailureInterruptedByRestart, Message: interruptedMessage}
 	now := h.now()
@@ -110,6 +110,15 @@ func (h *Host) Interrupt(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("interrupt workflow runs: %w", err)
+	}
+	reviews, err := h.store.RecoverableFormRuns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range reviews {
+		if err := h.resumeReviewRun(ctx, id); err != nil {
+			h.log.Error("recover review run", "run", id, "error", err)
+		}
 	}
 	if len(ids) != 0 {
 		h.log.Info("interrupted workflow runs left by the previous process", "runs", len(ids))
@@ -181,7 +190,7 @@ func (h *Host) StartRun(ctx context.Context, scope server.WorkflowRunScope, runI
 	st := h.register(runID, executionScope(scope))
 	// The run outlives the request once it starts; a disconnecting client must not abandon the
 	// first scheduling pass halfway.
-	err = h.engine.Start(context.WithoutCancel(ctx), runID)
+	err = h.engine.StartAs(context.WithoutCancel(ctx), runID, st.scope.UserID)
 	st.started()
 	// A run without Agents can finish within its first pass, and a refused start leaves the run
 	// pending without an owner.
@@ -207,8 +216,8 @@ func (h *Host) UpdateRunInput(ctx context.Context, scope server.WorkflowRunScope
 	return h.store.WorkflowRun(ctx, scope.TenantID, runID)
 }
 
-// CompleteNode is the interactive node's human completion. v2 never parks a node for input,
-// so after authorizing the run it reports that the node is not awaiting input.
+// CompleteNode remains the unsupported interactive-Agent completion endpoint.
+// Dynamic forms use their own versioned submission endpoint.
 func (h *Host) CompleteNode(ctx context.Context, scope server.WorkflowRunScope, runID, _ string, _ bool, _ string) (store.WorkflowRun, error) {
 	if _, err := h.store.WorkflowRun(ctx, scope.TenantID, runID); err != nil {
 		return store.WorkflowRun{}, err

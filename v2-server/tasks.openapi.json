@@ -1699,6 +1699,7 @@
           "projectId": {
             "type": "string"
           },
+          "workflowSources": {"type":"array","items":{"type":"object","required":["runId","name","submittedAt"],"additionalProperties":false,"properties":{"runId":{"type":"string","format":"uuid"},"name":{"type":"string"},"submittedAt":{"type":"string","format":"date-time","nullable":true}}}},
           "parentId": {
             "type": "string",
             "nullable": true,

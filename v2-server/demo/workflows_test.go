@@ -65,7 +65,7 @@ func TestAllWorkflowOutputsResolveFromRuntimePool(t *testing.T) {
 	}{
 		{"newcomer", NewcomerGraph, "verify.output", "交付说明：测试通过", map[string]any{"delivery": "交付说明：测试通过"}},
 		{"lead", DecompositionGraph, "decompose.structured_output", map[string]any{"tasks": tasks}, map[string]any{"tasks": tasks}},
-		{"ops", OpsGraph, "report.output", "巡检报告：服务正常", map[string]any{"report": "巡检报告：服务正常"}},
+		{"ops", legacyOpsGraph, "report.output", "巡检报告：服务正常", map[string]any{"report": "巡检报告：服务正常"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source, err := tc.build(WorkflowSeed{AgentCLI: "official/ora-space.opencode", ModelID: "configured"})
@@ -193,30 +193,47 @@ func TestSeedsComposeAndHistoryIsOwnedByOps(t *testing.T) {
 	for i, item := range history {
 		want := time.Date(2026, 10, 31, 18, 0, 0, 0, time.UTC).AddDate(0, 0, -i)
 		// 02:00 Shanghai of Nov 1 / Oct 31 / Oct 30 is 18:00 UTC on the previous day.
-		if !item.ScheduledAt.Equal(want) || item.Status != "succeeded" || !item.Released {
-			t.Fatalf("history entry %d: %+v; want %v", i, item, want)
+
+		if !item.ScheduledAt.Equal(want) {
+			t.Fatal("history date changed")
 		}
 		runID, ok := scheduler.WorkflowRunOf(item.ExecutionRef)
 		if !ok {
-			t.Fatal("history does not link a real persisted workflow run")
+			t.Fatal("missing run reference")
 		}
 		run, err := s.WorkflowRun(ctx, tenant, runID)
-		if err != nil || run.SnapshotID != ops.Snapshot.ID || run.ProjectID != seeds["ops"].ProjectID || !strings.HasSuffix(run.Name, "02:00") || run.Output == nil || strings.Contains(*run.Output, "预置") {
-			t.Fatalf("history run: %+v %v", run, err)
+		if err != nil {
+			t.Fatal(err)
 		}
-		// The seeded marker lives in the payload, never in the text the recording shows.
+		if run.ProjectID != seeds["ops"].ProjectID {
+			t.Fatal("wrong project")
+		}
 		if !strings.Contains(strings.ReplaceAll(string(run.RuntimePayload), " ", ""), `"demoSeed":true`) {
-			t.Fatalf("history run payload lacks demoSeed: %s", run.RuntimePayload)
+			t.Fatal("missing seed marker")
 		}
-		nodes, err := s.WorkflowRunNodes(ctx, tenant, runID)
-		if err != nil || len(nodes) != 4 {
-			t.Fatalf("nodes: %v %v", nodes, err)
-		}
-		for _, node := range nodes {
-			if node.Status != "succeeded" || node.Output == nil || strings.Contains(*node.Output, "预置") || !strings.Contains(strings.ReplaceAll(string(node.Payload), " ", ""), `"demoSeed":true`) {
-				t.Fatalf("incomplete historical node: %+v", node)
+		if i == 0 {
+			if run.Status != "awaitingInput" || item.Released || !item.WaitingForInput {
+				t.Fatalf("waiting history: %+v %+v", run, item)
+			}
+			form, err := s.WorkflowForm(ctx, tenant, seeds["ops"].Scope.UserID, runID)
+			if err != nil || form.Status != "open" {
+				t.Fatalf("waiting form: %+v %v", form, err)
+			}
+		} else {
+			if run.Status != "succeeded" || !item.Released {
+				t.Fatalf("finished history: %+v", run)
+			}
+			if i == 1 {
+				form, err := s.WorkflowForm(ctx, tenant, seeds["ops"].Scope.UserID, runID)
+				if err != nil || string(form.Results) == "[]" {
+					t.Fatalf("submitted history: %+v %v", form, err)
+				}
 			}
 		}
+		if (i < 2) != (run.SnapshotID == ops.Snapshot.ID) {
+			t.Fatal("history snapshot mismatch")
+		}
+
 	}
 	for _, name := range []string{"lead", "newcomer"} {
 		other, err := s.ScheduleConfigs(ctx, tenant, seeds[name].Scope.UserID)

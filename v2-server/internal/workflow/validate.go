@@ -129,6 +129,9 @@ func buildScopes(d *document) (map[string]*scope, error) {
 			}
 		}
 	}
+	if err := validateFormPlacement(d, scopes); err != nil {
+		return nil, err
+	}
 	return scopes, nil
 }
 

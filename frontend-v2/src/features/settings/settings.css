@@ -353,14 +353,14 @@
   align-items: center;
   gap: 12px;
 }
-.settings-plugin-detail-identity > span {
+.settings-plugin-detail-meta {
   display: flex;
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
 }
-.settings-plugin-detail-identity > span > span:last-child {
+.settings-plugin-detail-meta > span:last-child {
   max-width: min(310px, 55vw);
   overflow: hidden;
   color: var(--muted-foreground);

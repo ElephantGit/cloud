@@ -661,7 +661,7 @@ export default function PluginsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="settings-plugin-detail-identity">
               <PluginMark entry={selected} large />
-              <span>
+              <span className="settings-plugin-detail-meta">
                 <Badge variant="outline">{pluginKind(selected).label}</Badge>
                 <span>{pluginKey(selected)}</span>
               </span>

@@ -568,6 +568,12 @@ test('seven settings pages and keyboard-accessible details', async ({
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByRole('article', { name: '示例 Hooks' }).getByText(
+          '已安装（演示）',
+          { exact: true },
+        ),
+      ).toBeVisible({ timeout: 15_000 })
     }
     await resetScroll(page)
     await page.screenshot({

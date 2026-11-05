@@ -1,12 +1,15 @@
 import { isTaskFinished, taskActions, taskStatusLabel } from './task-model'
-import type { Task } from './tasks-api/generated'
+import type { MySquadTask, Task } from './tasks-api/generated'
+
+/** The tasks of the caller's squads, by task id. */
+export type SquadTasks = ReadonlyMap<string, MySquadTask>
 
 /** The task scopes the sidebar offers; each one is a filter over the same team-wide list. */
 export type TaskView = 'mine' | 'todo' | 'all'
 
 export const TASK_VIEWS: { id: TaskView; label: string; hint: string }[] = [
-  { id: 'mine', label: '我的任务', hint: '指派给我的任务' },
-  { id: 'todo', label: '待我处理', hint: '指派给我且未结束的、我建的等着验收的，以及有人 @ 我还没回复的' },
+  { id: 'mine', label: '我的任务', hint: '指派给我和我所在小队的任务' },
+  { id: 'todo', label: '待我处理', hint: '指派给我且未结束的、小队新派来的、我建的等着验收的，以及有人 @ 我还没回复的' },
   { id: 'all', label: '全部任务', hint: '工作区里所有任务，全团队可见' },
 ]
 
@@ -20,15 +23,16 @@ const finished = (task: Task) => task.status === 'done' || task.status === 'canc
 
 /**
  * The tasks of a view, for the person `me`; a squad narrows any view to the tasks it owns.
- * `mentioned` holds the tasks where someone @-mentioned `me` and is still waiting on a reply.
+ * `mentioned` holds the tasks where someone @-mentioned `me` and is still waiting on a reply;
+ * `squadTasks` holds the tasks of `me`'s squads.
  */
-export function filterTasks(tasks: Task[], view: TaskView, me: string, squadId?: string | null, mentioned: ReadonlySet<string> = new Set()): Task[] {
+export function filterTasks(tasks: Task[], view: TaskView, me: string, mentioned: ReadonlySet<string> = new Set(), squadTasks: SquadTasks = new Map(), squadId?: string | null): Task[] {
   const scoped = squadId ? tasks.filter(t => t.assignee?.type === 'squad' && t.assignee.id === squadId) : tasks
   switch (view) {
     case 'mine':
-      return scoped.filter(t => t.assignee?.type === 'human' && t.assignee.id === me)
+      return scoped.filter(t => (t.assignee?.type === 'human' && t.assignee.id === me) || squadTasks.has(t.id))
     case 'todo':
-      return scoped.filter(t => (t.assignee?.type === 'human' && t.assignee.id === me && !finished(t)) || (t.status === 'review' && t.createdBy === me) || mentioned.has(t.id))
+      return scoped.filter(t => (t.assignee?.type === 'human' && t.assignee.id === me && !finished(t)) || (t.status === 'review' && t.createdBy === me) || mentioned.has(t.id) || squadTasks.get(t.id)?.waiting)
     default:
       return scoped
   }
@@ -82,16 +86,17 @@ export function boardMove(task: Task, to: string): { ok: boolean; reason: string
 }
 
 /**
- * Whether the caller may run an Agent on the task at all: any member on an Agent's task, and on a
- * person's task only that person, with the Agent they pick.
+ * Whether the caller may run an Agent on the task at all: any member on an Agent's task, on a
+ * person's task only that person, and on a squad's task its members, with the Agent they pick.
  */
-export const runsAgent = (task: Task, me: string): boolean =>
-  task.assignee?.type === 'agent' || (task.assignee?.type === 'human' && task.assignee.id === me)
+export const runsAgent = (task: Task, me: string, inSquad = false): boolean =>
+  task.assignee?.type === 'agent' || (task.assignee?.type === 'human' && task.assignee.id === me) || (task.assignee?.type === 'squad' && inSquad)
 
 /** Whether the caller may send the Agent a turn now, and why not. */
-export function agentReach(task: Task, me: string): { ok: boolean; reason: string } {
+export function agentReach(task: Task, me: string, inSquad = false): { ok: boolean; reason: string } {
   if (task.assignee?.type === 'human' && task.assignee.id !== me) return { ok: false, reason: `任务派给了 ${task.assignee.displayName}，只有负责人本人能用 Agent 处理。` }
-  if (!runsAgent(task, me)) return { ok: false, reason: '任务没有指派给 Agent。' }
+  if (task.assignee?.type === 'squad' && !inSquad) return { ok: false, reason: `任务派给了小队 ${task.assignee.displayName}，只有队员能用 Agent 处理。` }
+  if (!runsAgent(task, me, inSquad)) return { ok: false, reason: '任务没有指派给 Agent。' }
   if (task.status === 'done' || task.status === 'cancelled') return { ok: false, reason: '任务已结束。' }
   const run = task.activeRun
   if (run?.state === 'running') return { ok: false, reason: 'Agent 正在执行，等这一轮结束。' }

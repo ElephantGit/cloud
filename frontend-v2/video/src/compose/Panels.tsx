@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, interpolate } from 'remotion'
-import { PANEL_ENTER, PANEL_EXIT } from '../record/timing.ts'
+import { panelProgress } from './panel-motion.ts'
 import type { ExplainOverlay, MarkOverlay, PanelItem, SlideOverlay } from '../timeline.ts'
 import { Grain } from './brand/Grain.tsx'
 import { Network } from './brand/Network.tsx'
@@ -12,11 +12,6 @@ const INK = '#15151d'
 const INDIGO = '#4a4c86'
 const MUTED = '#5b6375'
 
-/** How far a panel has come in, from 0 to 1, `age` output milliseconds into its `ms`. */
-export function panelProgress(age: number, ms: number): number {
-  const enter = interpolate(age, [0, PANEL_ENTER], [0, 1], { ...clamp, easing: ease })
-  return enter * interpolate(age, [ms - PANEL_EXIT, ms], [1, 0], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) })
-}
 
 function Card({ item, age, index, big }: { item: PanelItem; age: number; index: number; big?: boolean }) {
   const p = interpolate(age, [item.at, item.at + 500], [0, 1], { ...clamp, easing: ease })

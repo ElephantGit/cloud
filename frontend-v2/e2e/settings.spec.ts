@@ -178,7 +178,7 @@ test('server-backed plugin and skill install lifecycle survives reload and a new
     .getByRole('button', { name: '安装' })
     .click()
   await expect(
-    page.getByRole('dialog').getByText('可用', { exact: true }),
+    page.getByRole('dialog').getByText('已安装', { exact: true }),
   ).toBeVisible({ timeout: 15_000 })
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)

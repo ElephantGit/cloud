@@ -8,13 +8,8 @@ export const settings: Feature = {
   icon: Settings,
   page: () => import('./page'),
   children: [
-    { index: true, loader: () => redirect('/settings/members') },
-    {
-      path: 'members',
-      lazy: async () => ({
-        Component: (await import('./members/page')).default,
-      }),
-    },
+    { index: true, loader: () => redirect('/settings/squads') },
+    { path: 'members', loader: () => redirect('/settings/squads') },
     {
       path: 'squads',
       lazy: async () => ({
@@ -49,6 +44,6 @@ export const settings: Feature = {
         Component: (await import('./skills/page')).default,
       }),
     },
-    { path: '*', loader: () => redirect('/settings/members') },
+    { path: '*', loader: () => redirect('/settings/squads') },
   ],
 }

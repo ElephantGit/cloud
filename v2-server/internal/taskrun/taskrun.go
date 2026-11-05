@@ -27,9 +27,9 @@ import (
 
 // Errors the HTTP layer maps to stable codes.
 var (
-	// ErrNotAgentTask reports a run on a task assigned to neither an Agent nor a person.
-	ErrNotAgentTask = errors.New("task not assigned to an agent or a person")
-	// ErrNotAssignee reports a run on a person's task by someone other than that person.
+	// ErrNotAgentTask reports a run on a task assigned to no Agent, person or squad.
+	ErrNotAgentTask = errors.New("task not assigned to an agent, a person or a squad")
+	// ErrNotAssignee reports a run on a person's or squad's task by someone outside it.
 	ErrNotAssignee = errors.New("task assigned to someone else")
 	// ErrNoExecutor reports an Agent with no runnable executor, or an executor of another Agent.
 	ErrNoExecutor = errors.New("no executor for the task's agent")
@@ -44,6 +44,7 @@ var (
 // Store is the persistence a Host needs; *store.Store implements it.
 type Store interface {
 	Task(ctx context.Context, tenant, caller, id string) (store.Task, error)
+	InSquad(ctx context.Context, tenant, squad, user string) (bool, error)
 	TransitionTaskStatus(ctx context.Context, tenant, id, from, to string) (store.Task, error)
 	TaskRun(ctx context.Context, tenant, taskID, runID string) (store.TaskRun, error)
 	LiveTaskRun(ctx context.Context, tenant, taskID string) (store.TaskRun, bool, error)
@@ -124,7 +125,8 @@ func (h *Host) lock(taskID string) func() {
 }
 
 // Executors lists the executors that can run the task: for an Agent's task the catalog entries of
-// its plugin, for a person's task every executor that person can run, since they pick the Agent.
+// its plugin, for a person's or squad's task every executor the caller can run, since they pick
+// the Agent.
 func (h *Host) Executors(ctx context.Context, scope execution.Scope, taskID string) ([]execution.Executor, error) {
 	task, e := h.store.Task(ctx, scope.TenantID, scope.UserID, taskID)
 	if e != nil {
@@ -134,19 +136,33 @@ func (h *Host) Executors(ctx context.Context, scope execution.Scope, taskID stri
 }
 
 func (h *Host) executorsFor(ctx context.Context, scope execution.Scope, task store.Task) ([]execution.Executor, error) {
-	human := task.Assignee != nil && task.Assignee.Type == store.AssigneeHuman
-	switch {
-	case human && task.Assignee.ID != scope.UserID:
+	if task.Assignee == nil {
+		return nil, ErrNotAgentTask
+	}
+	switch task.Assignee.Type {
+	case store.AssigneeHuman:
 		// A person's task runs on that person's identity, so only they start it.
-		return nil, ErrNotAssignee
-	case !human && (task.Assignee == nil || task.Assignee.Type != store.AssigneeAgent):
+		if task.Assignee.ID != scope.UserID {
+			return nil, ErrNotAssignee
+		}
+	case store.AssigneeSquad:
+		// A squad's task runs on the identity of whichever member picks it up.
+		member, e := h.store.InSquad(ctx, scope.TenantID, task.Assignee.ID, scope.UserID)
+		if e != nil {
+			return nil, e
+		}
+		if !member {
+			return nil, ErrNotAssignee
+		}
+	case store.AssigneeAgent:
+	default:
 		return nil, ErrNotAgentTask
 	}
 	all, e := h.catalog.ListExecutors(ctx, scope)
 	if e != nil {
 		return nil, e
 	}
-	if human {
+	if task.Assignee.Type != store.AssigneeAgent {
 		return all, nil
 	}
 	out := []execution.Executor{}

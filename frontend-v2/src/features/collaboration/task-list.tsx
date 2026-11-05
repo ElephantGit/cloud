@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { AtSign, Bot, CornerDownRight, ListTree, UserRound, Users } from 'lucide-react'
-import type { PendingMention, Task } from './tasks-api/generated'
+import type { MySquadTask, PendingMention, Task } from './tasks-api/generated'
 import { assigneeLabel, projectLabel, taskStatusLabel } from './task-model'
-import { BOARD_COLUMNS, boardDraggable, boardMove, isAgentRunning } from './task-views'
+import { BOARD_COLUMNS, boardDraggable, boardMove, isAgentRunning, type SquadTasks } from './task-views'
 
 type Projects = { id: string; name: string }[]
 type Mentions = ReadonlyMap<string, PendingMention>
@@ -26,7 +26,7 @@ function TaskWorker({ task }: { task: Task }) {
     return <span className="mc-running"><i className="mc-pulse" aria-hidden="true" />{run?.startedByName} 发起 · 执行中</span>
   }
   if (run?.state === 'idle') return <span className="mc-task-hint"><Bot size={12} />{run.startedByName} 发起 · 等待追问</span>
-  return task.assignee?.type === 'squad' ? <span className="mc-task-hint">小队负责，不自动分派</span> : null
+  return null
 }
 
 /** The requirement a subtask was split from, or how many subtasks a requirement has. */
@@ -36,6 +36,12 @@ function FamilyTag({ task, label }: { task: Task; label?: string }) {
   return <span className="mc-family-tag"><Icon size={11} aria-hidden="true" />{label}</span>
 }
 
+/** The task came to the viewer through their squad and they have not acted on it yet. */
+function SquadTag({ task }: { task?: MySquadTask }) {
+  if (!task?.waiting) return null
+  return <span className="mc-mention-tag" title="评论或开始处理后提醒消失"><Users size={11} aria-hidden="true" />小队 {task.squadName} 的任务</span>
+}
+
 /** Someone @-mentioned the viewer here and is waiting on their reply. */
 function MentionTag({ mention }: { mention?: PendingMention }) {
   if (!mention) return null
@@ -43,7 +49,7 @@ function MentionTag({ mention }: { mention?: PendingMention }) {
 }
 
 /** Tasks as rows. */
-export function TaskRows({ tasks, projects, mentions, families = new Map(), onOpen }: { tasks: Task[]; projects: Projects; mentions: Mentions; families?: Families; onOpen: (task: Task) => void }) {
+export function TaskRows({ tasks, projects, mentions, squadTasks = new Map(), families = new Map(), onOpen }: { tasks: Task[]; projects: Projects; mentions: Mentions; squadTasks?: SquadTasks; families?: Families; onOpen: (task: Task) => void }) {
   return <ul className="mc-tasks">{tasks.map(item => <li key={item.id}>
     <button type="button" className="mc-task-row" aria-label={`查看任务 ${item.title}`} onClick={() => onOpen(item)}>
       <span className={`mc-status ${item.status}`}>{taskStatusLabel(item.status)}</span>
@@ -53,6 +59,7 @@ export function TaskRows({ tasks, projects, mentions, families = new Map(), onOp
         <FamilyTag task={item} label={families.get(item.id)} />
       </span>
       <MentionTag mention={mentions.get(item.id)} />
+      <SquadTag task={squadTasks.get(item.id)} />
       <TaskWorker task={item} />
       <TaskAssignee task={item} />
     </button>
@@ -60,9 +67,10 @@ export function TaskRows({ tasks, projects, mentions, families = new Map(), onOp
 }
 
 /** A board card's face, shared by the card in its column and the one lifted while dragging. */
-function CardFace({ task, projects, mention, family }: { task: Task; projects: Projects; mention?: PendingMention; family?: string }) {
+function CardFace({ task, projects, mention, squadTask, family }: { task: Task; projects: Projects; mention?: PendingMention; squadTask?: MySquadTask; family?: string }) {
   return <>
     <MentionTag mention={mention} />
+    <SquadTag task={squadTask} />
     <strong>{task.title}</strong>
     <FamilyTag task={task} label={family} />
     <small>{projectLabel(projects, task.projectId)} · {task.createdByName} 创建</small>
@@ -75,12 +83,12 @@ function CardFace({ task, projects, mention, family }: { task: Task; projects: P
  * One card. A short pointer drag picks it up (a click still opens the task); a running Agent's card
  * and finished work cannot be picked up, and say why on hover.
  */
-function BoardCard({ task, projects, mention, family, movable, onOpen }: { task: Task; projects: Projects; mention?: PendingMention; family?: string; movable: boolean; onOpen: (task: Task) => void }) {
+function BoardCard({ task, projects, mention, squadTask, family, movable, onOpen }: { task: Task; projects: Projects; mention?: PendingMention; squadTask?: MySquadTask; family?: string; movable: boolean; onOpen: (task: Task) => void }) {
   const pickable = movable ? boardDraggable(task) : { ok: false, reason: '' }
   const { setNodeRef, listeners, isDragging } = useDraggable({ id: task.id, disabled: !pickable.ok })
   return <li ref={setNodeRef} className={isDragging ? 'mc-card-lifted' : undefined} {...listeners}>
     <button type="button" className="mc-card-task" aria-label={`查看任务 ${task.title}`} title={movable ? pickable.reason || '拖到其他列改状态' : undefined} onClick={() => onOpen(task)}>
-      <CardFace task={task} projects={projects} mention={mention} family={family} />
+      <CardFace task={task} projects={projects} mention={mention} squadTask={squadTask} family={family} />
     </button>
   </li>
 }
@@ -106,8 +114,8 @@ function BoardColumn({ status, children, count, lifted }: { status: string; chil
  * Agent's card stays put, and an Agent task enters 进行中 only by starting its run. A refused drop
  * says why through `onRefuse`; the keyboard keeps the task page's buttons.
  */
-export function TaskBoardColumns({ tasks, projects, mentions, families = new Map(), showCancelled, onOpen, onMove, onRefuse }: {
-  tasks: Task[]; projects: Projects; mentions: Mentions; families?: Families; showCancelled: boolean; onOpen: (task: Task) => void
+export function TaskBoardColumns({ tasks, projects, mentions, squadTasks = new Map(), families = new Map(), showCancelled, onOpen, onMove, onRefuse }: {
+  tasks: Task[]; projects: Projects; mentions: Mentions; squadTasks?: SquadTasks; families?: Families; showCancelled: boolean; onOpen: (task: Task) => void
   onMove?: (task: Task, status: string) => void; onRefuse?: (reason: string) => void
 }) {
   const columns: string[] = showCancelled ? [...BOARD_COLUMNS, 'cancelled'] : [...BOARD_COLUMNS]
@@ -138,13 +146,13 @@ export function TaskBoardColumns({ tasks, projects, mentions, families = new Map
       {columns.map(status => {
         const items = tasks.filter(t => t.status === status)
         return <BoardColumn key={status} status={status} count={items.length} lifted={lifted}>
-          {items.map(item => <BoardCard key={item.id} task={item} projects={projects} mention={mentions.get(item.id)} family={families.get(item.id)} movable={!!onMove} onOpen={onOpen} />)}
+          {items.map(item => <BoardCard key={item.id} task={item} projects={projects} mention={mentions.get(item.id)} squadTask={squadTasks.get(item.id)} family={families.get(item.id)} movable={!!onMove} onOpen={onOpen} />)}
           {items.length === 0 && <li className="mc-column-empty">暂无</li>}
         </BoardColumn>
       })}
     </div>
     <DragOverlay dropAnimation={null}>
-      {lifted && <div className="mc-card-task mc-card-overlay"><CardFace task={lifted} projects={projects} mention={mentions.get(lifted.id)} family={families.get(lifted.id)} /></div>}
+      {lifted && <div className="mc-card-task mc-card-overlay"><CardFace task={lifted} projects={projects} mention={mentions.get(lifted.id)} squadTask={squadTasks.get(lifted.id)} family={families.get(lifted.id)} /></div>}
     </DragOverlay>
   </DndContext>
 }

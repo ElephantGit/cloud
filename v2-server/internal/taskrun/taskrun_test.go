@@ -465,6 +465,42 @@ func TestRunsNeedAnAgentAndItsOwnExecutor(t *testing.T) {
 	}
 }
 
+func TestSquadMembersRunTheAgentTheyPickOnTheSquadsTask(t *testing.T) {
+	f := newFixture(t)
+	squad, e := f.store.CreateSquad(f.ctx, f.tenant, f.owner.UserID, store.SquadInput{Name: "Web 前端组"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	task, e := f.store.CreateTask(f.ctx, f.tenant, f.owner.UserID, store.TaskInput{Title: "改版登录页", ProjectID: f.project,
+		Assignee: &store.TaskAssigneeRef{Type: store.AssigneeSquad, ID: squad.ID}})
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	// Someone outside the squad only watches.
+	if _, e := f.host.Executors(f.ctx, f.member, task.ID); !errors.Is(e, taskrun.ErrNotAssignee) {
+		t.Fatalf("executors outside the squad = %v", e)
+	}
+	if _, e := f.host.Start(f.ctx, f.member, task.ID, "k-out", taskrun.StartInput{}); !errors.Is(e, taskrun.ErrNotAssignee) {
+		t.Fatalf("start outside the squad = %v", e)
+	}
+
+	// A member picks from every executor they can run and works under their own identity.
+	if _, e := f.store.AddSquadMember(f.ctx, f.tenant, f.owner.UserID, squad.ID, store.SquadMemberInput{Type: "human", UserID: f.member.UserID, Version: squad.Version}); e != nil {
+		t.Fatal(e)
+	}
+	list, e := f.host.Executors(f.ctx, f.member, task.ID)
+	if e != nil || len(list) != 3 {
+		t.Fatalf("member's executors = %+v %v", list, e)
+	}
+	run, e := f.host.Start(f.ctx, f.member, task.ID, "k-member", taskrun.StartInput{ExecutorID: "claude:fixture"})
+	if e != nil || run.ExecutorID != "claude:fixture" || run.StartedBy != f.member.UserID {
+		t.Fatalf("member's run = %+v %v", run, e)
+	}
+	f.port.finish(t, run.LastTurnID, execution.StatusCompleted)
+	f.await(t, task.ID, store.TaskReview)
+}
+
 func TestAPersonRunsTheAgentTheyPickOnTheirOwnTask(t *testing.T) {
 	f := newFixture(t)
 	task, e := f.store.CreateTask(f.ctx, f.tenant, f.owner.UserID, store.TaskInput{Title: "修复登录页", ProjectID: f.project,

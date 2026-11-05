@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
@@ -39,18 +39,10 @@ function show(path: string) {
   return router
 }
 
-it('lists squads only as task filters; managing them lives in settings', async () => {
+it('has no squad column; tasks are still assigned to squads from the task', async () => {
   show('/collaboration?view=all')
-  const squads = await screen.findByRole('navigation', { name: '小队' }, routed)
-  expect(await within(squads).findByRole('link', { name: /产品小队/ })).toHaveAttribute('href', '/collaboration?view=all&squad=squad-1')
-  expect(screen.queryByText('管理小队')).not.toBeInTheDocument()
-  expect(within(squads).queryByRole('link', { name: '在设置中创建小队' })).not.toBeInTheDocument()
-})
-
-it('points to settings when the workspace has no squads yet', async () => {
-  vi.mocked(squadsApi.listSquads).mockResolvedValue({ items: [], nextCursor: '' })
-  show('/collaboration?view=all')
-  expect(await screen.findByRole('link', { name: '在设置中创建小队' }, routed)).toHaveAttribute('href', '/settings/squads')
+  expect(await screen.findByRole('navigation', { name: '任务视图' }, routed)).toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: '小队' })).not.toBeInTheDocument()
 })
 
 it('sends the old squads address to settings with the same squad', async () => {

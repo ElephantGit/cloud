@@ -40,8 +40,8 @@ describe('app shell, signed in', () => {
     for (const f of features) {
       await userEvent.click(screen.getByRole('link', { name: f.title }))
       if (f.path === 'settings') {
-        expect(await screen.findByRole('heading', { level: 1, name: '成员' })).toBeInTheDocument()
-        expect(router.state.location.pathname).toBe('/settings/members')
+        expect(await screen.findByRole('heading', { level: 1, name: '小队' })).toBeInTheDocument()
+        expect(router.state.location.pathname).toBe('/settings/squads')
         continue
       }
       // Each page's chunk loads on its first visit; the workflow editor's is the largest.

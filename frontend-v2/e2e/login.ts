@@ -21,7 +21,7 @@ export async function signIn(page: Page, email = ownerEmail) {
 /** Creates a real invited member and signs the page in as that account. */
 export async function signInAsInvitedMember(
   page: Page,
-  path = '/settings/members',
+  path = '/settings/squads',
 ) {
   const suffix = crypto.randomUUID().slice(0, 8)
   const email = `member-${suffix}@demo.ora-space.dev`

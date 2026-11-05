@@ -22,9 +22,16 @@ describe('task views', () => {
   it('scopes one team-wide list', () => {
     expect(ids(filterTasks(all, 'mine', 'me'))).toEqual(['mine', 'mine-done'])
     expect(ids(filterTasks(all, 'todo', 'me'))).toEqual(['mine', 'my-review'])
-    expect(ids(filterTasks(all, 'todo', 'me', null, new Set(['squad'])))).toEqual(['mine', 'my-review', 'squad'])
+    expect(ids(filterTasks(all, 'todo', 'me', new Set(['squad'])))).toEqual(['mine', 'my-review', 'squad'])
     expect(ids(filterTasks(all, 'all', 'me'))).toEqual(ids(all))
-    expect(ids(filterTasks(all, 'all', 'me', 'squad-1'))).toEqual(['squad'])
+    expect(ids(filterTasks(all, 'all', 'me', new Set(), new Map(), 'squad-1'))).toEqual(['squad'])
+    expect(ids(filterTasks(all, 'mine', 'me', new Set(), new Map(), 'squad-1'))).toEqual([])
+    const squadTasks = new Map([['squad', { taskId: 'squad', squadId: 'squad-1', squadName: '产品小队', waiting: true }]])
+    expect(ids(filterTasks(all, 'mine', 'me', new Set(), squadTasks))).toContain('squad')
+    expect(ids(filterTasks(all, 'todo', 'me', new Set(), squadTasks))).toContain('squad')
+    const handled = new Map([['squad', { taskId: 'squad', squadId: 'squad-1', squadName: '产品小队', waiting: false }]])
+    expect(ids(filterTasks(all, 'mine', 'me', new Set(), handled))).toContain('squad')
+    expect(ids(filterTasks(all, 'todo', 'me', new Set(), handled))).not.toContain('squad')
   })
 
   it('reads an unknown view as everything', () => {
@@ -51,7 +58,14 @@ describe('who may send the Agent a turn', () => {
     expect(agentReach(mine, 'me')).toMatchObject({ ok: true, reason: '用你的身份开一次新运行。' })
     expect(runsAgent(bobs, 'me')).toBe(false)
     expect(agentReach(bobs, 'me')).toEqual({ ok: false, reason: '任务派给了 鲍勃，只有负责人本人能用 Agent 处理。' })
-    expect(runsAgent(task({ assignee: { type: 'squad', id: 'squad-1', displayName: '产品小队' } }), 'me')).toBe(false)
+  })
+
+  it('lets the members of a squad run the Agent they pick on its task', () => {
+    const squad = task({ assignee: { type: 'squad', id: 'squad-1', displayName: '产品小队' } })
+    expect(runsAgent(squad, 'me', true)).toBe(true)
+    expect(agentReach(squad, 'me', true)).toMatchObject({ ok: true, reason: '用你的身份开一次新运行。' })
+    expect(runsAgent(squad, 'me')).toBe(false)
+    expect(agentReach(squad, 'me')).toEqual({ ok: false, reason: '任务派给了小队 产品小队，只有队员能用 Agent 处理。' })
   })
 
   it('waits for a running turn and refuses closed or unassigned tasks', () => {

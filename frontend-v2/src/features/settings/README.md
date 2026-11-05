@@ -1,12 +1,12 @@
 # Settings
 
-设置模块包含成员、小队、角色、模型连接、主题、Plugins 和 Skills 七个独立子路由，默认进入成员页。页面沿用 V2 的组件和语义颜色，不引入其他 UI 库。
+设置模块包含小队、角色、模型连接、主题、Plugins 和 Skills 六个独立子路由，默认进入小队页。成员属于小队，没有单独的成员页：在小队详情里看成员，在「添加成员」里邀请或加入，`/settings/members` 重定向到小队页。页面沿用 V2 的组件和语义颜色，不引入其他 UI 库。
 
 ## 数据边界
 
-成员页是真实的：列表来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），可选同时加入一个小队。名册里只有启动配置里的 bootstrap owner（显示名取自 `users.json` 的 `displayName`，「协作空间 Owner」）和真实受邀成员；旧 `dev/demo` 账号和启动配置 `retired` 里的旧预置成员会被软删除，不出现在名册中，它们的历史引用保留。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
+「添加成员」的候选人来自 `GET /api/v1/tenants/{tid}/members`，owner 还能填邮箱邀请（`POST /api/v2/tenants/{tid}/members`，契约之外的 v2-server 路由），被邀请人同时加入这个小队。名册里只有启动配置里的 bootstrap owner（显示名取自 `users.json` 的 `displayName`，「协作空间 Owner」）和真实受邀成员；旧 `dev/demo` 账号和启动配置 `retired` 里的旧预置成员会被软删除，不出现在名册中，它们的历史引用保留。v2 没有改角色、停用或移除成员的接口，页面因此不提供这些操作；邀请入口按 `GET /api/v1/me/tenants` 里的真实角色只对 owner 显示，服务端同样会拒绝 member。
 
-小队页（`squads/`，`/settings/squads`）管理工作区内人和 Agent 的协作编组，数据来自候选契约 `v2-server/squads.openapi.json`，客户端在 `src/lib/squads-api`（协作页按小队筛选和指派任务也用它），`npm run api:generate:squads` 生成。列表显示有效的人类成员、Agent 成员与维护者计数，详情按类型列成员、职责、维护者与 leader，并保留已退出历史；工作区 owner 和本队维护者可编辑、归档、加入成员与可执行的 Space Agent、移除成员，任何成员可以自己退出，维护者可以交接维护者标记、设置 Agent leader。已删除的账号由 v2-server 结束其成员关系，并且不再出现在小队里，「已退出」历史也不列出。小队关系不授予私人模型、Git 凭据或运行时权限。`?squad=<id>` 直接打开那个小队；协作页的旧地址 `/collaboration/squads` 会重定向过来。弹窗和基础样式来自 `src/components/panel/`，与协作页共用。
+小队页（`squads/`，`/settings/squads`）管理工作区内人和 Agent 的协作编组，数据来自候选契约 `v2-server/squads.openapi.json`，客户端在 `src/lib/squads-api`（协作页指派任务和按小队切换也用它），`npm run api:generate:squads` 生成。列表显示有效的人类成员、Agent 成员与维护者计数，详情按类型列成员、职责、维护者与 leader，并保留已退出历史；工作区 owner 和本队维护者可编辑、归档、加入成员与可执行的 Space Agent、移除成员，任何成员可以自己退出，维护者可以交接维护者标记、设置 Agent leader。已删除的账号由 v2-server 结束其成员关系，并且不再出现在小队里，「已退出」历史也不列出。小队关系不授予私人模型、Git 凭据或运行时权限。`?squad=<id>` 直接打开那个小队；协作页的旧地址 `/collaboration/squads` 会重定向过来。弹窗和基础样式来自 `src/components/panel/`，与协作页共用。
 
 成员、Plugins、技能、登录状态与浏览器主题偏好来自真实接口。Plugins 使用 Cloud
 契约的目录、空间选择和卸载路由；市场技能与来源插件共享同一份空间选择。Skill 的下载、校验和安装由节点回执确认，尚未确认时显示等待状态。MCP 没有 v2 执行器，安装和卸载状态只保存在浏览器，不会调用安装 API 或伪造服务端成功；目录缺少 MCP 类型时提供本地条目。Hook 的演示安装/卸载写入服务端空间选择，不下载、注册或执行包；目录同步会补一个无包体的示例 Hook。模型连接和角色同样只保存在当前浏览器。所有本地写入按登录用户隔离，其中 MCP 还按团队和空间隔离；不存在请求失败后自动切换假数据的逻辑。
@@ -47,13 +47,13 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
   命名空间。可在页面新建、编辑、删除，也可以导入带 YAML front matter（`name` 和
   `description`）的单个 `.md` 文件；同名时选择跳过或覆盖。工作流 Agent 节点按角色名称读取
   这份目录，v2 执行仍不注入角色内容。
-- 成员列表复用契约生成的 `MemberListItem`，角色显示为 `owner` / 成员；invite 客户端由 `orval.members.config.ts` 从 `v2-server/members.openapi.json` 生成。邀请填邮箱（必填）、显示名与小队（选填）；小队候选来自「协作」的 `GET /api/v2/tenants/{tid}/squads`，只列未归档小队，没有可加入的小队时不显示这一项。本地数据里不再保存成员、申请或邀请链接。
+- 成员列表复用契约生成的 `MemberListItem`，invite 客户端由 `orval.members.config.ts` 从 `v2-server/members.openapi.json` 生成。邀请填邮箱（必填）和显示名（选填），小队就是当前小队；小队候选来自「协作」的 `GET /api/v2/tenants/{tid}/squads`，只列未归档小队，没有可加入的小队时不显示这一项。本地数据里不再保存成员、申请或邀请链接。
 - 模型连接复用生成类型，维护元数据、多模型和默认选择；只记录 credentialConfigured，不提供真实 API Key 输入。默认连接失效时提示重新选择，不悄悄替换模型。
 
 ## 结构
 
 - `page.tsx`、`navigation.ts`、`index.ts`：设置容器、导航、懒加载子路由。
-- `members/`、`squads/`、`roles/`、`model-connections/`、`theme/`、`plugins/`、`skills/`：各页界面、表单与测试。
+- `squads/`、`roles/`、`model-connections/`、`theme/`、`plugins/`、`skills/`：各页界面、表单与测试。
 - `components/`：设置页面共用的状态、确认、详情和 Markdown 展示。
 - `api/generated.ts`：邀请接口的生成客户端，`npm run api:generate:members` 生成，`npm run check` 校验漂移。
 - `data/`：本机设置的类型、示例、持久化边界与领域操作，以及真实插件市场的查询和 mutation。

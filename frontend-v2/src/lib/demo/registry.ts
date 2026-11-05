@@ -19,6 +19,12 @@ export interface DemoMock {
 }
 
 export const demoMocks: readonly DemoMock[] = [
+  {
+    module: 'space-usage.ts',
+    scene: 'lead',
+    covers: 'Workspace token usage, model requests and tool categories for the Dashboard video',
+    replacedBy: 'An authorized workspace usage aggregation endpoint with explicit time boundaries',
+  },
  {module:'dts.ts',scene:'ops',covers:'DTS simulated receipts after real Cloud task creation',replacedBy:'An authenticated DTS connector with durable external delivery receipts'},
   {
     module: 'dashboard.ts',

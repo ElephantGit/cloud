@@ -20,7 +20,7 @@ it('keeps the placeholder while the demo mock is off', () => {
 it('renders the demo dashboard only when the demo mock is on', () => {
   vi.stubEnv('VITE_DEMO_MOCK', '1')
   render(<MemoryRouter><Page /></MemoryRouter>)
-  expect(screen.queryByText('演示数据')).not.toBeInTheDocument()
+  expect(within(screen.getByRole('region', { name: '空间用量' })).getByText('演示数据')).toBeInTheDocument()
 
   // Every member row is shown, with the counts it was given.
   const team = screen.getByRole('region', { name: '团队进度' })

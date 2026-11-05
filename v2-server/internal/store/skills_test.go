@@ -82,7 +82,7 @@ func TestSkillsAreUserScopedAndImportOverwriteKeepsIdentity(t *testing.T) {
 		names[item.Name] = true
 	}
 	if len(docs) != 5 || !names["deploy-checklist"] || !names["review"] ||
-		!names["code-review"] || !names["test-plan"] || !names["release-notes"] {
+		!names["ora-code-review"] || !names["test-plan"] || !names["release-notes"] {
 		t.Fatalf("runtime documents = %+v", docs)
 	}
 	if err := s.DeleteSkill(t.Context(), tenant, owner, created.ID); err != nil {
@@ -145,12 +145,12 @@ func TestStarterSkillsSeedOnceAndStayDeleted(t *testing.T) {
 	}
 	var review string
 	for _, item := range items {
-		if item.Name == "code-review" {
+		if item.Name == "ora-code-review" {
 			review = item.ID
 		}
 	}
 	if review == "" {
-		t.Fatalf("code-review missing from %+v", items)
+		t.Fatalf("ora-code-review missing from %+v", items)
 	}
 	if err := s.DeleteSkill(t.Context(), tenant, owner, review); err != nil {
 		t.Fatal(err)
@@ -163,4 +163,153 @@ func TestStarterSkillsSeedOnceAndStayDeleted(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("deleted starter returned: %+v", items)
 	}
+}
+
+func TestStarterSkillNameMigration(t *testing.T) {
+	seed := func(t *testing.T) (*store.Store, string, string, store.Skill) {
+		t.Helper()
+		s := storetest.Open(t)
+		owner, tenant := storetest.Login(t, s, "starter-migration-"+t.Name())
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		review, ok := skillNamed(items, "ora-code-review")
+		if !ok {
+			t.Fatalf("starter = %+v, want ora-code-review", items)
+		}
+		return s, owner, tenant, review
+	}
+
+	t.Run("unedited starter is renamed once", func(t *testing.T) {
+		s, owner, tenant, review := seed(t)
+		if _, err := s.UpdateSkill(t.Context(), tenant, owner, review.ID, store.SkillInput{
+			Name: "code-review", Description: review.Description, Content: review.Content,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, old := skillNamed(items, "code-review"); old {
+			t.Fatalf("legacy starter still live: %+v", items)
+		}
+		if _, renamed := skillNamed(items, "ora-code-review"); !renamed {
+			t.Fatalf("renamed starter missing: %+v", items)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		again, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil || len(again) != len(items) {
+			t.Fatalf("idempotent migration = %+v, %v", again, err)
+		}
+	})
+
+	t.Run("edited starter is not renamed", func(t *testing.T) {
+		s, owner, tenant, review := seed(t)
+		if _, err := s.UpdateSkill(t.Context(), tenant, owner, review.ID, store.SkillInput{
+			Name: "code-review", Description: review.Description, Content: "# edited\n",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, old := skillNamed(items, "code-review"); !old {
+			t.Fatalf("edited starter was renamed: %+v", items)
+		}
+		if _, target := skillNamed(items, "ora-code-review"); target {
+			t.Fatalf("edited starter gained target name: %+v", items)
+		}
+	})
+
+	t.Run("deleted starter is not recreated", func(t *testing.T) {
+		s, owner, tenant, review := seed(t)
+		if err := s.DeleteSkill(t.Context(), tenant, owner, review.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, old := skillNamed(items, "code-review"); old {
+			t.Fatalf("deleted starter came back as code-review: %+v", items)
+		}
+		if _, target := skillNamed(items, "ora-code-review"); target {
+			t.Fatalf("deleted starter came back under target name: %+v", items)
+		}
+	})
+
+	t.Run("user-created same name is not renamed", func(t *testing.T) {
+		s, owner, tenant, review := seed(t)
+		if err := s.DeleteSkill(t.Context(), tenant, owner, review.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CreateSkill(t.Context(), tenant, owner, store.SkillInput{
+			Name: "code-review", Description: "用户自己创建", Content: "# my review\n",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item, ok := skillNamed(items, "code-review"); !ok || item.Description != "用户自己创建" {
+			t.Fatalf("user-created code-review changed: %+v", items)
+		}
+		if _, target := skillNamed(items, "ora-code-review"); target {
+			t.Fatalf("user-created code-review gained target name: %+v", items)
+		}
+	})
+
+	t.Run("occupied target is left for the user to resolve", func(t *testing.T) {
+		s, owner, tenant, review := seed(t)
+		if _, err := s.UpdateSkill(t.Context(), tenant, owner, review.ID, store.SkillInput{
+			Name: "code-review", Description: review.Description, Content: review.Content,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CreateSkill(t.Context(), tenant, owner, store.SkillInput{
+			Name: "ora-code-review", Description: "自己的技能", Content: "# mine\n",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MigrateStarterSkillNames(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		items, err := s.ListSkills(t.Context(), tenant, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, old := skillNamed(items, "code-review"); !old {
+			t.Fatalf("legacy starter disappeared: %+v", items)
+		}
+		if target, ok := skillNamed(items, "ora-code-review"); !ok || target.Content != "# mine\n" {
+			t.Fatalf("occupied target was overwritten: %+v", items)
+		}
+	})
+}
+
+func skillNamed(items []store.Skill, name string) (store.Skill, bool) {
+	for _, item := range items {
+		if item.Name == name {
+			return item, true
+		}
+	}
+	return store.Skill{}, false
 }

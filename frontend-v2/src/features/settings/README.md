@@ -35,11 +35,13 @@ localStorage，再更新 TanStack Query 缓存。schema 2、3、4 的旧快照�
 - 用户技能通过候选契约 `v2-server/skills.openapi.json` 持久化在 PostgreSQL，按登录用户和
   工作区隔离；`npm run api:generate:skills` 生成共享客户端到 `src/lib/skills-api`。页面可新建、
   编辑、删除，或导入单个带 YAML front matter 的 `SKILL.md`；新账号首次登录获得
-  `code-review`、`test-plan`、`release-notes` 三个真实 starter skill，删除后不会重新创建。
+  `ora-code-review`、`test-plan`、`release-notes` 三个真实 starter skill，删除后不会重新创建。
   同名导入先返回冲突，用户确认后覆盖并保留技能 ID。市场技能仍从 `kind=skill` 的目录 README
   生成，只读，安装或移除来源插件会改变可用性，移除后仍能预览文档。预览不执行 HTML 或加载远程图片。
 - 用户技能在新 Agent 会话克隆工作副本后物化到 `.opencode/skills/<name>/SKILL.md` 与
-  `.claude/skills/<name>/SKILL.md`。项目已有同名目录时保留项目内容；编辑或删除只影响之后
+  `.claude/skills/<name>/SKILL.md`。项目已有同名目录时保留项目内容；市场 Skill 与用户技能
+  同名时会话以 `skill_name_conflict` 失败，提示用户改名，不覆盖也不静默丢弃任何一方；
+  编辑或删除只影响之后
   启动的会话。
 - 角色复用 desktop 的 Agent definition 形状：名称、描述和 Markdown 内容，使用 `local`
   命名空间。可在页面新建、编辑、删除，也可以导入带 YAML front matter（`name` 和

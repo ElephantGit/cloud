@@ -24,9 +24,9 @@ beforeEach(() => {
   api.read.mockImplementation(async () => structuredClone(form))
 })
 
-function mount() {
+function mount(runStatus = 'awaiting_input') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  render(<QueryClientProvider client={client}><MemoryRouter><RunForm tenantId="tenant" runId="run" runStatus="awaiting_input" /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter><RunForm tenantId="tenant" runId="run" runStatus={runStatus} /></MemoryRouter></QueryClientProvider>)
   return client
 }
 
@@ -49,4 +49,14 @@ it('refreshes a clean draft when another reviewer saves a newer version', async 
   await act(async () => { await client.invalidateQueries({ queryKey: ['workflow-form', 'tenant', 'run'] }) })
   await waitFor(()=>expect(screen.getByLabelText('备注')).toHaveValue('最新草稿'))
   expect(screen.queryByText('查看未保存的本地修改')).not.toBeInTheDocument()
+})
+
+it('offers task retry from the submitted answers despite a conflicting local rejection', async () => {
+  const client = mount('failed')
+  fireEvent.change(await screen.findByLabelText('是否为问题'), { target: { value: 'rejected' } })
+  form = { ...form, version: 2, status: 'submitted', canEdit: false, submittedBy: 'admin', answers: [{ key: 'disk', decision: 'confirmed', values: {} }] }
+  await act(async () => { await client.invalidateQueries({ queryKey: ['workflow-form', 'tenant', 'run'] }) })
+  await waitFor(()=>expect(screen.getByRole('button', { name: '重试任务创建' })).toBeEnabled())
+  expect(screen.queryByText('确认已提交，无需创建任务。')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('是否为问题')).toHaveValue('confirmed')
 })

@@ -113,8 +113,8 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
     })}
     {dirty && form.version>version && <div role="alert" className="rounded-lg border p-3 text-sm">其他确认人已更新这份表单；当前已提交结果以服务端为准。<details><summary>查看未保存的本地修改</summary>{answers.map(a=><p key={a.key}>{form.findings.find(f=>f.key===a.key)?.title}：{a.decision==='confirmed'?'是问题':a.decision==='rejected'?'不是问题':'待确认'} · {Object.values(a.values).join('；')}</p>)}</details>{form.status==='open'&&<Button variant="outline" onClick={()=>{setAnswers(readAnswers(form));setVersion(form.version);setDirty(false);setNotice('已载入最新草稿。')}}>载入最新草稿</Button>}</div>}
     {mutation.isError && <p role="alert">保存失败，请检查必填项或刷新核对最新版本。你的输入仍保留在页面中。</p>}
-    {notice && <p role="status">{form.status==='submitted' && form.results.length>0 ? '任务已创建或关联，可打开查看。' : form.status==='submitted' && !answers.some(a=>a.decision==='confirmed') ? '确认已提交，无需创建任务。' : notice}</p>}
-    {runStatus==='failed' && form.status==='submitted' && form.results.length===0 && answers.some(a=>a.decision==='confirmed') && <Button variant="outline" disabled={retry.isPending} onClick={()=>retry.mutate()}>重试任务创建</Button>}
+    {notice && <p role="status">{form.status==='submitted' && form.results.length>0 ? '任务已创建或关联，可打开查看。' : form.status==='submitted' && !displayAnswers.some(a=>a.decision==='confirmed') ? '确认已提交，无需创建任务。' : notice}</p>}
+    {runStatus==='failed' && form.status==='submitted' && form.results.length===0 && displayAnswers.some(a=>a.decision==='confirmed') && <Button variant="outline" disabled={retry.isPending} onClick={()=>retry.mutate()}>重试任务创建</Button>}
     {retry.isError && <p role="alert">任务当前不可重试，请查看运行状态。</p>}
     {form.status === 'open' && <footer className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t bg-background py-3"><Button variant="outline" disabled={readOnly} onClick={() => save(false)}>保存草稿</Button><Button disabled={readOnly || !complete} onClick={() => save(true)}>{mutation.isPending ? '正在保存…' : text(form.config.submitLabel) || '确认并生成任务'}</Button>{!form.canEdit && <p className="text-sm">仅指定确认人或管理员可以提交。</p>}</footer>}
   </section>

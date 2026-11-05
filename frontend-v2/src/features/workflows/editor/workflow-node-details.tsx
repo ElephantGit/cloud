@@ -78,7 +78,7 @@ export function WorkflowNodeDetailsLayout({
 }: WorkflowNodeDetailsLayoutProps) {
   switch (node.data.kind) {
     case "form":
-    case "createTasks": return <WorkflowFormFields node={node} onUpdate={onUpdate} onClose={onClose} />;
+    case "createTasks": return <WorkflowFormFields node={node} onUpdate={onUpdate} onClose={onClose} variableCatalog={variableCatalog} graphNodes={graphNodes} />;
     case "start":
       return (
         <StartNodeDetails

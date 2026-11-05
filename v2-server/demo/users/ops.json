@@ -1,5 +1,14 @@
 {
   "users": [
-    { "email": "xu.yun@demo.ora-space.dev", "displayName": "许运", "role": "owner" }
+    {
+      "email": "xu.yun@demo.ora-space.dev",
+      "displayName": "许运",
+      "role": "owner"
+    },
+    {
+      "email": "ops-handler@demo.test",
+      "displayName": "林维",
+      "role": "member"
+    }
   ]
 }

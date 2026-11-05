@@ -1,7 +1,24 @@
 {
   "environment": "demo",
-  "services": [{"name":"web","status":"healthy"},{"name":"api","status":"healthy"},{"name":"database","status":"healthy"}],
-  "errorRate": 0.002,
-  "diskUsage": 0.61,
-  "backup": {"status":"succeeded","checksumVerified":true}
+  "services": [
+    {
+      "name": "web",
+      "status": "healthy"
+    },
+    {
+      "name": "api",
+      "status": "healthy"
+    },
+    {
+      "name": "database",
+      "status": "healthy"
+    }
+  ],
+  "errorRate": 0.025,
+  "diskUsage": 0.86,
+  "backup": {
+    "status": "succeeded",
+    "checksumVerified": true
+  },
+  "maintenanceNotice": true
 }

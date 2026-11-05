@@ -2,3 +2,6 @@
 02:00:02 INFO api health check passed
 02:00:03 INFO database health check passed
 02:00:04 INFO backup finished checksum_verified=true
+02:00:05 WARN api error_rate=0.025 threshold=0.01
+02:00:06 WARN root_disk usage=0.86 threshold=0.8
+01:55:00 INFO maintenance completed restart_expected=true services_healthy=true

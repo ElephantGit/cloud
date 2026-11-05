@@ -5,6 +5,16 @@ test('dashboard analysis reads the real server with mock disabled', async ({ pag
   await page.goto('/dashboard')
   await signIn(page)
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+  const tenants = await (await page.request.get('/api/v1/me/tenants')).json()
+  const tasks = await (await page.request.get('/api/v2/tenants/' + tenants.items[0].id + '/tasks')).json()
+  const overview = page.getByRole('region', { name: '任务概览', exact: true })
+  await expect(overview).toBeVisible()
+  for (const [label, status] of [['进行中', 'running'], ['待验收', 'review'], ['已完成', 'done']]) {
+    const tile = overview.locator('article').filter({ has: page.getByText(label, { exact: true }) })
+    await expect(tile.locator('strong')).toHaveText(String(tasks.items.filter((task: { status: string }) => task.status === status).length))
+  }
+  await page.getByRole('button', { name: '刷新概览', exact: true }).click()
+  await expect(page.getByRole('button', { name: '刷新概览', exact: true })).toBeEnabled()
   await page.getByRole('navigation', { name: 'Dashboard 分区' }).getByRole('link', { name: /会话分析/ }).click()
   await expect(page.getByRole('heading', { level: 2, name: '会话分析' })).toBeVisible()
   await expect(page.getByText('正在读取会话…')).not.toBeVisible()

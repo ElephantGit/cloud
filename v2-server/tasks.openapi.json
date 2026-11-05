@@ -1549,6 +1549,77 @@
           }
         }
       }
+    },
+    "/api/v2/tenants/{tid}/my-squad-tasks": {
+      "get": {
+        "operationId": "listMySquadTasks",
+        "tags": [
+          "tasks"
+        ],
+        "description": "The tasks assigned to squads the caller belongs to. `waiting` marks an open task someone else created that the caller has neither commented on nor started a run on.",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySquadTaskList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2288,6 +2359,45 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskDecomposition"
+            }
+          }
+        }
+      },
+      "MySquadTask": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "squadId",
+          "squadName",
+          "waiting"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "squadId": {
+            "type": "string"
+          },
+          "squadName": {
+            "type": "string"
+          },
+          "waiting": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MySquadTaskList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MySquadTask"
             }
           }
         }

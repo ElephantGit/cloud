@@ -23,8 +23,8 @@ type Panel = { kind: 'create' } | { kind: 'detail'; id: string } | { kind: 'edit
 
 /**
  * 设置 / 小队: the workspace's squads, one squad's detail, and the maintainer's edits. Squads are
- * configuration; the collaboration page only filters tasks by them. Nothing here grants runtime
- * permissions. `?squad=<id>` opens that squad's detail, so a shared link lands on it.
+ * configuration and hold their members; on the collaboration page they own tasks, which every member receives and may run
+ * an Agent on. `?squad=<id>` opens that squad's detail, so a shared link lands on it.
  */
 export default function SquadsPage() {
   const me = useUser()
@@ -111,7 +111,7 @@ export default function SquadsPage() {
   const openSquad = (id: string) => { setError(''); setPanel({ kind: 'detail', id }) }
 
   return <div className="mc-scope mc-page">
-    <PageHeader title="小队" description="工作空间里人和 Agent 的协作编组。协作页可以按小队筛选任务，指派给小队不会自动分派。" count={list.data ? items.length : undefined}
+    <PageHeader title="小队" description="工作空间里人和 Agent 的协作编组，成员在各小队里管理。指派给小队的任务，每个队员都会收到。" count={list.data ? items.length : undefined}
       actions={<Button onClick={openCreate} disabled={!tenantId || list.isLoading || list.isError}><Plus data-icon="inline-start" />新建小队</Button>} />
       <section className="mc-list-section mc-squad-section" aria-label="小队列表">
 
@@ -157,8 +157,8 @@ export default function SquadsPage() {
           : squad && <SquadDetailView squad={squad} userId={me.id} canMaintain={canMaintain(squad, me.id, workspaceRole)} archiving={archive.isPending} removing={removing} updating={updating} error={error} onEdit={() => { setError(''); setPanel({ kind: 'edit', id: squad.id }) }} onArchive={() => archive.mutate(squad)} onAddMembers={() => { setError(''); setPanel({ kind: 'members', id: squad.id }) }} onRemove={member => { setError(''); remove.mutate({ member, target: squad }) }} onToggleMaintainer={member => { setError(''); toggleMaintainer.mutate({ member, target: squad }) }} onSetLeader={member => { setError(''); setLeader.mutate({ member, target: squad }) }} />}
     </PanelDialog>}
 
-    {panel?.kind === 'members' && squad && <PanelDialog icon={<Users size={14} />} eyebrow="小队" title={`添加成员到 ${squad.name}`} subtitle="可以加入当前工作区的有效成员或已安装的 Agent；移出小队不影响工作区成员资格。" onClose={close}>
-      <MemberPicker squad={squad} tenantId={tenantId} adding={add.isPending || addAgent.isPending} error={error}
+    {panel?.kind === 'members' && squad && <PanelDialog icon={<Users size={14} />} eyebrow="小队" title={`添加成员到 ${squad.name}`} subtitle="邀请新成员，或加入当前工作区的有效成员和已安装的 Agent；移出小队不影响工作区成员资格。" onClose={close}>
+      <MemberPicker squad={squad} tenantId={tenantId} canInvite={workspaceRole === 'owner'} adding={add.isPending || addAgent.isPending} error={error}
         onAdd={(member, role) => { setError(''); add.mutate({ member, role, target: squad }) }}
         onAddAgent={(plugin, role) => { setError(''); addAgent.mutate({ plugin, role, target: squad }) }}
         onClose={() => { setError(''); setPanel({ kind: 'detail', id: squad.id }) }} />

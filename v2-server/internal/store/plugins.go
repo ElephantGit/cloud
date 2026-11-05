@@ -256,7 +256,8 @@ func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, p
 
 // InstallWorkflowPlugin imports the documents from a verified workflow package and records the
 // marketplace selection in the same transaction. The imported workflows remain user data after
-// removal; the import table makes repeated installs and upgrades idempotent.
+// removal; the import table makes repeated installs idempotent and lets an upgrade refresh an
+// untouched import without replacing a workflow the user has edited.
 func (s *Store) InstallWorkflowPlugin(
 	ctx context.Context,
 	tenant, space, caller, path, key string,
@@ -426,15 +427,21 @@ func importWorkflowDocuments(
 		return fmt.Errorf("lock workflow plugin imports: %w", e)
 	}
 	for _, document := range documents {
-		var importedWorkflow string
+		if e := validate(document.Graph); e != nil {
+			return fmt.Errorf("%w: %s: %w", ErrPluginWorkflowInvalid, document.Path, e)
+		}
+		var importedWorkflow, importedSnapshot string
 		e := tx.QueryRow(ctx, `
-			SELECT i.workflow_id::text
+			SELECT i.workflow_id::text, i.snapshot_id::text
 			FROM v2_workflow_plugin_imports i
 			JOIN v2_workflows w ON w.id = i.workflow_id AND w.deleted_at IS NULL
 			WHERE i.selection_id = $1 AND i.document_path = $2`,
-			selection.ID, document.Path).Scan(&importedWorkflow)
+			selection.ID, document.Path).Scan(&importedWorkflow, &importedSnapshot)
 		switch {
 		case e == nil:
+			if e := refreshWorkflowPluginImport(ctx, tx, selection, importedWorkflow, importedSnapshot, document); e != nil {
+				return e
+			}
 			continue
 		case !errors.Is(e, pgx.ErrNoRows):
 			return fmt.Errorf("read workflow import: %w", e)
@@ -443,9 +450,6 @@ func importWorkflowDocuments(
 			DELETE FROM v2_workflow_plugin_imports
 			WHERE selection_id = $1 AND document_path = $2`, selection.ID, document.Path); e != nil {
 			return fmt.Errorf("clear stale workflow import: %w", e)
-		}
-		if e := validate(document.Graph); e != nil {
-			return fmt.Errorf("%w: %s: %w", ErrPluginWorkflowInvalid, document.Path, e)
 		}
 		name, e := uniqueWorkflowPluginName(ctx, tx, selection.TenantID, document.Name)
 		if e != nil {
@@ -483,6 +487,89 @@ func importWorkflowDocuments(
 		}
 	}
 	return nil
+}
+
+// refreshWorkflowPluginImport applies an upgraded package document to an imported workflow only
+// while that workflow is still the untouched copy the previous package imported. The draft and
+// published pointer must both still be the import; otherwise the user has saved or published an
+// edit, and replacing it would discard user data. An update freezes a new published version so
+// runs already frozen on the previous version keep their graph.
+func refreshWorkflowPluginImport(
+	ctx context.Context,
+	tx pgx.Tx,
+	selection SpacePlugin,
+	workflowID, snapshotID string,
+	document pluginmarket.WorkflowDocument,
+) error {
+	var publishedID, draftGraph, importedGraph string
+	e := tx.QueryRow(ctx, `
+		SELECT COALESCE(w.published_snapshot_id::text, ''), d.graph, s.graph
+		FROM v2_workflows w
+		JOIN v2_workflow_snapshots d
+			ON d.workflow_id = w.id AND d.version = $3 AND d.deleted_at IS NULL
+		JOIN v2_workflow_snapshots s
+			ON s.workflow_id = w.id AND s.id = $4 AND s.deleted_at IS NULL
+		WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL
+		FOR UPDATE OF w`, selection.TenantID, workflowID, WorkflowDraftVersion, snapshotID).
+		Scan(&publishedID, &draftGraph, &importedGraph)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return nil
+	}
+	if e != nil {
+		return fmt.Errorf("read imported workflow: %w", e)
+	}
+	if publishedID != snapshotID || draftGraph != importedGraph || document.Graph == importedGraph {
+		return nil
+	}
+	if _, e := tx.Exec(ctx, `
+		UPDATE v2_workflow_snapshots SET graph = $3, updated_at = now()
+		WHERE tenant_id = $1 AND workflow_id = $2 AND version = $4 AND deleted_at IS NULL`,
+		selection.TenantID, workflowID, document.Graph, WorkflowDraftVersion); e != nil {
+		return fmt.Errorf("update imported workflow draft: %w", e)
+	}
+	version, e := nextWorkflowPluginVersion(ctx, tx, selection.TenantID, workflowID)
+	if e != nil {
+		return e
+	}
+	var publishedSnapshot string
+	if e := tx.QueryRow(ctx, `
+		INSERT INTO v2_workflow_snapshots (tenant_id, workflow_id, version, graph)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id::text`,
+		selection.TenantID, workflowID, version, document.Graph).Scan(&publishedSnapshot); e != nil {
+		return fmt.Errorf("publish imported workflow upgrade: %w", e)
+	}
+	if _, e := tx.Exec(ctx, `
+		UPDATE v2_workflows SET published_snapshot_id = $3, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`,
+		selection.TenantID, workflowID, publishedSnapshot); e != nil {
+		return fmt.Errorf("activate imported workflow upgrade: %w", e)
+	}
+	if _, e := tx.Exec(ctx, `
+		UPDATE v2_workflow_plugin_imports SET snapshot_id = $3
+		WHERE selection_id = $1 AND document_path = $2`,
+		selection.ID, document.Path, publishedSnapshot); e != nil {
+		return fmt.Errorf("record workflow upgrade: %w", e)
+	}
+	return nil
+}
+
+// nextWorkflowPluginVersion returns the first unused sequential published version (v2, v3, ...).
+func nextWorkflowPluginVersion(ctx context.Context, tx pgx.Tx, tenant, workflowID string) (string, error) {
+	for number := 2; ; number++ {
+		version := fmt.Sprintf("v%d", number)
+		var exists bool
+		if e := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM v2_workflow_snapshots
+				WHERE tenant_id = $1 AND workflow_id = $2 AND version = $3 AND deleted_at IS NULL)`,
+			tenant, workflowID, version).Scan(&exists); e != nil {
+			return "", fmt.Errorf("check imported workflow version: %w", e)
+		}
+		if !exists {
+			return version, nil
+		}
+	}
 }
 
 // uniqueWorkflowPluginName keeps the imported definition independent from an existing workflow

@@ -26,10 +26,12 @@ export interface RunControls {
  * One task's facts and the moves on it: who owns it, running its Agent, and the manual status
  * moves. While the Agent runs a turn, the run owns the status, so manual moves wait for it.
  */
-export function TaskDetailView({ task, me, projectName, squads, busy, error, run, onStatus, onAssign }: {
+export function TaskDetailView({ task, me, inSquad, projectName, squads, busy, error, run, onStatus, onAssign }: {
   task: Task
   /** The caller's user id: a person's task runs an Agent only for that person. */
   me: string
+  /** The caller is a member of the squad that owns the task. */
+  inSquad: boolean
   /** The project's display name, resolved from the workspace list. */
   projectName: string
   /** Live squads the task may be reassigned to. */
@@ -44,8 +46,8 @@ export function TaskDetailView({ task, me, projectName, squads, busy, error, run
 }) {
   const finished = isTaskFinished(task.status)
   const agentTask = task.assignee?.type === 'agent'
-  // On their own task a person picks which Agent does the work; the executor names it.
-  const personal = task.assignee?.type === 'human'
+  // On their own or their squad's task a person picks which Agent does the work; the executor names it.
+  const personal = task.assignee?.type === 'human' || task.assignee?.type === 'squad'
   const running = task.activeRun?.state === 'running'
   // An Agent task enters 进行中 by running, not by hand.
   const actions = taskActions(task.status).filter(a => !(agentTask && a.status === 'running'))
@@ -63,10 +65,10 @@ export function TaskDetailView({ task, me, projectName, squads, busy, error, run
     <section className="mc-section" aria-label="指派">
       <h3><Users size={14} />指派对象</h3>
       <TaskAssigneePicker tenantId={task.tenantId} squads={squads} value={task.assignee} disabled={busy || running} onAssign={onAssign} />
-      <p className="mc-note">当前：{assigneeLabel(task)}{task.assignee && `（${assigneeKindLabel(task)}）`}。指派给小队只表示这个队负责，不会自动分派给成员。</p>
+      <p className="mc-note">当前：{assigneeLabel(task)}{task.assignee && `（${assigneeKindLabel(task)}）`}。{task.assignee?.type === 'squad' && '每个队员都会收到，任一队员都能评论和用 Agent 处理。'}</p>
     </section>
 
-    {runsAgent(task, me) && <section className="mc-section" aria-label="执行">
+    {runsAgent(task, me, inSquad) && <section className="mc-section" aria-label="执行">
       <h3><Bot size={14} />{personal ? '用 Agent 处理' : '执行'}</h3>
       {finished
         ? <p className="mc-empty-line">任务已结束，不能再执行。</p>

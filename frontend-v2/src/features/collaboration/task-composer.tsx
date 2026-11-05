@@ -22,10 +22,11 @@ type Picked = TaskMentionRef & { displayName: string }
  * (and to the team as a comment) unless they turn 发给 Agent off; otherwise it is a team comment.
  * Only a target picked from the @ menu counts: "@name" typed by hand routes nothing.
  */
-export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
+export function TaskComposer({ tenantId, task, me, inSquad, sending, error, onSend }: {
   tenantId: string
   task: Task
   me: string
+  inSquad: boolean
   sending: boolean
   error: string
   onSend: (draft: CommentDraft) => Promise<boolean>
@@ -37,7 +38,7 @@ export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
   const [query, setQuery] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const targets = useGetApiV1TenantsTidCollaborationTargets(tenantId, { query: { enabled: !!tenantId, staleTime: 60_000 } })
-  const reach = agentReach(task, me)
+  const reach = agentReach(task, me, inSquad)
   const sendToAgent = reach.ok && (toAgent ?? true)
   const options = useMemo(() => {
     if (query === null) return []
@@ -100,7 +101,7 @@ export function TaskComposer({ tenantId, task, me, sending, error, onSend }: {
       </ul>}
     </div>
     <div className="mc-composer-foot">
-      {runsAgent(task, me)
+      {runsAgent(task, me, inSquad)
         ? <label className="mc-switch-line" title={reach.reason}><Switch checked={sendToAgent} disabled={!reach.ok} onCheckedChange={setToAgent} aria-label="发给 Agent" />发给 Agent<small>{reach.reason}</small></label>
         : <small className="mc-muted">评论全团队可见。</small>}
       <Button type="button" size="sm" disabled={!body.trim() || sending} onClick={() => void submit()}>

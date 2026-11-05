@@ -19,7 +19,7 @@ import {
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
 } from './tasks-api/generated'
 import { canDecompose, runsAgent } from './task-views'
-import { useDecompositions, useWorkspace } from './workspace'
+import { useDecompositions, useMySquadTasks, useWorkspace } from './workspace'
 
 /** Fresh idempotency key for one submission: a retry of the same click reuses it. */
 const keyed = () => ({ headers: { 'Idempotency-Key': crypto.randomUUID() } })
@@ -54,7 +54,8 @@ export default function TaskPage() {
   })
   const projects = useQuery({ queryKey: ['projects', tenantId], queryFn: () => getApiV2TenantsTidProjects(tenantId, { limit: 100 }), enabled: !!tenantId })
   const squads = useQuery({ queryKey: ['squads', tenantId], queryFn: () => listSquads(tenantId), enabled: !!tenantId })
-  const runnable = !!task && runsAgent(task, me.id)
+  const inSquad = useMySquadTasks(tenantId).has(taskId)
+  const runnable = !!task && runsAgent(task, me.id, inSquad)
   const executors = useQuery({
     queryKey: ['task-executors', tenantId, taskId, task?.assignee?.id], queryFn: () => listTaskExecutors(tenantId, taskId), enabled: !!tenantId && runnable,
   })
@@ -82,6 +83,7 @@ export default function TaskPage() {
       client.invalidateQueries({ queryKey: ['task', tenantId, taskId] }),
       client.invalidateQueries({ queryKey: ['task-timeline', tenantId, taskId] }),
       client.invalidateQueries({ queryKey: ['tasks', tenantId] }),
+      client.invalidateQueries({ queryKey: ['my-squad-tasks', tenantId] }),
     ])
   }
   const showTab = (next: 'runs' | 'discussion', id?:string) => {
@@ -110,7 +112,7 @@ export default function TaskPage() {
   })
   const assign = useMutation({
     mutationFn: ({ assignee, target }: { assignee: TaskAssigneeRef | null; target: Task }) => setTaskAssignee(tenantId, target.id, { assignee, version: target.version }),
-    onSuccess: settle,
+    onSuccess: updated => { settle(updated); void client.invalidateQueries({ queryKey: ['my-squad-tasks', tenantId] }) },
     onError: e => setError(taskMessageFor(e)),
   })
   const start = useMutation({
@@ -168,11 +170,11 @@ export default function TaskPage() {
               ? pickedRun&&!selected&&!timeline.isPending ? <p role="status">这次运行已不存在或不可见。</p> : <RunPane tenantId={tenantId} taskId={task.id} runs={runs} selected={selected} onSelect={showRun} />
               : <TaskDiscussion comments={comments} runs={runs} onRun={showRun} />}
         </div>
-        <TaskComposer tenantId={tenantId} task={task} me={me.id} sending={comment.isPending} error={composeError}
+        <TaskComposer tenantId={tenantId} task={task} me={me.id} inSquad={inSquad} sending={comment.isPending} error={composeError}
           onSend={async draft => { try { await comment.mutateAsync(draft); return true } catch { return false } }} />
       </section>
       <aside className="mc-task-side-col" aria-label="任务属性">
-        <TaskDetailView task={task} me={me.id} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
+        <TaskDetailView task={task} me={me.id} inSquad={inSquad} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
           busy={move.isPending || assign.isPending} error={error}
           run={{
             executors: executorList, executorId, onExecutor: setExecutorId, hasRuns: runs.length > 0,

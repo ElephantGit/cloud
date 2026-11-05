@@ -6,7 +6,7 @@ export default defineConfig({
   tasks: {
     input: { target: '../v2-server/tasks.openapi.json' },
     output: {
-      target: 'src/features/collaboration/tasks-api/generated.ts',
+      target: 'src/lib/tasks-api/generated.ts',
       client: 'react-query',
       httpClient: 'axios',
       clean: true,

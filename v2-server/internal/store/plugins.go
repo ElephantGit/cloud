@@ -249,9 +249,19 @@ func (s *Store) PluginPackageSource(ctx context.Context, tenant, space, caller, 
 // InstallSpacePlugin records an owner's selection and terminal install result. v2 has no generic
 // plugin executor, so the simplified backend settles the selection immediately instead of
 // claiming that package bytes were downloaded or executed. Hook selections are demo-only: they
-// are settled as installed but never download or run a Hook package.
+// are settled as installed but never download or run a Hook package. Skill selections are the space
+// selection itself: a project Node may still receive the package, but the selection is usable as
+// soon as it is written, so a Space without a bound project is never left waiting for one.
 func (s *Store) InstallSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in PluginInstallInput) (SpacePlugin, error) {
 	return s.installSpacePlugin(ctx, tenant, space, caller, path, key, in, nil, nil)
+}
+
+// selectionSettlesWithoutNode reports whether a selected plugin is usable from its record alone.
+// Agents are installed by the runtime, Hooks only record the demo choice, and Skills are the Space
+// selection: waiting for every bound project to confirm would keep them pending forever in a Space
+// with no project, and the Skills page and workflow Agent picker read that settled state.
+func selectionSettlesWithoutNode(kind string) bool {
+	return kind == "agent" || kind == "hook" || kind == "skill"
 }
 
 // InstallWorkflowPlugin imports the documents from a verified workflow package and records the
@@ -334,7 +344,7 @@ func (s *Store) installSpacePlugin(
 				return recordPluginMutation(ctx, tx, tenant, caller, "POST", path, key, pluginInstallHash(in), out)
 			}
 			observedState, observedVersion := "pending", any(nil)
-			if kind == "agent" || kind == "hook" {
+			if selectionSettlesWithoutNode(kind) {
 				observedState, observedVersion = "installed", desired
 			}
 			if _, e := tx.Exec(ctx, `
@@ -351,7 +361,7 @@ func (s *Store) installSpacePlugin(
 				return ErrConflict
 			}
 			observedState, observedVersion := "pending", any(nil)
-			if kind == "agent" || kind == "hook" {
+			if selectionSettlesWithoutNode(kind) {
 				observedState, observedVersion = "installed", desired
 			}
 			if _, e := tx.Exec(ctx, `
@@ -608,7 +618,9 @@ func uniqueWorkflowPluginName(ctx context.Context, tx pgx.Tx, tenant, base strin
 	}
 }
 
-// RemoveSpacePlugin records an owner's removal and settles the simplified terminal state.
+// RemoveSpacePlugin records an owner's removal and settles the simplified terminal state. A Skill
+// selection is deleted instead of settled, because the selection record is the only state the
+// Skills page and the workflow Agent picker read.
 func (s *Store) RemoveSpacePlugin(ctx context.Context, tenant, space, caller, path, key string, in PluginRemoveInput) (SpacePlugin, error) {
 	var out SpacePlugin
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -639,6 +651,24 @@ func (s *Store) RemoveSpacePlugin(ctx context.Context, tenant, space, caller, pa
 		}
 		if old.Kind == "agent" && old.RequestedByUserID == nil {
 			return ErrPluginRuntimeManaged
+		}
+		if old.Kind == "skill" {
+			// A Skill selection is the whole install, so removal deletes the row: the Skills page and
+			// the workflow Agent picker drop it immediately instead of waiting for project Nodes to
+			// confirm a package removal. Package copies a Node already received stay local; v2 does
+			// not chase them.
+			if _, e := tx.Exec(ctx, `DELETE FROM v2_space_agents WHERE id = $1`, old.ID); e != nil {
+				return fmt.Errorf("remove skill selection: %w", e)
+			}
+			out = old
+			out.DesiredState = "removed"
+			out.ObservedState = "removed"
+			out.ObservedVersion = nil
+			out.InstallError = nil
+			out.RequestedByUserID = &caller
+			out.Version++
+			out.UpdatedAt = time.Now()
+			return recordPluginMutation(ctx, tx, tenant, caller, "DELETE", path, key, pluginRemoveHash(in), out)
 		}
 		if _, e := tx.Exec(ctx, `
 			WITH removal_state AS (

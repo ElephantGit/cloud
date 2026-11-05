@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestSkillProjectsRequireEveryBoundNode(t *testing.T) {
+func TestSkillDeliveryCoversEveryBoundProjectWithoutGatingTheSelection(t *testing.T) {
 	f := newSquadFixture(t)
 	owner := f.login(t, "owner", "owner")
 	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
@@ -37,6 +37,12 @@ func TestSkillProjectsRequireEveryBoundNode(t *testing.T) {
 	selection, e := f.store.InstallSpacePlugin(f.ctx, f.tenant, space, owner, "plugins", "first", store.PluginInstallInput{Identifier: "official/fixture"})
 	if e != nil {
 		t.Fatal(e)
+	}
+	// The selection is usable without a project receipt, so a Space with no bound project is not
+	// stuck waiting for a Node.
+	if selection.ObservedState != "installed" || selection.ObservedVersion == nil ||
+		*selection.ObservedVersion != "1.0.0" {
+		t.Fatalf("selection = %+v", selection)
 	}
 	jobs, e := f.store.SkillJobs(f.ctx)
 	if e != nil || len(jobs) != 2 || jobs[0].Project != "a" || jobs[1].Project != "b" {
@@ -71,34 +77,31 @@ func TestSkillProjectsRequireEveryBoundNode(t *testing.T) {
 		}
 		t.Fatal("selection disappeared")
 	}
-	state("pending")
 	run(jobs[0], store.SkillJobSucceeded)
-	state("pending")
 	run(jobs[1], store.SkillJobFailed)
-	state("failed")
+	// Project results stay delivery records: they never move the selection back to pending or failed.
+	state("installed")
 	result, e := f.store.SkillProgress(f.ctx, f.tenant, space, owner, "official", "fixture")
 	if e != nil || len(result) != 2 {
 		t.Fatal(e, result)
 	}
-	if _, e := f.store.InstallSpacePlugin(f.ctx, f.tenant, space, owner, "plugins", "retry", store.PluginInstallInput{Identifier: "official/fixture", Version: selection.Version}); e != nil {
-		t.Fatal(e)
-	}
-	jobs, e = f.store.SkillJobs(f.ctx)
-	if e != nil {
-		t.Fatal(e)
-	}
-	for _, j := range jobs {
-		run(j, store.SkillJobSucceeded)
-	}
-	state("installed")
 	addProject("new", space)
-	state("pending")
 	jobs, e = f.store.SkillJobs(f.ctx)
 	if e != nil || len(jobs) != 1 || jobs[0].Project != "new" {
 		t.Fatal(jobs, e)
 	}
 	run(jobs[0], store.SkillJobSucceeded)
 	state("installed")
+	if _, e := f.store.RemoveSpacePlugin(f.ctx, f.tenant, space, owner, "plugins", "remove", store.PluginRemoveInput{
+		Identifier: "official/fixture", Version: selection.Version,
+	}); e != nil {
+		t.Fatal(e)
+	}
+	if list, e := f.store.SpacePlugins(f.ctx, f.tenant, space, owner); e != nil {
+		t.Fatal(e)
+	} else if _, found := findSpacePlugin(list, selection.ID); found {
+		t.Fatalf("removal left a selection: %+v", list)
+	}
 }
 
 func TestTransientSkillFailureRetriesWithBackoff(t *testing.T) {
@@ -134,10 +137,11 @@ func TestTransientSkillFailureRetriesWithBackoff(t *testing.T) {
 	if e := f.store.RefreshSkillStates(f.ctx); e != nil {
 		t.Fatal(e)
 	}
+	// A retrying delivery is a project receipt, not a selection failure.
 	list, e := f.store.SpacePlugins(f.ctx, f.tenant, space, owner)
 	selected, found := findSpacePlugin(list, selection.ID)
-	if e != nil || !found || selected.ObservedState != "failed" || selected.InstallError == nil || *selected.InstallError != "部分项目暂时失败，将自动重试。" {
-		t.Fatal(list, e)
+	if e != nil || !found || selected.ObservedState != "installed" || selected.InstallError != nil {
+		t.Fatalf("retrying delivery changed the selection: %+v %v", selected, e)
 	}
 	if jobs, e := f.store.SkillJobs(f.ctx); e != nil || len(jobs) != 0 {
 		t.Fatalf("retry became due before backoff elapsed: %+v %v", jobs, e)

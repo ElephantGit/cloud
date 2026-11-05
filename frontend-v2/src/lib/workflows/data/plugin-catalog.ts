@@ -9,17 +9,19 @@ export async function workflowPluginCatalog(tenantId: string) {
   const spaces = await getApiV1TenantsTidSpaces(tenantId)
   const lists = await Promise.all(spaces.items.map((space) =>
     getApiV1TenantsTidSpacesSpaceIdPlugins(tenantId, space.id)))
-  const installed = lists.flatMap((list) => list.items).filter((item) =>
-    item.desiredState === 'installed' && item.observedState === 'installed')
-  const unique = new Map(installed.map((item) => [`${item.sourceNamespace}/${item.identifier}`, item]))
+  const selected = lists.flatMap((list) => list.items).filter((item) =>
+    item.desiredState === 'installed')
+  const unique = new Map(selected.map((item) => [`${item.sourceNamespace}/${item.identifier}`, item]))
   const skills: Skill[] = []
   const plugins: InstalledPlugin[] = []
   for (const [id, item] of unique) {
+    // A Skill selection is the install, so the picker offers it without a project receipt; an MCP
+    // server only exists once its Node reports it installed.
     if (item.kind === 'skill') {
       skills.push({ id, namespace: item.sourceNamespace, name: id,
         description: item.identifier, source: { kind: 'plugin', pluginId: id }, availability: 'available' })
     }
-    if (item.kind === 'mcp') {
+    if (item.kind === 'mcp' && item.observedState === 'installed') {
       plugins.push({ id, namespace: item.sourceNamespace, name: item.identifier,
         displayName: item.identifier, version: item.observedVersion ?? item.desiredVersion,
         description: '', homepage: null, license: null, logo: null, kind: 'mcp',

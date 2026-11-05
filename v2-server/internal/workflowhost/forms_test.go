@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
+	"github.com/wanglongan587/cloud/v2-server/internal/workflow"
 	"testing"
 )
 
@@ -170,5 +172,60 @@ func TestFormOnlyReviewerOrAdministratorCanSubmit(t *testing.T) {
 	tasks, err := f.s.Tasks(ctx, f.scope.TenantID, f.scope.UserID)
 	if err != nil || len(tasks) != 0 {
 		t.Fatalf("all rejected created tasks: %v %v", tasks, err)
+	}
+}
+
+func TestSubmittedFormRecoversBeforeAndDuringTaskCreation(t *testing.T) {
+	for _, started := range []bool{false, true} {
+		t.Run(fmt.Sprint(started), func(t *testing.T) {
+			f := newFixture(t)
+			ctx := context.Background()
+			report := "Evidence"
+			id := f.run(t, formGraph, &report)
+			if _, err := f.host.StartRun(ctx, f.scope, id); err != nil {
+				t.Fatal(err)
+			}
+			f.await(t, id, func(_ store.WorkflowRun, nodes []store.WorkflowNodeRun) bool {
+				return node(nodes, "review").Status == "pending"
+			})
+			form, err := f.host.ReadForm(ctx, f.scope, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			values := []any{map[string]any{"key": "disk:root", "decision": "confirmed", "assignee": map[string]string{"type": "human", "id": f.scope.UserID}, "values": map[string]string{}}}
+			answers, _ := json.Marshal(values)
+			_, err = f.s.SaveWorkflowForm(ctx, f.scope.TenantID, f.scope.UserID, id, form.Version, "crash-gap", answers, true, func(store.WorkflowForm) error { return nil }, func(raw []byte, form store.WorkflowForm) ([]byte, error) {
+				p, _, err := workflow.DecodeRunPayload(raw)
+				if err != nil {
+					return nil, err
+				}
+				text := string(answers)
+				if err := p.Complete(form.NodeID, "form", nil, &text, map[string]any{"answers": values}); err != nil {
+					return nil, err
+				}
+				return p.Encode()
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if started {
+				if _, err := f.s.StartWorkflowEngineNodes(ctx, id, []store.WorkflowEngineStart{{NodeID: "tasks", NodeType: "createTasks"}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.host.Close()
+			f.host = f.newHost(t)
+			if err := f.host.Interrupt(ctx); err != nil {
+				t.Fatal(err)
+			}
+			f.await(t, id, func(r store.WorkflowRun, _ []store.WorkflowNodeRun) bool { return r.Status == "succeeded" })
+			if err := f.host.Interrupt(ctx); err != nil {
+				t.Fatal(err)
+			}
+			tasks, err := f.s.Tasks(ctx, f.scope.TenantID, f.scope.UserID)
+			if err != nil || len(tasks) != 1 {
+				t.Fatalf("recovery tasks=%v err=%v", tasks, err)
+			}
+		})
 	}
 }

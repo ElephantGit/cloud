@@ -133,6 +133,28 @@ it('preserves the request identity across a network failure and reopening the dr
  await waitFor(()=>expect(sessionStorage.getItem('ora.schedule.request:user:tenant:task-1')).toBeNull())
 })
 
+it('closes from the backdrop without closing on inside clicks or bypassing the discard confirmation',async()=>{
+ mount();await screen.findByText('早报');await userEvent.click(screen.getByRole('button',{name:'新建任务'}))
+ let dialog=screen.getByRole('dialog')
+ await userEvent.click(dialog)
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+ dialog=await detail()
+ await userEvent.click(within(dialog).getByRole('heading',{name:'早报'}))
+ expect(dialog).toBeInTheDocument()
+ await userEvent.click(dialog)
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+ await userEvent.click(screen.getByRole('button',{name:'新建任务'}))
+ fireEvent.change(screen.getByLabelText('任务名称'),{target:{value:'未保存的任务'}})
+ dialog=screen.getByRole('dialog')
+ await userEvent.click(dialog)
+ expect(screen.getByText('放弃未保存的修改？')).toBeInTheDocument()
+ expect(dialog).toBeInTheDocument()
+ await userEvent.click(screen.getByRole('button',{name:'放弃修改'}))
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
 it('does not claim cancellation when stopping is unconfirmed and shows incomplete output honestly',async()=>{
  vi.mocked(history.listScheduleHistory).mockResolvedValue({items:[occurrence],nextCursor:''})
  vi.mocked(history.getScheduleExecutionResult).mockResolvedValue({sessionId:'s',turnId:'t',mode:'model',workspaceId:'',sessionEndedAt:null,startedAt:item.createdAt,endedAt:null,result:{status:'failed',answer:'只有部分内容',answerComplete:false,stopReason:'',failureCode:'result_incomplete',usage:null}})

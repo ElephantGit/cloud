@@ -16,7 +16,7 @@ export function ScheduleDrawer({ title, subtitle, onClose, children }: { title: 
       queueMicrotask(() => { if (trigger?.isConnected) trigger.focus() })
     }
   }, [])
-  return <dialog ref={ref} className="sp-dialog schedules-feature" aria-labelledby="sp-dialog-title" onCancel={event => { event.preventDefault(); onClose() }}>
+  return <dialog ref={ref} className="sp-dialog schedules-feature" aria-labelledby="sp-dialog-title" onClick={event => { if (event.target === event.currentTarget) onClose() }} onCancel={event => { event.preventDefault(); onClose() }}>
     <header className="sp-dialog-header"><div><span className="sp-eyebrow"><CalendarClock size={14} />定时任务</span><h2 id="sp-dialog-title">{title}</h2>{subtitle && <p>{subtitle}</p>}</div><Button type="button" variant="ghost" size="icon-sm" aria-label="关闭面板" onClick={onClose}><X /></Button></header>
     {children}
   </dialog>

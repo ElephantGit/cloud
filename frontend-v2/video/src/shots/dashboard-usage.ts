@@ -88,7 +88,7 @@ export const dashboardUsage: Shot = {
     const tools = page.getByRole('region', { name: '工具统计', exact: true })
     const row = tools.locator('tbody tr').first()
     await row.waitFor()
-    await d.mark(row, { label: '真实工具记录', ms: 5300 })
+    await d.mark(row.locator('td').nth(1), { label: '真实工具记录', ms: 5300 })
     await d.hold(5100)
 
     d.say({ narration: '从整体用量到单次执行，让 Agent 的工作过程看得见。' })

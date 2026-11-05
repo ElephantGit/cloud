@@ -6,7 +6,8 @@ test('Agent MCP choices reuse Settings installs and preserve bindings after remo
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto('/settings/plugins')
   await signIn(page)
-  const plugin = page.getByRole('article', { name: 'Tavily', exact: true })
+  // A live catalog can contain multiple providers with the same display name.
+  const plugin = page.getByRole('article', { name: 'Tavily', exact: true }).filter({ has: page.getByText('official/ora-space.tavily-search', { exact: true }) })
   await plugin.getByRole('button', { name: '安装', exact: true }).click()
   await expect(plugin.getByText('已安装', { exact: true })).toBeVisible({ timeout: 15_000 })
   const tid = (await (await page.request.get('/api/v1/me/tenants')).json()).items[0].id

@@ -234,4 +234,29 @@ describe('preparation', () => {
     const session = applySessionEvent(view({}), event(1, [{ id: 'runtime', startedAt: at(0) }]))
     expect(conversationOf([session]).preparation?.stages).toHaveLength(1)
   })
+
+  const asked = (sequence: number, prompt?: string): ChatEvent => ({ ...event(sequence, [{ id: 'runtime', startedAt: at(0) }]), prompt })
+
+  it('asks the first turn from preparation, before any history exists', () => {
+    const { turns } = conversationOf([applySessionEvent(view({}), asked(1, '修复登录页'))])
+    expect(turns.map((turn) => [turn.prompt.text, turn.status])).toEqual([['修复登录页', 'streaming']])
+    expect(turns[0]!.startedAt).toBe(Date.parse(at(0)))
+  })
+
+  it('keeps the prompt when a later stage could not read it', () => {
+    const session = [asked(1, '修复登录页'), asked(2)].reduce(applySessionEvent, view({}))
+    expect(conversationOf([session]).turns[0]?.prompt.text).toBe('修复登录页')
+  })
+
+  it('leaves the turn to the history once it arrives, so it never shows twice', () => {
+    const prompted = applySessionEvent(view({}), asked(1, '修复登录页'))
+    const record = { sequence: 1, data: { type: 'update', at: at(1), update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '修复登录页' } } } }
+    const session = applySessionEvent(prompted, { sequence: 2, occurredAt: at(2), kind: 'history_snapshot', turnId: 't1', history: { records: [record], incomplete: false } })
+    expect(conversationOf([session]).turns.map((turn) => turn.prompt.text)).toEqual(['修复登录页'])
+  })
+
+  it('invents no turn when the prompt is unknown or the session already ended', () => {
+    expect(conversationOf([applySessionEvent(view({}), event(1, [{ id: 'runtime', startedAt: at(0) }]))]).turns).toEqual([])
+    expect(conversationOf([{ ...applySessionEvent(view({}), asked(1, '修复登录页')), ended: true }]).turns).toEqual([])
+  })
 })

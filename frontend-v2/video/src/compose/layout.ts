@@ -5,6 +5,10 @@ export const WIDTH = 3840
 export const HEIGHT = 2160
 export const FPS = 60
 
+/** The opening and closing, in frames; the film needs them without loading their components. */
+export const INTRO_FRAMES = 360
+export const OUTRO_FRAMES = 300
+
 /** The canvas behind the browser window in every shot; the opening dissolves into it. */
 export const SHOT_BACKGROUND = 'radial-gradient(120% 120% at 20% 10%, #eef2ff 0%, #dfe7f5 45%, #cfd8ea 100%)'
 
@@ -20,7 +24,8 @@ export function stageFor(viewport: { width: number; height: number }): Stage {
   const maxH = HEIGHT * 0.86 - TITLE_BAR
   const width = Math.min(maxW, (maxH * viewport.width) / viewport.height)
   const height = (width * viewport.height) / viewport.width
-  const top = (HEIGHT - height - TITLE_BAR) / 2
+  // A little above centre, so subtitles sit in the space below the window instead of over it.
+  const top = (HEIGHT - height - TITLE_BAR) / 2 - 40
   return {
     width: WIDTH,
     height: HEIGHT,

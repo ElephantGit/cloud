@@ -11,7 +11,7 @@ export const scenePorts: Record<Scene, number> = { newcomer: 5191, lead: 5192, o
  * One shot of the video: who signs in where, and the script performed once recording starts.
  * Signing in and the first page load happen before recording, so the shot opens on a settled page.
  */
-export interface Shot {
+export interface RecordedShot {
   name: string
   scene: Scene
   /** The preset account to sign in as (v2-server/demo/users/<scene>.json). */
@@ -22,3 +22,12 @@ export interface Shot {
   ready(page: Page): Promise<void>
   play(d: Director, page: Page): Promise<void>
 }
+
+/** A shot made only of slides, which needs no demo environment. */
+export interface SlidesShot {
+  name: string
+  scene: null
+  play(d: Director): Promise<void> | void
+}
+
+export type Shot = RecordedShot | SlidesShot

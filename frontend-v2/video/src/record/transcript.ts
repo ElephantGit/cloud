@@ -1,24 +1,25 @@
-import { timecode, toOutputTime, type Recording } from '../timeline.ts'
+import { cuesOnOutput, timecode, toOutputTime, type Recording } from '../timeline.ts'
 
 /** One line of the voice-over script, at its output (video) time. */
-export interface Line { start: number; end: number; caption?: string; narration?: string }
+export interface Line { start: number; end: number; caption?: string; narration?: string; padded?: number }
 
 /**
  * The script lines of a recording on the video's timeline: each cue lasts until the next one, the
  * last until the end. Cues that only clear the caption carry nothing to read and are dropped.
  */
 export function lines(recording: Recording): Line[] {
-  const end = toOutputTime(recording.speed, recording.duration)
-  const timed = recording.cues.map(c => ({ ...c, at: toOutputTime(recording.speed, c.t) }))
+  const end = toOutputTime(recording, recording.duration)
+  const timed = cuesOnOutput(recording)
   return timed
-    .map((c, i) => ({ start: c.at, end: timed[i + 1]?.at ?? end, caption: c.caption || undefined, narration: c.narration }))
+    .map((c, i) => ({ start: c.t, end: timed[i + 1]?.t ?? end, caption: c.caption || undefined, narration: c.narration, padded: c.padded }))
     .filter(l => l.caption || l.narration)
 }
 
-/** The transcript the voice-over artist reads from: timecode, on-screen text, and narration. */
+/** The transcript: timecode, on-screen text, narration, and how long a line outran its picture. */
 export function markdown(shot: string, script: Line[]): string {
-  const rows = script.map(l => `| ${timecode(l.start)} – ${timecode(l.end)} | ${l.caption ?? ''} | ${l.narration ?? ''} |`)
-  return [`# ${shot} 文字稿`, '', '| 时间 | 画面文字 | 旁白 |', '|---|---|---|', ...rows, ''].join('\n')
+  const note = (l: Line) => (l.padded ? `画面不够，定格补了 ${(l.padded / 1000).toFixed(1)} 秒` : '')
+  const rows = script.map(l => `| ${timecode(l.start)} – ${timecode(l.end)} | ${l.caption ?? ''} | ${l.narration ?? ''} | ${note(l)} |`)
+  return [`# ${shot} 文字稿`, '', '| 时间 | 画面文字 | 旁白 | 节奏 |', '|---|---|---|---|', ...rows, ''].join('\n')
 }
 
 /** The same lines as SubRip subtitles, for lining the narration up in an editor. */

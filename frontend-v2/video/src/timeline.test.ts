@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CAMERA_MOVE, cameraAt, clampView, cursorAt, lastAt, MAX_ZOOM, rampAt, timecode, toOutputTime, toRecordTime, viewFor,
+  CAMERA_MOVE, cameraAt, clampView, cuesOnOutput, cursorAt, lastAt, MAX_ZOOM, narrationMs, needsPan, rampAt, restlessZooms,
+  timecode, toOutputTime, toRecordTime, viewFor,
   type Stage,
 } from './timeline.ts'
 
-const ramps = [{ from: 1000, to: 3000, rate: 4 }, { from: 5000, to: 6000, rate: 2 }]
+const ramps = { speed: [{ from: 1000, to: 3000, rate: 4 }, { from: 5000, to: 6000, rate: 2 }], holds: [] }
 
 describe('speed ramps', () => {
   it('compress only the ramped spans', () => {
@@ -29,6 +30,49 @@ describe('speed ramps', () => {
   })
 })
 
+describe('holds', () => {
+  const timing = { speed: [{ from: 1000, to: 3000, rate: 4 }], holds: [{ t: 1000, ms: 2000 }, { t: 4000, ms: 500 }] }
+
+  it('insert output time after the moment that holds', () => {
+    expect(toOutputTime(timing, 1000)).toBe(1000)
+    expect(toOutputTime(timing, 2000)).toBe(3250)
+    expect(toOutputTime(timing, 4000)).toBe(4500)
+    expect(toOutputTime(timing, 4001)).toBe(5001)
+  })
+
+  it('freeze recording time while they last', () => {
+    expect(toRecordTime(timing, 1000)).toBe(1000)
+    expect(toRecordTime(timing, 2999)).toBe(1000)
+    expect(toRecordTime(timing, 4600)).toBe(4000)
+  })
+
+  it('invert exactly around them', () => {
+    for (const t of [0, 999, 1500, 3000, 3999, 4001, 9000]) expect(toRecordTime(timing, toOutputTime(timing, t))).toBeCloseTo(t)
+  })
+
+  it('hide the speed badge until the ramp plays', () => {
+    expect(rampAt(timing, 2000)).toBeUndefined()
+    expect(rampAt(timing, 3100)?.rate).toBe(4)
+  })
+
+  it('place cues by their offset into the hold', () => {
+    const cues = cuesOnOutput({ ...timing, cues: [{ t: 1000, offset: 800, narration: 'b' }, { t: 1000, narration: 'a' }] })
+    expect(cues.map(c => [c.t, c.narration])).toEqual([[1000, 'a'], [1800, 'b']])
+  })
+})
+
+describe('narrationMs', () => {
+  it('reads about 4.5 characters a second, ignoring punctuation', () => {
+    expect(narrationMs('一二三四五六七八九。')).toBe(2300)
+    expect(narrationMs('一二三四五六七八九')).toBe(2300)
+  })
+
+  it('counts a Latin word as two characters and never goes below the minimum', () => {
+    expect(narrationMs('好')).toBe(1200)
+    expect(narrationMs('一二三四五 Agent 六七')).toBe(narrationMs('一二三四五六七八九'))
+  })
+})
+
 describe('lastAt', () => {
   const items = [{ t: 0 }, { t: 10 }, { t: 20 }]
   it('finds the item in effect', () => {
@@ -45,6 +89,10 @@ const viewport = { width: 1600 }
 describe('camera', () => {
   it('shows the whole stage for the page', () => {
     expect(viewFor(stage, viewport, null)).toEqual({ cx: 1920, cy: 1080, scale: 1 })
+  })
+
+  it('pushes in on the middle of the page when given a zoom', () => {
+    expect(viewFor(stage, viewport, null, 1.5)).toEqual({ cx: 1920, cy: 1100, scale: 1.5 })
   })
 
   it('pushes in on a box, capped at the maximum zoom', () => {
@@ -74,6 +122,30 @@ describe('camera', () => {
     // The second key interrupts the first halfway; its move begins from that halfway view.
     expect(cameraAt(keys, CAMERA_MOVE / 2, initial).cx).toBeCloseTo(halfway.cx)
     expect(cameraAt(keys, CAMERA_MOVE * 2, initial)).toEqual(b)
+  })
+})
+
+describe('panning', () => {
+  const pushed = { cx: 1920, cy: 1080, scale: 2 }
+  it('leaves the camera still for a point comfortably in frame', () => {
+    expect(needsPan(stage, viewport, pushed, { x: 800, y: 450 })).toBe(false)
+  })
+
+  it('pans for a point near or past the edge of the frame', () => {
+    expect(needsPan(stage, viewport, pushed, { x: 1400, y: 450 })).toBe(true)
+    expect(needsPan(stage, viewport, pushed, { x: 800, y: 850 })).toBe(true)
+  })
+
+  it('never needs to pan with the whole page in frame', () => {
+    expect(needsPan(stage, viewport, { ...pushed, scale: 1 }, { x: 1590, y: 890 })).toBe(false)
+  })
+})
+
+describe('restlessZooms', () => {
+  const at = (t: number, scale: number) => ({ t, view: { cx: 0, cy: 0, scale } })
+  const initial = { cx: 0, cy: 0, scale: 1 }
+  it('flags a zoom change right after another, and ignores pans', () => {
+    expect(restlessZooms([at(0, 1.35), at(1000, 1.35), at(2000, 1), at(6000, 1.35)], initial)).toEqual([2000])
   })
 })
 

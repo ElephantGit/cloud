@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ClipboardList, LayoutList, Plus, SquareKanban, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { useUser } from '@/app/auth/user'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from '@/components/ui/native-select'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Toaster } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { getApiV2TenantsTidProjects } from '@/lib/projects-api/generated'
@@ -13,7 +15,7 @@ import { PanelDialog } from '@/components/panel/panel-dialog'
 import { TaskForm, type TaskDraft } from './task-form'
 import { TaskBoardColumns, TaskRows } from './task-list'
 import { boardMoveMessageFor, taskMessageFor } from './task-model'
-import { familyLabels, filterTasks, TASK_VIEWS, viewOf } from './task-views'
+import { canCloseTask, familyLabels, filterTasks, TASK_VIEWS, viewOf } from './task-views'
 import { createTask, setTaskStatus, type Task, type TaskList, type TaskStatusProperty } from './tasks-api/generated'
 import { useMySquadTasks, usePendingMentions, useSquadChoices, useTaskList, useWorkspace } from './workspace'
 
@@ -23,7 +25,7 @@ import { useMySquadTasks, usePendingMentions, useSquadChoices, useTaskList, useW
  */
 export default function TasksPage() {
   const me = useUser()
-  const { tenantId } = useWorkspace()
+  const { tenantId, role } = useWorkspace()
   const client = useQueryClient()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -61,14 +63,13 @@ export default function TasksPage() {
     },
     onError: e => setError(taskMessageFor(e)),
   })
-  // A drop moves the card at once and puts it back if the server refuses, with the reason above
-  // the board; the list is read again either way.
-  const [notice, setNotice] = useState('')
+  // A drop moves the card at once and puts it back if the server refuses; the reason is a toast, so
+  // the board keeps its place. One id, so repeated drops replace it rather than stack.
+  const refuse = (reason: string) => { toast.warning(reason, { id: 'board-move', richColors: true }) }
   const listKey = ['tasks', tenantId]
   const move = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: TaskStatusProperty }) => setTaskStatus(tenantId, task.id, { status, version: task.version }),
     onMutate: async ({ task, status }) => {
-      setNotice('')
       await client.cancelQueries({ queryKey: listKey })
       const before = client.getQueryData<TaskList>(listKey)
       if (before) client.setQueryData<TaskList>(listKey, { ...before, items: before.items.map(t => (t.id === task.id ? { ...t, status } : t)) })
@@ -76,7 +77,7 @@ export default function TasksPage() {
     },
     onError: (e, _vars, context) => {
       if (context?.before) client.setQueryData(listKey, context.before)
-      setNotice(boardMoveMessageFor(e))
+      refuse(boardMoveMessageFor(e))
     },
     onSettled: () => client.invalidateQueries({ queryKey: listKey }),
   })
@@ -109,7 +110,6 @@ export default function TasksPage() {
       </div>
     </header>
 
-    {layout === 'board' && notice && <p role="alert" className="mc-error mc-board-notice">{notice}</p>}
     {layout === 'board' && <label className="mc-switch-line"><Switch checked={showCancelled} onCheckedChange={setShowCancelled} />显示已取消</label>}
 
     {list.isLoading
@@ -118,8 +118,8 @@ export default function TasksPage() {
         ? <p role="alert">任务加载失败，请刷新重试。</p>
         : items.length || layout === 'board'
           ? layout === 'board'
-            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} squadTasks={squadTasks} families={families} showCancelled={showCancelled} onOpen={open}
-              onMove={(task, status) => move.mutate({ task, status: status as TaskStatusProperty })} onRefuse={setNotice} />
+            ? <TaskBoardColumns tasks={items} projects={projectList} mentions={mentions} squadTasks={squadTasks} families={families} showCancelled={showCancelled} canClose={task => canCloseTask(task, me.id, role)} onOpen={open}
+              onMove={(task, status) => move.mutate({ task, status: status as TaskStatusProperty })} onRefuse={refuse} />
             : <TaskRows tasks={items} projects={projectList} mentions={mentions} squadTasks={squadTasks} families={families} onOpen={open} />
           : <Empty className="min-h-56 border">
             <EmptyHeader><EmptyMedia variant="icon"><ClipboardList /></EmptyMedia>
@@ -133,5 +133,6 @@ export default function TasksPage() {
     {creating && <PanelDialog icon={<ClipboardList size={14} />} eyebrow="任务" title="新建任务" subtitle={squad ? `任务属于一个项目，创建后指派给小队 ${squad.name}。` : '任务属于一个项目；创建后在任务里指派、执行与讨论。'} onClose={closeCreate}>
       <TaskForm projects={projectList} projectsLoading={projects.isLoading} submitLabel="创建任务" saving={create.isPending} error={error} onSave={draft => create.mutate(draft)} onCancel={closeCreate} />
     </PanelDialog>}
+    <Toaster position="top-center" closeButton />
   </div>
 }

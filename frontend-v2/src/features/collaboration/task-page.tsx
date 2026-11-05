@@ -18,7 +18,7 @@ import {
   createTaskComment, getTask, getTaskTimeline, listTaskExecutors, setTaskAssignee, setTaskStatus, startTaskRun, stopTaskRun, updateTask,
   type Task, type TaskAssigneeRef, type TaskStatusProperty,
 } from './tasks-api/generated'
-import { canDecompose, runsAgent } from './task-views'
+import { canCloseTask, canDecompose, runsAgent } from './task-views'
 import { useDecompositions, useMySquadTasks, useWorkspace } from './workspace'
 
 /** Fresh idempotency key for one submission: a retry of the same click reuses it. */
@@ -32,7 +32,7 @@ const keyed = () => ({ headers: { 'Idempotency-Key': crypto.randomUUID() } })
 export default function TaskPage() {
   const { taskId = '' } = useParams()
   const me = useUser()
-  const { tenantId } = useWorkspace()
+  const { tenantId, role } = useWorkspace()
   const client = useQueryClient()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'discussion' ? 'discussion' : 'runs'
@@ -174,7 +174,7 @@ export default function TaskPage() {
           onSend={async draft => { try { await comment.mutateAsync(draft); return true } catch { return false } }} />
       </section>
       <aside className="mc-task-side-col" aria-label="任务属性">
-        <TaskDetailView task={task} me={me.id} inSquad={inSquad} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
+        <TaskDetailView task={task} me={me.id} inSquad={inSquad} canClose={canCloseTask(task, me.id, role)} projectName={projectLabel(projectList, task.projectId)} squads={squads.data?.items ?? []}
           busy={move.isPending || assign.isPending} error={error}
           run={{
             executors: executorList, executorId, onExecutor: setExecutorId, hasRuns: runs.length > 0,

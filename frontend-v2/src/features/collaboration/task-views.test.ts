@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './tasks-api/generated'
-import { agentReach, boardDraggable, boardMove, canDecompose, familyLabels, filterTasks, runsAgent, viewOf } from './task-views'
+import { agentReach, boardDraggable, boardMove, canCloseTask, canDecompose, familyLabels, filterTasks, runsAgent, viewOf } from './task-views'
 
 const task = (overrides: Partial<Task>): Task => ({
   id: 'task', tenantId: 'tenant', title: '任务', description: '', projectId: 'project', assignee: null, status: 'pending',
@@ -94,6 +94,22 @@ describe('who may send the Agent a turn', () => {
     const idle = task({ status: 'running', assignee: agent, activeRun: { ...running, state: 'idle' } })
     expect(boardMove(idle, 'review').ok).toBe(true)
     expect(boardDraggable(task({ status: 'done' })).ok).toBe(false)
+  })
+
+  it('leaves ending a task to its creator and a workspace owner', () => {
+    const assigned = task({ status: 'review', createdBy: 'lead', createdByName: '陈默', assignee: { type: 'human', id: 'me', displayName: '我' } })
+    expect(canCloseTask(assigned, 'lead', 'member')).toBe(true)
+    expect(canCloseTask(assigned, 'me', 'owner')).toBe(true)
+    expect(canCloseTask(assigned, 'me', 'member')).toBe(false)
+    expect(canCloseTask(assigned, 'me', undefined)).toBe(false)
+
+    expect(boardMove(assigned, 'done', true).ok).toBe(true)
+    const refused = boardMove(assigned, 'done', false)
+    expect(refused.ok).toBe(false)
+    expect(refused.reason).toBe('只有创建人 陈默 或工作区 owner 能确认完成。')
+    expect(boardMove(assigned, 'cancelled', false).reason).toBe('只有创建人 陈默 或工作区 owner 能取消任务。')
+    // Handing the work to 待验收 stays with whoever does it.
+    expect(boardMove({ ...assigned, status: 'running' }, 'review', false).ok).toBe(true)
   })
 
   it('names a subtask\'s requirement and counts a requirement\'s subtasks', () => {

@@ -93,10 +93,16 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	}
 	var plugins, hooks, members, mutations int
 	var assigneeType, leader *string
+	var hookState string
+	var hookVersion *string
 	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_space_agents WHERE source_namespace='demo' AND kind <> 'hook'`).Scan(&plugins); e != nil {
 		t.Fatal(e)
 	}
 	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_space_agents WHERE id=$1`, hook).Scan(&hooks); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.pool.QueryRow(ctx, `SELECT observed_state, observed_version FROM v2_space_agents WHERE id=$1`, hook).
+		Scan(&hookState, &hookVersion); e != nil {
 		t.Fatal(e)
 	}
 	if e := s.pool.QueryRow(ctx, `SELECT count(*) FROM v2_squad_members WHERE space_agent_id=$1`, plugin).Scan(&members); e != nil {
@@ -111,8 +117,9 @@ func TestSchemaRemovesLegacyDemoSelections(t *testing.T) {
 	if e := s.pool.QueryRow(ctx, `SELECT leader_agent_id::text FROM v2_squads WHERE id=$1`, squad).Scan(&leader); e != nil {
 		t.Fatal(e)
 	}
-	if plugins != 0 || hooks != 1 || members != 0 || mutations != 0 || assigneeType != nil || leader != nil {
-		t.Fatalf("legacy cleanup: plugins=%d hooks=%d members=%d mutations=%d assignee=%v leader=%v",
-			plugins, hooks, members, mutations, assigneeType, leader)
+	if plugins != 0 || hooks != 1 || hookState != "installed" || hookVersion == nil ||
+		*hookVersion != "1.0.0" || members != 0 || mutations != 0 || assigneeType != nil || leader != nil {
+		t.Fatalf("legacy cleanup: plugins=%d hooks=%d hookState=%q hookVersion=%v members=%d mutations=%d assignee=%v leader=%v",
+			plugins, hooks, hookState, hookVersion, members, mutations, assigneeType, leader)
 	}
 }

@@ -581,7 +581,7 @@ WHERE kind='skill' AND desired_state='installed' AND observed_state IN ('pending
  AND NOT EXISTS(SELECT 1 FROM v2_skill_plans p WHERE p.selection_id=a.id);
 
 UPDATE v2_space_agents SET observed_state='pending',observed_version=NULL
-WHERE kind NOT IN ('agent','skill','workflow') AND desired_state='installed' AND observed_state='installed';
+WHERE kind NOT IN ('agent','skill','workflow','hook') AND desired_state='installed' AND observed_state='installed';
 
 -- A subtask is an ordinary task with a parent: the big requirement it was split from. Only one level
 -- exists; a subtask is never split again.

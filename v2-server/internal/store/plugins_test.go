@@ -34,7 +34,7 @@ func TestEmptyPluginCatalogKeepsThePreviousSnapshot(t *testing.T) {
 	}
 }
 
-func TestRemoveSpacePluginKeepsObservedVersionWhileSkillRemovalIsPending(t *testing.T) {
+func TestRemoveSpacePluginDeletesTheSkillSelection(t *testing.T) {
 	f := newSquadFixture(t)
 	owner := f.login(t, "owner", "owner")
 	spaces, e := f.store.TenantSpaces(f.ctx, f.tenant, owner)
@@ -57,10 +57,12 @@ func TestRemoveSpacePluginKeepsObservedVersionWhileSkillRemovalIsPending(t *test
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e := f.db.Exec(f.ctx, `INSERT INTO v2_projects(id,tenant_id,data,plugin_space_id) VALUES('pending-project',$1,'{}',$2)`, f.tenant, space); e != nil {
-		t.Fatal(e)
+	// A Skill selection is installed as soon as it is written, without a project Node receipt.
+	if installed.DesiredState != "installed" || installed.ObservedState != "installed" ||
+		installed.ObservedVersion == nil || *installed.ObservedVersion != "1.0.0" {
+		t.Fatalf("installed = %+v", installed)
 	}
-	if _, e := f.db.Exec(f.ctx, `UPDATE v2_space_agents SET observed_state='installed', observed_version='1.0.0' WHERE id=$1`, installed.ID); e != nil {
+	if _, e := f.db.Exec(f.ctx, `INSERT INTO v2_projects(id,tenant_id,data,plugin_space_id) VALUES('pending-project',$1,'{}',$2)`, f.tenant, space); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := f.db.Exec(f.ctx, `INSERT INTO v2_skill_results(selection_id,project_id,revision,state,installed_version)
@@ -74,9 +76,20 @@ func TestRemoveSpacePluginKeepsObservedVersionWhileSkillRemovalIsPending(t *test
 	if e != nil {
 		t.Fatal(e)
 	}
-	if removed.DesiredState != "removed" || removed.ObservedState != "removing" ||
-		removed.ObservedVersion == nil || *removed.ObservedVersion != "1.0.0" {
+	// An unsettled project receipt must not keep the removal pending: the row is gone.
+	if removed.DesiredState != "removed" || removed.ObservedState != "removed" || removed.ObservedVersion != nil {
 		t.Fatalf("removed = %+v", removed)
+	}
+	list, e := f.store.SpacePlugins(f.ctx, f.tenant, space, owner)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, found := findSpacePlugin(list, installed.ID); found {
+		t.Fatalf("removed selection is still listed: %+v", list)
+	}
+	var results int
+	if e := f.db.QueryRow(f.ctx, `SELECT count(*) FROM v2_skill_results WHERE selection_id=$1`, installed.ID).Scan(&results); e != nil || results != 0 {
+		t.Fatalf("project results after removal = %d %v", results, e)
 	}
 }
 
@@ -133,7 +146,8 @@ func TestPluginMarketLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 	if installed.Kind != "skill" || installed.DesiredState != "installed" ||
-		installed.ObservedState != "pending" || installed.ObservedVersion != nil || installed.RequestedByUserID == nil ||
+		installed.ObservedState != "installed" || installed.ObservedVersion == nil ||
+		*installed.ObservedVersion != "1.3.1" || installed.RequestedByUserID == nil ||
 		*installed.RequestedByUserID != owner {
 		t.Fatalf("installed = %+v", installed)
 	}
@@ -231,7 +245,7 @@ func TestPluginMarketLifecycle(t *testing.T) {
 	}
 	if _, e := f.store.RemoveSpacePlugin(ctx, f.tenant, space, owner, path, "stale-remove", store.PluginRemoveInput{
 		Identifier: "official/mattpocock.skills", Version: installed.Version,
-	}); !errors.Is(e, store.ErrConflict) {
+	}); !errors.Is(e, store.ErrPluginNotInstalled) {
 		t.Fatalf("stale removal = %v", e)
 	}
 	if _, e := f.store.RemoveSpacePlugin(ctx, f.tenant, space, member, path, "member-remove", store.PluginRemoveInput{
@@ -248,7 +262,7 @@ func TestPluginMarketLifecycle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(selections) != 4 {
+	if len(selections) != 3 {
 		t.Fatalf("selections after removal = %+v", selections)
 	}
 	agents, e := f.store.SpaceAgentPlugins(ctx, f.tenant, space, member)

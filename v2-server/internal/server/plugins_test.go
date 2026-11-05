@@ -122,8 +122,8 @@ func TestPluginMarketHTTP(t *testing.T) {
 		t.Fatalf("install = %d %v", status, body)
 	}
 	resource := body["resource"].(map[string]any)
-	if resource["kind"] != "skill" || resource["observedState"] != "pending" ||
-		resource["observedVersion"] != nil {
+	if resource["kind"] != "skill" || resource["observedState"] != "installed" ||
+		resource["observedVersion"] != "1.3.1" {
 		t.Fatalf("installed = %v", resource)
 	}
 	version := resource["version"].(float64)
@@ -231,7 +231,8 @@ func TestPluginMarketHTTP(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("plugins after remove = %d %v", status, body)
 	}
-	if items, _ := body["items"].([]any); len(items) != 4 {
+	// The removed Skill row is gone; the removed Agent stays as a settled selection.
+	if items, _ := body["items"].([]any); len(items) != 3 {
 		t.Fatalf("plugins after remove = %v", body)
 	}
 }

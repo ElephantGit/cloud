@@ -574,11 +574,11 @@ CREATE TABLE IF NOT EXISTS v2_skill_results (
 );
 ALTER TABLE v2_skill_results ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
 ALTER TABLE v2_skill_results ADD COLUMN IF NOT EXISTS retry_at timestamptz;
--- An old selection never proved that Node had installed a Skill and has no frozen package to retry.
-UPDATE v2_space_agents a SET observed_state='failed', observed_version=NULL,
- install_error='旧版本没有保留安装包信息，请重新安装。'
-WHERE kind='skill' AND desired_state='installed' AND observed_state IN ('pending','installed')
- AND NOT EXISTS(SELECT 1 FROM v2_skill_plans p WHERE p.selection_id=a.id);
+-- A Skill selection is the Space selection itself, not a Node-confirmed install: settle rows an older
+-- version left waiting for a project Node, and drop the selections whose removal never finished.
+UPDATE v2_space_agents SET observed_state='installed', observed_version=desired_version, install_error=NULL
+WHERE kind='skill' AND desired_state='installed' AND (observed_state<>'installed' OR install_error IS NOT NULL);
+DELETE FROM v2_space_agents WHERE kind='skill' AND desired_state='removed';
 
 UPDATE v2_space_agents SET observed_state='pending',observed_version=NULL
 WHERE kind NOT IN ('agent','skill','workflow','hook') AND desired_state='installed' AND observed_state='installed';

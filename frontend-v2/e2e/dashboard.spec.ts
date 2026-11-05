@@ -5,6 +5,7 @@ test('dashboard analysis reads the real server with mock disabled', async ({ pag
   await page.goto('/dashboard')
   await signIn(page)
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '空间用量', exact: true })).toHaveCount(0)
   await page.getByRole('navigation', { name: 'Dashboard 分区' }).getByRole('link', { name: /会话分析/ }).click()
   await expect(page.getByRole('heading', { level: 2, name: '会话分析' })).toBeVisible()
   await expect(page.getByText('正在读取会话…')).not.toBeVisible()

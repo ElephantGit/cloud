@@ -107,6 +107,13 @@ func CanTransitionTask(from, to string) bool {
 	return false
 }
 
+// canCloseTask reports whether the caller may end the task, by confirming it done or cancelling it.
+// That is the decision of whoever asked for the work or a workspace administrator; doing the work
+// does not grant it.
+func canCloseTask(role, user string, task Task) bool {
+	return isAdministrator(role) || task.CreatedBy == user
+}
+
 // CanRunTransitionTask reports the moves a task's Agent run makes: starting or following up a run
 // puts the task in 进行中, a finished turn hands it to 待验收, and a stopped or interrupted turn
 // returns it to 待处理. A person still cannot make the last two moves by hand.
@@ -328,8 +335,9 @@ func (s *Store) UpdateTask(ctx context.Context, tenant, user, id string, in Task
 }
 
 // SetTaskStatus moves a task by hand under a version check. Only the lifecycle's legal moves are
-// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen. While an Agent
-// turn runs the run owns the status, and a manual move returns ErrRunActive.
+// accepted, so 待验收 cannot be skipped and a finished task cannot silently reopen. Ending the task
+// is limited by canCloseTask; anyone else gets ErrForbidden. While an Agent turn runs the run owns
+// the status, and a manual move returns ErrRunActive.
 func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status string, version int64) (Task, error) {
 	var out Task
 	e := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -339,6 +347,15 @@ func (s *Store) SetTaskStatus(ctx context.Context, tenant, user, id, status stri
 		}
 		if !CanTransitionTask(task.Status, status) {
 			return ErrInvalidTransition
+		}
+		if status == TaskDone || status == TaskCancelled {
+			role, e := tenantRole(ctx, tx, tenant, user)
+			if e != nil {
+				return e
+			}
+			if !canCloseTask(role, user, task) {
+				return ErrForbidden
+			}
 		}
 		if task.ActiveRun != nil && task.ActiveRun.State == TaskRunRunning {
 			return ErrRunActive

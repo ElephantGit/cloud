@@ -54,7 +54,7 @@
 .mc-main { min-width: 0; min-height: 0; overflow: auto; }
 .mc-main .mc-content { padding-top: 24px; }
 .mc-page-header h2 { font-size: 20px; font-weight: 600; letter-spacing: -.4px; }
-.mc-header-actions { display: flex; align-items: center; gap: 10px; }
+.mc-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .mc-switch-line { display: inline-flex; align-items: center; gap: 8px; color: var(--secondary-foreground); font-size: 12px; margin-bottom: 12px; }
 .mc-switch-line small { color: var(--mc-muted); font-size: 11px; }
 .mc-link { border: 0; background: none; padding: 0; color: var(--mc-agent); font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
@@ -79,7 +79,6 @@
 .mc-column.mc-drop-open { border-style: dashed; border-color: var(--brand); }
 .mc-column.mc-drop-over { border-color: var(--brand); background: color-mix(in oklab, var(--brand) 8%, var(--mc-surface)); }
 .mc-column.mc-drop-closed { opacity: 0.5; }
-.mc-board-notice { margin: 0 0 8px; }
 .mc-task-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .mc-task-bar { display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-bottom: 1px solid var(--mc-line); }
 .mc-task-bar h2 { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

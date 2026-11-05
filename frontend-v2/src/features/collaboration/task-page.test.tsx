@@ -13,7 +13,8 @@ import TaskPage from './task-page'
 
 const targets = vi.hoisted(() => ({ items: [] as CollaborationTarget[] }))
 const session = vi.hoisted(() => ({ conversation: null as Conversation | null }))
-vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: 'owner' }] }, isLoading: false, isError: false }) }))
+const workspace = vi.hoisted(() => ({ role: 'owner' }))
+vi.mock('@/api/me/me', () => ({ useGetApiV1MeTenants: () => ({ data: { items: [{ id: 'tenant', role: workspace.role }] }, isLoading: false, isError: false }) }))
 vi.mock('@/api/members/members', () => ({ useGetApiV1TenantsTidMembers: () => ({ data: { items: [] }, isLoading: false, isError: false }) }))
 vi.mock('@/api/spaces/spaces', () => ({
   useGetApiV1TenantsTidSpaces: () => ({ data: { items: [], nextCursor: '' }, isLoading: false, isError: false }),
@@ -58,6 +59,7 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   vi.clearAllMocks()
   session.conversation = null
+  workspace.role = 'owner'
   targets.items = [
     { type: 'user', id: 'user-2', displayName: '鲍勃', description: '工作区成员', interactionDescriptor: { mode: 'mention', requiresTask: false, formRef: null } },
     { type: 'agent', id: 'agent-1', displayName: 'Claude Code', description: 'official/ora-space.claude', interactionDescriptor: { mode: 'task', requiresTask: true, formRef: null } },
@@ -287,4 +289,31 @@ it('opens the linked historical run instead of the newest run',async()=>{
   first.unmount();renderPage('?run=missing')
   expect(await screen.findByText('这次运行已不存在或不可见。')).toBeVisible()
   expect(screen.queryByLabelText('运行概况')).not.toBeInTheDocument()
+})
+
+const handedToMe = (status: Task['status']) => task({ status, createdBy: 'user-lead', createdByName: '陈默', assignee: { type: 'human', id: 'user-me', displayName: '演示用户' } })
+
+it('keeps 确认完成 and 取消任务 from an assignee, and says who decides', async () => {
+  workspace.role = 'member'
+  vi.mocked(api.getTask).mockResolvedValue(handedToMe('review'))
+  renderPage()
+  expect(await screen.findByRole('button', { name: '确认完成' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '取消任务' })).toBeDisabled()
+  expect(screen.getByText('等待 陈默 验收。只有创建人 陈默 或工作区 owner 能确认完成或取消任务。')).toBeInTheDocument()
+})
+
+it('leaves an assignee the moves that are theirs', async () => {
+  workspace.role = 'member'
+  vi.mocked(api.getTask).mockResolvedValue(handedToMe('running'))
+  renderPage()
+  expect(await screen.findByRole('button', { name: '提交验收' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '取消任务' })).toBeDisabled()
+})
+
+it('lets a workspace owner confirm work someone else asked for', async () => {
+  vi.mocked(api.getTask).mockResolvedValue(handedToMe('review'))
+  vi.mocked(api.setTaskStatus).mockResolvedValue(handedToMe('done'))
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: '确认完成' }))
+  await waitFor(() => expect(api.setTaskStatus).toHaveBeenCalledWith('tenant', 'task-1', { status: 'done', version: 1 }))
 })

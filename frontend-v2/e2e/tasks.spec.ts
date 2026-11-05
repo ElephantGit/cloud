@@ -81,7 +81,7 @@ test('drag a card on the board to move it one legal step', async ({ page }) => {
   await expect(page.getByRole('listitem', { name: '进行中列' })).toContainText(title)
   // Skipping 待验收 is refused with the reason, and the card stays where it was, also after a reload.
   await drag('已完成列')
-  await expect(page.getByRole('alert')).toContainText('逐步推进')
+  await expect(page.getByText('逐步推进')).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('board-drag.png'), fullPage: true })
   await page.reload()
   await expect(page.getByRole('listitem', { name: '进行中列' })).toContainText(title)

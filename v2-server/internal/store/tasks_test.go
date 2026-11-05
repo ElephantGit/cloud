@@ -104,6 +104,57 @@ func TestTaskLifecycle(t *testing.T) {
 	}
 }
 
+func TestTaskCloseNeedsCreatorOrOwner(t *testing.T) {
+	f := newSquadFixture(t)
+	ctx := f.ctx
+	owner := f.login(t, "owner", "owner")
+	lead := f.login(t, "lead", "member")
+	doer := f.login(t, "doer", "member")
+	addProject(t, f, owner)
+	mine := &store.TaskAssigneeRef{Type: store.AssigneeHuman, ID: doer}
+	inReview := func(title string) store.Task {
+		t.Helper()
+		task := createTask(t, f, lead, store.TaskInput{Title: title, Assignee: mine})
+		for _, status := range []string{store.TaskRunning, store.TaskReview} {
+			var e error
+			// Doing the work and handing it in stay with the assignee.
+			if task, e = f.store.SetTaskStatus(ctx, f.tenant, doer, task.ID, status, task.Version); e != nil {
+				t.Fatalf("%s: %v", status, e)
+			}
+		}
+		return task
+	}
+
+	task := inReview("待验收")
+	for _, status := range []string{store.TaskDone, store.TaskCancelled} {
+		if _, e := f.store.SetTaskStatus(ctx, f.tenant, doer, task.ID, status, task.Version); !errors.Is(e, store.ErrForbidden) {
+			t.Fatalf("assignee → %s = %v", status, e)
+		}
+	}
+	if got, e := f.store.Task(ctx, f.tenant, lead, task.ID); e != nil || got.Status != store.TaskReview || got.Version != task.Version {
+		t.Fatalf("refused move changed the task: %+v %v", got, e)
+	}
+	if done, e := f.store.SetTaskStatus(ctx, f.tenant, lead, task.ID, store.TaskDone, task.Version); e != nil || done.Status != store.TaskDone {
+		t.Fatalf("creator confirm = %+v %v", done, e)
+	}
+
+	// A workspace owner decides on work someone else asked for.
+	other := inReview("owner 验收")
+	if done, e := f.store.SetTaskStatus(ctx, f.tenant, owner, other.ID, store.TaskDone, other.Version); e != nil || done.Status != store.TaskDone {
+		t.Fatalf("owner confirm = %+v %v", done, e)
+	}
+
+	// Cancelling is limited the same way before review, and a task its creator took on stays theirs.
+	early := createTask(t, f, lead, store.TaskInput{Title: "还没开始", Assignee: mine})
+	if _, e := f.store.SetTaskStatus(ctx, f.tenant, doer, early.ID, store.TaskCancelled, early.Version); !errors.Is(e, store.ErrForbidden) {
+		t.Fatalf("assignee cancel = %v", e)
+	}
+	own := createTask(t, f, doer, store.TaskInput{Title: "自己的活", Assignee: mine})
+	if got, e := f.store.SetTaskStatus(ctx, f.tenant, doer, own.ID, store.TaskCancelled, own.Version); e != nil || got.Status != store.TaskCancelled {
+		t.Fatalf("own cancel = %+v %v", got, e)
+	}
+}
+
 func TestTaskAssignees(t *testing.T) {
 	f := newSquadFixture(t)
 	ctx := f.ctx

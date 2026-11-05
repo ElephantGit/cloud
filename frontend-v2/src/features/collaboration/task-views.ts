@@ -1,3 +1,4 @@
+import { isWorkspaceAdministrator } from '@/features/settings/squads/squad-model'
 import { isTaskFinished, taskActions, taskStatusLabel } from './task-model'
 import type { MySquadTask, Task } from './tasks-api/generated'
 
@@ -38,6 +39,42 @@ export function filterTasks(tasks: Task[], view: TaskView, me: string, mentioned
   }
 }
 
+/**
+ * Whether the caller may end the task, by confirming it or cancelling it: its creator or a
+ * workspace administrator, as the server's `canCloseTask` decides. Doing the work does not grant it.
+ */
+export const canCloseTask = (task: Task, me: string, role: string | undefined): boolean =>
+  isWorkspaceAdministrator(role) || task.createdBy === me
+
+/** Why the caller cannot end the task, named after who can. */
+export const closeRefusal = (task: Task, action: string): string => `只有创建人 ${task.createdByName} 或工作区 owner 能${action}。`
+
+/** The filter value of a task's assignee; unassigned work has its own. */
+export const UNASSIGNED = 'none'
+export const assigneeKey = (task: Task): string => (task.assignee ? `${task.assignee.type}:${task.assignee.id}` : UNASSIGNED)
+
+/** One assignee the filter offers, with how many of the given tasks it holds. */
+export interface AssigneeChoice {
+  value: string
+  label: string
+  type: 'human' | 'agent' | 'squad' | typeof UNASSIGNED
+  count: number
+}
+
+const CHOICE_ORDER: AssigneeChoice['type'][] = ['human', 'agent', 'squad', UNASSIGNED]
+
+/** The assignees of these tasks, people first and by name within a kind, so the filter lists exactly who holds work. */
+export function assigneeChoices(tasks: Task[]): AssigneeChoice[] {
+  const choices = new Map<string, AssigneeChoice>()
+  for (const t of tasks) {
+    const value = assigneeKey(t)
+    const known = choices.get(value)
+    if (known) known.count += 1
+    else choices.set(value, { value, label: t.assignee?.displayName ?? '未指派', type: t.assignee?.type ?? UNASSIGNED, count: 1 })
+  }
+  return [...choices.values()].sort((a, b) => CHOICE_ORDER.indexOf(a.type) - CHOICE_ORDER.indexOf(b.type) || a.label.localeCompare(b.label, 'zh-CN'))
+}
+
 /** Whether 「拆分」 applies: a big requirement still open, not a subtask. */
 export const canDecompose = (task: Task): boolean => !task.parentId && !isTaskFinished(task.status)
 
@@ -71,9 +108,10 @@ export function boardDraggable(task: Task): { ok: boolean; reason: string } {
 /**
  * Whether dropping the card on the column `to` is a move a person may make, and why not. The board
  * offers exactly the task's own buttons (the server's `CanTransitionTask`), so 待验收 is never
- * skipped; an Agent task reaches 进行中 only by starting its run, never by hand.
+ * skipped; an Agent task reaches 进行中 only by starting its run, never by hand. `canClose` is
+ * whether the caller may end this task, so a person who cannot confirm it sees why at the column.
  */
-export function boardMove(task: Task, to: string): { ok: boolean; reason: string } {
+export function boardMove(task: Task, to: string, canClose = true): { ok: boolean; reason: string } {
   const pickable = boardDraggable(task)
   if (!pickable.ok || task.status === to) return pickable.ok ? { ok: false, reason: '' } : pickable
   if (to === 'running' && task.assignee?.type === 'agent') {
@@ -82,6 +120,7 @@ export function boardMove(task: Task, to: string): { ok: boolean; reason: string
   if (!taskActions(task.status).some(a => a.status === to)) {
     return { ok: false, reason: `「${taskStatusLabel(task.status)}」不能直接拖到「${taskStatusLabel(to)}」：按「待处理 → 进行中 → 待验收 → 已完成」逐步推进。` }
   }
+  if (isTaskFinished(to) && !canClose) return { ok: false, reason: closeRefusal(task, to === 'done' ? '确认完成' : '取消任务') }
   return { ok: true, reason: '' }
 }
 

@@ -218,7 +218,7 @@ Agent 成员只引用 `v2_space_agents` 里由系统预装、可执行且观测�
 | `POST /api/v2/tenants/{tid}/tasks` | 创建任务，返回 201，初始状态 `pending`、version 为 1；不接受调用方给 version |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}` | 任务详情 |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}` | 携带 version 修改标题、描述与所属项目 |
-| `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态 |
+| `POST /api/v2/tenants/{tid}/tasks/{taskid}/status` | 携带 version 按生命周期推进状态；确认完成和取消只限任务创建人和工作区 owner，其他人 `403 forbidden` |
 | `PUT /api/v2/tenants/{tid}/tasks/{taskid}/assignment` | 携带 version 指派或清除指派人，显式 `null` 表示清除 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/timeline` | 任务的运行与评论，各按时间先后 |
 | `GET /api/v2/tenants/{tid}/tasks/{taskid}/executors` | 能运行这个任务的执行器：指派给 Agent 时是该 Agent 的执行器（执行目录里 `agentId` 等于该 Agent 插件标识的条目）；指派给人时，只有负责人本人能读，返回他能用的全部执行器，别人是 409 `not_assignee`；指派给小队或未指派是 409 `not_agent_task` |

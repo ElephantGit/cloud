@@ -5,7 +5,7 @@ import type { SquadSummary } from '@/lib/squads-api/generated'
 import { formatTime } from './task-model'
 import { TaskAssigneePicker } from '@/components/task-assignee-picker'
 import { assigneeKindLabel, assigneeLabel, isTaskFinished, taskActions } from './task-model'
-import { runsAgent } from './task-views'
+import { closeRefusal, runsAgent } from './task-views'
 import type { Task, TaskAssigneeRef, TaskExecutor, TaskStatusProperty } from './tasks-api/generated'
 
 /** The run controls' state, decided by the page from the task and its timeline. */
@@ -26,12 +26,14 @@ export interface RunControls {
  * One task's facts and the moves on it: who owns it, running its Agent, and the manual status
  * moves. While the Agent runs a turn, the run owns the status, so manual moves wait for it.
  */
-export function TaskDetailView({ task, me, inSquad, projectName, squads, busy, error, run, onStatus, onAssign }: {
+export function TaskDetailView({ task, me, inSquad, canClose, projectName, squads, busy, error, run, onStatus, onAssign }: {
   task: Task
   /** The caller's user id: a person's task runs an Agent only for that person. */
   me: string
   /** The caller is a member of the squad that owns the task. */
   inSquad: boolean
+  /** The caller may end the task: confirm it or cancel it. */
+  canClose: boolean
   /** The project's display name, resolved from the workspace list. */
   projectName: string
   /** Live squads the task may be reassigned to. */
@@ -105,7 +107,13 @@ export function TaskDetailView({ task, me, inSquad, projectName, squads, busy, e
         ? <p className="mc-empty-line">任务已结束，不能再改状态。</p>
         : running
           ? <p className="mc-empty-line">Agent 正在执行，结束后再推进。</p>
-          : <div className="mc-actions">{actions.map(action => <Button key={action.status} type="button" size="sm" variant={action.status === 'cancelled' ? 'outline' : 'default'} disabled={busy} onClick={() => onStatus(action.status)}>{action.label}</Button>)}</div>}
+          : <>
+            <div className="mc-actions">{actions.map(action => {
+              const refused = isTaskFinished(action.status) && !canClose
+              return <Button key={action.status} type="button" size="sm" variant={action.status === 'cancelled' ? 'outline' : 'default'} disabled={busy || refused} title={refused ? closeRefusal(task, action.label) : undefined} onClick={() => onStatus(action.status)}>{action.label}</Button>
+            })}</div>
+            {!canClose && <p className="mc-note">{task.status === 'review' ? `等待 ${task.createdByName} 验收。${closeRefusal(task, '确认完成或取消任务')}` : closeRefusal(task, '取消任务')}</p>}
+          </>}
     </section>
 
     {error && <p role="alert" className="mc-error">{error}</p>}

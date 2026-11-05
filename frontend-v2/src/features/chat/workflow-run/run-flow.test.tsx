@@ -209,7 +209,7 @@ describe('workflow runs in chat', () => {
     await user.click(within(pane).getByRole('button', { name: '启动' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '启动' }))
     await user.click(await within(pane).findByRole('button', { name: '查看节点会话' }))
-    expect(within(pane).getByText('正在等待 Agent 的会话…')).toBeInTheDocument()
+    expect(within(pane).getByText('正在准备…')).toBeInTheDocument()
 
     // v2-server answers 404 to anyone but the run's starter; the browser closes the stream for good.
     const [entry] = [...runs.runs.values()]

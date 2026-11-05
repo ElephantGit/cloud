@@ -1,10 +1,12 @@
 import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GraphWorkflowNodeStatus, WorkflowNodeConversationItem } from '@/lib/workflows/runtime'
+import { FirstTurnWait } from '@/components/agent-thread/preparation'
 import { Thread } from '@/components/agent-thread/thread'
 import { useChatStore } from '../store'
 import { nodeConversationTurns } from './conversation-turns'
 import { useNodeSession } from './node-session'
+import { isNodeWorking } from './run-status-style'
 
 // A node session has nothing to ask permission for, so answering is never offered.
 const noAnswer = () => {}
@@ -13,7 +15,8 @@ const noAnswer = () => {}
  * An Agent node's conversation, drawn by the chat page's own thread: the same prompts, answers,
  * thinking and tool rows as a chat session. As desktop shows the node's real session here, the
  * attempt's session is followed over v2-server's node events stream; until it can be read, or when
- * it cannot, the task and answer the run recorded stand in.
+ * it cannot, the task and answer the run recorded stand in. While a working node waits for its first
+ * turn the session's preparation stages show, as on the chat page.
  */
 export function RunNodeSessionChat({
   conversation,
@@ -39,6 +42,10 @@ export function RunNodeSessionChat({
       <div className="flex min-h-0 flex-1 flex-col">
         {thread.turns.length > 0 ? (
           <Thread conversation={thread} onAnswer={noAnswer} />
+        ) : isNodeWorking(status) && !refused ? (
+          <div role="status" className="min-h-0 flex-1 overflow-y-auto">
+            <FirstTurnWait preparation={followed?.preparation} />
+          </div>
         ) : (
           <p className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">{t(refused ? 'workflowRun.v2.sessionRefused' : 'workflowRun.v2.sessionWaiting')}</p>
         )}

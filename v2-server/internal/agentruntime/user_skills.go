@@ -5,6 +5,7 @@ package agentruntime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -13,8 +14,15 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/skilldoc"
 )
 
+type userSkillConflictError struct{ Name string }
+
+func (e *userSkillConflictError) Error() string {
+	return fmt.Sprintf("user skill %q conflicts with an installed plugin skill", e.Name)
+}
+
 // attachUserSkills projects the session owner's catalog into the two discovery roots Agents read.
-// Existing project-owned or market-linked paths win; only a missing path is created.
+// Existing project-owned paths win; a market link with the same name is a conflict, so neither
+// side is silently dropped.
 func (p *projectRuntime) attachUserSkills(ctx context.Context, checkout string, scope execution.Scope) error {
 	if p.driver.opts.UserSkills == nil {
 		return nil
@@ -25,6 +33,21 @@ func (p *projectRuntime) attachUserSkills(ctx context.Context, checkout string, 
 	}
 	if len(skills) == 0 {
 		return nil
+	}
+	p.skillsMu.Lock()
+	defer p.skillsMu.Unlock()
+	links, err := p.links()
+	if err != nil {
+		return execution.ErrUnavailable
+	}
+	marketNames := make(map[string]bool, len(links))
+	for _, link := range links {
+		marketNames[link.Name] = true
+	}
+	for _, skill := range skills {
+		if marketNames[skill.Name] {
+			return &userSkillConflictError{Name: skill.Name}
+		}
 	}
 	root, err := os.OpenRoot(checkout)
 	if err != nil {

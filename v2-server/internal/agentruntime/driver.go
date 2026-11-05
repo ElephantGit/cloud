@@ -144,6 +144,10 @@ func (d *Driver) Run(ctx context.Context, scope execution.Scope, session executi
 		if ctx.Err() != nil {
 			return d.cancelledRun(session.ID, ctx.Err())
 		}
+		var conflict *userSkillConflictError
+		if errors.As(err, &conflict) {
+			return failed("skill_name_conflict"), err
+		}
 		if workflowSkillError(err) {
 			return failed(err.Error()), err
 		}

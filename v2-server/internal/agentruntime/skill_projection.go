@@ -146,6 +146,8 @@ func (p *projectRuntime) projectSkills(checkouts []string, old, next []skillLink
 	return nil
 }
 
+// publishSkills is called by ApplySkill with skillsMu held; it also updates every prepared
+// checkout after a market package changes.
 func (p *projectRuntime) publishSkills(id, version string, remove bool) error {
 	old, e := p.links()
 	if e != nil {

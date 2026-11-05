@@ -62,3 +62,22 @@ func TestAttachUserSkillsReportsCatalogFailure(t *testing.T) {
 		t.Fatalf("error = %v, want ErrUnavailable", err)
 	}
 }
+
+func TestAttachUserSkillsRejectsInstalledPluginNameConflict(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "market-skills.json"), []byte(
+		`[{"ID":"official/mattpocock.skills","Version":"1.3.1","Name":"code-review"}]`,
+	), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &projectRuntime{root: root, driver: &Driver{opts: Options{
+		UserSkills: func(context.Context, execution.Scope) ([]UserSkill, error) {
+			return []UserSkill{{Name: "code-review", Description: "mine", Content: "# Review"}}, nil
+		},
+	}}}
+	err := p.attachUserSkills(context.Background(), t.TempDir(), execution.Scope{TenantID: "tenant", UserID: "user"})
+	var conflict *userSkillConflictError
+	if !errors.As(err, &conflict) || conflict.Name != "code-review" {
+		t.Fatalf("error = %v, want code-review userSkillConflictError", err)
+	}
+}

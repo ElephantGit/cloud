@@ -81,6 +81,10 @@ func run(addr, dbURL string, cleanup, fixture, testFixtures bool) (resultErr err
 		db.Close()
 		return e
 	}
+	if e := db.MigrateStarterSkillNames(ctx); e != nil {
+		db.Close()
+		return e
+	}
 	if e := db.RetireLegacyDemoUser(ctx); e != nil {
 		db.Close()
 		return e

@@ -123,13 +123,16 @@ seed 在 [`demo/`](demo/README.md)：`env.go` 是上表和重置、准备本地 
 简介最多 4096 字节，正文最多 900 KiB。写请求拒绝未知字段和多余 JSON；校验失败返回稳定的
 `skill_*` 错误码，不为越权用户暴露其他账号的资源。
 
-账号首次创建或首次被邀请时写入三个真实 starter skill（`code-review`、`test-plan`、
+账号首次创建或首次被邀请时写入三个真实 starter skill（`ora-code-review`、`test-plan`、
 `release-notes`），登记在独立的 `v2_skill_seeds` 一次性标记里；之后它们和用户创建的技能
 完全一样，可编辑、删除，删除后不会在下次登录时重新出现。
+存量账号中未编辑且目标名仍空闲的旧 `code-review` starter 会在启动时一次性改名为
+`ora-code-review`；已编辑、已删除或目标名已被占用的条目不改，留给用户自行处理。
 
 创建或导入的技能会在新 Agent 会话完成工作副本克隆后，物化为
-`.opencode/skills/<name>/SKILL.md` 和 `.claude/skills/<name>/SKILL.md`。已有项目文件或市场
-Skill 占用同名路径时保留原内容，不覆盖；已经启动的会话保留启动时的副本。Ora 实际创建的技能目录和市场技能链接会追加到该工作副本自己的 `.git/info/exclude`（不改项目的 `.gitignore`，保留已有规则），所以 Agent 的 `git add -A` 不会提交它们，工作区「变更」也不显示；项目自带的技能和 Agent 自己的改动照常可见。v2 的导入只支持
+`.opencode/skills/<name>/SKILL.md` 和 `.claude/skills/<name>/SKILL.md`。项目已有同名目录时保留
+项目内容；市场 Skill 与用户技能同名时该会话以 `skill_name_conflict` 失败，提示用户改名，
+不覆盖也不静默丢弃任何一方；已经启动的会话保留启动时的副本。Ora 实际创建的技能目录和市场技能链接会追加到该工作副本自己的 `.git/info/exclude`（不改项目的 `.gitignore`，保留已有规则），所以 Agent 的 `git add -A` 不会提交它们，工作区「变更」也不显示；项目自带的技能和 Agent 自己的改动照常可见。v2 的导入只支持
 单个 Markdown 文件，不支持文件夹、归档和附带脚本/资源。
 
 ### 定时任务配置

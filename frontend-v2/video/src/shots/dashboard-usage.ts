@@ -1,4 +1,23 @@
 import type { Shot } from '../record/shot.ts'
+import type { Locator, Page } from 'playwright'
+import type { Director } from '../record/director.ts'
+
+/** Scrolls the actual page with the wheel, keeping the native layout and scroll containers intact. */
+async function reveal(d: Director, page: Page, target: Locator) {
+  const height = await page.evaluate(() => innerHeight)
+  await page.mouse.move(1020, height * 0.65)
+  for (let step = 0; step < 12; step++) {
+    const box = await target.boundingBox()
+    if (!box) throw new Error('Recording target is not rendered.')
+    const delta = box.y - height * 0.3
+    if (Math.abs(delta) < 40) break
+    await page.mouse.wheel(0, Math.max(-280, Math.min(280, delta)))
+    await d.hold(280)
+    const moved = await target.boundingBox()
+    if (moved && Math.abs(moved.y - box.y) < 2) break
+  }
+  await d.hold(650)
+}
 
 /** Workspace usage is a labelled demo; the selected detail must have real, known gateway usage. */
 export const dashboardUsage: Shot = {
@@ -8,6 +27,8 @@ export const dashboardUsage: Shot = {
   start: '/dashboard',
   async ready(page) {
     await page.getByRole('region', { name: '空间用量', exact: true }).waitFor()
+    // Fail closed on the old fixed team overview instead of accidentally filming it again.
+    await page.getByRole('region', { name: '任务概览', exact: true }).waitFor()
     await page.getByRole('list', { name: 'Agent 会话', exact: true }).waitFor()
     const base = new URL(page.url()).origin
     const response = await page.request.get(`${base}/api/v1/me/tenants`)
@@ -43,7 +64,14 @@ export const dashboardUsage: Shot = {
     } while (!selected && after)
     if (!selected) throw new Error('Run a real Agent first: no completed session has known input/output usage.')
     // Resolve the target before recording without changing application data or choosing a seed sample.
-    await page.getByRole('list', { name: 'Agent 会话' }).locator(`a[href$="/${selected}"]`).waitFor()
+    const link = page.getByRole('list', { name: 'Agent 会话' }).locator(`a[href$="/${selected}"]`)
+    while (!await link.count()) {
+      const more = page.getByRole('button', { name: '加载更多会话', exact: true })
+      if (!await more.count()) throw new Error('Selected session is not available in the list.')
+      await more.click()
+      await page.waitForTimeout(300)
+    }
+    await link.waitFor()
     await page.evaluate(id => { sessionStorage.setItem('video-dashboard-session', id) }, selected)
     console.log(`Dashboard recording uses real session ${selected}`)
   },
@@ -54,7 +82,7 @@ export const dashboardUsage: Shot = {
       subtitle: '用量有概览，执行有记录',
       narration: '从空间用量，到每次执行。',
     })
-    await d.focus('page', 1.15)
+    await d.focus('page', 1)
     const usage = page.getByRole('region', { name: '空间用量', exact: true })
     await d.mark(usage.getByLabel('空间用量汇总'), {
       label: '空间用量 · 演示数据',
@@ -78,10 +106,26 @@ export const dashboardUsage: Shot = {
     })
     await d.hold(2300)
     const input = summary.getByText('输入 Token', { exact: true }).locator('..')
-    await input.scrollIntoViewIfNeeded()
-    await d.focus(input, 1.15)
+    await reveal(d, page, input)
     await d.mark(input, { label: '上游报告的用量', ms: 4000 })
     await d.hold(4100)
+
+    d.say({ narration: '向下滚动，还能查看每次请求的状态、耗时和具体用量。' })
+    const requests = page.getByRole('region', { name: '模型请求明细', exact: true })
+    await reveal(d, page, requests)
+    await d.hold(2000)
+    const requestScroll = requests.locator('table').locator('..')
+    const overflow = await requestScroll.evaluate(element => element.scrollWidth - element.clientWidth)
+    if (overflow > 2) {
+      const box = await requestScroll.boundingBox()
+      if (box) {
+        await page.mouse.move(box.x + box.width * 0.65, Math.min(500, box.y + 120))
+        await page.mouse.wheel(Math.min(overflow, 600), 0)
+        await d.hold(1700)
+        await page.mouse.wheel(-Math.min(overflow, 600), 0)
+      }
+    }
+    await d.hold(1200)
 
     d.say({ narration: '工具调用也有记录：次数、执行状态，以及已记录的耗时。' })
     await d.click(page.getByRole('button', { name: '工具统计', exact: true }))
@@ -94,6 +138,15 @@ export const dashboardUsage: Shot = {
     d.say({ narration: '从整体用量到单次执行，让 Agent 的工作过程看得见。' })
     await d.click(page.getByRole('button', { name: '时间轴', exact: true }))
     await page.getByRole('region', { name: '会话时间轴', exact: true }).waitFor()
-    await d.hold(5100)
+    await d.hold(2100)
+    const events = page.getByRole('table', { name: '时间轴事件', exact: true })
+    await reveal(d, page, events)
+    d.say({ narration: '沿着时间轴查看事件，也能展开工具执行的详细记录。' })
+    const tool = events.locator('tbody tr[data-event-id]').filter({ hasText: '工具' }).first().getByRole('button')
+    await d.click(tool)
+    await d.hold(2000)
+    const details = page.getByRole('complementary', { name: '事件详情', exact: true })
+    await reveal(d, page, details)
+    await d.hold(2800)
   },
 }

@@ -28,7 +28,7 @@ function readAnswers(form:WorkflowForm):Answer[]{return form.findings.map(row=>{
 export function RunForm({ tenantId, runId, runStatus }: { tenantId: string; runId: string; runStatus: string }) {
   const query = useQuery({ queryKey: ['workflow-form', tenantId, runId], queryFn: () => getWorkflowForm(tenantId, runId), refetchInterval: 3000, retry: false })
   if (query.isPending) return <p role="status">正在读取确认表单…</p>
-  if (!query.data) return <div role="status">表单尚未生成，巡检完成后会自动显示。<Button variant="outline" onClick={() => void query.refetch()}>刷新</Button></div>
+  if (!query.data) return <div role="status">表单尚未生成，运行到确认步骤后会自动显示。<Button variant="outline" onClick={() => void query.refetch()}>刷新</Button></div>
   return <FormEditor key={query.data.id} form={query.data} tenantId={tenantId} runStatus={runStatus} />
 }
 
@@ -77,10 +77,10 @@ function FormEditor({ form, tenantId, runStatus }: { form: WorkflowForm; tenantI
     }
     setErrors(found);if(Object.keys(found).length)return;mutation.mutate(final)
   }
-  return <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 overflow-auto p-4 md:p-6" aria-label="巡检报告与问题确认">
+  return <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 overflow-auto p-4 md:p-6" aria-label="报告与问题确认">
     <div><h2 className="text-xl font-semibold">{text(form.config.title) || '问题确认'}</h2><p className="text-sm text-muted-foreground">{form.status === 'cancelled' ? '运行已取消，表单不可提交' : form.status === 'submitted' ? runStatus==='failed' ? '确认已保存 · 提单失败，可重试' : runStatus==='succeeded' ? '确认完成 · 查看下方处理结果' : '确认已保存 · 正在生成任务' : `已确认 ${answers.length - remaining}/${answers.length} 项`}</p></div>
     {form.status==='submitted' && <p className="text-sm text-muted-foreground">提交人：{roster.data?.items.find(m=>m.userId===form.submittedBy)?.displayName ?? '确认人'}{form.submittedAt ? ` · ${new Date(form.submittedAt).toLocaleString()}` : ''}</p>}
-    <details open><summary className="cursor-pointer font-medium">巡检报告</summary><div className="mt-3 overflow-x-auto rounded-lg border p-4 text-sm [&_h1]:mb-3 [&_h1]:text-lg [&_h2]:my-3 [&_p]:my-2 [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{form.report}</ReactMarkdown></div></details>
+    <details open><summary className="cursor-pointer font-medium">报告</summary><div className="mt-3 overflow-x-auto rounded-lg border p-4 text-sm [&_h1]:mb-3 [&_h1]:text-lg [&_h2]:my-3 [&_p]:my-2 [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{form.report}</ReactMarkdown></div></details>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pendingOnly} onChange={e => setPendingOnly(e.target.checked)} />只看待确认问题</label>
     {form.findings.length === 0 && <p>本次未发现需要人工处理的问题。</p>}
     {form.findings.map(row => {

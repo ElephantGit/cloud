@@ -20,7 +20,7 @@ import (
 )
 
 func TestGraphs(t *testing.T) {
-	for name, build := range map[string]func(WorkflowSeed) (string, error){"newcomer": NewcomerGraph, "lead": DecompositionGraph, "ops": OpsGraph} {
+	for name, build := range map[string]func(WorkflowSeed) (string, error){"newcomer": NewcomerGraph, "lead": DecompositionGraph, "quality": QualityScanGraph, "ops": OpsGraph} {
 		t.Run(name, func(t *testing.T) {
 			graph, err := build(WorkflowSeed{AgentCLI: "official/ora-space.opencode", ModelID: "configured"})
 			if err != nil {
@@ -165,6 +165,13 @@ func TestSeedsComposeAndHistoryIsOwnedByOps(t *testing.T) {
 	if _, err := SeedDecomposition(ctx, seeds["lead"]); err != nil {
 		t.Fatal(err)
 	}
+	quality, err := SeedQualityScan(ctx, seeds["lead"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quality.Workflow.PublishedSnapshotID == nil || *quality.Workflow.PublishedSnapshotID != quality.Snapshot.ID {
+		t.Fatal("quality seed returned stale publication metadata")
+	}
 	if _, err := SeedNewcomer(ctx, seeds["newcomer"]); err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +186,7 @@ func TestSeedsComposeAndHistoryIsOwnedByOps(t *testing.T) {
 	}
 	tenant := seeds["ops"].Scope.TenantID
 	workflows, err := s.Workflows(ctx, tenant)
-	if err != nil || len(workflows) != 3 {
+	if err != nil || len(workflows) != 4 {
 		t.Fatalf("composed workflows: %v %v", workflows, err)
 	}
 	configs, err := s.ScheduleConfigs(ctx, tenant, seeds["ops"].Scope.UserID)
@@ -235,10 +242,41 @@ func TestSeedsComposeAndHistoryIsOwnedByOps(t *testing.T) {
 		}
 
 	}
+	// The nightly quality scan keeps its own schedule and three confirmed nights for 陈默; no run is
+	// left waiting for input, because the recording's own manual run is the one that stops at the form.
+	qualityConfigs, err := s.ScheduleConfigs(ctx, tenant, seeds["lead"].Scope.UserID)
+	if err != nil || len(qualityConfigs) != 1 {
+		t.Fatalf("quality schedule: %v %v", qualityConfigs, err)
+	}
+	qualityHistory, err := s.ScheduleHistory(ctx, tenant, seeds["lead"].Scope.UserID, qualityConfigs[0].ID, store.OccurrenceCursor{}, 20)
+	if err != nil || len(qualityHistory) != 3 {
+		t.Fatalf("quality history: %v %v", qualityHistory, err)
+	}
+	for _, item := range qualityHistory {
+		if item.Status != "succeeded" || item.WaitingForInput {
+			t.Fatalf("quality history is not settled: %+v", item)
+		}
+		runID, ok := scheduler.WorkflowRunOf(item.ExecutionRef)
+		if !ok {
+			t.Fatal("missing quality run reference")
+		}
+		run, err := s.WorkflowRun(ctx, tenant, runID)
+		if err != nil || run.Status != "succeeded" || run.SnapshotID != quality.Snapshot.ID {
+			t.Fatalf("quality history run: %+v %v", run, err)
+		}
+		form, err := s.WorkflowForm(ctx, tenant, seeds["lead"].Scope.UserID, runID)
+		if err != nil || form.Status != "submitted" || string(form.Answers) == "[]" {
+			t.Fatalf("quality form: %+v %v", form, err)
+		}
+	}
 	for _, name := range []string{"lead", "newcomer"} {
 		other, err := s.ScheduleConfigs(ctx, tenant, seeds[name].Scope.UserID)
-		if err != nil || len(other) != 0 {
-			t.Fatalf("ops schedule leaked to %s: %v %v", name, other, err)
+		want := 0
+		if name == "lead" {
+			want = 1
+		}
+		if err != nil || len(other) != want {
+			t.Fatalf("foreign schedule count for %s: %v %v", name, other, err)
 		}
 		if _, err := s.ScheduleHistory(ctx, tenant, seeds[name].Scope.UserID, configs[0].ID, store.OccurrenceCursor{}, 20); err == nil {
 			t.Fatal("foreign history readable")

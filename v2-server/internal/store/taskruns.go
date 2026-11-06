@@ -15,6 +15,9 @@ import (
 // ScheduledTaskStartPrefix cannot occur in a client Idempotency-Key HTTP header.
 const ScheduledTaskStartPrefix = "\nschedule:"
 
+// DemoSeedSessionPrefix identifies nonexecuting Dashboard history examples, not fixture-backed runs.
+const DemoSeedSessionPrefix = "demo-dashboard-"
+
 // Task run end reasons; the empty reason is a live run.
 const (
 	TaskRunStopped     = "stopped"
@@ -47,6 +50,7 @@ type TaskRun struct {
 	StartedBy     string     `json:"startedBy"`
 	StartedByName string     `json:"startedByName"`
 	Scheduled     bool       `json:"scheduled,omitempty"`
+	DemoSeed      bool       `json:"demoSeed"`
 	StartKey      string     `json:"-"`
 	ExecutorID    string     `json:"executorId"`
 	ExecutorName  string     `json:"executorName"`
@@ -104,6 +108,7 @@ func scanTaskRun(row pgx.Row) (TaskRun, error) {
 		return r, e
 	}
 	r.Scheduled = strings.HasPrefix(r.StartKey, ScheduledTaskStartPrefix)
+	r.DemoSeed = isDemoSeedRun(r.StartKey, r.SessionID)
 	switch {
 	case r.EndedAt != nil:
 		r.State = TaskRunEnded
@@ -113,6 +118,11 @@ func scanTaskRun(row pgx.Row) (TaskRun, error) {
 		r.State = TaskRunIdle
 	}
 	return r, nil
+}
+
+// Both persisted identities must match: a caller-chosen start key alone is not seed provenance.
+func isDemoSeedRun(startKey, sessionID string) bool {
+	return startKey == sessionID && strings.HasPrefix(sessionID, DemoSeedSessionPrefix) && len(sessionID) > len(DemoSeedSessionPrefix)
 }
 
 func taskRuns(ctx context.Context, q dbTX, where string, args ...any) ([]TaskRun, error) {

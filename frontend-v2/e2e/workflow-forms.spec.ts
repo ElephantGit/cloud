@@ -26,7 +26,7 @@ test('inspection form persists a draft, creates a real task once and survives re
   const run = (await response.json()).run.id
   expect((await page.request.post(`/api/v2/tenants/${tenant}/workflow-runs/${run}/start`, { data: {} })).ok()).toBeTruthy()
   await page.goto(`/chat?run=${run}`)
-  const form = page.getByRole('region', { name: '巡检报告与问题确认' })
+  const form = page.getByRole('region', { name: '报告与问题确认' })
   await expect(form.getByText('验收磁盘异常', { exact: true })).toBeVisible()
   await form.getByLabel('是否为问题').selectOption('confirmed')
   await form.getByLabel('指派给', { exact: true }).selectOption({ label: ownerName })

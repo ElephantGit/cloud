@@ -1,3 +1,4 @@
+import { cdaseWorkspaceReader } from '@/lib/demo/cdase'
 import {
   getChatWorkspaceChanges,
   getChatWorkspaceDiff,
@@ -41,6 +42,8 @@ export function workspaceReader(source: WorkspaceSource): WorkspaceReader {
     }
   }
   const { tenantId: t, runId: r } = source
+  const demo = cdaseWorkspaceReader(t, r)
+  if (demo) return demo
   return {
     key: ['workspace', 'run', t, r],
     entries: (path) => getWorkflowRunWorkspaceEntries(t, r, path ? { path } : undefined),

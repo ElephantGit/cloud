@@ -77,7 +77,7 @@ export function ShotVideo({ recording }: ShotProps) {
           pressed={clicks.some(c => out - toOutputTime(recording, c.t) < 140)} />}
       </AbsoluteFill>
     </AbsoluteFill>
-    {ramp && <SpeedBadge rate={ramp.rate} />}
+    {ramp && <SpeedBadge />}
     {slide && <SlidePanel overlay={slide} age={out - slide.at} opaqueEntry={slide.at < 50} />}
     {subtitle && cue && <Subtitle key={cue.t} text={subtitle} age={out - cue.t} />}
   </AbsoluteFill>
@@ -100,12 +100,13 @@ function TitleBar({ url }: { url: string }) {
   </div>
 }
 
-function SpeedBadge({ rate }: { rate: number }) {
+/** Marks a sped-up span in words only: the real rate varies between takes and says nothing to the audience. */
+function SpeedBadge() {
   return <div style={{
     position: 'absolute', right: 120, top: 100, padding: '18px 34px', borderRadius: 999,
     background: 'rgba(17, 24, 39, 0.78)', color: '#fff', fontSize: 44, fontWeight: 600,
-    fontFamily: 'system-ui, sans-serif', letterSpacing: 2,
-  }}>▶▶ ×{rate}</div>
+    fontFamily: '"Geist Variable", "Noto Sans SC Variable", system-ui, sans-serif', letterSpacing: 2,
+  }}>倍速</div>
 }
 
 function Subtitle({ text, age }: { text: string; age: number }) {

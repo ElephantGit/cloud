@@ -622,3 +622,5 @@ npm run e2e -- e2e/workflow-runs.spec.ts e2e/workflow-containers.spec.ts e2e/sch
 ## 动态表单与巡检提单
 
 `form` 负责冻结证据并等待确认，`createTasks` 根据确认结果创建或关联任务；二者使用 `workflows.openapi.json` 中的 v2 契约。表单的 GET/PUT/POST `/api/v2/tenants/{tid}/workflow-runs/{rid}/form` 与 POST `…/form/retry` 属于正式 Cloud 尚未提供的候选接口。行为、权限、幂等、去重与恢复边界见 [动态表单说明](internal/workflowforms/README.md)。等待确认的轮次不占用下一晚的自动执行资格，但仍保留未完成状态和终态跟踪。DTS 只有前端演示回执，不代表外部工单已提交。
+
+任务时间轴中的 `TaskRun.demoSeed` 明确区分未执行的预置历史样例。它依据 seed 专用会话身份与启动键的一致关系投影，既有样例也会标记，不需要数据迁移；实际运行即使使用 fixture 模型也为 false。团队概览排除这类样例的运行数和 Agent 产出，会话分析仍保留样例以供检查。

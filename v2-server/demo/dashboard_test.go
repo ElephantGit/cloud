@@ -25,6 +25,25 @@ func TestDashboardSeedAndTaskSessionShareAgentFilter(t *testing.T) {
 				t.Fatalf("seeded sessions = %v, error = %v", items, err)
 			}
 			seeded := items[0]
+			tasks, err := s.Store.Tasks(ctx, scope.TenantID, scope.UserID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seedCount := 0
+			for _, task := range tasks {
+				runs, _, err := s.Store.TaskTimeline(ctx, scope.TenantID, scope.UserID, task.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, run := range runs {
+					if run.DemoSeed {
+						seedCount++
+					}
+				}
+			}
+			if seedCount != 1 {
+				t.Fatalf("nonexecuting seeded task runs = %d, want 1", seedCount)
+			}
 			if seeded.Agent != "official/ora-space.opencode" {
 				t.Fatalf("seed Agent ID = %q, want the canonical runtime ID", seeded.Agent)
 			}
@@ -47,6 +66,10 @@ func TestDashboardSeedAndTaskSessionShareAgentFilter(t *testing.T) {
 			}
 			if err := s.Store.RecordTaskTurn(ctx, run.ID, ref.SessionID, ref.TurnID); err != nil {
 				t.Fatal(err)
+			}
+			liveRun, err := s.Store.TaskRun(ctx, scope.TenantID, task.ID, run.ID)
+			if err != nil || liveRun.DemoSeed {
+				t.Fatalf("normal execution provenance: demoSeed=%v, error=%v", liveRun.DemoSeed, err)
 			}
 			items, cursor, err := s.Store.DashboardSessions(ctx, scope, store.DashboardFilter{Project: seeded.ProjectID, Agent: "official/ora-space.opencode"})
 			if err != nil || len(items) != 2 || cursor != "" {

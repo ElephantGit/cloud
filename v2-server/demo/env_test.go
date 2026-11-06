@@ -26,7 +26,7 @@ func TestResolveFollowsTheEnvironmentTable(t *testing.T) {
 		mock        bool
 		scenes      []string
 	}{
-		"newcomer": {"ora_v2_demo_newcomer", "a", 8191, 5191, false, []string{"newcomer"}},
+		"newcomer": {"ora_v2_demo_newcomer", "a", 8191, 5191, true, []string{"newcomer"}},
 		"lead":     {"ora_v2_demo_lead", "b", 8192, 5192, true, []string{"lead"}},
 		"ops":      {"ora_v2_demo_ops", "c", 8193, 5193, true, []string{"ops"}},
 		"all":      {"ora_v2_demo", "all", 8190, 5190, true, []string{"newcomer", "lead", "ops"}},

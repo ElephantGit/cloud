@@ -21,7 +21,7 @@
     "e2e": "playwright test",
     "api:generate:schedule-runtime": "orval --config orval.schedule-runtime.config.ts",
     "api:generate:tasks": "orval --config orval.tasks.config.ts",
-    "api:check:tasks": "npm run api:generate:tasks && git diff --exit-code -- src/features/collaboration/tasks-api",
+    "api:check:tasks": "npm run api:generate:tasks && git diff --exit-code -- src/lib/tasks-api src/features/collaboration/tasks-api",
     "api:generate:chat": "orval --config orval.chat.config.ts",
     "api:check:chat": "npm run api:generate:chat && git diff --exit-code -- src/features/chat/api src/lib/projects-api",
     "api:generate:members": "orval --config orval.members.config.ts",

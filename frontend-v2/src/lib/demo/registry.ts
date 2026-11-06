@@ -25,11 +25,6 @@ export const demoMocks: readonly DemoMock[] = [
     covers: 'Workspace token usage, model requests and tool categories for the Dashboard video',
     replacedBy: 'An authorized workspace usage aggregation endpoint with explicit time boundaries',
   },
+  { module: 'cdase.ts', scene: 'newcomer', covers: 'SFMEA review workflow and report recording fixture', replacedBy: 'Installed cdase workflow with real Agent execution and persisted review artifacts' },
  {module:'dts.ts',scene:'ops',covers:'DTS simulated receipts after real Cloud task creation',replacedBy:'An authenticated DTS connector with durable external delivery receipts'},
-  {
-    module: 'dashboard.ts',
-    scene: 'lead',
-    covers: 'Dashboard team progress and Agent output',
-    replacedBy: 'A task aggregation endpoint: task status, Agent runs and output per squad',
-  },
 ]

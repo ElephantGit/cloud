@@ -61,7 +61,7 @@ const nodeSocketSuffix = "/nodes/0000000000000000/w/h/scopes/00000000-0000-0000-
 
 // environments is the table of #882: one command per scene plus the combined `task v2:demo`.
 var environments = map[string]Environment{
-	"newcomer": {Name: "newcomer", Database: "ora_v2_demo_newcomer", Dir: "a", ServerPort: 8191, WebPort: 5191, Scenes: []string{"newcomer"}},
+	"newcomer": {Name: "newcomer", Database: "ora_v2_demo_newcomer", Dir: "a", ServerPort: 8191, WebPort: 5191, Mock: true, Scenes: []string{"newcomer"}},
 	"lead":     {Name: "lead", Database: "ora_v2_demo_lead", Dir: "b", ServerPort: 8192, WebPort: 5192, Mock: true, Scenes: []string{"lead"}},
 	"ops":      {Name: "ops", Database: "ora_v2_demo_ops", Dir: "c", ServerPort: 8193, WebPort: 5193, Mock: true, Scenes: []string{"ops"}},
 	"all":      {Name: "all", Database: "ora_v2_demo", Dir: "all", ServerPort: 8190, WebPort: 5190, Mock: true, Scenes: []string{"newcomer", "lead", "ops"}},

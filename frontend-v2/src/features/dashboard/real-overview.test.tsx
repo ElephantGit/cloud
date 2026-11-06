@@ -1,0 +1,135 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
+import { afterEach, expect, it, vi } from 'vitest'
+import { getGetApiV1MeTenantsQueryKey } from '@/api/me/me'
+import { http } from '@/lib/api-client'
+import { UserContext } from '@/app/auth/user'
+import { demoUser, fakeBackend } from '@/test/backend'
+import RealOverview from './real-overview'
+
+const base = '/api/v2/tenants/team/tasks'
+const task = { id: 'task-1', title: '真实任务交付', description: '实际任务描述', tenantId: 'team', projectId: 'project', assignee: { type: 'agent', id: 'agent', displayName: '执行 Agent' }, status: 'review', createdBy: 'user', createdByName: '成员', version: 1, createdAt: '2026-11-05T00:00:00Z', updatedAt: '2026-11-05T01:00:00Z', activeRun: null }
+const timeline = { runs: [{ demoSeed: false, id: 'run', taskId: task.id, startedBy: 'user', startedByName: '成员', executorId: 'executor', executorName: '真实执行器', state: 'ended', lastResult: 'completed', failureCode: '', endReason: 'closed', createdAt: '2026-11-05T00:00:00Z', endedAt: '2026-11-05T01:00:00Z' }], comments: [] }
+const tenants = { status: 200, data: { items: [{ id: 'team' }] } }
+function content(client: QueryClient, user = demoUser) {
+  return <MemoryRouter><QueryClientProvider client={client}><UserContext.Provider value={user}><RealOverview /></UserContext.Provider></QueryClientProvider></MemoryRouter>
+}
+function show() {
+  return render(content(new QueryClient({ defaultOptions: { queries: { retry: false } } })))
+}
+
+afterEach(() => vi.unstubAllEnvs())
+
+it.each(['', '1'])('reads real task ownership and output with demo flag %s', async flag => {
+  vi.stubEnv('VITE_DEMO_MOCK', flag)
+  const seen = fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return { status: 200, data: { items: [task], nextCursor: '' } }
+    if (config.url === `${base}/${task.id}/timeline`) return { status: 200, data: timeline }
+  })
+  show()
+  const link = await screen.findByRole('link', { name: task.title })
+  expect(link).toHaveAttribute('href', '/collaboration/tasks/task-1')
+  expect(screen.queryByText('真实数据', { exact: true })).not.toBeInTheDocument()
+  expect(screen.getByText('真实执行器', { exact: false })).toBeInTheDocument()
+  expect(screen.getByRole('progressbar', { name: '执行 Agent 完成率' })).toHaveAttribute('aria-valuenow', '0')
+  expect(seen).toContain(`GET ${base}/${task.id}/timeline`)
+})
+
+it('hides old totals and outputs on revoked refresh, then recovers on retry', async () => {
+  let denied = false
+  fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return denied ? { status: 403 } : { status: 200, data: { items: [task], nextCursor: '' } }
+    if (config.url === `${base}/${task.id}/timeline`) return { status: 200, data: timeline }
+  })
+  show()
+  await screen.findByRole('link', { name: task.title })
+  denied = true
+  await userEvent.click(screen.getByRole('button', { name: '刷新概览' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('团队数据不可访问')
+  expect(screen.queryByRole('region', { name: '任务概览' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: task.title })).not.toBeInTheDocument()
+  denied = false
+  await userEvent.click(screen.getByRole('button', { name: '刷新概览' }))
+  expect(await screen.findByRole('link', { name: task.title })).toBeInTheDocument()
+})
+
+it.each(['incomplete', 'denied timeline'])('does not publish partial totals for %s data', async mode => {
+  fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return { status: 200, data: { items: [task], nextCursor: mode === 'incomplete' ? 'more' : '' } }
+    if (config.url === `${base}/${task.id}/timeline`) return { status: 403 }
+  })
+  show()
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('region', { name: '任务概览' })).not.toBeInTheDocument()
+})
+
+it('shows zero totals and explicit empty states without demo members', async () => {
+  vi.stubEnv('VITE_DEMO_MOCK', '1')
+  fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return { status: 200, data: { items: [], nextCursor: '' } }
+  })
+  show()
+  expect(await screen.findByText('还没有团队任务。')).toBeInTheDocument()
+  const stats = screen.getByRole('region', { name: '任务概览' })
+  expect(within(stats).getAllByText('0', { exact: true })).toHaveLength(4)
+  expect(screen.queryByText('陈默')).not.toBeInTheDocument()
+})
+
+it('does not remain loading when no workspace is available', async () => {
+  fakeBackend(config => config.url === '/api/v1/me/tenants' ? { status: 200, data: { items: [] } } : undefined)
+  show()
+  expect(await screen.findByText('暂无可访问的工作区。')).toBeInTheDocument()
+})
+
+it('does not publish statistics when the backend omits run provenance', async () => {
+  const legacyRun = Object.fromEntries(Object.entries(timeline.runs[0]).filter(([key]) => key !== 'demoSeed'))
+  fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (config.url === base) return { status: 200, data: { items: [task], nextCursor: '' } }
+    if (config.url === `${base}/${task.id}/timeline`) return { status: 200, data: { runs: [legacyRun], comments: [] } }
+  })
+  show()
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('region', { name: '任务概览' })).not.toBeInTheDocument()
+})
+
+it.each(['user', 'workspace'])('hides the previous snapshot while a new %s scope loads', async changed => {
+  let identity = 'first'
+  let hold = false
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const seen = fakeBackend(config => {
+    if (config.url === '/api/v1/me/tenants') return tenants
+    if (/\/tenants\/[^/]+\/tasks$/.test(config.url ?? '')) return { status: 200, data: { items: [{ ...task, id: identity, title: `交付-${identity}` }], nextCursor: '' } }
+    if (config.url?.endsWith('/timeline')) return { status: 200, data: { ...timeline, runs: timeline.runs.map(run => ({ ...run, taskId: identity, id: `run-${identity}` })) } }
+  })
+  const fallback = http.defaults.adapter
+  if (typeof fallback !== 'function') throw new Error('Expected the installed test adapter')
+  http.defaults.adapter = async config => {
+    if (hold && /\/tenants\/[^/]+\/tasks$/.test(config.url ?? '')) await gate
+    return fallback(config)
+  }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = render(content(client))
+  await screen.findByRole('link', { name: '交付-first' })
+  identity = 'second'
+  hold = true
+  if (changed === 'user') view.rerender(content(client, { ...demoUser, id: 'another-user' }))
+  else act(() => { client.setQueryData(getGetApiV1MeTenantsQueryKey(), { items: [{ id: 'another-team' }] }) })
+  await screen.findByRole('status')
+  expect(screen.queryByRole('link', { name: '交付-first' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: '任务概览' })).not.toBeInTheDocument()
+  act(() => { release() })
+  expect(await screen.findByRole('link', { name: '交付-second' })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: '交付-first' })).not.toBeInTheDocument()
+  const keys = client.getQueryCache().findAll({ queryKey: ['real-team-overview'] }).map(query => query.queryKey)
+  expect(keys).toContainEqual(['real-team-overview', demoUser.id, 'team'])
+  expect(keys).toContainEqual(['real-team-overview', changed === 'user' ? 'another-user' : demoUser.id, changed === 'workspace' ? 'another-team' : 'team'])
+  if (changed === 'workspace') expect(seen).toContain('GET /api/v2/tenants/another-team/tasks')
+})

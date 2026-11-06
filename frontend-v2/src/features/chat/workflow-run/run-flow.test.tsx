@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UserContext } from '@/app/auth/user'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { demoUser } from '@/test/backend'
@@ -59,7 +59,27 @@ describe('workflow runs in chat', () => {
   })
   afterEach(() => {
     runRefreshMs.interval = 1_000
+    vi.unstubAllEnvs()
   })
+
+  it('uses the production picker, Overview, Start dialog and Theater for the cdase demo', async () => {
+    vi.stubEnv('VITE_DEMO_MOCK', '1')
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(project()).getByRole('button', { name: '在 ora-space/cloud 新建对话' }))
+    await user.click(await screen.findByRole('menuitem', { name: '运行工作流' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /cdase · SFMEA 评审/ }))
+    await user.click(within(await screen.findByRole('dialog', { name: '运行工作流' })).getByRole('button', { name: '创建运行' }))
+    const pane = await screen.findByRole('region', { name: '工作流运行' })
+    expect(await within(pane).findByRole('button', { name: '全图' }, { timeout: 10000 })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(within(pane).getByRole('button', { name: '启动' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '启动' }))
+    expect(within(pane).getByRole('button', { name: '舞台' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(within(pane).getByText('运行完成')).toBeInTheDocument(), { timeout: 15000 })
+    expect(within(pane).getByText(/本次仅输出文本评审结论，未修改仓库文件/)).toBeInTheDocument()
+    expect(runs.runs.size).toBe(0)
+    expect(screen.queryByText('让研发经验进入每一次任务')).not.toBeInTheDocument()
+  }, 25000)
 
   it('creates a run in the chosen project from the visible new-chat entry', async () => {
     const user = userEvent.setup()

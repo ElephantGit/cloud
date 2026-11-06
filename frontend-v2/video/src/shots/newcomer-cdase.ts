@@ -44,7 +44,7 @@ export const newcomerCdase: Shot = {
         { title: '落实措施', body: '预防措施与待验证清单', narration: '最后把预防措施和验证要求写清楚。' },
       ],
     })
-    await d.wait(page.getByText('运行完成', { exact: true }), { rate: 1, timeout: 30_000 })
+    await d.wait(page.getByText('运行完成', { exact: true }), { rate: 8, timeout: 30_000 })
     await d.hold(500)
     const report = page.locator('pre').filter({ hasText: '退款申请接口 · SFMEA 评审报告' }).first()
     await d.mark(report, { label: '风险清单 · 评审结论', narration: '评审完成后，新人拿到风险清单和具体建议。' })

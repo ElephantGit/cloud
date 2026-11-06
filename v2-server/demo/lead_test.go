@@ -135,7 +135,7 @@ func seed(t *testing.T, s *Seeder, scenes ...string) seedSummary {
 
 func TestScenesComposeInOneTenant(t *testing.T) {
 	lead := seed(t, openSeeder(t), "lead")
-	if !slices.Equal(lead.projects, []string{"协作看板服务"}) || !slices.Equal(lead.workflows, []string{"需求拆分"}) {
+	if !slices.Equal(lead.projects, []string{"协作看板服务"}) || !slices.Equal(lead.workflows, []string{"版本质量扫描", "需求拆分"}) {
 		t.Fatalf("lead alone: %+v", lead)
 	}
 	if want := []string{"看板小队: 陈默/human/ 苏芮/human/前端 周衡/human/后端 OpenCode/agent/编码与测试 Claude Code/agent/代码评审"}; !slices.Equal(lead.squads, want) {
@@ -169,7 +169,7 @@ func TestScenesComposeInOneTenant(t *testing.T) {
 	if want := []string{"协作看板服务", "团队任务清单", "巡检演示服务"}; !slices.Equal(all.projects, want) {
 		t.Fatalf("projects: %q", all.projects)
 	}
-	if want := []string{"每日巡检", "需求开发", "需求拆分"}; !slices.Equal(all.workflows, want) {
+	if want := []string{"每日巡检", "版本质量扫描", "需求开发", "需求拆分"}; !slices.Equal(all.workflows, want) {
 		t.Fatalf("workflows: %q", all.workflows)
 	}
 

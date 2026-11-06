@@ -56,6 +56,9 @@ func seedLead(ctx context.Context, s *Seeder) error {
 	if _, err := SeedDecomposition(ctx, s.WorkflowSeed(lead, project)); err != nil {
 		return err
 	}
+	if _, err := SeedQualityScan(ctx, s.WorkflowSeed(lead, project)); err != nil {
+		return err
+	}
 	for _, h := range leadHistory {
 		task, err := s.Store.CreateTask(ctx, lead.TenantID, lead.UserID, store.TaskInput{
 			Title: h.title, Description: h.description, ProjectID: project.ID,

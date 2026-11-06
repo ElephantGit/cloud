@@ -1,0 +1,4 @@
+{
+  "baseline": "v0.3.0",
+  "changed": ["src/sync.mjs", "src/report.mjs", "src/board.mjs"]
+}

@@ -4,6 +4,8 @@
 
 运行测试：`node --test`。
 
+质量扫描：`node scripts/scan.mjs --mode incremental`（只扫 `release.json` 里的变更文件）或 `--mode full`（扫全部源码并检查测试覆盖），输出 findings 的 JSON。
+
 状态只能按 待处理 → 进行中 → 待验收 → 已完成 推进，任何未完成的状态都可以取消。函数都不修改传入的数组和对象。
 
 演示需求：看板支持截止日期。任务可以带 `dueDate`（`YYYY-MM-DD`）；列内按截止日期从早到晚排序，没有截止日期的排在最后；新增 `overdue(tasks, today)` 返回已过期且未完成的任务；在 README 中补充用法，并为排序和过期判断补上边界测试。

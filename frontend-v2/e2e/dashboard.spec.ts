@@ -5,6 +5,7 @@ test('dashboard analysis reads the real server with mock disabled', async ({ pag
   await page.goto('/dashboard')
   await signIn(page)
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '空间用量', exact: true })).toHaveCount(0)
   const overview = page.getByRole('region', { name: '任务概览', exact: true })
   await expect(overview).toBeVisible()
   const refreshedTasks = page.waitForResponse(response => /\/api\/v2\/tenants\/[^/]+\/tasks$/.test(new URL(response.url()).pathname) && response.request().method() === 'GET')

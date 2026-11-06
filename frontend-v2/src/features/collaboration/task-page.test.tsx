@@ -40,7 +40,7 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z', activeRun: null, ...overrides,
 })
 const run = (overrides: Partial<TaskRun> = {}): TaskRun => ({
-  id: 'run-1', taskId: 'task-1', startedBy: 'user-me', startedByName: '演示用户', executorId: 'claude:fixture', executorName: 'Claude Code / Fixture',
+  demoSeed: false, id: 'run-1', taskId: 'task-1', startedBy: 'user-me', startedByName: '演示用户', executorId: 'claude:fixture', executorName: 'Claude Code / Fixture',
   state: 'running', lastResult: '', failureCode: '', endReason: '', createdAt: '2026-10-30T01:00:00Z', endedAt: null, ...overrides,
 })
 const empty: TaskTimeline = { runs: [], comments: [] }

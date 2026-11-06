@@ -10,8 +10,7 @@ import (
 	"github.com/wanglongan587/cloud/v2-server/internal/store"
 )
 
-// B's accounts (users/lead.json). The names match the dashboard mock in
-// frontend-v2/src/lib/demo/dashboard.ts, so the recording does not jump between names.
+// B's accounts (users/lead.json), shared by the task board and team overview.
 const (
 	leadEmail     = "chen.mo@demo.ora-space.dev"
 	suRuiEmail    = "su.rui@demo.ora-space.dev"

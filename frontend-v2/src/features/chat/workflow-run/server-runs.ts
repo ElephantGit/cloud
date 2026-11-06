@@ -1,3 +1,5 @@
+import { cdaseWorkflow, cdaseDefinition, createCdaseRun, readCdaseRun, cdaseProjectRuns, isCdaseRun, startCdaseRun, updateCdaseInput, endCdaseRun } from '@/lib/demo/cdase'
+import { demoMockEnabled } from '@/lib/demo/flags'
 import { queryOptions } from '@tanstack/react-query'
 import {
   cancelWorkflowRun,
@@ -69,7 +71,7 @@ export async function listPublishedWorkflows(library: WorkflowContracts, signal?
         }
       }),
   )
-  return offered.filter((w) => w !== null)
+  return [...(demoMockEnabled() ? [cdaseWorkflow] : []), ...offered.filter((w) => w !== null)]
 }
 
 /**
@@ -103,6 +105,7 @@ export function runSnapshotQuery(tenantId: string, runId: string) {
     queryKey: runKeys.snapshot(tenantId, runId),
     staleTime: Number.POSITIVE_INFINITY,
     queryFn: async ({ signal }) => {
+      if (isCdaseRun(runId)) { readCdaseRun(tenantId, runId); return cdaseDefinition() }
       const { snapshot } = await call(() => getWorkflowRunSnapshot(tenantId, runId, undefined, signal))
       return definitionOf(snapshot.workflowId, snapshot.version, snapshot.graph, snapshot.updatedAt ?? snapshot.createdAt)
     },
@@ -119,7 +122,7 @@ export function runQuery(tenantId: string, runId: string, definition: WorkflowDe
     queryKey: runKeys.run(tenantId, runId),
     enabled: definition !== undefined,
     staleTime: 0,
-    queryFn: async ({ signal }) => toGraphWorkflowRun(await call(() => getWorkflowRun(tenantId, runId, undefined, signal)), definition!),
+    queryFn: async ({ signal }) => isCdaseRun(runId) ? readCdaseRun(tenantId, runId) : toGraphWorkflowRun(await call(() => getWorkflowRun(tenantId, runId, undefined, signal)), definition!),
     refetchInterval: (query) => {
       const run = query.state.data
       if (run && isTerminalRunStatus(run.status)) return false
@@ -147,7 +150,8 @@ export function projectRunsQuery(tenantId: string, projectId: string) {
     staleTime: 0,
     queryFn: async ({ signal }) => {
       const { runs } = await call(() => listWorkflowRuns(tenantId, { projectId }, undefined, signal))
-      return runs.map(listItem).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      const local = cdaseProjectRuns(tenantId, projectId).map(({ id, name, status, createdAt }) => ({ id, name, status, createdAt }))
+      return [...local, ...runs.map(listItem)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     },
     refetchInterval: (query) => (query.state.data?.some((run) => !isTerminalRunStatus(run.status)) ? runRefreshMs.interval : false),
   })
@@ -161,6 +165,7 @@ export function projectRunsQuery(tenantId: string, projectId: string) {
  * dialog did not name.
  */
 export async function createRun(library: WorkflowContracts, tenantId: string, projectId: string, offered: PublishedWorkflow, name: string): Promise<string> {
+  if (demoMockEnabled() && offered.id === cdaseWorkflow.id) return createCdaseRun(tenantId, projectId, name)
   const { published } = await library.get({ workflowId: offered.id })
   if (!published) throw new Error('这个工作流已经没有发布版本，请重新选择')
   if (published.id !== offered.snapshotId) {
@@ -179,22 +184,26 @@ export async function createRun(library: WorkflowContracts, tenantId: string, pr
 
 /** Starts a pending run with the Start dialog's prompt and values. */
 export async function startRun(tenantId: string, runId: string, prompt: string, variables: Record<string, unknown>): Promise<void> {
+  if (isCdaseRun(runId)) { startCdaseRun(tenantId, runId, prompt); return }
   await call(() => updateWorkflowRunInput(tenantId, runId, { input: prompt, variables }))
   await call(() => startWorkflowRun(tenantId, runId))
 }
 
 /** Sets a pending run's kickoff input: the Start node's prompt, and the values when given. */
 export async function updateRunInput(tenantId: string, runId: string, prompt: string, variables?: Record<string, unknown>): Promise<void> {
+  if (isCdaseRun(runId)) { updateCdaseInput(tenantId, runId, prompt); return }
   await call(() => updateWorkflowRunInput(tenantId, runId, { input: prompt, ...(variables ? { variables } : {}) }))
 }
 
 /** Stops the run; v2-server answers once execution confirmed the stop. */
 export async function cancelRun(tenantId: string, runId: string): Promise<void> {
+  if (isCdaseRun(runId)) { endCdaseRun(tenantId, runId, false); return }
   await call(() => cancelWorkflowRun(tenantId, runId))
 }
 
 /** Deletes a finished run with its node rows. */
 export async function deleteRun(tenantId: string, runId: string): Promise<void> {
+  if (isCdaseRun(runId)) { endCdaseRun(tenantId, runId, true); return }
   await call(() => deleteWorkflowRun(tenantId, runId))
 }
 

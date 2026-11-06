@@ -1,5 +1,3 @@
-import { CdaseDemo } from '@/lib/demo/cdase'
-import { demoMockEnabled } from '@/lib/demo/flags'
 import { SquarePenIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router'
@@ -83,7 +81,6 @@ export default function Page() {
       return p
     }, { replace: true })
   }, [connected, linkedConversation, linkedChat, setParams])
-  if (demoMockEnabled() && params.get('demo') === 'cdase') return <CdaseDemo />
   if (tenants.isError) {
     return (
       <div role="alert" className="flex min-h-0 flex-1 items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
@@ -195,7 +192,6 @@ function ChatPane({ session, workspace }: { session?: Session; workspace?: { ope
     <>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <ShowSidebarButton />
-        {demoMockEnabled() && <a href="/chat?demo=cdase" className="text-xs text-primary">cdase · SFMEA 评审</a>}
         <h2 className="flex min-w-0 text-sm font-medium">
           <FadeText text={session?.title ?? '新对话'} />
         </h2>
